@@ -119,6 +119,8 @@ bool isKnownBuiltinName(const std::string& name) {
 struct FunctionSignature {
     std::vector<std::string> outputs;
     std::vector<std::string> parameters;
+    bool hasVarargout = false;
+    bool hasVarargin = false;
 };
 
 FunctionSignature parseFunctionSignature(const SyntaxNode& functionNode) {
@@ -137,7 +139,9 @@ FunctionSignature parseFunctionSignature(const SyntaxNode& functionNode) {
         }
 
         for (const auto& part : splitCommaList(outputs)) {
-            if (isIdentifierText(part)) {
+            if (part == "varargout") {
+                signature.hasVarargout = true;
+            } else if (isIdentifierText(part)) {
                 signature.outputs.push_back(part);
             }
         }
@@ -161,7 +165,9 @@ FunctionSignature parseFunctionSignature(const SyntaxNode& functionNode) {
     const std::string parameters =
         declaration.substr(open + 1, close - open - 1);
     for (const auto& part : splitCommaList(parameters)) {
-        if (isIdentifierText(part) && part != "~") {
+        if (part == "varargin") {
+            signature.hasVarargin = true;
+        } else if (isIdentifierText(part) && part != "~") {
             signature.parameters.push_back(part);
         }
     }
@@ -334,6 +340,14 @@ private:
                 method && i == 0 ? className : std::string{};
             declareSymbol(SymbolKind::FunctionParameter, signature.parameters[i],
                           syntax.span, typeName);
+        }
+        if (signature.hasVarargin) {
+            declareSymbol(SymbolKind::FunctionParameter, "varargin",
+                          syntax.span);
+        }
+        if (signature.hasVarargout) {
+            declareSymbol(SymbolKind::FunctionOutput, "varargout",
+                          syntax.span);
         }
 
         lowerChildren(syntax, *node);

@@ -34,6 +34,16 @@ bool runtimeValuesEqual(const RuntimeValue& left,
     case RuntimeValueKind::Vector:
     case RuntimeValueKind::Matrix:
         return left.elements == right.elements;
+    case RuntimeValueKind::Cell:
+        if (left.cells.size() != right.cells.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < left.cells.size(); ++index) {
+            if (!runtimeValuesEqual(left.cells[index], right.cells[index])) {
+                return false;
+            }
+        }
+        return true;
     }
     return false;
 }

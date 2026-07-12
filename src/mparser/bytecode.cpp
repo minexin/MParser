@@ -103,7 +103,12 @@ private:
             lowerCallOrIndex(node, 1);
             break;
         case HirKind::BraceIndex:
-            lowerChildren(node);
+            if (!node.children.empty()) {
+                lowerNode(*node.children.front());
+                for (size_t index = 1; index < node.children.size(); ++index) {
+                    lowerNode(*node.children[index]);
+                }
+            }
             emit(BytecodeOp::BraceIndex, node, argumentCount(node));
             break;
         case HirKind::FunctionHandle:
@@ -550,8 +555,16 @@ private:
                  argumentCount(node));
             break;
         case HirKind::BraceIndex:
-            lowerChildren(node);
-            emit(BytecodeOp::StoreIndex, node, argumentCount(node));
+            if (node.children.empty()) {
+                emit(BytecodeOp::StoreBraceIndex, node, argumentCount(node));
+                break;
+            }
+            lowerNode(*node.children.front());
+            for (size_t index = 1; index < node.children.size(); ++index) {
+                lowerNode(*node.children[index]);
+            }
+            emit(BytecodeOp::StoreBraceIndex, *node.children.front(),
+                 argumentCount(node));
             break;
         default:
             lowerNode(node);
@@ -643,6 +656,8 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "StoreMember";
     case BytecodeOp::StoreIndex:
         return "StoreIndex";
+    case BytecodeOp::StoreBraceIndex:
+        return "StoreBraceIndex";
     case BytecodeOp::UnaryOp:
         return "UnaryOp";
     case BytecodeOp::BinaryOp:

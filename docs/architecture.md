@@ -98,8 +98,9 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.22 has an executable bytecode VM for scalar doubles, strings, numeric
-vectors/matrices, matrix literals, core arithmetic, selected builtins, scripts,
+v0.23 has an executable bytecode VM for scalar doubles, strings, numeric
+vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
+core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
 `break`, `continue`, and `return`, same-file local function calls, isolated
 call frames, multi-output call assignment, MATLAB-style numeric indexing with
@@ -193,16 +194,20 @@ Function invocation carries a requested output count separately from the
 declared signature. Top-level callers can request zero through all declared
 outputs; assignment lowering supplies the same count for local calls. Every
 active function frame initializes numeric `nargin` and `nargout` values before
-executing its body. Results expose only the requested output prefix, while the
-diagnostic frame snapshot retains all declared outputs and call-introspection
-variables. The HIR interpreter and all bytecode tiers share this contract.
+executing its body. A function with `varargin` receives all positional excess
+arguments in a one-dimensional Cell; a function with `varargout` may satisfy
+requested outputs beyond its fixed output names from `varargout{n}`. Results
+expose only the requested output prefix, while the diagnostic frame snapshot
+retains all declared outputs and call-introspection variables. The HIR
+interpreter and all bytecode tiers share this contract.
 
-The VM
-intentionally still rejects classes, object
-dispatch, member assignment, cell/function handle execution, dynamic function
-handles, automatic array growth, non-scalar right-hand-side indexed assignment
-shape matching, structs, sparse arrays, and complex values until the IR grows
-richer mutation, layout, and dynamic dispatch conventions.
+The VM intentionally still rejects classes, object dispatch, member assignment,
+function-handle execution, dynamic function handles, automatic numeric-array
+growth, non-scalar right-hand-side indexed assignment shape matching, structs,
+sparse arrays, and complex values until the IR grows richer mutation, layout,
+and dynamic dispatch conventions. Cell execution is deliberately limited to
+one-dimensional scalar brace reads/writes; multi-subscript Cells and
+comma-separated-list expansion are future work.
 
 This shape is intentionally close to an interpreter dispatch loop, but still
 abstract enough for MATLAB's delayed decisions. `CallOrIndex` remains a neutral
@@ -212,7 +217,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.22
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.23
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -243,10 +248,11 @@ preflight, repeated VM invocation, and adaptive-session construction over one
 immutable frontend result. v0.21 partitions adaptive state and typed modules by
 entry function, preserving unaffected specializations across invalidation.
 v0.22 adds requested-output semantics plus `nargin` and `nargout` across the
-interpreter, baseline, typed, adaptive, and module runtimes. The next steps are
-a real Cell runtime for variable arguments, persistent code caches, native
-lowering, and eventual on-stack replacement while preserving the same
-commit/fallback contract.
+interpreter, baseline, typed, adaptive, and module runtimes. v0.23 adds
+Cell-backed `varargin` and `varargout` through those same call boundaries. The
+next steps are multidimensional and comma-separated-list Cell semantics,
+persistent code caches, native lowering, and eventual on-stack replacement
+while preserving the same commit/fallback contract.
 
 When dynamic features invalidate assumptions, execution should deopt back to
 the interpreter. This is the path that keeps full MATLAB semantics compatible

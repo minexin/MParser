@@ -57,6 +57,15 @@ RuntimeValue matrixValue(size_t rows, size_t columns,
     return result;
 }
 
+RuntimeValue cellValue(std::vector<RuntimeValue> values) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::Cell;
+    result.cells = std::move(values);
+    result.rows = 1;
+    result.columns = result.cells.size();
+    return result;
+}
+
 bool isNumber(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Number;
 }
@@ -71,6 +80,10 @@ bool isVector(const RuntimeValue& value) {
 
 bool isMatrix(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Matrix;
+}
+
+bool isCell(const RuntimeValue& value) {
+    return value.kind == RuntimeValueKind::Cell;
 }
 
 bool isNumeric(const RuntimeValue& value) {
@@ -115,6 +128,18 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     if (isArray(left) && isArray(right)) {
         return left.rows == right.rows && left.columns == right.columns &&
                left.elements == right.elements;
+    }
+    if (isCell(left) && isCell(right)) {
+        if (left.rows != right.rows || left.columns != right.columns ||
+            left.cells.size() != right.cells.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < left.cells.size(); ++index) {
+            if (!runtimeEqual(left.cells[index], right.cells[index])) {
+                return false;
+            }
+        }
+        return true;
     }
     return false;
 }
@@ -363,14 +388,16 @@ private:
                                     std::optional<size_t> requestedOutputCount =
                                         std::nullopt) {
         const FunctionSignature signature = parseFunctionSignature(node);
-        if (arguments.size() != signature.parameters.size()) {
+        if (arguments.size() < signature.parameters.size() ||
+            (!signature.hasVarargin &&
+             arguments.size() != signature.parameters.size())) {
             addDiagnostic(node, "function argument count mismatch for: " +
                                     node.label);
             return FunctionCallResult{{missingValue()}};
         }
         const size_t outputCount =
             requestedOutputCount.value_or(signature.outputs.size());
-        if (outputCount > signature.outputs.size()) {
+        if (!signature.hasVarargout && outputCount > signature.outputs.size()) {
             addDiagnostic(node, "function output count mismatch for: " +
                                     node.label);
             return FunctionCallResult{
@@ -382,8 +409,16 @@ private:
         for (size_t i = 0; i < signature.parameters.size(); ++i) {
             currentFrame()[signature.parameters[i]] = arguments[i];
         }
+        if (signature.hasVarargin) {
+            std::vector<RuntimeValue> values(
+                arguments.begin() + signature.parameters.size(), arguments.end());
+            currentFrame()["varargin"] = cellValue(std::move(values));
+        }
         for (const auto& output : signature.outputs) {
             currentFrame()[output] = missingValue();
+        }
+        if (signature.hasVarargout) {
+            currentFrame()["varargout"] = cellValue({});
         }
         currentFrame()["nargin"] =
             numberValue(static_cast<double>(arguments.size()));
@@ -398,13 +433,20 @@ private:
         FunctionCallResult result;
         result.outputs.reserve(outputCount);
         for (size_t index = 0; index < outputCount; ++index) {
-            const auto& outputName = signature.outputs[index];
-            const auto output = completedFrame.find(outputName);
-            if (output != completedFrame.end()) {
-                result.outputs.push_back(output->second);
-            } else {
-                result.outputs.push_back(missingValue());
+            if (index < signature.outputs.size()) {
+                const auto output = completedFrame.find(signature.outputs[index]);
+                result.outputs.push_back(output == completedFrame.end()
+                                             ? missingValue()
+                                             : output->second);
+                continue;
             }
+            const auto varargout = completedFrame.find("varargout");
+            const size_t variableIndex = index - signature.outputs.size();
+            result.outputs.push_back(
+                varargout != completedFrame.end() && isCell(varargout->second) &&
+                        variableIndex < varargout->second.cells.size()
+                    ? varargout->second.cells[variableIndex]
+                    : missingValue());
         }
 
         if (captureResultFrame) {
@@ -587,9 +629,7 @@ private:
             assignIndexedTarget(target, value);
             break;
         case HirKind::BraceIndex:
-            addDiagnostic(target,
-                          "indexed assignment is not executable in the reference "
-                          "interpreter yet");
+            assignBraceIndexedTarget(target, value);
             break;
         default:
             addDiagnostic(target, "unsupported assignment target");
@@ -655,6 +695,49 @@ private:
 
         assignLinearTarget(target, targetValue, arguments.front(),
                            value.number);
+    }
+
+    void assignBraceIndexedTarget(const HirNode& target,
+                                  const RuntimeValue& value) {
+        if (target.children.empty() ||
+            target.children.front()->kind != HirKind::NameRef) {
+            addDiagnostic(target,
+                          "brace assignment currently requires a variable target");
+            return;
+        }
+
+        const std::vector<RuntimeValue> arguments = evaluateArguments(target);
+        if (arguments.size() != 1 || !isNumber(arguments.front())) {
+            addDiagnostic(target,
+                          "brace assignment currently requires one scalar index");
+            return;
+        }
+
+        const double rawIndex = arguments.front().number;
+        if (!isWholeNumber(rawIndex) || rawIndex < 1.0 ||
+            rawIndex > static_cast<double>(std::numeric_limits<size_t>::max())) {
+            addDiagnostic(target, "cell index must be a positive integer");
+            return;
+        }
+
+        auto variable = currentFrame().find(target.children.front()->label);
+        if (variable == currentFrame().end()) {
+            addDiagnostic(target, "brace assignment target is not defined: " +
+                                      target.children.front()->label);
+            return;
+        }
+        RuntimeValue& cell = variable->second;
+        if (!isCell(cell)) {
+            addDiagnostic(target, "brace assignment requires a cell target");
+            return;
+        }
+
+        const size_t index = static_cast<size_t>(rawIndex) - 1;
+        if (index >= cell.cells.size()) {
+            cell.cells.resize(index + 1, missingValue());
+            cell.columns = cell.cells.size();
+        }
+        cell.cells[index] = value;
     }
 
     void assignTwoSubscriptTarget(const HirNode& node, RuntimeValue& target,
@@ -1024,8 +1107,12 @@ private:
             return evaluateMatrix(node);
         case HirKind::MatrixRow:
             return evaluateMatrixRow(node);
+        case HirKind::Cell:
+            return evaluateCell(node);
         case HirKind::CallOrIndex:
             return evaluateCallOrIndex(node);
+        case HirKind::BraceIndex:
+            return evaluateBraceIndex(node);
         case HirKind::Assignment:
             executeAssignment(node);
             return missingValue();
@@ -1040,9 +1127,7 @@ private:
         case HirKind::ControlArm:
         case HirKind::OutputList:
         case HirKind::ParameterList:
-        case HirKind::Cell:
         case HirKind::MemberAccess:
-        case HirKind::BraceIndex:
         case HirKind::FunctionHandle:
         case HirKind::MetaClass:
         case HirKind::Unknown:
@@ -1059,6 +1144,15 @@ private:
             result = evaluate(*child);
         }
         return result;
+    }
+
+    RuntimeValue evaluateCell(const HirNode& node) {
+        std::vector<RuntimeValue> values;
+        values.reserve(node.children.size());
+        for (const auto& child : node.children) {
+            values.push_back(evaluate(*child));
+        }
+        return cellValue(std::move(values));
     }
 
     RuntimeValue evaluatePostfix(const HirNode& node) {
@@ -1779,6 +1873,32 @@ private:
                             requestedOutputCount);
     }
 
+    RuntimeValue evaluateBraceIndex(const HirNode& node) {
+        if (node.children.empty()) {
+            addDiagnostic(node, "brace indexing is missing a target");
+            return missingValue();
+        }
+
+        const RuntimeValue target = evaluate(*node.children.front());
+        const std::vector<RuntimeValue> arguments = evaluateArguments(node);
+        if (!isCell(target)) {
+            addDiagnostic(node, "brace indexing requires a cell target");
+            return missingValue();
+        }
+        if (arguments.size() != 1 || !isNumber(arguments.front())) {
+            addDiagnostic(node,
+                          "brace indexing currently requires one scalar index");
+            return missingValue();
+        }
+
+        const auto index =
+            checkedIndex(node, arguments.front().number, target.cells.size());
+        if (!index) {
+            return missingValue();
+        }
+        return target.cells[*index];
+    }
+
     RuntimeValue evaluateIndex(const HirNode& node, const RuntimeValue& target,
                                const std::vector<RuntimeValue>& arguments) {
         if (arguments.size() != 1 && arguments.size() != 2) {
@@ -2270,6 +2390,16 @@ std::string runtimeValueToString(const RuntimeValue& value) {
             }
         }
         output << "]";
+        return output.str();
+    case RuntimeValueKind::Cell:
+        output << "{";
+        for (size_t index = 0; index < value.cells.size(); ++index) {
+            if (index > 0) {
+                output << ", ";
+            }
+            output << runtimeValueToString(value.cells[index]);
+        }
+        output << "}";
         return output.str();
     }
     return "<missing>";

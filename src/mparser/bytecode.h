@@ -41,6 +41,7 @@ enum class BytecodeOp {
     StoreName,
     StoreMember,
     StoreIndex,
+    StoreBraceIndex,
     UnaryOp,
     BinaryOp,
     PostfixOp,

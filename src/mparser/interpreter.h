@@ -15,6 +15,7 @@ enum class RuntimeValueKind {
     String,
     Vector,
     Matrix,
+    Cell,
 };
 
 struct RuntimeValue {
@@ -22,6 +23,7 @@ struct RuntimeValue {
     double number = 0.0;
     std::string text;
     std::vector<double> elements;
+    std::vector<RuntimeValue> cells;
     size_t rows = 0;
     size_t columns = 0;
 };

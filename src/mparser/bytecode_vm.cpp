@@ -62,6 +62,15 @@ RuntimeValue matrixValue(size_t rows, size_t columns,
     return result;
 }
 
+RuntimeValue cellValue(std::vector<RuntimeValue> values) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::Cell;
+    result.cells = std::move(values);
+    result.rows = 1;
+    result.columns = result.cells.size();
+    return result;
+}
+
 bool isNumber(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Number;
 }
@@ -76,6 +85,10 @@ bool isVector(const RuntimeValue& value) {
 
 bool isMatrix(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Matrix;
+}
+
+bool isCell(const RuntimeValue& value) {
+    return value.kind == RuntimeValueKind::Cell;
 }
 
 bool isArray(const RuntimeValue& value) {
@@ -112,6 +125,8 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "vector";
     case RuntimeValueKind::Matrix:
         return "matrix";
+    case RuntimeValueKind::Cell:
+        return "cell";
     }
     return "unknown";
 }
@@ -263,6 +278,18 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return left.rows == right.rows && left.columns == right.columns &&
                left.elements == right.elements;
     }
+    if (isCell(left) && isCell(right)) {
+        if (left.rows != right.rows || left.columns != right.columns ||
+            left.cells.size() != right.cells.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < left.cells.size(); ++index) {
+            if (!runtimeEqual(left.cells[index], right.cells[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
     return false;
 }
 
@@ -405,6 +432,7 @@ public:
         executedRequestedOutputCount_ = 0;
         entrySignature_.reset();
         entryOutputs_.clear();
+        entryOutputNames_.clear();
         diagnostics_ = program.diagnostics;
         frames_.clear();
         frames_.push_back({});
@@ -433,12 +461,7 @@ public:
             result.variables.push_back(RuntimeVariable{name, value});
         }
         result.entryFunction = executedEntryFunction_;
-        if (entrySignature_) {
-            const size_t count = std::min(
-                executedRequestedOutputCount_, entrySignature_->outputs.size());
-            result.outputNames.assign(entrySignature_->outputs.begin(),
-                                      entrySignature_->outputs.begin() + count);
-        }
+        result.outputNames = entryOutputNames_;
         result.outputs = entryOutputs_;
         result.requestedOutputCount = executedRequestedOutputCount_;
         result.diagnostics = std::move(diagnostics_);
@@ -923,7 +946,9 @@ private:
         }
 
         const auto& signature = function->second.signature;
-        if (entryArguments_.size() != signature.parameters.size()) {
+        if (entryArguments_.size() < signature.parameters.size() ||
+            (!signature.hasVarargin &&
+             entryArguments_.size() != signature.parameters.size())) {
             addDiagnostic(instruction,
                           "function argument count mismatch for: " +
                               instruction.operand);
@@ -931,24 +956,15 @@ private:
         }
         const size_t requestedOutputCount =
             requestedEntryOutputCount_.value_or(signature.outputs.size());
-        if (requestedOutputCount > signature.outputs.size()) {
+        if (!signature.hasVarargout &&
+            requestedOutputCount > signature.outputs.size()) {
             addDiagnostic(instruction,
                           "function output count mismatch for: " +
                               instruction.operand);
             return false;
         }
 
-        for (size_t index = 0; index < signature.parameters.size(); ++index) {
-            currentFrame()[signature.parameters[index]] =
-                entryArguments_[index];
-        }
-        for (const auto& output : signature.outputs) {
-            currentFrame()[output] = missingValue();
-        }
-        currentFrame()["nargin"] =
-            numberValue(static_cast<double>(entryArguments_.size()));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(requestedOutputCount));
+        initializeFunctionFrame(signature, entryArguments_, requestedOutputCount);
         executedEntryFunction_ = instruction.operand;
         executedRequestedOutputCount_ = requestedOutputCount;
         entrySignature_ = signature;
@@ -957,6 +973,12 @@ private:
             profile.name = instruction.operand;
             profile.parameters = signature.parameters;
             profile.outputs = signature.outputs;
+            if (signature.hasVarargin) {
+                profile.parameters.push_back("varargin");
+            }
+            if (signature.hasVarargout) {
+                profile.outputs.push_back("varargout");
+            }
             ++profile.invocationCount;
             observeValues(profile.argumentObservations, entryArguments_);
         }
@@ -968,17 +990,76 @@ private:
             return;
         }
         const auto& frame = frames_.front();
-        for (size_t index = 0; index < executedRequestedOutputCount_; ++index) {
-            const auto& name = entrySignature_->outputs[index];
-            const auto value = frame.find(name);
-            entryOutputs_.push_back(value == frame.end()
-                                        ? missingValue()
-                                        : value->second);
-        }
+        entryOutputs_ = collectFunctionOutputs(
+            frame, *entrySignature_, executedRequestedOutputCount_);
+        entryOutputNames_ = collectFunctionOutputNames(
+            *entrySignature_, executedRequestedOutputCount_);
         if (profilingEnabled_) {
             auto& profile = functionEntryProfiles_[executedEntryFunction_];
             observeValues(profile.resultObservations, entryOutputs_);
         }
+    }
+
+    void initializeFunctionFrame(const FunctionSignature& signature,
+                                 const std::vector<RuntimeValue>& arguments,
+                                 size_t requestedOutputCount) {
+        for (size_t index = 0; index < signature.parameters.size(); ++index) {
+            currentFrame()[signature.parameters[index]] = arguments[index];
+        }
+        if (signature.hasVarargin) {
+            std::vector<RuntimeValue> values(
+                arguments.begin() + signature.parameters.size(), arguments.end());
+            currentFrame()["varargin"] = cellValue(std::move(values));
+        }
+        for (const auto& output : signature.outputs) {
+            currentFrame()[output] = missingValue();
+        }
+        if (signature.hasVarargout) {
+            currentFrame()["varargout"] = cellValue({});
+        }
+        currentFrame()["nargin"] =
+            numberValue(static_cast<double>(arguments.size()));
+        currentFrame()["nargout"] =
+            numberValue(static_cast<double>(requestedOutputCount));
+    }
+
+    std::vector<RuntimeValue> collectFunctionOutputs(
+        const std::map<std::string, RuntimeValue>& frame,
+        const FunctionSignature& signature, size_t requestedOutputCount) const {
+        std::vector<RuntimeValue> outputs;
+        outputs.reserve(requestedOutputCount);
+        const auto varargout = frame.find("varargout");
+        for (size_t index = 0; index < requestedOutputCount; ++index) {
+            if (index < signature.outputs.size()) {
+                const auto value = frame.find(signature.outputs[index]);
+                outputs.push_back(value == frame.end() ? missingValue()
+                                                       : value->second);
+                continue;
+            }
+            const size_t variableIndex = index - signature.outputs.size();
+            outputs.push_back(
+                varargout != frame.end() && isCell(varargout->second) &&
+                        variableIndex < varargout->second.cells.size()
+                    ? varargout->second.cells[variableIndex]
+                    : missingValue());
+        }
+        return outputs;
+    }
+
+    std::vector<std::string> collectFunctionOutputNames(
+        const FunctionSignature& signature, size_t requestedOutputCount) const {
+        std::vector<std::string> names;
+        names.reserve(requestedOutputCount);
+        for (size_t index = 0; index < requestedOutputCount; ++index) {
+            if (index < signature.outputs.size()) {
+                names.push_back(signature.outputs[index]);
+            } else {
+                names.push_back("varargout" +
+                                std::to_string(index - signature.outputs.size() +
+                                               1));
+            }
+        }
+        return names;
     }
 
     void executeFunctionBody(size_t entry, size_t end) {
@@ -1024,6 +1105,9 @@ private:
         case BytecodeOp::StoreIndex:
             storeIndex(instruction);
             break;
+        case BytecodeOp::StoreBraceIndex:
+            storeBraceIndex(instruction);
+            break;
         case BytecodeOp::UnaryOp:
             applyUnary(instruction);
             break;
@@ -1039,8 +1123,14 @@ private:
         case BytecodeOp::MakeMatrix:
             makeMatrix(instruction);
             break;
+        case BytecodeOp::MakeCell:
+            makeCell(instruction);
+            break;
         case BytecodeOp::CallOrIndex:
             callOrIndex(instruction);
+            break;
+        case BytecodeOp::BraceIndex:
+            braceIndex(instruction);
             break;
         case BytecodeOp::Jump:
             return jump(instruction);
@@ -1090,8 +1180,6 @@ private:
             break;
         case BytecodeOp::StoreMember:
         case BytecodeOp::MemberAccess:
-        case BytecodeOp::BraceIndex:
-        case BytecodeOp::MakeCell:
         case BytecodeOp::MakeFunctionHandle:
         case BytecodeOp::LoadMetaClass:
         case BytecodeOp::EnterModule:
@@ -1847,6 +1935,85 @@ private:
         pushRuntime(matrixValue(rows->size(), columns, std::move(elements)));
     }
 
+    void makeCell(const BytecodeInstruction& instruction) {
+        const auto values = popRuntimeValues(instruction, instruction.operandCount,
+                                             "cell literal");
+        if (!values) {
+            return;
+        }
+        pushRuntime(cellValue(*values));
+    }
+
+    void braceIndex(const BytecodeInstruction& instruction) {
+        const auto arguments = popRuntimeValues(instruction,
+                                                 instruction.operandCount,
+                                                 "cell index arguments");
+        const auto target = popRuntime(instruction, "cell index target");
+        if (!arguments || !target) {
+            return;
+        }
+        if (!isCell(*target)) {
+            addDiagnostic(instruction, "brace indexing requires a cell target");
+            return;
+        }
+        if (arguments->size() != 1 || !isNumber(arguments->front())) {
+            addDiagnostic(instruction,
+                          "brace indexing currently requires one scalar "
+                          "numeric subscript");
+            return;
+        }
+        const auto index = checkedIndex(instruction, arguments->front().number,
+                                        target->cells.size());
+        if (!index) {
+            return;
+        }
+        pushRuntime(target->cells[*index]);
+    }
+
+    void storeBraceIndex(const BytecodeInstruction& instruction) {
+        const auto arguments = popRuntimeValues(instruction,
+                                                 instruction.operandCount,
+                                                 "cell assignment arguments");
+        const auto target = popRuntime(instruction, "cell assignment target");
+        const auto value = popRuntime(instruction, "cell assignment value");
+        if (!arguments || !target || !value) {
+            return;
+        }
+        if (instruction.operand.empty()) {
+            addDiagnostic(instruction,
+                          "cell assignment requires a variable target");
+            return;
+        }
+        if (!isCell(*target)) {
+            addDiagnostic(instruction, "cell assignment requires a cell target");
+            return;
+        }
+        if (arguments->size() != 1 || !isNumber(arguments->front())) {
+            addDiagnostic(instruction,
+                          "cell assignment currently requires one scalar "
+                          "numeric subscript");
+            return;
+        }
+
+        const double rawIndex = arguments->front().number;
+        if (!std::isfinite(rawIndex) || rawIndex < 1.0 ||
+            std::floor(rawIndex) != rawIndex ||
+            rawIndex > static_cast<double>(std::numeric_limits<size_t>::max())) {
+            addDiagnostic(instruction, "cell subscript must be a positive integer");
+            return;
+        }
+        const size_t index = static_cast<size_t>(rawIndex - 1.0);
+        RuntimeValue updated = *target;
+        if (index >= updated.cells.size()) {
+            updated.cells.resize(index + 1, missingValue());
+        }
+        updated.cells[index] = *value;
+        updated.rows = 1;
+        updated.columns = updated.cells.size();
+        currentFrame()[instruction.operand] = updated;
+        recordAssignment(instruction, "cell", updated);
+    }
+
     void callOrIndex(const BytecodeInstruction& instruction) {
         const auto arguments = popRuntimeValues(instruction,
                                                 instruction.operandCount,
@@ -1979,13 +2146,15 @@ private:
         }
 
         const FunctionInfo& info = function->second;
-        if (arguments.size() != info.signature.parameters.size()) {
+        if (arguments.size() < info.signature.parameters.size() ||
+            (!info.signature.hasVarargin &&
+             arguments.size() != info.signature.parameters.size())) {
             addDiagnostic(instruction,
                           "function argument count mismatch for: " + name);
             return missingOutputs(requestedCount);
         }
-        if (requestedCount >
-            static_cast<int>(info.signature.outputs.size())) {
+        if (!info.signature.hasVarargout &&
+            requestedCount > static_cast<int>(info.signature.outputs.size())) {
             addDiagnostic(instruction,
                           "function output count mismatch for: " + name);
             return missingOutputs(requestedCount);
@@ -2003,18 +2172,8 @@ private:
         tryContextStack_.clear();
 
         frames_.push_back({});
-        for (size_t index = 0; index < info.signature.parameters.size();
-             ++index) {
-            currentFrame()[info.signature.parameters[index]] =
-                arguments[index];
-        }
-        for (const auto& output : info.signature.outputs) {
-            currentFrame()[output] = missingValue();
-        }
-        currentFrame()["nargin"] =
-            numberValue(static_cast<double>(arguments.size()));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(requestedCount));
+        initializeFunctionFrame(info.signature, arguments,
+                                static_cast<size_t>(requestedCount));
 
         enterFunctionProfile(name, info.span);
         executeFunctionBody(info.entry, info.end);
@@ -2028,20 +2187,8 @@ private:
         switchContextStack_ = std::move(savedSwitchContextStack);
         tryContextStack_ = std::move(savedTryContextStack);
 
-        std::vector<RuntimeValue> outputs;
-        outputs.reserve(static_cast<size_t>(requestedCount));
-        for (int index = 0; index < requestedCount; ++index) {
-            if (index >= static_cast<int>(info.signature.outputs.size())) {
-                outputs.push_back(missingValue());
-                continue;
-            }
-            const auto output =
-                completedFrame.find(info.signature.outputs[index]);
-            outputs.push_back(output == completedFrame.end()
-                                  ? missingValue()
-                                  : output->second);
-        }
-        return outputs;
+        return collectFunctionOutputs(completedFrame, info.signature,
+                                      static_cast<size_t>(requestedCount));
     }
 
     std::vector<RuntimeValue> missingOutputs(int count) const {
@@ -2684,6 +2831,7 @@ private:
     size_t executedRequestedOutputCount_ = 0;
     std::optional<FunctionSignature> entrySignature_;
     std::vector<RuntimeValue> entryOutputs_;
+    std::vector<std::string> entryOutputNames_;
 };
 
 } // namespace

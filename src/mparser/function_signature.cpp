@@ -68,7 +68,9 @@ FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
         }
 
         for (const auto& part : splitCommaList(outputs)) {
-            if (isIdentifierText(part)) {
+            if (part == "varargout") {
+                signature.hasVarargout = true;
+            } else if (isIdentifierText(part)) {
                 signature.outputs.push_back(part);
             }
         }
@@ -93,7 +95,9 @@ FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
     const std::string parameters =
         declaration.substr(open + 1, close - open - 1);
     for (const auto& part : splitCommaList(parameters)) {
-        if (isIdentifierText(part) && part != "~") {
+        if (part == "varargin") {
+            signature.hasVarargin = true;
+        } else if (isIdentifierText(part) && part != "~") {
             signature.parameters.push_back(part);
         }
     }

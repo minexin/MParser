@@ -132,12 +132,14 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
                            "entry function is not available: " +
                                std::string(entryFunction)}};
     }
-    if (function->signature.parameters.size() != argumentCount) {
+    if (argumentCount < function->signature.parameters.size() ||
+        (!function->signature.hasVarargin &&
+         function->signature.parameters.size() != argumentCount)) {
         return {Diagnostic{
             function->span,
             "function argument count mismatch for: " + function->name}};
     }
-    if (requestedOutputCount &&
+    if (!function->signature.hasVarargout && requestedOutputCount &&
         *requestedOutputCount > function->signature.outputs.size()) {
         return {Diagnostic{
             function->span,

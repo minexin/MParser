@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.22.0. See [docs/v0.22.md](docs/v0.22.md) for the
+Current milestone: v0.23.0. See [docs/v0.23.md](docs/v0.23.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.21.md](docs/v0.21.md),
+iteration plan. Previous boundaries are kept in [docs/v0.22.md](docs/v0.22.md),
+[docs/v0.21.md](docs/v0.21.md),
 [docs/v0.20.md](docs/v0.20.md),
 [docs/v0.19.md](docs/v0.19.md),
 [docs/v0.18.md](docs/v0.18.md),
@@ -54,7 +55,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.22 executes the core numeric/string subset,
+expression operators. v0.23 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -107,12 +108,15 @@ heat, arguments, workspaces, promotions, typed executions, fallbacks,
 invalidations, retraining, and event histories evolve independently. A failed
 specialization in one entry no longer discards another entry's installed typed
 regions.
-Named function calls now carry an explicit requested output count. Function
-frames expose numeric `nargin` and `nargout` values, callers may request zero
-through all declared outputs, and excessive output requests fail before
-execution. This contract is shared by the HIR interpreter's local calls, the
-bytecode VM, typed execution, adaptive sessions, compiled modules, and the
-module runtime.
+Named function calls carry an explicit requested output count. Function frames
+expose numeric `nargin` and `nargout` values, callers may request zero through
+all declared outputs, and excessive output requests fail before execution.
+v0.23 extends that contract with one-dimensional heterogeneous Cell values,
+cell literals, scalar `C{n}` reads/writes, automatic Cell growth for brace
+assignment, `varargin`, and `varargout`. Excess positional inputs are collected
+in a Cell; excess requested outputs are read from `varargout{n}`. The same
+contract is shared by the HIR interpreter's local calls, the bytecode VM, typed
+execution, adaptive sessions, compiled modules, and the module runtime.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -129,7 +133,8 @@ through `size` including `[rows, cols] = size(A)`, 1-based vector and matrix
 indexing such as `A(2)` and `A(2, 1)`, colon and vector subscripts, `end`
 expressions inside indexing, scalar-fill indexed assignment into existing
 numeric arrays, array constructors `zeros`, `ones`, and `eye`, `linspace`
-vector generation, transpose, and basic numeric matrix multiplication. It is
+vector generation, transpose, basic numeric matrix multiplication, and
+one-dimensional Cell literals plus scalar brace indexing/mutation. It is
 intentionally not a full MATLAB runtime yet: classes, automatic growth during
 indexed assignment, non-scalar right-hand-side indexed assignment shape
 matching, function handles, other builtin multi-output conventions beyond the
@@ -283,6 +288,14 @@ Request a prefix of declared outputs and inspect `nargin`/`nargout` with:
 build\mparser.exe --run-bytecode `
   --entry-function=function_contract_demo --argument=2 --argument=4 `
   --outputs=2 samples\function_contract_demo.m
+```
+
+Run a variadic function using Cell-backed `varargin` and `varargout` with:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --entry-function=cell_varargs_demo --argument=1 --argument=2 --argument=3 `
+  --outputs=4 samples\cell_varargs_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:

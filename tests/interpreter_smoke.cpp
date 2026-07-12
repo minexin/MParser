@@ -145,6 +145,29 @@ end
     assertNumber(result, "y", 16.0);
 }
 
+void runCellLiteralAndBraceIndexSmoke() {
+    const std::string source = R"(function y = f()
+C = {1, "two"};
+C{3} = [3 4];
+first = C{1};
+label = C{2};
+tail = C{3};
+y = first + tail(2);
+end
+)";
+
+    const auto result = run(source);
+    assert(result.diagnostics.empty());
+    const auto* cell = findVariable(result, "C");
+    assert(cell != nullptr);
+    assert(cell->kind == mparser::RuntimeValueKind::Cell);
+    assert(cell->cells.size() == 3);
+    assertNumber(result, "first", 1.0);
+    assertString(result, "label", "two");
+    assertVector(result, "tail", {3.0, 4.0});
+    assertNumber(result, "y", 5.0);
+}
+
 void runVectorRangeAndBuiltinSmoke() {
     const std::string source = R"(function y = f()
 A = 1:3;
@@ -683,6 +706,7 @@ int main() {
     runStepRangeSmoke();
     runIfAndBuiltinSmoke();
     runVectorLiteralAndIndexSmoke();
+    runCellLiteralAndBraceIndexSmoke();
     runVectorRangeAndBuiltinSmoke();
     runForLoopOverVectorSmoke();
     runMatrixShapeSmoke();
