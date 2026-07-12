@@ -1,0 +1,26 @@
+# CMake build trees
+/build/
+/out/
+/cmake-build-*/
+
+# IDE and local tool state
+/.vs/
+/.vscode/
+/.codex/
+/.agents/
+*.suo
+*.user
+*.VC.db
+
+# Generated compiler artifacts
+*.obj
+*.o
+*.lib
+*.dll
+*.exe
+*.pdb
+*.ilk
+
+# Platform noise
+.DS_Store
+Thumbs.db

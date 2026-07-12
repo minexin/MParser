@@ -1,0 +1,434 @@
+# MParser
+
+Current milestone: v0.22.0. See [docs/v0.22.md](docs/v0.22.md) for the
+current bytecode VM scope, supported subset, validation commands, and next
+iteration plan. Previous boundaries are kept in [docs/v0.21.md](docs/v0.21.md),
+[docs/v0.20.md](docs/v0.20.md),
+[docs/v0.19.md](docs/v0.19.md),
+[docs/v0.18.md](docs/v0.18.md),
+[docs/v0.17.md](docs/v0.17.md),
+[docs/v0.16.md](docs/v0.16.md),
+[docs/v0.15.md](docs/v0.15.md),
+[docs/v0.14.md](docs/v0.14.md),
+[docs/v0.13.md](docs/v0.13.md),
+[docs/v0.12.md](docs/v0.12.md),
+[docs/v0.11.md](docs/v0.11.md),
+[docs/v0.10.md](docs/v0.10.md),
+[docs/v0.9.md](docs/v0.9.md),
+[docs/v0.8.md](docs/v0.8.md), [docs/v0.7.md](docs/v0.7.md),
+[docs/v0.6.md](docs/v0.6.md), [docs/v0.5.md](docs/v0.5.md),
+[docs/v0.4.md](docs/v0.4.md), [docs/v0.3.md](docs/v0.3.md),
+[docs/v0.2.md](docs/v0.2.md), and [docs/v0.1.md](docs/v0.1.md).
+
+MParser is the first iteration of a MATLAB-compatible language frontend. The
+current focus is syntax coverage and stable compiler boundaries:
+
+```text
+source -> lossless tokens -> syntax tree -> semantic HIR -> interpreter/bytecode -> JIT IR
+```
+
+The implementation starts with a portable C++20 core and CMake build. The first
+milestone is to parse modern MATLAB source, including `classdef`, class member
+blocks, functions, and control-flow blocks, while preserving enough source
+information for later diagnostics, formatting, semantic analysis, and JIT
+profiling.
+
+The parser also builds an initial expression tree for ordinary statements:
+assignments, output lists, member access, neutral call/index nodes, brace
+indexing, unary/binary operators, function handles, matrix/cell literals, and
+meta-class expressions. Dynamic MATLAB ambiguities are intentionally preserved;
+for example, `A(x)` is represented as `CallOrIndexExpr` until semantic analysis
+can decide whether it is indexing or a function/constructor call.
+
+Control-flow headers are structured too. For example, `for i = 1:10` contains a
+`ControlHeader` with an `AssignmentStatement`, while `if x > 0` contains a
+header expression.
+
+The semantic layer lowers syntax into a HIR tree with scopes and symbols. It
+predeclares local functions/classes and class members, resolves local names,
+forward local function calls, anonymous function parameters, knowable class
+member access, and a small lazy registry of common MATLAB builtins. Dynamic
+calls, indexing, package/static lookup, and unknown member access remain delayed
+bindings for later name and type resolution.
+
+The next layer is an initial bytecode path. It linearizes HIR into stack-style
+instructions for module/class/function boundaries, assignments, control
+headers, literals, names, member access, neutral call/index operations, and
+expression operators. v0.22 executes the core numeric/string subset,
+`if`/`for`/`while` control flow, same-file local function calls, multi-output
+call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
+vector subscripts, indexed assignment into existing arrays,
+`switch/case/otherwise`, and `try/catch` diagnostic recovery. It also records
+bytecode VM execution profiles for functions, loops, instructions,
+call/index sites, and assignment sites, including runtime value kind and shape
+observations. Profile collection is now an explicit VM policy: analysis and
+planning commands collect the complete profile, while ordinary bytecode and
+post-specialization execution skip per-PC, function, loop, call-site, and
+assignment observations. A first optimization planner consumes full profiles
+and emits hot, stable candidates with explicit guard records for future typed
+IR and JIT work. A small typed IR builder now lowers those candidates into
+scalar or typed regions with guard and deoptimization operations. Guard
+evaluation can check eligible typed regions against real runtime values. A
+portable benchmark runner now measures the HIR interpreter, profiled bytecode
+VM, profile-off bytecode VM, and profile-off typed-region VM with common warmup
+and rotating measurement order. It reports timing distributions, VM dispatch
+counts, typed region activity, and typed instruction counts while requiring all
+four runtime outputs to match.
+Optimization candidates also carry concrete bytecode region contracts with PC
+ranges, stack boundaries, read/write/call summaries, and conservative typed
+execution eligibility. Eligible closed scalar `for` loops can now execute in a
+transactional typed region path and automatically fall back to unchanged-state
+bytecode execution when an entry value is not scalar numeric. A long-lived
+adaptive VM session can accumulate profiles across invocations, install an
+eligible typed module when a configurable loop threshold is reached, and use
+profile-off typed execution on later invocations. Consecutive typed fallbacks
+can now invalidate a module, clear stale observations, and resume profiling.
+An invalidated region must then re-establish stable scalar evidence for every
+external input before it may be installed again. A deterministic event history
+records promotions, executions, fallbacks, invalidations, and retraining
+rejections. Bytecode runs can now receive an initial workspace, and full
+profiles record the entry kind and shape of each injected variable. Adaptive
+sessions can optionally preserve the complete result workspace across
+invocations, allowing changing runtime state to invalidate and later retrain a
+specialization. A bytecode run may also select a same-file entry function by
+name, bind positional runtime arguments, and return declared outputs separately
+from the diagnostic variable snapshot. Full profiles record function parameter
+and result kind/shape observations, and adaptive sessions can retrain from
+changing argument values.
+The frontend pipeline is also available through `CompiledModule`: it owns the
+source, semantic HIR, lowered bytecode, compile diagnostics, and a catalog of
+invocable top-level function signatures. Embedders can compile once, validate
+an entry, invoke the ordinary VM repeatedly, or create an adaptive session over
+the same immutable artifacts. Class methods are deliberately excluded from the
+top-level entry catalog until object dispatch has a runtime contract.
+`AdaptiveModuleRuntime` adds a longer-lived module execution layer above those
+artifacts. It creates one adaptive session per named function, so invocation
+heat, arguments, workspaces, promotions, typed executions, fallbacks,
+invalidations, retraining, and event histories evolve independently. A failed
+specialization in one entry no longer discards another entry's installed typed
+regions.
+Named function calls now carry an explicit requested output count. Function
+frames expose numeric `nargin` and `nargout` values, callers may request zero
+through all declared outputs, and excessive output requests fail before
+execution. This contract is shared by the HIR interpreter's local calls, the
+bytecode VM, typed execution, adaptive sessions, compiled modules, and the
+module runtime.
+
+There is also a small reference interpreter over HIR. It executes scalar double
+expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
+string literals,
+assignments, local function calls with isolated stack frames, first-output
+single-value calls, multiple-output destructuring such as `[a, b] = f(x)`,
+ignored outputs with `~`, `for` ranges, `while` loops, `break`/`continue`,
+`return`,
+`if`/`elseif`/`else` blocks, `switch`/`case`/`otherwise`, `try`/`catch`
+diagnostic recovery, short-circuit `&&`/`||`, string equality comparisons, MATLAB
+constants such as `pi`, one-argument math builtins such as `sin` and `sqrt`,
+string builtin `strcmp`, reductions such as `sum`, row/column shape queries
+through `size` including `[rows, cols] = size(A)`, 1-based vector and matrix
+indexing such as `A(2)` and `A(2, 1)`, colon and vector subscripts, `end`
+expressions inside indexing, scalar-fill indexed assignment into existing
+numeric arrays, array constructors `zeros`, `ones`, and `eye`, `linspace`
+vector generation, transpose, and basic numeric matrix multiplication. It is
+intentionally not a full MATLAB runtime yet: classes, automatic growth during
+indexed assignment, non-scalar right-hand-side indexed assignment shape
+matching, function handles, other builtin multi-output conventions beyond the
+scalar runtime subset, complex numbers, sparse arrays, and object dispatch
+still report runtime diagnostics instead of guessing.
+
+## Build
+
+```powershell
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build
+```
+
+## Try the parser
+
+Check the current CLI version:
+
+```powershell
+build\mparser.exe --version
+```
+
+```powershell
+build\Debug\mparser.exe samples\basic_class.m
+```
+
+With the Ninja generator used by the current build:
+
+```powershell
+build\mparser.exe samples\expression_demo.m
+```
+
+Use `--tokens` to inspect the lossless token stream:
+
+```powershell
+build\Debug\mparser.exe --tokens samples\basic_class.m
+```
+
+Use `--hir` to inspect semantic scopes, symbols, and bindings:
+
+```powershell
+build\mparser.exe --hir samples\expression_demo.m
+```
+
+Use `--bytecode` to inspect the current linear IR skeleton:
+
+```powershell
+build\mparser.exe --bytecode samples\expression_demo.m
+```
+
+Use `--run-bytecode` to execute the current bytecode VM subset:
+
+```powershell
+build\mparser.exe --run-bytecode samples\bytecode_vm_demo.m
+```
+
+The bytecode VM control-flow subset can be tried with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\bytecode_control_demo.m
+```
+
+The bytecode VM local-function and multi-output subset can be tried with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\bytecode_call_demo.m
+```
+
+The bytecode VM indexing and indexed-assignment subset can be tried with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\bytecode_indexing_demo.m
+```
+
+The bytecode VM profiling and type/shape observation subset can be tried with:
+
+```powershell
+build\mparser.exe --profile-bytecode samples\bytecode_profile_demo.m
+build\mparser.exe --profile-bytecode samples\bytecode_indexing_demo.m
+```
+
+The profile-driven bytecode optimization planner can be tried with:
+
+```powershell
+build\mparser.exe --plan-bytecode samples\bytecode_profile_demo.m
+```
+
+The typed optimization IR handoff can be tried with:
+
+```powershell
+build\mparser.exe --typed-ir-bytecode samples\bytecode_profile_demo.m
+```
+
+Typed IR guard evaluation can be tried with:
+
+```powershell
+build\mparser.exe --check-typed-ir-bytecode samples\bytecode_profile_demo.m
+```
+
+Inspect an eligible closed scalar loop region with:
+
+```powershell
+build\mparser.exe --plan-bytecode samples\typed_region_demo.m
+build\mparser.exe --typed-ir-bytecode samples\typed_region_demo.m
+build\mparser.exe --check-typed-ir-bytecode samples\typed_region_demo.m
+```
+
+Execute the scalar typed region and verify its output against the baseline VM:
+
+```powershell
+build\mparser.exe --run-typed-bytecode samples\typed_region_demo.m
+build\mparser.exe --run-typed-bytecode `
+  samples\typed_region_fallback_demo.m
+```
+
+Observe cross-invocation warmup and automatic typed-tier promotion with:
+
+```powershell
+build\mparser.exe --run-adaptive-bytecode --adaptive-runs=3 `
+  --adaptive-hot-loop=10 samples\adaptive_tiering_demo.m
+```
+
+Observe fallback-driven invalidation and conservative retraining with:
+
+```powershell
+build\mparser.exe --run-adaptive-bytecode --adaptive-runs=4 `
+  --adaptive-hot-loop=10 --adaptive-fallback-limit=2 `
+  samples\typed_region_fallback_demo.m
+```
+
+Run the full promotion, invalidation, retraining, and re-promotion cycle with:
+
+```powershell
+build\mparser.exe --run-adaptive-bytecode --adaptive-runs=7 `
+  --adaptive-hot-loop=10 --adaptive-fallback-limit=2 `
+  --adaptive-persist-workspace --adaptive-workspace=phase=0 `
+  samples\adaptive_workspace_demo.m
+```
+
+Select a named function, pass positional arguments, and return its declared
+outputs with:
+
+```powershell
+build\mparser.exe --run-bytecode --entry-function=kernel `
+  --argument=2 --argument=4 samples\function_entry_demo.m
+```
+
+Request a prefix of declared outputs and inspect `nargin`/`nargout` with:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --entry-function=function_contract_demo --argument=2 --argument=4 `
+  --outputs=2 samples\function_contract_demo.m
+```
+
+Compile once, inspect the reusable module catalog, and validate an entry with:
+
+```powershell
+build\mparser.exe --module-info --entry-function=accumulate_scale `
+  --argument=2 --argument=4 samples\compiled_module_demo.m
+```
+
+The same function-entry contract participates in adaptive tiering:
+
+```powershell
+build\mparser.exe --run-adaptive-bytecode --adaptive-runs=3 `
+  --adaptive-hot-loop=10 --entry-function=adaptive_function_demo `
+  --argument=3 samples\adaptive_function_demo.m
+```
+
+Alternate between independently tiered functions in one compiled module with:
+
+```powershell
+build\mparser.exe --run-module-runtime --adaptive-hot-loop=10 `
+  --adaptive-fallback-limit=2 --module-call=hot_a:2 `
+  --module-call=hot_b:3 --module-call=hot_a:2 `
+  --module-call=hot_b:3 --module-call=hot_a:2 `
+  --module-call=hot_b:3 samples\adaptive_module_runtime_demo.m
+```
+
+Compare the HIR interpreter, baseline bytecode VM, and typed-region VM with:
+
+```powershell
+build\mparser.exe --benchmark-runtime --benchmark-warmup=3 `
+  --benchmark-iterations=20 samples\runtime_benchmark_demo.m
+```
+
+Use the closed scalar loop sample to observe typed-region dispatch reduction:
+
+```powershell
+build\mparser.exe --benchmark-runtime --benchmark-warmup=3 `
+  --benchmark-iterations=20 samples\typed_benchmark_demo.m
+```
+
+The bytecode VM switch and try/catch subset can be tried with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\switch_demo.m
+build\mparser.exe --run-bytecode samples\try_catch_demo.m
+```
+
+Use `--run` to execute the current interpreter subset:
+
+```powershell
+build\mparser.exe --run samples\run_demo.m
+```
+
+The vector subset can be tried with:
+
+```powershell
+build\mparser.exe --run samples\vector_demo.m
+```
+
+The matrix subset can be tried with:
+
+```powershell
+build\mparser.exe --run samples\matrix_demo.m
+```
+
+Local function calls can be tried with:
+
+```powershell
+build\mparser.exe --run samples\local_function_demo.m
+```
+
+Multiple-output local functions can be tried with:
+
+```powershell
+build\mparser.exe --run samples\multi_output_demo.m
+```
+
+Array constructors can be tried with:
+
+```powershell
+build\mparser.exe --run samples\constructor_demo.m
+```
+
+`linspace` vector generation can be tried with:
+
+```powershell
+build\mparser.exe --run samples\linspace_demo.m
+```
+
+Indexed assignment can be tried with:
+
+```powershell
+build\mparser.exe --run samples\indexed_assignment_demo.m
+```
+
+`end` in indexing expressions can be tried with:
+
+```powershell
+build\mparser.exe --run samples\end_indexing_demo.m
+```
+
+Colon and vector indexing can be tried with:
+
+```powershell
+build\mparser.exe --run samples\colon_indexing_demo.m
+```
+
+`while` loops can be tried with:
+
+```powershell
+build\mparser.exe --run samples\while_demo.m
+```
+
+`switch` blocks can be tried with:
+
+```powershell
+build\mparser.exe --run samples\switch_demo.m
+```
+
+String comparisons can be tried with:
+
+```powershell
+build\mparser.exe --run samples\string_compare_demo.m
+```
+
+Short-circuit logical conditions can be tried with:
+
+```powershell
+build\mparser.exe --run samples\short_circuit_demo.m
+```
+
+Loop control can be tried with:
+
+```powershell
+build\mparser.exe --run samples\loop_control_demo.m
+```
+
+Function returns can be tried with:
+
+```powershell
+build\mparser.exe --run samples\return_demo.m
+```
+
+`try`/`catch` diagnostic recovery can be tried with:
+
+```powershell
+build\mparser.exe --run samples\try_catch_demo.m
+```
