@@ -11,6 +11,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -387,6 +388,7 @@ struct TryContext {
 
 struct FunctionInfo {
     std::string name;
+    std::string declaringClass;
     FunctionSignature signature;
     size_t entry = 0;
     size_t end = 0;
@@ -395,10 +397,24 @@ struct FunctionInfo {
 
 struct ClassInfo {
     std::string name;
+    SourceSpan span;
+    std::vector<std::string> superclasses;
+    bool directHandleClass = false;
     bool handleClass = false;
+    bool hierarchyValid = true;
+    std::map<std::string, RuntimeValue> declaredProperties;
+    std::map<std::string, FunctionInfo> declaredMethods;
+    std::map<std::string, bool> declaredStaticMethods;
     std::map<std::string, RuntimeValue> properties;
+    std::map<std::string, std::string> propertyDeclaringClasses;
     std::map<std::string, FunctionInfo> methods;
     std::map<std::string, bool> staticMethods;
+};
+
+enum class ClassResolutionState {
+    Unresolved,
+    Resolving,
+    Resolved,
 };
 
 struct ActiveTypedLoopRegion {
@@ -521,6 +537,7 @@ public:
         initializeWorkspace(options.initialWorkspace);
         collectFunctionNodes(semantic.root.get());
         collectFunctionRanges(program);
+        resolveClassHierarchies();
         collectTypedRegions(typedIr);
 
         const bool scriptMode = requestedEntryFunction_.empty() &&
@@ -824,12 +841,16 @@ private:
             className = node->label;
             auto& info = classesByName_[className];
             info.name = className;
-            info.handleClass = std::find(node->superclasses.begin(),
-                                         node->superclasses.end(),
-                                         "handle") != node->superclasses.end();
+            info.span = node->span;
+            info.superclasses = node->superclasses;
+            info.directHandleClass =
+                std::find(node->superclasses.begin(),
+                          node->superclasses.end(),
+                          "handle") != node->superclasses.end();
         }
         if (node->kind == HirKind::Property && !className.empty()) {
-            classesByName_[className].properties[node->label] = missingValue();
+            classesByName_[className].declaredProperties[node->label] =
+                missingValue();
         }
         for (const auto& attribute : node->attributes) {
             if (attribute.name == "Static") {
@@ -841,7 +862,7 @@ private:
                 functionNodes_[node->label] = node;
             } else {
                 classFunctionNodes_[className + "." + node->label] = node;
-                classesByName_[className].staticMethods[node->label] =
+                classesByName_[className].declaredStaticMethods[node->label] =
                     staticMethodBlock;
             }
         }
@@ -902,15 +923,208 @@ private:
                 functionsByName_[info.name] = std::move(info);
             } else {
                 const std::string key = classStack.back() + "." + info.name;
+                info.declaringClass = classStack.back();
                 if (const auto hir = classFunctionNodes_.find(key);
                     hir != classFunctionNodes_.end()) {
                     info.signature = parseFunctionSignature(*hir->second);
                 }
-                classesByName_[classStack.back()].methods[info.name] =
+                classesByName_[classStack.back()].declaredMethods[info.name] =
                     std::move(info);
             }
             pc = end;
         }
+    }
+
+    void resolveClassHierarchies() {
+        std::map<std::string, ClassResolutionState> states;
+        for (const auto& [name, info] : classesByName_) {
+            (void)info;
+            resolveClassHierarchy(name, states);
+        }
+    }
+
+    bool resolveClassHierarchy(
+        const std::string& className,
+        std::map<std::string, ClassResolutionState>& states) {
+        auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end()) {
+            return false;
+        }
+
+        auto& state = states[className];
+        if (state == ClassResolutionState::Resolved) {
+            return klass->second.hierarchyValid;
+        }
+        if (state == ClassResolutionState::Resolving) {
+            klass->second.hierarchyValid = false;
+            reportClassHierarchyDiagnostic(
+                klass->second, "cycle:" + className,
+                "cyclic class inheritance involving: " + className);
+            return false;
+        }
+
+        state = ClassResolutionState::Resolving;
+        auto& info = klass->second;
+        bool valid = true;
+        bool handleClass = info.directHandleClass;
+        std::map<std::string, RuntimeValue> properties;
+        std::map<std::string, std::string> propertyDeclaringClasses;
+        std::map<std::string, FunctionInfo> methods;
+        std::map<std::string, bool> staticMethods;
+
+        for (const auto& superclassName : info.superclasses) {
+            if (superclassName == "handle") {
+                handleClass = true;
+                continue;
+            }
+
+            const auto superclass = classesByName_.find(superclassName);
+            if (superclass == classesByName_.end()) {
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info, "missing:" + className + ":" + superclassName,
+                    "superclass is not available: " + superclassName +
+                        " (required by " + className + ")");
+                continue;
+            }
+
+            if (!resolveClassHierarchy(superclassName, states)) {
+                valid = false;
+            }
+            const auto& base = superclass->second;
+            handleClass = handleClass || base.handleClass;
+
+            for (const auto& [propertyName, value] : base.properties) {
+                const auto owner =
+                    base.propertyDeclaringClasses.find(propertyName);
+                const std::string declaringClass =
+                    owner == base.propertyDeclaringClasses.end()
+                        ? superclassName
+                        : owner->second;
+                const auto existing = properties.find(propertyName);
+                if (existing == properties.end()) {
+                    properties[propertyName] = value;
+                    propertyDeclaringClasses[propertyName] = declaringClass;
+                    continue;
+                }
+                if (propertyDeclaringClasses[propertyName] != declaringClass) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info, "property:" + className + ":" + propertyName,
+                        "ambiguous inherited property: " + className + "." +
+                            propertyName + " from " +
+                            propertyDeclaringClasses[propertyName] + " and " +
+                            declaringClass);
+                }
+            }
+
+            for (const auto& [methodName, method] : base.methods) {
+                if (method.name == method.declaringClass) {
+                    continue;
+                }
+
+                const bool candidateStatic =
+                    base.staticMethods.contains(methodName) &&
+                    base.staticMethods.at(methodName);
+                const auto existing = methods.find(methodName);
+                if (existing == methods.end()) {
+                    methods[methodName] = method;
+                    staticMethods[methodName] = candidateStatic;
+                    continue;
+                }
+                if (existing->second.declaringClass == method.declaringClass) {
+                    continue;
+                }
+                if (info.declaredMethods.contains(methodName)) {
+                    continue;
+                }
+                if (classDerivesFrom(method.declaringClass,
+                                     existing->second.declaringClass)) {
+                    methods[methodName] = method;
+                    staticMethods[methodName] = candidateStatic;
+                    continue;
+                }
+                if (classDerivesFrom(existing->second.declaringClass,
+                                     method.declaringClass)) {
+                    continue;
+                }
+
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info, "method:" + className + ":" + methodName,
+                    "ambiguous inherited method: " + className + "." +
+                        methodName + " from " +
+                        existing->second.declaringClass + " and " +
+                        method.declaringClass);
+            }
+        }
+
+        for (const auto& [propertyName, value] : info.declaredProperties) {
+            if (const auto inherited = properties.find(propertyName);
+                inherited != properties.end()) {
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info, "property:" + className + ":" + propertyName,
+                    "inherited property cannot be redeclared: " + className +
+                        "." + propertyName);
+            }
+            properties[propertyName] = value;
+            propertyDeclaringClasses[propertyName] = className;
+        }
+
+        for (const auto& [methodName, method] : info.declaredMethods) {
+            methods[methodName] = method;
+            staticMethods[methodName] =
+                info.declaredStaticMethods.contains(methodName) &&
+                info.declaredStaticMethods.at(methodName);
+        }
+
+        info.handleClass = handleClass;
+        info.hierarchyValid = valid;
+        info.properties = std::move(properties);
+        info.propertyDeclaringClasses =
+            std::move(propertyDeclaringClasses);
+        info.methods = std::move(methods);
+        info.staticMethods = std::move(staticMethods);
+        state = ClassResolutionState::Resolved;
+        return valid;
+    }
+
+    bool classDerivesFrom(const std::string& className,
+                          const std::string& possibleSuperclass) const {
+        std::set<std::string> visiting;
+        return classDerivesFrom(className, possibleSuperclass, visiting);
+    }
+
+    bool classDerivesFrom(const std::string& className,
+                          const std::string& possibleSuperclass,
+                          std::set<std::string>& visiting) const {
+        if (className == possibleSuperclass) {
+            return true;
+        }
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end() ||
+            !visiting.insert(className).second) {
+            return false;
+        }
+        for (const auto& superclass : klass->second.superclasses) {
+            if (superclass == possibleSuperclass ||
+                classDerivesFrom(superclass, possibleSuperclass, visiting)) {
+                visiting.erase(className);
+                return true;
+            }
+        }
+        visiting.erase(className);
+        return false;
+    }
+
+    void reportClassHierarchyDiagnostic(const ClassInfo& info,
+                                        std::string key,
+                                        std::string message) {
+        if (!classHierarchyDiagnosticKeys_.insert(std::move(key)).second) {
+            return;
+        }
+        diagnostics_.push_back(Diagnostic{info.span, std::move(message)});
     }
 
     void collectTypedRegions(const BytecodeTypedIrModule* typedIr) {
@@ -2388,6 +2602,11 @@ private:
             addDiagnostic(instruction, "class is not available: " + className);
             return missingOutputs(requestedCount);
         }
+        if (!klass->second.hierarchyValid) {
+            addDiagnostic(instruction,
+                          "class hierarchy is invalid: " + className);
+            return missingOutputs(requestedCount);
+        }
         const RuntimeValue object = objectValue(
             className, klass->second.properties, klass->second.handleClass);
         const auto constructor = klass->second.methods.find(className);
@@ -2419,8 +2638,12 @@ private:
         if (receiver) {
             callArguments.insert(callArguments.begin(), *receiver);
         }
-        return callFunctionInfo(instruction, className + "." + methodName,
-                                klass->second.methods.at(methodName),
+        const auto& method = klass->second.methods.at(methodName);
+        const std::string declaringClass = method.declaringClass.empty()
+                                               ? className
+                                               : method.declaringClass;
+        return callFunctionInfo(instruction,
+                                declaringClass + "." + methodName, method,
                                 callArguments, requestedCount, std::nullopt);
     }
 
@@ -3102,6 +3325,7 @@ private:
     std::map<std::string, const HirNode*> classFunctionNodes_;
     std::map<std::string, FunctionInfo> functionsByName_;
     std::map<std::string, ClassInfo> classesByName_;
+    std::set<std::string> classHierarchyDiagnosticKeys_;
     std::vector<Diagnostic> diagnostics_;
     std::vector<size_t> instructionExecutionCounts_;
     std::map<std::string, BytecodeFunctionProfile> functionProfiles_;

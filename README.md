@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.25.0. See [docs/v0.25.md](docs/v0.25.md) for the
+Current milestone: v0.26.0. See [docs/v0.26.md](docs/v0.26.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.24.md](docs/v0.24.md),
+iteration plan. Previous boundaries are kept in [docs/v0.25.md](docs/v0.25.md),
+[docs/v0.24.md](docs/v0.24.md),
 [docs/v0.23.md](docs/v0.23.md),
 [docs/v0.22.md](docs/v0.22.md),
 [docs/v0.21.md](docs/v0.21.md),
@@ -50,14 +51,15 @@ header expression.
 The semantic layer lowers syntax into a HIR tree with scopes and symbols. It
 predeclares local functions/classes and class members, resolves local names,
 forward local function calls, anonymous function parameters, knowable class
-member access, and a small lazy registry of common MATLAB builtins. Dynamic
+member access including same-file inherited members declared later, and a small
+lazy registry of common MATLAB builtins. Dynamic
 calls, indexing, package/static lookup, and unknown member access remain delayed
 bindings for later name and type resolution.
 
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.25 executes the core numeric/string subset,
+expression operators. v0.26 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -131,6 +133,12 @@ field state when copied, while classes declared with `< handle` share property
 storage across aliases. Calls used as standalone statements now request zero
 outputs, so outputless methods execute without stack residue and observe
 `nargout == 0`.
+v0.26 resolves same-file class hierarchies recursively. Derived objects include
+inherited properties, dispatch inherited instance and static methods, honor
+subclass overrides, and inherit handle ownership transitively. Multiple
+inheritance accepts shared declarations through a common ancestor, selects a
+strictly more specific override, and diagnoses unresolved member conflicts,
+missing superclasses, and cyclic hierarchies.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -322,6 +330,13 @@ Observe handle aliases, value-copy isolation, and zero-output method calls with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\handle_semantics_demo.m
+```
+
+Run inherited property layout, method override, static inheritance, and
+transitive handle behavior with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\class_inheritance_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:

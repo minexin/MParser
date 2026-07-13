@@ -5,6 +5,7 @@
 #include <optional>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace mparser {
@@ -183,6 +184,7 @@ public:
         predeclareModuleSymbols(root);
         lowerChildren(root, *result_.root);
         popScope();
+        resolveDeferredBindings(*result_.root);
         return std::move(result_);
     }
 
@@ -317,6 +319,7 @@ private:
                 }
             }
         }
+        classSuperclassesByName_[syntax.label] = node->superclasses;
         const int classScope = pushScope(ScopeKind::Class, syntax.label);
         classScopeByName_[syntax.label] = classScope;
         classStack_.push_back(syntax.label);
@@ -602,23 +605,144 @@ private:
 
     std::optional<BindingRef> resolveClassMember(const std::string& className,
                                                  const std::string& memberName) const {
-        const auto scope = classScopeByName_.find(className);
-        if (scope == classScopeByName_.end()) {
+        std::unordered_set<std::string> visiting;
+        return resolveClassMember(className, memberName, visiting);
+    }
+
+    std::optional<BindingRef> resolveClassMember(
+        const std::string& className, const std::string& memberName,
+        std::unordered_set<std::string>& visiting) const {
+        if (!visiting.insert(className).second) {
             return std::nullopt;
         }
 
-        const auto& classScope =
-            result_.scopes[static_cast<size_t>(scope->second)];
-        for (int symbolId : classScope.symbols) {
-            const auto& symbol = result_.symbols[static_cast<size_t>(symbolId)];
-            if (symbol.name == memberName &&
-                (symbol.kind == SymbolKind::Property ||
-                 symbol.kind == SymbolKind::Method)) {
-                return BindingRef{bindingKindForSymbol(symbol.kind), symbol.id};
+        const auto scope = classScopeByName_.find(className);
+        if (scope != classScopeByName_.end()) {
+            const auto& classScope =
+                result_.scopes[static_cast<size_t>(scope->second)];
+            for (int symbolId : classScope.symbols) {
+                const auto& symbol =
+                    result_.symbols[static_cast<size_t>(symbolId)];
+                if (symbol.name == memberName &&
+                    (symbol.kind == SymbolKind::Property ||
+                     symbol.kind == SymbolKind::Method)) {
+                    visiting.erase(className);
+                    return BindingRef{bindingKindForSymbol(symbol.kind),
+                                      symbol.id};
+                }
             }
         }
 
-        return std::nullopt;
+        std::optional<BindingRef> resolved;
+        if (const auto superclasses = classSuperclassesByName_.find(className);
+            superclasses != classSuperclassesByName_.end()) {
+            for (const auto& superclass : superclasses->second) {
+                auto candidate =
+                    resolveClassMember(superclass, memberName, visiting);
+                if (!candidate) {
+                    continue;
+                }
+                if (resolved && resolved->symbolId != candidate->symbolId) {
+                    const std::string resolvedClass =
+                        declaringClassForMember(*resolved);
+                    const std::string candidateClass =
+                        declaringClassForMember(*candidate);
+                    if (classDerivesFrom(candidateClass, resolvedClass)) {
+                        resolved = candidate;
+                        continue;
+                    }
+                    if (classDerivesFrom(resolvedClass, candidateClass)) {
+                        continue;
+                    }
+                    visiting.erase(className);
+                    return std::nullopt;
+                }
+                resolved = candidate;
+            }
+        }
+
+        visiting.erase(className);
+        return resolved;
+    }
+
+    std::string declaringClassForMember(BindingRef binding) const {
+        if (binding.symbolId < 0) {
+            return {};
+        }
+        const auto& symbol =
+            result_.symbols[static_cast<size_t>(binding.symbolId)];
+        if (symbol.scopeId < 0) {
+            return {};
+        }
+        const auto& scope =
+            result_.scopes[static_cast<size_t>(symbol.scopeId)];
+        return scope.kind == ScopeKind::Class ? scope.label : std::string{};
+    }
+
+    bool classDerivesFrom(const std::string& className,
+                          const std::string& possibleSuperclass) const {
+        if (className.empty() || possibleSuperclass.empty()) {
+            return false;
+        }
+        std::unordered_set<std::string> visiting;
+        return classDerivesFrom(className, possibleSuperclass, visiting);
+    }
+
+    bool classDerivesFrom(
+        const std::string& className, const std::string& possibleSuperclass,
+        std::unordered_set<std::string>& visiting) const {
+        if (className == possibleSuperclass) {
+            return true;
+        }
+        if (!visiting.insert(className).second) {
+            return false;
+        }
+        if (const auto superclasses = classSuperclassesByName_.find(className);
+            superclasses != classSuperclassesByName_.end()) {
+            for (const auto& superclass : superclasses->second) {
+                if (superclass == possibleSuperclass ||
+                    classDerivesFrom(superclass, possibleSuperclass,
+                                     visiting)) {
+                    visiting.erase(className);
+                    return true;
+                }
+            }
+        }
+        visiting.erase(className);
+        return false;
+    }
+
+    void resolveDeferredBindings(HirNode& node) {
+        for (auto& child : node.children) {
+            resolveDeferredBindings(*child);
+        }
+
+        if (node.kind == HirKind::MemberAccess &&
+            node.binding.kind == BindingKind::Unresolved &&
+            !node.children.empty()) {
+            const std::string className =
+                classNameForBinding(node.children.front()->binding);
+            if (!className.empty()) {
+                if (const auto member =
+                        resolveClassMember(className, node.label)) {
+                    node.binding = *member;
+                }
+            }
+        }
+
+        if (node.kind != HirKind::CallOrIndex ||
+            node.binding.kind != BindingKind::Unresolved ||
+            node.children.empty()) {
+            return;
+        }
+
+        const BindingKind calleeKind = node.children.front()->binding.kind;
+        if (calleeKind == BindingKind::Function ||
+            calleeKind == BindingKind::Method ||
+            calleeKind == BindingKind::Class ||
+            calleeKind == BindingKind::Builtin) {
+            node.binding = node.children.front()->binding;
+        }
     }
 
     std::string classNameForBinding(BindingRef binding) const {
@@ -638,6 +762,8 @@ private:
     std::vector<int> scopeStack_;
     std::vector<std::string> classStack_;
     std::unordered_map<std::string, int> classScopeByName_;
+    std::unordered_map<std::string, std::vector<std::string>>
+        classSuperclassesByName_;
     std::unordered_map<std::string, int> builtinSymbols_;
 };
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.25.0 LANGUAGES CXX)
+project(MParser VERSION 0.26.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -117,6 +117,11 @@ add_test(NAME class_runtime_smoke COMMAND class_runtime_smoke_tests)
 add_executable(handle_semantics_smoke_tests tests/handle_semantics_smoke.cpp)
 target_link_libraries(handle_semantics_smoke_tests PRIVATE mparser_core)
 add_test(NAME handle_semantics_smoke COMMAND handle_semantics_smoke_tests)
+
+add_executable(class_inheritance_smoke_tests
+    tests/class_inheritance_smoke.cpp)
+target_link_libraries(class_inheritance_smoke_tests PRIVATE mparser_core)
+add_test(NAME class_inheritance_smoke COMMAND class_inheritance_smoke_tests)
 
 add_executable(interpreter_smoke_tests tests/interpreter_smoke.cpp)
 target_link_libraries(interpreter_smoke_tests PRIVATE mparser_core)

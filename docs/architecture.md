@@ -56,6 +56,13 @@ minimal but useful: constructors and first method parameters can carry class
 type names, allowing member access such as `obj.Value` to bind to a known class
 property when the receiver type is clear.
 
+After every same-file class has been lowered, a hierarchy-aware fixup revisits
+unresolved member and call nodes. It walks superclass graphs, merges repeated
+paths to the same declaration, and prefers a declaration from a strictly more
+specific class. This makes inherited bindings independent of source order while
+leaving genuinely ambiguous multiple-inheritance members unresolved for the
+runtime class registry to diagnose with full executable metadata.
+
 Dynamic MATLAB constructs intentionally remain delayed. `CallOrIndex`,
 `BraceIndex`, and `MemberAccess` HIR nodes preserve the surface operation and
 carry unresolved bindings until a later name-resolution pass has path, package,
@@ -98,7 +105,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.25 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.26 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -221,11 +228,24 @@ Standalone call statements lower with a requested result count of zero; the
 callee therefore observes `nargout == 0`, and the VM leaves no unused result on
 its operand stack.
 
-The VM intentionally still rejects general inheritance and superclass method
-lookup, handle lifecycle operations such as `delete` and `isvalid`, cyclic
-object collection, access-control enforcement, events, enumerations, dependent
-properties, class methods as `CompiledModule` entry targets, function-handle
-execution, dynamic function handles, automatic numeric-array
+Class declarations and executable method ranges are collected before hierarchy
+resolution, so same-file superclasses may appear before or after subclasses.
+The resolver recursively builds each class's effective property layout and
+instance/static method tables. Constructors remain local to their declaring
+class. A subclass declaration overrides an inherited method; in a diamond,
+the same common-ancestor declaration is merged once and a strictly more
+specific override dominates its ancestor definition. Unrelated inherited
+definitions require a subclass override, otherwise the hierarchy receives an
+ambiguity diagnostic. Missing and cyclic same-file hierarchies are rejected.
+Handle ownership propagates through the resolved superclass graph.
+
+The VM intentionally still rejects cross-file/package superclass lookup,
+automatic or explicit superclass constructor calls, `method@Superclass`
+dispatch, full independent-property compatibility checks, access-control and
+`Abstract`/`Sealed`/`HandleCompatible` enforcement, handle lifecycle operations
+such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
+dependent properties, class methods as `CompiledModule` entry targets,
+function-handle execution, dynamic function handles, automatic numeric-array
 growth, non-scalar right-hand-side indexed assignment shape matching, structs,
 sparse arrays, and complex values until the IR grows richer mutation, layout,
 and dynamic dispatch conventions. Cell execution is deliberately limited to
@@ -240,7 +260,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.25
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.26
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -275,10 +295,13 @@ interpreter, baseline, typed, adaptive, and module runtimes. v0.23 adds
 Cell-backed `varargin` and `varargout` through those same call boundaries. The
 v0.24 adds baseline object values and bytecode class dispatch. v0.25 adds
 handle-alias ownership, value-copy isolation, retained superclass metadata, and
-true zero-output call statements. The next steps are multidimensional and
-comma-separated-list Cell semantics, general inheritance, persistent code
-caches, native lowering, and eventual
-on-stack replacement while preserving the same commit/fallback contract.
+true zero-output call statements. v0.26 adds order-independent same-file class
+hierarchies, inherited property/method tables, override and diamond resolution,
+transitive handle ownership, and invalid-hierarchy diagnostics. The next steps
+are multidimensional and comma-separated-list Cell semantics, superclass
+constructor dispatch, access-aware class metadata, persistent code caches,
+native lowering, and eventual on-stack replacement while preserving the same
+commit/fallback contract.
 
 When dynamic features invalidate assumptions, execution should deopt back to
 the interpreter. This is the path that keeps full MATLAB semantics compatible
