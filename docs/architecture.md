@@ -98,7 +98,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.24 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.25 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -179,8 +179,9 @@ top-level function catalog. Compilation stops after a failed parse, semantic
 analysis, or lowering phase. Valid modules can preflight a named entry, execute
 independent ordinary VM invocations, or construct adaptive sessions that point
 at the same immutable HIR and bytecode. The module must therefore outlive every
-adaptive session created from it. Class methods are excluded from the entry
-catalog until class instances and method dispatch are executable.
+adaptive session created from it. Class methods remain excluded from the entry
+catalog because module entries do not yet carry a class receiver or
+constructor-dispatch contract.
 
 `AdaptiveModuleRuntime` partitions mutable tiering state by named entry
 function. Each lazily created function session owns its cumulative profiles,
@@ -211,8 +212,18 @@ accepted only for methods declared in a `methods (Static)` block. Objects use
 the ordinary function-frame contract, so method inputs, outputs, `nargin`, and
 `nargout` retain the same runtime behavior as local functions.
 
-The VM intentionally still rejects inheritance, handle alias/reference
-semantics, access-control enforcement, events, enumerations, dependent
+Superclass names are retained explicitly in HIR instead of being flattened
+into generic statements. A class whose superclass list contains the built-in
+`handle` marker allocates shared property storage, so assignment copies an
+object reference and mutations are visible through every alias. Other classes
+keep field maps by value, so assignment produces independent property state.
+Standalone call statements lower with a requested result count of zero; the
+callee therefore observes `nargout == 0`, and the VM leaves no unused result on
+its operand stack.
+
+The VM intentionally still rejects general inheritance and superclass method
+lookup, handle lifecycle operations such as `delete` and `isvalid`, cyclic
+object collection, access-control enforcement, events, enumerations, dependent
 properties, class methods as `CompiledModule` entry targets, function-handle
 execution, dynamic function handles, automatic numeric-array
 growth, non-scalar right-hand-side indexed assignment shape matching, structs,
@@ -229,7 +240,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.24
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.25
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -262,9 +273,11 @@ entry function, preserving unaffected specializations across invalidation.
 v0.22 adds requested-output semantics plus `nargin` and `nargout` across the
 interpreter, baseline, typed, adaptive, and module runtimes. v0.23 adds
 Cell-backed `varargin` and `varargout` through those same call boundaries. The
-v0.24 adds baseline object values and bytecode class dispatch. The next steps
-are multidimensional and comma-separated-list Cell semantics, object ownership
-and inheritance, persistent code caches, native lowering, and eventual
+v0.24 adds baseline object values and bytecode class dispatch. v0.25 adds
+handle-alias ownership, value-copy isolation, retained superclass metadata, and
+true zero-output call statements. The next steps are multidimensional and
+comma-separated-list Cell semantics, general inheritance, persistent code
+caches, native lowering, and eventual
 on-stack replacement while preserving the same commit/fallback contract.
 
 When dynamic features invalidate assumptions, execution should deopt back to

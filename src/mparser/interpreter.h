@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,8 @@ struct RuntimeValue {
     std::vector<RuntimeValue> cells;
     std::string className;
     std::map<std::string, RuntimeValue> fields;
+    std::shared_ptr<std::map<std::string, RuntimeValue>> sharedFields;
+    bool handleObject = false;
     size_t rows = 0;
     size_t columns = 0;
 };

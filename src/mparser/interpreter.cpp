@@ -86,6 +86,14 @@ bool isCell(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Cell;
 }
 
+const std::map<std::string, RuntimeValue>& objectFields(
+    const RuntimeValue& value) {
+    if (value.handleObject && value.sharedFields) {
+        return *value.sharedFields;
+    }
+    return value.fields;
+}
+
 bool isNumeric(const RuntimeValue& value) {
     return isNumber(value) || isVector(value) || isMatrix(value);
 }
@@ -143,13 +151,16 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     }
     if (left.kind == RuntimeValueKind::Object &&
         right.kind == RuntimeValueKind::Object) {
+        const auto& leftFields = objectFields(left);
+        const auto& rightFields = objectFields(right);
         if (left.className != right.className ||
-            left.fields.size() != right.fields.size()) {
+            left.handleObject != right.handleObject ||
+            leftFields.size() != rightFields.size()) {
             return false;
         }
-        for (const auto& [name, value] : left.fields) {
-            const auto other = right.fields.find(name);
-            if (other == right.fields.end() ||
+        for (const auto& [name, value] : leftFields) {
+            const auto other = rightFields.find(name);
+            if (other == rightFields.end() ||
                 !runtimeEqual(value, other->second)) {
                 return false;
             }

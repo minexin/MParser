@@ -33,6 +33,16 @@ void dumpNode(std::ostream& output, const SemanticResult& result,
     if (!node.label.empty()) {
         output << " " << node.label;
     }
+    if (!node.superclasses.empty()) {
+        output << " superclasses=[";
+        for (size_t index = 0; index < node.superclasses.size(); ++index) {
+            if (index > 0) {
+                output << ",";
+            }
+            output << node.superclasses[index];
+        }
+        output << "]";
+    }
     if (!node.raw.empty()) {
         output << " raw=\"" << node.raw << "\"";
     }

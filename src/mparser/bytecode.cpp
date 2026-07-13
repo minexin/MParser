@@ -126,6 +126,11 @@ private:
             if (lowerControlStatement(node)) {
                 break;
             }
+            if (node.children.size() == 1 &&
+                node.children.front()->kind == HirKind::CallOrIndex) {
+                lowerExpression(*node.children.front(), 0);
+                break;
+            }
             lowerChildren(node);
             break;
         case HirKind::Unknown:

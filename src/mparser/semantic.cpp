@@ -307,11 +307,25 @@ private:
     std::unique_ptr<HirNode> lowerClass(const SyntaxNode& syntax) {
         declareSymbol(SymbolKind::Class, syntax.label, syntax.span, syntax.label);
         auto node = makeNode(HirKind::Class, syntax);
+        for (const auto& child : syntax.children) {
+            if (child->kind != SyntaxKind::SuperclassList) {
+                continue;
+            }
+            for (const auto& superclass : child->children) {
+                if (!superclass->label.empty()) {
+                    node->superclasses.push_back(superclass->label);
+                }
+            }
+        }
         const int classScope = pushScope(ScopeKind::Class, syntax.label);
         classScopeByName_[syntax.label] = classScope;
         classStack_.push_back(syntax.label);
         predeclareClassMembers(syntax);
-        lowerChildren(syntax, *node);
+        for (const auto& child : syntax.children) {
+            if (child->kind != SyntaxKind::SuperclassList) {
+                node->children.push_back(lower(*child));
+            }
+        }
         classStack_.pop_back();
         popScope();
         return node;
@@ -337,7 +351,9 @@ private:
         }
         for (size_t i = 0; i < signature.parameters.size(); ++i) {
             const std::string typeName =
-                method && i == 0 ? className : std::string{};
+                method && syntax.label != className && i == 0
+                    ? className
+                    : std::string{};
             declareSymbol(SymbolKind::FunctionParameter, signature.parameters[i],
                           syntax.span, typeName);
         }

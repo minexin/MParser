@@ -96,14 +96,30 @@ bool isObject(const RuntimeValue& value) {
 }
 
 RuntimeValue objectValue(std::string className,
-                         std::map<std::string, RuntimeValue> fields) {
+                         std::map<std::string, RuntimeValue> fields,
+                         bool handleObject) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Object;
     result.className = std::move(className);
-    result.fields = std::move(fields);
+    result.handleObject = handleObject;
+    if (handleObject) {
+        result.sharedFields =
+            std::make_shared<std::map<std::string, RuntimeValue>>(
+                std::move(fields));
+    } else {
+        result.fields = std::move(fields);
+    }
     result.rows = 1;
     result.columns = 1;
     return result;
+}
+
+const std::map<std::string, RuntimeValue>& objectFields(
+    const RuntimeValue& value) {
+    if (value.handleObject && value.sharedFields) {
+        return *value.sharedFields;
+    }
+    return value.fields;
 }
 
 bool isArray(const RuntimeValue& value) {
@@ -308,13 +324,16 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return true;
     }
     if (isObject(left) && isObject(right)) {
+        const auto& leftFields = objectFields(left);
+        const auto& rightFields = objectFields(right);
         if (left.className != right.className ||
-            left.fields.size() != right.fields.size()) {
+            left.handleObject != right.handleObject ||
+            leftFields.size() != rightFields.size()) {
             return false;
         }
-        for (const auto& [name, value] : left.fields) {
-            const auto other = right.fields.find(name);
-            if (other == right.fields.end() ||
+        for (const auto& [name, value] : leftFields) {
+            const auto other = rightFields.find(name);
+            if (other == rightFields.end() ||
                 !runtimeEqual(value, other->second)) {
                 return false;
             }
@@ -376,6 +395,7 @@ struct FunctionInfo {
 
 struct ClassInfo {
     std::string name;
+    bool handleClass = false;
     std::map<std::string, RuntimeValue> properties;
     std::map<std::string, FunctionInfo> methods;
     std::map<std::string, bool> staticMethods;
@@ -804,6 +824,9 @@ private:
             className = node->label;
             auto& info = classesByName_[className];
             info.name = className;
+            info.handleClass = std::find(node->superclasses.begin(),
+                                         node->superclasses.end(),
+                                         "handle") != node->superclasses.end();
         }
         if (node->kind == HirKind::Property && !className.empty()) {
             classesByName_[className].properties[node->label] = missingValue();
@@ -1785,8 +1808,9 @@ private:
                           "member access requires a class object target");
             return;
         }
-        if (const auto field = target->value.fields.find(instruction.operand);
-            field != target->value.fields.end()) {
+        const auto& fields = objectFields(target->value);
+        if (const auto field = fields.find(instruction.operand);
+            field != fields.end()) {
             stack_.push_back(runtimeStackValue(field->second));
             return;
         }
@@ -1816,7 +1840,11 @@ private:
         }
 
         RuntimeValue updated = *target;
-        updated.fields[instruction.operand] = *value;
+        if (updated.handleObject && updated.sharedFields) {
+            (*updated.sharedFields)[instruction.operand] = *value;
+        } else {
+            updated.fields[instruction.operand] = *value;
+        }
         if (instruction.receiverName.empty()) {
             addDiagnostic(instruction,
                           "member assignment requires a direct variable target");
@@ -2253,7 +2281,7 @@ private:
             return;
         }
 
-        if (instruction.resultCount != 1) {
+        if (instruction.resultCount != 0 && instruction.resultCount != 1) {
             finishIndexContext();
             addDiagnostic(instruction,
                           "bytecode indexing cannot produce multiple outputs");
@@ -2276,6 +2304,10 @@ private:
         }
         RuntimeValue result = indexValue(instruction, callee->value,
                                          *arguments);
+        if (instruction.resultCount == 0) {
+            finishIndexContext();
+            return;
+        }
         const std::vector<RuntimeValue> outputs{result};
         if (profile) {
             observeValues(profile->resultObservations, outputs);
@@ -2287,9 +2319,14 @@ private:
     std::vector<RuntimeValue> callBuiltinOutputs(
         const BytecodeInstruction& instruction, const std::string& name,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
-        if (requestedCount < 1) {
+        if (requestedCount < 0) {
             addDiagnostic(instruction,
-                          "bytecode call result count must be positive");
+                          "bytecode call result count cannot be negative");
+            return {};
+        }
+
+        if (requestedCount == 0) {
+            (void)callBuiltin(instruction, name, arguments);
             return {};
         }
 
@@ -2326,9 +2363,9 @@ private:
     std::vector<RuntimeValue> callLocalFunction(
         const BytecodeInstruction& instruction, const std::string& name,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
-        if (requestedCount < 1) {
+        if (requestedCount < 0) {
             addDiagnostic(instruction,
-                          "bytecode call result count must be positive");
+                          "bytecode call result count cannot be negative");
             return {};
         }
 
@@ -2351,7 +2388,8 @@ private:
             addDiagnostic(instruction, "class is not available: " + className);
             return missingOutputs(requestedCount);
         }
-        const RuntimeValue object = objectValue(className, klass->second.properties);
+        const RuntimeValue object = objectValue(
+            className, klass->second.properties, klass->second.handleClass);
         const auto constructor = klass->second.methods.find(className);
         if (constructor == klass->second.methods.end()) {
             if (!arguments.empty()) {
@@ -2359,7 +2397,8 @@ private:
                               "class has no constructor arguments: " + className);
                 return missingOutputs(requestedCount);
             }
-            return {object};
+            return requestedCount == 0 ? std::vector<RuntimeValue>{}
+                                       : std::vector<RuntimeValue>{object};
         }
         return callFunctionInfo(instruction, className, constructor->second,
                                 arguments, requestedCount, object);
@@ -2389,9 +2428,9 @@ private:
         const BytecodeInstruction& instruction, const std::string& name,
         const FunctionInfo& info, const std::vector<RuntimeValue>& arguments,
         int requestedCount, std::optional<RuntimeValue> constructorObject) {
-        if (requestedCount < 1) {
+        if (requestedCount < 0) {
             addDiagnostic(instruction,
-                          "bytecode call result count must be positive");
+                          "bytecode call result count cannot be negative");
             return {};
         }
 
@@ -2453,6 +2492,9 @@ private:
 
     void pushOutputValues(const BytecodeInstruction& instruction,
                           const std::vector<RuntimeValue>& outputs) {
+        if (instruction.resultCount == 0) {
+            return;
+        }
         if (outputs.empty()) {
             addDiagnostic(instruction,
                           "bytecode call produced no outputs");

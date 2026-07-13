@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.24.0. See [docs/v0.24.md](docs/v0.24.md) for the
+Current milestone: v0.25.0. See [docs/v0.25.md](docs/v0.25.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.23.md](docs/v0.23.md),
+iteration plan. Previous boundaries are kept in [docs/v0.24.md](docs/v0.24.md),
+[docs/v0.23.md](docs/v0.23.md),
 [docs/v0.22.md](docs/v0.22.md),
 [docs/v0.21.md](docs/v0.21.md),
 [docs/v0.20.md](docs/v0.20.md),
@@ -56,7 +57,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.24 executes the core numeric/string subset,
+expression operators. v0.25 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -101,8 +102,9 @@ The frontend pipeline is also available through `CompiledModule`: it owns the
 source, semantic HIR, lowered bytecode, compile diagnostics, and a catalog of
 invocable top-level function signatures. Embedders can compile once, validate
 an entry, invoke the ordinary VM repeatedly, or create an adaptive session over
-the same immutable artifacts. Class methods are deliberately excluded from the
-top-level entry catalog until object dispatch has a runtime contract.
+the same immutable artifacts. Class methods remain excluded from the top-level
+entry catalog because module entries do not yet carry a class receiver or
+constructor-dispatch contract.
 `AdaptiveModuleRuntime` adds a longer-lived module execution layer above those
 artifacts. It creates one adaptive session per named function, so invocation
 heat, arguments, workspaces, promotions, typed executions, fallbacks,
@@ -124,6 +126,11 @@ bytecode VM: class objects own named scalar runtime fields, constructors
 initialize objects through their regular function frame, direct property reads
 and writes work, instance methods receive the object as their first argument,
 and methods declared in `methods (Static)` can be called through the class.
+v0.25 adds the first ownership policy: ordinary classes retain independent
+field state when copied, while classes declared with `< handle` share property
+storage across aliases. Calls used as standalone statements now request zero
+outputs, so outputless methods execute without stack residue and observe
+`nargout == 0`.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -309,6 +316,12 @@ Run the executable class subset with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\class_runtime_demo.m
+```
+
+Observe handle aliases, value-copy isolation, and zero-output method calls with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\handle_semantics_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:

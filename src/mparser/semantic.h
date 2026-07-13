@@ -82,6 +82,7 @@ struct HirNode {
     SourceSpan span;
     BindingRef binding;
     std::vector<AttributeSyntax> attributes;
+    std::vector<std::string> superclasses;
     std::vector<std::unique_ptr<HirNode>> children;
 };
 
