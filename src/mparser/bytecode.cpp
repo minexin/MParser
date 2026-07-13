@@ -12,6 +12,7 @@ namespace {
 class BytecodeLoweringContext {
 public:
     BytecodeProgram lower(const SemanticResult& semantic) {
+        program_.diagnostics = semantic.diagnostics;
         if (semantic.root) {
             lowerNode(*semantic.root);
         }
@@ -102,6 +103,9 @@ private:
         case HirKind::CallOrIndex:
             lowerCallOrIndex(node, 1);
             break;
+        case HirKind::SuperclassCall:
+            lowerSuperclassCall(node, 1);
+            break;
         case HirKind::BraceIndex:
             if (!node.children.empty()) {
                 lowerNode(*node.children.front());
@@ -127,7 +131,8 @@ private:
                 break;
             }
             if (node.children.size() == 1 &&
-                node.children.front()->kind == HirKind::CallOrIndex) {
+                (node.children.front()->kind == HirKind::CallOrIndex ||
+                 node.children.front()->kind == HirKind::SuperclassCall)) {
                 lowerExpression(*node.children.front(), 0);
                 break;
             }
@@ -477,6 +482,10 @@ private:
             lowerCallOrIndex(node, resultCount);
             return;
         }
+        if (node.kind == HirKind::SuperclassCall) {
+            lowerSuperclassCall(node, resultCount);
+            return;
+        }
         lowerNode(node);
     }
 
@@ -497,7 +506,19 @@ private:
             lowerIndexArguments(node);
         }
         emit(BytecodeOp::CallOrIndex, node, argumentCount(node), -1,
-             resultCount);
+                 resultCount);
+    }
+
+    void lowerSuperclassCall(const HirNode& node, int resultCount) {
+        for (size_t index = 1; index < node.children.size(); ++index) {
+            lowerNode(*node.children[index]);
+        }
+        const size_t call = emit(BytecodeOp::CallSuperclass, node,
+                                 argumentCount(node), -1, resultCount);
+        if (!node.children.empty()) {
+            program_.instructions[call].receiverName =
+                node.children.front()->label;
+        }
     }
 
     void lowerIndexArguments(const HirNode& node) {
@@ -681,6 +702,8 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "MemberAccess";
     case BytecodeOp::CallOrIndex:
         return "CallOrIndex";
+    case BytecodeOp::CallSuperclass:
+        return "CallSuperclass";
     case BytecodeOp::BraceIndex:
         return "BraceIndex";
     case BytecodeOp::MakeMatrix:

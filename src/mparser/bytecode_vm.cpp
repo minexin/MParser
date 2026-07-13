@@ -390,6 +390,7 @@ struct FunctionInfo {
     std::string name;
     std::string declaringClass;
     FunctionSignature signature;
+    std::vector<std::string> explicitSuperclassConstructors;
     size_t entry = 0;
     size_t end = 0;
     SourceSpan span;
@@ -415,6 +416,19 @@ enum class ClassResolutionState {
     Unresolved,
     Resolving,
     Resolved,
+};
+
+struct ConstructionContext {
+    RuntimeValue object;
+    std::set<std::string> initializedClasses;
+    std::set<std::string> activeClasses;
+};
+
+struct ActiveClassFunction {
+    std::string className;
+    std::string methodName;
+    std::string constructorOutput;
+    ConstructionContext* construction = nullptr;
 };
 
 struct ActiveTypedLoopRegion {
@@ -483,6 +497,7 @@ bool isTopLevelRuntimeOp(BytecodeOp op) {
     case BytecodeOp::PostfixOp:
     case BytecodeOp::MemberAccess:
     case BytecodeOp::CallOrIndex:
+    case BytecodeOp::CallSuperclass:
     case BytecodeOp::BraceIndex:
     case BytecodeOp::MakeMatrix:
     case BytecodeOp::MakeMatrixRow:
@@ -533,6 +548,7 @@ public:
         diagnostics_ = program.diagnostics;
         frames_.clear();
         frames_.push_back({});
+        activeClassFunctions_.clear();
         resetProfiling(program.instructions.size());
         initializeWorkspace(options.initialWorkspace);
         collectFunctionNodes(semantic.root.get());
@@ -548,7 +564,7 @@ public:
         } else if (scriptMode && requestedEntryOutputCount_.value_or(0) > 0) {
             diagnostics_.push_back(Diagnostic{
                 SourceSpan{}, "script entry does not declare outputs"});
-        } else {
+        } else if (diagnostics_.empty()) {
             execute(scriptMode);
         }
         finalizeEntryOutputs();
@@ -872,6 +888,21 @@ private:
         }
     }
 
+    void collectExplicitSuperclassConstructors(
+        const HirNode& node,
+        std::vector<std::string>& constructors) const {
+        for (const auto& child : node.children) {
+            if (child->kind == HirKind::Function) {
+                continue;
+            }
+            if (child->kind == HirKind::SuperclassCall &&
+                child->binding.kind == BindingKind::Class) {
+                constructors.push_back(child->label);
+            }
+            collectExplicitSuperclassConstructors(*child, constructors);
+        }
+    }
+
     void collectFunctionRanges(const BytecodeProgram& program) {
         std::vector<std::string> classStack;
         for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
@@ -927,6 +958,9 @@ private:
                 if (const auto hir = classFunctionNodes_.find(key);
                     hir != classFunctionNodes_.end()) {
                     info.signature = parseFunctionSignature(*hir->second);
+                    collectExplicitSuperclassConstructors(
+                        *hir->second,
+                        info.explicitSuperclassConstructors);
                 }
                 classesByName_[classStack.back()].declaredMethods[info.name] =
                     std::move(info);
@@ -1472,6 +1506,9 @@ private:
             break;
         case BytecodeOp::CallOrIndex:
             callOrIndex(instruction);
+            break;
+        case BytecodeOp::CallSuperclass:
+            callSuperclass(instruction);
             break;
         case BytecodeOp::BraceIndex:
             braceIndex(instruction);
@@ -2530,6 +2567,165 @@ private:
         pushRuntime(std::move(result));
     }
 
+    void callSuperclass(const BytecodeInstruction& instruction) {
+        const auto arguments = popRuntimeValues(
+            instruction, instruction.operandCount,
+            "superclass call arguments");
+        if (!arguments) {
+            return;
+        }
+
+        const bool activeConstructor =
+            !activeClassFunctions_.empty() &&
+            activeClassFunctions_.back().construction != nullptr &&
+            activeClassFunctions_.back().constructorOutput ==
+                instruction.receiverName;
+        if (instruction.binding.kind == BindingKind::Class ||
+            activeConstructor) {
+            callSuperclassConstructor(instruction, *arguments);
+            return;
+        }
+        callQualifiedSuperclassMethod(instruction, *arguments);
+    }
+
+    void callSuperclassConstructor(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (activeClassFunctions_.empty() ||
+            activeClassFunctions_.back().construction == nullptr) {
+            addDiagnostic(
+                instruction,
+                "superclass constructor call is not inside a constructor");
+            return;
+        }
+
+        const ActiveClassFunction active = activeClassFunctions_.back();
+        auto klass = classesByName_.find(active.className);
+        if (klass == classesByName_.end() ||
+            std::find(klass->second.superclasses.begin(),
+                      klass->second.superclasses.end(),
+                      instruction.operand) ==
+                klass->second.superclasses.end() ||
+            instruction.operand == "handle") {
+            addDiagnostic(
+                instruction,
+                "superclass constructor is not a direct executable "
+                "superclass: " +
+                    instruction.operand);
+            return;
+        }
+        if (instruction.receiverName != active.constructorOutput) {
+            addDiagnostic(
+                instruction,
+                "superclass constructor must use the constructor output "
+                "object");
+            return;
+        }
+
+        auto receiver = currentFrame().find(instruction.receiverName);
+        if (receiver == currentFrame().end() ||
+            !isObject(receiver->second)) {
+            addDiagnostic(instruction,
+                          "superclass constructor receiver is not an object: " +
+                              instruction.receiverName);
+            return;
+        }
+        active.construction->object = receiver->second;
+
+        BytecodeCallSiteProfile* profile = nullptr;
+        if (profilingEnabled_) {
+            profile = &recordCallSite(
+                instruction, "super-constructor", instruction.operand);
+            observeValues(profile->argumentObservations, arguments);
+        }
+        const size_t diagnosticCount = diagnostics_.size();
+        auto outputs = constructClass(instruction, instruction.operand,
+                                      arguments, *active.construction, 1,
+                                      true);
+        if (diagnostics_.size() != diagnosticCount || outputs.empty()) {
+            return;
+        }
+
+        currentFrame()[instruction.receiverName] =
+            active.construction->object;
+        std::vector<RuntimeValue> visibleOutputs;
+        if (instruction.resultCount == 1) {
+            visibleOutputs.push_back(active.construction->object);
+        } else if (instruction.resultCount != 0) {
+            addDiagnostic(
+                instruction,
+                "superclass constructor call supports at most one output");
+            return;
+        }
+        if (profile) {
+            observeValues(profile->resultObservations, visibleOutputs);
+        }
+        pushOutputValues(instruction, visibleOutputs);
+    }
+
+    void callQualifiedSuperclassMethod(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (activeClassFunctions_.empty()) {
+            addDiagnostic(
+                instruction,
+                "qualified superclass method call is not inside a class "
+                "method");
+            return;
+        }
+        const ActiveClassFunction active = activeClassFunctions_.back();
+        if (active.className.empty() ||
+            active.methodName != instruction.receiverName ||
+            active.className == instruction.operand ||
+            !classDerivesFrom(active.className, instruction.operand)) {
+            addDiagnostic(
+                instruction,
+                "invalid qualified superclass method call: " +
+                    instruction.receiverName + "@" + instruction.operand);
+            return;
+        }
+        const auto superclass = classesByName_.find(instruction.operand);
+        if (superclass == classesByName_.end() ||
+            !superclass->second.declaredMethods.contains(
+                instruction.receiverName)) {
+            addDiagnostic(instruction,
+                          "superclass method is not available: " +
+                              instruction.operand + "." +
+                              instruction.receiverName);
+            return;
+        }
+        if (arguments.empty() || !isObject(arguments.front()) ||
+            !classDerivesFrom(arguments.front().className,
+                              instruction.operand)) {
+            addDiagnostic(
+                instruction,
+                "qualified superclass method requires a compatible object "
+                "argument");
+            return;
+        }
+
+        BytecodeCallSiteProfile* profile = nullptr;
+        if (profilingEnabled_) {
+            profile = &recordCallSite(
+                instruction, "super-method",
+                instruction.operand + "." + instruction.receiverName);
+            profile->hasReceiverObservation = true;
+            observeValue(profile->receiverObservation, arguments.front());
+            observeValues(profile->argumentObservations, arguments);
+        }
+        const auto& method = superclass->second.declaredMethods.at(
+            instruction.receiverName);
+        auto outputs = callFunctionInfo(
+            instruction,
+            instruction.operand + "." + instruction.receiverName, method,
+            arguments, instruction.resultCount, std::nullopt, nullptr,
+            false);
+        if (profile) {
+            observeValues(profile->resultObservations, outputs);
+        }
+        pushOutputValues(instruction, outputs);
+    }
+
     std::vector<RuntimeValue> callBuiltinOutputs(
         const BytecodeInstruction& instruction, const std::string& name,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
@@ -2591,7 +2787,7 @@ private:
         }
 
         return callFunctionInfo(instruction, name, function->second, arguments,
-                                requestedCount, std::nullopt);
+                                requestedCount, std::nullopt, nullptr, false);
     }
 
     std::vector<RuntimeValue> callClassConstructor(
@@ -2607,20 +2803,149 @@ private:
                           "class hierarchy is invalid: " + className);
             return missingOutputs(requestedCount);
         }
-        const RuntimeValue object = objectValue(
+        if (requestedCount < 0) {
+            addDiagnostic(instruction,
+                          "bytecode call result count cannot be negative");
+            return {};
+        }
+
+        ConstructionContext construction;
+        construction.object = objectValue(
             className, klass->second.properties, klass->second.handleClass);
-        const auto constructor = klass->second.methods.find(className);
-        if (constructor == klass->second.methods.end()) {
-            if (!arguments.empty()) {
+        return constructClass(instruction, className, arguments, construction,
+                              requestedCount, false);
+    }
+
+    std::vector<RuntimeValue> constructClass(
+        const BytecodeInstruction& instruction, const std::string& className,
+        const std::vector<RuntimeValue>& arguments,
+        ConstructionContext& construction, int requestedCount,
+        bool explicitCall) {
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end()) {
+            addDiagnostic(instruction, "class is not available: " + className);
+            return missingOutputs(requestedCount);
+        }
+        if (!klass->second.hierarchyValid) {
+            addDiagnostic(instruction,
+                          "class hierarchy is invalid: " + className);
+            return missingOutputs(requestedCount);
+        }
+        if (construction.initializedClasses.contains(className)) {
+            if (explicitCall) {
+                addDiagnostic(
+                    instruction,
+                    "superclass constructor called more than once: " +
+                        className);
+            }
+            return requestedCount == 0
+                       ? std::vector<RuntimeValue>{}
+                       : std::vector<RuntimeValue>{construction.object};
+        }
+        if (!construction.activeClasses.insert(className).second) {
+            addDiagnostic(instruction,
+                          "recursive superclass construction: " + className);
+            return missingOutputs(requestedCount);
+        }
+
+        const auto constructor = klass->second.declaredMethods.find(className);
+        if (constructor == klass->second.declaredMethods.end()) {
+            bool passedArguments = false;
+            for (const auto& superclassName : klass->second.superclasses) {
+                if (superclassName == "handle") {
+                    continue;
+                }
+                const std::vector<RuntimeValue> superclassArguments =
+                    passedArguments ? std::vector<RuntimeValue>{} : arguments;
+                passedArguments = true;
+                (void)constructClass(instruction, superclassName,
+                                     superclassArguments, construction, 1,
+                                     false);
+                if (!diagnostics_.empty()) {
+                    construction.activeClasses.erase(className);
+                    return missingOutputs(requestedCount);
+                }
+            }
+            if (!arguments.empty() && !passedArguments) {
+                construction.activeClasses.erase(className);
                 addDiagnostic(instruction,
-                              "class has no constructor arguments: " + className);
+                              "class has no constructor arguments: " +
+                                  className);
                 return missingOutputs(requestedCount);
             }
-            return requestedCount == 0 ? std::vector<RuntimeValue>{}
-                                       : std::vector<RuntimeValue>{object};
+            construction.activeClasses.erase(className);
+            construction.initializedClasses.insert(className);
+            if (requestedCount == 0) {
+                return {};
+            }
+            if (requestedCount != 1) {
+                addDiagnostic(
+                    instruction,
+                    "default class constructor supports one output: " +
+                        className);
+                return missingOutputs(requestedCount);
+            }
+            return {construction.object};
         }
-        return callFunctionInfo(instruction, className, constructor->second,
-                                arguments, requestedCount, object);
+
+        std::set<std::string> explicitSuperclasses(
+            constructor->second.explicitSuperclassConstructors.begin(),
+            constructor->second.explicitSuperclassConstructors.end());
+        const size_t diagnosticCount = diagnostics_.size();
+        for (const auto& superclassName : klass->second.superclasses) {
+            if (superclassName == "handle" ||
+                explicitSuperclasses.contains(superclassName)) {
+                continue;
+            }
+            (void)constructClass(instruction, superclassName, {}, construction,
+                                 1, false);
+            if (diagnostics_.size() != diagnosticCount) {
+                construction.activeClasses.erase(className);
+                return missingOutputs(requestedCount);
+            }
+        }
+
+        const int internalRequestedCount = std::max(1, requestedCount);
+        auto outputs = callFunctionInfo(
+            instruction, className, constructor->second, arguments,
+            internalRequestedCount, construction.object, &construction,
+            true);
+        if (diagnostics_.size() != diagnosticCount || outputs.empty()) {
+            construction.activeClasses.erase(className);
+            return missingOutputs(requestedCount);
+        }
+        construction.object = outputs.front();
+        if (!isObject(construction.object)) {
+            construction.activeClasses.erase(className);
+            addDiagnostic(instruction,
+                          "class constructor did not return an object: " +
+                              className);
+            return missingOutputs(requestedCount);
+        }
+
+        for (const auto& superclassName : klass->second.superclasses) {
+            if (superclassName == "handle") {
+                continue;
+            }
+            if (!construction.initializedClasses.contains(superclassName)) {
+                addDiagnostic(
+                    instruction,
+                    "superclass constructor was not called: " + className +
+                        " -> " + superclassName);
+            }
+        }
+        construction.activeClasses.erase(className);
+        if (diagnostics_.size() != diagnosticCount) {
+            return missingOutputs(requestedCount);
+        }
+        construction.initializedClasses.insert(className);
+
+        if (requestedCount == 0) {
+            return {};
+        }
+        outputs.resize(static_cast<size_t>(requestedCount), missingValue());
+        outputs.front() = construction.object;
+        return outputs;
     }
 
     std::vector<RuntimeValue> callClassMethod(
@@ -2644,13 +2969,15 @@ private:
                                                : method.declaringClass;
         return callFunctionInfo(instruction,
                                 declaringClass + "." + methodName, method,
-                                callArguments, requestedCount, std::nullopt);
+                                callArguments, requestedCount, std::nullopt,
+                                nullptr, false);
     }
 
     std::vector<RuntimeValue> callFunctionInfo(
         const BytecodeInstruction& instruction, const std::string& name,
         const FunctionInfo& info, const std::vector<RuntimeValue>& arguments,
-        int requestedCount, std::optional<RuntimeValue> constructorObject) {
+        int requestedCount, std::optional<RuntimeValue> constructorObject,
+        ConstructionContext* construction, bool constructorInvocation) {
         if (requestedCount < 0) {
             addDiagnostic(instruction,
                           "bytecode call result count cannot be negative");
@@ -2689,9 +3016,23 @@ private:
             currentFrame()[info.signature.outputs.front()] = *constructorObject;
         }
 
+        const bool classFunction = !info.declaringClass.empty();
+        if (classFunction) {
+            activeClassFunctions_.push_back(ActiveClassFunction{
+                info.declaringClass, info.name,
+                constructorInvocation && !info.signature.outputs.empty()
+                    ? info.signature.outputs.front()
+                    : std::string{},
+                construction});
+        }
+
         enterFunctionProfile(name, info.span);
         executeFunctionBody(info.entry, info.end);
         leaveFunctionProfile();
+
+        if (classFunction) {
+            activeClassFunctions_.pop_back();
+        }
 
         auto completedFrame = std::move(currentFrame());
         frames_.pop_back();
@@ -3321,6 +3662,7 @@ private:
     std::vector<SwitchContext> switchContextStack_;
     std::vector<TryContext> tryContextStack_;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
+    std::vector<ActiveClassFunction> activeClassFunctions_;
     std::map<std::string, const HirNode*> functionNodes_;
     std::map<std::string, const HirNode*> classFunctionNodes_;
     std::map<std::string, FunctionInfo> functionsByName_;

@@ -47,6 +47,7 @@ enum class BytecodeOp {
     PostfixOp,
     MemberAccess,
     CallOrIndex,
+    CallSuperclass,
     BraceIndex,
     MakeMatrix,
     MakeMatrixRow,

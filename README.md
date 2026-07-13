@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.26.0. See [docs/v0.26.md](docs/v0.26.md) for the
+Current milestone: v0.27.0. See [docs/v0.27.md](docs/v0.27.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.25.md](docs/v0.25.md),
+iteration plan. Previous boundaries are kept in [docs/v0.26.md](docs/v0.26.md),
+[docs/v0.25.md](docs/v0.25.md),
 [docs/v0.24.md](docs/v0.24.md),
 [docs/v0.23.md](docs/v0.23.md),
 [docs/v0.22.md](docs/v0.22.md),
@@ -59,7 +60,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.26 executes the core numeric/string subset,
+expression operators. v0.27 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -139,6 +140,16 @@ subclass overrides, and inherit handle ownership transitively. Multiple
 inheritance accepts shared declarations through a common ancestor, selects a
 strictly more specific override, and diagnoses unresolved member conflicts,
 missing superclasses, and cyclic hierarchies.
+v0.27 adds executable superclass initialization. Dedicated syntax, HIR, and
+bytecode nodes retain `obj@Superclass(args)` and
+`method@Superclass(obj, args)` without confusing either form with indexing.
+Derived constructors can call direct superclass constructors explicitly,
+uncalled direct bases receive implicit zero-argument construction, and a
+default derived constructor forwards its arguments to its first executable
+base. A shared construction context preserves the most-derived object through
+value and handle constructors and initializes common diamond ancestors once.
+Qualified superclass methods bypass the current override while retaining
+normal dynamic dispatch for calls made inside the selected base method.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -337,6 +348,13 @@ transitive handle behavior with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\class_inheritance_demo.m
+```
+
+Run explicit and implicit superclass constructors, default constructor
+forwarding, and qualified superclass methods with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\superclass_construction_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:

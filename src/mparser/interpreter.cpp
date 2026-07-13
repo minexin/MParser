@@ -521,6 +521,7 @@ private:
         case HirKind::Cell:
         case HirKind::MemberAccess:
         case HirKind::CallOrIndex:
+        case HirKind::SuperclassCall:
         case HirKind::BraceIndex:
         case HirKind::FunctionHandle:
         case HirKind::MetaClass:
@@ -1154,6 +1155,7 @@ private:
         case HirKind::OutputList:
         case HirKind::ParameterList:
         case HirKind::MemberAccess:
+        case HirKind::SuperclassCall:
         case HirKind::FunctionHandle:
         case HirKind::MetaClass:
         case HirKind::Unknown:

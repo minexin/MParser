@@ -185,6 +185,7 @@ public:
         lowerChildren(root, *result_.root);
         popScope();
         resolveDeferredBindings(*result_.root);
+        validateSuperclassCalls(*result_.root);
         return std::move(result_);
     }
 
@@ -293,6 +294,8 @@ private:
             return lowerMemberAccess(syntax);
         case SyntaxKind::CallOrIndexExpr:
             return lowerCallOrIndex(syntax);
+        case SyntaxKind::SuperclassCallExpr:
+            return lowerSuperclassCall(syntax);
         case SyntaxKind::BraceIndexExpr:
             return lowerGeneric(syntax, HirKind::BraceIndex);
         case SyntaxKind::FunctionHandleExpr:
@@ -369,7 +372,13 @@ private:
                           syntax.span);
         }
 
+        functionStack_.push_back(FunctionContext{
+            className, syntax.label,
+            signature.outputs.empty() ? std::string{}
+                                      : signature.outputs.front(),
+            method && syntax.label == className});
         lowerChildren(syntax, *node);
+        functionStack_.pop_back();
         popScope();
         return node;
     }
@@ -430,6 +439,28 @@ private:
         return node;
     }
 
+    std::unique_ptr<HirNode> lowerSuperclassCall(const SyntaxNode& syntax) {
+        auto node = makeNode(HirKind::SuperclassCall, syntax);
+        lowerChildren(syntax, *node);
+        if (node->children.empty() || functionStack_.empty()) {
+            return node;
+        }
+
+        const auto& function = functionStack_.back();
+        const std::string& calleeOrObject = node->children.front()->label;
+        if (function.constructor &&
+            calleeOrObject == function.constructorOutput) {
+            node->binding = resolveClass(syntax.label);
+            return node;
+        }
+
+        if (const auto method =
+                resolveDeclaredClassMethod(syntax.label, calleeOrObject)) {
+            node->binding = *method;
+        }
+        return node;
+    }
+
     std::unique_ptr<HirNode> lowerMetaClass(const SyntaxNode& syntax) {
         auto node = makeNode(HirKind::MetaClass, syntax);
         node->binding = resolveClass(syntax.label);
@@ -486,6 +517,7 @@ private:
             }
             break;
         case SyntaxKind::CallOrIndexExpr:
+        case SyntaxKind::SuperclassCallExpr:
         case SyntaxKind::BraceIndexExpr:
         case SyntaxKind::MemberAccessExpr:
             if (!syntax.children.empty()) {
@@ -609,6 +641,25 @@ private:
         return resolveClassMember(className, memberName, visiting);
     }
 
+    std::optional<BindingRef> resolveDeclaredClassMethod(
+        const std::string& className, const std::string& methodName) const {
+        const auto scope = classScopeByName_.find(className);
+        if (scope == classScopeByName_.end()) {
+            return std::nullopt;
+        }
+        const auto& classScope =
+            result_.scopes[static_cast<size_t>(scope->second)];
+        for (int symbolId : classScope.symbols) {
+            const auto& symbol =
+                result_.symbols[static_cast<size_t>(symbolId)];
+            if (symbol.kind == SymbolKind::Method &&
+                symbol.name == methodName) {
+                return BindingRef{BindingKind::Method, symbol.id};
+            }
+        }
+        return std::nullopt;
+    }
+
     std::optional<BindingRef> resolveClassMember(
         const std::string& className, const std::string& memberName,
         std::unordered_set<std::string>& visiting) const {
@@ -730,6 +781,15 @@ private:
             }
         }
 
+        if (node.kind == HirKind::SuperclassCall &&
+            node.binding.kind == BindingKind::Unresolved &&
+            !node.children.empty()) {
+            if (const auto method = resolveDeclaredClassMethod(
+                    node.label, node.children.front()->label)) {
+                node.binding = *method;
+            }
+        }
+
         if (node.kind != HirKind::CallOrIndex ||
             node.binding.kind != BindingKind::Unresolved ||
             node.children.empty()) {
@@ -742,6 +802,252 @@ private:
             calleeKind == BindingKind::Class ||
             calleeKind == BindingKind::Builtin) {
             node.binding = node.children.front()->binding;
+        }
+    }
+
+    std::string constructorOutputForClass(
+        const std::string& className) const {
+        const auto classScope = classScopeByName_.find(className);
+        if (classScope == classScopeByName_.end()) {
+            return {};
+        }
+        for (const auto& scope : result_.scopes) {
+            if (scope.kind != ScopeKind::Function ||
+                scope.parentId != classScope->second ||
+                scope.label != className) {
+                continue;
+            }
+            for (int symbolId : scope.symbols) {
+                const auto& symbol =
+                    result_.symbols[static_cast<size_t>(symbolId)];
+                if (symbol.kind == SymbolKind::FunctionOutput) {
+                    return symbol.name;
+                }
+            }
+        }
+        return {};
+    }
+
+    bool containsNameReference(const HirNode& node,
+                               const std::string& name,
+                               bool skipFirstChild = false) const {
+        if (node.kind == HirKind::NameRef && node.label == name) {
+            return true;
+        }
+        const size_t begin = skipFirstChild && !node.children.empty() ? 1 : 0;
+        for (size_t index = begin; index < node.children.size(); ++index) {
+            if (containsNameReference(*node.children[index], name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool isConstructorSuperclassCall(
+        const HirNode& node, const std::string& outputName) const {
+        return node.kind == HirKind::SuperclassCall &&
+               !outputName.empty() && !node.children.empty() &&
+               node.children.front()->kind == HirKind::NameRef &&
+               node.children.front()->label == outputName;
+    }
+
+    void addSemanticDiagnostic(const HirNode& node, std::string message) {
+        result_.diagnostics.push_back(
+            Diagnostic{node.span, std::move(message)});
+    }
+
+    void validateConstructorCall(
+        HirNode& node, const HirNode& classNode,
+        const std::string& outputName, int controlDepth,
+        bool objectReferenced, bool returnSeen,
+        std::unordered_set<std::string>& calledSuperclasses) {
+        if (node.children.empty() ||
+            node.children.front()->label != outputName) {
+            addSemanticDiagnostic(
+                node, "superclass constructor must use the constructor "
+                      "output object");
+        }
+
+        if (std::find(classNode.superclasses.begin(),
+                      classNode.superclasses.end(), node.label) ==
+            classNode.superclasses.end() || node.label == "handle") {
+            addSemanticDiagnostic(
+                node, "superclass constructor is not a direct executable "
+                      "superclass: " +
+                          node.label);
+        }
+        if (!calledSuperclasses.insert(node.label).second) {
+            addSemanticDiagnostic(
+                node, "superclass constructor called more than once: " +
+                          node.label);
+        }
+        if (controlDepth > 0) {
+            addSemanticDiagnostic(
+                node, "superclass constructor call cannot be conditional");
+        }
+        if (objectReferenced || returnSeen) {
+            addSemanticDiagnostic(
+                node, "superclass constructor call must precede all other "
+                      "references to the constructed object");
+        }
+        if (containsNameReference(node, outputName, true)) {
+            addSemanticDiagnostic(
+                node, "superclass constructor arguments cannot reference "
+                      "the constructed object");
+        }
+        if (node.binding.kind != BindingKind::Class) {
+            addSemanticDiagnostic(
+                node, "superclass constructor target is not available: " +
+                          node.label);
+        }
+    }
+
+    void validateConstructorSequence(
+        HirNode& node, const HirNode& classNode,
+        const std::string& outputName, int controlDepth,
+        bool& objectReferenced, bool& returnSeen,
+        std::unordered_set<std::string>& calledSuperclasses) {
+        if (node.kind == HirKind::Function) {
+            return;
+        }
+
+        if (isConstructorSuperclassCall(node, outputName)) {
+            validateConstructorCall(node, classNode, outputName, controlDepth,
+                                    objectReferenced, returnSeen,
+                                    calledSuperclasses);
+            return;
+        }
+
+        if (node.kind == HirKind::Assignment && node.children.size() >= 2 &&
+            isConstructorSuperclassCall(*node.children[1], outputName)) {
+            validateConstructorSequence(
+                *node.children[1], classNode, outputName, controlDepth,
+                objectReferenced, returnSeen, calledSuperclasses);
+            for (size_t index = 2; index < node.children.size(); ++index) {
+                validateConstructorSequence(
+                    *node.children[index], classNode, outputName,
+                    controlDepth, objectReferenced, returnSeen,
+                    calledSuperclasses);
+            }
+            return;
+        }
+
+        if (node.kind == HirKind::NameRef && node.label == outputName) {
+            objectReferenced = true;
+        }
+        if (node.kind == HirKind::Statement && node.label == "return") {
+            returnSeen = true;
+        }
+
+        const int childControlDepth =
+            controlDepth + (node.kind == HirKind::Control ? 1 : 0);
+        for (auto& child : node.children) {
+            validateConstructorSequence(
+                *child, classNode, outputName, childControlDepth,
+                objectReferenced, returnSeen, calledSuperclasses);
+        }
+    }
+
+    void validateQualifiedMethodCalls(HirNode& node,
+                                      const HirNode* classNode,
+                                      const HirNode* functionNode,
+                                      const std::string& constructorOutput) {
+        if (node.kind == HirKind::Function && functionNode &&
+            &node != functionNode) {
+            return;
+        }
+        if (node.kind == HirKind::SuperclassCall && classNode &&
+            functionNode &&
+            !isConstructorSuperclassCall(node, constructorOutput)) {
+            const std::string methodName =
+                node.children.empty() ? std::string{}
+                                      : node.children.front()->label;
+            if (methodName.empty() || methodName != functionNode->label) {
+                addSemanticDiagnostic(
+                    node, "qualified superclass method call must name the "
+                          "current method");
+            }
+            if (node.label == classNode->label ||
+                !classDerivesFrom(classNode->label, node.label)) {
+                addSemanticDiagnostic(
+                    node, "qualified method target is not a superclass of " +
+                              classNode->label + ": " + node.label);
+            }
+            if (node.children.size() < 2) {
+                addSemanticDiagnostic(
+                    node, "qualified superclass method call requires an "
+                          "object argument");
+            }
+            if (node.binding.kind != BindingKind::Method) {
+                addSemanticDiagnostic(
+                    node, "superclass method is not available: " + node.label +
+                              "." + methodName);
+            }
+        } else if (node.kind == HirKind::SuperclassCall &&
+                   (!classNode || !functionNode)) {
+            addSemanticDiagnostic(
+                node, "superclass-qualified call is only valid in a class "
+                      "method");
+        }
+
+        for (auto& child : node.children) {
+            validateQualifiedMethodCalls(*child, classNode, functionNode,
+                                         constructorOutput);
+        }
+    }
+
+    void validateClassFunction(HirNode& functionNode,
+                               const HirNode& classNode) {
+        const bool constructor = functionNode.label == classNode.label;
+        const std::string outputName =
+            constructor ? constructorOutputForClass(classNode.label)
+                        : std::string{};
+        validateQualifiedMethodCalls(functionNode, &classNode, &functionNode,
+                                     outputName);
+        if (!constructor) {
+            return;
+        }
+        if (outputName.empty()) {
+            addSemanticDiagnostic(
+                functionNode,
+                "class constructor must declare an object output");
+            return;
+        }
+
+        bool objectReferenced = false;
+        bool returnSeen = false;
+        std::unordered_set<std::string> calledSuperclasses;
+        for (auto& child : functionNode.children) {
+            validateConstructorSequence(
+                *child, classNode, outputName, 0, objectReferenced,
+                returnSeen, calledSuperclasses);
+        }
+    }
+
+    void validateClassMembers(HirNode& node, const HirNode& classNode) {
+        if (node.kind == HirKind::Function) {
+            validateClassFunction(node, classNode);
+            return;
+        }
+        if (node.kind == HirKind::Class && &node != &classNode) {
+            return;
+        }
+        for (auto& child : node.children) {
+            validateClassMembers(*child, classNode);
+        }
+    }
+
+    void validateSuperclassCalls(HirNode& node) {
+        if (node.kind == HirKind::Class) {
+            validateClassMembers(node, node);
+            return;
+        }
+        if (node.kind == HirKind::Function) {
+            validateQualifiedMethodCalls(node, nullptr, &node, {});
+            return;
+        }
+        for (auto& child : node.children) {
+            validateSuperclassCalls(*child);
         }
     }
 
@@ -759,8 +1065,15 @@ private:
     }
 
     SemanticResult result_;
+    struct FunctionContext {
+        std::string className;
+        std::string name;
+        std::string constructorOutput;
+        bool constructor = false;
+    };
     std::vector<int> scopeStack_;
     std::vector<std::string> classStack_;
+    std::vector<FunctionContext> functionStack_;
     std::unordered_map<std::string, int> classScopeByName_;
     std::unordered_map<std::string, std::vector<std::string>>
         classSuperclassesByName_;
@@ -820,6 +1133,8 @@ const char* hirKindName(HirKind kind) {
         return "MemberAccess";
     case HirKind::CallOrIndex:
         return "CallOrIndex";
+    case HirKind::SuperclassCall:
+        return "SuperclassCall";
     case HirKind::BraceIndex:
         return "BraceIndex";
     case HirKind::FunctionHandle:

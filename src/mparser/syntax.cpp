@@ -92,6 +92,8 @@ const char* syntaxKindName(SyntaxKind kind) {
         return "MemberAccessExpr";
     case SyntaxKind::CallOrIndexExpr:
         return "CallOrIndexExpr";
+    case SyntaxKind::SuperclassCallExpr:
+        return "SuperclassCallExpr";
     case SyntaxKind::BraceIndexExpr:
         return "BraceIndexExpr";
     case SyntaxKind::FunctionHandleExpr:

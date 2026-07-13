@@ -288,6 +288,11 @@ private:
                 continue;
             }
 
+            if (at(TokenKind::At)) {
+                left = parseSuperclassCall(std::move(left));
+                continue;
+            }
+
             if (at(TokenKind::LBrace)) {
                 const Token open = advance();
                 left = parsePostfixDelimited(SyntaxKind::BraceIndexExpr,
@@ -305,6 +310,64 @@ private:
         }
 
         return left;
+    }
+
+    std::unique_ptr<SyntaxNode> parseSuperclassCall(
+        std::unique_ptr<SyntaxNode> calleeOrObject) {
+        const Token atToken = advance();
+        auto node = makeNodeFromSpan(
+            SyntaxKind::SuperclassCallExpr,
+            mergeSpans(calleeOrObject->span, atToken.span));
+        node->raw = atToken.text;
+        node->children.push_back(std::move(calleeOrObject));
+
+        std::vector<Token> nameTokens;
+        while (!isAtEnd() &&
+               atAny({TokenKind::Identifier, TokenKind::Dot})) {
+            nameTokens.push_back(advance());
+        }
+        if (nameTokens.empty()) {
+            node->children.push_back(
+                makeError(atToken.span, "expected superclass name after @"));
+            return node;
+        }
+
+        node->label = trimAsciiWhitespace(joinTokenTexts(nameTokens));
+        node->raw += node->label;
+        node->span = mergeSpans(node->span, nameTokens.back().span);
+        if (!at(TokenKind::LParen)) {
+            node->children.push_back(makeError(
+                nameTokens.back().span,
+                "expected argument list after superclass name"));
+            return node;
+        }
+
+        const Token open = advance();
+        while (!isAtEnd() && !at(TokenKind::RParen)) {
+            if (atAny({TokenKind::Comma, TokenKind::Semicolon})) {
+                advance();
+                continue;
+            }
+
+            auto argument = parseExpression(0);
+            if (argument) {
+                node->children.push_back(std::move(argument));
+                continue;
+            }
+
+            const Token unexpected = advance();
+            node->children.push_back(makeError(
+                unexpected.span,
+                "unexpected token in superclass argument list"));
+        }
+
+        if (at(TokenKind::RParen)) {
+            const Token close = advance();
+            node->span = mergeSpans(node->span, close.span);
+        } else {
+            node->span = mergeSpans(node->span, open.span);
+        }
+        return node;
     }
 
     std::unique_ptr<SyntaxNode> parseParenthesized(const Token& open) {

@@ -144,6 +144,7 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         }
         break;
     case BytecodeOp::CallOrIndex:
+    case BytecodeOp::CallSuperclass:
         contract.hasCalls = true;
         break;
     case BytecodeOp::StoreMember:
@@ -215,7 +216,8 @@ BytecodeRegionContract analyzePointRegion(const BytecodeProgram& program,
         contract.outputs.push_back(std::string(target));
         contract.hasMutation = instruction.op == BytecodeOp::StoreIndex;
     }
-    if (instruction.op == BytecodeOp::CallOrIndex) {
+    if (instruction.op == BytecodeOp::CallOrIndex ||
+        instruction.op == BytecodeOp::CallSuperclass) {
         contract.hasCalls = true;
         contract.callTargets.push_back(std::string(target));
     }

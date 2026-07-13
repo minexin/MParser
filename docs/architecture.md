@@ -63,6 +63,13 @@ specific class. This makes inherited bindings independent of source order while
 leaving genuinely ambiguous multiple-inheritance members unresolved for the
 runtime class registry to diagnose with full executable metadata.
 
+Superclass-qualified calls have their own syntax and HIR node. The semantic
+pass binds an object-output form to a direct superclass constructor and a
+same-named method form to the exact declaration on the named superclass. A
+post-lowering validation pass rejects indirect or repeated constructor calls,
+conditional construction, construction after an object reference, object
+references in superclass arguments, and malformed qualified method calls.
+
 Dynamic MATLAB constructs intentionally remain delayed. `CallOrIndex`,
 `BraceIndex`, and `MemberAccess` HIR nodes preserve the surface operation and
 carry unresolved bindings until a later name-resolution pass has path, package,
@@ -105,7 +112,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.26 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.27 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -239,9 +246,21 @@ definitions require a subclass override, otherwise the hierarchy receives an
 ambiguity diagnostic. Missing and cyclic same-file hierarchies are rejected.
 Handle ownership propagates through the resolved superclass graph.
 
+Construction allocates the most-derived object once and carries it through a
+shared construction context. Explicit `obj@Superclass(args)` instructions
+invoke only direct bases and write the updated value object back to the active
+constructor output; handle objects retain the same shared property storage.
+Uncalled direct bases are initialized with zero arguments in declaration order.
+When a derived class has no constructor, its arguments are forwarded to the
+first executable direct base and remaining bases receive no arguments. The
+context records initialized classes, so a common ancestor reached through a
+diamond runs once. `method@Superclass(obj, ...)` invokes the exact method
+declared on the named ancestor. Calls made by that base implementation still
+use the runtime object's most-derived dispatch table.
+
 The VM intentionally still rejects cross-file/package superclass lookup,
-automatic or explicit superclass constructor calls, `method@Superclass`
-dispatch, full independent-property compatibility checks, access-control and
+non-`handle` built-in superclass construction, full independent-property
+compatibility checks, access-control and
 `Abstract`/`Sealed`/`HandleCompatible` enforcement, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 dependent properties, class methods as `CompiledModule` entry targets,
@@ -260,7 +279,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.26
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.27
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -297,11 +316,14 @@ v0.24 adds baseline object values and bytecode class dispatch. v0.25 adds
 handle-alias ownership, value-copy isolation, retained superclass metadata, and
 true zero-output call statements. v0.26 adds order-independent same-file class
 hierarchies, inherited property/method tables, override and diamond resolution,
-transitive handle ownership, and invalid-hierarchy diagnostics. The next steps
-are multidimensional and comma-separated-list Cell semantics, superclass
-constructor dispatch, access-aware class metadata, persistent code caches,
-native lowering, and eventual on-stack replacement while preserving the same
-commit/fallback contract.
+transitive handle ownership, and invalid-hierarchy diagnostics. v0.27 adds
+dedicated superclass-call IR, semantic construction-order checks, explicit and
+implicit base construction, default constructor forwarding, one-time diamond
+initialization, and exact qualified base-method calls. The next steps are
+property defaults and validation, access-aware class metadata,
+multidimensional and comma-separated-list Cell semantics, persistent code
+caches, native lowering, and eventual on-stack replacement while preserving
+the same commit/fallback contract.
 
 When dynamic features invalidate assumptions, execution should deopt back to
 the interpreter. This is the path that keeps full MATLAB semantics compatible

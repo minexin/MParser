@@ -33,6 +33,7 @@ enum class HirKind {
     Cell,
     MemberAccess,
     CallOrIndex,
+    SuperclassCall,
     BraceIndex,
     FunctionHandle,
     MetaClass,

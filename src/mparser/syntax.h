@@ -53,6 +53,7 @@ enum class SyntaxKind {
     CellExpr,
     MemberAccessExpr,
     CallOrIndexExpr,
+    SuperclassCallExpr,
     BraceIndexExpr,
     FunctionHandleExpr,
     MetaClassExpr,
