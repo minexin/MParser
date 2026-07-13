@@ -1302,7 +1302,9 @@ std::unique_ptr<SyntaxNode> Parser::parseMethodsBlock() {
         }
 
         if (at(TokenKind::KeywordFunction)) {
-            node->children.push_back(parseFunction());
+            auto method = parseFunction();
+            method->attributes = node->attributes;
+            node->children.push_back(std::move(method));
             continue;
         }
 
@@ -1310,6 +1312,7 @@ std::unique_ptr<SyntaxNode> Parser::parseMethodsBlock() {
         const auto tokens = collectUntilSeparator();
         method->raw = joinTokens(tokens);
         method->label = functionNameFromHeader(tokens);
+        method->attributes = node->attributes;
         consumeSeparator();
         finishNode(*method);
         node->children.push_back(std::move(method));
@@ -1671,7 +1674,15 @@ std::string Parser::functionNameFromHeader(const std::vector<Token>& tokens) con
 
     for (size_t i = start; i < tokens.size(); ++i) {
         if (tokens[i].kind == TokenKind::Identifier) {
-            return tokens[i].text;
+            std::string name = tokens[i].text;
+            size_t cursor = i + 1;
+            while (cursor + 1 < tokens.size() &&
+                   tokens[cursor].kind == TokenKind::Dot &&
+                   tokens[cursor + 1].kind == TokenKind::Identifier) {
+                name += "." + tokens[cursor + 1].text;
+                cursor += 2;
+            }
+            return name;
         }
     }
 

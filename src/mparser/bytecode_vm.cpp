@@ -23,6 +23,30 @@ namespace {
 constexpr size_t kHotLoopThreshold = 10;
 constexpr std::string_view kScriptProfileName = "<script>";
 
+std::string trimAscii(std::string_view text) {
+    size_t begin = 0;
+    while (begin < text.size() &&
+           std::isspace(static_cast<unsigned char>(text[begin])) != 0) {
+        ++begin;
+    }
+    size_t end = text.size();
+    while (end > begin &&
+           std::isspace(static_cast<unsigned char>(text[end - 1])) != 0) {
+        --end;
+    }
+    return std::string(text.substr(begin, end - begin));
+}
+
+std::string lowerAscii(std::string_view text) {
+    std::string result;
+    result.reserve(text.size());
+    for (const char character : text) {
+        result.push_back(static_cast<char>(
+            std::tolower(static_cast<unsigned char>(character))));
+    }
+    return result;
+}
+
 RuntimeValue missingValue() {
     return RuntimeValue{};
 }
@@ -407,11 +431,23 @@ struct TryContext {
     size_t switchContextDepth = 0;
 };
 
+enum class MemberAccessLevel {
+    Public,
+    Protected,
+    Private,
+    Immutable,
+};
+
 struct FunctionInfo {
     std::string name;
     std::string declaringClass;
     FunctionSignature signature;
+    std::vector<AttributeSyntax> attributes;
     std::vector<std::string> explicitSuperclassConstructors;
+    MemberAccessLevel access = MemberAccessLevel::Public;
+    bool staticMethod = false;
+    bool propertyAccessor = false;
+    std::string accessorProperty;
     size_t entry = 0;
     size_t end = 0;
     SourceSpan span;
@@ -422,6 +458,13 @@ struct PropertyInfo {
     std::string declaringClass;
     PropertySpec spec;
     std::vector<AttributeSyntax> attributes;
+    MemberAccessLevel getAccess = MemberAccessLevel::Public;
+    MemberAccessLevel setAccess = MemberAccessLevel::Public;
+    bool constant = false;
+    bool dependent = false;
+    bool abortSet = false;
+    std::string getterName;
+    std::string setterName;
     SourceSpan span;
     size_t initializerEntry = 0;
     size_t initializerEnd = 0;
@@ -593,7 +636,9 @@ public:
         initializeWorkspace(options.initialWorkspace);
         collectFunctionNodes(semantic.root.get());
         collectFunctionRanges(program);
+        configureDeclaredClassMembers();
         resolveClassHierarchies();
+        validateResolvedClassMembers();
         collectTypedRegions(typedIr);
 
         const bool scriptMode = requestedEntryFunction_.empty() &&
@@ -1055,14 +1100,256 @@ private:
                 if (const auto hir = classFunctionNodes_.find(key);
                     hir != classFunctionNodes_.end()) {
                     info.signature = parseFunctionSignature(*hir->second);
+                    info.attributes = hir->second->attributes;
                     collectExplicitSuperclassConstructors(
                         *hir->second,
                         info.explicitSuperclassConstructors);
                 }
+                const auto& declaredStatic =
+                    classesByName_[classStack.back()].declaredStaticMethods;
+                info.staticMethod = declaredStatic.contains(info.name) &&
+                                    declaredStatic.at(info.name);
                 classesByName_[classStack.back()].declaredMethods[info.name] =
                     std::move(info);
             }
             pc = end;
+        }
+    }
+
+    std::optional<bool> logicalAttributeValue(
+        const AttributeSyntax& attribute, const std::string& owner) {
+        if (attribute.value.empty()) {
+            return !attribute.negated;
+        }
+        if (attribute.negated) {
+            diagnostics_.push_back(Diagnostic{
+                attribute.span,
+                "negated class member attribute cannot also have a value: " +
+                    owner + "." + attribute.name});
+            return std::nullopt;
+        }
+        const std::string value = lowerAscii(trimAscii(attribute.value));
+        if (value == "true") {
+            return true;
+        }
+        if (value == "false") {
+            return false;
+        }
+        diagnostics_.push_back(Diagnostic{
+            attribute.span,
+            "class member attribute requires true or false: " + owner + "." +
+                attribute.name});
+        return std::nullopt;
+    }
+
+    std::optional<MemberAccessLevel> accessAttributeValue(
+        const AttributeSyntax& attribute, const std::string& owner,
+        bool allowImmutable) {
+        if (attribute.negated || attribute.value.empty()) {
+            diagnostics_.push_back(Diagnostic{
+                attribute.span,
+                "access attribute requires an explicit value: " + owner +
+                    "." + attribute.name});
+            return std::nullopt;
+        }
+        const std::string value = lowerAscii(trimAscii(attribute.value));
+        if (value == "public") {
+            return MemberAccessLevel::Public;
+        }
+        if (value == "protected") {
+            return MemberAccessLevel::Protected;
+        }
+        if (value == "private") {
+            return MemberAccessLevel::Private;
+        }
+        if (allowImmutable && value == "immutable") {
+            return MemberAccessLevel::Immutable;
+        }
+        diagnostics_.push_back(Diagnostic{
+            attribute.span,
+            "unsupported access attribute value for " + owner + "." +
+                attribute.name + ": " + attribute.value});
+        return std::nullopt;
+    }
+
+    void configurePropertyAttributes(PropertyInfo& property) {
+        const std::string owner = propertyDisplayName(property);
+        for (const auto& attribute : property.attributes) {
+            const std::string name = lowerAscii(attribute.name);
+            if (name == "access") {
+                if (const auto access =
+                        accessAttributeValue(attribute, owner, false)) {
+                    property.getAccess = *access;
+                    property.setAccess = *access;
+                }
+            } else if (name == "getaccess") {
+                if (const auto access =
+                        accessAttributeValue(attribute, owner, false)) {
+                    property.getAccess = *access;
+                }
+            } else if (name == "setaccess") {
+                if (const auto access =
+                        accessAttributeValue(attribute, owner, true)) {
+                    property.setAccess = *access;
+                }
+            } else if (name == "constant") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.constant = *value;
+                }
+            } else if (name == "dependent") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.dependent = *value;
+                }
+            } else if (name == "abortset") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.abortSet = *value;
+                }
+            }
+        }
+
+        if (property.constant && !property.spec.hasExplicitDefault) {
+            diagnostics_.push_back(Diagnostic{
+                property.span,
+                "constant property requires a default value: " + owner});
+        }
+        if (property.constant && property.dependent) {
+            diagnostics_.push_back(Diagnostic{
+                property.span,
+                "property cannot be both Constant and Dependent: " + owner});
+        }
+        if (property.dependent && property.spec.hasExplicitDefault) {
+            diagnostics_.push_back(Diagnostic{
+                property.span,
+                "dependent property cannot define a default value: " + owner});
+        }
+    }
+
+    void configureMethodAttributes(ClassInfo& klass, FunctionInfo& method) {
+        const std::string owner = klass.name + "." + method.name;
+        for (const auto& attribute : method.attributes) {
+            const std::string name = lowerAscii(attribute.name);
+            if (name == "access") {
+                if (const auto access =
+                        accessAttributeValue(attribute, owner, false)) {
+                    method.access = *access;
+                }
+            } else if (name == "static") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    method.staticMethod = *value;
+                }
+            }
+        }
+
+        const bool getter = method.name.rfind("get.", 0) == 0;
+        const bool setter = method.name.rfind("set.", 0) == 0;
+        if (!getter && !setter) {
+            return;
+        }
+        method.propertyAccessor = true;
+        method.accessorProperty = method.name.substr(4);
+        if (method.accessorProperty.empty() ||
+            method.accessorProperty.find('.') != std::string::npos) {
+            diagnostics_.push_back(Diagnostic{
+                method.span, "invalid property access method name: " + owner});
+            return;
+        }
+        if (!method.attributes.empty()) {
+            diagnostics_.push_back(Diagnostic{
+                method.span,
+                "property access methods must be declared in a methods block "
+                "without attributes: " + owner});
+        }
+        const auto property =
+            klass.declaredProperties.find(method.accessorProperty);
+        if (property == klass.declaredProperties.end()) {
+            diagnostics_.push_back(Diagnostic{
+                method.span,
+                "property access method has no property declaration: " +
+                    owner});
+            return;
+        }
+        if (getter) {
+            property->second->getterName = method.name;
+        } else {
+            property->second->setterName = method.name;
+        }
+    }
+
+    void configureDeclaredClassMembers() {
+        for (auto& [className, klass] : classesByName_) {
+            (void)className;
+            for (const auto& property : klass.declaredPropertyOrder) {
+                configurePropertyAttributes(*property);
+            }
+            for (auto& [methodName, method] : klass.declaredMethods) {
+                configureMethodAttributes(klass, method);
+                klass.declaredStaticMethods[methodName] = method.staticMethod;
+            }
+        }
+    }
+
+    void validateResolvedClassMembers() {
+        for (const auto& [className, klass] : classesByName_) {
+            for (const auto& property : klass.declaredPropertyOrder) {
+                const std::string owner = propertyDisplayName(*property);
+                if (property->abortSet && !klass.handleClass) {
+                    diagnostics_.push_back(Diagnostic{
+                        property->span,
+                        "AbortSet is supported only for handle-class "
+                        "properties: " + owner});
+                }
+                if (property->dependent && property->getterName.empty()) {
+                    diagnostics_.push_back(Diagnostic{
+                        property->span,
+                        "dependent property requires a get method: " + owner});
+                }
+                if (property->constant &&
+                    (!property->getterName.empty() ||
+                     !property->setterName.empty())) {
+                    diagnostics_.push_back(Diagnostic{
+                        property->span,
+                        "constant property cannot define access methods: " +
+                            owner});
+                }
+
+                if (!property->getterName.empty()) {
+                    const auto& getter =
+                        klass.declaredMethods.at(property->getterName);
+                    if (getter.staticMethod || getter.signature.hasVarargin ||
+                        getter.signature.hasVarargout ||
+                        getter.signature.parameters.size() != 1 ||
+                        getter.signature.outputs.size() != 1) {
+                        diagnostics_.push_back(Diagnostic{
+                            getter.span,
+                            "property get method must accept one object and "
+                            "return one value: " + className + "." +
+                                getter.name});
+                    }
+                }
+                if (!property->setterName.empty()) {
+                    const auto& setter =
+                        klass.declaredMethods.at(property->setterName);
+                    const size_t expectedOutputs = klass.handleClass ? 0 : 1;
+                    const bool outputCountValid =
+                        klass.handleClass
+                            ? setter.signature.outputs.size() <= 1
+                            : setter.signature.outputs.size() == expectedOutputs;
+                    if (setter.staticMethod || setter.signature.hasVarargin ||
+                        setter.signature.hasVarargout ||
+                        setter.signature.parameters.size() != 2 ||
+                        !outputCountValid) {
+                        diagnostics_.push_back(Diagnostic{
+                            setter.span,
+                            klass.handleClass
+                                ? "handle-class property set method must "
+                                  "accept object and value and return at most "
+                                  "one object: " + className + "." + setter.name
+                                : "value-class property set method must accept "
+                                  "object and value and return one object: " +
+                                      className + "." + setter.name});
+                    }
+                }
+            }
         }
     }
 
@@ -1200,6 +1487,18 @@ private:
         }
 
         for (const auto& [methodName, method] : info.declaredMethods) {
+            if (method.propertyAccessor) {
+                continue;
+            }
+            if (const auto inherited = methods.find(methodName);
+                inherited != methods.end() && methodName != className &&
+                inherited->second.access != method.access) {
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info, "method-access:" + className + ":" + methodName,
+                    "overriding method must preserve Access: " + className +
+                        "." + methodName);
+            }
             methods[methodName] = method;
             staticMethods[methodName] =
                 info.declaredStaticMethods.contains(methodName) &&
@@ -1242,6 +1541,60 @@ private:
         }
         visiting.erase(className);
         return false;
+    }
+
+    bool hasMemberAccess(MemberAccessLevel access,
+                         const std::string& declaringClass) const {
+        if (access == MemberAccessLevel::Public) {
+            return true;
+        }
+        if (activeClassFunctions_.empty()) {
+            return false;
+        }
+        const auto& active = activeClassFunctions_.back();
+        if (access == MemberAccessLevel::Private) {
+            return active.className == declaringClass;
+        }
+        if (access == MemberAccessLevel::Protected) {
+            return classDerivesFrom(active.className, declaringClass) ||
+                   classDerivesFrom(declaringClass, active.className);
+        }
+        return active.className == declaringClass &&
+               active.methodName == declaringClass &&
+               active.construction != nullptr;
+    }
+
+    bool hasConstructorAccess(MemberAccessLevel access,
+                              const std::string& declaringClass,
+                              const std::string& requestingClass) const {
+        if (access == MemberAccessLevel::Public) {
+            return true;
+        }
+        if (access == MemberAccessLevel::Private) {
+            return requestingClass == declaringClass;
+        }
+        if (access == MemberAccessLevel::Protected) {
+            return !requestingClass.empty() &&
+                   classDerivesFrom(requestingClass, declaringClass);
+        }
+        return false;
+    }
+
+    bool activePropertyGetter(const PropertyInfo& property) const {
+        return !activeClassFunctions_.empty() &&
+               activeClassFunctions_.back().className ==
+                   property.declaringClass &&
+               activeClassFunctions_.back().methodName == property.getterName;
+    }
+
+    bool activePropertyWriter(const PropertyInfo& property) const {
+        if (activeClassFunctions_.empty() ||
+            activeClassFunctions_.back().className !=
+                property.declaringClass) {
+            return false;
+        }
+        const auto& method = activeClassFunctions_.back().methodName;
+        return method == property.getterName || method == property.setterName;
     }
 
     void reportClassHierarchyDiagnostic(const ClassInfo& info,
@@ -1476,7 +1829,7 @@ private:
             currentFrame()["varargin"] = cellValue(std::move(values));
         }
         for (const auto& output : signature.outputs) {
-            currentFrame()[output] = missingValue();
+            currentFrame().try_emplace(output, missingValue());
         }
         if (signature.hasVarargout) {
             currentFrame()["varargout"] = cellValue({});
@@ -2129,6 +2482,58 @@ private:
         recordAssignment(instruction, "name", *value);
     }
 
+    std::optional<RuntimeValue> invokePropertyGetter(
+        const BytecodeInstruction& instruction, const RuntimeValue& target,
+        PropertyInfo& property) {
+        if (property.constant) {
+            return propertyDefault(property);
+        }
+        if (!property.getterName.empty() && !activePropertyGetter(property)) {
+            const auto klass = classesByName_.find(property.declaringClass);
+            if (klass == classesByName_.end() ||
+                !klass->second.declaredMethods.contains(property.getterName)) {
+                addDiagnostic(instruction,
+                              "property get method is not available: " +
+                                  propertyDisplayName(property));
+                return std::nullopt;
+            }
+            const size_t diagnosticCount = diagnostics_.size();
+            auto outputs = callFunctionInfo(
+                instruction,
+                property.declaringClass + "." + property.getterName,
+                klass->second.declaredMethods.at(property.getterName),
+                {target}, 1, std::nullopt, nullptr, false);
+            if (diagnostics_.size() != diagnosticCount || outputs.empty()) {
+                return std::nullopt;
+            }
+            return outputs.front();
+        }
+        if (property.dependent) {
+            addDiagnostic(instruction,
+                          "dependent property has no stored value: " +
+                              propertyDisplayName(property));
+            return std::nullopt;
+        }
+        const auto& fields = objectFields(target);
+        const auto field = fields.find(property.name);
+        if (field == fields.end()) {
+            addDiagnostic(instruction,
+                          "property storage is not available: " +
+                              propertyDisplayName(property));
+            return std::nullopt;
+        }
+        return field->second;
+    }
+
+    void writeStoredProperty(RuntimeValue& target, const PropertyInfo& property,
+                             const RuntimeValue& value) {
+        if (target.handleObject && target.sharedFields) {
+            (*target.sharedFields)[property.name] = value;
+        } else {
+            target.fields[property.name] = value;
+        }
+    }
+
     void memberAccess(const BytecodeInstruction& instruction) {
         const auto target = popStackValue(instruction, "member access target");
         if (!target) {
@@ -2136,12 +2541,45 @@ private:
         }
         if (target->isClassReference) {
             const auto klass = classesByName_.find(target->className);
-            if (klass == classesByName_.end() ||
-                !klass->second.methods.contains(instruction.operand) ||
+            if (klass == classesByName_.end()) {
+                addDiagnostic(instruction, "class is not available: " +
+                                              target->className);
+                return;
+            }
+            if (const auto property =
+                    klass->second.properties.find(instruction.operand);
+                property != klass->second.properties.end()) {
+                if (!property->second->constant) {
+                    addDiagnostic(
+                        instruction,
+                        "class-qualified property access requires Constant: " +
+                            target->className + "." + instruction.operand);
+                    return;
+                }
+                if (!hasMemberAccess(property->second->getAccess,
+                                     property->second->declaringClass)) {
+                    addDiagnostic(instruction,
+                                  "property get access is denied: " +
+                                      propertyDisplayName(*property->second));
+                    return;
+                }
+                if (const auto value = propertyDefault(*property->second)) {
+                    stack_.push_back(runtimeStackValue(*value));
+                }
+                return;
+            }
+            if (!klass->second.methods.contains(instruction.operand) ||
                 !klass->second.staticMethods[instruction.operand]) {
                 addDiagnostic(instruction, "class method is not available: " +
                                               target->className + "." +
                                               instruction.operand);
+                return;
+            }
+            const auto& method = klass->second.methods.at(instruction.operand);
+            if (!hasMemberAccess(method.access, method.declaringClass)) {
+                addDiagnostic(instruction, "method access is denied: " +
+                                              method.declaringClass + "." +
+                                              method.name);
                 return;
             }
             stack_.push_back(methodStackValue(target->className,
@@ -2153,15 +2591,36 @@ private:
                           "member access requires a class object target");
             return;
         }
-        const auto& fields = objectFields(target->value);
-        if (const auto field = fields.find(instruction.operand);
-            field != fields.end()) {
-            stack_.push_back(runtimeStackValue(field->second));
+        const auto klass = classesByName_.find(target->value.className);
+        if (klass == classesByName_.end()) {
+            addDiagnostic(instruction, "class is not available: " +
+                                          target->value.className);
             return;
         }
-        const auto klass = classesByName_.find(target->value.className);
-        if (klass != classesByName_.end() &&
-            klass->second.methods.contains(instruction.operand)) {
+        if (const auto property =
+                klass->second.properties.find(instruction.operand);
+            property != klass->second.properties.end()) {
+            if (!hasMemberAccess(property->second->getAccess,
+                                 property->second->declaringClass)) {
+                addDiagnostic(instruction,
+                              "property get access is denied: " +
+                                  propertyDisplayName(*property->second));
+                return;
+            }
+            if (const auto value = invokePropertyGetter(
+                    instruction, target->value, *property->second)) {
+                stack_.push_back(runtimeStackValue(*value));
+            }
+            return;
+        }
+        if (klass->second.methods.contains(instruction.operand)) {
+            const auto& method = klass->second.methods.at(instruction.operand);
+            if (!hasMemberAccess(method.access, method.declaringClass)) {
+                addDiagnostic(instruction, "method access is denied: " +
+                                              method.declaringClass + "." +
+                                              method.name);
+                return;
+            }
             stack_.push_back(methodStackValue(target->value.className,
                                                instruction.operand,
                                                target->value));
@@ -2173,18 +2632,39 @@ private:
     }
 
     void storeMember(const BytecodeInstruction& instruction) {
-        const auto target = popRuntime(instruction, "member assignment target");
+        const auto target =
+            popStackValue(instruction, "member assignment target");
         const auto value = popRuntime(instruction, "member assignment value");
         if (!target || !value) {
             return;
         }
-        if (!isObject(*target)) {
+        if (target->isClassReference) {
+            const auto klass = classesByName_.find(target->className);
+            if (klass != classesByName_.end()) {
+                const auto property =
+                    klass->second.properties.find(instruction.operand);
+                if (property != klass->second.properties.end() &&
+                    property->second->constant) {
+                    addDiagnostic(instruction,
+                                  "constant property cannot be assigned: " +
+                                      propertyDisplayName(*property->second));
+                    return;
+                }
+            }
+            addDiagnostic(
+                instruction,
+                "class-qualified property assignment requires Constant, "
+                "which is read-only: " + target->className + "." +
+                    instruction.operand);
+            return;
+        }
+        if (!isObject(target->value)) {
             addDiagnostic(instruction,
                           "member assignment requires a class object target");
             return;
         }
 
-        RuntimeValue updated = *target;
+        RuntimeValue updated = target->value;
         const auto klass = classesByName_.find(updated.className);
         if (klass == classesByName_.end()) {
             addDiagnostic(instruction,
@@ -2200,20 +2680,97 @@ private:
                                            instruction.operand);
             return;
         }
-        const auto validated = validatePropertyValue(
-            instruction, *property->second, *value);
-        if (!validated) {
+
+        PropertyInfo& info = *property->second;
+        if (info.constant) {
+            addDiagnostic(instruction,
+                          "constant property cannot be assigned: " +
+                              propertyDisplayName(info));
             return;
         }
-        if (updated.handleObject && updated.sharedFields) {
-            (*updated.sharedFields)[instruction.operand] = *validated;
-        } else {
-            updated.fields[instruction.operand] = *validated;
+        if (!hasMemberAccess(info.setAccess, info.declaringClass)) {
+            addDiagnostic(instruction,
+                          "property set access is denied: " +
+                              propertyDisplayName(info));
+            return;
         }
         if (instruction.receiverName.empty()) {
             addDiagnostic(instruction,
                           "member assignment requires a direct variable target");
             return;
+        }
+
+        if (activePropertyWriter(info)) {
+            if (info.dependent) {
+                addDiagnostic(instruction,
+                              "dependent property cannot store a value: " +
+                                  propertyDisplayName(info));
+                return;
+            }
+            writeStoredProperty(updated, info, *value);
+            currentFrame()[instruction.receiverName] = updated;
+            recordAssignment(instruction, "member", updated);
+            return;
+        }
+
+        const auto validated = validatePropertyValue(
+            instruction, info, *value);
+        if (!validated) {
+            return;
+        }
+
+        if (info.abortSet) {
+            const auto current = invokePropertyGetter(instruction, updated, info);
+            if (!current) {
+                return;
+            }
+            if (runtimeEqual(*current, *validated)) {
+                currentFrame()[instruction.receiverName] = updated;
+                return;
+            }
+        }
+
+        if (!info.setterName.empty()) {
+            const auto owner = classesByName_.find(info.declaringClass);
+            if (owner == classesByName_.end() ||
+                !owner->second.declaredMethods.contains(info.setterName)) {
+                addDiagnostic(instruction,
+                              "property set method is not available: " +
+                                  propertyDisplayName(info));
+                return;
+            }
+            const auto& setter =
+                owner->second.declaredMethods.at(info.setterName);
+            const int requestedCount =
+                setter.signature.outputs.empty() ? 0 : 1;
+            const size_t diagnosticCount = diagnostics_.size();
+            auto outputs = callFunctionInfo(
+                instruction, info.declaringClass + "." + info.setterName,
+                setter, {updated, *validated}, requestedCount, std::nullopt,
+                nullptr, false);
+            if (diagnostics_.size() != diagnosticCount) {
+                return;
+            }
+            if (requestedCount == 1) {
+                if (outputs.empty() || !isObject(outputs.front()) ||
+                    !classDerivesFrom(outputs.front().className,
+                                      info.declaringClass)) {
+                    addDiagnostic(instruction,
+                                  "property set method did not return a "
+                                  "compatible object: " +
+                                      propertyDisplayName(info));
+                    return;
+                }
+                updated = outputs.front();
+            }
+        } else {
+            if (info.dependent) {
+                addDiagnostic(instruction,
+                              "dependent property has no set method: " +
+                                  propertyDisplayName(info));
+                return;
+            }
+            writeStoredProperty(updated, info, *validated);
         }
         currentFrame()[instruction.receiverName] = updated;
         recordAssignment(instruction, "member", updated);
@@ -2755,7 +3312,7 @@ private:
         const size_t diagnosticCount = diagnostics_.size();
         auto outputs = constructClass(instruction, instruction.operand,
                                       arguments, *active.construction, 1,
-                                      true);
+                                      true, active.className);
         if (diagnostics_.size() != diagnosticCount || outputs.empty()) {
             return;
         }
@@ -2829,6 +3386,13 @@ private:
         }
         const auto& method = superclass->second.declaredMethods.at(
             instruction.receiverName);
+        if (!hasMemberAccess(method.access, method.declaringClass)) {
+            addDiagnostic(instruction,
+                          "superclass method access is denied: " +
+                              instruction.operand + "." +
+                              instruction.receiverName);
+            return;
+        }
         auto outputs = callFunctionInfo(
             instruction,
             instruction.operand + "." + instruction.receiverName, method,
@@ -3469,6 +4033,9 @@ private:
         tryContextStack_.clear();
         returnRequested_ = false;
         frames_.push_back({});
+        activeClassFunctions_.push_back(ActiveClassFunction{
+            property.declaringClass,
+            "<property-default:" + property.name + ">", {}, nullptr});
 
         const size_t diagnosticCount = diagnostics_.size();
         executeFunctionBody(property.initializerEntry,
@@ -3484,6 +4051,7 @@ private:
             }
         }
 
+        activeClassFunctions_.pop_back();
         frames_.pop_back();
         stack_ = std::move(savedStack);
         forLoopStack_ = std::move(savedForLoops);
@@ -3529,11 +4097,16 @@ private:
     initializePropertyValues(const ClassInfo& klass) {
         std::map<std::string, RuntimeValue> values;
         for (const auto& property : klass.propertyOrder) {
+            if (property->dependent) {
+                continue;
+            }
             const auto value = propertyDefault(*property);
             if (!value) {
                 return std::nullopt;
             }
-            values[property->name] = *value;
+            if (!property->constant) {
+                values[property->name] = *value;
+            }
         }
         return values;
     }
@@ -3556,7 +4129,19 @@ private:
                           "bytecode call result count cannot be negative");
             return {};
         }
-
+        const std::string requestingClass =
+            activeClassFunctions_.empty()
+                ? std::string{}
+                : activeClassFunctions_.back().className;
+        if (const auto constructor =
+                klass->second.declaredMethods.find(className);
+            constructor != klass->second.declaredMethods.end() &&
+            !hasConstructorAccess(constructor->second.access, className,
+                                  requestingClass)) {
+            addDiagnostic(instruction,
+                          "constructor access is denied: " + className);
+            return missingOutputs(requestedCount);
+        }
         const auto properties = initializePropertyValues(klass->second);
         if (!properties) {
             return missingOutputs(requestedCount);
@@ -3565,14 +4150,14 @@ private:
         construction.object = objectValue(
             className, *properties, klass->second.handleClass);
         return constructClass(instruction, className, arguments, construction,
-                              requestedCount, false);
+                              requestedCount, false, requestingClass);
     }
 
     std::vector<RuntimeValue> constructClass(
         const BytecodeInstruction& instruction, const std::string& className,
         const std::vector<RuntimeValue>& arguments,
         ConstructionContext& construction, int requestedCount,
-        bool explicitCall) {
+        bool explicitCall, const std::string& requestingClass) {
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end()) {
             addDiagnostic(instruction, "class is not available: " + className);
@@ -3601,6 +4186,14 @@ private:
         }
 
         const auto constructor = klass->second.declaredMethods.find(className);
+        if (constructor != klass->second.declaredMethods.end() &&
+            !hasConstructorAccess(constructor->second.access, className,
+                                  requestingClass)) {
+            construction.activeClasses.erase(className);
+            addDiagnostic(instruction,
+                          "constructor access is denied: " + className);
+            return missingOutputs(requestedCount);
+        }
         if (constructor == klass->second.declaredMethods.end()) {
             bool passedArguments = false;
             for (const auto& superclassName : klass->second.superclasses) {
@@ -3612,7 +4205,7 @@ private:
                 passedArguments = true;
                 (void)constructClass(instruction, superclassName,
                                      superclassArguments, construction, 1,
-                                     false);
+                                     false, className);
                 if (!diagnostics_.empty()) {
                     construction.activeClasses.erase(className);
                     return missingOutputs(requestedCount);
@@ -3650,7 +4243,7 @@ private:
                 continue;
             }
             (void)constructClass(instruction, superclassName, {}, construction,
-                                 1, false);
+                                 1, false, className);
             if (diagnostics_.size() != diagnosticCount) {
                 construction.activeClasses.erase(className);
                 return missingOutputs(requestedCount);
@@ -3719,6 +4312,11 @@ private:
         const std::string declaringClass = method.declaringClass.empty()
                                                ? className
                                                : method.declaringClass;
+        if (!hasMemberAccess(method.access, declaringClass)) {
+            addDiagnostic(instruction, "method access is denied: " +
+                                          declaringClass + "." + methodName);
+            return missingOutputs(requestedCount);
+        }
         return callFunctionInfo(instruction,
                                 declaringClass + "." + methodName, method,
                                 callArguments, requestedCount, std::nullopt,

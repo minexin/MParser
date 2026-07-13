@@ -118,7 +118,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.28 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.29 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -283,13 +283,33 @@ text, comparison, and missing-value validators execute left to right. The same
 pipeline validates explicit and implicit defaults and direct member writes;
 failed validation leaves the object unchanged.
 
+Class member attributes are normalized into executable runtime descriptors.
+Property `Access`, `GetAccess`, and `SetAccess` select public, protected, or
+private visibility, with immutable writes restricted to the defining
+constructor. Method access applies to instance, static, constructor, and
+qualified superclass calls. Access checks use the currently executing method's
+declaring class, so inherited base implementations retain base privileges and
+subclass implementations receive protected access. Constructor checks also
+carry an explicit requesting class through implicit and explicit superclass
+construction.
+
+Constant properties have no per-instance field. Their explicit initializer
+uses the declaring-class context, enters the existing one-time property cache,
+and is available through class-qualified or object reads. Dependent properties
+also have no field; they bind qualified `get.Name` and `set.Name` function
+ranges during class resolution. Reads invoke getters, while writes validate
+before invoking setters. Active access methods bypass recursive dispatch for
+their own property. Value setters return the updated object; handle setters may
+mutate shared storage without an output. Handle-only `AbortSet` compares the
+current exposed value and skips an equal assignment.
+
 The VM intentionally still rejects cross-file/package superclass lookup,
 non-`handle` built-in superclass construction, full MATLAB property conversion,
 custom validators, validator set-membership/range functions, dimensions above
-two, non-scalar string arrays, access-control and
+two, non-scalar string arrays, class-list access policies, and
 `Abstract`/`Sealed`/`HandleCompatible` enforcement, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
-dependent properties, class methods as `CompiledModule` entry targets,
+class methods as `CompiledModule` entry targets,
 function-handle execution, dynamic function handles, automatic numeric-array
 growth, non-scalar right-hand-side indexed assignment shape matching, structs,
 sparse arrays, and complex values until the IR grows richer mutation, layout,
@@ -305,7 +325,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.28
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.29
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -347,9 +367,12 @@ dedicated superclass-call IR, semantic construction-order checks, explicit and
 implicit base construction, default constructor forwarding, one-time diamond
 initialization, and exact qualified base-method calls. v0.28 adds structured
 property metadata, executable class-level default caches, implicit defaults,
-class/size conversion, and ordered assignment validation. The next steps are
-access-aware class metadata,
-multidimensional and comma-separated-list Cell semantics, persistent code
+class/size conversion, and ordered assignment validation. v0.29 adds
+access-aware class metadata, constructor visibility, constant and dependent
+properties, qualified get/set dispatch, immutable construction, and
+handle-only `AbortSet`. The next steps are abstract/sealed class contracts,
+class-list access policies, multidimensional and comma-separated-list Cell
+semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.
 

@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.28.0. See [docs/v0.28.md](docs/v0.28.md) for the
+Current milestone: v0.29.0. See [docs/v0.29.md](docs/v0.29.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.27.md](docs/v0.27.md),
+iteration plan. Previous boundaries are kept in [docs/v0.28.md](docs/v0.28.md),
+[docs/v0.27.md](docs/v0.27.md),
 [docs/v0.26.md](docs/v0.26.md),
 [docs/v0.25.md](docs/v0.25.md),
 [docs/v0.24.md](docs/v0.24.md),
@@ -61,7 +62,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.28 executes the core numeric/string subset,
+expression operators. v0.29 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -161,6 +162,14 @@ copied into each object. The VM creates supported implicit defaults, performs
 class conversion before size adaptation and validators, and applies the same
 pipeline to later direct property assignments. Inherited declarations retain
 source order and common diamond properties keep one shared default cache.
+v0.29 executes class-member encapsulation. Property `Access`, `GetAccess`, and
+`SetAccess` enforce public, protected, private, and constructor-only immutable
+writes; method visibility also covers static methods and constructors.
+`Constant` properties use class-level cached values, while `Dependent`
+properties dispatch through qualified `get.Property` and `set.Property`
+methods without allocating fields. Validation runs before setters, recursive
+same-property access is suppressed, handle setters may omit outputs, and
+`AbortSet` skips runtime-equal handle assignments.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -373,6 +382,13 @@ scalar expansion, and class-level handle default caching with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\property_validation_demo.m
+```
+
+Run member access control, constants, immutable construction, and dependent
+property get/set dispatch with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\class_access_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:
