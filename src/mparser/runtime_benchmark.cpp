@@ -44,6 +44,19 @@ bool runtimeValuesEqual(const RuntimeValue& left,
             }
         }
         return true;
+    case RuntimeValueKind::Object:
+        if (left.className != right.className ||
+            left.fields.size() != right.fields.size()) {
+            return false;
+        }
+        for (const auto& [name, value] : left.fields) {
+            const auto other = right.fields.find(name);
+            if (other == right.fields.end() ||
+                !runtimeValuesEqual(value, other->second)) {
+                return false;
+            }
+        }
+        return true;
     }
     return false;
 }

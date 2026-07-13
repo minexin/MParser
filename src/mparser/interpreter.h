@@ -4,6 +4,7 @@
 #include "mparser/semantic.h"
 
 #include <cstddef>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,7 @@ enum class RuntimeValueKind {
     Vector,
     Matrix,
     Cell,
+    Object,
 };
 
 struct RuntimeValue {
@@ -24,6 +26,8 @@ struct RuntimeValue {
     std::string text;
     std::vector<double> elements;
     std::vector<RuntimeValue> cells;
+    std::string className;
+    std::map<std::string, RuntimeValue> fields;
     size_t rows = 0;
     size_t columns = 0;
 };

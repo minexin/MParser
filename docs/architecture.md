@@ -98,7 +98,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.23 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.24 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -201,8 +201,20 @@ expose only the requested output prefix, while the diagnostic frame snapshot
 retains all declared outputs and call-introspection variables. The HIR
 interpreter and all bytecode tiers share this contract.
 
-The VM intentionally still rejects classes, object dispatch, member assignment,
-function-handle execution, dynamic function handles, automatic numeric-array
+The VM also has an initial executable class object model. A class declaration
+registers its properties and method bytecode ranges; a constructor call creates
+an object with named fields and initializes its first declared output to that
+object. Direct `obj.Property` reads and direct variable-backed
+`obj.Property = value` writes are executable. Instance method calls receive the
+receiver as their first positional argument, while class-qualified calls are
+accepted only for methods declared in a `methods (Static)` block. Objects use
+the ordinary function-frame contract, so method inputs, outputs, `nargin`, and
+`nargout` retain the same runtime behavior as local functions.
+
+The VM intentionally still rejects inheritance, handle alias/reference
+semantics, access-control enforcement, events, enumerations, dependent
+properties, class methods as `CompiledModule` entry targets, function-handle
+execution, dynamic function handles, automatic numeric-array
 growth, non-scalar right-hand-side indexed assignment shape matching, structs,
 sparse arrays, and complex values until the IR grows richer mutation, layout,
 and dynamic dispatch conventions. Cell execution is deliberately limited to
@@ -217,7 +229,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.23
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.24
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -250,9 +262,10 @@ entry function, preserving unaffected specializations across invalidation.
 v0.22 adds requested-output semantics plus `nargin` and `nargout` across the
 interpreter, baseline, typed, adaptive, and module runtimes. v0.23 adds
 Cell-backed `varargin` and `varargout` through those same call boundaries. The
-next steps are multidimensional and comma-separated-list Cell semantics,
-persistent code caches, native lowering, and eventual on-stack replacement
-while preserving the same commit/fallback contract.
+v0.24 adds baseline object values and bytecode class dispatch. The next steps
+are multidimensional and comma-separated-list Cell semantics, object ownership
+and inheritance, persistent code caches, native lowering, and eventual
+on-stack replacement while preserving the same commit/fallback contract.
 
 When dynamic features invalidate assumptions, execution should deopt back to
 the interpreter. This is the path that keeps full MATLAB semantics compatible

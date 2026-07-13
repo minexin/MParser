@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.23.0. See [docs/v0.23.md](docs/v0.23.md) for the
+Current milestone: v0.24.0. See [docs/v0.24.md](docs/v0.24.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.22.md](docs/v0.22.md),
+iteration plan. Previous boundaries are kept in [docs/v0.23.md](docs/v0.23.md),
+[docs/v0.22.md](docs/v0.22.md),
 [docs/v0.21.md](docs/v0.21.md),
 [docs/v0.20.md](docs/v0.20.md),
 [docs/v0.19.md](docs/v0.19.md),
@@ -55,7 +56,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.23 executes the core numeric/string subset,
+expression operators. v0.24 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -117,6 +118,12 @@ assignment, `varargin`, and `varargout`. Excess positional inputs are collected
 in a Cell; excess requested outputs are read from `varargout{n}`. The same
 contract is shared by the HIR interpreter's local calls, the bytecode VM, typed
 execution, adaptive sessions, compiled modules, and the module runtime.
+
+v0.24 makes a focused subset of the existing class frontend executable in the
+bytecode VM: class objects own named scalar runtime fields, constructors
+initialize objects through their regular function frame, direct property reads
+and writes work, instance methods receive the object as their first argument,
+and methods declared in `methods (Static)` can be called through the class.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -296,6 +303,12 @@ Run a variadic function using Cell-backed `varargin` and `varargout` with:
 build\mparser.exe --run-bytecode `
   --entry-function=cell_varargs_demo --argument=1 --argument=2 --argument=3 `
   --outputs=4 samples\cell_varargs_demo.m
+```
+
+Run the executable class subset with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\class_runtime_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:

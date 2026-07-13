@@ -483,6 +483,7 @@ private:
         node->label = syntax.label;
         node->raw = syntax.raw;
         node->span = syntax.span;
+        node->attributes = syntax.attributes;
         return node;
     }
 

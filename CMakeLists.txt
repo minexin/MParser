@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.23.0 LANGUAGES CXX)
+project(MParser VERSION 0.24.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -109,6 +109,10 @@ add_test(NAME function_call_contract_smoke
 add_executable(cell_varargs_smoke_tests tests/cell_varargs_smoke.cpp)
 target_link_libraries(cell_varargs_smoke_tests PRIVATE mparser_core)
 add_test(NAME cell_varargs_smoke COMMAND cell_varargs_smoke_tests)
+
+add_executable(class_runtime_smoke_tests tests/class_runtime_smoke.cpp)
+target_link_libraries(class_runtime_smoke_tests PRIVATE mparser_core)
+add_test(NAME class_runtime_smoke COMMAND class_runtime_smoke_tests)
 
 add_executable(interpreter_smoke_tests tests/interpreter_smoke.cpp)
 target_link_libraries(interpreter_smoke_tests PRIVATE mparser_core)

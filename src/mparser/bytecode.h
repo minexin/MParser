@@ -59,6 +59,7 @@ enum class BytecodeOp {
 struct BytecodeInstruction {
     BytecodeOp op = BytecodeOp::Unknown;
     std::string operand;
+    std::string receiverName;
     BindingRef binding;
     SourceSpan span;
     int operandCount = 0;

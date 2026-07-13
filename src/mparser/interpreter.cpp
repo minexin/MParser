@@ -141,6 +141,21 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         }
         return true;
     }
+    if (left.kind == RuntimeValueKind::Object &&
+        right.kind == RuntimeValueKind::Object) {
+        if (left.className != right.className ||
+            left.fields.size() != right.fields.size()) {
+            return false;
+        }
+        for (const auto& [name, value] : left.fields) {
+            const auto other = right.fields.find(name);
+            if (other == right.fields.end() ||
+                !runtimeEqual(value, other->second)) {
+                return false;
+            }
+        }
+        return true;
+    }
     return false;
 }
 
@@ -2400,6 +2415,9 @@ std::string runtimeValueToString(const RuntimeValue& value) {
             output << runtimeValueToString(value.cells[index]);
         }
         output << "}";
+        return output.str();
+    case RuntimeValueKind::Object:
+        output << "<" << value.className << ">";
         return output.str();
     }
     return "<missing>";

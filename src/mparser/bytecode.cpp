@@ -29,7 +29,7 @@ private:
     size_t emit(BytecodeOp op, const HirNode& node, int operandCount = 0,
                 int target = -1, int resultCount = 1) {
         program_.instructions.push_back(BytecodeInstruction{
-            op, node.label.empty() ? node.raw : node.label, node.binding,
+            op, node.label.empty() ? node.raw : node.label, {}, node.binding,
             node.span, operandCount, target, resultCount});
         return program_.instructions.size() - 1;
     }
@@ -542,7 +542,15 @@ private:
             if (!node.children.empty()) {
                 lowerNode(*node.children.front());
             }
-            emit(BytecodeOp::StoreMember, node, childCount(node));
+            {
+                const size_t store =
+                    emit(BytecodeOp::StoreMember, node, childCount(node));
+                if (!node.children.empty() &&
+                    node.children.front()->kind == HirKind::NameRef) {
+                    program_.instructions[store].receiverName =
+                        node.children.front()->label;
+                }
+            }
             break;
         case HirKind::CallOrIndex:
             if (node.children.empty()) {

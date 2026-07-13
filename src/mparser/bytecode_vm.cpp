@@ -91,6 +91,21 @@ bool isCell(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Cell;
 }
 
+bool isObject(const RuntimeValue& value) {
+    return value.kind == RuntimeValueKind::Object;
+}
+
+RuntimeValue objectValue(std::string className,
+                         std::map<std::string, RuntimeValue> fields) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::Object;
+    result.className = std::move(className);
+    result.fields = std::move(fields);
+    result.rows = 1;
+    result.columns = 1;
+    return result;
+}
+
 bool isArray(const RuntimeValue& value) {
     return isVector(value) || isMatrix(value);
 }
@@ -127,6 +142,8 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "matrix";
     case RuntimeValueKind::Cell:
         return "cell";
+    case RuntimeValueKind::Object:
+        return "object";
     }
     return "unknown";
 }
@@ -290,6 +307,20 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         }
         return true;
     }
+    if (isObject(left) && isObject(right)) {
+        if (left.className != right.className ||
+            left.fields.size() != right.fields.size()) {
+            return false;
+        }
+        for (const auto& [name, value] : left.fields) {
+            const auto other = right.fields.find(name);
+            if (other == right.fields.end() ||
+                !runtimeEqual(value, other->second)) {
+                return false;
+            }
+        }
+        return true;
+    }
     return false;
 }
 
@@ -299,6 +330,12 @@ struct StackValue {
     std::string builtinName;
     bool isFunctionReference = false;
     std::string functionName;
+    bool isClassReference = false;
+    std::string className;
+    bool isMethodReference = false;
+    std::string methodClassName;
+    std::string methodName;
+    std::optional<RuntimeValue> receiver;
 };
 
 struct ForLoopState {
@@ -337,6 +374,13 @@ struct FunctionInfo {
     SourceSpan span;
 };
 
+struct ClassInfo {
+    std::string name;
+    std::map<std::string, RuntimeValue> properties;
+    std::map<std::string, FunctionInfo> methods;
+    std::map<std::string, bool> staticMethods;
+};
+
 struct ActiveTypedLoopRegion {
     size_t regionId = 0;
     std::string kind;
@@ -361,6 +405,23 @@ StackValue functionStackValue(std::string name) {
     StackValue result;
     result.isFunctionReference = true;
     result.functionName = std::move(name);
+    return result;
+}
+
+StackValue classStackValue(std::string name) {
+    StackValue result;
+    result.isClassReference = true;
+    result.className = std::move(name);
+    return result;
+}
+
+StackValue methodStackValue(std::string className, std::string methodName,
+                            std::optional<RuntimeValue> receiver = std::nullopt) {
+    StackValue result;
+    result.isMethodReference = true;
+    result.methodClassName = std::move(className);
+    result.methodName = std::move(methodName);
+    result.receiver = std::move(receiver);
     return result;
 }
 
@@ -438,7 +499,7 @@ public:
         frames_.push_back({});
         resetProfiling(program.instructions.size());
         initializeWorkspace(options.initialWorkspace);
-        collectFunctionNodes(semantic.root.get(), false);
+        collectFunctionNodes(semantic.root.get());
         collectFunctionRanges(program);
         collectTypedRegions(typedIr);
 
@@ -733,24 +794,54 @@ private:
         observeValue(profile.valueObservation, value);
     }
 
-    void collectFunctionNodes(const HirNode* node, bool inClass) {
+    void collectFunctionNodes(const HirNode* node, std::string className = {},
+                              bool staticMethodBlock = false) {
         if (!node) {
             return;
         }
 
-        const bool childInClass = inClass || node->kind == HirKind::Class;
-        if (!inClass && node->kind == HirKind::Function) {
-            functionNodes_[node->label] = node;
+        if (node->kind == HirKind::Class) {
+            className = node->label;
+            auto& info = classesByName_[className];
+            info.name = className;
+        }
+        if (node->kind == HirKind::Property && !className.empty()) {
+            classesByName_[className].properties[node->label] = missingValue();
+        }
+        for (const auto& attribute : node->attributes) {
+            if (attribute.name == "Static") {
+                staticMethodBlock = !attribute.negated;
+            }
+        }
+        if (node->kind == HirKind::Function) {
+            if (className.empty()) {
+                functionNodes_[node->label] = node;
+            } else {
+                classFunctionNodes_[className + "." + node->label] = node;
+                classesByName_[className].staticMethods[node->label] =
+                    staticMethodBlock;
+            }
         }
 
         for (const auto& child : node->children) {
-            collectFunctionNodes(child.get(), childInClass);
+            collectFunctionNodes(child.get(), className, staticMethodBlock);
         }
     }
 
     void collectFunctionRanges(const BytecodeProgram& program) {
+        std::vector<std::string> classStack;
         for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
             const auto& instruction = program.instructions[pc];
+            if (instruction.op == BytecodeOp::EnterClass) {
+                classStack.push_back(instruction.operand);
+                continue;
+            }
+            if (instruction.op == BytecodeOp::LeaveClass) {
+                if (!classStack.empty()) {
+                    classStack.pop_back();
+                }
+                continue;
+            }
             if (instruction.op != BytecodeOp::EnterFunction) {
                 continue;
             }
@@ -780,11 +871,21 @@ private:
             info.entry = pc + 1;
             info.end = end;
             info.span = instruction.span;
-            if (const auto hir = functionNodes_.find(info.name);
-                hir != functionNodes_.end()) {
-                info.signature = parseFunctionSignature(*hir->second);
+            if (classStack.empty()) {
+                if (const auto hir = functionNodes_.find(info.name);
+                    hir != functionNodes_.end()) {
+                    info.signature = parseFunctionSignature(*hir->second);
+                }
+                functionsByName_[info.name] = std::move(info);
+            } else {
+                const std::string key = classStack.back() + "." + info.name;
+                if (const auto hir = classFunctionNodes_.find(key);
+                    hir != classFunctionNodes_.end()) {
+                    info.signature = parseFunctionSignature(*hir->second);
+                }
+                classesByName_[classStack.back()].methods[info.name] =
+                    std::move(info);
             }
-            functionsByName_[info.name] = std::move(info);
             pc = end;
         }
     }
@@ -1102,6 +1203,9 @@ private:
         case BytecodeOp::StoreName:
             storeName(instruction);
             break;
+        case BytecodeOp::StoreMember:
+            storeMember(instruction);
+            break;
         case BytecodeOp::StoreIndex:
             storeIndex(instruction);
             break;
@@ -1125,6 +1229,9 @@ private:
             break;
         case BytecodeOp::MakeCell:
             makeCell(instruction);
+            break;
+        case BytecodeOp::MemberAccess:
+            memberAccess(instruction);
             break;
         case BytecodeOp::CallOrIndex:
             callOrIndex(instruction);
@@ -1178,8 +1285,6 @@ private:
         case BytecodeOp::ControlArm:
         case BytecodeOp::LeaveControl:
             break;
-        case BytecodeOp::StoreMember:
-        case BytecodeOp::MemberAccess:
         case BytecodeOp::MakeFunctionHandle:
         case BytecodeOp::LoadMetaClass:
         case BytecodeOp::EnterModule:
@@ -1497,9 +1602,10 @@ private:
             return;
         }
         const StackValue& target = stack_.back();
-        if (target.isBuiltinReference || target.isFunctionReference) {
-            addDiagnostic(instruction,
-                          "bytecode index context requires a runtime target");
+        if (target.isBuiltinReference || target.isFunctionReference ||
+            target.isClassReference || target.isMethodReference) {
+            indexContextStack_.push_back(IndexContext{
+                missingValue(), static_cast<size_t>(instruction.operandCount), 0});
             return;
         }
         if (!isNumeric(target.value)) {
@@ -1612,6 +1718,11 @@ private:
             return;
         }
 
+        if (classesByName_.contains(instruction.operand)) {
+            stack_.push_back(classStackValue(instruction.operand));
+            return;
+        }
+
         addDiagnostic(instruction,
                       "unknown bytecode runtime variable: " +
                           instruction.operand);
@@ -1648,6 +1759,71 @@ private:
         }
         currentFrame()[instruction.operand] = *value;
         recordAssignment(instruction, "name", *value);
+    }
+
+    void memberAccess(const BytecodeInstruction& instruction) {
+        const auto target = popStackValue(instruction, "member access target");
+        if (!target) {
+            return;
+        }
+        if (target->isClassReference) {
+            const auto klass = classesByName_.find(target->className);
+            if (klass == classesByName_.end() ||
+                !klass->second.methods.contains(instruction.operand) ||
+                !klass->second.staticMethods[instruction.operand]) {
+                addDiagnostic(instruction, "class method is not available: " +
+                                              target->className + "." +
+                                              instruction.operand);
+                return;
+            }
+            stack_.push_back(methodStackValue(target->className,
+                                               instruction.operand));
+            return;
+        }
+        if (!isObject(target->value)) {
+            addDiagnostic(instruction,
+                          "member access requires a class object target");
+            return;
+        }
+        if (const auto field = target->value.fields.find(instruction.operand);
+            field != target->value.fields.end()) {
+            stack_.push_back(runtimeStackValue(field->second));
+            return;
+        }
+        const auto klass = classesByName_.find(target->value.className);
+        if (klass != classesByName_.end() &&
+            klass->second.methods.contains(instruction.operand)) {
+            stack_.push_back(methodStackValue(target->value.className,
+                                               instruction.operand,
+                                               target->value));
+            return;
+        }
+        addDiagnostic(instruction, "class member is not available: " +
+                                      target->value.className + "." +
+                                      instruction.operand);
+    }
+
+    void storeMember(const BytecodeInstruction& instruction) {
+        const auto target = popRuntime(instruction, "member assignment target");
+        const auto value = popRuntime(instruction, "member assignment value");
+        if (!target || !value) {
+            return;
+        }
+        if (!isObject(*target)) {
+            addDiagnostic(instruction,
+                          "member assignment requires a class object target");
+            return;
+        }
+
+        RuntimeValue updated = *target;
+        updated.fields[instruction.operand] = *value;
+        if (instruction.receiverName.empty()) {
+            addDiagnostic(instruction,
+                          "member assignment requires a direct variable target");
+            return;
+        }
+        currentFrame()[instruction.receiverName] = updated;
+        recordAssignment(instruction, "member", updated);
     }
 
     void storeIndex(const BytecodeInstruction& instruction) {
@@ -2023,6 +2199,24 @@ private:
             return;
         }
 
+        if (callee->isClassReference) {
+            auto outputs = callClassConstructor(instruction, callee->className,
+                                                *arguments,
+                                                instruction.resultCount);
+            finishIndexContext();
+            pushOutputValues(instruction, outputs);
+            return;
+        }
+
+        if (callee->isMethodReference) {
+            auto outputs = callClassMethod(instruction, callee->methodClassName,
+                                           callee->methodName, callee->receiver,
+                                           *arguments, instruction.resultCount);
+            finishIndexContext();
+            pushOutputValues(instruction, outputs);
+            return;
+        }
+
         if (instruction.binding.kind == BindingKind::Function ||
             callee->isFunctionReference) {
             const std::string name = symbolName(instruction.binding)
@@ -2145,7 +2339,62 @@ private:
             return missingOutputs(requestedCount);
         }
 
-        const FunctionInfo& info = function->second;
+        return callFunctionInfo(instruction, name, function->second, arguments,
+                                requestedCount, std::nullopt);
+    }
+
+    std::vector<RuntimeValue> callClassConstructor(
+        const BytecodeInstruction& instruction, const std::string& className,
+        const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end()) {
+            addDiagnostic(instruction, "class is not available: " + className);
+            return missingOutputs(requestedCount);
+        }
+        const RuntimeValue object = objectValue(className, klass->second.properties);
+        const auto constructor = klass->second.methods.find(className);
+        if (constructor == klass->second.methods.end()) {
+            if (!arguments.empty()) {
+                addDiagnostic(instruction,
+                              "class has no constructor arguments: " + className);
+                return missingOutputs(requestedCount);
+            }
+            return {object};
+        }
+        return callFunctionInfo(instruction, className, constructor->second,
+                                arguments, requestedCount, object);
+    }
+
+    std::vector<RuntimeValue> callClassMethod(
+        const BytecodeInstruction& instruction, const std::string& className,
+        const std::string& methodName, const std::optional<RuntimeValue>& receiver,
+        const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end() ||
+            !klass->second.methods.contains(methodName)) {
+            addDiagnostic(instruction, "class method is not available: " +
+                                          className + "." + methodName);
+            return missingOutputs(requestedCount);
+        }
+        std::vector<RuntimeValue> callArguments = arguments;
+        if (receiver) {
+            callArguments.insert(callArguments.begin(), *receiver);
+        }
+        return callFunctionInfo(instruction, className + "." + methodName,
+                                klass->second.methods.at(methodName),
+                                callArguments, requestedCount, std::nullopt);
+    }
+
+    std::vector<RuntimeValue> callFunctionInfo(
+        const BytecodeInstruction& instruction, const std::string& name,
+        const FunctionInfo& info, const std::vector<RuntimeValue>& arguments,
+        int requestedCount, std::optional<RuntimeValue> constructorObject) {
+        if (requestedCount < 1) {
+            addDiagnostic(instruction,
+                          "bytecode call result count must be positive");
+            return {};
+        }
+
         if (arguments.size() < info.signature.parameters.size() ||
             (!info.signature.hasVarargin &&
              arguments.size() != info.signature.parameters.size())) {
@@ -2174,6 +2423,9 @@ private:
         frames_.push_back({});
         initializeFunctionFrame(info.signature, arguments,
                                 static_cast<size_t>(requestedCount));
+        if (constructorObject && !info.signature.outputs.empty()) {
+            currentFrame()[info.signature.outputs.front()] = *constructorObject;
+        }
 
         enterFunctionProfile(name, info.span);
         executeFunctionBody(info.entry, info.end);
@@ -2805,7 +3057,9 @@ private:
     std::vector<TryContext> tryContextStack_;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
     std::map<std::string, const HirNode*> functionNodes_;
+    std::map<std::string, const HirNode*> classFunctionNodes_;
     std::map<std::string, FunctionInfo> functionsByName_;
+    std::map<std::string, ClassInfo> classesByName_;
     std::vector<Diagnostic> diagnostics_;
     std::vector<size_t> instructionExecutionCounts_;
     std::map<std::string, BytecodeFunctionProfile> functionProfiles_;
