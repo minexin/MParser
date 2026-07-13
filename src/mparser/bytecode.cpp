@@ -125,7 +125,6 @@ private:
         case HirKind::OutputList:
         case HirKind::ParameterList:
         case HirKind::MethodPrototype:
-        case HirKind::Property:
         case HirKind::Statement:
             if (lowerControlStatement(node)) {
                 break;
@@ -137,6 +136,12 @@ private:
                 break;
             }
             lowerChildren(node);
+            break;
+        case HirKind::Property:
+            if (node.property.hasExplicitDefault) {
+                emitBlock(BytecodeOp::EnterPropertyInitializer,
+                          BytecodeOp::LeavePropertyInitializer, node);
+            }
             break;
         case HirKind::Unknown:
             lowerChildren(node);
@@ -636,6 +641,10 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "EnterClass";
     case BytecodeOp::LeaveClass:
         return "LeaveClass";
+    case BytecodeOp::EnterPropertyInitializer:
+        return "EnterPropertyInitializer";
+    case BytecodeOp::LeavePropertyInitializer:
+        return "LeavePropertyInitializer";
     case BytecodeOp::EnterFunction:
         return "EnterFunction";
     case BytecodeOp::LeaveFunction:

@@ -37,6 +37,35 @@ void dumpAttributes(std::ostream& output,
     output << "]";
 }
 
+void dumpPropertySpec(std::ostream& output, const PropertySpec& property) {
+    if (!property.dimensions.empty()) {
+        output << " size=(";
+        for (size_t index = 0; index < property.dimensions.size(); ++index) {
+            if (index != 0) {
+                output << ",";
+            }
+            output << property.dimensions[index].text;
+        }
+        output << ")";
+    }
+    if (!property.className.empty()) {
+        output << " type=" << property.className;
+    }
+    if (!property.validators.empty()) {
+        output << " validators={";
+        for (size_t index = 0; index < property.validators.size(); ++index) {
+            if (index != 0) {
+                output << ",";
+            }
+            output << property.validators[index].raw;
+        }
+        output << "}";
+    }
+    if (property.hasExplicitDefault) {
+        output << " default=explicit";
+    }
+}
+
 void dumpNode(std::ostream& output, const SyntaxNode& node, int depth) {
     indent(output, depth);
     output << syntaxKindName(node.kind);
@@ -44,6 +73,9 @@ void dumpNode(std::ostream& output, const SyntaxNode& node, int depth) {
         output << " " << node.label;
     }
     dumpAttributes(output, node.attributes);
+    if (node.kind == SyntaxKind::PropertyDecl) {
+        dumpPropertySpec(output, node.property);
+    }
     if (!node.raw.empty()) {
         output << " raw=\"" << node.raw << "\"";
     }

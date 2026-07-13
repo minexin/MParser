@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.27.0 LANGUAGES CXX)
+project(MParser VERSION 0.28.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -128,6 +128,12 @@ add_executable(superclass_construction_smoke_tests
 target_link_libraries(superclass_construction_smoke_tests PRIVATE mparser_core)
 add_test(NAME superclass_construction_smoke
     COMMAND superclass_construction_smoke_tests)
+
+add_executable(property_validation_smoke_tests
+    tests/property_validation_smoke.cpp)
+target_link_libraries(property_validation_smoke_tests PRIVATE mparser_core)
+add_test(NAME property_validation_smoke
+    COMMAND property_validation_smoke_tests)
 
 add_executable(interpreter_smoke_tests tests/interpreter_smoke.cpp)
 target_link_libraries(interpreter_smoke_tests PRIVATE mparser_core)

@@ -1,7 +1,9 @@
 #include "mparser/parser.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <sstream>
 #include <utility>
 
@@ -691,6 +693,260 @@ std::vector<std::vector<Token>> splitTopLevel(
     return parts;
 }
 
+std::vector<std::vector<Token>> splitTopLevelCommas(
+    const std::vector<Token>& tokens) {
+    std::vector<std::vector<Token>> parts;
+    std::vector<Token> currentPart;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+
+    for (const auto& token : tokens) {
+        if (token.kind == TokenKind::Comma &&
+            atTopLevel(parenDepth, bracketDepth, braceDepth)) {
+            parts.push_back(std::move(currentPart));
+            currentPart = {};
+            continue;
+        }
+
+        updateDepth(token.kind, parenDepth, bracketDepth, braceDepth);
+        currentPart.push_back(token);
+    }
+
+    parts.push_back(std::move(currentPart));
+    return parts;
+}
+
+struct PropertyParseDiagnostic {
+    SourceSpan span;
+    std::string message;
+};
+
+struct PropertyDeclarationParseResult {
+    std::string label;
+    PropertySpec spec;
+    std::vector<Token> defaultTokens;
+    std::vector<PropertyParseDiagnostic> diagnostics;
+};
+
+std::vector<Token> removeEllipses(const std::vector<Token>& tokens) {
+    std::vector<Token> result;
+    result.reserve(tokens.size());
+    for (const auto& token : tokens) {
+        if (token.kind != TokenKind::Ellipsis) {
+            result.push_back(token);
+        }
+    }
+    return result;
+}
+
+size_t findMatchingDelimiter(const std::vector<Token>& tokens, size_t begin,
+                             TokenKind open, TokenKind close) {
+    int depth = 0;
+    for (size_t index = begin; index < tokens.size(); ++index) {
+        if (tokens[index].kind == open) {
+            ++depth;
+        } else if (tokens[index].kind == close) {
+            --depth;
+            if (depth == 0) {
+                return index;
+            }
+        }
+    }
+    return tokens.size();
+}
+
+std::pair<std::string, size_t> parseDottedName(
+    const std::vector<Token>& tokens, size_t begin) {
+    if (begin >= tokens.size() ||
+        tokens[begin].kind != TokenKind::Identifier) {
+        return {{}, begin};
+    }
+
+    size_t end = begin + 1;
+    while (end + 1 < tokens.size() &&
+           tokens[end].kind == TokenKind::Dot &&
+           tokens[end + 1].kind == TokenKind::Identifier) {
+        end += 2;
+    }
+    std::string name;
+    for (size_t index = begin; index < end; ++index) {
+        name += tokens[index].text;
+    }
+    return {std::move(name), end};
+}
+
+bool isPositiveIntegerDimension(const std::vector<Token>& tokens) {
+    if (tokens.size() != 1 || tokens.front().kind != TokenKind::Number) {
+        return false;
+    }
+    char* end = nullptr;
+    const double value = std::strtod(tokens.front().text.c_str(), &end);
+    return end != tokens.front().text.c_str() && *end == '\0' &&
+           std::isfinite(value) && value > 0.0 && std::floor(value) == value;
+}
+
+PropertyValidatorSpec parsePropertyValidator(
+    const std::vector<Token>& tokens,
+    std::vector<PropertyParseDiagnostic>& diagnostics) {
+    PropertyValidatorSpec validator;
+    if (tokens.empty()) {
+        diagnostics.push_back(
+            {SourceSpan{}, "expected property validation function"});
+        return validator;
+    }
+
+    validator.raw = trimAsciiWhitespace(joinTokenTexts(tokens));
+    validator.span = spanFromTokens(tokens);
+    const auto [name, nameEnd] = parseDottedName(tokens, 0);
+    validator.name = name;
+    if (name.empty()) {
+        diagnostics.push_back(
+            {validator.span, "expected property validation function name"});
+        return validator;
+    }
+    if (nameEnd == tokens.size()) {
+        return validator;
+    }
+    if (tokens[nameEnd].kind != TokenKind::LParen) {
+        diagnostics.push_back(
+            {validator.span, "unexpected tokens after property validator"});
+        return validator;
+    }
+
+    const size_t close = findMatchingDelimiter(
+        tokens, nameEnd, TokenKind::LParen, TokenKind::RParen);
+    if (close == tokens.size() || close + 1 != tokens.size()) {
+        diagnostics.push_back(
+            {validator.span, "malformed property validator arguments"});
+        return validator;
+    }
+
+    const std::vector<Token> arguments(
+        tokens.begin() + static_cast<std::ptrdiff_t>(nameEnd + 1),
+        tokens.begin() + static_cast<std::ptrdiff_t>(close));
+    if (arguments.empty()) {
+        return validator;
+    }
+    for (const auto& argument : splitTopLevelCommas(arguments)) {
+        if (argument.empty()) {
+            diagnostics.push_back(
+                {validator.span, "empty property validator argument"});
+            continue;
+        }
+        validator.arguments.push_back(
+            trimAsciiWhitespace(joinTokenTexts(argument)));
+    }
+    return validator;
+}
+
+PropertyDeclarationParseResult parsePropertyDeclarationTokens(
+    const std::vector<Token>& sourceTokens) {
+    PropertyDeclarationParseResult result;
+    const std::vector<Token> tokens = removeEllipses(sourceTokens);
+    if (tokens.empty()) {
+        result.diagnostics.push_back(
+            {spanFromTokens(sourceTokens), "expected property declaration"});
+        return result;
+    }
+    if (tokens.front().kind != TokenKind::Identifier) {
+        result.diagnostics.push_back(
+            {tokens.front().span, "expected property name"});
+        return result;
+    }
+
+    result.label = tokens.front().text;
+    size_t cursor = 1;
+
+    if (cursor < tokens.size() &&
+        tokens[cursor].kind == TokenKind::LParen) {
+        const size_t close = findMatchingDelimiter(
+            tokens, cursor, TokenKind::LParen, TokenKind::RParen);
+        if (close == tokens.size()) {
+            result.diagnostics.push_back(
+                {tokens[cursor].span, "unterminated property size declaration"});
+            return result;
+        }
+
+        const std::vector<Token> dimensions(
+            tokens.begin() + static_cast<std::ptrdiff_t>(cursor + 1),
+            tokens.begin() + static_cast<std::ptrdiff_t>(close));
+        if (dimensions.empty()) {
+            result.diagnostics.push_back(
+                {tokens[cursor].span, "property size declaration is empty"});
+        }
+        for (const auto& dimension : splitTopLevelCommas(dimensions)) {
+            PropertyDimensionSpec spec;
+            spec.text = trimAsciiWhitespace(joinTokenTexts(dimension));
+            spec.span = spanFromTokens(dimension);
+            if (dimension.empty() ||
+                !(dimension.size() == 1 &&
+                  dimension.front().kind == TokenKind::Colon) &&
+                    !isPositiveIntegerDimension(dimension)) {
+                result.diagnostics.push_back(
+                    {spec.span,
+                     "property dimensions must be positive integers or ':'"});
+            }
+            result.spec.dimensions.push_back(std::move(spec));
+        }
+        cursor = close + 1;
+    }
+
+    if (cursor < tokens.size() &&
+        tokens[cursor].kind == TokenKind::Identifier) {
+        const size_t classBegin = cursor;
+        auto [className, classEnd] = parseDottedName(tokens, cursor);
+        result.spec.className = std::move(className);
+        result.spec.classSpan = mergeSpans(tokens[classBegin].span,
+                                           tokens[classEnd - 1].span);
+        cursor = classEnd;
+    }
+
+    if (cursor < tokens.size() &&
+        tokens[cursor].kind == TokenKind::LBrace) {
+        const size_t close = findMatchingDelimiter(
+            tokens, cursor, TokenKind::LBrace, TokenKind::RBrace);
+        if (close == tokens.size()) {
+            result.diagnostics.push_back(
+                {tokens[cursor].span,
+                 "unterminated property validation declaration"});
+            return result;
+        }
+        const std::vector<Token> validators(
+            tokens.begin() + static_cast<std::ptrdiff_t>(cursor + 1),
+            tokens.begin() + static_cast<std::ptrdiff_t>(close));
+        if (validators.empty()) {
+            result.diagnostics.push_back(
+                {tokens[cursor].span,
+                 "property validation declaration is empty"});
+        }
+        for (const auto& validator : splitTopLevelCommas(validators)) {
+            result.spec.validators.push_back(
+                parsePropertyValidator(validator, result.diagnostics));
+        }
+        cursor = close + 1;
+    }
+
+    if (cursor < tokens.size() && tokens[cursor].kind == TokenKind::Equal) {
+        result.spec.hasExplicitDefault = true;
+        ++cursor;
+        result.defaultTokens.assign(
+            tokens.begin() + static_cast<std::ptrdiff_t>(cursor), tokens.end());
+        if (result.defaultTokens.empty()) {
+            result.diagnostics.push_back(
+                {tokens[cursor - 1].span,
+                 "expected property default expression after '='"});
+        }
+        cursor = tokens.size();
+    }
+
+    if (cursor < tokens.size()) {
+        result.diagnostics.push_back(
+            {tokens[cursor].span, "unexpected tokens in property declaration"});
+    }
+    return result;
+}
+
 bool isBracketedOutputList(const std::vector<Token>& tokens) {
     return tokens.size() >= 2 && tokens.front().kind == TokenKind::LBracket &&
            tokens.back().kind == TokenKind::RBracket;
@@ -1001,7 +1257,28 @@ std::unique_ptr<SyntaxNode> Parser::parsePropertiesBlock() {
         auto declaration = makeNode(SyntaxKind::PropertyDecl, current().span.begin);
         const auto tokens = collectUntilSeparator();
         declaration->raw = joinTokens(tokens);
-        declaration->label = firstIdentifier(tokens);
+        declaration->attributes = node->attributes;
+        auto parsed = parsePropertyDeclarationTokens(tokens);
+        declaration->label = std::move(parsed.label);
+        declaration->property = std::move(parsed.spec);
+        for (auto& diagnostic : parsed.diagnostics) {
+            diagnostics_.push_back(
+                Diagnostic{diagnostic.span, std::move(diagnostic.message)});
+        }
+        if (declaration->property.hasExplicitDefault &&
+            !parsed.defaultTokens.empty()) {
+            auto expression = parseExpressionTokens(parsed.defaultTokens);
+            if (expression.root && expression.consumedAll) {
+                declaration->children.push_back(std::move(expression.root));
+            } else {
+                diagnostics_.push_back(Diagnostic{
+                    spanFromTokens(parsed.defaultTokens),
+                    "unable to parse property default expression"});
+                if (expression.root) {
+                    declaration->children.push_back(std::move(expression.root));
+                }
+            }
+        }
         consumeSeparator();
         finishNode(*declaration);
         node->children.push_back(std::move(declaration));

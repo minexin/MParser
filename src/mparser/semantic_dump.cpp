@@ -26,6 +26,35 @@ const SemanticSymbol* symbolForBinding(const SemanticResult& result,
     return &result.symbols[index];
 }
 
+void dumpPropertySpec(std::ostream& output, const PropertySpec& property) {
+    if (!property.dimensions.empty()) {
+        output << " size=(";
+        for (size_t index = 0; index < property.dimensions.size(); ++index) {
+            if (index != 0) {
+                output << ",";
+            }
+            output << property.dimensions[index].text;
+        }
+        output << ")";
+    }
+    if (!property.className.empty()) {
+        output << " type=" << property.className;
+    }
+    if (!property.validators.empty()) {
+        output << " validators={";
+        for (size_t index = 0; index < property.validators.size(); ++index) {
+            if (index != 0) {
+                output << ",";
+            }
+            output << property.validators[index].raw;
+        }
+        output << "}";
+    }
+    if (property.hasExplicitDefault) {
+        output << " default=explicit";
+    }
+}
+
 void dumpNode(std::ostream& output, const SemanticResult& result,
               const HirNode& node, int depth) {
     indent(output, depth);
@@ -42,6 +71,9 @@ void dumpNode(std::ostream& output, const SemanticResult& result,
             output << node.superclasses[index];
         }
         output << "]";
+    }
+    if (node.kind == HirKind::Property) {
+        dumpPropertySpec(output, node.property);
     }
     if (!node.raw.empty()) {
         output << " raw=\"" << node.raw << "\"";

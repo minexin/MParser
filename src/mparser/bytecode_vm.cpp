@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -69,6 +70,14 @@ RuntimeValue cellValue(std::vector<RuntimeValue> values) {
     result.cells = std::move(values);
     result.rows = 1;
     result.columns = result.cells.size();
+    return result;
+}
+
+RuntimeValue cellValueForShape(size_t rows, size_t columns,
+                               std::vector<RuntimeValue> values) {
+    RuntimeValue result = cellValue(std::move(values));
+    result.rows = rows;
+    result.columns = columns;
     return result;
 }
 
@@ -132,7 +141,7 @@ bool isNumeric(const RuntimeValue& value) {
 }
 
 size_t rowCount(const RuntimeValue& value) {
-    return isNumber(value) || isString(value) ? 1 : value.rows;
+    return isNumber(value) ? 1 : value.rows;
 }
 
 size_t columnCount(const RuntimeValue& value) {
@@ -140,9 +149,21 @@ size_t columnCount(const RuntimeValue& value) {
         return 1;
     }
     if (isString(value)) {
-        return value.text.size();
+        return value.columns;
     }
     return value.columns;
+}
+
+template <typename Predicate>
+bool allNumericElements(const RuntimeValue& value, Predicate predicate) {
+    if (isNumber(value)) {
+        return predicate(value.number);
+    }
+    if (!isArray(value)) {
+        return false;
+    }
+    return std::all_of(value.elements.begin(), value.elements.end(),
+                       predicate);
 }
 
 std::string runtimeKindName(const RuntimeValue& value) {
@@ -396,6 +417,22 @@ struct FunctionInfo {
     SourceSpan span;
 };
 
+struct PropertyInfo {
+    std::string name;
+    std::string declaringClass;
+    PropertySpec spec;
+    std::vector<AttributeSyntax> attributes;
+    SourceSpan span;
+    size_t initializerEntry = 0;
+    size_t initializerEnd = 0;
+    bool hasInitializerRange = false;
+    bool defaultEvaluationActive = false;
+    bool defaultEvaluated = false;
+    RuntimeValue defaultValue;
+};
+
+using PropertyInfoPtr = std::shared_ptr<PropertyInfo>;
+
 struct ClassInfo {
     std::string name;
     SourceSpan span;
@@ -403,11 +440,12 @@ struct ClassInfo {
     bool directHandleClass = false;
     bool handleClass = false;
     bool hierarchyValid = true;
-    std::map<std::string, RuntimeValue> declaredProperties;
+    std::map<std::string, PropertyInfoPtr> declaredProperties;
+    std::vector<PropertyInfoPtr> declaredPropertyOrder;
     std::map<std::string, FunctionInfo> declaredMethods;
     std::map<std::string, bool> declaredStaticMethods;
-    std::map<std::string, RuntimeValue> properties;
-    std::map<std::string, std::string> propertyDeclaringClasses;
+    std::map<std::string, PropertyInfoPtr> properties;
+    std::vector<PropertyInfoPtr> propertyOrder;
     std::map<std::string, FunctionInfo> methods;
     std::map<std::string, bool> staticMethods;
 };
@@ -476,13 +514,15 @@ StackValue methodStackValue(std::string className, std::string methodName,
 }
 
 bool isBoundaryEnter(BytecodeOp op) {
-    return op == BytecodeOp::EnterClass || op == BytecodeOp::EnterFunction ||
-           op == BytecodeOp::EnterControl;
+    return op == BytecodeOp::EnterClass ||
+           op == BytecodeOp::EnterPropertyInitializer ||
+           op == BytecodeOp::EnterFunction || op == BytecodeOp::EnterControl;
 }
 
 bool isBoundaryLeave(BytecodeOp op) {
-    return op == BytecodeOp::LeaveClass || op == BytecodeOp::LeaveFunction ||
-           op == BytecodeOp::LeaveControl;
+    return op == BytecodeOp::LeaveClass ||
+           op == BytecodeOp::LeavePropertyInitializer ||
+           op == BytecodeOp::LeaveFunction || op == BytecodeOp::LeaveControl;
 }
 
 bool isTopLevelRuntimeOp(BytecodeOp op) {
@@ -865,8 +905,22 @@ private:
                           "handle") != node->superclasses.end();
         }
         if (node->kind == HirKind::Property && !className.empty()) {
-            classesByName_[className].declaredProperties[node->label] =
-                missingValue();
+            auto& klass = classesByName_[className];
+            if (klass.declaredProperties.contains(node->label)) {
+                diagnostics_.push_back(Diagnostic{
+                    node->span,
+                    "duplicate property declaration: " + className + "." +
+                        node->label});
+            } else {
+                auto property = std::make_shared<PropertyInfo>();
+                property->name = node->label;
+                property->declaringClass = className;
+                property->spec = node->property;
+                property->attributes = node->attributes;
+                property->span = node->span;
+                klass.declaredProperties[node->label] = property;
+                klass.declaredPropertyOrder.push_back(std::move(property));
+            }
         }
         for (const auto& attribute : node->attributes) {
             if (attribute.name == "Static") {
@@ -915,6 +969,49 @@ private:
                 if (!classStack.empty()) {
                     classStack.pop_back();
                 }
+                continue;
+            }
+            if (instruction.op == BytecodeOp::EnterPropertyInitializer) {
+                size_t depth = 1;
+                size_t end = pc + 1;
+                while (end < program.instructions.size() && depth > 0) {
+                    const auto op = program.instructions[end].op;
+                    if (op == BytecodeOp::EnterPropertyInitializer) {
+                        ++depth;
+                    } else if (op ==
+                               BytecodeOp::LeavePropertyInitializer) {
+                        --depth;
+                        if (depth == 0) {
+                            break;
+                        }
+                    }
+                    ++end;
+                }
+                if (end >= program.instructions.size()) {
+                    addDiagnostic(
+                        instruction,
+                        "property initializer has no matching leave");
+                    return;
+                }
+                if (classStack.empty()) {
+                    addDiagnostic(instruction,
+                                  "property initializer is outside a class");
+                    return;
+                }
+                auto& klass = classesByName_[classStack.back()];
+                const auto property =
+                    klass.declaredProperties.find(instruction.operand);
+                if (property == klass.declaredProperties.end()) {
+                    addDiagnostic(instruction,
+                                  "property initializer has no declaration: " +
+                                      classStack.back() + "." +
+                                      instruction.operand);
+                    return;
+                }
+                property->second->initializerEntry = pc + 1;
+                property->second->initializerEnd = end;
+                property->second->hasInitializerRange = true;
+                pc = end;
                 continue;
             }
             if (instruction.op != BytecodeOp::EnterFunction) {
@@ -1001,8 +1098,8 @@ private:
         auto& info = klass->second;
         bool valid = true;
         bool handleClass = info.directHandleClass;
-        std::map<std::string, RuntimeValue> properties;
-        std::map<std::string, std::string> propertyDeclaringClasses;
+        std::map<std::string, PropertyInfoPtr> properties;
+        std::vector<PropertyInfoPtr> propertyOrder;
         std::map<std::string, FunctionInfo> methods;
         std::map<std::string, bool> staticMethods;
 
@@ -1028,27 +1125,22 @@ private:
             const auto& base = superclass->second;
             handleClass = handleClass || base.handleClass;
 
-            for (const auto& [propertyName, value] : base.properties) {
-                const auto owner =
-                    base.propertyDeclaringClasses.find(propertyName);
-                const std::string declaringClass =
-                    owner == base.propertyDeclaringClasses.end()
-                        ? superclassName
-                        : owner->second;
+            for (const auto& property : base.propertyOrder) {
+                const std::string& propertyName = property->name;
                 const auto existing = properties.find(propertyName);
                 if (existing == properties.end()) {
-                    properties[propertyName] = value;
-                    propertyDeclaringClasses[propertyName] = declaringClass;
+                    properties[propertyName] = property;
+                    propertyOrder.push_back(property);
                     continue;
                 }
-                if (propertyDeclaringClasses[propertyName] != declaringClass) {
+                if (existing->second != property) {
                     valid = false;
                     reportClassHierarchyDiagnostic(
                         info, "property:" + className + ":" + propertyName,
                         "ambiguous inherited property: " + className + "." +
                             propertyName + " from " +
-                            propertyDeclaringClasses[propertyName] + " and " +
-                            declaringClass);
+                            existing->second->declaringClass + " and " +
+                            property->declaringClass);
                 }
             }
 
@@ -1093,7 +1185,8 @@ private:
             }
         }
 
-        for (const auto& [propertyName, value] : info.declaredProperties) {
+        for (const auto& property : info.declaredPropertyOrder) {
+            const std::string& propertyName = property->name;
             if (const auto inherited = properties.find(propertyName);
                 inherited != properties.end()) {
                 valid = false;
@@ -1102,8 +1195,8 @@ private:
                     "inherited property cannot be redeclared: " + className +
                         "." + propertyName);
             }
-            properties[propertyName] = value;
-            propertyDeclaringClasses[propertyName] = className;
+            properties[propertyName] = property;
+            propertyOrder.push_back(property);
         }
 
         for (const auto& [methodName, method] : info.declaredMethods) {
@@ -1116,8 +1209,7 @@ private:
         info.handleClass = handleClass;
         info.hierarchyValid = valid;
         info.properties = std::move(properties);
-        info.propertyDeclaringClasses =
-            std::move(propertyDeclaringClasses);
+        info.propertyOrder = std::move(propertyOrder);
         info.methods = std::move(methods);
         info.staticMethods = std::move(staticMethods);
         state = ClassResolutionState::Resolved;
@@ -1565,6 +1657,8 @@ private:
         case BytecodeOp::LeaveModule:
         case BytecodeOp::EnterClass:
         case BytecodeOp::LeaveClass:
+        case BytecodeOp::EnterPropertyInitializer:
+        case BytecodeOp::LeavePropertyInitializer:
         case BytecodeOp::EnterFunction:
         case BytecodeOp::LeaveFunction:
         case BytecodeOp::EnterControl:
@@ -2091,10 +2185,30 @@ private:
         }
 
         RuntimeValue updated = *target;
+        const auto klass = classesByName_.find(updated.className);
+        if (klass == classesByName_.end()) {
+            addDiagnostic(instruction,
+                          "class is not available for member assignment: " +
+                              updated.className);
+            return;
+        }
+        const auto property =
+            klass->second.properties.find(instruction.operand);
+        if (property == klass->second.properties.end()) {
+            addDiagnostic(instruction, "property is not available: " +
+                                           updated.className + "." +
+                                           instruction.operand);
+            return;
+        }
+        const auto validated = validatePropertyValue(
+            instruction, *property->second, *value);
+        if (!validated) {
+            return;
+        }
         if (updated.handleObject && updated.sharedFields) {
-            (*updated.sharedFields)[instruction.operand] = *value;
+            (*updated.sharedFields)[instruction.operand] = *validated;
         } else {
-            updated.fields[instruction.operand] = *value;
+            updated.fields[instruction.operand] = *validated;
         }
         if (instruction.receiverName.empty()) {
             addDiagnostic(instruction,
@@ -2790,6 +2904,640 @@ private:
                                 requestedCount, std::nullopt, nullptr, false);
     }
 
+    BytecodeInstruction propertyInstruction(
+        const PropertyInfo& property) const {
+        BytecodeInstruction instruction;
+        instruction.operand = property.declaringClass + "." + property.name;
+        instruction.span = property.span;
+        return instruction;
+    }
+
+    std::string propertyDisplayName(const PropertyInfo& property) const {
+        return property.declaringClass + "." + property.name;
+    }
+
+    std::optional<size_t> propertyDimension(
+        const PropertyDimensionSpec& dimension) const {
+        if (dimension.text == ":") {
+            return std::nullopt;
+        }
+        const auto value = parseNumber(dimension.text);
+        if (!value || *value < 0.0 || !isWholeNumber(*value) ||
+            static_cast<long double>(*value) >
+                static_cast<long double>(
+                    std::numeric_limits<size_t>::max())) {
+            return std::nullopt;
+        }
+        return static_cast<size_t>(*value);
+    }
+
+    std::pair<size_t, size_t> propertyValueShape(
+        const RuntimeValue& value, const PropertyInfo& property) const {
+        if (isString(value) && property.spec.className == "string") {
+            return {value.rows, value.columns};
+        }
+        return {rowCount(value), columnCount(value)};
+    }
+
+    size_t propertyValueCount(const RuntimeValue& value,
+                              const PropertyInfo& property) const {
+        if (value.kind == RuntimeValueKind::Missing) {
+            return 0;
+        }
+        if (isString(value) && property.spec.className == "string") {
+            return value.rows * value.columns;
+        }
+        if (isString(value)) {
+            return value.text.size();
+        }
+        if (isCell(value)) {
+            return value.cells.size();
+        }
+        return isNumber(value) ? 1 : value.elements.size();
+    }
+
+    bool propertyValidationError(const BytecodeInstruction& instruction,
+                                 const PropertyInfo& property,
+                                 std::string message) {
+        addDiagnostic(instruction, "property validation failed for " +
+                                       propertyDisplayName(property) + ": " +
+                                       std::move(message));
+        return false;
+    }
+
+    std::optional<RuntimeValue> coercePropertyClass(
+        const BytecodeInstruction& instruction, const PropertyInfo& property,
+        RuntimeValue value) {
+        const std::string& type = property.spec.className;
+        if (type.empty()) {
+            return value;
+        }
+        if (type == "double") {
+            if (isNumeric(value)) {
+                return value;
+            }
+            propertyValidationError(instruction, property,
+                                    "value must be numeric for class double");
+            return std::nullopt;
+        }
+        if (type == "logical") {
+            if (!isNumeric(value)) {
+                propertyValidationError(
+                    instruction, property,
+                    "value must be numeric or logical for class logical");
+                return std::nullopt;
+            }
+            return mapUnary(value, [](double element) {
+                return element == 0.0 ? 0.0 : 1.0;
+            });
+        }
+        if (type == "char") {
+            if (isString(value)) {
+                return value;
+            }
+            propertyValidationError(instruction, property,
+                                    "value must be text for class char");
+            return std::nullopt;
+        }
+        if (type == "string") {
+            if (isString(value)) {
+                if (value.rows != 0 || value.columns != 0) {
+                    value.rows = 1;
+                    value.columns = 1;
+                }
+                return value;
+            }
+            propertyValidationError(instruction, property,
+                                    "value must be text for class string");
+            return std::nullopt;
+        }
+        if (type == "cell") {
+            if (isCell(value)) {
+                return value;
+            }
+            propertyValidationError(instruction, property,
+                                    "value must be a cell array");
+            return std::nullopt;
+        }
+        if (type == "handle") {
+            if (isObject(value) && value.handleObject) {
+                return value;
+            }
+            propertyValidationError(instruction, property,
+                                    "value must be a handle object");
+            return std::nullopt;
+        }
+
+        if (value.kind == RuntimeValueKind::Missing) {
+            return value;
+        }
+        if (isObject(value) && classesByName_.contains(type) &&
+            classDerivesFrom(value.className, type)) {
+            return value;
+        }
+        if (!classesByName_.contains(type)) {
+            propertyValidationError(instruction, property,
+                                    "property class is not available: " + type);
+        } else {
+            propertyValidationError(instruction, property,
+                                    "value must be an object of class " + type);
+        }
+        return std::nullopt;
+    }
+
+    std::optional<RuntimeValue> reshapePropertyValue(
+        const BytecodeInstruction& instruction, const PropertyInfo& property,
+        RuntimeValue value, size_t rows, size_t columns) {
+        if (rows != 0 &&
+            columns > std::numeric_limits<size_t>::max() / rows) {
+            propertyValidationError(instruction, property,
+                                    "property dimensions are too large");
+            return std::nullopt;
+        }
+        const size_t count = rows * columns;
+        if (isNumber(value)) {
+            if (count == 1) {
+                return value;
+            }
+            return arrayValueForShape(
+                rows, columns, std::vector<double>(count, value.number));
+        }
+        if (isArray(value)) {
+            if (value.elements.size() != count) {
+                propertyValidationError(
+                    instruction, property,
+                    "value has " + std::to_string(value.elements.size()) +
+                        " elements but the property requires " +
+                        std::to_string(count));
+                return std::nullopt;
+            }
+            if (count == 1) {
+                return numberValue(value.elements.front());
+            }
+            return arrayValueForShape(rows, columns,
+                                      std::move(value.elements));
+        }
+        if (isCell(value)) {
+            if (value.cells.size() != count) {
+                propertyValidationError(
+                    instruction, property,
+                    "cell value has incompatible property dimensions");
+                return std::nullopt;
+            }
+            value.rows = rows;
+            value.columns = columns;
+            return value;
+        }
+
+        propertyValidationError(instruction, property,
+                                "value cannot be reshaped to the property size");
+        return std::nullopt;
+    }
+
+    std::optional<RuntimeValue> coercePropertySize(
+        const BytecodeInstruction& instruction, const PropertyInfo& property,
+        RuntimeValue value) {
+        if (property.spec.dimensions.empty()) {
+            return value;
+        }
+        if (property.spec.dimensions.size() > 2) {
+            propertyValidationError(
+                instruction, property,
+                "runtime size validation currently supports two dimensions");
+            return std::nullopt;
+        }
+        for (const auto& dimension : property.spec.dimensions) {
+            if (dimension.text != ":" && !propertyDimension(dimension)) {
+                propertyValidationError(
+                    instruction, property,
+                    "property dimension cannot be represented at runtime");
+                return std::nullopt;
+            }
+        }
+
+        const auto expectedRows = propertyDimension(
+            property.spec.dimensions.front());
+        const std::optional<size_t> expectedColumns =
+            property.spec.dimensions.size() == 1
+                ? std::optional<size_t>{1}
+                : propertyDimension(property.spec.dimensions[1]);
+        auto [rows, columns] = propertyValueShape(value, property);
+
+        if (expectedRows && expectedColumns) {
+            if (rows == *expectedRows && columns == *expectedColumns) {
+                return value;
+            }
+            return reshapePropertyValue(instruction, property, std::move(value),
+                                        *expectedRows, *expectedColumns);
+        }
+
+        if (expectedRows && rows != *expectedRows) {
+            if (*expectedRows != 1 || (!isNumeric(value) && !isCell(value))) {
+                propertyValidationError(
+                    instruction, property,
+                    "row count does not match the property size");
+                return std::nullopt;
+            }
+            const size_t count = propertyValueCount(value, property);
+            return reshapePropertyValue(
+                instruction, property, std::move(value), 1, count);
+        }
+        if (expectedColumns && columns != *expectedColumns) {
+            if (*expectedColumns != 1 ||
+                (!isNumeric(value) && !isCell(value))) {
+                propertyValidationError(
+                    instruction, property,
+                    "column count does not match the property size");
+                return std::nullopt;
+            }
+            const size_t count = propertyValueCount(value, property);
+            return reshapePropertyValue(
+                instruction, property, std::move(value), count, 1);
+        }
+        return value;
+    }
+
+    std::optional<double> validatorNumericArgument(
+        const BytecodeInstruction& instruction, const PropertyInfo& property,
+        const PropertyValidatorSpec& validator) {
+        size_t begin = 0;
+        if (!validator.arguments.empty() &&
+            validator.arguments.front() == property.name) {
+            begin = 1;
+        }
+        if (validator.arguments.size() != begin + 1) {
+            propertyValidationError(
+                instruction, property,
+                validator.name + " requires one literal comparison value");
+            return std::nullopt;
+        }
+        const auto argument = parseNumber(validator.arguments[begin]);
+        if (!argument) {
+            propertyValidationError(
+                instruction, property,
+                validator.name + " comparison value must be numeric");
+            return std::nullopt;
+        }
+        return argument;
+    }
+
+    bool applyPropertyValidator(const BytecodeInstruction& instruction,
+                                const PropertyInfo& property,
+                                const PropertyValidatorSpec& validator,
+                                const RuntimeValue& value) {
+        const std::string& name = validator.name;
+        const auto requireNumeric = [&]() {
+            return isNumeric(value) ||
+                   propertyValidationError(instruction, property,
+                                           name + " requires numeric data");
+        };
+        const auto numericCheck = [&](auto predicate,
+                                      std::string message) {
+            return requireNumeric() &&
+                   (allNumericElements(value, predicate) ||
+                    propertyValidationError(instruction, property,
+                                            std::move(message)));
+        };
+
+        if (name == "mustBePositive") {
+            return numericCheck([](double item) { return item > 0.0; },
+                                "value must be positive");
+        }
+        if (name == "mustBeNonpositive") {
+            return numericCheck([](double item) { return item <= 0.0; },
+                                "value must be nonpositive");
+        }
+        if (name == "mustBeNonnegative") {
+            return numericCheck([](double item) { return item >= 0.0; },
+                                "value must be nonnegative");
+        }
+        if (name == "mustBeNegative") {
+            return numericCheck([](double item) { return item < 0.0; },
+                                "value must be negative");
+        }
+        if (name == "mustBeFinite") {
+            return numericCheck([](double item) { return std::isfinite(item); },
+                                "value must be finite");
+        }
+        if (name == "mustBeNonNan") {
+            return numericCheck([](double item) { return !std::isnan(item); },
+                                "value must not contain NaN");
+        }
+        if (name == "mustBeNonzero") {
+            return numericCheck([](double item) { return item != 0.0; },
+                                "value must be nonzero");
+        }
+        if (name == "mustBeInteger") {
+            return numericCheck(
+                [](double item) {
+                    return std::isfinite(item) && std::floor(item) == item;
+                },
+                "value must contain integers");
+        }
+        if (name == "mustBeReal" || name == "mustBeFloat" ||
+            name == "mustBeNumeric" ||
+            name == "mustBeNumericOrLogical") {
+            return requireNumeric();
+        }
+        if (name == "mustBeNonsparse") {
+            return true;
+        }
+        if (name == "mustBeSparse") {
+            return propertyValidationError(
+                instruction, property,
+                "sparse values are not represented by the current runtime");
+        }
+
+        const size_t count = propertyValueCount(value, property);
+        const auto [rows, columns] = propertyValueShape(value, property);
+        const bool empty = value.kind == RuntimeValueKind::Missing || count == 0;
+        if (name == "mustBeNonempty") {
+            return !empty || propertyValidationError(
+                                 instruction, property,
+                                 "value must be nonempty");
+        }
+        if (name == "mustBeScalarOrEmpty") {
+            return count <= 1 || propertyValidationError(
+                                     instruction, property,
+                                     "value must be scalar or empty");
+        }
+        if (name == "mustBeVector") {
+            return (!empty && (rows == 1 || columns == 1)) ||
+                   propertyValidationError(instruction, property,
+                                           "value must be a vector");
+        }
+        if (name == "mustBeRow") {
+            return rows == 1 || propertyValidationError(
+                                    instruction, property,
+                                    "value must be a row");
+        }
+        if (name == "mustBeColumn") {
+            return columns == 1 || propertyValidationError(
+                                       instruction, property,
+                                       "value must be a column");
+        }
+        if (name == "mustBeMatrix") {
+            return true;
+        }
+        if (name == "mustBeText" || name == "mustBeTextScalar") {
+            return isString(value) || propertyValidationError(
+                                          instruction, property,
+                                          "value must be text");
+        }
+        if (name == "mustBeNonzeroLengthText") {
+            return (isString(value) && !value.text.empty()) ||
+                   propertyValidationError(
+                       instruction, property,
+                       "text value must have nonzero length");
+        }
+        if (name == "mustBeNonmissing") {
+            const bool present = value.kind != RuntimeValueKind::Missing &&
+                                 (!isNumeric(value) ||
+                                  allNumericElements(value, [](double item) {
+                                      return !std::isnan(item);
+                                  }));
+            return present || propertyValidationError(
+                                  instruction, property,
+                                  "value must not be missing");
+        }
+
+        if (name == "mustBeGreaterThan" || name == "mustBeLessThan" ||
+            name == "mustBeGreaterThanOrEqual" ||
+            name == "mustBeLessThanOrEqual") {
+            if (!requireNumeric()) {
+                return false;
+            }
+            const auto limit =
+                validatorNumericArgument(instruction, property, validator);
+            if (!limit) {
+                return false;
+            }
+            bool valid = false;
+            if (name == "mustBeGreaterThan") {
+                valid = allNumericElements(
+                    value, [limit](double item) { return item > *limit; });
+            } else if (name == "mustBeLessThan") {
+                valid = allNumericElements(
+                    value, [limit](double item) { return item < *limit; });
+            } else if (name == "mustBeGreaterThanOrEqual") {
+                valid = allNumericElements(
+                    value, [limit](double item) { return item >= *limit; });
+            } else {
+                valid = allNumericElements(
+                    value, [limit](double item) { return item <= *limit; });
+            }
+            return valid || propertyValidationError(
+                                instruction, property,
+                                "value does not satisfy " + name);
+        }
+
+        return propertyValidationError(
+            instruction, property,
+            "validator is not executable yet: " + name);
+    }
+
+    std::optional<RuntimeValue> validatePropertyValue(
+        const BytecodeInstruction& instruction, const PropertyInfo& property,
+        RuntimeValue value) {
+        auto classValue = coercePropertyClass(instruction, property,
+                                              std::move(value));
+        if (!classValue) {
+            return std::nullopt;
+        }
+        auto sizedValue = coercePropertySize(instruction, property,
+                                             std::move(*classValue));
+        if (!sizedValue) {
+            return std::nullopt;
+        }
+        for (const auto& validator : property.spec.validators) {
+            if (!applyPropertyValidator(instruction, property, validator,
+                                        *sizedValue)) {
+                return std::nullopt;
+            }
+        }
+        return sizedValue;
+    }
+
+    std::optional<RuntimeValue> implicitPropertyDefault(
+        const PropertyInfo& property) {
+        const BytecodeInstruction instruction = propertyInstruction(property);
+        const std::string& type = property.spec.className;
+        if (property.spec.dimensions.empty() && type.empty()) {
+            return missingValue();
+        }
+
+        size_t rows = 0;
+        size_t columns = 0;
+        if (!property.spec.dimensions.empty()) {
+            for (const auto& dimension : property.spec.dimensions) {
+                if (dimension.text != ":" && !propertyDimension(dimension)) {
+                    propertyValidationError(
+                        instruction, property,
+                        "property dimension cannot be represented at runtime");
+                    return std::nullopt;
+                }
+            }
+            rows = propertyDimension(property.spec.dimensions.front())
+                       .value_or(0);
+            columns = property.spec.dimensions.size() == 1
+                          ? 1
+                          : propertyDimension(property.spec.dimensions[1])
+                                .value_or(0);
+        }
+        if (rows != 0 &&
+            columns > std::numeric_limits<size_t>::max() / rows) {
+            propertyValidationError(instruction, property,
+                                    "property dimensions are too large");
+            return std::nullopt;
+        }
+        const size_t count = rows * columns;
+
+        if (type.empty() || type == "double" || type == "logical") {
+            return arrayValueForShape(rows, columns,
+                                      std::vector<double>(count, 0.0));
+        }
+        if (type == "char") {
+            RuntimeValue value = stringValue(std::string(count, ' '));
+            value.rows = rows;
+            value.columns = columns;
+            return value;
+        }
+        if (type == "string") {
+            if (property.spec.dimensions.empty()) {
+                RuntimeValue value = stringValue("");
+                value.rows = 0;
+                value.columns = 0;
+                return value;
+            }
+            if (rows == 1 && columns == 1) {
+                RuntimeValue value = stringValue("");
+                value.rows = 1;
+                value.columns = 1;
+                return value;
+            }
+            propertyValidationError(
+                instruction, property,
+                "implicit string-array defaults beyond scalar are not "
+                "represented yet");
+            return std::nullopt;
+        }
+        if (type == "cell") {
+            return cellValueForShape(
+                rows, columns, std::vector<RuntimeValue>(count, missingValue()));
+        }
+        if (!classesByName_.contains(type)) {
+            propertyValidationError(instruction, property,
+                                    "property class is not available: " + type);
+            return std::nullopt;
+        }
+        if (property.spec.dimensions.empty() || count == 0) {
+            return missingValue();
+        }
+        if (rows != 1 || columns != 1) {
+            propertyValidationError(
+                instruction, property,
+                "implicit object-array defaults currently require size (1,1)");
+            return std::nullopt;
+        }
+        const size_t diagnosticCount = diagnostics_.size();
+        auto outputs = callClassConstructor(instruction, type, {}, 1);
+        if (outputs.empty() || diagnostics_.size() != diagnosticCount) {
+            return std::nullopt;
+        }
+        return outputs.front();
+    }
+
+    std::optional<RuntimeValue> evaluateExplicitPropertyDefault(
+        const PropertyInfo& property) {
+        const BytecodeInstruction instruction = propertyInstruction(property);
+        if (!property.hasInitializerRange) {
+            addDiagnostic(instruction,
+                          "property default expression has no bytecode range");
+            return std::nullopt;
+        }
+
+        auto savedStack = std::move(stack_);
+        auto savedForLoops = std::move(forLoopStack_);
+        auto savedIndexContexts = std::move(indexContextStack_);
+        auto savedSwitchContexts = std::move(switchContextStack_);
+        auto savedTryContexts = std::move(tryContextStack_);
+        const bool savedReturnRequested = returnRequested_;
+        stack_.clear();
+        forLoopStack_.clear();
+        indexContextStack_.clear();
+        switchContextStack_.clear();
+        tryContextStack_.clear();
+        returnRequested_ = false;
+        frames_.push_back({});
+
+        const size_t diagnosticCount = diagnostics_.size();
+        executeFunctionBody(property.initializerEntry,
+                            property.initializerEnd);
+        std::optional<RuntimeValue> value;
+        if (diagnostics_.size() == diagnosticCount) {
+            if (stack_.size() != 1) {
+                addDiagnostic(
+                    instruction,
+                    "property default expression must produce one value");
+            } else {
+                value = popRuntime(instruction, "property default expression");
+            }
+        }
+
+        frames_.pop_back();
+        stack_ = std::move(savedStack);
+        forLoopStack_ = std::move(savedForLoops);
+        indexContextStack_ = std::move(savedIndexContexts);
+        switchContextStack_ = std::move(savedSwitchContexts);
+        tryContextStack_ = std::move(savedTryContexts);
+        returnRequested_ = savedReturnRequested;
+        return value;
+    }
+
+    std::optional<RuntimeValue> propertyDefault(PropertyInfo& property) {
+        if (property.defaultEvaluated) {
+            return property.defaultValue;
+        }
+        const BytecodeInstruction instruction = propertyInstruction(property);
+        if (property.defaultEvaluationActive) {
+            addDiagnostic(instruction,
+                          "recursive property default evaluation: " +
+                              propertyDisplayName(property));
+            return std::nullopt;
+        }
+
+        property.defaultEvaluationActive = true;
+        auto rawValue = property.spec.hasExplicitDefault
+                            ? evaluateExplicitPropertyDefault(property)
+                            : implicitPropertyDefault(property);
+        if (!rawValue) {
+            property.defaultEvaluationActive = false;
+            return std::nullopt;
+        }
+        auto value = validatePropertyValue(instruction, property,
+                                           std::move(*rawValue));
+        property.defaultEvaluationActive = false;
+        if (!value) {
+            return std::nullopt;
+        }
+        property.defaultValue = *value;
+        property.defaultEvaluated = true;
+        return property.defaultValue;
+    }
+
+    std::optional<std::map<std::string, RuntimeValue>>
+    initializePropertyValues(const ClassInfo& klass) {
+        std::map<std::string, RuntimeValue> values;
+        for (const auto& property : klass.propertyOrder) {
+            const auto value = propertyDefault(*property);
+            if (!value) {
+                return std::nullopt;
+            }
+            values[property->name] = *value;
+        }
+        return values;
+    }
+
     std::vector<RuntimeValue> callClassConstructor(
         const BytecodeInstruction& instruction, const std::string& className,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
@@ -2809,9 +3557,13 @@ private:
             return {};
         }
 
+        const auto properties = initializePropertyValues(klass->second);
+        if (!properties) {
+            return missingOutputs(requestedCount);
+        }
         ConstructionContext construction;
         construction.object = objectValue(
-            className, klass->second.properties, klass->second.handleClass);
+            className, *properties, klass->second.handleClass);
         return constructClass(instruction, className, arguments, construction,
                               requestedCount, false);
     }

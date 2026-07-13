@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mparser/property_spec.h"
 #include "mparser/source.h"
 #include "mparser/token.h"
 
@@ -76,6 +77,7 @@ struct SyntaxNode {
     std::string raw;
     SourceSpan span;
     std::vector<AttributeSyntax> attributes;
+    PropertySpec property;
     std::vector<std::unique_ptr<SyntaxNode>> children;
 };
 

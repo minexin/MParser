@@ -70,6 +70,12 @@ post-lowering validation pass rejects indirect or repeated constructor calls,
 conditional construction, construction after an object reference, object
 references in superclass arguments, and malformed qualified method calls.
 
+Property declarations use a shared `PropertySpec` structure rather than raw
+text reparsing. It retains dimensions, a class constraint, ordered validator
+descriptors and literal arguments, block attributes, and whether an executable
+default expression exists. The default remains a normal expression child, so
+name binding and future type/JIT passes use the same HIR as script expressions.
+
 Dynamic MATLAB constructs intentionally remain delayed. `CallOrIndex`,
 `BraceIndex`, and `MemberAccess` HIR nodes preserve the surface operation and
 carry unresolved bindings until a later name-resolution pass has path, package,
@@ -112,7 +118,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.27 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.28 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -258,9 +264,29 @@ diamond runs once. `method@Superclass(obj, ...)` invokes the exact method
 declared on the named ancestor. Calls made by that base implementation still
 use the runtime object's most-derived dispatch table.
 
+Each explicit property default lowers into an
+`EnterPropertyInitializer`/`LeavePropertyInitializer` bytecode range. Runtime
+class descriptors retain declaration order and share property descriptors
+through inherited and diamond layouts. On first use within a VM run, a
+descriptor evaluates its default in an isolated class-initialization frame,
+validates it, and caches
+the resulting value. Object allocation copies cached value data while nested
+handle objects retain shared storage. This mirrors MATLAB's evaluate-once class
+default behavior and ensures all effective defaults exist before any base or
+derived constructor body runs.
+
+Property writes use a class, size, validator pipeline. The current class subset
+supports `double`, `logical`, `char`, scalar `string`, `cell`, and same-file
+user classes. Two-dimensional positive-integer/colon size constraints support
+numeric scalar expansion and row/column reshaping. Built-in numeric, shape,
+text, comparison, and missing-value validators execute left to right. The same
+pipeline validates explicit and implicit defaults and direct member writes;
+failed validation leaves the object unchanged.
+
 The VM intentionally still rejects cross-file/package superclass lookup,
-non-`handle` built-in superclass construction, full independent-property
-compatibility checks, access-control and
+non-`handle` built-in superclass construction, full MATLAB property conversion,
+custom validators, validator set-membership/range functions, dimensions above
+two, non-scalar string arrays, access-control and
 `Abstract`/`Sealed`/`HandleCompatible` enforcement, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 dependent properties, class methods as `CompiledModule` entry targets,
@@ -279,7 +305,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.27
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.28
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -319,8 +345,10 @@ hierarchies, inherited property/method tables, override and diamond resolution,
 transitive handle ownership, and invalid-hierarchy diagnostics. v0.27 adds
 dedicated superclass-call IR, semantic construction-order checks, explicit and
 implicit base construction, default constructor forwarding, one-time diamond
-initialization, and exact qualified base-method calls. The next steps are
-property defaults and validation, access-aware class metadata,
+initialization, and exact qualified base-method calls. v0.28 adds structured
+property metadata, executable class-level default caches, implicit defaults,
+class/size conversion, and ordered assignment validation. The next steps are
+access-aware class metadata,
 multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

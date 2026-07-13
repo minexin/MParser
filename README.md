@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.27.0. See [docs/v0.27.md](docs/v0.27.md) for the
+Current milestone: v0.28.0. See [docs/v0.28.md](docs/v0.28.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.26.md](docs/v0.26.md),
+iteration plan. Previous boundaries are kept in [docs/v0.27.md](docs/v0.27.md),
+[docs/v0.26.md](docs/v0.26.md),
 [docs/v0.25.md](docs/v0.25.md),
 [docs/v0.24.md](docs/v0.24.md),
 [docs/v0.23.md](docs/v0.23.md),
@@ -60,7 +61,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.27 executes the core numeric/string subset,
+expression operators. v0.28 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -150,6 +151,16 @@ base. A shared construction context preserves the most-derived object through
 value and handle constructors and initializes common diamond ancestors once.
 Qualified superclass methods bypass the current override while retaining
 normal dynamic dispatch for calls made inside the selected base method.
+v0.28 makes structured property declarations executable. Property dimensions,
+class constraints, ordered validator functions, block attributes, and default
+expressions survive syntax and HIR lowering. Explicit defaults execute once on
+first class use within a bytecode run and are cached at the declaring property,
+so handle-object
+defaults are shared exactly as class-load defaults while ordinary values are
+copied into each object. The VM creates supported implicit defaults, performs
+class conversion before size adaptation and validators, and applies the same
+pipeline to later direct property assignments. Inherited declarations retain
+source order and common diamond properties keep one shared default cache.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -355,6 +366,13 @@ forwarding, and qualified superclass methods with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\superclass_construction_demo.m
+```
+
+Run structured property defaults, type/size validation, ordered validators,
+scalar expansion, and class-level handle default caching with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\property_validation_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:

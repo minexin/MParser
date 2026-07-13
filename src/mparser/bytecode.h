@@ -14,6 +14,8 @@ enum class BytecodeOp {
     LeaveModule,
     EnterClass,
     LeaveClass,
+    EnterPropertyInitializer,
+    LeavePropertyInitializer,
     EnterFunction,
     LeaveFunction,
     EnterControl,

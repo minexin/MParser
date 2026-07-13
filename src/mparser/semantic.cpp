@@ -207,7 +207,8 @@ private:
                 for (const auto& child : block->children) {
                     if (child->kind == SyntaxKind::PropertyDecl) {
                         declareSymbol(SymbolKind::Property, child->label,
-                                      child->span);
+                                      child->span,
+                                      child->property.className);
                     }
                 }
                 continue;
@@ -385,7 +386,10 @@ private:
 
     std::unique_ptr<HirNode> lowerDeclaration(const SyntaxNode& syntax, HirKind kind,
                                               SymbolKind symbolKind) {
-        declareSymbol(symbolKind, syntax.label, syntax.span);
+        declareSymbol(symbolKind, syntax.label, syntax.span,
+                      kind == HirKind::Property
+                          ? syntax.property.className
+                          : std::string{});
         return lowerGeneric(syntax, kind);
     }
 
@@ -535,6 +539,7 @@ private:
         node->raw = syntax.raw;
         node->span = syntax.span;
         node->attributes = syntax.attributes;
+        node->property = syntax.property;
         return node;
     }
 
