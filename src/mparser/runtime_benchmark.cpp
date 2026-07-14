@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <map>
 #include <numeric>
+#include <set>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -25,8 +26,11 @@ const std::map<std::string, RuntimeValue>& objectFields(
     return value.fields;
 }
 
-bool runtimeValuesEqual(const RuntimeValue& left,
-                        const RuntimeValue& right) {
+using ComparedHandleObjects = std::set<std::pair<const void*, const void*>>;
+
+bool runtimeValuesEqualImpl(const RuntimeValue& left,
+                            const RuntimeValue& right,
+                            ComparedHandleObjects& comparedHandles) {
     if (left.kind != right.kind || left.rows != right.rows ||
         left.columns != right.columns) {
         return false;
@@ -47,11 +51,14 @@ bool runtimeValuesEqual(const RuntimeValue& left,
             return false;
         }
         for (size_t index = 0; index < left.cells.size(); ++index) {
-            if (!runtimeValuesEqual(left.cells[index], right.cells[index])) {
+            if (!runtimeValuesEqualImpl(left.cells[index], right.cells[index],
+                                        comparedHandles)) {
                 return false;
             }
         }
         return true;
+    case RuntimeValueKind::FunctionHandle:
+        return left.opaqueId == right.opaqueId && left.text == right.text;
     case RuntimeValueKind::Object: {
         const auto& leftFields = objectFields(left);
         const auto& rightFields = objectFields(right);
@@ -60,10 +67,18 @@ bool runtimeValuesEqual(const RuntimeValue& left,
             leftFields.size() != rightFields.size()) {
             return false;
         }
+        if (left.handleObject && left.sharedFields && right.sharedFields) {
+            const auto identity = std::pair<const void*, const void*>{
+                left.sharedFields.get(), right.sharedFields.get()};
+            if (!comparedHandles.insert(identity).second) {
+                return true;
+            }
+        }
         for (const auto& [name, value] : leftFields) {
             const auto other = rightFields.find(name);
             if (other == rightFields.end() ||
-                !runtimeValuesEqual(value, other->second)) {
+                !runtimeValuesEqualImpl(value, other->second,
+                                        comparedHandles)) {
                 return false;
             }
         }
@@ -71,6 +86,12 @@ bool runtimeValuesEqual(const RuntimeValue& left,
     }
     }
     return false;
+}
+
+bool runtimeValuesEqual(const RuntimeValue& left,
+                        const RuntimeValue& right) {
+    ComparedHandleObjects comparedHandles;
+    return runtimeValuesEqualImpl(left, right, comparedHandles);
 }
 
 std::pair<bool, std::string> compareVariables(

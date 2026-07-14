@@ -107,6 +107,8 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "matrix";
     case RuntimeValueKind::Cell:
         return "cell";
+    case RuntimeValueKind::FunctionHandle:
+        return "function-handle";
     case RuntimeValueKind::Object:
         return "object";
     }

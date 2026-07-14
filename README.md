@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.40.0. See [docs/v0.40.md](docs/v0.40.md) for the
+Current milestone: v0.41.0. See [docs/v0.41.md](docs/v0.41.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.39.md](docs/v0.39.md),
+iteration plan. Previous boundaries are kept in [docs/v0.40.md](docs/v0.40.md),
+[docs/v0.39.md](docs/v0.39.md),
 [docs/v0.38.md](docs/v0.38.md),
 [docs/v0.37.md](docs/v0.37.md),
 [docs/v0.36.md](docs/v0.36.md),
@@ -76,7 +77,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.40 executes the core numeric/string subset,
+expression operators. v0.41 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -295,6 +296,20 @@ remain directly addressable but are filtered from enumeration queries. Until
 object arrays exist, `enumeration` returns visible values and names as Cells,
 which support brace indexing and general `length`, `numel`, `size`, and
 `isempty` queries.
+v0.41 makes function handles and class events executable in the bytecode VM.
+Anonymous handles retain their parameter list, bytecode body range, lexical
+class privilege, and a value snapshot of the defining frame. Named handles can
+target builtins, local/path/package functions, static methods, and bound object
+methods, and may be called through the same neutral call/index operation as an
+ordinary function. Event declarations now have distinct symbols, bindings, HIR
+nodes, inherited runtime metadata, and executable `ListenAccess`,
+`NotifyAccess`, and `Hidden` policies. `addlistener` creates a listener coupled
+to its source, while `listener` creates an independently retained listener;
+`notify` invokes callbacks synchronously with source and `event.EventData`
+arguments. Listener `Enabled`, `Recursive`, `Callback`, `delete`, and `isvalid`
+behavior is implemented, including recursion suppression and source-coupled
+lifetime. Custom `event.EventData` subclasses receive `Source` and `EventName`,
+and named callback handles participate in package/path dependency loading.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,

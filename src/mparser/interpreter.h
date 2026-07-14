@@ -18,6 +18,7 @@ enum class RuntimeValueKind {
     Vector,
     Matrix,
     Cell,
+    FunctionHandle,
     Object,
 };
 
@@ -32,6 +33,7 @@ struct RuntimeValue {
     std::map<std::string, RuntimeValue> fields;
     std::shared_ptr<std::map<std::string, RuntimeValue>> sharedFields;
     bool handleObject = false;
+    size_t opaqueId = 0;
     size_t rows = 0;
     size_t columns = 0;
 };

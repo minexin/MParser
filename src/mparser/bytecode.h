@@ -65,6 +65,7 @@ struct BytecodeInstruction {
     BytecodeOp op = BytecodeOp::Unknown;
     std::string operand;
     std::string receiverName;
+    std::vector<std::string> parameters;
     BindingRef binding;
     SourceSpan span;
     int operandCount = 0;

@@ -260,6 +260,10 @@ void collectRawDependencies(const SyntaxNode& node,
     } else if (node.kind == SyntaxKind::MetaClassExpr &&
                !splitClassName(node.label).empty()) {
         recordRawDependency(dependencies, node.label, false);
+    } else if (node.kind == SyntaxKind::FunctionHandleExpr &&
+               node.label != "@()" &&
+               !splitClassName(node.label).empty()) {
+        recordRawDependency(dependencies, node.label, true);
     } else if (node.kind == SyntaxKind::CallOrIndexExpr &&
                !node.children.empty()) {
         if (const auto name =

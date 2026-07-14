@@ -22,6 +22,15 @@ namespace {
 
 constexpr size_t kHotLoopThreshold = 10;
 constexpr std::string_view kScriptProfileName = "<script>";
+constexpr std::string_view kEventDataClassName = "event.EventData";
+constexpr std::string_view kEventListenerClassName = "event.listener";
+constexpr std::string_view kListenerValidityField = "__mparser_valid";
+constexpr std::string_view kCoupledListenersField =
+    "__mparser_coupled_listeners";
+
+bool isBuiltinHandleSuperclass(std::string_view name) {
+    return name == "handle" || name == kEventDataClassName;
+}
 
 std::string trimAscii(std::string_view text) {
     size_t begin = 0;
@@ -105,6 +114,16 @@ RuntimeValue cellValueForShape(size_t rows, size_t columns,
     return result;
 }
 
+RuntimeValue functionHandleValue(size_t id, std::string display) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::FunctionHandle;
+    result.opaqueId = id;
+    result.text = std::move(display);
+    result.rows = 1;
+    result.columns = 1;
+    return result;
+}
+
 bool isNumber(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Number;
 }
@@ -123,6 +142,10 @@ bool isMatrix(const RuntimeValue& value) {
 
 bool isCell(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Cell;
+}
+
+bool isFunctionHandle(const RuntimeValue& value) {
+    return value.kind == RuntimeValueKind::FunctionHandle;
 }
 
 bool isObject(const RuntimeValue& value) {
@@ -204,6 +227,8 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "matrix";
     case RuntimeValueKind::Cell:
         return "cell";
+    case RuntimeValueKind::FunctionHandle:
+        return "function_handle";
     case RuntimeValueKind::Object:
         return "object";
     }
@@ -378,12 +403,20 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         }
         return true;
     }
+    if (isFunctionHandle(left) && isFunctionHandle(right)) {
+        return left.opaqueId == right.opaqueId;
+    }
     if (isObject(left) && isObject(right)) {
         if (!left.enumerationMemberName.empty() ||
             !right.enumerationMemberName.empty()) {
             return left.className == right.className &&
                    left.enumerationMemberName ==
                        right.enumerationMemberName;
+        }
+        if (left.handleObject || right.handleObject) {
+            return left.handleObject && right.handleObject &&
+                   left.sharedFields && right.sharedFields &&
+                   left.sharedFields.get() == right.sharedFields.get();
         }
         const auto& leftFields = objectFields(left);
         const auto& rightFields = objectFields(right);
@@ -529,6 +562,16 @@ struct EnumerationMemberInfo {
     RuntimeValue value;
 };
 
+struct EventInfo {
+    std::string name;
+    std::string declaringClass;
+    std::vector<AttributeSyntax> attributes;
+    MemberAccessPolicy listenAccess;
+    MemberAccessPolicy notifyAccess;
+    SourceSpan span;
+    bool hidden = false;
+};
+
 struct ClassInfo {
     std::string name;
     SourceSpan span;
@@ -548,6 +591,8 @@ struct ClassInfo {
     std::map<std::string, EnumerationMemberInfo>
         declaredEnumerationMembers;
     std::vector<std::string> declaredEnumerationOrder;
+    std::map<std::string, EventInfo> declaredEvents;
+    std::vector<std::string> declaredEventOrder;
     std::map<std::string, FunctionInfo> declaredMethods;
     std::map<std::string, bool> declaredStaticMethods;
     PropertyTable properties;
@@ -557,6 +602,8 @@ struct ClassInfo {
     std::map<std::string, bool> staticMethods;
     std::map<std::string, FunctionInfo> abstractMethods;
     std::map<std::string, PropertyInfoPtr> abstractProperties;
+    std::map<std::string, EventInfo> events;
+    std::vector<std::string> eventOrder;
 };
 
 enum class ClassResolutionState {
@@ -576,6 +623,41 @@ struct ActiveClassFunction {
     std::string methodName;
     std::string constructorOutput;
     ConstructionContext* construction = nullptr;
+};
+
+enum class FunctionHandleTargetKind {
+    Anonymous,
+    Function,
+    Builtin,
+    Method,
+};
+
+struct FunctionHandleInfo {
+    size_t id = 0;
+    FunctionHandleTargetKind kind = FunctionHandleTargetKind::Function;
+    std::string display;
+    std::string targetName;
+    std::string className;
+    std::string methodName;
+    std::string declaringClass;
+    std::string lexicalClassName;
+    std::optional<FunctionInfo> callable;
+    std::optional<RuntimeValue> receiver;
+    std::vector<std::string> parameters;
+    std::map<std::string, RuntimeValue> capturedVariables;
+    size_t entry = 0;
+    size_t end = 0;
+    SourceSpan span;
+};
+
+struct EventListenerRecord {
+    size_t id = 0;
+    std::weak_ptr<std::map<std::string, RuntimeValue>> sourceFields;
+    std::weak_ptr<std::map<std::string, RuntimeValue>> listenerFields;
+    std::string sourceClass;
+    std::string eventName;
+    bool coupled = false;
+    bool callbackActive = false;
 };
 
 struct ActiveTypedLoopRegion {
@@ -702,6 +784,10 @@ public:
         frames_.clear();
         frames_.push_back({});
         activeClassFunctions_.clear();
+        functionHandles_.clear();
+        eventListeners_.clear();
+        nextFunctionHandleId_ = 1;
+        nextEventListenerId_ = 1;
         resetProfiling(program.instructions.size());
         initializeWorkspace(options.initialWorkspace);
         collectFunctionNodes(semantic.root.get());
@@ -1016,10 +1102,11 @@ private:
             info.span = node->span;
             info.attributes = node->attributes;
             info.superclasses = node->superclasses;
-            info.directHandleClass =
-                std::find(node->superclasses.begin(),
-                          node->superclasses.end(),
-                          "handle") != node->superclasses.end();
+            info.directHandleClass = std::any_of(
+                node->superclasses.begin(), node->superclasses.end(),
+                [](const std::string& superclass) {
+                    return isBuiltinHandleSuperclass(superclass);
+                });
         }
         if (node->kind == HirKind::Property && !className.empty()) {
             auto& klass = classesByName_[className];
@@ -1038,6 +1125,24 @@ private:
                 property->span = node->span;
                 klass.declaredProperties[node->label] = property;
                 klass.declaredPropertyOrder.push_back(std::move(property));
+            }
+        }
+        if (node->kind == HirKind::Event && !className.empty()) {
+            auto& klass = classesByName_[className];
+            EventInfo event;
+            event.name = node->label;
+            event.declaringClass = className;
+            event.attributes = node->attributes;
+            event.span = node->span;
+            if (!klass.declaredEvents
+                     .try_emplace(node->label, std::move(event))
+                     .second) {
+                diagnostics_.push_back(Diagnostic{
+                    node->span,
+                    "duplicate event declaration: " + className + "." +
+                        node->label});
+            } else {
+                klass.declaredEventOrder.push_back(node->label);
             }
         }
         if (node->kind == HirKind::EnumerationMember &&
@@ -1575,6 +1680,30 @@ private:
         }
     }
 
+    void configureEventAttributes(EventInfo& event) {
+        const std::string owner =
+            event.declaringClass + "." + event.name;
+        for (const auto& attribute : event.attributes) {
+            const std::string name = lowerAscii(attribute.name);
+            if (name == "listenaccess") {
+                if (const auto access =
+                        accessAttributeValue(attribute, owner, false)) {
+                    event.listenAccess = *access;
+                }
+            } else if (name == "notifyaccess") {
+                if (const auto access =
+                        accessAttributeValue(attribute, owner, false)) {
+                    event.notifyAccess = *access;
+                }
+            } else if (name == "hidden") {
+                if (const auto value =
+                        logicalAttributeValue(attribute, owner)) {
+                    event.hidden = *value;
+                }
+            }
+        }
+    }
+
     void configureDeclaredClassMembers() {
         for (auto& [className, klass] : classesByName_) {
             (void)className;
@@ -1589,6 +1718,10 @@ private:
                  klass.declaredEnumerationMembers) {
                 (void)memberName;
                 configureEnumerationMemberAttributes(member);
+            }
+            for (auto& [eventName, event] : klass.declaredEvents) {
+                (void)eventName;
+                configureEventAttributes(event);
             }
             for (auto& [methodName, method] : klass.declaredMethods) {
                 configureMethodAttributes(klass, method);
@@ -1628,6 +1761,12 @@ private:
 
     void validateResolvedClassMembers() {
         for (const auto& [className, klass] : classesByName_) {
+            if (!klass.declaredEvents.empty() && !klass.handleClass) {
+                diagnostics_.push_back(Diagnostic{
+                    klass.span,
+                    "events can be declared only by handle classes: " +
+                        className});
+            }
             for (const auto& property : klass.declaredPropertyOrder) {
                 const std::string owner = propertyDisplayName(*property);
                 if (property->abortSet && !klass.handleClass) {
@@ -1913,9 +2052,11 @@ private:
         std::map<std::string, bool> staticMethods;
         std::map<std::string, FunctionInfo> abstractMethods;
         std::map<std::string, PropertyInfoPtr> abstractProperties;
+        std::map<std::string, EventInfo> events;
+        std::vector<std::string> eventOrder;
 
         for (const auto& superclassName : info.superclasses) {
-            if (superclassName == "handle") {
+            if (isBuiltinHandleSuperclass(superclassName)) {
                 handleClass = true;
                 continue;
             }
@@ -1968,6 +2109,39 @@ private:
                 (void)propertyName;
                 mergeAbstractPropertyRequirement(
                     info, abstractProperties, property, valid);
+            }
+
+            for (const auto& eventName : base.eventOrder) {
+                const auto candidate = base.events.find(eventName);
+                if (candidate == base.events.end()) {
+                    continue;
+                }
+                const auto existing = events.find(eventName);
+                if (existing == events.end()) {
+                    events[eventName] = candidate->second;
+                    eventOrder.push_back(eventName);
+                    continue;
+                }
+                if (existing->second.declaringClass ==
+                    candidate->second.declaringClass) {
+                    continue;
+                }
+                if (classDerivesFrom(candidate->second.declaringClass,
+                                     existing->second.declaringClass)) {
+                    events[eventName] = candidate->second;
+                    continue;
+                }
+                if (classDerivesFrom(existing->second.declaringClass,
+                                     candidate->second.declaringClass)) {
+                    continue;
+                }
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info, "event:" + className + ":" + eventName,
+                    "ambiguous inherited event: " + className + "." +
+                        eventName + " from " +
+                        existing->second.declaringClass + " and " +
+                        candidate->second.declaringClass);
             }
 
             mergePrivateMethods(privateMethods, base.privateMethods);
@@ -2109,6 +2283,20 @@ private:
             }
             properties[propertyName].push_back(property);
             propertyOrder.push_back(property);
+        }
+
+        for (const auto& eventName : info.declaredEventOrder) {
+            const auto& event = info.declaredEvents.at(eventName);
+            if (events.contains(eventName)) {
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info, "event-redeclare:" + className + ":" + eventName,
+                    "inherited event cannot be redeclared: " + className +
+                        "." + eventName);
+                continue;
+            }
+            events[eventName] = event;
+            eventOrder.push_back(eventName);
         }
 
         for (const auto& [methodName, method] : info.declaredMethods) {
@@ -2268,6 +2456,8 @@ private:
         info.staticMethods = std::move(staticMethods);
         info.abstractMethods = std::move(abstractMethods);
         info.abstractProperties = std::move(abstractProperties);
+        info.events = std::move(events);
+        info.eventOrder = std::move(eventOrder);
         state = ClassResolutionState::Resolved;
         return valid;
     }
@@ -2780,6 +2970,7 @@ private:
         case BytecodeOp::LeaveControl:
             break;
         case BytecodeOp::MakeFunctionHandle:
+            return makeFunctionHandle(instruction);
         case BytecodeOp::LoadMetaClass:
         case BytecodeOp::EnterModule:
         case BytecodeOp::LeaveModule:
@@ -2799,6 +2990,143 @@ private:
             break;
         }
         return std::nullopt;
+    }
+
+    bool configureNamedFunctionHandle(
+        const BytecodeInstruction& instruction, FunctionHandleInfo& info) {
+        const std::string& target = instruction.operand;
+        if (instruction.binding.kind == BindingKind::Builtin) {
+            info.kind = FunctionHandleTargetKind::Builtin;
+            info.targetName = symbolName(instruction.binding).value_or(target);
+            return true;
+        }
+
+        const size_t firstDot = target.find('.');
+        if (firstDot != std::string::npos) {
+            const std::string receiverName = target.substr(0, firstDot);
+            const std::string methodName = target.substr(firstDot + 1);
+            const auto receiver = currentFrame().find(receiverName);
+            if (receiver != currentFrame().end() &&
+                isObject(receiver->second) &&
+                methodName.find('.') == std::string::npos) {
+                const auto klass =
+                    classesByName_.find(receiver->second.className);
+                const FunctionInfo* method =
+                    klass == classesByName_.end()
+                        ? nullptr
+                        : selectMethod(klass->second, methodName);
+                if (!method || method->staticMethod) {
+                    addDiagnostic(instruction,
+                                  "bound method is not available: " + target);
+                    return false;
+                }
+                if (!hasMemberAccess(method->access,
+                                     method->declaringClass)) {
+                    addDiagnostic(instruction,
+                                  "method access is denied: " +
+                                      method->declaringClass + "." +
+                                      method->name);
+                    return false;
+                }
+                info.kind = FunctionHandleTargetKind::Method;
+                info.className = receiver->second.className;
+                info.methodName = methodName;
+                info.declaringClass = method->declaringClass;
+                info.callable = *method;
+                info.receiver = receiver->second;
+                return true;
+            }
+
+            const size_t lastDot = target.find_last_of('.');
+            const std::string className = target.substr(0, lastDot);
+            const std::string staticMethodName = target.substr(lastDot + 1);
+            const auto klass = classesByName_.find(className);
+            const FunctionInfo* method =
+                klass == classesByName_.end()
+                    ? nullptr
+                    : selectMethod(klass->second, staticMethodName, false);
+            if (method && method->staticMethod) {
+                if (!hasMemberAccess(method->access,
+                                     method->declaringClass)) {
+                    addDiagnostic(instruction,
+                                  "method access is denied: " +
+                                      method->declaringClass + "." +
+                                      method->name);
+                    return false;
+                }
+                info.kind = FunctionHandleTargetKind::Method;
+                info.className = className;
+                info.methodName = staticMethodName;
+                info.declaringClass = method->declaringClass;
+                info.callable = *method;
+                return true;
+            }
+        }
+
+        std::string functionName = target;
+        if (instruction.binding.kind == BindingKind::Function) {
+            functionName = symbolName(instruction.binding).value_or(target);
+        }
+        auto function = functionsByName_.find(functionName);
+        if (function == functionsByName_.end() && functionName != target) {
+            function = functionsByName_.find(target);
+        }
+        if (function != functionsByName_.end()) {
+            info.kind = FunctionHandleTargetKind::Function;
+            info.targetName = function->first;
+            info.callable = function->second;
+            return true;
+        }
+
+        addDiagnostic(instruction,
+                      "function handle target is not available: " + target);
+        return false;
+    }
+
+    std::optional<size_t> makeFunctionHandle(
+        const BytecodeInstruction& instruction) {
+        FunctionHandleInfo info;
+        info.id = nextFunctionHandleId_++;
+        info.span = instruction.span;
+        info.lexicalClassName = instruction.receiverName;
+
+        std::optional<size_t> continuation;
+        if (instruction.operand == "@()") {
+            continuation = checkedTarget(instruction);
+            if (!continuation) {
+                return std::nullopt;
+            }
+            info.kind = FunctionHandleTargetKind::Anonymous;
+            info.parameters = instruction.parameters;
+            info.capturedVariables = currentFrame();
+            info.entry = currentPc_ + 1;
+            info.end = *continuation;
+            std::string display = "@(";
+            for (size_t index = 0; index < info.parameters.size(); ++index) {
+                if (index > 0) {
+                    display += ",";
+                }
+                display += info.parameters[index];
+            }
+            display += ")";
+            info.display = std::move(display);
+            if (info.entry >= info.end) {
+                addDiagnostic(instruction,
+                              "anonymous function handle requires a body");
+                return continuation;
+            }
+        } else {
+            info.display = "@" + instruction.operand;
+            if (!configureNamedFunctionHandle(instruction, info)) {
+                return std::nullopt;
+            }
+        }
+
+        const size_t id = info.id;
+        const std::string display = info.display;
+        functionHandles_[id] = std::move(info);
+        pushRuntime(functionHandleValue(id, display));
+        return continuation;
     }
 
     std::optional<size_t> checkedTarget(
@@ -3101,7 +3429,8 @@ private:
         }
         const StackValue& target = stack_.back();
         if (target.isBuiltinReference || target.isFunctionReference ||
-            target.isClassReference || target.isMethodReference) {
+            target.isClassReference || target.isMethodReference ||
+            isFunctionHandle(target.value)) {
             indexContextStack_.push_back(IndexContext{
                 missingValue(), static_cast<size_t>(instruction.operandCount), 0});
             return;
@@ -3519,6 +3848,29 @@ private:
                           "member access requires a class object target");
             return;
         }
+        const bool builtInEventData =
+            target->value.className == kEventDataClassName;
+        const bool inheritedEventDataProperty =
+            (instruction.operand == "Source" ||
+             instruction.operand == "EventName") &&
+            classDerivesFrom(target->value.className,
+                             std::string(kEventDataClassName));
+        if (builtInEventData || inheritedEventDataProperty ||
+            target->value.className == kEventListenerClassName) {
+            const auto& fields = objectFields(target->value);
+            const auto field = fields.find(instruction.operand);
+            if (field == fields.end() ||
+                instruction.operand.rfind("__mparser_", 0) == 0) {
+                addDiagnostic(instruction,
+                              "built-in event object property is not "
+                              "available: " +
+                                  target->value.className + "." +
+                                  instruction.operand);
+                return;
+            }
+            stack_.push_back(runtimeStackValue(field->second));
+            return;
+        }
         const auto klass = classesByName_.find(target->value.className);
         if (klass == classesByName_.end()) {
             addDiagnostic(instruction, "class is not available: " +
@@ -3593,6 +3945,41 @@ private:
         }
 
         RuntimeValue updated = target->value;
+        if (updated.className == kEventListenerClassName) {
+            if (!updated.sharedFields) {
+                addDiagnostic(instruction,
+                              "event listener has no runtime state");
+                return;
+            }
+            if (instruction.operand == "Enabled" ||
+                instruction.operand == "Recursive") {
+                if (!isNumber(*value)) {
+                    addDiagnostic(instruction,
+                                  "event listener logical property requires "
+                                  "a scalar numeric value: " +
+                                      instruction.operand);
+                    return;
+                }
+            } else if (instruction.operand == "Callback") {
+                if (!isFunctionHandle(*value)) {
+                    addDiagnostic(instruction,
+                                  "event listener Callback requires a "
+                                  "function handle");
+                    return;
+                }
+            } else {
+                addDiagnostic(instruction,
+                              "event listener property is read-only: " +
+                                  instruction.operand);
+                return;
+            }
+            (*updated.sharedFields)[instruction.operand] = *value;
+            if (!instruction.receiverName.empty()) {
+                currentFrame()[instruction.receiverName] = updated;
+            }
+            recordAssignment(instruction, "listener-member", updated);
+            return;
+        }
         const auto klass = classesByName_.find(updated.className);
         if (klass == classesByName_.end()) {
             addDiagnostic(instruction,
@@ -4120,6 +4507,24 @@ private:
             return;
         }
 
+        if (isFunctionHandle(callee->value)) {
+            BytecodeCallSiteProfile* profile = nullptr;
+            if (profilingEnabled_) {
+                profile = &recordCallSite(instruction, "function-handle",
+                                          callee->value.text);
+                observeValues(profile->argumentObservations, *arguments);
+            }
+            auto outputs = callFunctionHandle(
+                instruction, callee->value, *arguments,
+                instruction.resultCount);
+            if (profile) {
+                observeValues(profile->resultObservations, outputs);
+            }
+            finishIndexContext();
+            pushOutputValues(instruction, outputs);
+            return;
+        }
+
         if (instruction.binding.kind == BindingKind::Function ||
             callee->isFunctionReference) {
             const std::string name = symbolName(instruction.binding)
@@ -4191,6 +4596,123 @@ private:
         pushRuntime(std::move(result));
     }
 
+    std::vector<RuntimeValue> callAnonymousFunctionHandle(
+        const BytecodeInstruction& instruction,
+        const FunctionHandleInfo& info,
+        const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        if (arguments.size() != info.parameters.size()) {
+            addDiagnostic(instruction,
+                          "anonymous function argument count mismatch: " +
+                              info.display);
+            return missingOutputs(requestedCount);
+        }
+        if (requestedCount < 0 || requestedCount > 1) {
+            addDiagnostic(instruction,
+                          "anonymous function supports at most one output: " +
+                              info.display);
+            return missingOutputs(requestedCount);
+        }
+
+        const bool savedReturnRequested = returnRequested_;
+        const size_t savedPc = currentPc_;
+        const size_t stackBase = stack_.size();
+        auto savedForLoopStack = std::move(forLoopStack_);
+        auto savedIndexContextStack = std::move(indexContextStack_);
+        auto savedSwitchContextStack = std::move(switchContextStack_);
+        auto savedTryContextStack = std::move(tryContextStack_);
+        returnRequested_ = false;
+        forLoopStack_.clear();
+        indexContextStack_.clear();
+        switchContextStack_.clear();
+        tryContextStack_.clear();
+
+        frames_.push_back(info.capturedVariables);
+        for (size_t index = 0; index < info.parameters.size(); ++index) {
+            if (info.parameters[index] != "~") {
+                currentFrame()[info.parameters[index]] = arguments[index];
+            }
+        }
+        currentFrame()["nargin"] =
+            numberValue(static_cast<double>(arguments.size()));
+        currentFrame()["nargout"] =
+            numberValue(static_cast<double>(requestedCount));
+
+        if (!info.lexicalClassName.empty()) {
+            activeClassFunctions_.push_back(ActiveClassFunction{
+                info.lexicalClassName, "<anonymous>", {}, nullptr});
+        }
+        enterFunctionProfile(info.display, info.span);
+        executeFunctionBody(info.entry, info.end);
+        leaveFunctionProfile();
+        if (!info.lexicalClassName.empty()) {
+            activeClassFunctions_.pop_back();
+        }
+
+        RuntimeValue output = missingValue();
+        if (stack_.size() > stackBase) {
+            output = stack_.back().value;
+        } else if (diagnostics_.empty()) {
+            addDiagnostic(instruction,
+                          "anonymous function body produced no value: " +
+                              info.display);
+        }
+        stack_.resize(stackBase);
+        frames_.pop_back();
+        returnRequested_ = savedReturnRequested;
+        currentPc_ = savedPc;
+        forLoopStack_ = std::move(savedForLoopStack);
+        indexContextStack_ = std::move(savedIndexContextStack);
+        switchContextStack_ = std::move(savedSwitchContextStack);
+        tryContextStack_ = std::move(savedTryContextStack);
+
+        if (requestedCount == 0) {
+            return {};
+        }
+        return {output};
+    }
+
+    std::vector<RuntimeValue> callFunctionHandle(
+        const BytecodeInstruction& instruction, const RuntimeValue& handle,
+        const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        const auto found = functionHandles_.find(handle.opaqueId);
+        if (found == functionHandles_.end()) {
+            addDiagnostic(instruction,
+                          "function handle does not belong to this VM run");
+            return missingOutputs(requestedCount);
+        }
+
+        const FunctionHandleInfo& info = found->second;
+        auto savedActiveClassFunctions = std::move(activeClassFunctions_);
+        activeClassFunctions_.clear();
+        std::vector<RuntimeValue> outputs;
+        if (info.kind == FunctionHandleTargetKind::Anonymous) {
+            outputs = callAnonymousFunctionHandle(
+                instruction, info, arguments, requestedCount);
+        } else if (info.kind == FunctionHandleTargetKind::Builtin) {
+            outputs = callBuiltinOutputs(instruction, info.targetName,
+                                         arguments, requestedCount);
+        } else if (info.callable) {
+            std::vector<RuntimeValue> callArguments = arguments;
+            if (info.receiver) {
+                callArguments.insert(callArguments.begin(), *info.receiver);
+            }
+            const std::string name =
+                info.kind == FunctionHandleTargetKind::Method
+                    ? info.declaringClass + "." + info.methodName
+                    : info.targetName;
+            outputs = callFunctionInfo(
+                instruction, name, *info.callable, callArguments,
+                requestedCount, std::nullopt, nullptr, false);
+        } else {
+            addDiagnostic(instruction,
+                          "function handle target is unavailable: " +
+                              info.display);
+            outputs = missingOutputs(requestedCount);
+        }
+        activeClassFunctions_ = std::move(savedActiveClassFunctions);
+        return outputs;
+    }
+
     void callSuperclass(const BytecodeInstruction& instruction) {
         const auto arguments = popRuntimeValues(
             instruction, instruction.operandCount,
@@ -4230,7 +4752,7 @@ private:
                       klass->second.superclasses.end(),
                       instruction.operand) ==
                 klass->second.superclasses.end() ||
-            instruction.operand == "handle") {
+            isBuiltinHandleSuperclass(instruction.operand)) {
             addDiagnostic(
                 instruction,
                 "superclass constructor is not a direct executable "
@@ -4357,12 +4879,289 @@ private:
         pushOutputValues(instruction, outputs);
     }
 
+    const EventInfo* selectEvent(const RuntimeValue& source,
+                                 const std::string& eventName) const {
+        if (!isObject(source)) {
+            return nullptr;
+        }
+        const auto klass = classesByName_.find(source.className);
+        if (klass == classesByName_.end()) {
+            return nullptr;
+        }
+        const auto event = klass->second.events.find(eventName);
+        return event == klass->second.events.end() ? nullptr
+                                                   : &event->second;
+    }
+
+    RuntimeValue createEventListener(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments, bool coupled) {
+        if (arguments.size() != 3 || !isObject(arguments[0]) ||
+            !arguments[0].handleObject || !arguments[0].sharedFields ||
+            !isString(arguments[1]) ||
+            !isFunctionHandle(arguments[2])) {
+            addDiagnostic(
+                instruction,
+                std::string(coupled ? "addlistener" : "listener") +
+                    " expects a handle object, event-name string, and "
+                    "function handle");
+            return missingValue();
+        }
+
+        const RuntimeValue& source = arguments[0];
+        const std::string& eventName = arguments[1].text;
+        const EventInfo* event = selectEvent(source, eventName);
+        if (!event) {
+            addDiagnostic(instruction,
+                          "event is not available: " + source.className +
+                              "." + eventName);
+            return missingValue();
+        }
+        if (!hasMemberAccess(event->listenAccess,
+                             event->declaringClass)) {
+            addDiagnostic(instruction,
+                          "event listen access is denied: " +
+                              event->declaringClass + "." + eventName);
+            return missingValue();
+        }
+
+        const size_t id = nextEventListenerId_++;
+        std::map<std::string, RuntimeValue> fields;
+        fields["Source"] = source;
+        fields["EventName"] = stringValue(eventName);
+        fields["Callback"] = arguments[2];
+        fields["Enabled"] = numberValue(1.0);
+        fields["Recursive"] = numberValue(0.0);
+        fields[std::string(kListenerValidityField)] = numberValue(1.0);
+        RuntimeValue listener = objectValue(
+            std::string(kEventListenerClassName), std::move(fields), true);
+        listener.opaqueId = id;
+
+        eventListeners_[id] = EventListenerRecord{
+            id, source.sharedFields, listener.sharedFields, source.className,
+            eventName, coupled, false};
+
+        if (coupled) {
+            auto& sourceFields = *source.sharedFields;
+            auto coupledListeners =
+                sourceFields.find(std::string(kCoupledListenersField));
+            if (coupledListeners == sourceFields.end() ||
+                !isCell(coupledListeners->second)) {
+                sourceFields[std::string(kCoupledListenersField)] =
+                    cellValue({listener});
+            } else {
+                coupledListeners->second.cells.push_back(listener);
+                coupledListeners->second.rows = 1;
+                coupledListeners->second.columns =
+                    coupledListeners->second.cells.size();
+            }
+        }
+        return listener;
+    }
+
+    RuntimeValue eventNamesBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1 ||
+            (!isString(arguments[0]) && !isObject(arguments[0]))) {
+            addDiagnostic(instruction,
+                          "events expects a class-name string or object");
+            return missingValue();
+        }
+        const std::string className = isString(arguments[0])
+                                          ? arguments[0].text
+                                          : arguments[0].className;
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end()) {
+            addDiagnostic(instruction,
+                          "event class is not available: " + className);
+            return missingValue();
+        }
+
+        std::vector<RuntimeValue> names;
+        for (const auto& eventName : klass->second.eventOrder) {
+            const auto event = klass->second.events.find(eventName);
+            if (event == klass->second.events.end() || event->second.hidden ||
+                event->second.listenAccess.level !=
+                    MemberAccessLevel::Public) {
+                continue;
+            }
+            names.push_back(stringValue(eventName));
+        }
+        return cellValue(std::move(names));
+    }
+
+    RuntimeValue eventListenerIsValid(const RuntimeValue& value) const {
+        if (!isObject(value) ||
+            value.className != kEventListenerClassName ||
+            !value.sharedFields) {
+            return numberValue(isObject(value) && value.handleObject ? 1.0
+                                                                     : 0.0);
+        }
+        const auto valid = value.sharedFields->find(
+            std::string(kListenerValidityField));
+        return numberValue(valid != value.sharedFields->end() &&
+                                   truthy(valid->second)
+                               ? 1.0
+                               : 0.0);
+    }
+
+    void deleteEventListener(const BytecodeInstruction& instruction,
+                             const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1 || !isObject(arguments[0]) ||
+            arguments[0].className != kEventListenerClassName ||
+            !arguments[0].sharedFields) {
+            addDiagnostic(instruction,
+                          "delete currently expects an event listener");
+            return;
+        }
+        (*arguments[0].sharedFields)[std::string(kListenerValidityField)] =
+            numberValue(0.0);
+    }
+
+    void notifyEvent(const BytecodeInstruction& instruction,
+                     const std::vector<RuntimeValue>& arguments) {
+        if ((arguments.size() != 2 && arguments.size() != 3) ||
+            !isObject(arguments[0]) || !arguments[0].handleObject ||
+            !arguments[0].sharedFields || !isString(arguments[1])) {
+            addDiagnostic(
+                instruction,
+                "notify expects a handle object, event-name string, and "
+                "optional event data object");
+            return;
+        }
+
+        const RuntimeValue& source = arguments[0];
+        const std::string& eventName = arguments[1].text;
+        const EventInfo* event = selectEvent(source, eventName);
+        if (!event) {
+            addDiagnostic(instruction,
+                          "event is not available: " + source.className +
+                              "." + eventName);
+            return;
+        }
+        if (!hasMemberAccess(event->notifyAccess,
+                             event->declaringClass)) {
+            addDiagnostic(instruction,
+                          "event notify access is denied: " +
+                              event->declaringClass + "." + eventName);
+            return;
+        }
+
+        RuntimeValue eventData;
+        if (arguments.size() == 3) {
+            if (!isObject(arguments[2]) ||
+                (arguments[2].className != kEventDataClassName &&
+                 !classDerivesFrom(arguments[2].className,
+                                   std::string(kEventDataClassName)))) {
+                addDiagnostic(instruction,
+                              "notify event data must derive from "
+                              "event.EventData");
+                return;
+            }
+            eventData = arguments[2];
+            if (!eventData.handleObject || !eventData.sharedFields) {
+                addDiagnostic(instruction,
+                              "notify event data must be a handle object");
+                return;
+            }
+            (*eventData.sharedFields)["Source"] = source;
+            (*eventData.sharedFields)["EventName"] =
+                stringValue(eventName);
+        } else {
+            eventData = objectValue(
+                std::string(kEventDataClassName),
+                {{"EventName", stringValue(eventName)},
+                 {"Source", source}},
+                true);
+        }
+
+        std::vector<size_t> listeners;
+        for (const auto& [id, record] : eventListeners_) {
+            const auto listenerSource = record.sourceFields.lock();
+            if (listenerSource &&
+                listenerSource.get() == source.sharedFields.get() &&
+                record.eventName == eventName) {
+                listeners.push_back(id);
+            }
+        }
+
+        for (const size_t id : listeners) {
+            auto record = eventListeners_.find(id);
+            if (record == eventListeners_.end()) {
+                continue;
+            }
+            const auto listenerFields =
+                record->second.listenerFields.lock();
+            if (!listenerFields) {
+                continue;
+            }
+            const auto valid = listenerFields->find(
+                std::string(kListenerValidityField));
+            const auto enabled = listenerFields->find("Enabled");
+            const auto recursive = listenerFields->find("Recursive");
+            const auto callback = listenerFields->find("Callback");
+            if (valid == listenerFields->end() ||
+                !truthy(valid->second) || enabled == listenerFields->end() ||
+                !truthy(enabled->second) || callback == listenerFields->end() ||
+                !isFunctionHandle(callback->second)) {
+                continue;
+            }
+            const bool recursionEnabled =
+                recursive != listenerFields->end() &&
+                truthy(recursive->second);
+            if (record->second.callbackActive && !recursionEnabled) {
+                continue;
+            }
+
+            record->second.callbackActive = true;
+            const size_t diagnosticCount = diagnostics_.size();
+            (void)callFunctionHandle(instruction, callback->second,
+                                     {source, eventData}, 0);
+            record->second.callbackActive = false;
+            if (diagnostics_.size() != diagnosticCount) {
+                return;
+            }
+        }
+    }
+
     std::vector<RuntimeValue> callBuiltinOutputs(
         const BytecodeInstruction& instruction, const std::string& name,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
         if (requestedCount < 0) {
             addDiagnostic(instruction,
                           "bytecode call result count cannot be negative");
+            return {};
+        }
+
+        if (name == "addlistener" || name == "listener") {
+            if (requestedCount > 1) {
+                addDiagnostic(instruction,
+                              name + " supports at most one output");
+                return missingOutputs(requestedCount);
+            }
+            RuntimeValue listener = createEventListener(
+                instruction, arguments, name == "addlistener");
+            return requestedCount == 0
+                       ? std::vector<RuntimeValue>{}
+                       : std::vector<RuntimeValue>{std::move(listener)};
+        }
+        if (name == "notify") {
+            if (requestedCount != 0) {
+                addDiagnostic(instruction,
+                              "notify does not produce outputs");
+                return missingOutputs(requestedCount);
+            }
+            notifyEvent(instruction, arguments);
+            return {};
+        }
+        if (name == "delete") {
+            if (requestedCount != 0) {
+                addDiagnostic(instruction,
+                              "delete does not produce outputs");
+                return missingOutputs(requestedCount);
+            }
+            deleteEventListener(instruction, arguments);
             return {};
         }
 
@@ -5415,7 +6214,7 @@ private:
         if (constructor == klass->second.declaredMethods.end()) {
             bool passedArguments = false;
             for (const auto& superclassName : klass->second.superclasses) {
-                if (superclassName == "handle") {
+                if (isBuiltinHandleSuperclass(superclassName)) {
                     continue;
                 }
                 const std::vector<RuntimeValue> superclassArguments =
@@ -5456,7 +6255,7 @@ private:
             constructor->second.explicitSuperclassConstructors.end());
         const size_t diagnosticCount = diagnostics_.size();
         for (const auto& superclassName : klass->second.superclasses) {
-            if (superclassName == "handle" ||
+            if (isBuiltinHandleSuperclass(superclassName) ||
                 explicitSuperclasses.contains(superclassName)) {
                 continue;
             }
@@ -5487,7 +6286,7 @@ private:
         }
 
         for (const auto& superclassName : klass->second.superclasses) {
-            if (superclassName == "handle") {
+            if (isBuiltinHandleSuperclass(superclassName)) {
                 continue;
             }
             if (!construction.initializedClasses.contains(superclassName)) {
@@ -5658,6 +6457,17 @@ private:
     RuntimeValue callBuiltin(const BytecodeInstruction& instruction,
                              const std::string& name,
                              const std::vector<RuntimeValue>& arguments) {
+        if (name == "events") {
+            return eventNamesBuiltin(instruction, arguments);
+        }
+        if (name == "isvalid") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode isvalid expects one argument");
+                return missingValue();
+            }
+            return eventListenerIsValid(arguments.front());
+        }
         if (name == "isenum") {
             if (arguments.size() != 1) {
                 addDiagnostic(instruction,
@@ -5689,6 +6499,9 @@ private:
             if (isCell(value)) {
                 return stringValue("cell");
             }
+            if (isFunctionHandle(value)) {
+                return stringValue("function_handle");
+            }
             return stringValue("missing");
         }
         if (name == "isa") {
@@ -5709,6 +6522,8 @@ private:
                 matches = target == "char" || target == "string";
             } else if (isCell(value)) {
                 matches = target == "cell";
+            } else if (isFunctionHandle(value)) {
+                matches = target == "function_handle";
             }
             return numberValue(matches ? 1.0 : 0.0);
         }
@@ -6335,6 +7150,10 @@ private:
     std::vector<TryContext> tryContextStack_;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
     std::vector<ActiveClassFunction> activeClassFunctions_;
+    std::map<size_t, FunctionHandleInfo> functionHandles_;
+    std::map<size_t, EventListenerRecord> eventListeners_;
+    size_t nextFunctionHandleId_ = 1;
+    size_t nextEventListenerId_ = 1;
     std::map<std::string, const HirNode*> functionNodes_;
     std::map<std::string, const HirNode*> classFunctionNodes_;
     std::map<std::string, FunctionInfo> functionsByName_;

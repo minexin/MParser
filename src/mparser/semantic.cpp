@@ -142,6 +142,8 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
         return BindingKind::Method;
     case SymbolKind::Property:
         return BindingKind::Property;
+    case SymbolKind::Event:
+        return BindingKind::Event;
     case SymbolKind::EnumerationMember:
         return BindingKind::EnumerationMember;
     case SymbolKind::Class:
@@ -154,14 +156,15 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
 
 bool isKnownBuiltinName(const std::string& name) {
     static constexpr const char* kBuiltinNames[] = {
-        "abs",      "acos",     "all",      "any",     "asin",
-        "assert",   "atan",     "cell",     "char",    "class",
-        "cos",      "disp",     "double",   "empty",   "eps",
-        "enumeration", "error", "exp",      "eye",      "false",
+        "abs",      "acos",     "addlistener", "all",   "any",
+        "asin",     "assert",   "atan",     "cell",     "char",
+        "class",    "cos",      "delete",   "disp",     "double",
+        "empty",    "enumeration", "eps",   "error",    "events",
+        "exp",      "eye",      "false",
         "fprintf",  "inf",      "isa",      "isenum",   "isempty",
-        "isfield",  "length",
-        "linspace", "log",      "logical",  "max",     "mean",
-        "min",      "nan",      "numel",    "ones",    "pi",
+        "isfield",  "isvalid",  "length",   "linspace", "listener",
+        "log",      "logical",  "max",      "mean",     "min",
+        "nan",      "notify",   "numel",    "ones",     "pi",
         "plot",     "rand",     "randn",    "single",  "sin",
         "size",     "sqrt",     "strcmp",   "string",  "struct",
         "sum",      "table",    "tan",      "true",    "zeros",
@@ -451,12 +454,34 @@ private:
                 continue;
             }
 
-            if (block->kind == SyntaxKind::EventsBlock) {
-                for (const auto& child : block->children) {
-                    if (child->kind == SyntaxKind::EventDecl) {
-                        occupiedNames.insert(child->label);
-                    }
+        }
+
+        for (const auto& block : classNode.children) {
+            if (block->kind != SyntaxKind::EventsBlock) {
+                continue;
+            }
+            for (const auto& child : block->children) {
+                if (child->kind != SyntaxKind::EventDecl ||
+                    child->label.empty()) {
+                    continue;
                 }
+                if (child->label ==
+                    unqualifiedClassName(classNode.label)) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        child->span,
+                        "event cannot have the class name: " +
+                            classNode.label + "." + child->label});
+                    continue;
+                }
+                if (!occupiedNames.insert(child->label).second) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        child->span,
+                        "event conflicts with another class member: " +
+                            classNode.label + "." + child->label});
+                    continue;
+                }
+                declareSymbol(SymbolKind::Event, child->label,
+                              child->span, classNode.label);
             }
         }
 
@@ -517,6 +542,8 @@ private:
             return lowerGeneric(syntax, HirKind::Import);
         case SyntaxKind::PropertyDecl:
             return lowerDeclaration(syntax, HirKind::Property, SymbolKind::Property);
+        case SyntaxKind::EventDecl:
+            return lowerEvent(syntax);
         case SyntaxKind::EnumMember:
             return lowerEnumerationMember(syntax);
         case SyntaxKind::MethodPrototype:
@@ -543,7 +570,6 @@ private:
         case SyntaxKind::MethodsBlock:
         case SyntaxKind::EventsBlock:
         case SyntaxKind::EnumerationBlock:
-        case SyntaxKind::EventDecl:
         case SyntaxKind::SuperclassList:
         case SyntaxKind::Superclass:
             return lowerGeneric(syntax, HirKind::Statement);
@@ -714,6 +740,18 @@ private:
         return node;
     }
 
+    std::unique_ptr<HirNode> lowerEvent(const SyntaxNode& syntax) {
+        auto node = makeNode(HirKind::Event, syntax);
+        if (!classStack_.empty()) {
+            if (const auto event =
+                    resolveClassMember(classStack_.back(), syntax.label);
+                event && event->kind == BindingKind::Event) {
+                node->binding = *event;
+            }
+        }
+        return node;
+    }
+
     std::unique_ptr<HirNode> lowerAssignment(const SyntaxNode& syntax) {
         auto node = makeNode(HirKind::Assignment, syntax);
         if (!syntax.children.empty()) {
@@ -813,6 +851,24 @@ private:
 
     std::unique_ptr<HirNode> lowerFunctionHandle(const SyntaxNode& syntax) {
         auto node = makeNode(HirKind::FunctionHandle, syntax);
+        if (!classStack_.empty()) {
+            node->lexicalClassName = classStack_.back();
+        } else if (syntax.span.begin.sourceId != kInvalidSourceId) {
+            const auto lexicalClass =
+                lexicalClassBySource_.find(syntax.span.begin.sourceId);
+            if (lexicalClass != lexicalClassBySource_.end()) {
+                node->lexicalClassName = lexicalClass->second;
+            }
+        }
+        if (syntax.label != "@()") {
+            const auto resolution = resolveName(syntax.label, syntax.span);
+            node->binding = resolution.binding;
+            if (!resolution.canonicalName.empty()) {
+                node->label = resolution.canonicalName;
+            }
+            return node;
+        }
+
         pushScope(ScopeKind::Function, "<anonymous>");
 
         if (!syntax.children.empty() &&
@@ -1218,6 +1274,7 @@ private:
                 if (symbol.name == memberName &&
                     (symbol.kind == SymbolKind::Property ||
                      symbol.kind == SymbolKind::Method ||
+                     symbol.kind == SymbolKind::Event ||
                      symbol.kind == SymbolKind::EnumerationMember)) {
                     visiting.erase(className);
                     return BindingRef{bindingKindForSymbol(symbol.kind),
@@ -1716,6 +1773,8 @@ const char* hirKindName(HirKind kind) {
         return "Import";
     case HirKind::Property:
         return "Property";
+    case HirKind::Event:
+        return "Event";
     case HirKind::EnumerationMember:
         return "EnumerationMember";
     case HirKind::MethodPrototype:
@@ -1784,6 +1843,8 @@ const char* bindingKindName(BindingKind kind) {
         return "Method";
     case BindingKind::Property:
         return "Property";
+    case BindingKind::Event:
+        return "Event";
     case BindingKind::EnumerationMember:
         return "EnumerationMember";
     case BindingKind::Class:
@@ -1808,6 +1869,8 @@ const char* symbolKindName(SymbolKind kind) {
         return "Method";
     case SymbolKind::Property:
         return "Property";
+    case SymbolKind::Event:
+        return "Event";
     case SymbolKind::EnumerationMember:
         return "EnumerationMember";
     case SymbolKind::Class:

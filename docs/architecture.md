@@ -216,7 +216,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.40 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.41 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -262,6 +262,26 @@ and switch matching compare the class-qualified member identity. Enumeration
 classes are implicitly sealed, and member collisions are rejected during
 semantic predeclaration. Until object arrays exist, `enumeration` exposes its
 ordered visible values and names as Cells.
+
+Function handles are first-class runtime values backed by VM-owned callable
+descriptors. Anonymous handles retain an explicit parameter vector, a half-open
+bytecode body range, the lexical class identity, and a value snapshot of the
+defining frame. Named handles resolve once at creation to a builtin, ordinary
+function, package function, static method, or bound object method. The public
+runtime value carries only an opaque VM-local identity, so closures and private
+method metadata do not leak through the embedding boundary.
+
+Event declarations use their own HIR and binding kind but emit no top-level
+runtime instruction. Instead, class loading builds inherited event tables with
+stable declaration order, access policies, and hidden flags. Listener records
+hold weak links to source and listener field storage. `addlistener` also stores
+the listener on the source object, while `listener` relies on the caller to
+retain its result. `notify` snapshots matching listener identities, then invokes
+each enabled callback synchronously with the source and an `event.EventData`
+object. Per-listener active state suppresses recursive delivery unless
+`Recursive` is enabled. Custom event-data subclasses reuse normal class
+construction and receive the built-in `Source` and `EventName` fields at
+notification time.
 
 Optimization candidates also carry bytecode region
 contracts: half-open PC
@@ -474,20 +494,19 @@ overridden only by an authorized subclass, and the override must preserve the
 complete resolved access policy.
 
 The VM intentionally still rejects non-`handle` built-in superclass
-construction, full MATLAB property conversion,
-custom validators, validator set-membership/range functions, dimensions above
-two, non-scalar string arrays, `HandleCompatible` enforcement, cross-file
-function discovery from command-form calls, function handles, `.mlx`, `.p`, and
-MEX precedence, class-folder Live Code/P-code/MEX methods, handle lifecycle
-operations such as `delete` and `isvalid`, cyclic object collection, events,
-numeric/logical/character built-in enumeration bases, enumeration object arrays,
-class methods as `CompiledModule` entry targets,
-function-handle execution, dynamic function handles, automatic numeric-array
-growth, non-scalar right-hand-side indexed assignment shape matching, structs,
-sparse arrays, and complex values until the IR grows richer mutation, layout,
-and dynamic dispatch conventions. Cell execution is deliberately limited to
-one-dimensional scalar brace reads/writes; multi-subscript Cells and
-comma-separated-list expansion are future work.
+construction, full MATLAB property conversion, custom validators, validator
+set-membership/range functions, dimensions above two, non-scalar string arrays,
+`HandleCompatible` enforcement, cross-file function discovery from command-form
+calls, dynamic or text-created function handles, `.mlx`, `.p`, and MEX
+precedence, class-folder Live Code/P-code/MEX methods, general handle deletion,
+`ObjectBeingDestroyed`, cyclic object collection, property change listeners,
+listener/source arrays, numeric/logical/character built-in enumeration bases,
+enumeration object arrays, class methods as `CompiledModule` entry targets,
+automatic numeric-array growth, non-scalar right-hand-side indexed assignment
+shape matching, structs, sparse arrays, and complex values until the IR grows
+richer mutation, layout, and dynamic dispatch conventions. Cell execution is
+deliberately limited to one-dimensional scalar brace reads/writes;
+multi-subscript Cells and comma-separated-list expansion are future work.
 
 This shape is intentionally close to an interpreter dispatch loop, but still
 abstract enough for MATLAB's delayed decisions. `CallOrIndex` remains a neutral
@@ -497,7 +516,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.40
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.41
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -578,8 +597,12 @@ inspection without exposing helpers as methods. v0.40 adds structured
 enumeration-member symbols and initializer regions, lazy cached construction,
 value immutability, handle singleton state, implicit sealing, enum equality and
 switch behavior, member imports, package loading, conversions, and visible
-member queries. The next steps are events and listeners, multidimensional and
-comma-separated-list Cell semantics, persistent code
+member queries. v0.41 adds executable closure and named function handles,
+package callback discovery, event metadata and inheritance, listener access and
+lifecycle policies, synchronous notification, recursive callback control, and
+default/custom event data. The next steps are multidimensional arrays,
+object/listener arrays, property event listeners, comma-separated-list Cell
+semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.
 

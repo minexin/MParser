@@ -323,6 +323,7 @@ private:
         switch (token.kind) {
         case TokenKind::Identifier:
         case TokenKind::KeywordEnumeration:
+        case TokenKind::KeywordEvents:
             return makeLeaf(SyntaxKind::IdentifierExpr, token);
         case TokenKind::Number:
             return makeLeaf(SyntaxKind::NumberLiteralExpr, token);
@@ -1414,13 +1415,32 @@ std::unique_ptr<SyntaxNode> Parser::parseEventsBlock() {
             break;
         }
 
-        auto event = makeNode(SyntaxKind::EventDecl, current().span.begin);
-        const auto tokens = collectUntilSeparator();
-        event->raw = joinTokens(tokens);
-        event->label = firstIdentifier(tokens);
+        const auto declarationTokens =
+            removeEllipses(collectUntilSeparator());
+        for (const auto& tokens : splitTopLevelCommas(declarationTokens)) {
+            if (tokens.empty()) {
+                diagnostics_.push_back(Diagnostic{
+                    current().span, "expected event name after comma"});
+                continue;
+            }
+
+            auto event = makeNode(SyntaxKind::EventDecl,
+                                  tokens.front().span.begin);
+            event->raw = joinTokens(tokens);
+            event->attributes = node->attributes;
+            event->span = mergeSpans(tokens.front().span,
+                                     tokens.back().span);
+            if (tokens.size() != 1 ||
+                tokens.front().kind != TokenKind::Identifier) {
+                diagnostics_.push_back(Diagnostic{
+                    event->span,
+                    "event declaration must contain one identifier"});
+            } else {
+                event->label = tokens.front().text;
+            }
+            node->children.push_back(std::move(event));
+        }
         consumeSeparator();
-        finishNode(*event);
-        node->children.push_back(std::move(event));
     }
 
     consumeExpectedEnd("events block");
@@ -1822,7 +1842,7 @@ std::vector<Token> Parser::collectUntilSeparator() {
         }
 
         if (at(TokenKind::Ellipsis)) {
-            tokens.push_back(advance());
+            advance();
             if (at(TokenKind::Newline)) {
                 advance();
             }

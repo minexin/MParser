@@ -1,13 +1,48 @@
 #include "mparser/bytecode.h"
 
 #include <cstddef>
+#include <cctype>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 namespace mparser {
 namespace {
+
+std::string trimAscii(std::string_view text) {
+    size_t begin = 0;
+    while (begin < text.size() &&
+           std::isspace(static_cast<unsigned char>(text[begin])) != 0) {
+        ++begin;
+    }
+    size_t end = text.size();
+    while (end > begin &&
+           std::isspace(static_cast<unsigned char>(text[end - 1])) != 0) {
+        --end;
+    }
+    return std::string(text.substr(begin, end - begin));
+}
+
+std::vector<std::string> parameterNames(std::string_view text) {
+    std::vector<std::string> names;
+    size_t begin = 0;
+    while (begin <= text.size()) {
+        const size_t comma = text.find(',', begin);
+        const size_t end = comma == std::string_view::npos ? text.size()
+                                                           : comma;
+        std::string name = trimAscii(text.substr(begin, end - begin));
+        if (!name.empty()) {
+            names.push_back(std::move(name));
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        begin = comma + 1;
+    }
+    return names;
+}
 
 class BytecodeLoweringContext {
 public:
@@ -30,8 +65,8 @@ private:
     size_t emit(BytecodeOp op, const HirNode& node, int operandCount = 0,
                 int target = -1, int resultCount = 1) {
         program_.instructions.push_back(BytecodeInstruction{
-            op, node.label.empty() ? node.raw : node.label, {}, node.binding,
-            node.span, operandCount, target, resultCount});
+            op, node.label.empty() ? node.raw : node.label, {}, {},
+            node.binding, node.span, operandCount, target, resultCount});
         return program_.instructions.size() - 1;
     }
 
@@ -118,8 +153,7 @@ private:
             emit(BytecodeOp::BraceIndex, node, argumentCount(node));
             break;
         case HirKind::FunctionHandle:
-            lowerChildren(node);
-            emit(BytecodeOp::MakeFunctionHandle, node, childCount(node));
+            lowerFunctionHandle(node);
             break;
         case HirKind::MetaClass:
             emit(BytecodeOp::LoadMetaClass, node);
@@ -145,6 +179,8 @@ private:
                           BytecodeOp::LeavePropertyInitializer, node);
             }
             break;
+        case HirKind::Event:
+            break;
         case HirKind::EnumerationMember:
             emit(BytecodeOp::EnterEnumerationMemberInitializer, node,
                  childCount(node));
@@ -161,6 +197,25 @@ private:
         emit(enter, node);
         lowerChildren(node);
         emit(leave, node);
+    }
+
+    void lowerFunctionHandle(const HirNode& node) {
+        const size_t make = emit(BytecodeOp::MakeFunctionHandle, node);
+        auto& instruction = program_.instructions[make];
+        instruction.receiverName = node.lexicalClassName;
+
+        if (node.label != "@()") {
+            return;
+        }
+        if (!node.children.empty() &&
+            node.children.front()->kind == HirKind::ParameterList) {
+            instruction.parameters =
+                parameterNames(node.children.front()->raw);
+        }
+        if (node.children.size() >= 2) {
+            lowerExpression(*node.children[1]);
+        }
+        patchTarget(make, program_.instructions.size());
     }
 
     bool lowerControlStatement(const HirNode& node) {

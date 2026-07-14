@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.40.0 LANGUAGES CXX)
+project(MParser VERSION 0.41.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -178,6 +178,30 @@ add_test(NAME enumeration_class_query_loader_cli_smoke
 set_tests_properties(enumeration_class_query_loader_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "query_count = 2")
 
+add_test(NAME event_listener_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/app/run_demo.m)
+set_tests_properties(event_listener_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 39")
+
+add_test(NAME event_listener_module_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --module-info
+        --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/app/run_demo.m)
+set_tests_properties(event_listener_module_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "signals.onPulse")
+
+add_test(NAME event_listener_hir_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --hir
+        --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/app/run_demo.m)
+set_tests_properties(event_listener_hir_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "Event Tick type=signals.Pulse")
+
 add_test(NAME namespace_function_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
         --run-bytecode
@@ -279,6 +303,12 @@ add_executable(enumeration_class_smoke_tests
 target_link_libraries(enumeration_class_smoke_tests PRIVATE mparser_core)
 add_test(NAME enumeration_class_smoke
     COMMAND enumeration_class_smoke_tests)
+
+add_executable(event_listener_smoke_tests
+    tests/event_listener_smoke.cpp)
+target_link_libraries(event_listener_smoke_tests PRIVATE mparser_core)
+add_test(NAME event_listener_smoke
+    COMMAND event_listener_smoke_tests)
 
 add_executable(handle_semantics_smoke_tests tests/handle_semantics_smoke.cpp)
 target_link_libraries(handle_semantics_smoke_tests PRIVATE mparser_core)

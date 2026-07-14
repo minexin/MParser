@@ -513,6 +513,7 @@ private:
         case HirKind::Class:
         case HirKind::Import:
         case HirKind::Property:
+        case HirKind::Event:
         case HirKind::EnumerationMember:
         case HirKind::MethodPrototype:
         case HirKind::ControlArm:
@@ -1158,6 +1159,7 @@ private:
         case HirKind::Function:
         case HirKind::Import:
         case HirKind::Property:
+        case HirKind::Event:
         case HirKind::EnumerationMember:
         case HirKind::MethodPrototype:
         case HirKind::Control:
@@ -2439,6 +2441,8 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         }
         output << "}";
         return output.str();
+    case RuntimeValueKind::FunctionHandle:
+        return value.text.empty() ? "<function_handle>" : value.text;
     case RuntimeValueKind::Object:
         output << "<" << value.className;
         if (!value.enumerationMemberName.empty()) {
