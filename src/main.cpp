@@ -726,6 +726,10 @@ void printCompiledModuleInfo(const mparser::CompiledModule& module) {
         if (!source.classMethodOwner.empty()) {
             std::cout << " method-of=" << source.classMethodOwner;
         }
+        if (!source.classPrivateFunctionOwner.empty()) {
+            std::cout << " private-of="
+                      << source.classPrivateFunctionOwner;
+        }
         std::cout << "\n";
         for (const auto& binding : source.functionBindings) {
             std::cout << "      bind " << binding.alias << " -> "

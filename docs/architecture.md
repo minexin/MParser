@@ -99,8 +99,8 @@ property when the receiver type is clear.
 whole containing script or function, including statements textually before the
 declaration, and never leak into nested functions or classes. Variable-like
 bindings win first, followed by explicit imports, functions local to the same
-source, other lexical symbols, wildcard imports, caller-specific external
-function bindings, and builtins. Explicit imports
+source, wildcard imports, class-private function bindings, other lexical
+symbols, caller-specific external function bindings, and builtins. Explicit imports
 can bind namespace functions, classes, and static class methods. Importing an
 instance method is rejected during semantic validation, conflicting explicit
 aliases and ambiguous wildcard matches receive diagnostics, and a fully
@@ -132,6 +132,17 @@ source-local under an owner-qualified identity such as
 matching MATLAB's class-folder rule. This normalized class syntax then uses the
 same semantic scopes, access checks, hierarchy fixups, and VM metadata as an
 inline method.
+
+A function loaded from `@ClassName/private` keeps its hidden `$privateN>name`
+identity and also records the canonical class in
+`SourceUnit::classPrivateFunctionOwner`. Semantic lowering copies that owner to
+`HirNode::lexicalClassName`. The helper remains a module function rather than a
+class method, so it receives only its declared arguments and is excluded from
+the public invocation catalog. Its source-specific alias is resolved after
+wildcard imports but before class methods, which gives MATLAB's function
+notation rule without changing dot-member binding. A helper source can bind
+other files in the same private folder, while unrelated files and subclasses
+receive no alias edge.
 
 The semantic fixup also canonicalizes a known dotted class reference. A syntax
 chain such as `pkg.inner.ClassName` remains ordinary member access until all
@@ -205,7 +216,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.38 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.39 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -232,6 +243,15 @@ typed module, then all four paths share warmup and rotate measurement order.
 The report includes timing distributions, VM dispatch counts, typed
 attempts/executions/fallbacks, and typed instruction counts; exact four-way
 output equivalence is a required correctness gate.
+
+VM member access is lexical rather than inherited from the dynamic caller.
+Every function invocation pushes an access frame. Methods and class-private
+helpers place their canonical class in that frame; ordinary, namespace, path,
+and unrelated private functions place an empty class identity. This lets a
+helper use private properties and methods while preventing an ordinary function
+called by a method from borrowing the method's access rights. The frame is
+restored across nested calls, constructor chains, failures, and returns.
+
 Optimization candidates also carry bytecode region
 contracts: half-open PC
 ranges, body boundaries, stack inputs/outputs, variable reads/inputs/writes,
@@ -465,7 +485,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.38
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.39
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -539,7 +559,10 @@ inspection, and execution through both baseline runtimes. v0.38 adds
 deterministic separate-method loading, prototype/implementation signature
 validation, inherited method attributes, unlisted default-public methods,
 method-local helper identity, and ordinary/static/private method execution with
-inheritance and virtual overrides. The next steps are
+inheritance and virtual overrides. v0.39 adds class-private helper ownership,
+helper-to-helper discovery, MATLAB function-versus-dot dispatch precedence,
+subclass isolation, explicit lexical VM access frames, and source/HIR ownership
+inspection without exposing helpers as methods. The next steps are
 multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

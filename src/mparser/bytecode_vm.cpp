@@ -1160,6 +1160,8 @@ private:
                 if (const auto hir = functionNodes_.find(info.name);
                     hir != functionNodes_.end()) {
                     info.signature = parseFunctionSignature(*hir->second);
+                    info.declaringClass =
+                        hir->second->lexicalClassName;
                 }
                 functionsByName_[info.name] = std::move(info);
             } else {
@@ -5145,23 +5147,18 @@ private:
             currentFrame()[info.signature.outputs.front()] = *constructorObject;
         }
 
-        const bool classFunction = !info.declaringClass.empty();
-        if (classFunction) {
-            activeClassFunctions_.push_back(ActiveClassFunction{
-                info.declaringClass, info.name,
-                constructorInvocation && !info.signature.outputs.empty()
-                    ? info.signature.outputs.front()
-                    : std::string{},
-                construction});
-        }
+        activeClassFunctions_.push_back(ActiveClassFunction{
+            info.declaringClass, info.name,
+            constructorInvocation && !info.signature.outputs.empty()
+                ? info.signature.outputs.front()
+                : std::string{},
+            construction});
 
         enterFunctionProfile(name, info.span);
         executeFunctionBody(info.entry, info.end);
         leaveFunctionProfile();
 
-        if (classFunction) {
-            activeClassFunctions_.pop_back();
-        }
+        activeClassFunctions_.pop_back();
 
         auto completedFrame = std::move(currentFrame());
         frames_.pop_back();

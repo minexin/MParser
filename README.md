@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.38.0. See [docs/v0.38.md](docs/v0.38.md) for the
+Current milestone: v0.39.0. See [docs/v0.39.md](docs/v0.39.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.37.md](docs/v0.37.md),
+iteration plan. Previous boundaries are kept in [docs/v0.38.md](docs/v0.38.md),
+[docs/v0.37.md](docs/v0.37.md),
 [docs/v0.36.md](docs/v0.36.md),
 [docs/v0.35.md](docs/v0.35.md),
 [docs/v0.34.md](docs/v0.34.md),
@@ -74,7 +75,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.38 executes the core numeric/string subset,
+expression operators. v0.39 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -266,6 +267,17 @@ existing class HIR and bytecode dispatch. Signature mismatches, duplicate
 inline/separate implementations, malformed method files, and missing owners
 are compile diagnostics. Constructors remain in the `classdef` file as MATLAB
 requires.
+v0.39 completes the `.m` class-folder helper model for functions under
+`@ClassName/private`. Each helper remains an ordinary hidden function, but its
+source unit and HIR function carry the canonical lexical class identity. This
+lets the bytecode VM read and write private class members without turning the
+helper into a method or inserting an object receiver. Private helpers are
+visible only to methods of the defining class, are not inherited by subclasses,
+and can call one another. For a same-named helper and method, function notation
+selects the private helper while dot notation selects the method. Source-local
+functions and wildcard imports retain their higher MATLAB precedence. Every VM
+function call now installs its own lexical access context, so an ordinary path
+function called by a method cannot inherit the caller's private privilege.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -553,6 +565,18 @@ build\mparser.exe --run-bytecode `
 
 Use `--module-info` with the same paths to inspect each method source's
 `method-of=folderpkg.Counter` ownership.
+
+Run class-private helper reads, writes, static calls, and function-versus-dot
+dispatch with:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --path=samples\class_private_functions\lib `
+  samples\class_private_functions\app\run_demo.m
+```
+
+`--module-info` reports `private-of=securepkg.Vault`, while `--hir` reports
+`lexical-class=securepkg.Vault` on the hidden helper functions.
 
 Run qualified namespace functions, explicit and wildcard imports, same-file
 private helpers, an imported class, and an imported static method with:

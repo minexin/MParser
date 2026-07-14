@@ -81,6 +81,7 @@ struct HirNode {
     HirKind kind;
     std::string label;
     std::string raw;
+    std::string lexicalClassName;
     SourceSpan span;
     BindingRef binding;
     std::vector<AttributeSyntax> attributes;

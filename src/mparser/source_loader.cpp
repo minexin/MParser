@@ -327,6 +327,9 @@ std::vector<std::filesystem::path> buildSearchPaths(
 
     append(sourceNamespaceLocation(entry).root);
     for (const auto& path : options.searchPaths) {
+        if (normalizedPath(path).filename() == "private") {
+            continue;
+        }
         append(path);
     }
     return result;
@@ -346,6 +349,9 @@ std::vector<std::filesystem::path> buildOrdinaryFunctionSearchPaths(
 
     append(entry.parent_path());
     for (const auto& path : options.searchPaths) {
+        if (normalizedPath(path).filename() == "private") {
+            continue;
+        }
         append(path);
     }
     return result;
@@ -355,6 +361,31 @@ struct OrdinaryFunctionSource {
     std::filesystem::path path;
     bool privateFunction = false;
 };
+
+std::optional<std::string> classPrivateFunctionOwner(
+    const std::filesystem::path& path) {
+    const auto privateFolder = path.parent_path();
+    if (privateFolder.filename() != "private") {
+        return std::nullopt;
+    }
+
+    const auto classFolder = privateFolder.parent_path();
+    const std::string folderName = classFolder.filename().string();
+    if (folderName.size() < 2 || folderName.front() != '@' ||
+        !isSimpleClassName(folderName.substr(1))) {
+        return std::nullopt;
+    }
+
+    const std::string className = folderName.substr(1);
+    const auto definitionPath = classFolder / (className + ".m");
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(definitionPath, error) || error) {
+        return std::nullopt;
+    }
+
+    const auto namespaceLocation = sourceNamespaceLocation(definitionPath);
+    return qualifyClassName(namespaceLocation.name, className);
+}
 
 std::optional<OrdinaryFunctionSource> findOrdinaryFunctionSource(
     const std::string& functionName,
@@ -379,6 +410,10 @@ std::optional<OrdinaryFunctionSource> findOrdinaryFunctionSource(
     for (const auto& [directory, privateFunction] : directories) {
         const auto normalizedDirectory = normalizedPath(directory);
         if (!visited.insert(normalizedDirectory).second) {
+            continue;
+        }
+        if (!privateFunction &&
+            normalizedDirectory.filename() == "private") {
             continue;
         }
         const auto candidate =
@@ -525,7 +560,8 @@ SourceLoaderResult SourceLoader::load(
                                   InspectedSource inspected,
                                   std::string namespaceName,
                                   std::string functionIdentity = {},
-                                  std::string classMethodOwner = {}) {
+                                  std::string classMethodOwner = {},
+                                  std::string classPrivateOwner = {}) {
         loadedPaths.insert(path);
         if (classMethodOwner.empty()) {
             for (const auto& className : inspected.classes) {
@@ -547,7 +583,8 @@ SourceLoaderResult SourceLoader::load(
         sourcePaths.push_back(path);
         result.sources.push_back(SourceUnit{
             path.string(), std::move(content), std::move(namespaceName),
-            std::move(functionIdentity), std::move(classMethodOwner), {}});
+            std::move(functionIdentity), std::move(classMethodOwner),
+            std::move(classPrivateOwner), {}});
     };
 
     const auto appendClassFolderMethods =
@@ -655,7 +692,12 @@ SourceLoaderResult SourceLoader::load(
                             appendSource(
                                 ordinary->path, std::move(content),
                                 std::move(candidate), namespaceName,
-                                identity);
+                                identity, {},
+                                ordinary->privateFunction
+                                    ? classPrivateFunctionOwner(
+                                          ordinary->path)
+                                          .value_or(std::string{})
+                                    : std::string{});
                             addFunctionBinding(sourceId, dependency,
                                                identity);
                             continue;

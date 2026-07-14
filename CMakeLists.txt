@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.38.0 LANGUAGES CXX)
+project(MParser VERSION 0.39.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -123,6 +123,12 @@ target_link_libraries(class_folder_smoke_tests PRIVATE mparser_core)
 add_test(NAME class_folder_smoke
     COMMAND class_folder_smoke_tests)
 
+add_executable(class_private_function_smoke_tests
+    tests/class_private_function_smoke.cpp)
+target_link_libraries(class_private_function_smoke_tests PRIVATE mparser_core)
+add_test(NAME class_private_function_smoke
+    COMMAND class_private_function_smoke_tests)
+
 add_test(NAME cross_file_class_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
         --run-bytecode
@@ -190,6 +196,30 @@ add_test(NAME class_folder_module_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/app/run_demo.m)
 set_tests_properties(class_folder_module_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "method-of=folderpkg.Counter")
+
+add_test(NAME class_private_function_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/class_private_functions/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_private_functions/app/run_demo.m)
+set_tests_properties(class_private_function_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "function_choice = 16")
+
+add_test(NAME class_private_function_module_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --module-info
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/class_private_functions/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_private_functions/app/run_demo.m)
+set_tests_properties(class_private_function_module_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "private-of=securepkg.Vault")
+
+add_test(NAME class_private_function_hir_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --hir
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/class_private_functions/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_private_functions/app/run_demo.m)
+set_tests_properties(class_private_function_hir_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "lexical-class=securepkg.Vault")
 
 add_test(NAME source_loader_diagnostic_cli_smoke
     COMMAND ${CMAKE_COMMAND}

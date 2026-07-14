@@ -72,6 +72,9 @@ void dumpNode(std::ostream& output, const SemanticResult& result,
         }
         output << "]";
     }
+    if (!node.lexicalClassName.empty()) {
+        output << " lexical-class=" << node.lexicalClassName;
+    }
     if (node.kind == HirKind::Property) {
         dumpPropertySpec(output, node.property);
     }

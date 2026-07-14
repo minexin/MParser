@@ -21,6 +21,7 @@ struct SourceUnit {
     std::string namespaceName;
     std::string primaryFunctionIdentity;
     std::string classMethodOwner;
+    std::string classPrivateFunctionOwner;
     std::vector<SourceFunctionBinding> functionBindings;
 };
 

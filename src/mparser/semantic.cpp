@@ -249,6 +249,12 @@ class AnalyzerContext {
 public:
     SemanticResult analyze(const SyntaxNode& root,
                            const std::vector<SourceUnit>& sources) {
+        for (size_t sourceId = 0; sourceId < sources.size(); ++sourceId) {
+            if (!sources[sourceId].classPrivateFunctionOwner.empty()) {
+                lexicalClassBySource_[sourceId] =
+                    sources[sourceId].classPrivateFunctionOwner;
+            }
+        }
         result_.root = makeNode(HirKind::Module, root);
         pushScope(ScopeKind::Module, "module");
         predeclareModuleSymbols(root);
@@ -306,6 +312,14 @@ private:
 
     void registerExternalFunctionBindings(
         const std::vector<SourceUnit>& sources) {
+        std::unordered_set<std::string> classPrivateTargets;
+        for (const auto& source : sources) {
+            if (!source.classPrivateFunctionOwner.empty() &&
+                !source.primaryFunctionIdentity.empty()) {
+                classPrivateTargets.insert(source.primaryFunctionIdentity);
+            }
+        }
+
         for (size_t sourceId = 0; sourceId < sources.size(); ++sourceId) {
             for (const auto& binding : sources[sourceId].functionBindings) {
                 SourceSpan span;
@@ -319,7 +333,9 @@ private:
                     continue;
                 }
 
-                auto& aliases = externalFunctionAliases_[sourceId];
+                auto& aliases = classPrivateTargets.contains(binding.target)
+                                    ? classPrivateFunctionAliases_[sourceId]
+                                    : externalFunctionAliases_[sourceId];
                 const auto [existing, inserted] =
                     aliases.emplace(binding.alias, target);
                 if (!inserted &&
@@ -581,6 +597,15 @@ private:
 
         auto node = makeNode(HirKind::Function, syntax);
         node->label = functionName;
+        if (method) {
+            node->lexicalClassName = className;
+        } else if (syntax.span.begin.sourceId != kInvalidSourceId) {
+            const auto lexicalClass =
+                lexicalClassBySource_.find(syntax.span.begin.sourceId);
+            if (lexicalClass != lexicalClassBySource_.end()) {
+                node->lexicalClassName = lexicalClass->second;
+            }
+        }
         pushScope(ScopeKind::Function, functionName);
         collectImportsForCurrentScope(syntax);
 
@@ -894,6 +919,23 @@ private:
         return BindingRef{};
     }
 
+    BindingRef resolveSourceLocalFunction(const std::string& name,
+                                          size_t sourceId) const {
+        for (auto it = scopeStack_.rbegin(); it != scopeStack_.rend(); ++it) {
+            const auto& scope = result_.scopes[static_cast<size_t>(*it)];
+            for (int symbolId : scope.symbols) {
+                const auto& symbol =
+                    result_.symbols[static_cast<size_t>(symbolId)];
+                if (symbol.kind == SymbolKind::Function &&
+                    symbol.name == name &&
+                    symbol.span.begin.sourceId == sourceId) {
+                    return BindingRef{BindingKind::Function, symbol.id};
+                }
+            }
+        }
+        return BindingRef{};
+    }
+
     BindingRef resolveFunction(const std::string& name) const {
         for (const auto& symbol : result_.symbols) {
             if (symbol.kind == SymbolKind::Function &&
@@ -997,15 +1039,34 @@ private:
                     return NameResolution{alias->second, symbol.name};
                 }
             }
+
+            if (const auto local =
+                    resolveSourceLocalFunction(name, span.begin.sourceId);
+                local.kind != BindingKind::Unresolved) {
+                return NameResolution{local, {}};
+            }
+        }
+
+        if (const auto wildcard = resolveWildcardImport(name, span)) {
+            return *wildcard;
+        }
+
+        if (span.begin.sourceId != kInvalidSourceId) {
+            if (const auto sourceAliases =
+                    classPrivateFunctionAliases_.find(span.begin.sourceId);
+                sourceAliases != classPrivateFunctionAliases_.end()) {
+                if (const auto alias = sourceAliases->second.find(name);
+                    alias != sourceAliases->second.end()) {
+                    const auto& symbol = result_.symbols[
+                        static_cast<size_t>(alias->second.symbolId)];
+                    return NameResolution{alias->second, symbol.name};
+                }
+            }
         }
 
         if (const auto local = resolveNonVariableLocal(name);
             local.kind != BindingKind::Unresolved) {
             return NameResolution{local, {}};
-        }
-
-        if (const auto wildcard = resolveWildcardImport(name, span)) {
-            return *wildcard;
         }
 
         if (span.begin.sourceId != kInvalidSourceId) {
@@ -1562,7 +1623,11 @@ private:
         sourceFunctionAliases_;
     std::unordered_map<
         size_t, std::unordered_map<std::string, BindingRef>>
+        classPrivateFunctionAliases_;
+    std::unordered_map<
+        size_t, std::unordered_map<std::string, BindingRef>>
         externalFunctionAliases_;
+    std::unordered_map<size_t, std::string> lexicalClassBySource_;
     std::vector<RegisteredImport> registeredImports_;
 };
 

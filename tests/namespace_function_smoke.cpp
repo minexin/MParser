@@ -62,6 +62,10 @@ void assertNumber(const Result& result, std::string_view name,
     const auto* value = findVariable(result, name);
     assert(value != nullptr);
     assert(value->kind == mparser::RuntimeValueKind::Number);
+    if (std::fabs(value->number - expected) >= 1e-9) {
+        std::cerr << "unexpected value for " << name << ": got "
+                  << value->number << ", expected " << expected << '\n';
+    }
     assert(std::fabs(value->number - expected) < 1e-9);
 }
 
