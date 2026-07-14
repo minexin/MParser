@@ -30,8 +30,8 @@ Attribute syntax also preserves structured meta-class lists. A single
 `?Class`, an empty cell list, or a comma-separated list such as
 `{?Reader, ?pkg.Writer}` is retained as normalized class names alongside the
 lossless raw value. Runtime policy resolution therefore does not need to
-re-tokenize attribute strings, while package-qualified names remain available
-for a future class loader.
+re-tokenize attribute strings, and namespace-qualified names can feed the
+source loader and class registry directly.
 
 Ordinary statements are parsed into a first expression tree when the syntax is
 unambiguous enough to preserve. `AssignmentStatement` keeps left and right
@@ -41,16 +41,19 @@ particular, `A(...)` becomes `CallOrIndexExpr` because only semantic analysis
 can decide whether `A` is a variable, function, constructor, or overloaded
 object.
 
-`SourceLoader` builds the first executable multi-file boundary without changing
-the parser grammar. It starts with the requested entry file, inspects structured
-syntax for simple class references, and recursively resolves matching
-`ClassName.m` files. The referring file's directory wins, followed by the entry
-directory and repeatable class paths in command-line order. A candidate is added
-only when it declares the requested top-level class, so unrelated or malformed
-files outside the dependency closure do not affect compilation. Every loaded
-`SourceUnit` receives a stable index that is copied into source positions.
-Package-qualified names, `@class` method folders, and ordinary function-file
-discovery remain separate future loader stages.
+`SourceLoader` builds the executable multi-file boundary without changing the
+parser grammar. It starts with the requested entry file, inspects structured
+syntax for class references, and recursively resolves matching class files.
+A simple `ClassName` maps to `ClassName.m`; a qualified
+`pkg.inner.ClassName` maps to `+pkg/+inner/ClassName.m` below a search root.
+The referring source root wins, followed by the entry root and repeatable class
+paths in command-line order. Candidate chains are tried longest-first so
+`pkg.Class.staticMethod()` first resolves `pkg.Class`, not a spurious `pkg`
+class. A candidate is added only when its top-level class and physical namespace
+produce the requested full name, so unrelated files outside the dependency
+closure do not affect compilation. Every loaded `SourceUnit` receives a stable
+source index and namespace name. `@class` method folders, namespace functions,
+imports, and ordinary function-file discovery remain separate future stages.
 
 Control-flow headers use the same expression machinery. A `for` range header is
 represented through a `ControlHeader` child that can contain an assignment-like
@@ -74,6 +77,13 @@ filling every symbol table dump with unused builtins. The current type hints are
 minimal but useful: constructors and first method parameters can carry class
 type names, allowing member access such as `obj.Value` to bind to a known class
 property when the receiver type is clear.
+
+The semantic fixup also canonicalizes a known dotted class reference. A syntax
+chain such as `pkg.inner.ClassName` remains ordinary member access until all
+loaded classes are declared; it then becomes one class-bound HIR name. Physical
+namespace names qualify class scopes and runtime keys, while constructor source
+signatures continue to use the final unqualified class segment required by
+MATLAB syntax.
 
 After every class in the compiled source graph has been lowered, a
 hierarchy-aware fixup revisits
@@ -138,7 +148,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.34 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.35 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -214,8 +224,8 @@ invocations, so retraining can prove a region input from a stable function
 parameter when no preceding assignment defines it.
 
 `CompiledModule` is the reusable embedding boundary above those runtime paths.
-It owns an ordered set of named sources, semantic HIR, bytecode, diagnostics,
-and the invocable
+It owns an ordered set of named, namespace-aware sources, semantic HIR,
+bytecode, diagnostics, and the invocable
 top-level function catalog. Compilation stops after a failed parse, semantic
 analysis, or lowering phase. Valid modules can preflight a named entry, execute
 independent ordinary VM invocations, or construct adaptive sessions that point
@@ -370,11 +380,12 @@ unresolved list is equivalent to sealing the class. A class-list method may be
 overridden only by an authorized subclass, and the override must preserve the
 complete resolved access policy.
 
-The VM intentionally still rejects package-qualified superclass lookup,
-non-`handle` built-in superclass construction, full MATLAB property conversion,
+The VM intentionally still rejects non-`handle` built-in superclass
+construction, full MATLAB property conversion,
 custom validators, validator set-membership/range functions, dimensions above
-two, non-scalar string arrays, `HandleCompatible` enforcement, cross-file
-ordinary function discovery, `@class` method folders, handle lifecycle operations
+two, non-scalar string arrays, `HandleCompatible` enforcement, namespace
+functions/imports, cross-file ordinary function discovery, `@class` method
+folders, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 class methods as `CompiledModule` entry targets,
 function-handle execution, dynamic function handles, automatic numeric-array
@@ -392,7 +403,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.34
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.35
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -452,7 +463,10 @@ merging without weakening visible virtual dispatch. v0.34 adds ordered source
 units, recursive class dependency discovery, deterministic class-path lookup,
 multi-source compilation, duplicate-class rejection, and file-aware CLI
 diagnostics while preserving the existing class identity and runtime tables.
-The next steps are
+v0.35 adds physical `+namespace` discovery, nested namespaces, canonical full
+class identities, qualified constructor/static binding, cross-namespace
+inheritance, same-short-name isolation, duplicate-full-name diagnostics, and
+first-class-path-member precedence. The next steps are
 multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

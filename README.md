@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.34.0. See [docs/v0.34.md](docs/v0.34.md) for the
+Current milestone: v0.35.0. See [docs/v0.35.md](docs/v0.35.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.33.md](docs/v0.33.md),
+iteration plan. Previous boundaries are kept in [docs/v0.34.md](docs/v0.34.md),
+[docs/v0.33.md](docs/v0.33.md),
 [docs/v0.32.md](docs/v0.32.md),
 [docs/v0.31.md](docs/v0.31.md),
 [docs/v0.30.md](docs/v0.30.md),
@@ -59,15 +60,15 @@ header expression.
 The semantic layer lowers syntax into a HIR tree with scopes and symbols. It
 predeclares local functions/classes and class members, resolves local names,
 forward local function calls, anonymous function parameters, knowable class
-member access including same-file inherited members declared later, and a small
-lazy registry of common MATLAB builtins. Dynamic
-calls, indexing, package/static lookup, and unknown member access remain delayed
+member access across the loaded source graph, qualified namespace class/static
+lookup, and a small lazy registry of common MATLAB builtins. Dynamic calls,
+indexing, namespace functions/imports, and unknown member access remain delayed
 bindings for later name and type resolution.
 
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.34 executes the core numeric/string subset,
+expression operators. v0.35 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -216,6 +217,16 @@ identity, selective access lists, and dynamic dispatch therefore reuse the
 same runtime metadata as same-file classes. Only referenced class files enter
 the module, deterministic path precedence selects one definition, and
 `--module-info` reports the complete source set.
+v0.35 extends that source graph to MATLAB namespace folders. A reference such
+as `pkg.inner.ClassName` resolves from a class-path root through
+`+pkg/+inner/ClassName.m`; each source unit records its namespace and each class
+uses the full name as its semantic and runtime identity. Constructors keep the
+short name required inside `classdef` source while compiling to the qualified
+class key. Qualified construction, static access, cross-namespace inheritance,
+superclass calls, private member identity, and dynamic dispatch share the same
+class registry. Classes with the same short name can coexist in different
+namespaces, while duplicate full names are diagnosed. Multiple namespace roots
+merge naturally and the first matching class member in class-path order wins.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -477,6 +488,17 @@ build\mparser.exe --run-bytecode `
 `--class-path=DIR` may be repeated. It participates in semantic, bytecode,
 runtime, benchmark, and module modes; token and syntax-only inspection remain
 limited to the requested entry file.
+
+Run qualified classes from multiple and nested namespace folders with:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --class-path=samples\package_classes `
+  samples\package_classes\app\run_demo.m
+```
+
+Inspect the resolved namespace attached to each source with the same command
+using `--module-info` instead of `--run-bytecode`.
 
 Compile once, inspect the reusable module catalog, and validate an entry with:
 

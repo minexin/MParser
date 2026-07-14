@@ -12,6 +12,7 @@ inline constexpr size_t kInvalidSourceId =
 struct SourceUnit {
     std::string name;
     std::string content;
+    std::string namespaceName;
 };
 
 struct SourcePosition {

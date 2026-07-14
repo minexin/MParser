@@ -14,6 +14,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace mparser {
 namespace {
@@ -21,6 +22,11 @@ namespace {
 struct InspectedSource {
     std::set<std::string> classes;
     std::set<std::string> dependencies;
+};
+
+struct SourceNamespaceLocation {
+    std::filesystem::path root;
+    std::string name;
 };
 
 std::filesystem::path normalizedPath(const std::filesystem::path& path) {
@@ -57,6 +63,94 @@ bool isSimpleClassName(const std::string& name) {
         });
 }
 
+std::vector<std::string> splitClassName(std::string_view name) {
+    std::vector<std::string> parts;
+    size_t begin = 0;
+    while (begin <= name.size()) {
+        const size_t end = name.find('.', begin);
+        const auto part = name.substr(
+            begin, end == std::string_view::npos ? name.size() - begin
+                                                 : end - begin);
+        if (!isSimpleClassName(std::string(part))) {
+            return {};
+        }
+        parts.emplace_back(part);
+        if (end == std::string_view::npos) {
+            break;
+        }
+        begin = end + 1;
+    }
+    return parts;
+}
+
+std::string joinClassName(const std::vector<std::string>& parts,
+                          size_t count) {
+    std::string result;
+    for (size_t index = 0; index < count; ++index) {
+        if (!result.empty()) {
+            result += '.';
+        }
+        result += parts[index];
+    }
+    return result;
+}
+
+std::string qualifyClassName(std::string_view namespaceName,
+                             std::string_view className) {
+    if (namespaceName.empty()) {
+        return std::string(className);
+    }
+    return std::string(namespaceName) + "." + std::string(className);
+}
+
+SourceNamespaceLocation sourceNamespaceLocation(
+    const std::filesystem::path& sourcePath) {
+    SourceNamespaceLocation result{sourcePath.parent_path(), {}};
+    std::vector<std::string> parts;
+    auto directory = sourcePath.parent_path();
+    while (!directory.empty()) {
+        const std::string folder = directory.filename().string();
+        if (folder.size() < 2 || folder.front() != '+' ||
+            !isSimpleClassName(folder.substr(1))) {
+            break;
+        }
+        parts.push_back(folder.substr(1));
+        directory = directory.parent_path();
+    }
+
+    if (parts.empty()) {
+        return result;
+    }
+    std::reverse(parts.begin(), parts.end());
+    result.root = directory;
+    result.name = joinClassName(parts, parts.size());
+    return result;
+}
+
+std::optional<std::string> dottedExpressionName(const SyntaxNode& node) {
+    if (node.kind == SyntaxKind::IdentifierExpr &&
+        isSimpleClassName(node.label)) {
+        return node.label;
+    }
+    if (node.kind != SyntaxKind::MemberAccessExpr ||
+        node.children.empty() || !isSimpleClassName(node.label)) {
+        return std::nullopt;
+    }
+    auto prefix = dottedExpressionName(*node.children.front());
+    if (!prefix) {
+        return std::nullopt;
+    }
+    return *prefix + "." + node.label;
+}
+
+void appendClassNameCandidates(
+    std::string_view name, std::set<std::string>& dependencies) {
+    const auto parts = splitClassName(name);
+    for (size_t count = parts.size(); count > 0; --count) {
+        dependencies.insert(joinClassName(parts, count));
+    }
+}
+
 void collectDefinedClasses(const SyntaxNode& root,
                            std::set<std::string>& classes) {
     for (const auto& child : root.children) {
@@ -71,7 +165,7 @@ void collectDependencies(const SyntaxNode& node,
                          std::set<std::string>& dependencies) {
     for (const auto& attribute : node.attributes) {
         for (const auto& className : attribute.metaClassNames) {
-            if (isSimpleClassName(className)) {
+            if (!splitClassName(className).empty()) {
                 dependencies.insert(className);
             }
         }
@@ -79,22 +173,26 @@ void collectDependencies(const SyntaxNode& node,
 
     if (node.kind == SyntaxKind::SuperclassList) {
         for (const auto& superclass : node.children) {
-            if (isSimpleClassName(superclass->label)) {
+            if (!splitClassName(superclass->label).empty()) {
                 dependencies.insert(superclass->label);
             }
         }
     } else if (node.kind == SyntaxKind::PropertyDecl &&
-               isSimpleClassName(node.property.className)) {
+               !splitClassName(node.property.className).empty()) {
         dependencies.insert(node.property.className);
     } else if (node.kind == SyntaxKind::MetaClassExpr &&
-               isSimpleClassName(node.label)) {
+               !splitClassName(node.label).empty()) {
         dependencies.insert(node.label);
-    } else if ((node.kind == SyntaxKind::CallOrIndexExpr ||
-                node.kind == SyntaxKind::MemberAccessExpr) &&
-               !node.children.empty() &&
-               node.children.front()->kind == SyntaxKind::IdentifierExpr &&
-               isSimpleClassName(node.children.front()->label)) {
-        dependencies.insert(node.children.front()->label);
+    } else if (node.kind == SyntaxKind::CallOrIndexExpr &&
+               !node.children.empty()) {
+        if (const auto name =
+                dottedExpressionName(*node.children.front())) {
+            appendClassNameCandidates(*name, dependencies);
+        }
+    } else if (node.kind == SyntaxKind::MemberAccessExpr) {
+        if (const auto name = dottedExpressionName(node)) {
+            appendClassNameCandidates(*name, dependencies);
+        }
     }
 
     for (const auto& child : node.children) {
@@ -127,19 +225,38 @@ std::vector<std::filesystem::path> buildSearchPaths(
         }
     };
 
-    append(entry.parent_path());
+    append(sourceNamespaceLocation(entry).root);
     for (const auto& path : options.classPaths) {
         append(path);
     }
     return result;
 }
 
+std::filesystem::path classSourceRelativePath(
+    const std::string& className) {
+    const auto parts = splitClassName(className);
+    std::filesystem::path result;
+    for (size_t index = 0; index + 1 < parts.size(); ++index) {
+        result /= "+" + parts[index];
+    }
+    if (!parts.empty()) {
+        result /= parts.back() + ".m";
+    }
+    return result;
+}
+
 std::optional<std::filesystem::path> findClassSource(
     const std::string& className,
-    const std::filesystem::path& sourceDirectory,
+    const std::filesystem::path& sourcePath,
     const std::vector<std::filesystem::path>& searchPaths) {
+    const auto relative = classSourceRelativePath(className);
+    if (relative.empty()) {
+        return std::nullopt;
+    }
+
     std::vector<std::filesystem::path> directories;
-    directories.push_back(normalizedPath(sourceDirectory));
+    directories.push_back(
+        normalizedPath(sourceNamespaceLocation(sourcePath).root));
     directories.insert(directories.end(), searchPaths.begin(),
                        searchPaths.end());
 
@@ -148,13 +265,31 @@ std::optional<std::filesystem::path> findClassSource(
         if (!visited.insert(directory).second) {
             continue;
         }
-        const auto candidate = directory / (className + ".m");
+        const auto candidate = directory / relative;
         std::error_code error;
         if (std::filesystem::is_regular_file(candidate, error) && !error) {
             return normalizedPath(candidate);
         }
     }
     return std::nullopt;
+}
+
+size_t classNameDepth(std::string_view name) {
+    return static_cast<size_t>(
+               std::count(name.begin(), name.end(), '.')) +
+           1;
+}
+
+bool coveredByKnownClass(const std::string& dependency,
+                         const std::set<std::string>& knownClasses) {
+    for (const auto& known : knownClasses) {
+        if (known == dependency ||
+            (known.size() > dependency.size() &&
+             known.starts_with(dependency + "."))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -177,38 +312,64 @@ SourceLoaderResult SourceLoader::load(
 
     const auto appendSource = [&](const std::filesystem::path& path,
                                   std::string content,
-                                  InspectedSource inspected) {
+                                  InspectedSource inspected,
+                                  std::string namespaceName) {
         loadedPaths.insert(path);
-        knownClasses.insert(inspected.classes.begin(),
-                            inspected.classes.end());
+        for (const auto& className : inspected.classes) {
+            knownClasses.insert(
+                qualifyClassName(namespaceName, className));
+        }
         sourcePaths.push_back(path);
-        result.sources.push_back(
-            SourceUnit{path.string(), std::move(content)});
+        result.sources.push_back(SourceUnit{
+            path.string(), std::move(content), std::move(namespaceName)});
     };
 
     std::string entryContent = readSourceFile(entry);
+    const auto entryNamespace = sourceNamespaceLocation(entry).name;
     appendSource(entry, entryContent,
-                 inspectSource(entryContent, result.sources.size()));
+                 inspectSource(entryContent, result.sources.size()),
+                 entryNamespace);
 
     for (size_t sourceId = 0; sourceId < result.sources.size(); ++sourceId) {
         const auto inspected =
             inspectSource(result.sources[sourceId].content, sourceId);
-        for (const auto& dependency : inspected.dependencies) {
-            if (knownClasses.contains(dependency)) {
+        std::vector<std::string> dependencies(
+            inspected.dependencies.begin(), inspected.dependencies.end());
+        std::sort(dependencies.begin(), dependencies.end(),
+                  [](const std::string& left, const std::string& right) {
+                      const size_t leftDepth = classNameDepth(left);
+                      const size_t rightDepth = classNameDepth(right);
+                      return leftDepth != rightDepth
+                                 ? leftDepth > rightDepth
+                                 : left < right;
+                  });
+        for (const auto& dependency : dependencies) {
+            if (coveredByKnownClass(dependency, knownClasses)) {
                 continue;
             }
             const auto path = findClassSource(
-                dependency, sourcePaths[sourceId].parent_path(), searchPaths);
+                dependency, sourcePaths[sourceId], searchPaths);
             if (!path || loadedPaths.contains(*path)) {
                 continue;
             }
 
             std::string content = readSourceFile(*path);
             auto candidate = inspectSource(content, result.sources.size());
-            if (!candidate.classes.contains(dependency)) {
+            const auto namespaceName =
+                sourceNamespaceLocation(*path).name;
+            bool definesDependency = false;
+            for (const auto& className : candidate.classes) {
+                if (qualifyClassName(namespaceName, className) ==
+                    dependency) {
+                    definesDependency = true;
+                    break;
+                }
+            }
+            if (!definesDependency) {
                 continue;
             }
-            appendSource(*path, std::move(content), std::move(candidate));
+            appendSource(*path, std::move(content), std::move(candidate),
+                         namespaceName);
         }
     }
 

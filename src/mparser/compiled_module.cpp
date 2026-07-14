@@ -43,6 +43,19 @@ void appendDiagnostics(std::vector<Diagnostic>& destination,
     destination.insert(destination.end(), source.begin(), source.end());
 }
 
+void applySourceNamespace(SyntaxNode& root,
+                          std::string_view namespaceName) {
+    if (namespaceName.empty()) {
+        return;
+    }
+    for (auto& child : root.children) {
+        if (child->kind == SyntaxKind::ClassDef &&
+            !child->label.empty()) {
+            child->label = std::string(namespaceName) + "." + child->label;
+        }
+    }
+}
+
 void collectTopLevelClasses(
     const SyntaxNode& root, std::map<std::string, SourceSpan>& definitions,
     std::vector<Diagnostic>& diagnostics) {
@@ -102,6 +115,7 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
             continue;
         }
 
+        applySourceNamespace(*parse.root, source.namespaceName);
         collectTopLevelClasses(*parse.root, classDefinitions,
                                module.diagnostics_);
         if (!rootSpanInitialized) {

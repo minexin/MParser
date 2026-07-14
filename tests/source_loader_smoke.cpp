@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -100,6 +101,23 @@ const mparser::SemanticSymbol* findClassSymbol(
     return nullptr;
 }
 
+const mparser::HirNode* findHirNode(const mparser::HirNode* node,
+                                   mparser::HirKind kind,
+                                   std::string_view label) {
+    if (!node) {
+        return nullptr;
+    }
+    if (node->kind == kind && node->label == label) {
+        return node;
+    }
+    for (const auto& child : node->children) {
+        if (const auto* match = findHirNode(child.get(), kind, label)) {
+            return match;
+        }
+    }
+    return nullptr;
+}
+
 std::vector<mparser::SourceUnit> crossFileSources() {
     return {
         {"main.m", kEntrySource},
@@ -161,6 +179,47 @@ void runMultiSourceDiagnosticSmoke() {
         }
     }
     assert(foundDuplicate);
+
+    module = mparser::CompiledModule::compile(
+        std::vector<mparser::SourceUnit>{
+            {"Left.m", "classdef SharedName\nend\n", "leftpkg"},
+            {"Right.m", "classdef SharedName\nend\n", "rightpkg"},
+        });
+    assert(module.valid());
+    assert(findClassSymbol(module, "leftpkg.SharedName") != nullptr);
+    assert(findClassSymbol(module, "rightpkg.SharedName") != nullptr);
+
+    module = mparser::CompiledModule::compile(
+        std::vector<mparser::SourceUnit>{
+            {"First.m", "classdef SharedName\nend\n", "samepkg"},
+            {"Second.m", "classdef SharedName\nend\n", "samepkg"},
+        });
+    assert(!module.valid());
+    bool foundQualifiedDuplicate = false;
+    for (const auto& diagnostic : module.diagnostics()) {
+        if (diagnostic.message ==
+            "duplicate top-level class: samepkg.SharedName") {
+            foundQualifiedDuplicate = true;
+            assert(module.sourceName(diagnostic.span) == "Second.m");
+        }
+    }
+    assert(foundQualifiedDuplicate);
+
+    module = mparser::CompiledModule::compile(
+        std::vector<mparser::SourceUnit>{
+            {"main.m",
+             "shadowpkg = 1;\nvalue = shadowpkg.Shadowed;\n"},
+            {"Shadowed.m", "classdef Shadowed\nend\n", "shadowpkg"},
+        });
+    assert(module.valid());
+    const auto* shadowed = findHirNode(
+        module.semantic().root.get(), mparser::HirKind::MemberAccess,
+        "Shadowed");
+    assert(shadowed != nullptr);
+    assert(shadowed->binding.kind == mparser::BindingKind::Unresolved);
+    assert(!shadowed->children.empty());
+    assert(shadowed->children.front()->binding.kind ==
+           mparser::BindingKind::LocalVariable);
 }
 
 struct TemporaryDirectory {
@@ -260,12 +319,200 @@ void runFileDependencyLoadingSmoke() {
     assertNumber(runtime, "dynamic_code", 2);
 }
 
+void runNamespaceClassLoadingSmoke() {
+    auto temporary = makeTemporaryDirectory();
+    const auto entryPath = temporary.path / "entry" / "main.m";
+
+    writeFile(entryPath, R"(obj = pkgchild.Counter(5, 7);
+base_code = obj.baseCode();
+child_code = obj.childCode();
+dynamic_code = obj.dispatchCode();
+static_code = pkgchild.Counter.tag();
+nested_code = pkgchild.inner.Marker.code();
+other = pkgsibling.Counter(9);
+other_code = other.code();
+)");
+    writeFile(temporary.path / "+pkgbase" / "CounterBase.m",
+              R"(classdef (AllowedSubclasses = ?pkgchild.Counter) CounterBase
+    properties (Access = private)
+        Value = 1
+    end
+    methods
+        function obj = CounterBase(value)
+            obj.Value = value;
+        end
+        function value = baseCode(obj)
+            value = obj.code();
+        end
+        function value = dispatchCode(obj)
+            value = obj.step();
+        end
+        function value = step(obj)
+            value = 1;
+        end
+    end
+    methods (Access = private)
+        function value = code(obj)
+            value = obj.Value + 100;
+        end
+    end
+end
+)");
+    writeFile(temporary.path / "+pkgchild" / "Counter.m",
+              R"(classdef Counter < pkgbase.CounterBase
+    properties (Access = private)
+        Value = 2
+    end
+    methods
+        function obj = Counter(baseValue, childValue)
+            obj = obj@pkgbase.CounterBase(baseValue);
+            obj.Value = childValue;
+        end
+        function value = childCode(obj)
+            value = obj.code();
+        end
+        function value = step(obj)
+            value = 2;
+        end
+    end
+    methods (Access = private)
+        function value = code(obj)
+            value = obj.Value + 200;
+        end
+    end
+    methods (Static)
+        function value = tag()
+            value = 35;
+        end
+    end
+end
+)");
+    writeFile(temporary.path / "+pkgsibling" / "Counter.m",
+              R"(classdef Counter
+    properties
+        Value = 0
+    end
+    methods
+        function obj = Counter(value)
+            obj.Value = value;
+        end
+        function value = code(obj)
+            value = obj.Value + 300;
+        end
+    end
+end
+)");
+    writeFile(temporary.path / "+pkgchild" / "+inner" / "Marker.m",
+              R"(classdef Marker
+    methods (Static)
+        function value = code()
+            value = 44;
+        end
+    end
+end
+)");
+
+    mparser::SourceLoaderOptions loaderOptions;
+    loaderOptions.classPaths.push_back(temporary.path);
+    const auto loaded =
+        mparser::SourceLoader{}.load(entryPath, loaderOptions);
+    assert(loaded.sources.size() == 5);
+
+    std::set<std::string> namespaces;
+    for (const auto& source : loaded.sources) {
+        namespaces.insert(source.namespaceName);
+    }
+    assert(namespaces.contains(""));
+    assert(namespaces.contains("pkgbase"));
+    assert(namespaces.contains("pkgchild"));
+    assert(namespaces.contains("pkgchild.inner"));
+    assert(namespaces.contains("pkgsibling"));
+
+    const auto module =
+        mparser::CompiledModule::compile(loaded.sources);
+    assert(module.valid());
+    assert(findClassSymbol(module, "pkgbase.CounterBase") != nullptr);
+    assert(findClassSymbol(module, "pkgchild.Counter") != nullptr);
+    assert(findClassSymbol(module, "pkgchild.inner.Marker") != nullptr);
+    assert(findClassSymbol(module, "pkgsibling.Counter") != nullptr);
+
+    const auto runtime = module.invoke();
+    for (const auto& diagnostic : runtime.diagnostics) {
+        std::cerr << module.sourceName(diagnostic.span) << ":"
+                  << diagnostic.span.begin.line << ":"
+                  << diagnostic.span.begin.column << ": "
+                  << diagnostic.message << "\n";
+    }
+    if (!runtime.diagnostics.empty()) {
+        throw std::runtime_error("namespace class runtime failed");
+    }
+    assertNumber(runtime, "base_code", 105);
+    assertNumber(runtime, "child_code", 207);
+    assertNumber(runtime, "dynamic_code", 2);
+    assertNumber(runtime, "static_code", 35);
+    assertNumber(runtime, "nested_code", 44);
+    assertNumber(runtime, "other_code", 309);
+}
+
+void runNamespacePathPrecedenceSmoke() {
+    auto temporary = makeTemporaryDirectory();
+    const auto entryPath = temporary.path / "app" / "main.m";
+    const auto firstRoot = temporary.path / "first";
+    const auto secondRoot = temporary.path / "second";
+    const auto relativeClass =
+        std::filesystem::path("+precedence") / "Choice.m";
+
+    writeFile(entryPath,
+              "selected = precedence.Choice.code();\n");
+    writeFile(firstRoot / relativeClass,
+              "classdef Choice\n"
+              "    methods (Static)\n"
+              "        function value = code()\n"
+              "            value = 1;\n"
+              "        end\n"
+              "    end\n"
+              "end\n");
+    writeFile(secondRoot / relativeClass,
+              "classdef Choice\n"
+              "    methods (Static)\n"
+              "        function value = code()\n"
+              "            value = 2;\n"
+              "        end\n"
+              "    end\n"
+              "end\n");
+
+    mparser::SourceLoaderOptions options;
+    options.classPaths = {firstRoot, secondRoot};
+    auto loaded = mparser::SourceLoader{}.load(entryPath, options);
+    assert(loaded.sources.size() == 2);
+    assert(std::filesystem::equivalent(
+        loaded.sources[1].name, firstRoot / relativeClass));
+    auto module = mparser::CompiledModule::compile(loaded.sources);
+    assert(module.valid());
+    auto runtime = module.invoke();
+    assert(runtime.diagnostics.empty());
+    assertNumber(runtime, "selected", 1);
+
+    options.classPaths = {secondRoot, firstRoot};
+    loaded = mparser::SourceLoader{}.load(entryPath, options);
+    assert(loaded.sources.size() == 2);
+    assert(std::filesystem::equivalent(
+        loaded.sources[1].name, secondRoot / relativeClass));
+    module = mparser::CompiledModule::compile(loaded.sources);
+    assert(module.valid());
+    runtime = module.invoke();
+    assert(runtime.diagnostics.empty());
+    assertNumber(runtime, "selected", 2);
+}
+
 } // namespace
 
 int main() {
     runMultiSourceCompilationSmoke();
     runMultiSourceDiagnosticSmoke();
     runFileDependencyLoadingSmoke();
+    runNamespaceClassLoadingSmoke();
+    runNamespacePathPrecedenceSmoke();
     std::cout << "source loader smoke tests passed\n";
     return 0;
 }

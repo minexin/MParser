@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.34.0 LANGUAGES CXX)
+project(MParser VERSION 0.35.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -112,6 +112,14 @@ add_test(NAME cross_file_class_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/cross_file_classes/run_demo.m)
 set_tests_properties(cross_file_class_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "dynamic_code = 2")
+
+add_test(NAME package_class_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/package_classes
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/package_classes/app/run_demo.m)
+set_tests_properties(package_class_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "nested_code = 44")
 
 add_test(NAME source_loader_diagnostic_cli_smoke
     COMMAND ${CMAKE_COMMAND}

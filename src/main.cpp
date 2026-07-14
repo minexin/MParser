@@ -32,7 +32,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.34.0"
+#define MPARSER_VERSION "0.35.0"
 #endif
 
 namespace {
@@ -715,7 +715,11 @@ void printCompiledModuleInfo(const mparser::CompiledModule& module) {
          ++sourceId) {
         const auto& source = module.sources()[sourceId];
         std::cout << "  [" << sourceId << "] " << source.name << " ("
-                  << source.content.size() << " bytes)\n";
+                  << source.content.size() << " bytes)";
+        if (!source.namespaceName.empty()) {
+            std::cout << " namespace=" << source.namespaceName;
+        }
+        std::cout << "\n";
     }
 
     if (module.functions().empty()) {

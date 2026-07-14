@@ -55,6 +55,11 @@ bool isIdentifierText(const std::string& text) {
 FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
     FunctionSignature signature;
     std::string text = trim(functionNode.raw);
+    std::string_view sourceName = functionNode.label;
+    if (const size_t dot = sourceName.find_last_of('.');
+        dot != std::string_view::npos) {
+        sourceName.remove_prefix(dot + 1);
+    }
 
     const auto equal = text.find('=');
     std::string declaration = text;
@@ -76,13 +81,13 @@ FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
         }
     }
 
-    const auto namePosition = declaration.find(functionNode.label);
+    const auto namePosition = declaration.find(sourceName);
     if (namePosition == std::string::npos) {
         return signature;
     }
 
     const auto open =
-        declaration.find('(', namePosition + functionNode.label.size());
+        declaration.find('(', namePosition + sourceName.size());
     if (open == std::string::npos) {
         return signature;
     }

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -69,6 +70,30 @@ bool isIdentifierText(const std::string& text) {
         const unsigned char value = static_cast<unsigned char>(c);
         return std::isalnum(value) != 0 || c == '_';
     });
+}
+
+std::string unqualifiedClassName(std::string_view className) {
+    const size_t dot = className.find_last_of('.');
+    return std::string(dot == std::string_view::npos
+                           ? className
+                           : className.substr(dot + 1));
+}
+
+std::optional<std::string> dottedReferenceName(const HirNode& node) {
+    if (node.kind == HirKind::NameRef && !node.label.empty() &&
+        (node.binding.kind == BindingKind::Unresolved ||
+         node.binding.kind == BindingKind::Class)) {
+        return node.label;
+    }
+    if (node.kind != HirKind::MemberAccess || node.children.empty() ||
+        !isIdentifierText(node.label)) {
+        return std::nullopt;
+    }
+    auto prefix = dottedReferenceName(*node.children.front());
+    if (!prefix) {
+        return std::nullopt;
+    }
+    return *prefix + "." + node.label;
 }
 
 BindingKind bindingKindForSymbol(SymbolKind kind) {
@@ -218,7 +243,12 @@ private:
                 for (const auto& child : block->children) {
                     if (child->kind == SyntaxKind::FunctionDef ||
                         child->kind == SyntaxKind::MethodPrototype) {
-                        declareSymbol(SymbolKind::Method, child->label,
+                        const std::string memberName =
+                            child->label ==
+                                    unqualifiedClassName(classNode.label)
+                                ? classNode.label
+                                : child->label;
+                        declareSymbol(SymbolKind::Method, memberName,
                                       child->span);
                     }
                 }
@@ -343,22 +373,27 @@ private:
         const std::string className = method && !classStack_.empty()
                                           ? classStack_.back()
                                           : std::string{};
+        const bool constructor =
+            method && syntax.label == unqualifiedClassName(className);
+        const std::string functionName =
+            constructor ? className : syntax.label;
         declareSymbol(method ? SymbolKind::Method : SymbolKind::Function,
-                      syntax.label, syntax.span);
+                      functionName, syntax.span);
 
         auto node = makeNode(HirKind::Function, syntax);
-        pushScope(ScopeKind::Function, syntax.label);
+        node->label = functionName;
+        pushScope(ScopeKind::Function, functionName);
 
         const FunctionSignature signature = parseFunctionSignature(syntax);
         for (const auto& output : signature.outputs) {
             const std::string typeName =
-                method && syntax.label == className ? className : std::string{};
+                constructor ? className : std::string{};
             declareSymbol(SymbolKind::FunctionOutput, output, syntax.span,
                           typeName);
         }
         for (size_t i = 0; i < signature.parameters.size(); ++i) {
             const std::string typeName =
-                method && syntax.label != className && i == 0
+                method && !constructor && i == 0
                     ? className
                     : std::string{};
             declareSymbol(SymbolKind::FunctionParameter, signature.parameters[i],
@@ -374,10 +409,10 @@ private:
         }
 
         functionStack_.push_back(FunctionContext{
-            className, syntax.label,
+            className, functionName,
             signature.outputs.empty() ? std::string{}
                                       : signature.outputs.front(),
-            method && syntax.label == className});
+            constructor});
         lowerChildren(syntax, *node);
         functionStack_.pop_back();
         popScope();
@@ -776,6 +811,18 @@ private:
         if (node.kind == HirKind::MemberAccess &&
             node.binding.kind == BindingKind::Unresolved &&
             !node.children.empty()) {
+            if (const auto className = dottedReferenceName(node)) {
+                const auto classBinding = resolveClass(*className);
+                if (classBinding.kind == BindingKind::Class) {
+                    node.kind = HirKind::NameRef;
+                    node.label = *className;
+                    node.raw = *className;
+                    node.binding = classBinding;
+                    node.children.clear();
+                    return;
+                }
+            }
+
             const std::string className =
                 classNameForBinding(node.children.front()->binding);
             if (!className.empty()) {
