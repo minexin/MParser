@@ -63,8 +63,14 @@ imports add direct dependency candidates. Wildcard imports combine their
 namespace prefix with names actually referenced in the source, avoiding an
 eager folder scan. Import inspection and ordinary call discovery are
 intentionally conservative and file-wide for graph loading; semantic visibility
-and precedence remain scope-correct. `@class` method folders remain a future
-stage.
+and precedence remain scope-correct.
+
+Class-folder discovery adds `@ClassName/ClassName.m` as an alternative class
+candidate at each root, including nested `+namespace` roots. Once selected, all
+valid sibling `.m` function files are loaded in deterministic filename order
+and tagged with the canonical declaring class. The parent folder, not the
+`@ClassName` folder itself, is the search-path root. Method files remain distinct
+source units so diagnostics and bytecode spans retain their physical file.
 
 Control-flow headers use the same expression machinery. A `for` range header is
 represented through a `ControlHeader` child that can contain an assignment-like
@@ -115,6 +121,17 @@ source resolves its own short alias through the binding edge selected during
 loading, so path order and private visibility remain stable throughout HIR,
 bytecode, and runtime execution. Entry-source functions retain the existing
 public `CompiledModule` entry catalog contract.
+
+Before semantic lowering, the module merger attaches each class-folder method's
+primary function to its declaring class. A matching prototype is replaced only
+when input/output signatures agree, and its method-block attributes are copied
+to the implementation. An undeclared method enters a default public,
+non-static methods block. Later functions in the same method file remain
+source-local under an owner-qualified identity such as
+`pkg.Counter.scale>localMultiply`. Constructors are rejected as separate files,
+matching MATLAB's class-folder rule. This normalized class syntax then uses the
+same semantic scopes, access checks, hierarchy fixups, and VM metadata as an
+inline method.
 
 The semantic fixup also canonicalizes a known dotted class reference. A syntax
 chain such as `pkg.inner.ClassName` remains ordinary member access until all
@@ -188,7 +205,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.37 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.38 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -265,7 +282,7 @@ parameter when no preceding assignment defines it.
 
 `CompiledModule` is the reusable embedding boundary above those runtime paths.
 It owns an ordered set of named, namespace-aware sources, caller-specific
-function bindings, semantic HIR,
+function bindings, class-method ownership, semantic HIR,
 bytecode, diagnostics, and the invocable
 top-level function catalog. Compilation stops after a failed parse, semantic
 analysis, or lowering phase. Valid modules can preflight a named entry, execute
@@ -430,8 +447,8 @@ construction, full MATLAB property conversion,
 custom validators, validator set-membership/range functions, dimensions above
 two, non-scalar string arrays, `HandleCompatible` enforcement, cross-file
 function discovery from command-form calls, function handles, `.mlx`, `.p`, and
-MEX precedence, `@class` method folders, handle lifecycle operations
-such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
+MEX precedence, class-folder Live Code/P-code/MEX methods, handle lifecycle
+operations such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 class methods as `CompiledModule` entry targets,
 function-handle execution, dynamic function handles, automatic numeric-array
 growth, non-scalar right-hand-side indexed assignment shape matching, structs,
@@ -448,7 +465,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.37
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.38
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -517,7 +534,12 @@ wildcard import precedence, imported static-method validation, and namespace
 function execution in both baseline runtimes. v0.37 adds ordinary `.m` function
 discovery, caller-scoped private folders, current-directory and ordered search
 path precedence, stable external function identities, source binding graph
-inspection, and execution through both baseline runtimes. The next steps are
+inspection, and execution through both baseline runtimes. v0.38 adds
+`@ClassName` definition discovery, nested namespace class folders,
+deterministic separate-method loading, prototype/implementation signature
+validation, inherited method attributes, unlisted default-public methods,
+method-local helper identity, and ordinary/static/private method execution with
+inheritance and virtual overrides. The next steps are
 multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

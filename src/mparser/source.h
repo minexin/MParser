@@ -20,6 +20,7 @@ struct SourceUnit {
     std::string content;
     std::string namespaceName;
     std::string primaryFunctionIdentity;
+    std::string classMethodOwner;
     std::vector<SourceFunctionBinding> functionBindings;
 };
 

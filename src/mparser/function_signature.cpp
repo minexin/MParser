@@ -52,16 +52,18 @@ bool isIdentifierText(const std::string& text) {
 
 } // namespace
 
-FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
+FunctionSignature parseFunctionSignature(std::string_view rawDeclaration,
+                                         std::string_view sourceName) {
     FunctionSignature signature;
-    std::string text = trim(functionNode.raw);
-    std::string_view sourceName = functionNode.label;
+    std::string text = trim(rawDeclaration);
     if (const size_t local = sourceName.find_last_of('>');
         local != std::string_view::npos) {
         sourceName.remove_prefix(local + 1);
-    } else if (const size_t dot = sourceName.find_last_of('.');
-        dot != std::string_view::npos) {
-        sourceName.remove_prefix(dot + 1);
+    } else if (text.find(sourceName) == std::string::npos) {
+        if (const size_t qualified = sourceName.find_last_of('.');
+            qualified != std::string_view::npos) {
+            sourceName.remove_prefix(qualified + 1);
+        }
     }
 
     const auto equal = text.find('=');
@@ -111,6 +113,10 @@ FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
     }
 
     return signature;
+}
+
+FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
+    return parseFunctionSignature(functionNode.raw, functionNode.label);
 }
 
 } // namespace mparser

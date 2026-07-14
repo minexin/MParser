@@ -3,6 +3,7 @@
 #include "mparser/semantic.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mparser {
@@ -15,5 +16,7 @@ struct FunctionSignature {
 };
 
 FunctionSignature parseFunctionSignature(const HirNode& functionNode);
+FunctionSignature parseFunctionSignature(std::string_view declaration,
+                                         std::string_view sourceName);
 
 } // namespace mparser

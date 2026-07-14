@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.37.0. See [docs/v0.37.md](docs/v0.37.md) for the
+Current milestone: v0.38.0. See [docs/v0.38.md](docs/v0.38.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.36.md](docs/v0.36.md),
+iteration plan. Previous boundaries are kept in [docs/v0.37.md](docs/v0.37.md),
+[docs/v0.36.md](docs/v0.36.md),
 [docs/v0.35.md](docs/v0.35.md),
 [docs/v0.34.md](docs/v0.34.md),
 [docs/v0.33.md](docs/v0.33.md),
@@ -65,13 +66,15 @@ forward local function calls, anonymous function parameters, knowable class
 member access across the loaded source graph, qualified namespace
 functions/classes/static methods, structured explicit and wildcard imports,
 caller-scoped ordinary and `private` function files, and a small lazy registry
-of common MATLAB builtins. Dynamic calls, indexing, and unknown member access
-remain delayed bindings for later name and type resolution.
+of common MATLAB builtins. Class methods implemented in separate
+`@ClassName/*.m` files are merged into their declaring class before semantic
+lowering. Dynamic calls, indexing, and unknown member access remain delayed
+bindings for later name and type resolution.
 
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.37 executes the core numeric/string subset,
+expression operators. v0.38 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -251,6 +254,18 @@ use different private helpers with the same filename without colliding. The
 source graph records each caller's alias-to-identity binding and `--module-info`
 prints those edges. Explicit and wildcard imports retain their v0.36 semantic
 precedence. `--class-path` remains a compatibility alias for `--path`.
+v0.38 adds MATLAB class folders. A class definition can live at
+`@Counter/Counter.m` or inside a namespace such as
+`+pkg/@Counter/Counter.m`; the loader deterministically collects sibling `.m`
+method files and records their declaring class. A separate implementation
+replaces its matching method prototype while preserving block attributes such
+as `Static` and `Access`. A method without a prototype is added with MATLAB's
+default public, non-static attributes. Instance, static, and private methods,
+method-local helper functions, inheritance, and virtual overrides reuse the
+existing class HIR and bytecode dispatch. Signature mismatches, duplicate
+inline/separate implementations, malformed method files, and missing owners
+are compile diagnostics. Constructors remain in the `classdef` file as MATLAB
+requires.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -526,6 +541,18 @@ build\mparser.exe --run-bytecode `
 
 Inspect the resolved namespace attached to each source with the same command
 using `--module-info` instead of `--run-bytecode`.
+
+Run a namespace class whose instance, static, private, and default-public
+methods live in separate `@Counter` files with:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --path=samples\class_folders\lib `
+  samples\class_folders\app\run_demo.m
+```
+
+Use `--module-info` with the same paths to inspect each method source's
+`method-of=folderpkg.Counter` ownership.
 
 Run qualified namespace functions, explicit and wildcard imports, same-file
 private helpers, an imported class, and an imported static method with:

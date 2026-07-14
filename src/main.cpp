@@ -32,7 +32,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.37.0"
+#define MPARSER_VERSION "0.38.0"
 #endif
 
 namespace {
@@ -722,6 +722,9 @@ void printCompiledModuleInfo(const mparser::CompiledModule& module) {
         if (!source.primaryFunctionIdentity.empty()) {
             std::cout << " function="
                       << source.primaryFunctionIdentity;
+        }
+        if (!source.classMethodOwner.empty()) {
+            std::cout << " method-of=" << source.classMethodOwner;
         }
         std::cout << "\n";
         for (const auto& binding : source.functionBindings) {

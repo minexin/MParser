@@ -112,9 +112,14 @@ std::string qualifyClassName(std::string_view namespaceName,
 
 SourceNamespaceLocation sourceNamespaceLocation(
     const std::filesystem::path& sourcePath) {
-    SourceNamespaceLocation result{sourcePath.parent_path(), {}};
     std::vector<std::string> parts;
     auto directory = sourcePath.parent_path();
+    const std::string immediateFolder = directory.filename().string();
+    if (immediateFolder.size() >= 2 && immediateFolder.front() == '@' &&
+        isSimpleClassName(immediateFolder.substr(1))) {
+        directory = directory.parent_path();
+    }
+    SourceNamespaceLocation result{directory, {}};
     while (!directory.empty()) {
         const std::string folder = directory.filename().string();
         if (folder.size() < 2 || folder.front() != '+' ||
@@ -400,11 +405,27 @@ std::filesystem::path symbolSourceRelativePath(
     return result;
 }
 
+std::filesystem::path classFolderSourceRelativePath(
+    const std::string& symbolName) {
+    const auto parts = splitClassName(symbolName);
+    std::filesystem::path result;
+    for (size_t index = 0; index + 1 < parts.size(); ++index) {
+        result /= "+" + parts[index];
+    }
+    if (!parts.empty()) {
+        result /= "@" + parts.back();
+        result /= parts.back() + ".m";
+    }
+    return result;
+}
+
 std::optional<std::filesystem::path> findSymbolSource(
     const std::string& symbolName,
     const std::filesystem::path& sourcePath,
     const std::vector<std::filesystem::path>& searchPaths) {
     const auto relative = symbolSourceRelativePath(symbolName);
+    const auto classFolderRelative =
+        classFolderSourceRelativePath(symbolName);
     if (relative.empty()) {
         return std::nullopt;
     }
@@ -425,8 +446,30 @@ std::optional<std::filesystem::path> findSymbolSource(
         if (std::filesystem::is_regular_file(candidate, error) && !error) {
             return normalizedPath(candidate);
         }
+        error.clear();
+        const auto classFolderCandidate =
+            directory / classFolderRelative;
+        if (std::filesystem::is_regular_file(classFolderCandidate, error) &&
+            !error) {
+            return normalizedPath(classFolderCandidate);
+        }
     }
     return std::nullopt;
+}
+
+std::optional<std::string> classFolderOwnerForDefinition(
+    const std::filesystem::path& path, std::string_view namespaceName,
+    const InspectedSource& inspected) {
+    const std::string folder = path.parent_path().filename().string();
+    if (folder.size() < 2 || folder.front() != '@') {
+        return std::nullopt;
+    }
+    const std::string className = folder.substr(1);
+    if (!isSimpleClassName(className) || path.stem().string() != className ||
+        !inspected.classes.contains(className)) {
+        return std::nullopt;
+    }
+    return qualifyClassName(namespaceName, className);
 }
 
 size_t symbolNameDepth(std::string_view name) {
@@ -481,27 +524,64 @@ SourceLoaderResult SourceLoader::load(
                                   std::string content,
                                   InspectedSource inspected,
                                   std::string namespaceName,
-                                  std::string functionIdentity = {}) {
+                                  std::string functionIdentity = {},
+                                  std::string classMethodOwner = {}) {
         loadedPaths.insert(path);
-        for (const auto& className : inspected.classes) {
-            knownClasses.insert(
-                qualifyClassName(namespaceName, className));
-        }
-        for (const auto& functionName : inspected.functions) {
-            const std::string identity = functionIdentity.empty()
-                                             ? qualifyClassName(
-                                                   namespaceName,
-                                                   functionName)
-                                             : functionIdentity;
-            knownFunctions.insert(identity);
-            if (!functionIdentity.empty()) {
-                functionIdentityByPath[path] = identity;
+        if (classMethodOwner.empty()) {
+            for (const auto& className : inspected.classes) {
+                knownClasses.insert(
+                    qualifyClassName(namespaceName, className));
+            }
+            for (const auto& functionName : inspected.functions) {
+                const std::string identity = functionIdentity.empty()
+                                                 ? qualifyClassName(
+                                                       namespaceName,
+                                                       functionName)
+                                                 : functionIdentity;
+                knownFunctions.insert(identity);
+                if (!functionIdentity.empty()) {
+                    functionIdentityByPath[path] = identity;
+                }
             }
         }
         sourcePaths.push_back(path);
         result.sources.push_back(SourceUnit{
             path.string(), std::move(content), std::move(namespaceName),
-            std::move(functionIdentity), {}});
+            std::move(functionIdentity), std::move(classMethodOwner), {}});
+    };
+
+    const auto appendClassFolderMethods =
+        [&](const std::filesystem::path& definitionPath,
+            const std::string& owner) {
+        std::vector<std::filesystem::path> methodPaths;
+        std::error_code directoryError;
+        for (std::filesystem::directory_iterator iterator(
+                 definitionPath.parent_path(), directoryError), end;
+             !directoryError && iterator != end;
+             iterator.increment(directoryError)) {
+            std::error_code fileError;
+            if (!iterator->is_regular_file(fileError) || fileError) {
+                continue;
+            }
+            const auto path = normalizedPath(iterator->path());
+            if (path == definitionPath || path.extension() != ".m" ||
+                !isSimpleClassName(path.stem().string())) {
+                continue;
+            }
+            methodPaths.push_back(path);
+        }
+        std::sort(methodPaths.begin(), methodPaths.end());
+
+        for (const auto& methodPath : methodPaths) {
+            if (loadedPaths.contains(methodPath)) {
+                continue;
+            }
+            std::string content = readSourceFile(methodPath);
+            auto inspected = inspectSource(content, result.sources.size());
+            appendSource(methodPath, std::move(content),
+                         std::move(inspected),
+                         sourceNamespaceLocation(methodPath).name, {}, owner);
+        }
     };
 
     const auto addFunctionBinding = [&](size_t sourceId,
@@ -522,8 +602,13 @@ SourceLoaderResult SourceLoader::load(
     const auto entryNamespace = sourceNamespaceLocation(entry).name;
     auto entryInspected =
         inspectSource(entryContent, result.sources.size());
+    const auto entryClassFolderOwner = classFolderOwnerForDefinition(
+        entry, entryNamespace, entryInspected);
     appendSource(entry, entryContent, std::move(entryInspected),
                  entryNamespace);
+    if (entryClassFolderOwner) {
+        appendClassFolderMethods(entry, *entryClassFolderOwner);
+    }
 
     for (size_t sourceId = 0; sourceId < result.sources.size(); ++sourceId) {
         const auto inspected =
@@ -616,8 +701,13 @@ SourceLoaderResult SourceLoader::load(
             if (!definesDependency) {
                 continue;
             }
+            const auto classFolderOwner = classFolderOwnerForDefinition(
+                *path, namespaceName, candidate);
             appendSource(*path, std::move(content), std::move(candidate),
                          namespaceName);
+            if (classFolderOwner) {
+                appendClassFolderMethods(*path, *classFolderOwner);
+            }
         }
     }
 

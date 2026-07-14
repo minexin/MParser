@@ -205,12 +205,24 @@ FunctionSignature parseFunctionSignature(const SyntaxNode& functionNode) {
         }
     }
 
-    const auto namePosition = declaration.find(functionNode.label);
+    std::string_view sourceName = functionNode.label;
+    if (const size_t local = sourceName.find_last_of('>');
+        local != std::string_view::npos) {
+        sourceName.remove_prefix(local + 1);
+    } else if (declaration.find(sourceName) == std::string::npos) {
+        if (const size_t qualified = sourceName.find_last_of('.');
+            qualified != std::string_view::npos) {
+            sourceName.remove_prefix(qualified + 1);
+        }
+    }
+
+    const auto namePosition = declaration.find(sourceName);
     if (namePosition == std::string::npos) {
         return signature;
     }
 
-    const auto open = declaration.find('(', namePosition + functionNode.label.size());
+    const auto open =
+        declaration.find('(', namePosition + sourceName.size());
     if (open == std::string::npos) {
         return signature;
     }
@@ -560,6 +572,8 @@ private:
                                           : std::string{};
         const bool constructor =
             method && syntax.label == unqualifiedClassName(className);
+        const bool staticMethod =
+            method && logicalAttributeEnabled(syntax.attributes, "Static");
         const std::string functionName =
             constructor ? className : syntax.label;
         declareSymbol(method ? SymbolKind::Method : SymbolKind::Function,
@@ -579,7 +593,7 @@ private:
         }
         for (size_t i = 0; i < signature.parameters.size(); ++i) {
             const std::string typeName =
-                method && !constructor && i == 0
+                method && !constructor && !staticMethod && i == 0
                     ? className
                     : std::string{};
             declareSymbol(SymbolKind::FunctionParameter, signature.parameters[i],
