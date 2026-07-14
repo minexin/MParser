@@ -446,6 +446,9 @@ struct FunctionInfo {
     std::vector<std::string> explicitSuperclassConstructors;
     MemberAccessLevel access = MemberAccessLevel::Public;
     bool staticMethod = false;
+    bool abstractMethod = false;
+    bool sealedMethod = false;
+    bool hasBody = true;
     bool propertyAccessor = false;
     std::string accessorProperty;
     size_t entry = 0;
@@ -463,6 +466,7 @@ struct PropertyInfo {
     bool constant = false;
     bool dependent = false;
     bool abortSet = false;
+    bool abstractProperty = false;
     std::string getterName;
     std::string setterName;
     SourceSpan span;
@@ -479,9 +483,13 @@ using PropertyInfoPtr = std::shared_ptr<PropertyInfo>;
 struct ClassInfo {
     std::string name;
     SourceSpan span;
+    std::vector<AttributeSyntax> attributes;
     std::vector<std::string> superclasses;
     bool directHandleClass = false;
     bool handleClass = false;
+    bool explicitlyAbstract = false;
+    bool abstractClass = false;
+    bool sealedClass = false;
     bool hierarchyValid = true;
     std::map<std::string, PropertyInfoPtr> declaredProperties;
     std::vector<PropertyInfoPtr> declaredPropertyOrder;
@@ -491,6 +499,8 @@ struct ClassInfo {
     std::vector<PropertyInfoPtr> propertyOrder;
     std::map<std::string, FunctionInfo> methods;
     std::map<std::string, bool> staticMethods;
+    std::map<std::string, FunctionInfo> abstractMethods;
+    std::map<std::string, PropertyInfoPtr> abstractProperties;
 };
 
 enum class ClassResolutionState {
@@ -943,6 +953,7 @@ private:
             auto& info = classesByName_[className];
             info.name = className;
             info.span = node->span;
+            info.attributes = node->attributes;
             info.superclasses = node->superclasses;
             info.directHandleClass =
                 std::find(node->superclasses.begin(),
@@ -976,9 +987,41 @@ private:
             if (className.empty()) {
                 functionNodes_[node->label] = node;
             } else {
-                classFunctionNodes_[className + "." + node->label] = node;
+                const std::string key = className + "." + node->label;
+                if (!classFunctionNodes_.try_emplace(key, node).second) {
+                    diagnostics_.push_back(Diagnostic{
+                        node->span,
+                        "duplicate method declaration: " + key});
+                }
                 classesByName_[className].declaredStaticMethods[node->label] =
                     staticMethodBlock;
+            }
+        }
+        if (node->kind == HirKind::MethodPrototype && !className.empty()) {
+            FunctionInfo info;
+            info.name = node->label;
+            info.declaringClass = className;
+            info.signature = parseFunctionSignature(*node);
+            info.attributes = node->attributes;
+            info.staticMethod = staticMethodBlock;
+            info.hasBody = false;
+            info.span = node->span;
+
+            auto& klass = classesByName_[className];
+            if (info.name.empty()) {
+                diagnostics_.push_back(Diagnostic{
+                    node->span,
+                    "method prototype requires a method name in class: " +
+                        className});
+            } else if (!klass.declaredMethods
+                            .try_emplace(info.name, std::move(info))
+                            .second) {
+                diagnostics_.push_back(Diagnostic{
+                    node->span,
+                    "duplicate method declaration: " + className + "." +
+                        node->label});
+            } else {
+                klass.declaredStaticMethods[node->label] = staticMethodBlock;
             }
         }
 
@@ -1109,8 +1152,15 @@ private:
                     classesByName_[classStack.back()].declaredStaticMethods;
                 info.staticMethod = declaredStatic.contains(info.name) &&
                                     declaredStatic.at(info.name);
-                classesByName_[classStack.back()].declaredMethods[info.name] =
-                    std::move(info);
+                auto& declaredMethods =
+                    classesByName_[classStack.back()].declaredMethods;
+                if (!declaredMethods.try_emplace(info.name, std::move(info))
+                         .second) {
+                    diagnostics_.push_back(Diagnostic{
+                        instruction.span,
+                        "duplicate method declaration: " +
+                            classStack.back() + "." + instruction.operand});
+                }
             }
             pc = end;
         }
@@ -1124,7 +1174,7 @@ private:
         if (attribute.negated) {
             diagnostics_.push_back(Diagnostic{
                 attribute.span,
-                "negated class member attribute cannot also have a value: " +
+                "negated logical attribute cannot also have a value: " +
                     owner + "." + attribute.name});
             return std::nullopt;
         }
@@ -1137,9 +1187,26 @@ private:
         }
         diagnostics_.push_back(Diagnostic{
             attribute.span,
-            "class member attribute requires true or false: " + owner + "." +
+            "logical attribute requires true or false: " + owner + "." +
                 attribute.name});
         return std::nullopt;
+    }
+
+    void configureClassAttributes(ClassInfo& klass) {
+        for (const auto& attribute : klass.attributes) {
+            const std::string name = lowerAscii(attribute.name);
+            if (name == "abstract") {
+                if (const auto value =
+                        logicalAttributeValue(attribute, klass.name)) {
+                    klass.explicitlyAbstract = *value;
+                }
+            } else if (name == "sealed") {
+                if (const auto value =
+                        logicalAttributeValue(attribute, klass.name)) {
+                    klass.sealedClass = *value;
+                }
+            }
+        }
     }
 
     std::optional<MemberAccessLevel> accessAttributeValue(
@@ -1204,10 +1271,18 @@ private:
                 if (const auto value = logicalAttributeValue(attribute, owner)) {
                     property.abortSet = *value;
                 }
+            } else if (name == "abstract") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.abstractProperty = *value;
+                }
             }
         }
 
-        if (property.constant && !property.spec.hasExplicitDefault) {
+        if (property.abstractProperty && property.constant) {
+            diagnostics_.push_back(Diagnostic{
+                property.span,
+                "property cannot be both Abstract and Constant: " + owner});
+        } else if (property.constant && !property.spec.hasExplicitDefault) {
             diagnostics_.push_back(Diagnostic{
                 property.span,
                 "constant property requires a default value: " + owner});
@@ -1221,6 +1296,11 @@ private:
             diagnostics_.push_back(Diagnostic{
                 property.span,
                 "dependent property cannot define a default value: " + owner});
+        }
+        if (property.abstractProperty && property.spec.hasExplicitDefault) {
+            diagnostics_.push_back(Diagnostic{
+                property.span,
+                "abstract property cannot define a default value: " + owner});
         }
     }
 
@@ -1237,7 +1317,36 @@ private:
                 if (const auto value = logicalAttributeValue(attribute, owner)) {
                     method.staticMethod = *value;
                 }
+            } else if (name == "abstract") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    method.abstractMethod = *value;
+                }
+            } else if (name == "sealed") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    method.sealedMethod = *value;
+                }
             }
+        }
+
+        if (method.abstractMethod && method.sealedMethod) {
+            diagnostics_.push_back(Diagnostic{
+                method.span,
+                "method cannot be both Abstract and Sealed: " + owner});
+        }
+        if (method.abstractMethod && method.hasBody) {
+            diagnostics_.push_back(Diagnostic{
+                method.span,
+                "abstract method must be declared as a prototype: " + owner});
+        }
+        if (!method.abstractMethod && !method.hasBody) {
+            diagnostics_.push_back(Diagnostic{
+                method.span,
+                "method prototype must be declared Abstract: " + owner});
+        }
+        if (method.abstractMethod && method.name == klass.name) {
+            diagnostics_.push_back(Diagnostic{
+                method.span,
+                "class constructor cannot be Abstract: " + owner});
         }
 
         const bool getter = method.name.rfind("get.", 0) == 0;
@@ -1278,6 +1387,7 @@ private:
     void configureDeclaredClassMembers() {
         for (auto& [className, klass] : classesByName_) {
             (void)className;
+            configureClassAttributes(klass);
             for (const auto& property : klass.declaredPropertyOrder) {
                 configurePropertyAttributes(*property);
             }
@@ -1298,7 +1408,16 @@ private:
                         "AbortSet is supported only for handle-class "
                         "properties: " + owner});
                 }
-                if (property->dependent && property->getterName.empty()) {
+                if (property->abstractProperty &&
+                    (!property->getterName.empty() ||
+                     !property->setterName.empty())) {
+                    diagnostics_.push_back(Diagnostic{
+                        property->span,
+                        "abstract property cannot define access methods: " +
+                            owner});
+                }
+                if (!property->abstractProperty && property->dependent &&
+                    property->getterName.empty()) {
                     diagnostics_.push_back(Diagnostic{
                         property->span,
                         "dependent property requires a get method: " + owner});
@@ -1353,6 +1472,86 @@ private:
         }
     }
 
+    bool hasPropertyValidation(const PropertyInfo& property) const {
+        return !property.spec.dimensions.empty() ||
+               !property.spec.className.empty() ||
+               !property.spec.validators.empty();
+    }
+
+    void mergeAbstractPropertyRequirement(
+        ClassInfo& info,
+        std::map<std::string, PropertyInfoPtr>& requirements,
+        const PropertyInfoPtr& candidate, bool& valid) {
+        const auto existing = requirements.find(candidate->name);
+        if (existing == requirements.end()) {
+            requirements[candidate->name] = candidate;
+            return;
+        }
+        if (existing->second == candidate) {
+            return;
+        }
+
+        if (existing->second->getAccess != candidate->getAccess ||
+            existing->second->setAccess != candidate->setAccess) {
+            valid = false;
+            reportClassHierarchyDiagnostic(
+                info, "abstract-property-access:" + info.name + ":" +
+                          candidate->name,
+                "inherited abstract property access contracts conflict: " +
+                    info.name + "." + candidate->name);
+        }
+
+        const bool existingValidation =
+            hasPropertyValidation(*existing->second);
+        const bool candidateValidation = hasPropertyValidation(*candidate);
+        if (existingValidation && candidateValidation) {
+            valid = false;
+            reportClassHierarchyDiagnostic(
+                info, "abstract-property-validation:" + info.name + ":" +
+                          candidate->name,
+                "multiple inherited abstract properties define validation: " +
+                    info.name + "." + candidate->name);
+        } else if (candidateValidation) {
+            existing->second = candidate;
+        }
+    }
+
+    bool applyAbstractPropertyRequirement(
+        ClassInfo& info, PropertyInfo& implementation,
+        const PropertyInfo& requirement) {
+        bool valid = true;
+        if (implementation.getAccess != requirement.getAccess ||
+            implementation.setAccess != requirement.setAccess) {
+            valid = false;
+            reportClassHierarchyDiagnostic(
+                info, "abstract-property-implementation-access:" +
+                          info.name + ":" + implementation.name,
+                "abstract property implementation must preserve GetAccess "
+                "and SetAccess: " +
+                    info.name + "." + implementation.name);
+        }
+
+        if (!hasPropertyValidation(requirement)) {
+            return valid;
+        }
+        if (hasPropertyValidation(implementation)) {
+            valid = false;
+            reportClassHierarchyDiagnostic(
+                info, "abstract-property-implementation-validation:" +
+                          info.name + ":" + implementation.name,
+                "abstract property implementation cannot redefine inherited "
+                "validation: " +
+                    info.name + "." + implementation.name);
+            return valid;
+        }
+
+        implementation.spec.dimensions = requirement.spec.dimensions;
+        implementation.spec.className = requirement.spec.className;
+        implementation.spec.classSpan = requirement.spec.classSpan;
+        implementation.spec.validators = requirement.spec.validators;
+        return valid;
+    }
+
     void resolveClassHierarchies() {
         std::map<std::string, ClassResolutionState> states;
         for (const auto& [name, info] : classesByName_) {
@@ -1383,12 +1582,14 @@ private:
 
         state = ClassResolutionState::Resolving;
         auto& info = klass->second;
-        bool valid = true;
+        bool valid = info.hierarchyValid;
         bool handleClass = info.directHandleClass;
         std::map<std::string, PropertyInfoPtr> properties;
         std::vector<PropertyInfoPtr> propertyOrder;
         std::map<std::string, FunctionInfo> methods;
         std::map<std::string, bool> staticMethods;
+        std::map<std::string, FunctionInfo> abstractMethods;
+        std::map<std::string, PropertyInfoPtr> abstractProperties;
 
         for (const auto& superclassName : info.superclasses) {
             if (superclassName == "handle") {
@@ -1411,6 +1612,13 @@ private:
             }
             const auto& base = superclass->second;
             handleClass = handleClass || base.handleClass;
+            if (base.sealedClass) {
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info, "sealed-class:" + className + ":" + superclassName,
+                    "sealed class cannot be subclassed: " + superclassName +
+                        " (required by " + className + ")");
+            }
 
             for (const auto& property : base.propertyOrder) {
                 const std::string& propertyName = property->name;
@@ -1431,6 +1639,13 @@ private:
                 }
             }
 
+            for (const auto& [propertyName, property] :
+                 base.abstractProperties) {
+                (void)propertyName;
+                mergeAbstractPropertyRequirement(
+                    info, abstractProperties, property, valid);
+            }
+
             for (const auto& [methodName, method] : base.methods) {
                 if (method.name == method.declaringClass) {
                     continue;
@@ -1449,6 +1664,16 @@ private:
                     continue;
                 }
                 if (info.declaredMethods.contains(methodName)) {
+                    if (method.sealedMethod) {
+                        valid = false;
+                        reportClassHierarchyDiagnostic(
+                            info,
+                            "sealed-method:" + className + ":" + methodName,
+                            "sealed method cannot be redefined: " +
+                                className + "." + methodName +
+                                " (declared by " + method.declaringClass +
+                                ")");
+                    }
                     continue;
                 }
                 if (classDerivesFrom(method.declaringClass,
@@ -1470,10 +1695,62 @@ private:
                         existing->second.declaringClass + " and " +
                         method.declaringClass);
             }
+
+            for (const auto& [methodName, method] : base.abstractMethods) {
+                abstractMethods.try_emplace(methodName, method);
+            }
+        }
+
+        for (auto requirement = abstractMethods.begin();
+             requirement != abstractMethods.end();) {
+            if (methods.contains(requirement->first)) {
+                requirement = abstractMethods.erase(requirement);
+            } else {
+                ++requirement;
+            }
+        }
+
+        for (auto requirement = abstractProperties.begin();
+             requirement != abstractProperties.end();) {
+            const auto implementation = properties.find(requirement->first);
+            if (implementation == properties.end()) {
+                ++requirement;
+                continue;
+            }
+
+            auto effective =
+                std::make_shared<PropertyInfo>(*implementation->second);
+            if (!applyAbstractPropertyRequirement(
+                    info, *effective, *requirement->second)) {
+                valid = false;
+            }
+            for (auto& ordered : propertyOrder) {
+                if (ordered == implementation->second) {
+                    ordered = effective;
+                }
+            }
+            implementation->second = std::move(effective);
+            requirement = abstractProperties.erase(requirement);
         }
 
         for (const auto& property : info.declaredPropertyOrder) {
             const std::string& propertyName = property->name;
+            if (property->abstractProperty) {
+                if (properties.contains(propertyName)) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info,
+                        "abstract-property-over-concrete:" + className + ":" +
+                            propertyName,
+                        "abstract property cannot redeclare an inherited "
+                        "concrete property: " +
+                            className + "." + propertyName);
+                }
+                mergeAbstractPropertyRequirement(
+                    info, abstractProperties, property, valid);
+                continue;
+            }
+
             if (const auto inherited = properties.find(propertyName);
                 inherited != properties.end()) {
                 valid = false;
@@ -1481,6 +1758,15 @@ private:
                     info, "property:" + className + ":" + propertyName,
                     "inherited property cannot be redeclared: " + className +
                         "." + propertyName);
+            }
+            if (const auto requirement =
+                    abstractProperties.find(propertyName);
+                requirement != abstractProperties.end()) {
+                if (!applyAbstractPropertyRequirement(
+                        info, *property, *requirement->second)) {
+                    valid = false;
+                }
+                abstractProperties.erase(requirement);
             }
             properties[propertyName] = property;
             propertyOrder.push_back(property);
@@ -1490,14 +1776,42 @@ private:
             if (method.propertyAccessor) {
                 continue;
             }
-            if (const auto inherited = methods.find(methodName);
-                inherited != methods.end() && methodName != className &&
-                inherited->second.access != method.access) {
-                valid = false;
-                reportClassHierarchyDiagnostic(
-                    info, "method-access:" + className + ":" + methodName,
-                    "overriding method must preserve Access: " + className +
-                        "." + methodName);
+
+            const auto inherited = methods.find(methodName);
+            if (method.abstractMethod) {
+                if (inherited != methods.end() &&
+                    inherited->second.sealedMethod) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info, "sealed-method:" + className + ":" + methodName,
+                        "sealed method cannot be redefined: " + className +
+                            "." + methodName + " (declared by " +
+                            inherited->second.declaringClass + ")");
+                }
+                methods.erase(methodName);
+                staticMethods.erase(methodName);
+                abstractMethods[methodName] = method;
+                continue;
+            }
+
+            abstractMethods.erase(methodName);
+            if (inherited != methods.end() && methodName != className) {
+                if (inherited->second.sealedMethod) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info, "sealed-method:" + className + ":" + methodName,
+                        "sealed method cannot be redefined: " + className +
+                            "." + methodName + " (declared by " +
+                            inherited->second.declaringClass + ")");
+                }
+                if (inherited->second.access != method.access) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info,
+                        "method-access:" + className + ":" + methodName,
+                        "overriding method must preserve Access: " +
+                            className + "." + methodName);
+                }
             }
             methods[methodName] = method;
             staticMethods[methodName] =
@@ -1506,11 +1820,23 @@ private:
         }
 
         info.handleClass = handleClass;
+        info.abstractClass = info.explicitlyAbstract ||
+                             !abstractMethods.empty() ||
+                             !abstractProperties.empty();
+        if (info.sealedClass && info.abstractClass) {
+            valid = false;
+            reportClassHierarchyDiagnostic(
+                info, "sealed-abstract-class:" + className,
+                "sealed class cannot define or inherit abstract members: " +
+                    className);
+        }
         info.hierarchyValid = valid;
         info.properties = std::move(properties);
         info.propertyOrder = std::move(propertyOrder);
         info.methods = std::move(methods);
         info.staticMethods = std::move(staticMethods);
+        info.abstractMethods = std::move(abstractMethods);
+        info.abstractProperties = std::move(abstractProperties);
         state = ClassResolutionState::Resolved;
         return valid;
     }
@@ -4097,7 +4423,7 @@ private:
     initializePropertyValues(const ClassInfo& klass) {
         std::map<std::string, RuntimeValue> values;
         for (const auto& property : klass.propertyOrder) {
-            if (property->dependent) {
+            if (property->abstractProperty || property->dependent) {
                 continue;
             }
             const auto value = propertyDefault(*property);
@@ -4122,6 +4448,28 @@ private:
         if (!klass->second.hierarchyValid) {
             addDiagnostic(instruction,
                           "class hierarchy is invalid: " + className);
+            return missingOutputs(requestedCount);
+        }
+        if (klass->second.abstractClass) {
+            std::string message =
+                "abstract class cannot be instantiated: " + className;
+            std::string separator = " (unimplemented: ";
+            for (const auto& [name, method] :
+                 klass->second.abstractMethods) {
+                (void)method;
+                message += separator + "method " + name;
+                separator = ", ";
+            }
+            for (const auto& [name, property] :
+                 klass->second.abstractProperties) {
+                (void)property;
+                message += separator + "property " + name;
+                separator = ", ";
+            }
+            if (separator == ", ") {
+                message += ")";
+            }
+            addDiagnostic(instruction, std::move(message));
             return missingOutputs(requestedCount);
         }
         if (requestedCount < 0) {
@@ -4332,6 +4680,11 @@ private:
             addDiagnostic(instruction,
                           "bytecode call result count cannot be negative");
             return {};
+        }
+        if (!info.hasBody || info.abstractMethod) {
+            addDiagnostic(instruction,
+                          "abstract method has no implementation: " + name);
+            return missingOutputs(requestedCount);
         }
 
         if (arguments.size() < info.signature.parameters.size() ||

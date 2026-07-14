@@ -118,7 +118,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.29 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.30 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -303,11 +303,31 @@ their own property. Value setters return the updated object; handle setters may
 mutate shared storage without an output. Handle-only `AbortSet` compares the
 current exposed value and skips an equal assignment.
 
+Abstract and sealed contracts are resolved with the same class graph. Method
+prototypes and abstract properties remain separate from executable method and
+field tables, then propagate as unresolved requirements through every base.
+A concrete declaration with the same name satisfies a method requirement;
+MATLAB does not require the implementation to preserve the prototype's
+signature or attributes. An abstract property implementation must preserve
+`GetAccess` and `SetAccess`. Validation declared by the abstract property is
+materialized on the effective concrete descriptor, while validation on the
+implementation itself is rejected. This lets constructors and later writes
+reuse the existing validation pipeline without creating abstract storage.
+
+A class is effectively abstract when it explicitly sets `Abstract` or retains
+any unresolved method/property requirement. Direct construction reports the
+remaining names, while abstract base constructors still participate in a
+concrete most-derived construction chain. A `Sealed` class rejects every
+subclass edge, a sealed method rejects direct redefinition, and a sealed class
+cannot retain abstract members. Multiple inheritance can satisfy a requirement
+with a concrete member supplied by another base before the final abstractness
+decision is made.
+
 The VM intentionally still rejects cross-file/package superclass lookup,
 non-`handle` built-in superclass construction, full MATLAB property conversion,
 custom validators, validator set-membership/range functions, dimensions above
 two, non-scalar string arrays, class-list access policies, and
-`Abstract`/`Sealed`/`HandleCompatible` enforcement, handle lifecycle operations
+`AllowedSubclasses`/`HandleCompatible` enforcement, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 class methods as `CompiledModule` entry targets,
 function-handle execution, dynamic function handles, automatic numeric-array
@@ -325,7 +345,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.29
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.30
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -370,9 +390,12 @@ property metadata, executable class-level default caches, implicit defaults,
 class/size conversion, and ordered assignment validation. v0.29 adds
 access-aware class metadata, constructor visibility, constant and dependent
 properties, qualified get/set dispatch, immutable construction, and
-handle-only `AbortSet`. The next steps are abstract/sealed class contracts,
-class-list access policies, multidimensional and comma-separated-list Cell
-semantics, persistent code
+handle-only `AbortSet`. v0.30 adds method prototypes as inherited contracts,
+abstract-property implementation and validation inheritance, automatic
+abstract-class detection, instantiation diagnostics, sealed classes, and
+sealed methods. The next steps are class-list access policies and
+`AllowedSubclasses`, multidimensional and comma-separated-list Cell semantics,
+persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.
 

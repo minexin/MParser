@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.29.0. See [docs/v0.29.md](docs/v0.29.md) for the
+Current milestone: v0.30.0. See [docs/v0.30.md](docs/v0.30.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.28.md](docs/v0.28.md),
+iteration plan. Previous boundaries are kept in [docs/v0.29.md](docs/v0.29.md),
+[docs/v0.28.md](docs/v0.28.md),
 [docs/v0.27.md](docs/v0.27.md),
 [docs/v0.26.md](docs/v0.26.md),
 [docs/v0.25.md](docs/v0.25.md),
@@ -62,7 +63,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.29 executes the core numeric/string subset,
+expression operators. v0.30 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -170,6 +171,15 @@ properties dispatch through qualified `get.Property` and `set.Property`
 methods without allocating fields. Validation runs before setters, recursive
 same-property access is suppressed, handle setters may omit outputs, and
 `AbortSet` skips runtime-equal handle assignments.
+v0.30 makes abstract and sealed class contracts executable. Method prototypes
+and abstract properties become inherited implementation requirements, and a
+class with unresolved requirements is automatically abstract even without an
+explicit class attribute. Concrete properties preserve abstract `GetAccess`
+and `SetAccess` and inherit abstract validation; abstract methods are satisfied
+by name without imposing argument-name, signature, or attribute equality.
+Abstract classes cannot be instantiated, sealed classes cannot be subclassed,
+and sealed methods cannot be redefined. Multiple inheritance can satisfy an
+abstract requirement with a concrete member supplied by another base.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -389,6 +399,13 @@ property get/set dispatch with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\class_access_demo.m
+```
+
+Run abstract method/property implementation, inherited validation, dynamic
+dispatch, and sealed members with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\abstract_contract_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:
