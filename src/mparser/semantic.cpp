@@ -156,19 +156,20 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
 
 bool isKnownBuiltinName(const std::string& name) {
     static constexpr const char* kBuiltinNames[] = {
-        "abs",      "acos",     "addlistener", "all",   "any",
-        "asin",     "assert",   "atan",     "cell",     "char",
-        "class",    "cos",      "delete",   "disp",     "double",
-        "empty",    "enumeration", "eps",   "error",    "events",
-        "exp",      "eye",      "false",
-        "fprintf",  "inf",      "isa",      "isenum",   "isempty",
-        "isfield",  "isvalid",  "length",   "linspace", "listener",
-        "log",      "logical",  "max",      "mean",     "min",
-        "nan",      "notify",   "numel",    "ones",     "pi",
-        "ndims",    "plot",     "rand",     "randn",    "single",  "sin",
-        "size",     "sqrt",     "strcmp",   "string",  "struct",
-        "sum",      "table",    "tan",      "true",    "zeros",
-        "nargin",   "nargout",
+        "abs",      "acos",     "addlistener", "all",      "any",
+        "asin",     "assert",   "atan",        "cat",      "cell",
+        "char",     "class",    "cos",         "delete",   "disp",
+        "double",   "empty",    "enumeration", "eps",      "error",
+        "events",   "exp",      "eye",         "false",    "fprintf",
+        "horzcat",  "inf",      "ipermute",    "isa",      "isenum",
+        "isempty",  "isfield",  "isvalid",     "length",   "linspace",
+        "listener", "log",      "logical",     "max",      "mean",
+        "min",      "nan",      "nargin",      "nargout",  "ndims",
+        "notify",   "numel",    "ones",        "permute",  "pi",
+        "plot",     "rand",     "randn",       "repmat",   "reshape",
+        "single",   "sin",      "size",        "sqrt",     "squeeze",
+        "strcmp",   "string",   "struct",      "sum",      "table",
+        "tan",      "true",     "vertcat",     "zeros",
     };
 
     for (const char* builtin : kBuiltinNames) {

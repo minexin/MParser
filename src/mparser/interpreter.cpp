@@ -1,5 +1,6 @@
 #include "mparser/interpreter.h"
 #include "mparser/function_signature.h"
+#include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_assignment.h"
 #include "mparser/runtime_shape.h"
 
@@ -2125,6 +2126,14 @@ private:
     callBuiltin(const HirNode& node, const std::string& name,
                 const std::vector<RuntimeValue>& arguments,
                 size_t requestedOutputCount) {
+        if (isRuntimeArrayOperationBuiltin(name)) {
+            auto result = runtimeArrayOperationBuiltin(name, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, result.error);
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{std::move(result.value)}};
+        }
         if (name == "zeros" || name == "ones" || name == "eye") {
             return callArrayConstructorBuiltin(node, name, arguments);
         }

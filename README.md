@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.43.0. See [docs/v0.43.md](docs/v0.43.md) for the
+Current milestone: v0.44.0. See [docs/v0.44.md](docs/v0.44.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.42.md](docs/v0.42.md),
+iteration plan. Previous boundaries are kept in [docs/v0.43.md](docs/v0.43.md),
+[docs/v0.42.md](docs/v0.42.md),
 [docs/v0.41.md](docs/v0.41.md),
 [docs/v0.40.md](docs/v0.40.md),
 [docs/v0.39.md](docs/v0.39.md),
@@ -79,7 +80,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.43 executes the core numeric/string subset,
+expression operators. v0.44 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -339,6 +340,15 @@ numeric elementwise operators also implement MATLAB dimension-wise implicit
 expansion, including singleton expansion across significant third and later
 dimensions.
 
+v0.44 adds shared N-dimensional array transformations for numeric arrays and
+Cells. `reshape` preserves MATLAB column-major logical order and supports one
+inferred `[]` dimension; `permute` and `ipermute` validate complete dimension
+orders; `squeeze` removes significant singleton dimensions; and `repmat`
+performs checked multidimensional tiling. `cat`, `horzcat`, and `vertcat`
+perform coordinate-preserving concatenation with strict shape validation.
+The HIR interpreter, bytecode VM, and class-property reshape path now use the
+same transformation contract.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -357,8 +367,9 @@ N-dimensional numeric indexing such as `A(2)` and `A(2, 1, 3)`, colon and
 vector subscripts, `end`
 expressions inside indexing, non-scalar and scalar-expanded indexed assignment
 with automatic numeric-array growth, array constructors `zeros`, `ones`, and
-two-dimensional `eye`, `linspace`
-vector generation, transpose, basic numeric matrix multiplication, and
+two-dimensional `eye`, `linspace` vector generation, numeric/Cell `reshape`,
+`permute`, `ipermute`, `squeeze`, `repmat`, `cat`, `horzcat`, and `vertcat`,
+transpose, basic numeric matrix multiplication, and
 N-dimensional Cells with scalar brace indexing/mutation. It is
 intentionally not a full MATLAB runtime yet: classes, logical indexing,
 deletion assignment, function handles, other builtin multi-output conventions beyond the

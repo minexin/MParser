@@ -199,7 +199,8 @@ single row-vector output, selected dimensions, or multiple scalar outputs,
 dimensions, `end` expressions inside indexing, shape-checked non-scalar
 indexed assignment, scalar expansion, and automatic numeric-array growth,
 N-dimensional `zeros`, `ones`, and `cell` constructors, two-dimensional `eye`,
-`linspace` vector generation,
+`linspace` vector generation, and shared numeric/Cell `reshape`, `permute`,
+`ipermute`, `squeeze`, `repmat`, `cat`, `horzcat`, and `vertcat` operations,
 transpose, and basic numeric matrix multiplication.
 
 Unsupported dynamic features produce runtime diagnostics. That includes class
@@ -217,7 +218,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.43 has an executable bytecode VM for scalar doubles, strings,
+v0.44 has an executable bytecode VM for scalar doubles, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -228,7 +229,9 @@ assignment and automatic numeric-array growth. Linear and multi-subscript
 indexing use MATLAB column-major
 order, fold trailing dimensions when fewer subscripts are supplied, and expose
 trailing singleton dimensions when more subscripts are supplied. It also
-executes `switch`/`case`/`otherwise` dispatch and
+executes coordinate-preserving numeric/Cell array transformations and
+concatenation through the same checked implementation as the reference
+interpreter, plus `switch`/`case`/`otherwise` dispatch and
 `try`/`catch` diagnostic recovery. When enabled, runtime profiles record
 instruction PCs, functions, loops, call/index sites, and assignment sites,
 including hot-loop marking plus structured runtime kind/shape observations.
@@ -532,7 +535,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.43
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.44
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/full-shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -621,8 +624,11 @@ column-major logical indexing, numeric and Cell construction/query/mutation,
 N-dimensional class property constraints, and full-shape profile and guard
 metadata. v0.43 adds shared column-major numeric-array assignment, checked
 automatic growth, repeated-index ordering, and N-dimensional implicit expansion
-to both baseline runtimes. The next steps are object/listener arrays, property
-event listeners,
+to both baseline runtimes. v0.44 adds shared logical-order reshape, dimension
+permutation and inversion, singleton squeezing, checked replication, and
+general N-dimensional concatenation for numeric arrays and Cells. The next
+steps are logical indexing and deletion assignment, object/listener arrays,
+property event listeners,
 comma-separated-list Cell
 semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving

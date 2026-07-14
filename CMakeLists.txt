@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.43.0 LANGUAGES CXX)
+project(MParser VERSION 0.44.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,7 @@ add_library(mparser_core
     src/mparser/lexer.cpp
     src/mparser/optimization_plan.cpp
     src/mparser/parser.cpp
+    src/mparser/runtime_array_ops.cpp
     src/mparser/runtime_assignment.cpp
     src/mparser/runtime_benchmark.cpp
     src/mparser/runtime_shape.cpp
@@ -66,6 +67,11 @@ add_test(NAME bytecode_vm_smoke COMMAND bytecode_vm_smoke_tests)
 add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
 target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)
 add_test(NAME nd_array_smoke COMMAND nd_array_smoke_tests)
+
+add_executable(array_transform_smoke_tests
+    tests/array_transform_smoke.cpp)
+target_link_libraries(array_transform_smoke_tests PRIVATE mparser_core)
+add_test(NAME array_transform_smoke COMMAND array_transform_smoke_tests)
 
 add_executable(optimization_plan_smoke_tests tests/optimization_plan_smoke.cpp)
 target_link_libraries(optimization_plan_smoke_tests PRIVATE mparser_core)
@@ -235,6 +241,20 @@ add_test(NAME array_assignment_interpreter_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_assignment_demo.m)
 set_tests_properties(array_assignment_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 860")
+
+add_test(NAME array_transform_bytecode_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_transform_demo.m)
+set_tests_properties(array_transform_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2126")
+
+add_test(NAME array_transform_interpreter_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_transform_demo.m)
+set_tests_properties(array_transform_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2126")
 
 add_test(NAME namespace_function_cli_smoke
     COMMAND $<TARGET_FILE:mparser>

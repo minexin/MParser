@@ -1,5 +1,6 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/function_signature.h"
+#include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_assignment.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/typed_ir.h"
@@ -5606,26 +5607,13 @@ private:
             if (*count == 1) {
                 return numberValue(value.elements.front());
             }
-            RuntimeValue reshaped = arrayValueForDimensions(
-                dimensions, std::vector<double>(*count, 0.0));
-            for (size_t linearIndex = 0; linearIndex < *count;
-                 ++linearIndex) {
-                const auto sourceOffset =
-                    runtimeColumnMajorLinearToStorageOffset(value,
-                                                            linearIndex);
-                const auto targetOffset =
-                    runtimeColumnMajorLinearToStorageOffset(reshaped,
-                                                            linearIndex);
-                if (!sourceOffset || !targetOffset) {
-                    propertyValidationError(
-                        instruction, property,
-                        "property reshape could not preserve linear order");
-                    return std::nullopt;
-                }
-                reshaped.elements[*targetOffset] =
-                    value.elements[*sourceOffset];
+            auto reshaped = runtimeReshapeValue(value, dimensions);
+            if (!reshaped.succeeded) {
+                propertyValidationError(instruction, property,
+                                        "property " + reshaped.error);
+                return std::nullopt;
             }
-            return reshaped;
+            return std::move(reshaped.value);
         }
         if (isCell(value)) {
             if (value.cells.size() != *count) {
@@ -5634,27 +5622,13 @@ private:
                     "cell value has incompatible property dimensions");
                 return std::nullopt;
             }
-            RuntimeValue reshaped = cellValueForDimensions(
-                dimensions,
-                std::vector<RuntimeValue>(*count, missingValue()));
-            for (size_t linearIndex = 0; linearIndex < *count;
-                 ++linearIndex) {
-                const auto sourceOffset =
-                    runtimeColumnMajorLinearToStorageOffset(value,
-                                                            linearIndex);
-                const auto targetOffset =
-                    runtimeColumnMajorLinearToStorageOffset(reshaped,
-                                                            linearIndex);
-                if (!sourceOffset || !targetOffset) {
-                    propertyValidationError(
-                        instruction, property,
-                        "cell property reshape could not preserve linear order");
-                    return std::nullopt;
-                }
-                reshaped.cells[*targetOffset] =
-                    std::move(value.cells[*sourceOffset]);
+            auto reshaped = runtimeReshapeValue(value, dimensions);
+            if (!reshaped.succeeded) {
+                propertyValidationError(instruction, property,
+                                        "property " + reshaped.error);
+                return std::nullopt;
             }
-            return reshaped;
+            return std::move(reshaped.value);
         }
 
         propertyValidationError(instruction, property,
@@ -6537,6 +6511,14 @@ private:
     RuntimeValue callBuiltin(const BytecodeInstruction& instruction,
                              const std::string& name,
                              const std::vector<RuntimeValue>& arguments) {
+        if (isRuntimeArrayOperationBuiltin(name)) {
+            auto result = runtimeArrayOperationBuiltin(name, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
         if (name == "cell") {
             const auto shape = constructorShape(instruction, arguments);
             if (!shape) {
