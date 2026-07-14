@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.32.0 LANGUAGES CXX)
+project(MParser VERSION 0.33.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -156,6 +156,12 @@ add_executable(class_property_identity_smoke_tests
 target_link_libraries(class_property_identity_smoke_tests PRIVATE mparser_core)
 add_test(NAME class_property_identity_smoke
     COMMAND class_property_identity_smoke_tests)
+
+add_executable(class_method_identity_smoke_tests
+    tests/class_method_identity_smoke.cpp)
+target_link_libraries(class_method_identity_smoke_tests PRIVATE mparser_core)
+add_test(NAME class_method_identity_smoke
+    COMMAND class_method_identity_smoke_tests)
 
 add_executable(interpreter_smoke_tests tests/interpreter_smoke.cpp)
 target_link_libraries(interpreter_smoke_tests PRIVATE mparser_core)

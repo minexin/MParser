@@ -125,7 +125,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.32 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.33 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -376,7 +376,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.32
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.33
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -429,7 +429,10 @@ property/method/constructor access, authorized class-list overrides, and
 direct-edge `AllowedSubclasses` enforcement. v0.32 adds candidate-based
 property layout, declaring-class-local storage identity, legal private
 property redeclaration, lexical property selection, and compatible private
-property merging across multiple inheritance. The next steps are
+property merging across multiple inheritance. v0.33 adds declaring-class-local
+private method candidates, lexical private dispatch, exact selected-method
+references, private static-method identity, and compatible private method
+merging without weakening visible virtual dispatch. The next steps are
 multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.32.0. See [docs/v0.32.md](docs/v0.32.md) for the
+Current milestone: v0.33.0. See [docs/v0.33.md](docs/v0.33.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.31.md](docs/v0.31.md),
+iteration plan. Previous boundaries are kept in [docs/v0.32.md](docs/v0.32.md),
+[docs/v0.31.md](docs/v0.31.md),
 [docs/v0.30.md](docs/v0.30.md),
 [docs/v0.29.md](docs/v0.29.md),
 [docs/v0.28.md](docs/v0.28.md),
@@ -65,7 +66,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.32 executes the core numeric/string subset,
+expression operators. v0.33 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -198,6 +199,13 @@ constructors, defaults, validation, constants, dependent accessors, value
 copies, handle aliases, and compatible multiple inheritance all resolve the
 correct independent property slot. More than one inherited non-private
 candidate remains an ambiguity.
+v0.33 applies declaring-class identity to private methods. Explicitly private
+and empty-list private methods can coexist by surface name across subclasses
+and unrelated bases. Calls made by a declaring class select its own private
+candidate, while public/protected methods retain most-specific dynamic
+dispatch. Method references carry the chosen declaring class through the
+operand stack, static private methods use the same rule, diamond paths dedupe
+one definition, and named access-list override restrictions remain intact.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -438,6 +446,13 @@ inheritance with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\class_property_identity_demo.m
+```
+
+Run declaring-class-local private method dispatch while preserving public
+virtual dispatch with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\class_method_identity_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:

@@ -400,6 +400,7 @@ struct StackValue {
     bool isMethodReference = false;
     std::string methodClassName;
     std::string methodName;
+    std::string methodDeclaringClass;
     std::optional<RuntimeValue> receiver;
 };
 
@@ -443,6 +444,7 @@ struct MemberAccessPolicy {
     MemberAccessLevel level = MemberAccessLevel::Public;
     std::vector<std::string> classNames;
     bool selectiveClassList = false;
+    bool privateMemberIdentity = false;
 
     bool operator==(const MemberAccessPolicy& other) const {
         return level == other.level && classNames == other.classNames;
@@ -466,6 +468,9 @@ struct FunctionInfo {
     size_t end = 0;
     SourceSpan span;
 };
+
+using MethodCandidates = std::vector<FunctionInfo>;
+using PrivateMethodTable = std::map<std::string, MethodCandidates>;
 
 struct PropertyInfo {
     std::string name;
@@ -514,6 +519,7 @@ struct ClassInfo {
     PropertyTable properties;
     std::vector<PropertyInfoPtr> propertyOrder;
     std::map<std::string, FunctionInfo> methods;
+    PrivateMethodTable privateMethods;
     std::map<std::string, bool> staticMethods;
     std::map<std::string, FunctionInfo> abstractMethods;
     std::map<std::string, PropertyInfoPtr> abstractProperties;
@@ -573,11 +579,13 @@ StackValue classStackValue(std::string name) {
 }
 
 StackValue methodStackValue(std::string className, std::string methodName,
+                            std::string declaringClass,
                             std::optional<RuntimeValue> receiver = std::nullopt) {
     StackValue result;
     result.isMethodReference = true;
     result.methodClassName = std::move(className);
     result.methodName = std::move(methodName);
+    result.methodDeclaringClass = std::move(declaringClass);
     result.receiver = std::move(receiver);
     return result;
 }
@@ -1273,7 +1281,8 @@ private:
                 classNames.end());
             if (classNames.empty()) {
                 return MemberAccessPolicy{MemberAccessLevel::Private, {},
-                                          true};
+                                          true,
+                                          attribute.metaClassNames.empty()};
             }
             return MemberAccessPolicy{MemberAccessLevel::ClassList,
                                       std::move(classNames), true};
@@ -1286,7 +1295,8 @@ private:
             return MemberAccessPolicy{MemberAccessLevel::Protected, {}};
         }
         if (value == "private") {
-            return MemberAccessPolicy{MemberAccessLevel::Private, {}};
+            return MemberAccessPolicy{MemberAccessLevel::Private, {}, false,
+                                      true};
         }
         if (allowImmutable && value == "immutable") {
             return MemberAccessPolicy{MemberAccessLevel::Immutable, {}};
@@ -1600,6 +1610,37 @@ private:
         propertyOrder.push_back(candidate);
     }
 
+    bool isPrivateMethod(const FunctionInfo& method) const {
+        return method.access.level == MemberAccessLevel::Private &&
+               method.access.privateMemberIdentity;
+    }
+
+    void mergePrivateMethod(PrivateMethodTable& methods,
+                            const FunctionInfo& candidate) const {
+        auto& candidates = methods[candidate.name];
+        const bool alreadyPresent = std::any_of(
+            candidates.begin(), candidates.end(),
+            [&candidate](const FunctionInfo& existing) {
+                return existing.declaringClass == candidate.declaringClass;
+            });
+        if (!alreadyPresent) {
+            candidates.push_back(candidate);
+        }
+    }
+
+    void mergePrivateMethods(PrivateMethodTable& methods,
+                             const PrivateMethodTable& inherited) const {
+        for (const auto& [name, candidates] : inherited) {
+            (void)name;
+            for (const auto& candidate : candidates) {
+                if (candidate.name == candidate.declaringClass) {
+                    continue;
+                }
+                mergePrivateMethod(methods, candidate);
+            }
+        }
+    }
+
     void mergeAbstractPropertyRequirement(
         ClassInfo& info,
         std::map<std::string, PropertyInfoPtr>& requirements,
@@ -1709,6 +1750,7 @@ private:
         PropertyTable properties;
         std::vector<PropertyInfoPtr> propertyOrder;
         std::map<std::string, FunctionInfo> methods;
+        PrivateMethodTable privateMethods;
         std::map<std::string, bool> staticMethods;
         std::map<std::string, FunctionInfo> abstractMethods;
         std::map<std::string, PropertyInfoPtr> abstractProperties;
@@ -1768,6 +1810,8 @@ private:
                 mergeAbstractPropertyRequirement(
                     info, abstractProperties, property, valid);
             }
+
+            mergePrivateMethods(privateMethods, base.privateMethods);
 
             for (const auto& [methodName, method] : base.methods) {
                 if (method.name == method.declaringClass) {
@@ -1914,6 +1958,67 @@ private:
             }
 
             const auto inherited = methods.find(methodName);
+            const auto inheritedPrivate = privateMethods.find(methodName);
+            if (methodName != className &&
+                inheritedPrivate != privateMethods.end()) {
+                const auto sealed = std::find_if(
+                    inheritedPrivate->second.begin(),
+                    inheritedPrivate->second.end(),
+                    [](const FunctionInfo& candidate) {
+                        return candidate.sealedMethod;
+                    });
+                if (sealed != inheritedPrivate->second.end()) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info, "sealed-method:" + className + ":" + methodName,
+                        "sealed method cannot be redefined: " + className +
+                            "." + methodName + " (declared by " +
+                            sealed->declaringClass + ")");
+                }
+            }
+
+            if (isPrivateMethod(method)) {
+                if (inherited != methods.end() && methodName != className) {
+                    if (inherited->second.sealedMethod) {
+                        valid = false;
+                        reportClassHierarchyDiagnostic(
+                            info,
+                            "sealed-method:" + className + ":" + methodName,
+                            "sealed method cannot be redefined: " +
+                                className + "." + methodName +
+                                " (declared by " +
+                                inherited->second.declaringClass + ")");
+                    }
+                    if (inherited->second.access.selectiveClassList &&
+                        !policyAllowsClass(inherited->second.access,
+                                           inherited->second.declaringClass,
+                                           className)) {
+                        valid = false;
+                        reportClassHierarchyDiagnostic(
+                            info,
+                            "method-override-access:" + className + ":" +
+                                methodName,
+                            "subclass cannot override inaccessible method: " +
+                                className + "." + methodName +
+                                " (declared by " +
+                                inherited->second.declaringClass + ")");
+                    }
+                    if (inherited->second.access != method.access) {
+                        valid = false;
+                        reportClassHierarchyDiagnostic(
+                            info,
+                            "method-access:" + className + ":" + methodName,
+                            "overriding method must preserve Access: " +
+                                className + "." + methodName);
+                    }
+                }
+                mergePrivateMethod(privateMethods, method);
+                if (method.abstractMethod) {
+                    abstractMethods[methodName] = method;
+                }
+                continue;
+            }
+
             if (method.abstractMethod) {
                 if (inherited != methods.end() &&
                     inherited->second.sealedMethod) {
@@ -2000,6 +2105,7 @@ private:
         info.properties = std::move(properties);
         info.propertyOrder = std::move(propertyOrder);
         info.methods = std::move(methods);
+        info.privateMethods = std::move(privateMethods);
         info.staticMethods = std::move(staticMethods);
         info.abstractMethods = std::move(abstractMethods);
         info.abstractProperties = std::move(abstractProperties);
@@ -3022,6 +3128,45 @@ private:
                                                : found->second.back();
     }
 
+    const FunctionInfo* selectMethod(const ClassInfo& klass,
+                                     const std::string& name,
+                                     bool lexicalContext = true) const {
+        const auto privateMethods = klass.privateMethods.find(name);
+        if (lexicalContext && privateMethods != klass.privateMethods.end() &&
+            !activeClassFunctions_.empty()) {
+            const auto& requestingClass =
+                activeClassFunctions_.back().className;
+            const auto local = std::find_if(
+                privateMethods->second.rbegin(),
+                privateMethods->second.rend(),
+                [&requestingClass](const FunctionInfo& method) {
+                    return method.declaringClass == requestingClass;
+                });
+            if (local != privateMethods->second.rend()) {
+                return &*local;
+            }
+        }
+
+        const auto visible = klass.methods.find(name);
+        if (visible != klass.methods.end()) {
+            return &visible->second;
+        }
+        if (privateMethods == klass.privateMethods.end() ||
+            privateMethods->second.empty()) {
+            return nullptr;
+        }
+
+        const auto local = std::find_if(
+            privateMethods->second.rbegin(), privateMethods->second.rend(),
+            [&klass](const FunctionInfo& method) {
+                return method.declaringClass == klass.name;
+            });
+        if (local != privateMethods->second.rend()) {
+            return &*local;
+        }
+        return lexicalContext ? &privateMethods->second.back() : nullptr;
+    }
+
     std::optional<RuntimeValue> invokePropertyGetter(
         const BytecodeInstruction& instruction, const RuntimeValue& target,
         PropertyInfo& property) {
@@ -3108,22 +3253,23 @@ private:
                 }
                 return;
             }
-            if (!klass->second.methods.contains(instruction.operand) ||
-                !klass->second.staticMethods[instruction.operand]) {
+            const auto* method = selectMethod(
+                klass->second, instruction.operand, false);
+            if (!method || !method->staticMethod) {
                 addDiagnostic(instruction, "class method is not available: " +
                                               target->className + "." +
                                               instruction.operand);
                 return;
             }
-            const auto& method = klass->second.methods.at(instruction.operand);
-            if (!hasMemberAccess(method.access, method.declaringClass)) {
+            if (!hasMemberAccess(method->access, method->declaringClass)) {
                 addDiagnostic(instruction, "method access is denied: " +
-                                              method.declaringClass + "." +
-                                              method.name);
+                                              method->declaringClass + "." +
+                                              method->name);
                 return;
             }
             stack_.push_back(methodStackValue(target->className,
-                                               instruction.operand));
+                                               instruction.operand,
+                                               method->declaringClass));
             return;
         }
         if (!isObject(target->value)) {
@@ -3152,16 +3298,17 @@ private:
             }
             return;
         }
-        if (klass->second.methods.contains(instruction.operand)) {
-            const auto& method = klass->second.methods.at(instruction.operand);
-            if (!hasMemberAccess(method.access, method.declaringClass)) {
+        if (const auto* method =
+                selectMethod(klass->second, instruction.operand)) {
+            if (!hasMemberAccess(method->access, method->declaringClass)) {
                 addDiagnostic(instruction, "method access is denied: " +
-                                              method.declaringClass + "." +
-                                              method.name);
+                                              method->declaringClass + "." +
+                                              method->name);
                 return;
             }
             stack_.push_back(methodStackValue(target->value.className,
                                                instruction.operand,
+                                               method->declaringClass,
                                                target->value));
             return;
         }
@@ -3699,7 +3846,9 @@ private:
 
         if (callee->isMethodReference) {
             auto outputs = callClassMethod(instruction, callee->methodClassName,
-                                           callee->methodName, callee->receiver,
+                                           callee->methodName,
+                                           callee->methodDeclaringClass,
+                                           callee->receiver,
                                            *arguments, instruction.resultCount);
             finishIndexContext();
             pushOutputValues(instruction, outputs);
@@ -4856,11 +5005,30 @@ private:
 
     std::vector<RuntimeValue> callClassMethod(
         const BytecodeInstruction& instruction, const std::string& className,
-        const std::string& methodName, const std::optional<RuntimeValue>& receiver,
+        const std::string& methodName,
+        const std::string& methodDeclaringClass,
+        const std::optional<RuntimeValue>& receiver,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
         const auto klass = classesByName_.find(className);
-        if (klass == classesByName_.end() ||
-            !klass->second.methods.contains(methodName)) {
+        if (klass == classesByName_.end()) {
+            addDiagnostic(instruction, "class method is not available: " +
+                                          className + "." + methodName);
+            return missingOutputs(requestedCount);
+        }
+        const FunctionInfo* method = nullptr;
+        if (!methodDeclaringClass.empty()) {
+            const auto owner = classesByName_.find(methodDeclaringClass);
+            if (owner != classesByName_.end()) {
+                const auto declared =
+                    owner->second.declaredMethods.find(methodName);
+                if (declared != owner->second.declaredMethods.end()) {
+                    method = &declared->second;
+                }
+            }
+        } else {
+            method = selectMethod(klass->second, methodName);
+        }
+        if (!method) {
             addDiagnostic(instruction, "class method is not available: " +
                                           className + "." + methodName);
             return missingOutputs(requestedCount);
@@ -4869,17 +5037,16 @@ private:
         if (receiver) {
             callArguments.insert(callArguments.begin(), *receiver);
         }
-        const auto& method = klass->second.methods.at(methodName);
-        const std::string declaringClass = method.declaringClass.empty()
+        const std::string declaringClass = method->declaringClass.empty()
                                                ? className
-                                               : method.declaringClass;
-        if (!hasMemberAccess(method.access, declaringClass)) {
+                                               : method->declaringClass;
+        if (!hasMemberAccess(method->access, declaringClass)) {
             addDiagnostic(instruction, "method access is denied: " +
                                           declaringClass + "." + methodName);
             return missingOutputs(requestedCount);
         }
         return callFunctionInfo(instruction,
-                                declaringClass + "." + methodName, method,
+                                declaringClass + "." + methodName, *method,
                                 callArguments, requestedCount, std::nullopt,
                                 nullptr, false);
     }
