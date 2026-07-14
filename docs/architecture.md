@@ -25,6 +25,13 @@ raw text for declarations and statements that are not yet fully lowered. This
 lets the parser accept more MATLAB surface syntax while the semantic layer
 grows incrementally.
 
+Attribute syntax also preserves structured meta-class lists. A single
+`?Class`, an empty cell list, or a comma-separated list such as
+`{?Reader, ?pkg.Writer}` is retained as normalized class names alongside the
+lossless raw value. Runtime policy resolution therefore does not need to
+re-tokenize attribute strings, while package-qualified names remain available
+for a future class loader.
+
 Ordinary statements are parsed into a first expression tree when the syntax is
 unambiguous enough to preserve. `AssignmentStatement` keeps left and right
 children; bracketed multi-output assignments are represented as `OutputList`.
@@ -118,7 +125,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.30 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.31 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -285,13 +292,17 @@ failed validation leaves the object unchanged.
 
 Class member attributes are normalized into executable runtime descriptors.
 Property `Access`, `GetAccess`, and `SetAccess` select public, protected, or
-private visibility, with immutable writes restricted to the defining
-constructor. Method access applies to instance, static, constructor, and
-qualified superclass calls. Access checks use the currently executing method's
-declaring class, so inherited base implementations retain base privileges and
-subclass implementations receive protected access. Constructor checks also
-carry an explicit requesting class through implicit and explicit superclass
-construction.
+private visibility or a selective class list, with immutable writes restricted
+to the defining constructor. Method access applies to instance, static,
+constructor, and qualified superclass calls. Access checks use the currently
+executing method's declaring class, so inherited base implementations retain
+base privileges and subclass implementations receive protected access. A
+class list always permits the defining class, permits every resolved listed
+class, and permits descendants of listed classes. It does not implicitly grant
+access to descendants of the defining class unless that class is itself in the
+list. Unresolved names are removed; an empty effective list has private
+semantics. Constructor checks also carry an explicit requesting class through
+implicit and explicit superclass construction.
 
 Constant properties have no per-instance field. Their explicit initializer
 uses the declaring-class context, enters the existing one-time property cache,
@@ -323,11 +334,19 @@ cannot retain abstract members. Multiple inheritance can satisfy a requirement
 with a concrete member supplied by another base before the final abstractness
 decision is made.
 
+`AllowedSubclasses` uses the same structured meta-class representation to
+validate each direct superclass edge. Only classes in the resolved list may
+name the restricted class as a direct base; descendants below an allowed class
+remain governed by that allowed class's own policy. An empty or fully
+unresolved list is equivalent to sealing the class. A class-list method may be
+overridden only by an authorized subclass, and the override must preserve the
+complete resolved access policy.
+
 The VM intentionally still rejects cross-file/package superclass lookup,
 non-`handle` built-in superclass construction, full MATLAB property conversion,
 custom validators, validator set-membership/range functions, dimensions above
-two, non-scalar string arrays, class-list access policies, and
-`AllowedSubclasses`/`HandleCompatible` enforcement, handle lifecycle operations
+two, non-scalar string arrays, `HandleCompatible` enforcement, cross-file
+class-list resolution, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 class methods as `CompiledModule` entry targets,
 function-handle execution, dynamic function handles, automatic numeric-array
@@ -345,7 +364,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.30
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.31
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -393,9 +412,11 @@ properties, qualified get/set dispatch, immutable construction, and
 handle-only `AbortSet`. v0.30 adds method prototypes as inherited contracts,
 abstract-property implementation and validation inheritance, automatic
 abstract-class detection, instantiation diagnostics, sealed classes, and
-sealed methods. The next steps are class-list access policies and
-`AllowedSubclasses`, multidimensional and comma-separated-list Cell semantics,
-persistent code
+sealed methods. v0.31 adds structured meta-class attribute lists, selective
+property/method/constructor access, authorized class-list overrides, and
+direct-edge `AllowedSubclasses` enforcement. The next steps are private
+property redeclaration with declaring-class-local storage, multidimensional
+and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.
 

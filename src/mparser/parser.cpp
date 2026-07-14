@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -72,6 +73,83 @@ SourceSpan spanFromTokens(const std::vector<Token>& tokens) {
         return SourceSpan{};
     }
     return mergeSpans(tokens.front().span, tokens.back().span);
+}
+
+bool parseMetaClassReference(const std::vector<Token>& tokens, size_t& index,
+                             std::string& name) {
+    if (index >= tokens.size() || tokens[index].kind != TokenKind::Question) {
+        return false;
+    }
+    ++index;
+    if (index >= tokens.size() || tokens[index].kind != TokenKind::Identifier) {
+        return false;
+    }
+
+    name = tokens[index].text;
+    ++index;
+    while (index < tokens.size() && tokens[index].kind == TokenKind::Dot) {
+        ++index;
+        if (index >= tokens.size() ||
+            tokens[index].kind != TokenKind::Identifier) {
+            return false;
+        }
+        name += "." + tokens[index].text;
+        ++index;
+    }
+    return true;
+}
+
+std::optional<std::vector<std::string>>
+parseMetaClassList(const std::vector<Token>& tokens) {
+    if (tokens.empty()) {
+        return std::nullopt;
+    }
+
+    size_t index = 0;
+    std::vector<std::string> names;
+    if (tokens.front().kind == TokenKind::Question) {
+        std::string name;
+        if (!parseMetaClassReference(tokens, index, name) ||
+            index != tokens.size()) {
+            return std::nullopt;
+        }
+        names.push_back(std::move(name));
+        return names;
+    }
+
+    if (tokens.front().kind != TokenKind::LBrace) {
+        return std::nullopt;
+    }
+    ++index;
+    if (index < tokens.size() && tokens[index].kind == TokenKind::RBrace) {
+        ++index;
+        return index == tokens.size()
+                   ? std::optional<std::vector<std::string>>(std::move(names))
+                   : std::nullopt;
+    }
+
+    while (index < tokens.size()) {
+        std::string name;
+        if (!parseMetaClassReference(tokens, index, name)) {
+            return std::nullopt;
+        }
+        names.push_back(std::move(name));
+        if (index >= tokens.size()) {
+            return std::nullopt;
+        }
+        if (tokens[index].kind == TokenKind::RBrace) {
+            ++index;
+            return index == tokens.size()
+                       ? std::optional<std::vector<std::string>>(
+                             std::move(names))
+                       : std::nullopt;
+        }
+        if (tokens[index].kind != TokenKind::Comma) {
+            return std::nullopt;
+        }
+        ++index;
+    }
+    return std::nullopt;
 }
 
 std::unique_ptr<SyntaxNode> makeNodeFromSpan(SyntaxKind kind, SourceSpan span) {
@@ -1588,6 +1666,10 @@ AttributeSyntax Parser::buildAttribute(const std::vector<Token>& tokens) const {
                 tokens.begin() + static_cast<std::ptrdiff_t>(i + 1),
                 tokens.end());
             attribute.value = joinTokens(valueTokens);
+            if (auto classNames = parseMetaClassList(valueTokens)) {
+                attribute.hasMetaClassList = true;
+                attribute.metaClassNames = std::move(*classNames);
+            }
             break;
         }
         updateDepth(tokens[i].kind, parenDepth, bracketDepth, braceDepth);

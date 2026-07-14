@@ -66,6 +66,8 @@ struct AttributeSyntax {
     std::string value;
     std::string raw;
     bool negated = false;
+    bool hasMetaClassList = false;
+    std::vector<std::string> metaClassNames;
     SourceSpan span;
 };
 

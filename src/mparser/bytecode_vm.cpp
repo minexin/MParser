@@ -436,6 +436,17 @@ enum class MemberAccessLevel {
     Protected,
     Private,
     Immutable,
+    ClassList,
+};
+
+struct MemberAccessPolicy {
+    MemberAccessLevel level = MemberAccessLevel::Public;
+    std::vector<std::string> classNames;
+    bool selectiveClassList = false;
+
+    bool operator==(const MemberAccessPolicy& other) const {
+        return level == other.level && classNames == other.classNames;
+    }
 };
 
 struct FunctionInfo {
@@ -444,7 +455,7 @@ struct FunctionInfo {
     FunctionSignature signature;
     std::vector<AttributeSyntax> attributes;
     std::vector<std::string> explicitSuperclassConstructors;
-    MemberAccessLevel access = MemberAccessLevel::Public;
+    MemberAccessPolicy access;
     bool staticMethod = false;
     bool abstractMethod = false;
     bool sealedMethod = false;
@@ -461,8 +472,8 @@ struct PropertyInfo {
     std::string declaringClass;
     PropertySpec spec;
     std::vector<AttributeSyntax> attributes;
-    MemberAccessLevel getAccess = MemberAccessLevel::Public;
-    MemberAccessLevel setAccess = MemberAccessLevel::Public;
+    MemberAccessPolicy getAccess;
+    MemberAccessPolicy setAccess;
     bool constant = false;
     bool dependent = false;
     bool abortSet = false;
@@ -490,6 +501,8 @@ struct ClassInfo {
     bool explicitlyAbstract = false;
     bool abstractClass = false;
     bool sealedClass = false;
+    bool restrictsSubclassing = false;
+    std::vector<std::string> allowedSubclasses;
     bool hierarchyValid = true;
     std::map<std::string, PropertyInfoPtr> declaredProperties;
     std::vector<PropertyInfoPtr> declaredPropertyOrder;
@@ -1205,11 +1218,35 @@ private:
                         logicalAttributeValue(attribute, klass.name)) {
                     klass.sealedClass = *value;
                 }
+            } else if (name == "allowedsubclasses") {
+                if (attribute.negated || attribute.value.empty() ||
+                    !attribute.hasMetaClassList) {
+                    klass.hierarchyValid = false;
+                    diagnostics_.push_back(Diagnostic{
+                        attribute.span,
+                        "AllowedSubclasses requires ?Class or a cell array "
+                        "of meta-class references: " +
+                            klass.name});
+                    continue;
+                }
+                klass.restrictsSubclassing = true;
+                klass.allowedSubclasses.clear();
+                for (const auto& className : attribute.metaClassNames) {
+                    if (classesByName_.contains(className)) {
+                        klass.allowedSubclasses.push_back(className);
+                    }
+                }
+                std::sort(klass.allowedSubclasses.begin(),
+                          klass.allowedSubclasses.end());
+                klass.allowedSubclasses.erase(
+                    std::unique(klass.allowedSubclasses.begin(),
+                                klass.allowedSubclasses.end()),
+                    klass.allowedSubclasses.end());
             }
         }
     }
 
-    std::optional<MemberAccessLevel> accessAttributeValue(
+    std::optional<MemberAccessPolicy> accessAttributeValue(
         const AttributeSyntax& attribute, const std::string& owner,
         bool allowImmutable) {
         if (attribute.negated || attribute.value.empty()) {
@@ -1219,18 +1256,36 @@ private:
                     "." + attribute.name});
             return std::nullopt;
         }
+        if (attribute.hasMetaClassList) {
+            std::vector<std::string> classNames;
+            for (const auto& className : attribute.metaClassNames) {
+                if (classesByName_.contains(className)) {
+                    classNames.push_back(className);
+                }
+            }
+            std::sort(classNames.begin(), classNames.end());
+            classNames.erase(
+                std::unique(classNames.begin(), classNames.end()),
+                classNames.end());
+            if (classNames.empty()) {
+                return MemberAccessPolicy{MemberAccessLevel::Private, {},
+                                          true};
+            }
+            return MemberAccessPolicy{MemberAccessLevel::ClassList,
+                                      std::move(classNames), true};
+        }
         const std::string value = lowerAscii(trimAscii(attribute.value));
         if (value == "public") {
-            return MemberAccessLevel::Public;
+            return MemberAccessPolicy{MemberAccessLevel::Public, {}};
         }
         if (value == "protected") {
-            return MemberAccessLevel::Protected;
+            return MemberAccessPolicy{MemberAccessLevel::Protected, {}};
         }
         if (value == "private") {
-            return MemberAccessLevel::Private;
+            return MemberAccessPolicy{MemberAccessLevel::Private, {}};
         }
         if (allowImmutable && value == "immutable") {
-            return MemberAccessLevel::Immutable;
+            return MemberAccessPolicy{MemberAccessLevel::Immutable, {}};
         }
         diagnostics_.push_back(Diagnostic{
             attribute.span,
@@ -1612,12 +1667,27 @@ private:
             }
             const auto& base = superclass->second;
             handleClass = handleClass || base.handleClass;
-            if (base.sealedClass) {
+            const bool effectivelySealed =
+                base.sealedClass ||
+                (base.restrictsSubclassing &&
+                 base.allowedSubclasses.empty());
+            if (effectivelySealed) {
                 valid = false;
                 reportClassHierarchyDiagnostic(
                     info, "sealed-class:" + className + ":" + superclassName,
                     "sealed class cannot be subclassed: " + superclassName +
                         " (required by " + className + ")");
+            } else if (base.restrictsSubclassing &&
+                       !std::binary_search(base.allowedSubclasses.begin(),
+                                           base.allowedSubclasses.end(),
+                                           className)) {
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info,
+                    "disallowed-subclass:" + className + ":" +
+                        superclassName,
+                    "class is not listed in AllowedSubclasses: " +
+                        className + " cannot derive from " + superclassName);
             }
 
             for (const auto& property : base.propertyOrder) {
@@ -1788,6 +1858,20 @@ private:
                             "." + methodName + " (declared by " +
                             inherited->second.declaringClass + ")");
                 }
+                if (inherited != methods.end() &&
+                    inherited->second.access.selectiveClassList &&
+                    !policyAllowsClass(inherited->second.access,
+                                       inherited->second.declaringClass,
+                                       className)) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info,
+                        "method-override-access:" + className + ":" +
+                            methodName,
+                        "subclass cannot override inaccessible method: " +
+                            className + "." + methodName + " (declared by " +
+                            inherited->second.declaringClass + ")");
+                }
                 methods.erase(methodName);
                 staticMethods.erase(methodName);
                 abstractMethods[methodName] = method;
@@ -1802,6 +1886,19 @@ private:
                         info, "sealed-method:" + className + ":" + methodName,
                         "sealed method cannot be redefined: " + className +
                             "." + methodName + " (declared by " +
+                            inherited->second.declaringClass + ")");
+                }
+                if (inherited->second.access.selectiveClassList &&
+                    !policyAllowsClass(inherited->second.access,
+                                       inherited->second.declaringClass,
+                                       className)) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info,
+                        "method-override-access:" + className + ":" +
+                            methodName,
+                        "subclass cannot override inaccessible method: " +
+                            className + "." + methodName + " (declared by " +
                             inherited->second.declaringClass + ")");
                 }
                 if (inherited->second.access != method.access) {
@@ -1823,7 +1920,10 @@ private:
         info.abstractClass = info.explicitlyAbstract ||
                              !abstractMethods.empty() ||
                              !abstractProperties.empty();
-        if (info.sealedClass && info.abstractClass) {
+        const bool effectivelySealed =
+            info.sealedClass ||
+            (info.restrictsSubclassing && info.allowedSubclasses.empty());
+        if (effectivelySealed && info.abstractClass) {
             valid = false;
             reportClassHierarchyDiagnostic(
                 info, "sealed-abstract-class:" + className,
@@ -1869,41 +1969,59 @@ private:
         return false;
     }
 
-    bool hasMemberAccess(MemberAccessLevel access,
+    bool policyAllowsClass(const MemberAccessPolicy& access,
+                           const std::string& declaringClass,
+                           const std::string& requestingClass) const {
+        if (access.level == MemberAccessLevel::Public) {
+            return true;
+        }
+        if (requestingClass.empty()) {
+            return false;
+        }
+        if (access.level == MemberAccessLevel::Private) {
+            return requestingClass == declaringClass;
+        }
+        if (access.level == MemberAccessLevel::Protected) {
+            return classDerivesFrom(requestingClass, declaringClass);
+        }
+        if (access.level == MemberAccessLevel::ClassList) {
+            if (requestingClass == declaringClass) {
+                return true;
+            }
+            for (const auto& allowedClass : access.classNames) {
+                if (classDerivesFrom(requestingClass, allowedClass)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    bool hasMemberAccess(const MemberAccessPolicy& access,
                          const std::string& declaringClass) const {
-        if (access == MemberAccessLevel::Public) {
+        if (access.level == MemberAccessLevel::Public) {
             return true;
         }
         if (activeClassFunctions_.empty()) {
             return false;
         }
         const auto& active = activeClassFunctions_.back();
-        if (access == MemberAccessLevel::Private) {
-            return active.className == declaringClass;
+        if (access.level == MemberAccessLevel::Immutable) {
+            return active.className == declaringClass &&
+                   active.methodName == declaringClass &&
+                   active.construction != nullptr;
         }
-        if (access == MemberAccessLevel::Protected) {
-            return classDerivesFrom(active.className, declaringClass) ||
-                   classDerivesFrom(declaringClass, active.className);
-        }
-        return active.className == declaringClass &&
-               active.methodName == declaringClass &&
-               active.construction != nullptr;
-    }
-
-    bool hasConstructorAccess(MemberAccessLevel access,
-                              const std::string& declaringClass,
-                              const std::string& requestingClass) const {
-        if (access == MemberAccessLevel::Public) {
+        if (access.level == MemberAccessLevel::Protected &&
+            classDerivesFrom(declaringClass, active.className)) {
             return true;
         }
-        if (access == MemberAccessLevel::Private) {
-            return requestingClass == declaringClass;
-        }
-        if (access == MemberAccessLevel::Protected) {
-            return !requestingClass.empty() &&
-                   classDerivesFrom(requestingClass, declaringClass);
-        }
-        return false;
+        return policyAllowsClass(access, declaringClass, active.className);
+    }
+
+    bool hasConstructorAccess(const MemberAccessPolicy& access,
+                              const std::string& declaringClass,
+                              const std::string& requestingClass) const {
+        return policyAllowsClass(access, declaringClass, requestingClass);
     }
 
     bool activePropertyGetter(const PropertyInfo& property) const {
