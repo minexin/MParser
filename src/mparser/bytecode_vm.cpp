@@ -259,7 +259,16 @@ void observeValues(std::vector<BytecodeValueObservation>& observations,
 }
 
 size_t elementCount(const RuntimeValue& value) {
-    if (isNumber(value) || isString(value)) {
+    if (isNumber(value)) {
+        return 1;
+    }
+    if (isString(value)) {
+        return value.text.size();
+    }
+    if (isCell(value)) {
+        return value.cells.size();
+    }
+    if (isObject(value)) {
         return 1;
     }
     return value.elements.size();
@@ -370,6 +379,12 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return true;
     }
     if (isObject(left) && isObject(right)) {
+        if (!left.enumerationMemberName.empty() ||
+            !right.enumerationMemberName.empty()) {
+            return left.className == right.className &&
+                   left.enumerationMemberName ==
+                       right.enumerationMemberName;
+        }
         const auto& leftFields = objectFields(left);
         const auto& rightFields = objectFields(right);
         if (left.className != right.className ||
@@ -499,6 +514,21 @@ using PropertyInfoPtr = std::shared_ptr<PropertyInfo>;
 using PropertyCandidates = std::vector<PropertyInfoPtr>;
 using PropertyTable = std::map<std::string, PropertyCandidates>;
 
+struct EnumerationMemberInfo {
+    std::string name;
+    std::string declaringClass;
+    std::vector<AttributeSyntax> attributes;
+    SourceSpan span;
+    int argumentCount = 0;
+    size_t initializerEntry = 0;
+    size_t initializerEnd = 0;
+    bool hasInitializerRange = false;
+    bool hidden = false;
+    bool evaluationActive = false;
+    bool evaluated = false;
+    RuntimeValue value;
+};
+
 struct ClassInfo {
     std::string name;
     SourceSpan span;
@@ -509,11 +539,15 @@ struct ClassInfo {
     bool explicitlyAbstract = false;
     bool abstractClass = false;
     bool sealedClass = false;
+    bool enumerationClass = false;
     bool restrictsSubclassing = false;
     std::vector<std::string> allowedSubclasses;
     bool hierarchyValid = true;
     std::map<std::string, PropertyInfoPtr> declaredProperties;
     std::vector<PropertyInfoPtr> declaredPropertyOrder;
+    std::map<std::string, EnumerationMemberInfo>
+        declaredEnumerationMembers;
+    std::vector<std::string> declaredEnumerationOrder;
     std::map<std::string, FunctionInfo> declaredMethods;
     std::map<std::string, bool> declaredStaticMethods;
     PropertyTable properties;
@@ -593,12 +627,14 @@ StackValue methodStackValue(std::string className, std::string methodName,
 bool isBoundaryEnter(BytecodeOp op) {
     return op == BytecodeOp::EnterClass ||
            op == BytecodeOp::EnterPropertyInitializer ||
+           op == BytecodeOp::EnterEnumerationMemberInitializer ||
            op == BytecodeOp::EnterFunction || op == BytecodeOp::EnterControl;
 }
 
 bool isBoundaryLeave(BytecodeOp op) {
     return op == BytecodeOp::LeaveClass ||
            op == BytecodeOp::LeavePropertyInitializer ||
+           op == BytecodeOp::LeaveEnumerationMemberInitializer ||
            op == BytecodeOp::LeaveFunction || op == BytecodeOp::LeaveControl;
 }
 
@@ -672,6 +708,7 @@ public:
         collectFunctionRanges(program);
         configureDeclaredClassMembers();
         resolveClassHierarchies();
+        finalizeEnumerationSemantics();
         validateResolvedClassMembers();
         collectTypedRegions(typedIr);
 
@@ -1003,6 +1040,27 @@ private:
                 klass.declaredPropertyOrder.push_back(std::move(property));
             }
         }
+        if (node->kind == HirKind::EnumerationMember &&
+            !className.empty()) {
+            auto& klass = classesByName_[className];
+            klass.enumerationClass = true;
+            EnumerationMemberInfo member;
+            member.name = node->label;
+            member.declaringClass = className;
+            member.attributes = node->attributes;
+            member.span = node->span;
+            member.argumentCount = static_cast<int>(node->children.size());
+            if (!klass.declaredEnumerationMembers
+                     .try_emplace(node->label, std::move(member))
+                     .second) {
+                diagnostics_.push_back(Diagnostic{
+                    node->span,
+                    "duplicate enumeration member declaration: " +
+                        className + "." + node->label});
+            } else {
+                klass.declaredEnumerationOrder.push_back(node->label);
+            }
+        }
         for (const auto& attribute : node->attributes) {
             if (attribute.name == "Static") {
                 staticMethodBlock = !attribute.negated;
@@ -1124,6 +1182,54 @@ private:
                 property->second->initializerEntry = pc + 1;
                 property->second->initializerEnd = end;
                 property->second->hasInitializerRange = true;
+                pc = end;
+                continue;
+            }
+            if (instruction.op ==
+                BytecodeOp::EnterEnumerationMemberInitializer) {
+                size_t depth = 1;
+                size_t end = pc + 1;
+                while (end < program.instructions.size() && depth > 0) {
+                    const auto op = program.instructions[end].op;
+                    if (op == BytecodeOp::EnterEnumerationMemberInitializer) {
+                        ++depth;
+                    } else if (
+                        op ==
+                        BytecodeOp::LeaveEnumerationMemberInitializer) {
+                        --depth;
+                        if (depth == 0) {
+                            break;
+                        }
+                    }
+                    ++end;
+                }
+                if (end >= program.instructions.size()) {
+                    addDiagnostic(
+                        instruction,
+                        "enumeration member initializer has no matching "
+                        "leave");
+                    return;
+                }
+                if (classStack.empty()) {
+                    addDiagnostic(
+                        instruction,
+                        "enumeration member initializer is outside a class");
+                    return;
+                }
+                auto& klass = classesByName_[classStack.back()];
+                const auto member = klass.declaredEnumerationMembers.find(
+                    instruction.operand);
+                if (member == klass.declaredEnumerationMembers.end()) {
+                    addDiagnostic(
+                        instruction,
+                        "enumeration member initializer has no declaration: " +
+                            classStack.back() + "." + instruction.operand);
+                    return;
+                }
+                member->second.initializerEntry = pc + 1;
+                member->second.initializerEnd = end;
+                member->second.hasInitializerRange = true;
+                member->second.argumentCount = instruction.operandCount;
                 pc = end;
                 continue;
             }
@@ -1455,16 +1561,67 @@ private:
         }
     }
 
+    void configureEnumerationMemberAttributes(
+        EnumerationMemberInfo& member) {
+        const std::string owner =
+            member.declaringClass + "." + member.name;
+        for (const auto& attribute : member.attributes) {
+            if (lowerAscii(attribute.name) != "hidden") {
+                continue;
+            }
+            if (const auto value = logicalAttributeValue(attribute, owner)) {
+                member.hidden = *value;
+            }
+        }
+    }
+
     void configureDeclaredClassMembers() {
         for (auto& [className, klass] : classesByName_) {
             (void)className;
             configureClassAttributes(klass);
+            if (klass.enumerationClass) {
+                klass.sealedClass = true;
+            }
             for (const auto& property : klass.declaredPropertyOrder) {
                 configurePropertyAttributes(*property);
+            }
+            for (auto& [memberName, member] :
+                 klass.declaredEnumerationMembers) {
+                (void)memberName;
+                configureEnumerationMemberAttributes(member);
             }
             for (auto& [methodName, method] : klass.declaredMethods) {
                 configureMethodAttributes(klass, method);
                 klass.declaredStaticMethods[methodName] = method.staticMethod;
+            }
+        }
+    }
+
+    void finalizeEnumerationSemantics() {
+        for (auto& [className, klass] : classesByName_) {
+            if (!klass.enumerationClass || klass.handleClass) {
+                continue;
+            }
+            for (const auto& property : klass.declaredPropertyOrder) {
+                if (property->constant) {
+                    continue;
+                }
+                for (const auto& attribute : property->attributes) {
+                    const std::string name = lowerAscii(attribute.name);
+                    if (name != "access" && name != "setaccess") {
+                        continue;
+                    }
+                    if (lowerAscii(trimAscii(attribute.value)) !=
+                        "immutable") {
+                        diagnostics_.push_back(Diagnostic{
+                            attribute.span,
+                            "value enumeration property SetAccess must be "
+                            "immutable: " +
+                                className + "." + property->name});
+                    }
+                }
+                property->setAccess = MemberAccessPolicy{
+                    MemberAccessLevel::Immutable, {}};
             }
         }
     }
@@ -2630,6 +2787,8 @@ private:
         case BytecodeOp::LeaveClass:
         case BytecodeOp::EnterPropertyInitializer:
         case BytecodeOp::LeavePropertyInitializer:
+        case BytecodeOp::EnterEnumerationMemberInitializer:
+        case BytecodeOp::LeaveEnumerationMemberInitializer:
         case BytecodeOp::EnterFunction:
         case BytecodeOp::LeaveFunction:
         case BytecodeOp::EnterControl:
@@ -2947,9 +3106,10 @@ private:
                 missingValue(), static_cast<size_t>(instruction.operandCount), 0});
             return;
         }
-        if (!isNumeric(target.value)) {
+        if (!isNumeric(target.value) && !isCell(target.value)) {
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric target");
+                          "bytecode index context requires a numeric or cell "
+                          "target");
             return;
         }
 
@@ -3054,6 +3214,31 @@ private:
 
         if (instruction.binding.kind == BindingKind::Function) {
             stack_.push_back(functionStackValue(instruction.operand));
+            return;
+        }
+
+        if (instruction.binding.kind == BindingKind::EnumerationMember &&
+            semantic_ && instruction.binding.symbolId >= 0) {
+            const size_t symbolIndex =
+                static_cast<size_t>(instruction.binding.symbolId);
+            if (symbolIndex >= semantic_->symbols.size()) {
+                addDiagnostic(instruction,
+                              "enumeration member binding has an invalid "
+                              "symbol");
+                return;
+            }
+            const auto& symbol = semantic_->symbols[symbolIndex];
+            std::string className = symbol.typeName;
+            if (className.empty() && symbol.scopeId >= 0 &&
+                static_cast<size_t>(symbol.scopeId) <
+                    semantic_->scopes.size()) {
+                className = semantic_->scopes[
+                    static_cast<size_t>(symbol.scopeId)].label;
+            }
+            if (const auto value = enumerationMemberValue(
+                    instruction, className, symbol.name)) {
+                stack_.push_back(runtimeStackValue(*value));
+            }
             return;
         }
 
@@ -3279,6 +3464,15 @@ private:
                                               target->className);
                 return;
             }
+            if (klass->second.declaredEnumerationMembers.contains(
+                    instruction.operand)) {
+                if (const auto value = enumerationMemberValue(
+                        instruction, target->className,
+                        instruction.operand)) {
+                    stack_.push_back(runtimeStackValue(*value));
+                }
+                return;
+            }
             if (const auto property =
                     selectProperty(klass->second, instruction.operand,
                                    false)) {
@@ -3420,6 +3614,13 @@ private:
             addDiagnostic(instruction,
                           "constant property cannot be assigned: " +
                               propertyDisplayName(info));
+            return;
+        }
+        if (!updated.enumerationMemberName.empty() &&
+            !updated.handleObject) {
+            addDiagnostic(instruction,
+                          "value enumeration properties are immutable: " +
+                              updated.className + "." + instruction.operand);
             return;
         }
         if (!hasMemberAccess(info.setAccess, info.declaringClass)) {
@@ -3676,6 +3877,22 @@ private:
             }
             addDiagnostic(instruction,
                           "bytecode string operators support only == and ~=");
+            return;
+        }
+
+        if (isObject(*left) || isObject(*right)) {
+            if (isObject(*left) && isObject(*right) &&
+                (instruction.operand == "==" ||
+                 instruction.operand == "~=")) {
+                const bool equal = runtimeEqual(*left, *right);
+                pushRuntime(numberValue((instruction.operand == "==") == equal
+                                            ? 1.0
+                                            : 0.0));
+                return;
+            }
+            addDiagnostic(
+                instruction,
+                "bytecode object operators support only == and ~=");
             return;
         }
 
@@ -4149,15 +4366,20 @@ private:
             return {};
         }
 
+        if (name == "enumeration") {
+            return enumerationBuiltinOutputs(instruction, arguments,
+                                             requestedCount);
+        }
+
         if (requestedCount == 0) {
             (void)callBuiltin(instruction, name, arguments);
             return {};
         }
 
         if (name == "size" && requestedCount > 1) {
-            if (arguments.size() != 1 || !isNumeric(arguments.front())) {
+            if (arguments.size() != 1) {
                 addDiagnostic(instruction,
-                              "bytecode size expects one numeric argument");
+                              "bytecode size expects one argument");
                 return missingOutputs(requestedCount);
             }
 
@@ -4210,6 +4432,201 @@ private:
         instruction.operand = property.declaringClass + "." + property.name;
         instruction.span = property.span;
         return instruction;
+    }
+
+    BytecodeInstruction enumerationInstruction(
+        const EnumerationMemberInfo& member) const {
+        BytecodeInstruction instruction;
+        instruction.operand = member.declaringClass + "." + member.name;
+        instruction.span = member.span;
+        instruction.operandCount = member.argumentCount;
+        return instruction;
+    }
+
+    std::optional<std::vector<RuntimeValue>>
+    evaluateEnumerationArguments(EnumerationMemberInfo& member) {
+        const BytecodeInstruction instruction =
+            enumerationInstruction(member);
+        if (!member.hasInitializerRange) {
+            addDiagnostic(
+                instruction,
+                "enumeration member has no initializer bytecode range");
+            return std::nullopt;
+        }
+
+        auto savedStack = std::move(stack_);
+        auto savedForLoops = std::move(forLoopStack_);
+        auto savedIndexContexts = std::move(indexContextStack_);
+        auto savedSwitchContexts = std::move(switchContextStack_);
+        auto savedTryContexts = std::move(tryContextStack_);
+        const bool savedReturnRequested = returnRequested_;
+        stack_.clear();
+        forLoopStack_.clear();
+        indexContextStack_.clear();
+        switchContextStack_.clear();
+        tryContextStack_.clear();
+        returnRequested_ = false;
+        frames_.push_back({});
+        activeClassFunctions_.push_back(ActiveClassFunction{
+            member.declaringClass,
+            "<enumeration-member:" + member.name + ">", {}, nullptr});
+
+        const size_t diagnosticCount = diagnostics_.size();
+        executeFunctionBody(member.initializerEntry, member.initializerEnd);
+        std::optional<std::vector<RuntimeValue>> arguments;
+        if (diagnostics_.size() == diagnosticCount) {
+            if (stack_.size() != static_cast<size_t>(member.argumentCount)) {
+                addDiagnostic(
+                    instruction,
+                    "enumeration member initializer produced an unexpected "
+                    "number of values");
+            } else {
+                arguments = popRuntimeValues(
+                    instruction, member.argumentCount,
+                    "enumeration member constructor argument");
+            }
+        }
+
+        activeClassFunctions_.pop_back();
+        frames_.pop_back();
+        stack_ = std::move(savedStack);
+        forLoopStack_ = std::move(savedForLoops);
+        indexContextStack_ = std::move(savedIndexContexts);
+        switchContextStack_ = std::move(savedSwitchContexts);
+        tryContextStack_ = std::move(savedTryContexts);
+        returnRequested_ = savedReturnRequested;
+        return arguments;
+    }
+
+    std::optional<RuntimeValue> enumerationMemberValue(
+        const BytecodeInstruction& instruction,
+        const std::string& className, const std::string& memberName) {
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end() ||
+            !klass->second.enumerationClass) {
+            addDiagnostic(instruction,
+                          "enumeration class is not available: " +
+                              className);
+            return std::nullopt;
+        }
+        const auto found =
+            klass->second.declaredEnumerationMembers.find(memberName);
+        if (found == klass->second.declaredEnumerationMembers.end()) {
+            addDiagnostic(instruction,
+                          "enumeration member is not available: " +
+                              className + "." + memberName);
+            return std::nullopt;
+        }
+
+        auto& member = found->second;
+        if (member.evaluated) {
+            return member.value;
+        }
+        if (member.evaluationActive) {
+            addDiagnostic(instruction,
+                          "recursive enumeration member evaluation: " +
+                              className + "." + memberName);
+            return std::nullopt;
+        }
+
+        member.evaluationActive = true;
+        const auto arguments = evaluateEnumerationArguments(member);
+        if (!arguments) {
+            member.evaluationActive = false;
+            return std::nullopt;
+        }
+        const size_t diagnosticCount = diagnostics_.size();
+        auto outputs = callClassConstructor(
+            enumerationInstruction(member), className, *arguments, 1, true);
+        if (outputs.empty() || diagnostics_.size() != diagnosticCount ||
+            !isObject(outputs.front())) {
+            member.evaluationActive = false;
+            return std::nullopt;
+        }
+        outputs.front().enumerationMemberName = memberName;
+        member.value = outputs.front();
+        member.evaluated = true;
+        member.evaluationActive = false;
+        return member.value;
+    }
+
+    std::optional<std::string> enumerationClassName(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1) {
+            addDiagnostic(
+                instruction,
+                "enumeration expects one class-name or enumeration value");
+            return std::nullopt;
+        }
+
+        std::string className;
+        if (isString(arguments.front())) {
+            className = arguments.front().text;
+        } else if (isObject(arguments.front()) &&
+                   !arguments.front().enumerationMemberName.empty()) {
+            className = arguments.front().className;
+        } else {
+            addDiagnostic(
+                instruction,
+                "enumeration expects a class-name string or enumeration "
+                "value");
+            return std::nullopt;
+        }
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end() ||
+            !klass->second.enumerationClass) {
+            addDiagnostic(instruction,
+                          "enumeration class is not available: " +
+                              className);
+            return std::nullopt;
+        }
+        return className;
+    }
+
+    std::vector<RuntimeValue> enumerationBuiltinOutputs(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        if (requestedCount < 0 || requestedCount > 2) {
+            addDiagnostic(
+                instruction,
+                "enumeration supports at most two outputs");
+            return missingOutputs(requestedCount);
+        }
+        const auto className = enumerationClassName(instruction, arguments);
+        if (!className) {
+            return missingOutputs(requestedCount);
+        }
+
+        auto& klass = classesByName_.at(*className);
+        std::vector<RuntimeValue> values;
+        std::vector<RuntimeValue> names;
+        for (const auto& memberName : klass.declaredEnumerationOrder) {
+            const auto& member =
+                klass.declaredEnumerationMembers.at(memberName);
+            if (member.hidden) {
+                continue;
+            }
+            const auto value = enumerationMemberValue(
+                instruction, *className, memberName);
+            if (!value) {
+                return missingOutputs(requestedCount);
+            }
+            values.push_back(*value);
+            names.push_back(stringValue(memberName));
+        }
+
+        if (requestedCount == 0) {
+            return {};
+        }
+        std::vector<RuntimeValue> outputs;
+        outputs.push_back(cellValueForShape(1, values.size(),
+                                            std::move(values)));
+        if (requestedCount == 2) {
+            outputs.push_back(cellValueForShape(1, names.size(),
+                                                std::move(names)));
+        }
+        return outputs;
     }
 
     std::string propertyDisplayName(const PropertyInfo& property) const {
@@ -4849,11 +5266,52 @@ private:
 
     std::vector<RuntimeValue> callClassConstructor(
         const BytecodeInstruction& instruction, const std::string& className,
-        const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        const std::vector<RuntimeValue>& arguments, int requestedCount,
+        bool internalEnumerationConstruction = false) {
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end()) {
             addDiagnostic(instruction, "class is not available: " + className);
             return missingOutputs(requestedCount);
+        }
+        if (klass->second.enumerationClass &&
+            !internalEnumerationConstruction) {
+            if (requestedCount < 0 || requestedCount > 1) {
+                addDiagnostic(
+                    instruction,
+                    "enumeration constructor supports at most one output: " +
+                        className);
+                return missingOutputs(requestedCount);
+            }
+            std::string memberName;
+            if (arguments.empty()) {
+                if (klass->second.declaredEnumerationOrder.empty()) {
+                    addDiagnostic(instruction,
+                                  "enumeration class has no members: " +
+                                      className);
+                    return missingOutputs(requestedCount);
+                }
+                memberName =
+                    klass->second.declaredEnumerationOrder.front();
+            } else if (arguments.size() == 1 &&
+                       isString(arguments.front())) {
+                memberName = arguments.front().text;
+            } else {
+                addDiagnostic(
+                    instruction,
+                    "enumeration constructor expects zero arguments or one "
+                    "member-name string: " +
+                        className);
+                return missingOutputs(requestedCount);
+            }
+            const auto value = enumerationMemberValue(
+                instruction, className, memberName);
+            if (!value) {
+                return missingOutputs(requestedCount);
+            }
+            if (requestedCount == 0) {
+                return {};
+            }
+            return {*value};
         }
         if (!klass->second.hierarchyValid) {
             addDiagnostic(instruction,
@@ -4888,7 +5346,9 @@ private:
             return {};
         }
         const std::string requestingClass =
-            activeClassFunctions_.empty()
+            internalEnumerationConstruction
+                ? className
+                : activeClassFunctions_.empty()
                 ? std::string{}
                 : activeClassFunctions_.back().className;
         if (const auto constructor =
@@ -5198,6 +5658,106 @@ private:
     RuntimeValue callBuiltin(const BytecodeInstruction& instruction,
                              const std::string& name,
                              const std::vector<RuntimeValue>& arguments) {
+        if (name == "isenum") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode isenum expects one argument");
+                return missingValue();
+            }
+            return numberValue(
+                isObject(arguments.front()) &&
+                        !arguments.front().enumerationMemberName.empty()
+                    ? 1.0
+                    : 0.0);
+        }
+        if (name == "class") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode class expects one argument");
+                return missingValue();
+            }
+            const RuntimeValue& value = arguments.front();
+            if (isObject(value)) {
+                return stringValue(value.className);
+            }
+            if (isNumeric(value)) {
+                return stringValue("double");
+            }
+            if (isString(value)) {
+                return stringValue("char");
+            }
+            if (isCell(value)) {
+                return stringValue("cell");
+            }
+            return stringValue("missing");
+        }
+        if (name == "isa") {
+            if (arguments.size() != 2 || !isString(arguments[1])) {
+                addDiagnostic(
+                    instruction,
+                    "bytecode isa expects a value and class-name string");
+                return missingValue();
+            }
+            const RuntimeValue& value = arguments.front();
+            const std::string& target = arguments[1].text;
+            bool matches = false;
+            if (isObject(value)) {
+                matches = classDerivesFrom(value.className, target);
+            } else if (isNumeric(value)) {
+                matches = target == "double" || target == "numeric";
+            } else if (isString(value)) {
+                matches = target == "char" || target == "string";
+            } else if (isCell(value)) {
+                matches = target == "cell";
+            }
+            return numberValue(matches ? 1.0 : 0.0);
+        }
+        if (name == "char" || name == "string") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode " + name +
+                                  " expects one argument");
+                return missingValue();
+            }
+            if (isString(arguments.front())) {
+                return arguments.front();
+            }
+            if (isObject(arguments.front()) &&
+                !arguments.front().enumerationMemberName.empty()) {
+                return stringValue(
+                    arguments.front().enumerationMemberName);
+            }
+            addDiagnostic(instruction,
+                          "bytecode " + name +
+                              " conversion is not available for this value");
+            return missingValue();
+        }
+        if (name == "length" || name == "numel" || name == "size" ||
+            name == "isempty") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode " + name +
+                                  " expects one argument");
+                return missingValue();
+            }
+            if (name == "length") {
+                return numberValue(static_cast<double>(
+                    std::max(rowCount(arguments.front()),
+                             columnCount(arguments.front()))));
+            }
+            if (name == "numel") {
+                return numberValue(static_cast<double>(
+                    elementCount(arguments.front())));
+            }
+            if (name == "isempty") {
+                return numberValue(elementCount(arguments.front()) == 0
+                                       ? 1.0
+                                       : 0.0);
+            }
+            return vectorValue(
+                {static_cast<double>(rowCount(arguments.front())),
+                 static_cast<double>(columnCount(arguments.front()))});
+        }
         if (name == "zeros" || name == "ones" || name == "eye") {
             return arrayConstructor(instruction, name, arguments);
         }
@@ -5241,20 +5801,6 @@ private:
             return mapUnary(arguments.front(), [](double value) {
                 return std::fabs(value);
             });
-        }
-        if (name == "length") {
-            return numberValue(static_cast<double>(
-                std::max(rowCount(arguments.front()),
-                         columnCount(arguments.front()))));
-        }
-        if (name == "numel") {
-            return numberValue(
-                static_cast<double>(elementCount(arguments.front())));
-        }
-        if (name == "size") {
-            return vectorValue({static_cast<double>(rowCount(arguments.front())),
-                                static_cast<double>(
-                                    columnCount(arguments.front()))});
         }
         if (name == "sum") {
             double total = 0.0;

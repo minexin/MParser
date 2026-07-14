@@ -145,6 +145,12 @@ private:
                           BytecodeOp::LeavePropertyInitializer, node);
             }
             break;
+        case HirKind::EnumerationMember:
+            emit(BytecodeOp::EnterEnumerationMemberInitializer, node,
+                 childCount(node));
+            lowerChildren(node);
+            emit(BytecodeOp::LeaveEnumerationMemberInitializer, node);
+            break;
         case HirKind::Unknown:
             lowerChildren(node);
             break;
@@ -647,6 +653,10 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "EnterPropertyInitializer";
     case BytecodeOp::LeavePropertyInitializer:
         return "LeavePropertyInitializer";
+    case BytecodeOp::EnterEnumerationMemberInitializer:
+        return "EnterEnumerationMemberInitializer";
+    case BytecodeOp::LeaveEnumerationMemberInitializer:
+        return "LeaveEnumerationMemberInitializer";
     case BytecodeOp::EnterFunction:
         return "EnterFunction";
     case BytecodeOp::LeaveFunction:

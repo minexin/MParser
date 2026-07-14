@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.39.0. See [docs/v0.39.md](docs/v0.39.md) for the
+Current milestone: v0.40.0. See [docs/v0.40.md](docs/v0.40.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.38.md](docs/v0.38.md),
+iteration plan. Previous boundaries are kept in [docs/v0.39.md](docs/v0.39.md),
+[docs/v0.38.md](docs/v0.38.md),
 [docs/v0.37.md](docs/v0.37.md),
 [docs/v0.36.md](docs/v0.36.md),
 [docs/v0.35.md](docs/v0.35.md),
@@ -75,7 +76,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.39 executes the core numeric/string subset,
+expression operators. v0.40 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -278,6 +279,22 @@ selects the private helper while dot notation selects the method. Source-local
 functions and wildcard imports retain their higher MATLAB precedence. Every VM
 function call now installs its own lexical access context, so an ordinary path
 function called by a method cannot inherit the caller's private privilege.
+v0.40 makes MATLAB enumeration classes executable. Enumeration declarations
+retain same-line comma separation, `...` continuations, block attributes, and
+structured constructor arguments through syntax, HIR, and dedicated bytecode
+initializer regions. `Class.Member`, explicit member imports, package-qualified
+members, default and string conversion constructors, methods, equality, and
+`switch` all share lazy one-time member construction. Value-enumeration
+properties become immutable after construction, while enumerations derived
+from `handle` expose one shared mutable singleton. Enumeration classes are
+implicitly sealed, conflicting member names are diagnosed, private
+constructors remain usable by member initialization, and recursive member
+initialization fails deterministically. The VM also implements `isenum`,
+`enumeration`, enum-aware `class`, `isa`, `char`, and `string`; `Hidden` members
+remain directly addressable but are filtered from enumeration queries. Until
+object arrays exist, `enumeration` returns visible values and names as Cells,
+which support brace indexing and general `length`, `numel`, `size`, and
+`isempty` queries.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -553,6 +570,19 @@ build\mparser.exe --run-bytecode `
 
 Inspect the resolved namespace attached to each source with the same command
 using `--module-info` instead of `--run-bytecode`.
+
+Run a package enumeration with an imported member, constructor arguments,
+methods, `switch`, string conversion, and visible-member discovery with:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --class-path=samples\enumeration_classes\lib `
+  samples\enumeration_classes\app\run_demo.m
+```
+
+The demo reports `summary = 56`, prints members as
+`<palette.Status.Ready>`, and filters the `Hidden` member from the two Cells
+returned by `enumeration`.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:

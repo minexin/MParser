@@ -142,6 +142,8 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
         return BindingKind::Method;
     case SymbolKind::Property:
         return BindingKind::Property;
+    case SymbolKind::EnumerationMember:
+        return BindingKind::EnumerationMember;
     case SymbolKind::Class:
         return BindingKind::Class;
     case SymbolKind::Builtin:
@@ -155,8 +157,9 @@ bool isKnownBuiltinName(const std::string& name) {
         "abs",      "acos",     "all",      "any",     "asin",
         "assert",   "atan",     "cell",     "char",    "class",
         "cos",      "disp",     "double",   "empty",   "eps",
-        "error",    "exp",      "eye",      "false",   "fprintf",
-        "inf",      "isa",      "isempty",  "isfield", "length",
+        "enumeration", "error", "exp",      "eye",      "false",
+        "fprintf",  "inf",      "isa",      "isenum",   "isempty",
+        "isfield",  "length",
         "linspace", "log",      "logical",  "max",     "mean",
         "min",      "nan",      "numel",    "ones",    "pi",
         "plot",     "rand",     "randn",    "single",  "sin",
@@ -412,10 +415,12 @@ private:
     }
 
     void predeclareClassMembers(const SyntaxNode& classNode) {
+        std::unordered_set<std::string> occupiedNames;
         for (const auto& block : classNode.children) {
             if (block->kind == SyntaxKind::PropertiesBlock) {
                 for (const auto& child : block->children) {
                     if (child->kind == SyntaxKind::PropertyDecl) {
+                        occupiedNames.insert(child->label);
                         declareSymbol(SymbolKind::Property, child->label,
                                       child->span,
                                       child->property.className);
@@ -428,6 +433,7 @@ private:
                 for (const auto& child : block->children) {
                     if (child->kind == SyntaxKind::FunctionDef ||
                         child->kind == SyntaxKind::MethodPrototype) {
+                        occupiedNames.insert(child->label);
                         const std::string memberName =
                             child->label ==
                                     unqualifiedClassName(classNode.label)
@@ -442,6 +448,45 @@ private:
                         }
                     }
                 }
+                continue;
+            }
+
+            if (block->kind == SyntaxKind::EventsBlock) {
+                for (const auto& child : block->children) {
+                    if (child->kind == SyntaxKind::EventDecl) {
+                        occupiedNames.insert(child->label);
+                    }
+                }
+            }
+        }
+
+        const std::string shortClassName =
+            unqualifiedClassName(classNode.label);
+        for (const auto& block : classNode.children) {
+            if (block->kind != SyntaxKind::EnumerationBlock) {
+                continue;
+            }
+            for (const auto& child : block->children) {
+                if (child->kind != SyntaxKind::EnumMember ||
+                    child->label.empty()) {
+                    continue;
+                }
+                if (child->label == shortClassName) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        child->span,
+                        "enumeration member cannot have the class name: " +
+                            classNode.label + "." + child->label});
+                    continue;
+                }
+                if (!occupiedNames.insert(child->label).second) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        child->span,
+                        "enumeration member conflicts with another class "
+                        "member: " + classNode.label + "." + child->label});
+                    continue;
+                }
+                declareSymbol(SymbolKind::EnumerationMember, child->label,
+                              child->span, classNode.label);
             }
         }
     }
@@ -472,6 +517,8 @@ private:
             return lowerGeneric(syntax, HirKind::Import);
         case SyntaxKind::PropertyDecl:
             return lowerDeclaration(syntax, HirKind::Property, SymbolKind::Property);
+        case SyntaxKind::EnumMember:
+            return lowerEnumerationMember(syntax);
         case SyntaxKind::MethodPrototype:
             return lowerDeclaration(syntax, HirKind::MethodPrototype,
                                     SymbolKind::Method);
@@ -497,7 +544,6 @@ private:
         case SyntaxKind::EventsBlock:
         case SyntaxKind::EnumerationBlock:
         case SyntaxKind::EventDecl:
-        case SyntaxKind::EnumMember:
         case SyntaxKind::SuperclassList:
         case SyntaxKind::Superclass:
             return lowerGeneric(syntax, HirKind::Statement);
@@ -651,6 +697,21 @@ private:
                           ? syntax.property.className
                           : std::string{});
         return lowerGeneric(syntax, kind);
+    }
+
+    std::unique_ptr<HirNode> lowerEnumerationMember(
+        const SyntaxNode& syntax) {
+        auto node = makeNode(HirKind::EnumerationMember, syntax);
+        if (!classStack_.empty()) {
+            if (const auto member =
+                    resolveClassMember(classStack_.back(), syntax.label);
+                member &&
+                member->kind == BindingKind::EnumerationMember) {
+                node->binding = *member;
+            }
+        }
+        lowerChildren(syntax, *node);
+        return node;
     }
 
     std::unique_ptr<HirNode> lowerAssignment(const SyntaxNode& syntax) {
@@ -963,6 +1024,9 @@ private:
         }
         const auto member =
             resolveClassMember(target.substr(0, dot), target.substr(dot + 1));
+        if (member && member->kind == BindingKind::EnumerationMember) {
+            return *member;
+        }
         return member && member->kind == BindingKind::Method &&
                        staticMethodSymbols_.contains(member->symbolId)
                    ? *member
@@ -1153,7 +1217,8 @@ private:
                     result_.symbols[static_cast<size_t>(symbolId)];
                 if (symbol.name == memberName &&
                     (symbol.kind == SymbolKind::Property ||
-                     symbol.kind == SymbolKind::Method)) {
+                     symbol.kind == SymbolKind::Method ||
+                     symbol.kind == SymbolKind::EnumerationMember)) {
                     visiting.erase(className);
                     return BindingRef{bindingKindForSymbol(symbol.kind),
                                       symbol.id};
@@ -1651,6 +1716,8 @@ const char* hirKindName(HirKind kind) {
         return "Import";
     case HirKind::Property:
         return "Property";
+    case HirKind::EnumerationMember:
+        return "EnumerationMember";
     case HirKind::MethodPrototype:
         return "MethodPrototype";
     case HirKind::Control:
@@ -1717,6 +1784,8 @@ const char* bindingKindName(BindingKind kind) {
         return "Method";
     case BindingKind::Property:
         return "Property";
+    case BindingKind::EnumerationMember:
+        return "EnumerationMember";
     case BindingKind::Class:
         return "Class";
     case BindingKind::Builtin:
@@ -1739,6 +1808,8 @@ const char* symbolKindName(SymbolKind kind) {
         return "Method";
     case SymbolKind::Property:
         return "Property";
+    case SymbolKind::EnumerationMember:
+        return "EnumerationMember";
     case SymbolKind::Class:
         return "Class";
     case SymbolKind::Builtin:

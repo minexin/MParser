@@ -213,6 +213,27 @@ void recordRawDependency(std::map<std::string, bool>& dependencies,
     existing = existing || functionsAllowed;
 }
 
+std::optional<std::string> staticStringLiteral(const SyntaxNode& node) {
+    if (node.kind != SyntaxKind::StringLiteralExpr || node.raw.size() < 2) {
+        return std::nullopt;
+    }
+    const char quote = node.raw.front();
+    if ((quote != '\'' && quote != '"') || node.raw.back() != quote) {
+        return std::nullopt;
+    }
+    std::string value;
+    for (size_t index = 1; index + 1 < node.raw.size(); ++index) {
+        if (node.raw[index] == quote && index + 1 < node.raw.size() - 1 &&
+            node.raw[index + 1] == quote) {
+            value.push_back(quote);
+            ++index;
+        } else {
+            value.push_back(node.raw[index]);
+        }
+    }
+    return value;
+}
+
 void collectRawDependencies(const SyntaxNode& node,
                             std::map<std::string, bool>& dependencies) {
     if (node.kind == SyntaxKind::ImportStatement ||
@@ -244,6 +265,13 @@ void collectRawDependencies(const SyntaxNode& node,
         if (const auto name =
                 dottedExpressionName(*node.children.front())) {
             recordRawDependency(dependencies, *name, true);
+            if (*name == "enumeration" && node.children.size() == 2) {
+                if (const auto className =
+                        staticStringLiteral(*node.children[1]);
+                    className && !splitClassName(*className).empty()) {
+                    recordRawDependency(dependencies, *className, false);
+                }
+            }
         }
     } else if (node.kind == SyntaxKind::MemberAccessExpr) {
         if (const auto name = dottedExpressionName(node)) {

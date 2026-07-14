@@ -216,7 +216,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.39 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.40 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -251,6 +251,17 @@ and unrelated private functions place an empty class identity. This lets a
 helper use private properties and methods while preventing an ordinary function
 called by a method from borrowing the method's access rights. The frame is
 restored across nested calls, constructor chains, failures, and returns.
+
+Enumeration members use declaration-owned bytecode regions rather than class
+top-level execution. Each class stores the ordered member metadata, attributes,
+constructor argument range, recursion state, and cached runtime object. Class
+member access, explicit imports, and string conversion all enter one lazy
+construction function. Value-enumeration identity freezes property writes
+after construction; handle enumerations keep shared member storage. Equality
+and switch matching compare the class-qualified member identity. Enumeration
+classes are implicitly sealed, and member collisions are rejected during
+semantic predeclaration. Until object arrays exist, `enumeration` exposes its
+ordered visible values and names as Cells.
 
 Optimization candidates also carry bytecode region
 contracts: half-open PC
@@ -468,7 +479,8 @@ custom validators, validator set-membership/range functions, dimensions above
 two, non-scalar string arrays, `HandleCompatible` enforcement, cross-file
 function discovery from command-form calls, function handles, `.mlx`, `.p`, and
 MEX precedence, class-folder Live Code/P-code/MEX methods, handle lifecycle
-operations such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
+operations such as `delete` and `isvalid`, cyclic object collection, events,
+numeric/logical/character built-in enumeration bases, enumeration object arrays,
 class methods as `CompiledModule` entry targets,
 function-handle execution, dynamic function handles, automatic numeric-array
 growth, non-scalar right-hand-side indexed assignment shape matching, structs,
@@ -485,7 +497,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.39
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.40
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -562,8 +574,12 @@ method-local helper identity, and ordinary/static/private method execution with
 inheritance and virtual overrides. v0.39 adds class-private helper ownership,
 helper-to-helper discovery, MATLAB function-versus-dot dispatch precedence,
 subclass isolation, explicit lexical VM access frames, and source/HIR ownership
-inspection without exposing helpers as methods. The next steps are
-multidimensional and comma-separated-list Cell semantics, persistent code
+inspection without exposing helpers as methods. v0.40 adds structured
+enumeration-member symbols and initializer regions, lazy cached construction,
+value immutability, handle singleton state, implicit sealing, enum equality and
+switch behavior, member imports, package loading, conversions, and visible
+member queries. The next steps are events and listeners, multidimensional and
+comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.
 

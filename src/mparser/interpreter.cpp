@@ -151,6 +151,12 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     }
     if (left.kind == RuntimeValueKind::Object &&
         right.kind == RuntimeValueKind::Object) {
+        if (!left.enumerationMemberName.empty() ||
+            !right.enumerationMemberName.empty()) {
+            return left.className == right.className &&
+                   left.enumerationMemberName ==
+                       right.enumerationMemberName;
+        }
         const auto& leftFields = objectFields(left);
         const auto& rightFields = objectFields(right);
         if (left.className != right.className ||
@@ -507,6 +513,7 @@ private:
         case HirKind::Class:
         case HirKind::Import:
         case HirKind::Property:
+        case HirKind::EnumerationMember:
         case HirKind::MethodPrototype:
         case HirKind::ControlArm:
         case HirKind::OutputList:
@@ -1151,6 +1158,7 @@ private:
         case HirKind::Function:
         case HirKind::Import:
         case HirKind::Property:
+        case HirKind::EnumerationMember:
         case HirKind::MethodPrototype:
         case HirKind::Control:
         case HirKind::ControlArm:
@@ -2432,7 +2440,11 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         output << "}";
         return output.str();
     case RuntimeValueKind::Object:
-        output << "<" << value.className << ">";
+        output << "<" << value.className;
+        if (!value.enumerationMemberName.empty()) {
+            output << "." << value.enumerationMemberName;
+        }
+        output << ">";
         return output.str();
     }
     return "<missing>";

@@ -16,6 +16,7 @@ enum class HirKind {
     Function,
     Import,
     Property,
+    EnumerationMember,
     MethodPrototype,
     Control,
     ControlHeader,
@@ -49,6 +50,7 @@ enum class BindingKind {
     Function,
     Method,
     Property,
+    EnumerationMember,
     Class,
     Builtin,
 };
@@ -60,6 +62,7 @@ enum class SymbolKind {
     Function,
     Method,
     Property,
+    EnumerationMember,
     Class,
     Builtin,
 };

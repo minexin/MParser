@@ -322,6 +322,7 @@ private:
         const Token token = advance();
         switch (token.kind) {
         case TokenKind::Identifier:
+        case TokenKind::KeywordEnumeration:
             return makeLeaf(SyntaxKind::IdentifierExpr, token);
         case TokenKind::Number:
             return makeLeaf(SyntaxKind::NumberLiteralExpr, token);
@@ -1430,6 +1431,7 @@ std::unique_ptr<SyntaxNode> Parser::parseEventsBlock() {
 std::unique_ptr<SyntaxNode> Parser::parseEnumerationBlock() {
     auto node = makeNode(SyntaxKind::EnumerationBlock, current().span.begin);
     advance();
+    node->attributes = parseAttributeList();
     consumeSeparator();
 
     while (!isAtEnd() && !at(TokenKind::KeywordEnd)) {
@@ -1438,13 +1440,75 @@ std::unique_ptr<SyntaxNode> Parser::parseEnumerationBlock() {
             break;
         }
 
-        auto member = makeNode(SyntaxKind::EnumMember, current().span.begin);
-        const auto tokens = collectUntilSeparator();
-        member->raw = joinTokens(tokens);
-        member->label = firstIdentifier(tokens);
+        const auto declarationTokens =
+            removeEllipses(collectUntilSeparator());
+        for (const auto& tokens : splitTopLevelCommas(declarationTokens)) {
+            if (tokens.empty()) {
+                diagnostics_.push_back(Diagnostic{
+                    current().span,
+                    "expected enumeration member after comma"});
+                continue;
+            }
+
+            auto member = makeNode(SyntaxKind::EnumMember,
+                                   tokens.front().span.begin);
+            member->raw = joinTokens(tokens);
+            member->attributes = node->attributes;
+            member->span = mergeSpans(tokens.front().span,
+                                      tokens.back().span);
+            if (tokens.front().kind != TokenKind::Identifier) {
+                diagnostics_.push_back(Diagnostic{
+                    member->span,
+                    "enumeration member must begin with an identifier"});
+                node->children.push_back(std::move(member));
+                continue;
+            }
+            member->label = tokens.front().text;
+
+            if (tokens.size() > 1) {
+                const size_t close =
+                    tokens[1].kind == TokenKind::LParen
+                        ? findMatchingDelimiter(tokens, 1, TokenKind::LParen,
+                                                TokenKind::RParen)
+                        : tokens.size();
+                if (close != tokens.size() - 1) {
+                    diagnostics_.push_back(Diagnostic{
+                        member->span,
+                        "enumeration member suffix must be a constructor "
+                        "argument list"});
+                } else {
+                    const std::vector<Token> arguments(
+                        tokens.begin() + 2,
+                        tokens.begin() + static_cast<std::ptrdiff_t>(close));
+                    if (!arguments.empty()) {
+                        for (const auto& argument :
+                             splitTopLevelCommas(arguments)) {
+                            if (argument.empty()) {
+                                diagnostics_.push_back(Diagnostic{
+                                    member->span,
+                                    "enumeration constructor argument cannot "
+                                    "be empty"});
+                                continue;
+                            }
+                            auto expression = parseExpressionTokens(argument);
+                            if (!expression.root ||
+                                !expression.consumedAll) {
+                                diagnostics_.push_back(Diagnostic{
+                                    spanFromTokens(argument),
+                                    "unable to parse enumeration constructor "
+                                    "argument"});
+                                continue;
+                            }
+                            member->children.push_back(
+                                std::move(expression.root));
+                        }
+                    }
+                }
+            }
+
+            node->children.push_back(std::move(member));
+        }
         consumeSeparator();
-        finishNode(*member);
-        node->children.push_back(std::move(member));
     }
 
     consumeExpectedEnd("enumeration block");

@@ -28,6 +28,7 @@ struct RuntimeValue {
     std::vector<double> elements;
     std::vector<RuntimeValue> cells;
     std::string className;
+    std::string enumerationMemberName;
     std::map<std::string, RuntimeValue> fields;
     std::shared_ptr<std::map<std::string, RuntimeValue>> sharedFields;
     bool handleObject = false;

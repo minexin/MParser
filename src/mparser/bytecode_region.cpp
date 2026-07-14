@@ -189,6 +189,8 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
     case BytecodeOp::LeaveClass:
     case BytecodeOp::EnterPropertyInitializer:
     case BytecodeOp::LeavePropertyInitializer:
+    case BytecodeOp::EnterEnumerationMemberInitializer:
+    case BytecodeOp::LeaveEnumerationMemberInitializer:
     case BytecodeOp::EnterFunction:
     case BytecodeOp::LeaveFunction:
     case BytecodeOp::Unknown:
