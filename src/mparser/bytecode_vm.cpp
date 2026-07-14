@@ -470,6 +470,7 @@ struct FunctionInfo {
 struct PropertyInfo {
     std::string name;
     std::string declaringClass;
+    std::string storageKey;
     PropertySpec spec;
     std::vector<AttributeSyntax> attributes;
     MemberAccessPolicy getAccess;
@@ -490,6 +491,8 @@ struct PropertyInfo {
 };
 
 using PropertyInfoPtr = std::shared_ptr<PropertyInfo>;
+using PropertyCandidates = std::vector<PropertyInfoPtr>;
+using PropertyTable = std::map<std::string, PropertyCandidates>;
 
 struct ClassInfo {
     std::string name;
@@ -508,7 +511,7 @@ struct ClassInfo {
     std::vector<PropertyInfoPtr> declaredPropertyOrder;
     std::map<std::string, FunctionInfo> declaredMethods;
     std::map<std::string, bool> declaredStaticMethods;
-    std::map<std::string, PropertyInfoPtr> properties;
+    PropertyTable properties;
     std::vector<PropertyInfoPtr> propertyOrder;
     std::map<std::string, FunctionInfo> methods;
     std::map<std::string, bool> staticMethods;
@@ -984,6 +987,7 @@ private:
                 auto property = std::make_shared<PropertyInfo>();
                 property->name = node->label;
                 property->declaringClass = className;
+                property->storageKey = className + "::" + node->label;
                 property->spec = node->property;
                 property->attributes = node->attributes;
                 property->span = node->span;
@@ -1533,6 +1537,69 @@ private:
                !property.spec.validators.empty();
     }
 
+    bool isFullyPrivateProperty(const PropertyInfo& property) const {
+        return property.getAccess.level == MemberAccessLevel::Private &&
+               property.setAccess.level == MemberAccessLevel::Private;
+    }
+
+    bool hasNonPrivateProperty(
+        const PropertyCandidates& candidates) const {
+        return std::any_of(
+            candidates.begin(), candidates.end(),
+            [this](const PropertyInfoPtr& property) {
+                return !isFullyPrivateProperty(*property);
+            });
+    }
+
+    PropertyInfoPtr selectAbstractPropertyImplementation(
+        const PropertyCandidates& candidates) const {
+        const auto visible = std::find_if(
+            candidates.begin(), candidates.end(),
+            [this](const PropertyInfoPtr& property) {
+                return !isFullyPrivateProperty(*property);
+            });
+        if (visible != candidates.end()) {
+            return *visible;
+        }
+        return candidates.empty() ? nullptr : candidates.back();
+    }
+
+    void mergeInheritedProperty(
+        ClassInfo& info, PropertyTable& properties,
+        std::vector<PropertyInfoPtr>& propertyOrder,
+        const PropertyInfoPtr& candidate, bool& valid) {
+        auto& candidates = properties[candidate->name];
+        if (std::any_of(candidates.begin(), candidates.end(),
+                        [&candidate](const PropertyInfoPtr& existing) {
+                            return existing->storageKey ==
+                                   candidate->storageKey;
+                        })) {
+            return;
+        }
+
+        if (!isFullyPrivateProperty(*candidate)) {
+            const auto conflict = std::find_if(
+                candidates.begin(), candidates.end(),
+                [this](const PropertyInfoPtr& existing) {
+                    return !isFullyPrivateProperty(*existing);
+                });
+            if (conflict != candidates.end()) {
+                valid = false;
+                reportClassHierarchyDiagnostic(
+                    info,
+                    "property:" + info.name + ":" + candidate->name,
+                    "ambiguous inherited property: " + info.name + "." +
+                        candidate->name + " from " +
+                        (*conflict)->declaringClass + " and " +
+                        candidate->declaringClass);
+                return;
+            }
+        }
+
+        candidates.push_back(candidate);
+        propertyOrder.push_back(candidate);
+    }
+
     void mergeAbstractPropertyRequirement(
         ClassInfo& info,
         std::map<std::string, PropertyInfoPtr>& requirements,
@@ -1639,7 +1706,7 @@ private:
         auto& info = klass->second;
         bool valid = info.hierarchyValid;
         bool handleClass = info.directHandleClass;
-        std::map<std::string, PropertyInfoPtr> properties;
+        PropertyTable properties;
         std::vector<PropertyInfoPtr> propertyOrder;
         std::map<std::string, FunctionInfo> methods;
         std::map<std::string, bool> staticMethods;
@@ -1691,22 +1758,8 @@ private:
             }
 
             for (const auto& property : base.propertyOrder) {
-                const std::string& propertyName = property->name;
-                const auto existing = properties.find(propertyName);
-                if (existing == properties.end()) {
-                    properties[propertyName] = property;
-                    propertyOrder.push_back(property);
-                    continue;
-                }
-                if (existing->second != property) {
-                    valid = false;
-                    reportClassHierarchyDiagnostic(
-                        info, "property:" + className + ":" + propertyName,
-                        "ambiguous inherited property: " + className + "." +
-                            propertyName + " from " +
-                            existing->second->declaringClass + " and " +
-                            property->declaringClass);
-                }
+                mergeInheritedProperty(info, properties, propertyOrder,
+                                       property, valid);
             }
 
             for (const auto& [propertyName, property] :
@@ -1788,25 +1841,36 @@ private:
                 continue;
             }
 
-            auto effective =
-                std::make_shared<PropertyInfo>(*implementation->second);
+            const auto original = selectAbstractPropertyImplementation(
+                implementation->second);
+            if (!original) {
+                ++requirement;
+                continue;
+            }
+            auto effective = std::make_shared<PropertyInfo>(*original);
             if (!applyAbstractPropertyRequirement(
                     info, *effective, *requirement->second)) {
                 valid = false;
             }
             for (auto& ordered : propertyOrder) {
-                if (ordered == implementation->second) {
+                if (ordered == original) {
                     ordered = effective;
                 }
             }
-            implementation->second = std::move(effective);
+            for (auto& candidate : implementation->second) {
+                if (candidate == original) {
+                    candidate = effective;
+                }
+            }
             requirement = abstractProperties.erase(requirement);
         }
 
         for (const auto& property : info.declaredPropertyOrder) {
             const std::string& propertyName = property->name;
             if (property->abstractProperty) {
-                if (properties.contains(propertyName)) {
+                const auto inherited = properties.find(propertyName);
+                if (inherited != properties.end() &&
+                    hasNonPrivateProperty(inherited->second)) {
                     valid = false;
                     reportClassHierarchyDiagnostic(
                         info,
@@ -1822,12 +1886,14 @@ private:
             }
 
             if (const auto inherited = properties.find(propertyName);
-                inherited != properties.end()) {
+                inherited != properties.end() &&
+                hasNonPrivateProperty(inherited->second)) {
                 valid = false;
                 reportClassHierarchyDiagnostic(
                     info, "property:" + className + ":" + propertyName,
                     "inherited property cannot be redeclared: " + className +
                         "." + propertyName);
+                continue;
             }
             if (const auto requirement =
                     abstractProperties.find(propertyName);
@@ -1838,7 +1904,7 @@ private:
                 }
                 abstractProperties.erase(requirement);
             }
-            properties[propertyName] = property;
+            properties[propertyName].push_back(property);
             propertyOrder.push_back(property);
         }
 
@@ -2926,6 +2992,36 @@ private:
         recordAssignment(instruction, "name", *value);
     }
 
+    PropertyInfoPtr selectProperty(const ClassInfo& klass,
+                                   const std::string& name,
+                                   bool lexicalContext = true) const {
+        const auto found = klass.properties.find(name);
+        if (found == klass.properties.end() || found->second.empty()) {
+            return nullptr;
+        }
+
+        if (lexicalContext && !activeClassFunctions_.empty()) {
+            const auto& requestingClass =
+                activeClassFunctions_.back().className;
+            const auto local = std::find_if(
+                found->second.rbegin(), found->second.rend(),
+                [&requestingClass](const PropertyInfoPtr& property) {
+                    return property->declaringClass == requestingClass;
+                });
+            if (local != found->second.rend()) {
+                return *local;
+            }
+        }
+
+        const auto visible = std::find_if(
+            found->second.rbegin(), found->second.rend(),
+            [this](const PropertyInfoPtr& property) {
+                return !isFullyPrivateProperty(*property);
+            });
+        return visible != found->second.rend() ? *visible
+                                               : found->second.back();
+    }
+
     std::optional<RuntimeValue> invokePropertyGetter(
         const BytecodeInstruction& instruction, const RuntimeValue& target,
         PropertyInfo& property) {
@@ -2959,7 +3055,7 @@ private:
             return std::nullopt;
         }
         const auto& fields = objectFields(target);
-        const auto field = fields.find(property.name);
+        const auto field = fields.find(property.storageKey);
         if (field == fields.end()) {
             addDiagnostic(instruction,
                           "property storage is not available: " +
@@ -2972,9 +3068,9 @@ private:
     void writeStoredProperty(RuntimeValue& target, const PropertyInfo& property,
                              const RuntimeValue& value) {
         if (target.handleObject && target.sharedFields) {
-            (*target.sharedFields)[property.name] = value;
+            (*target.sharedFields)[property.storageKey] = value;
         } else {
-            target.fields[property.name] = value;
+            target.fields[property.storageKey] = value;
         }
     }
 
@@ -2991,23 +3087,23 @@ private:
                 return;
             }
             if (const auto property =
-                    klass->second.properties.find(instruction.operand);
-                property != klass->second.properties.end()) {
-                if (!property->second->constant) {
+                    selectProperty(klass->second, instruction.operand,
+                                   false)) {
+                if (!property->constant) {
                     addDiagnostic(
                         instruction,
                         "class-qualified property access requires Constant: " +
                             target->className + "." + instruction.operand);
                     return;
                 }
-                if (!hasMemberAccess(property->second->getAccess,
-                                     property->second->declaringClass)) {
+                if (!hasMemberAccess(property->getAccess,
+                                     property->declaringClass)) {
                     addDiagnostic(instruction,
                                   "property get access is denied: " +
-                                      propertyDisplayName(*property->second));
+                                      propertyDisplayName(*property));
                     return;
                 }
-                if (const auto value = propertyDefault(*property->second)) {
+                if (const auto value = propertyDefault(*property)) {
                     stack_.push_back(runtimeStackValue(*value));
                 }
                 return;
@@ -3042,17 +3138,16 @@ private:
             return;
         }
         if (const auto property =
-                klass->second.properties.find(instruction.operand);
-            property != klass->second.properties.end()) {
-            if (!hasMemberAccess(property->second->getAccess,
-                                 property->second->declaringClass)) {
+                selectProperty(klass->second, instruction.operand)) {
+            if (!hasMemberAccess(property->getAccess,
+                                 property->declaringClass)) {
                 addDiagnostic(instruction,
                               "property get access is denied: " +
-                                  propertyDisplayName(*property->second));
+                                  propertyDisplayName(*property));
                 return;
             }
             if (const auto value = invokePropertyGetter(
-                    instruction, target->value, *property->second)) {
+                    instruction, target->value, *property)) {
                 stack_.push_back(runtimeStackValue(*value));
             }
             return;
@@ -3086,12 +3181,12 @@ private:
             const auto klass = classesByName_.find(target->className);
             if (klass != classesByName_.end()) {
                 const auto property =
-                    klass->second.properties.find(instruction.operand);
-                if (property != klass->second.properties.end() &&
-                    property->second->constant) {
+                    selectProperty(klass->second, instruction.operand,
+                                   false);
+                if (property && property->constant) {
                     addDiagnostic(instruction,
                                   "constant property cannot be assigned: " +
-                                      propertyDisplayName(*property->second));
+                                      propertyDisplayName(*property));
                     return;
                 }
             }
@@ -3117,15 +3212,15 @@ private:
             return;
         }
         const auto property =
-            klass->second.properties.find(instruction.operand);
-        if (property == klass->second.properties.end()) {
+            selectProperty(klass->second, instruction.operand);
+        if (!property) {
             addDiagnostic(instruction, "property is not available: " +
                                            updated.className + "." +
                                            instruction.operand);
             return;
         }
 
-        PropertyInfo& info = *property->second;
+        PropertyInfo& info = *property;
         if (info.constant) {
             addDiagnostic(instruction,
                           "constant property cannot be assigned: " +
@@ -4549,7 +4644,7 @@ private:
                 return std::nullopt;
             }
             if (!property->constant) {
-                values[property->name] = *value;
+                values[property->storageKey] = *value;
             }
         }
         return values;

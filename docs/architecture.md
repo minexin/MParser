@@ -125,7 +125,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.31 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.32 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -259,6 +259,16 @@ definitions require a subclass override, otherwise the hierarchy receives an
 ambiguity diagnostic. Missing and cyclic same-file hierarchies are rejected.
 Handle ownership propagates through the resolved superclass graph.
 
+An effective property name maps to an ordered candidate set rather than one
+descriptor. Each descriptor has a stable `DeclaringClass::Property` storage
+identity. Repeated diamond paths merge that identity once. Multiple distinct
+same-name candidates are compatible only when at most one has non-private
+`GetAccess` or `SetAccess`; a class may add its own same-name property only
+when every inherited candidate has both access values private. Runtime member
+selection first chooses a descriptor declared by the currently executing
+method's class, then the unique non-private descriptor. This preserves lexical
+base-class access while exposing a subclass's separate public property.
+
 Construction allocates the most-derived object once and carries it through a
 shared construction context. Explicit `obj@Superclass(args)` instructions
 invoke only direct bases and write the updated value object back to the active
@@ -280,7 +290,9 @@ validates it, and caches
 the resulting value. Object allocation copies cached value data while nested
 handle objects retain shared storage. This mirrors MATLAB's evaluate-once class
 default behavior and ensures all effective defaults exist before any base or
-derived constructor body runs.
+derived constructor body runs. Stored fields use the descriptor's qualified
+identity, so base and subclass defaults with the same surface name coexist in
+both value objects and shared handle storage.
 
 Property writes use a class, size, validator pipeline. The current class subset
 supports `double`, `logical`, `char`, scalar `string`, `cell`, and same-file
@@ -364,7 +376,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.31
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.32
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -414,9 +426,11 @@ abstract-property implementation and validation inheritance, automatic
 abstract-class detection, instantiation diagnostics, sealed classes, and
 sealed methods. v0.31 adds structured meta-class attribute lists, selective
 property/method/constructor access, authorized class-list overrides, and
-direct-edge `AllowedSubclasses` enforcement. The next steps are private
-property redeclaration with declaring-class-local storage, multidimensional
-and comma-separated-list Cell semantics, persistent code
+direct-edge `AllowedSubclasses` enforcement. v0.32 adds candidate-based
+property layout, declaring-class-local storage identity, legal private
+property redeclaration, lexical property selection, and compatible private
+property merging across multiple inheritance. The next steps are
+multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.
 

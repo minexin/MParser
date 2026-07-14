@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.31.0. See [docs/v0.31.md](docs/v0.31.md) for the
+Current milestone: v0.32.0. See [docs/v0.32.md](docs/v0.32.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.30.md](docs/v0.30.md),
+iteration plan. Previous boundaries are kept in [docs/v0.31.md](docs/v0.31.md),
+[docs/v0.30.md](docs/v0.30.md),
 [docs/v0.29.md](docs/v0.29.md),
 [docs/v0.28.md](docs/v0.28.md),
 [docs/v0.27.md](docs/v0.27.md),
@@ -64,7 +65,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.31 executes the core numeric/string subset,
+expression operators. v0.32 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -189,6 +190,14 @@ access, while the defining class always retains access. `AllowedSubclasses`
 restricts direct subclass edges, with an empty or fully unresolved list acting
 as a sealed class. Class-list method overrides require both authorization and
 an exactly preserved access policy.
+v0.32 gives every stored property a declaring-class-qualified identity. A
+subclass may now declare a property with the same surface name as inherited
+properties only when every inherited candidate has both `GetAccess` and
+`SetAccess` set to private. Base methods, subclass methods, external access,
+constructors, defaults, validation, constants, dependent accessors, value
+copies, handle aliases, and compatible multiple inheritance all resolve the
+correct independent property slot. More than one inherited non-private
+candidate remains an ambiguity.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -422,6 +431,13 @@ with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\class_access_policy_demo.m
+```
+
+Run declaring-class-local private property slots across value and handle
+inheritance with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\class_property_identity_demo.m
 ```
 
 Compile once, inspect the reusable module catalog, and validate an entry with:
