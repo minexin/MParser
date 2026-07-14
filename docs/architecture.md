@@ -181,8 +181,8 @@ class, overload, and runtime workspace context.
 
 The current executable runtime is a small HIR interpreter. Its purpose is to
 define and test execution semantics before the bytecode VM and JIT harden. It
-supports scalar double values, one-dimensional numeric vectors,
-two-dimensional numeric matrices, string literals, variable assignment, local function calls
+supports scalar double values, N-dimensional numeric arrays, N-dimensional
+Cells, string literals, variable assignment, local function calls
 with isolated stack frames, namespace, ordinary path, and private function calls,
 first-output single-value
 calls, multiple-output
@@ -193,11 +193,13 @@ diagnostic recovery, short-circuit `&&`/`||`, arithmetic and comparison
 operators with scalar/vector/matrix broadcasting, string equality comparisons,
 MATLAB constants such as `pi`, one-argument math builtins such as `sin`,
 `cos`, `sqrt`, `exp`, and `log`, string builtin `strcmp`, reductions such as
-`sum`, `min`, `max`, and `mean`, `size` queries as a single row-vector output
-or multiple scalar outputs, 1-based vector and matrix indexing, colon and
-vector subscripts, `end` expressions inside indexing, scalar-fill indexed
+`sum`, `min`, `max`, and `mean`, full-shape `size` and `ndims` queries as a
+single row-vector output, selected dimensions, or multiple scalar outputs,
+1-based N-dimensional indexing, colon and vector subscripts, folded trailing
+dimensions, `end` expressions inside indexing, scalar-fill indexed
 assignment into existing numeric arrays,
-`zeros`, `ones`, and `eye` array constructors, `linspace` vector generation,
+N-dimensional `zeros`, `ones`, and `cell` constructors, two-dimensional `eye`,
+`linspace` vector generation,
 transpose, and basic numeric matrix multiplication.
 
 Unsupported dynamic features produce runtime diagnostics. That includes class
@@ -216,14 +218,17 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.41 has an executable bytecode VM for scalar doubles, strings, numeric
-vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
+v0.42 has an executable bytecode VM for scalar doubles, strings,
+N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
 `break`, `continue`, and `return`, same-file local function calls, isolated
 call frames, multi-output call assignment, MATLAB-style numeric indexing with
 `end`, `:`, and vector subscripts, and indexed assignment into existing
-numeric arrays. It also executes `switch`/`case`/`otherwise` dispatch and
+numeric arrays. Linear and multi-subscript indexing use MATLAB column-major
+order, fold trailing dimensions when fewer subscripts are supplied, and expose
+trailing singleton dimensions when more subscripts are supplied. It also
+executes `switch`/`case`/`otherwise` dispatch and
 `try`/`catch` diagnostic recovery. When enabled, runtime profiles record
 instruction PCs, functions, loops, call/index sites, and assignment sites,
 including hot-loop marking plus structured runtime kind/shape observations.
@@ -243,6 +248,16 @@ typed module, then all four paths share warmup and rotate measurement order.
 The report includes timing distributions, VM dispatch counts, typed
 attempts/executions/fallbacks, and typed instruction counts; exact four-way
 output equivalence is a required correctness gate.
+
+`RuntimeValue::dimensions` is the canonical shape. It always exposes at least
+two dimensions and drops trailing singleton dimensions beyond the second,
+matching MATLAB's `ndims` convention. The legacy `rows` and `columns` fields
+mirror the first two entries for compatibility with existing scalar and matrix
+operations. Numeric and Cell payloads retain the runtime's established
+row-major physical representation, while `runtime_shape` maps every logical
+linear or multidimensional access through MATLAB column-major coordinates.
+This isolates storage compatibility from language semantics and provides one
+shape contract for both baseline runtimes and optimization metadata.
 
 VM member access is lexical rather than inherited from the dynamic caller.
 Every function invocation pushes an access frame. Methods and class-private
@@ -435,8 +450,9 @@ both value objects and shared handle storage.
 
 Property writes use a class, size, validator pipeline. The current class subset
 supports `double`, `logical`, `char`, scalar `string`, `cell`, and same-file
-user classes. Two-dimensional positive-integer/colon size constraints support
-numeric scalar expansion and row/column reshaping. Built-in numeric, shape,
+user classes. N-dimensional positive-integer/colon size constraints support
+numeric scalar expansion and numeric/Cell reshaping that preserves MATLAB
+column-major linear order. Built-in numeric, shape,
 text, comparison, and missing-value validators execute left to right. The same
 pipeline validates explicit and implicit defaults and direct member writes;
 failed validation leaves the object unchanged.
@@ -495,7 +511,7 @@ complete resolved access policy.
 
 The VM intentionally still rejects non-`handle` built-in superclass
 construction, full MATLAB property conversion, custom validators, validator
-set-membership/range functions, dimensions above two, non-scalar string arrays,
+set-membership/range functions, non-scalar string arrays,
 `HandleCompatible` enforcement, cross-file function discovery from command-form
 calls, dynamic or text-created function handles, `.mlx`, `.p`, and MEX
 precedence, class-folder Live Code/P-code/MEX methods, general handle deletion,
@@ -504,9 +520,10 @@ listener/source arrays, numeric/logical/character built-in enumeration bases,
 enumeration object arrays, class methods as `CompiledModule` entry targets,
 automatic numeric-array growth, non-scalar right-hand-side indexed assignment
 shape matching, structs, sparse arrays, and complex values until the IR grows
-richer mutation, layout, and dynamic dispatch conventions. Cell execution is
-deliberately limited to one-dimensional scalar brace reads/writes;
-multi-subscript Cells and comma-separated-list expansion are future work.
+richer mutation, layout, and dynamic dispatch conventions. Cell execution
+supports N-dimensional scalar brace reads/writes, but Cell parenthesis
+indexing, vector-valued brace selections, and comma-separated-list expansion
+are future work.
 
 This shape is intentionally close to an interpreter dispatch loop, but still
 abstract enough for MATLAB's delayed decisions. `CallOrIndex` remains a neutral
@@ -516,9 +533,9 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.41
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.42
 runtime profiler can identify frequently executed loops, functions, and
-call/index sites, then attach conservative runtime kind/shape observations to
+call/index sites, then attach conservative runtime kind/full-shape observations to
 stable profile positions. The optimization planner converts those observations
 into explicit candidates and guards. The typed IR builder now lowers those
 candidates into typed regions, and the guard evaluator can decide whether
@@ -600,8 +617,11 @@ switch behavior, member imports, package loading, conversions, and visible
 member queries. v0.41 adds executable closure and named function handles,
 package callback discovery, event metadata and inheritance, listener access and
 lifecycle policies, synchronous notification, recursive callback control, and
-default/custom event data. The next steps are multidimensional arrays,
-object/listener arrays, property event listeners, comma-separated-list Cell
+default/custom event data. v0.42 adds canonical N-dimensional runtime shapes,
+column-major logical indexing, numeric and Cell construction/query/mutation,
+N-dimensional class property constraints, and full-shape profile and guard
+metadata. The next steps are object/listener arrays, property event listeners,
+comma-separated-list Cell
 semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

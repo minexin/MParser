@@ -1,5 +1,6 @@
 #include "mparser/runtime_benchmark.h"
 #include "mparser/optimization_plan.h"
+#include "mparser/runtime_shape.h"
 #include "mparser/typed_ir.h"
 
 #include <algorithm>
@@ -31,8 +32,8 @@ using ComparedHandleObjects = std::set<std::pair<const void*, const void*>>;
 bool runtimeValuesEqualImpl(const RuntimeValue& left,
                             const RuntimeValue& right,
                             ComparedHandleObjects& comparedHandles) {
-    if (left.kind != right.kind || left.rows != right.rows ||
-        left.columns != right.columns) {
+    if (left.kind != right.kind ||
+        runtimeDimensions(left) != runtimeDimensions(right)) {
         return false;
     }
 

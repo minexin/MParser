@@ -9,6 +9,7 @@
 #include "mparser/optimization_plan.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_benchmark.h"
+#include "mparser/runtime_shape.h"
 #include "mparser/semantic.h"
 #include "mparser/semantic_dump.h"
 #include "mparser/source_loader.h"
@@ -142,14 +143,12 @@ mparser::RuntimeValue parseRuntimeValue(const std::string& valueText) {
                 "invalid numeric runtime vector: " + valueText);
         }
         value.kind = mparser::RuntimeValueKind::Vector;
-        value.rows = 1;
-        value.columns = value.elements.size();
+        mparser::setRuntimeDimensions(value, {1, value.elements.size()});
     } else if (valueText.size() >= 2 && valueText.front() == '"' &&
                valueText.back() == '"') {
         value.kind = mparser::RuntimeValueKind::String;
         value.text = valueText.substr(1, valueText.size() - 2);
-        value.rows = 1;
-        value.columns = value.text.size();
+        mparser::setRuntimeDimensions(value, {1, value.text.size()});
     } else {
         size_t consumed = 0;
         try {
@@ -163,6 +162,7 @@ mparser::RuntimeValue parseRuntimeValue(const std::string& valueText) {
                 "invalid numeric runtime value: " + valueText);
         }
         value.kind = mparser::RuntimeValueKind::Number;
+        mparser::setRuntimeDimensions(value, {1, 1});
     }
     return value;
 }
@@ -254,8 +254,19 @@ std::string observationToString(
 
     std::ostringstream output;
     if (observation.stable) {
-        output << observation.kind << "(" << observation.rows << "x"
-               << observation.columns << ")";
+        const std::vector<size_t> dimensions =
+            observation.dimensions.empty()
+                ? std::vector<size_t>{observation.rows,
+                                      observation.columns}
+                : observation.dimensions;
+        output << observation.kind << "(";
+        for (size_t index = 0; index < dimensions.size(); ++index) {
+            if (index != 0) {
+                output << "x";
+            }
+            output << dimensions[index];
+        }
+        output << ")";
     } else {
         output << "mixed";
     }
@@ -302,7 +313,22 @@ bool runtimeValueEqual(const mparser::RuntimeValue& left,
                        const mparser::RuntimeValue& right) {
     return left.kind == right.kind && left.number == right.number &&
            left.text == right.text && left.elements == right.elements &&
-           left.rows == right.rows && left.columns == right.columns;
+           mparser::runtimeDimensions(left) ==
+               mparser::runtimeDimensions(right);
+}
+
+std::string dimensionListToString(const std::vector<size_t>& dimensions,
+                                  size_t rows, size_t columns) {
+    const std::vector<size_t> shape =
+        dimensions.empty() ? std::vector<size_t>{rows, columns} : dimensions;
+    std::ostringstream output;
+    for (size_t index = 0; index < shape.size(); ++index) {
+        if (index != 0) {
+            output << "x";
+        }
+        output << shape[index];
+    }
+    return output.str();
 }
 
 bool runtimeVariablesEqual(
@@ -441,8 +467,9 @@ void printBytecodeOptimizationPlan(
             std::cout << "      guard source=" << guard.source
                       << ", role=" << guard.role
                       << ", kind=" << guard.kind
-                      << ", shape=" << guard.rows << "x"
-                      << guard.columns
+                      << ", shape="
+                      << dimensionListToString(guard.dimensions, guard.rows,
+                                               guard.columns)
                       << ", observations=" << guard.observationCount
                       << "\n";
         }
@@ -477,8 +504,9 @@ void printBytecodeTypedIr(const mparser::BytecodeTypedIrModule& module) {
             std::cout << "      guard source=" << guard.source
                       << ", role=" << guard.role
                       << ", kind=" << guard.value.kind
-                      << ", shape=" << guard.value.rows << "x"
-                      << guard.value.columns
+                      << ", shape=" << dimensionListToString(
+                             guard.value.dimensions, guard.value.rows,
+                             guard.value.columns)
                       << ", observations=" << guard.observationCount
                       << "\n";
         }

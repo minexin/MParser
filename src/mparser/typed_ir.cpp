@@ -1,4 +1,5 @@
 #include "mparser/typed_ir.h"
+#include "mparser/runtime_shape.h"
 
 #include <optional>
 #include <string>
@@ -44,10 +45,15 @@ std::string typedRegionKind(
 
 BytecodeTypedIrGuard typedGuard(
     const BytecodeOptimizationGuard& guard) {
+    const std::vector<size_t> dimensions =
+        guard.dimensions.empty()
+            ? normalizeRuntimeDimensions({guard.rows, guard.columns})
+            : normalizeRuntimeDimensions(guard.dimensions);
     return BytecodeTypedIrGuard{
         guard.source,
         guard.role,
-        BytecodeTypedValue{guard.kind, guard.rows, guard.columns},
+        BytecodeTypedValue{guard.kind, guard.rows, guard.columns,
+                           dimensions},
         guard.observationCount};
 }
 
@@ -115,27 +121,16 @@ std::string runtimeKindName(const RuntimeValue& value) {
     return "unknown";
 }
 
-size_t runtimeRows(const RuntimeValue& value) {
-    if (value.kind == RuntimeValueKind::Number ||
-        value.kind == RuntimeValueKind::String) {
-        return 1;
+std::string shapeText(std::string_view kind,
+                      const std::vector<size_t>& dimensions) {
+    std::string result = std::string(kind) + "(";
+    for (size_t index = 0; index < dimensions.size(); ++index) {
+        if (index != 0) {
+            result += "x";
+        }
+        result += std::to_string(dimensions[index]);
     }
-    return value.rows;
-}
-
-size_t runtimeColumns(const RuntimeValue& value) {
-    if (value.kind == RuntimeValueKind::Number) {
-        return 1;
-    }
-    if (value.kind == RuntimeValueKind::String) {
-        return value.text.size();
-    }
-    return value.columns;
-}
-
-std::string shapeText(std::string_view kind, size_t rows, size_t columns) {
-    return std::string(kind) + "(" + std::to_string(rows) + "x" +
-           std::to_string(columns) + ")";
+    return result + ")";
 }
 
 const RuntimeValue* findRuntimeVariable(
@@ -181,20 +176,21 @@ BytecodeTypedIrGuardCheck evaluateGuard(
 
     check.checked = true;
     const std::string actualKind = runtimeKindName(*value);
-    const size_t actualRows = runtimeRows(*value);
-    const size_t actualColumns = runtimeColumns(*value);
+    const auto actualDimensions = runtimeDimensions(*value);
+    const auto expectedDimensions =
+        guard.value.dimensions.empty()
+            ? normalizeRuntimeDimensions(
+                  {guard.value.rows, guard.value.columns})
+            : normalizeRuntimeDimensions(guard.value.dimensions);
     check.passed = actualKind == guard.value.kind &&
-                   actualRows == guard.value.rows &&
-                   actualColumns == guard.value.columns;
+                   actualDimensions == expectedDimensions;
     if (check.passed) {
-        check.reason = "matched " +
-                       shapeText(actualKind, actualRows, actualColumns);
+        check.reason = "matched " + shapeText(actualKind, actualDimensions);
     } else {
         check.reason = "expected " +
-                       shapeText(guard.value.kind, guard.value.rows,
-                                 guard.value.columns) +
+                       shapeText(guard.value.kind, expectedDimensions) +
                        ", got " +
-                       shapeText(actualKind, actualRows, actualColumns);
+                       shapeText(actualKind, actualDimensions);
     }
     return check;
 }

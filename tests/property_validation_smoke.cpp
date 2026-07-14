@@ -2,6 +2,7 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_shape.h"
 #include "mparser/semantic.h"
 
 #include <cassert>
@@ -242,6 +243,52 @@ shared_value = second.Token.Value;
     assertNumber(result, "shared_value", 9);
 }
 
+void executeNdPropertyDimensionsSmoke() {
+    const auto result = run(R"(classdef TensorRecord
+    properties
+        Tensor(2,3,2) double {mustBeFinite}
+        Slots(2,1,2) cell
+    end
+end
+
+record = TensorRecord();
+record.Tensor = 1:12;
+slot_input = cell(1,4);
+slot_input{1} = 21;
+slot_input{2} = 22;
+slot_input{3} = 23;
+slot_input{4} = 24;
+record.Slots = slot_input;
+tensor = record.Tensor;
+slots = record.Slots;
+tensor_probe = tensor(2,2,2);
+slot_probe = slots{2,1,2};
+tensor_count = numel(tensor);
+slot_count = numel(slots);
+tensor_rank = ndims(tensor);
+slot_rank = ndims(slots);
+)");
+
+    assert(result.diagnostics.empty());
+    const auto* tensor = findVariable(result, "tensor");
+    const auto* slots = findVariable(result, "slots");
+    assert(tensor != nullptr);
+    assert(slots != nullptr);
+    assert(mparser::runtimeDimensions(*tensor) ==
+           std::vector<size_t>({2, 3, 2}));
+    assert(mparser::runtimeDimensions(*slots) ==
+           std::vector<size_t>({2, 1, 2}));
+    assert(tensor->elements ==
+           std::vector<double>({1, 7, 3, 9, 5, 11,
+                                2, 8, 4, 10, 6, 12}));
+    assertNumber(result, "tensor_probe", 10);
+    assertNumber(result, "slot_probe", 24);
+    assertNumber(result, "tensor_count", 12);
+    assertNumber(result, "slot_count", 4);
+    assertNumber(result, "tensor_rank", 3);
+    assertNumber(result, "slot_rank", 3);
+}
+
 void rejectInvalidDefaultSmoke() {
     const auto result = run(R"(classdef BadDefault
     properties
@@ -293,6 +340,7 @@ int main() {
     rejectMalformedPropertySyntaxSmoke();
     executePropertyDefaultsAndValidationSmoke();
     cacheHandleDefaultOnceSmoke();
+    executeNdPropertyDimensionsSmoke();
     rejectInvalidDefaultSmoke();
     rejectInvalidAssignmentsSmoke();
     std::cout << "property validation smoke tests passed\n";

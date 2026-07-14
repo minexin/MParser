@@ -26,6 +26,7 @@ void addGuard(BytecodeOptimizationCandidate& candidate, size_t pc,
         observation.kind,
         observation.rows,
         observation.columns,
+        observation.dimensions,
         observation.observationCount});
 }
 

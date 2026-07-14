@@ -1,5 +1,6 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/function_signature.h"
+#include "mparser/runtime_shape.h"
 #include "mparser/typed_ir.h"
 #include "mparser/typed_region_executor.h"
 
@@ -64,8 +65,7 @@ RuntimeValue numberValue(double value) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Number;
     result.number = value;
-    result.rows = 1;
-    result.columns = 1;
+    setRuntimeDimensions(result, {1, 1});
     return result;
 }
 
@@ -73,8 +73,7 @@ RuntimeValue stringValue(std::string value) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::String;
     result.text = std::move(value);
-    result.rows = 1;
-    result.columns = result.text.size();
+    setRuntimeDimensions(result, {1, result.text.size()});
     return result;
 }
 
@@ -82,8 +81,7 @@ RuntimeValue vectorValue(std::vector<double> values) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Vector;
     result.elements = std::move(values);
-    result.rows = 1;
-    result.columns = result.elements.size();
+    setRuntimeDimensions(result, {1, result.elements.size()});
     return result;
 }
 
@@ -91,8 +89,7 @@ RuntimeValue matrixValue(size_t rows, size_t columns,
                          std::vector<double> values) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Matrix;
-    result.rows = rows;
-    result.columns = columns;
+    setRuntimeDimensions(result, {rows, columns});
     result.elements = std::move(values);
     return result;
 }
@@ -101,16 +98,23 @@ RuntimeValue cellValue(std::vector<RuntimeValue> values) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Cell;
     result.cells = std::move(values);
-    result.rows = 1;
-    result.columns = result.cells.size();
+    setRuntimeDimensions(result, {1, result.cells.size()});
     return result;
 }
 
 RuntimeValue cellValueForShape(size_t rows, size_t columns,
                                std::vector<RuntimeValue> values) {
     RuntimeValue result = cellValue(std::move(values));
-    result.rows = rows;
-    result.columns = columns;
+    setRuntimeDimensions(result, {rows, columns});
+    return result;
+}
+
+RuntimeValue cellValueForDimensions(std::vector<size_t> dimensions,
+                                    std::vector<RuntimeValue> values) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::Cell;
+    result.cells = std::move(values);
+    setRuntimeDimensions(result, std::move(dimensions));
     return result;
 }
 
@@ -119,8 +123,7 @@ RuntimeValue functionHandleValue(size_t id, std::string display) {
     result.kind = RuntimeValueKind::FunctionHandle;
     result.opaqueId = id;
     result.text = std::move(display);
-    result.rows = 1;
-    result.columns = 1;
+    setRuntimeDimensions(result, {1, 1});
     return result;
 }
 
@@ -166,8 +169,7 @@ RuntimeValue objectValue(std::string className,
     } else {
         result.fields = std::move(fields);
     }
-    result.rows = 1;
-    result.columns = 1;
+    setRuntimeDimensions(result, {1, 1});
     return result;
 }
 
@@ -188,17 +190,11 @@ bool isNumeric(const RuntimeValue& value) {
 }
 
 size_t rowCount(const RuntimeValue& value) {
-    return isNumber(value) ? 1 : value.rows;
+    return runtimeDimension(value, 0);
 }
 
 size_t columnCount(const RuntimeValue& value) {
-    if (isNumber(value)) {
-        return 1;
-    }
-    if (isString(value)) {
-        return value.columns;
-    }
-    return value.columns;
+    return runtimeDimension(value, 1);
 }
 
 template <typename Predicate>
@@ -240,11 +236,13 @@ void observeValue(BytecodeValueObservation& observation,
     const std::string kind = runtimeKindName(value);
     const size_t rows = rowCount(value);
     const size_t columns = columnCount(value);
+    const auto dimensions = runtimeDimensions(value);
 
     if (observation.observationCount == 0) {
         observation.kind = kind;
         observation.rows = rows;
         observation.columns = columns;
+        observation.dimensions = dimensions;
         observation.observationCount = 1;
         observation.stable = true;
         return;
@@ -256,10 +254,12 @@ void observeValue(BytecodeValueObservation& observation,
     }
 
     if (observation.kind != kind || observation.rows != rows ||
-        observation.columns != columns) {
+        observation.columns != columns ||
+        observation.dimensions != dimensions) {
         observation.kind = "mixed";
         observation.rows = 0;
         observation.columns = 0;
+        observation.dimensions.clear();
         observation.stable = false;
     }
 }
@@ -279,24 +279,13 @@ void observeValues(std::vector<BytecodeValueObservation>& observations,
              ++index) {
             observations[index].stable = false;
             observations[index].kind = "mixed";
+            observations[index].dimensions.clear();
         }
     }
 }
 
 size_t elementCount(const RuntimeValue& value) {
-    if (isNumber(value)) {
-        return 1;
-    }
-    if (isString(value)) {
-        return value.text.size();
-    }
-    if (isCell(value)) {
-        return value.cells.size();
-    }
-    if (isObject(value)) {
-        return 1;
-    }
-    return value.elements.size();
+    return runtimeShapeElementCount(value);
 }
 
 RuntimeValue arrayValueForShape(size_t rows, size_t columns,
@@ -305,6 +294,18 @@ RuntimeValue arrayValueForShape(size_t rows, size_t columns,
         return vectorValue(std::move(values));
     }
     return matrixValue(rows, columns, std::move(values));
+}
+
+RuntimeValue arrayValueForDimensions(std::vector<size_t> dimensions,
+                                     std::vector<double> values) {
+    dimensions = normalizeRuntimeDimensions(std::move(dimensions));
+    RuntimeValue result;
+    result.kind = dimensions.size() == 2 && dimensions[0] == 1
+                      ? RuntimeValueKind::Vector
+                      : RuntimeValueKind::Matrix;
+    result.elements = std::move(values);
+    setRuntimeDimensions(result, std::move(dimensions));
+    return result;
 }
 
 double elementAt(const RuntimeValue& value, size_t index) {
@@ -388,11 +389,11 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return left.text == right.text;
     }
     if (isArray(left) && isArray(right)) {
-        return left.rows == right.rows && left.columns == right.columns &&
+        return runtimeDimensions(left) == runtimeDimensions(right) &&
                left.elements == right.elements;
     }
     if (isCell(left) && isCell(right)) {
-        if (left.rows != right.rows || left.columns != right.columns ||
+        if (runtimeDimensions(left) != runtimeDimensions(right) ||
             left.cells.size() != right.cells.size()) {
             return false;
         }
@@ -3482,16 +3483,11 @@ private:
 
     double endValueForIndex(const RuntimeValue& target, size_t position,
                             size_t total) const {
-        if (total <= 1) {
-            return static_cast<double>(elementCount(target));
-        }
-        if (position == 0) {
-            return static_cast<double>(rowCount(target));
-        }
-        if (position == 1) {
-            return static_cast<double>(columnCount(target));
-        }
-        return 1.0;
+        const auto dimensions =
+            runtimeEffectiveSubscriptDimensions(target, total);
+        return position < dimensions.size()
+                   ? static_cast<double>(dimensions[position])
+                   : 1.0;
     }
 
     void finishIndexContext() {
@@ -4129,18 +4125,17 @@ private:
                           "target");
             return;
         }
-        if (arguments->size() != 1 && arguments->size() != 2) {
+        if (arguments->empty()) {
             addDiagnostic(instruction,
-                          "bytecode indexed assignment supports one or two "
-                          "subscripts");
+                          "bytecode indexed assignment requires subscripts");
             return;
         }
 
         RuntimeValue updated = *target;
         const size_t diagnosticCount = diagnostics_.size();
-        if (arguments->size() == 2) {
-            assignTwoSubscriptTarget(instruction, updated, *arguments,
-                                     value->number);
+        if (arguments->size() > 1) {
+            assignSubscriptTarget(instruction, updated, *arguments,
+                                  value->number);
         } else {
             assignLinearTarget(instruction, updated, arguments->front(),
                                value->number);
@@ -4152,20 +4147,47 @@ private:
         currentFrame()[instruction.operand] = std::move(updated);
     }
 
-    void assignTwoSubscriptTarget(
+    void assignSubscriptTarget(
         const BytecodeInstruction& instruction, RuntimeValue& target,
         const std::vector<RuntimeValue>& arguments, double value) {
-        const auto rows =
-            checkedIndices(instruction, arguments[0], rowCount(target));
-        const auto columns =
-            checkedIndices(instruction, arguments[1], columnCount(target));
-        if (!rows || !columns) {
-            return;
+        const auto effectiveDimensions =
+            runtimeEffectiveSubscriptDimensions(target, arguments.size());
+        std::vector<std::vector<size_t>> selections;
+        std::vector<size_t> selectionDimensions;
+        selections.reserve(arguments.size());
+        selectionDimensions.reserve(arguments.size());
+        for (size_t index = 0; index < arguments.size(); ++index) {
+            auto selection = checkedIndices(instruction, arguments[index],
+                                            effectiveDimensions[index]);
+            if (!selection) {
+                return;
+            }
+            selectionDimensions.push_back(selection->size());
+            selections.push_back(std::move(*selection));
         }
 
-        for (size_t row : *rows) {
-            for (size_t column : *columns) {
-                assignMatrixElement(target, row, column, value);
+        const size_t count = checkedRuntimeDimensionProduct(
+                                 selectionDimensions)
+                                 .value_or(0);
+        for (size_t outputOffset = 0; outputOffset < count; ++outputOffset) {
+            const auto outputCoordinates = runtimeRowMajorCoordinates(
+                outputOffset, selectionDimensions);
+            std::vector<size_t> sourceCoordinates(arguments.size(), 0);
+            for (size_t index = 0; index < arguments.size(); ++index) {
+                sourceCoordinates[index] =
+                    selections[index][outputCoordinates[index]];
+            }
+            const auto storageOffset = runtimeSubscriptsToStorageOffset(
+                target, sourceCoordinates, effectiveDimensions);
+            if (!storageOffset) {
+                addDiagnostic(instruction,
+                              "bytecode indexed assignment could not map subscripts");
+                return;
+            }
+            if (isNumber(target)) {
+                target.number = value;
+            } else {
+                target.elements[*storageOffset] = value;
             }
         }
     }
@@ -4190,23 +4212,11 @@ private:
             target.number = value;
             return;
         }
-        if (!isMatrix(target)) {
-            target.elements[zeroBasedIndex] = value;
-            return;
+        const auto storageOffset =
+            runtimeColumnMajorLinearToStorageOffset(target, zeroBasedIndex);
+        if (storageOffset) {
+            target.elements[*storageOffset] = value;
         }
-
-        const size_t row = zeroBasedIndex % target.rows;
-        const size_t column = zeroBasedIndex / target.rows;
-        assignMatrixElement(target, row, column, value);
-    }
-
-    void assignMatrixElement(RuntimeValue& target, size_t row, size_t column,
-                             double value) {
-        if (isNumber(target)) {
-            target.number = value;
-            return;
-        }
-        target.elements[row * columnCount(target) + column] = value;
     }
 
     void applyUnary(const BytecodeInstruction& instruction) {
@@ -4315,6 +4325,12 @@ private:
             return;
         }
         if (isMatrix(*value)) {
+            if (runtimeDimensionCount(*value) > 2) {
+                addDiagnostic(instruction,
+                              "bytecode transpose requires a "
+                              "two-dimensional array");
+                return;
+            }
             std::vector<double> transposed;
             transposed.reserve(value->elements.size());
             for (size_t column = 0; column < value->columns; ++column) {
@@ -4413,6 +4429,7 @@ private:
                                                  instruction.operandCount,
                                                  "cell index arguments");
         const auto target = popRuntime(instruction, "cell index target");
+        finishIndexContext();
         if (!arguments || !target) {
             return;
         }
@@ -4420,18 +4437,65 @@ private:
             addDiagnostic(instruction, "brace indexing requires a cell target");
             return;
         }
-        if (arguments->size() != 1 || !isNumber(arguments->front())) {
+        const auto storageOffset =
+            checkedCellStorageOffset(instruction, *target, *arguments);
+        if (!storageOffset) {
+            return;
+        }
+        pushRuntime(target->cells[*storageOffset]);
+    }
+
+    std::optional<size_t> checkedCellStorageOffset(
+        const BytecodeInstruction& instruction, const RuntimeValue& target,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.empty()) {
+            addDiagnostic(instruction, "brace indexing requires subscripts");
+            return std::nullopt;
+        }
+        for (const auto& argument : arguments) {
+            if (!isNumber(argument)) {
+                addDiagnostic(instruction,
+                              "brace indexing requires scalar numeric subscripts");
+                return std::nullopt;
+            }
+        }
+
+        if (arguments.size() == 1) {
+            const auto index = checkedIndex(instruction,
+                                            arguments.front().number,
+                                            target.cells.size());
+            if (!index) {
+                return std::nullopt;
+            }
+            const auto storageOffset =
+                runtimeColumnMajorLinearToStorageOffset(target, *index);
+            if (!storageOffset) {
+                addDiagnostic(instruction,
+                              "brace indexing could not map the linear subscript");
+            }
+            return storageOffset;
+        }
+
+        const auto effectiveDimensions =
+            runtimeEffectiveSubscriptDimensions(target, arguments.size());
+        std::vector<size_t> coordinates;
+        coordinates.reserve(arguments.size());
+        for (size_t index = 0; index < arguments.size(); ++index) {
+            const auto coordinate = checkedIndex(
+                instruction, arguments[index].number,
+                effectiveDimensions[index]);
+            if (!coordinate) {
+                return std::nullopt;
+            }
+            coordinates.push_back(*coordinate);
+        }
+        const auto storageOffset = runtimeSubscriptsToStorageOffset(
+            target, coordinates, effectiveDimensions);
+        if (!storageOffset) {
             addDiagnostic(instruction,
-                          "brace indexing currently requires one scalar "
-                          "numeric subscript");
-            return;
+                          "brace indexing could not map the subscripts");
         }
-        const auto index = checkedIndex(instruction, arguments->front().number,
-                                        target->cells.size());
-        if (!index) {
-            return;
-        }
-        pushRuntime(target->cells[*index]);
+        return storageOffset;
     }
 
     void storeBraceIndex(const BytecodeInstruction& instruction) {
@@ -4440,6 +4504,7 @@ private:
                                                  "cell assignment arguments");
         const auto target = popRuntime(instruction, "cell assignment target");
         const auto value = popRuntime(instruction, "cell assignment value");
+        finishIndexContext();
         if (!arguments || !target || !value) {
             return;
         }
@@ -4452,28 +4517,41 @@ private:
             addDiagnostic(instruction, "cell assignment requires a cell target");
             return;
         }
-        if (arguments->size() != 1 || !isNumber(arguments->front())) {
-            addDiagnostic(instruction,
-                          "cell assignment currently requires one scalar "
-                          "numeric subscript");
-            return;
-        }
-
-        const double rawIndex = arguments->front().number;
-        if (!std::isfinite(rawIndex) || rawIndex < 1.0 ||
-            std::floor(rawIndex) != rawIndex ||
-            rawIndex > static_cast<double>(std::numeric_limits<size_t>::max())) {
-            addDiagnostic(instruction, "cell subscript must be a positive integer");
-            return;
-        }
-        const size_t index = static_cast<size_t>(rawIndex - 1.0);
         RuntimeValue updated = *target;
-        if (index >= updated.cells.size()) {
-            updated.cells.resize(index + 1, missingValue());
+        std::optional<size_t> storageOffset;
+        if (arguments->size() == 1 && isNumber(arguments->front())) {
+            const double rawIndex = arguments->front().number;
+            const auto oneBasedIndex =
+                checkedRuntimeNonnegativeInteger(rawIndex);
+            if (!oneBasedIndex || *oneBasedIndex == 0) {
+                addDiagnostic(instruction,
+                              "cell subscript must be a positive integer");
+                return;
+            }
+            const size_t index = *oneBasedIndex - 1;
+            if (index >= updated.cells.size()) {
+                if (runtimeDimensionCount(updated) > 2 ||
+                    rowCount(updated) != 1) {
+                    addDiagnostic(
+                        instruction,
+                        "cell linear growth currently requires a row cell array");
+                    return;
+                }
+                updated.cells.resize(index + 1, missingValue());
+                setRuntimeDimensions(updated, {1, updated.cells.size()});
+                storageOffset = index;
+            } else {
+                storageOffset = runtimeColumnMajorLinearToStorageOffset(
+                    updated, index);
+            }
+        } else {
+            storageOffset =
+                checkedCellStorageOffset(instruction, updated, *arguments);
         }
-        updated.cells[index] = *value;
-        updated.rows = 1;
-        updated.columns = updated.cells.size();
+        if (!storageOffset) {
+            return;
+        }
+        updated.cells[*storageOffset] = *value;
         currentFrame()[instruction.operand] = updated;
         recordAssignment(instruction, "cell", updated);
     }
@@ -4951,9 +5029,9 @@ private:
                     cellValue({listener});
             } else {
                 coupledListeners->second.cells.push_back(listener);
-                coupledListeners->second.rows = 1;
-                coupledListeners->second.columns =
-                    coupledListeners->second.cells.size();
+                setRuntimeDimensions(
+                    coupledListeners->second,
+                    {1, coupledListeners->second.cells.size()});
             }
         }
         return listener;
@@ -5184,12 +5262,20 @@ private:
 
             std::vector<RuntimeValue> outputs;
             outputs.reserve(static_cast<size_t>(requestedCount));
-            outputs.push_back(
-                numberValue(static_cast<double>(rowCount(arguments.front()))));
-            outputs.push_back(numberValue(
-                static_cast<double>(columnCount(arguments.front()))));
-            while (outputs.size() < static_cast<size_t>(requestedCount)) {
-                outputs.push_back(numberValue(1.0));
+            const auto dimensions = runtimeDimensions(arguments.front());
+            for (int index = 0; index < requestedCount; ++index) {
+                size_t dimension = 1;
+                if (index + 1 == requestedCount &&
+                    static_cast<size_t>(requestedCount) < dimensions.size()) {
+                    std::vector<size_t> folded(
+                        dimensions.begin() + index, dimensions.end());
+                    dimension =
+                        checkedRuntimeDimensionProduct(folded).value_or(0);
+                } else if (static_cast<size_t>(index) < dimensions.size()) {
+                    dimension = dimensions[static_cast<size_t>(index)];
+                }
+                outputs.push_back(
+                    numberValue(static_cast<double>(dimension)));
             }
             return outputs;
         }
@@ -5418,11 +5504,13 @@ private:
         if (requestedCount == 0) {
             return {};
         }
+        const size_t valueCount = values.size();
+        const size_t nameCount = names.size();
         std::vector<RuntimeValue> outputs;
-        outputs.push_back(cellValueForShape(1, values.size(),
+        outputs.push_back(cellValueForShape(1, valueCount,
                                             std::move(values)));
         if (requestedCount == 2) {
-            outputs.push_back(cellValueForShape(1, names.size(),
+            outputs.push_back(cellValueForShape(1, nameCount,
                                                 std::move(names)));
         }
         return outputs;
@@ -5438,13 +5526,10 @@ private:
             return std::nullopt;
         }
         const auto value = parseNumber(dimension.text);
-        if (!value || *value < 0.0 || !isWholeNumber(*value) ||
-            static_cast<long double>(*value) >
-                static_cast<long double>(
-                    std::numeric_limits<size_t>::max())) {
+        if (!value) {
             return std::nullopt;
         }
-        return static_cast<size_t>(*value);
+        return checkedRuntimeNonnegativeInteger(*value);
     }
 
     std::pair<size_t, size_t> propertyValueShape(
@@ -5453,6 +5538,14 @@ private:
             return {value.rows, value.columns};
         }
         return {rowCount(value), columnCount(value)};
+    }
+
+    std::vector<size_t> propertyValueDimensions(
+        const RuntimeValue& value, const PropertyInfo& property) const {
+        if (isString(value) && property.spec.className == "string") {
+            return normalizeRuntimeDimensions({value.rows, value.columns});
+        }
+        return runtimeDimensions(value);
     }
 
     size_t propertyValueCount(const RuntimeValue& value,
@@ -5518,8 +5611,7 @@ private:
         if (type == "string") {
             if (isString(value)) {
                 if (value.rows != 0 || value.columns != 0) {
-                    value.rows = 1;
-                    value.columns = 1;
+                    setRuntimeDimensions(value, {1, 1});
                 }
                 return value;
             }
@@ -5563,46 +5655,82 @@ private:
 
     std::optional<RuntimeValue> reshapePropertyValue(
         const BytecodeInstruction& instruction, const PropertyInfo& property,
-        RuntimeValue value, size_t rows, size_t columns) {
-        if (rows != 0 &&
-            columns > std::numeric_limits<size_t>::max() / rows) {
+        RuntimeValue value, std::vector<size_t> dimensions) {
+        dimensions = normalizeRuntimeDimensions(std::move(dimensions));
+        const auto count = checkedRuntimeDimensionProduct(dimensions);
+        if (!count) {
             propertyValidationError(instruction, property,
                                     "property dimensions are too large");
             return std::nullopt;
         }
-        const size_t count = rows * columns;
         if (isNumber(value)) {
-            if (count == 1) {
+            if (*count == 1) {
                 return value;
             }
-            return arrayValueForShape(
-                rows, columns, std::vector<double>(count, value.number));
+            return arrayValueForDimensions(
+                dimensions, std::vector<double>(*count, value.number));
         }
         if (isArray(value)) {
-            if (value.elements.size() != count) {
+            if (value.elements.size() != *count) {
                 propertyValidationError(
                     instruction, property,
                     "value has " + std::to_string(value.elements.size()) +
                         " elements but the property requires " +
-                        std::to_string(count));
+                        std::to_string(*count));
                 return std::nullopt;
             }
-            if (count == 1) {
+            if (*count == 1) {
                 return numberValue(value.elements.front());
             }
-            return arrayValueForShape(rows, columns,
-                                      std::move(value.elements));
+            RuntimeValue reshaped = arrayValueForDimensions(
+                dimensions, std::vector<double>(*count, 0.0));
+            for (size_t linearIndex = 0; linearIndex < *count;
+                 ++linearIndex) {
+                const auto sourceOffset =
+                    runtimeColumnMajorLinearToStorageOffset(value,
+                                                            linearIndex);
+                const auto targetOffset =
+                    runtimeColumnMajorLinearToStorageOffset(reshaped,
+                                                            linearIndex);
+                if (!sourceOffset || !targetOffset) {
+                    propertyValidationError(
+                        instruction, property,
+                        "property reshape could not preserve linear order");
+                    return std::nullopt;
+                }
+                reshaped.elements[*targetOffset] =
+                    value.elements[*sourceOffset];
+            }
+            return reshaped;
         }
         if (isCell(value)) {
-            if (value.cells.size() != count) {
+            if (value.cells.size() != *count) {
                 propertyValidationError(
                     instruction, property,
                     "cell value has incompatible property dimensions");
                 return std::nullopt;
             }
-            value.rows = rows;
-            value.columns = columns;
-            return value;
+            RuntimeValue reshaped = cellValueForDimensions(
+                dimensions,
+                std::vector<RuntimeValue>(*count, missingValue()));
+            for (size_t linearIndex = 0; linearIndex < *count;
+                 ++linearIndex) {
+                const auto sourceOffset =
+                    runtimeColumnMajorLinearToStorageOffset(value,
+                                                            linearIndex);
+                const auto targetOffset =
+                    runtimeColumnMajorLinearToStorageOffset(reshaped,
+                                                            linearIndex);
+                if (!sourceOffset || !targetOffset) {
+                    propertyValidationError(
+                        instruction, property,
+                        "cell property reshape could not preserve linear order");
+                    return std::nullopt;
+                }
+                reshaped.cells[*targetOffset] =
+                    std::move(value.cells[*sourceOffset]);
+            }
+            return reshaped;
         }
 
         propertyValidationError(instruction, property,
@@ -5616,12 +5744,6 @@ private:
         if (property.spec.dimensions.empty()) {
             return value;
         }
-        if (property.spec.dimensions.size() > 2) {
-            propertyValidationError(
-                instruction, property,
-                "runtime size validation currently supports two dimensions");
-            return std::nullopt;
-        }
         for (const auto& dimension : property.spec.dimensions) {
             if (dimension.text != ":" && !propertyDimension(dimension)) {
                 propertyValidationError(
@@ -5631,46 +5753,73 @@ private:
             }
         }
 
-        const auto expectedRows = propertyDimension(
-            property.spec.dimensions.front());
-        const std::optional<size_t> expectedColumns =
-            property.spec.dimensions.size() == 1
-                ? std::optional<size_t>{1}
-                : propertyDimension(property.spec.dimensions[1]);
-        auto [rows, columns] = propertyValueShape(value, property);
-
-        if (expectedRows && expectedColumns) {
-            if (rows == *expectedRows && columns == *expectedColumns) {
-                return value;
-            }
-            return reshapePropertyValue(instruction, property, std::move(value),
-                                        *expectedRows, *expectedColumns);
+        std::vector<std::optional<size_t>> expected;
+        expected.reserve(std::max<size_t>(2,
+                                          property.spec.dimensions.size()));
+        for (const auto& dimension : property.spec.dimensions) {
+            expected.push_back(propertyDimension(dimension));
+        }
+        if (expected.size() == 1) {
+            expected.push_back(1);
         }
 
-        if (expectedRows && rows != *expectedRows) {
-            if (*expectedRows != 1 || (!isNumeric(value) && !isCell(value))) {
+        const auto actual = propertyValueDimensions(value, property);
+        bool exact = true;
+        for (size_t index = 0; index < expected.size(); ++index) {
+            if (expected[index] &&
+                runtimeDimension(value, index) != *expected[index]) {
+                exact = false;
+            }
+        }
+        for (size_t index = expected.size(); index < actual.size(); ++index) {
+            if (actual[index] != 1) {
+                exact = false;
+            }
+        }
+        if (exact) {
+            return value;
+        }
+
+        if (!isNumeric(value) && !isCell(value)) {
+            propertyValidationError(instruction, property,
+                                    "value shape does not match the property size");
+            return std::nullopt;
+        }
+
+        size_t wildcardCount = 0;
+        size_t wildcardIndex = 0;
+        std::vector<size_t> targetDimensions(expected.size(), 1);
+        for (size_t index = 0; index < expected.size(); ++index) {
+            if (expected[index]) {
+                targetDimensions[index] = *expected[index];
+            } else {
+                ++wildcardCount;
+                wildcardIndex = index;
+            }
+        }
+        if (wildcardCount > 1) {
+            propertyValidationError(
+                instruction, property,
+                "value shape cannot be inferred for multiple wildcard dimensions");
+            return std::nullopt;
+        }
+
+        const size_t valueCount = propertyValueCount(value, property);
+        if (wildcardCount == 1) {
+            targetDimensions[wildcardIndex] = 1;
+            const auto fixedCount =
+                checkedRuntimeDimensionProduct(targetDimensions);
+            if (!fixedCount || *fixedCount == 0 ||
+                valueCount % *fixedCount != 0) {
                 propertyValidationError(
                     instruction, property,
-                    "row count does not match the property size");
+                    "value element count does not match the property size");
                 return std::nullopt;
             }
-            const size_t count = propertyValueCount(value, property);
-            return reshapePropertyValue(
-                instruction, property, std::move(value), 1, count);
+            targetDimensions[wildcardIndex] = valueCount / *fixedCount;
         }
-        if (expectedColumns && columns != *expectedColumns) {
-            if (*expectedColumns != 1 ||
-                (!isNumeric(value) && !isCell(value))) {
-                propertyValidationError(
-                    instruction, property,
-                    "column count does not match the property size");
-                return std::nullopt;
-            }
-            const size_t count = propertyValueCount(value, property);
-            return reshapePropertyValue(
-                instruction, property, std::move(value), count, 1);
-        }
-        return value;
+        return reshapePropertyValue(instruction, property, std::move(value),
+                                    std::move(targetDimensions));
     }
 
     std::optional<double> validatorNumericArgument(
@@ -5766,6 +5915,8 @@ private:
 
         const size_t count = propertyValueCount(value, property);
         const auto [rows, columns] = propertyValueShape(value, property);
+        const size_t dimensionCount =
+            propertyValueDimensions(value, property).size();
         const bool empty = value.kind == RuntimeValueKind::Missing || count == 0;
         if (name == "mustBeNonempty") {
             return !empty || propertyValidationError(
@@ -5778,22 +5929,25 @@ private:
                                      "value must be scalar or empty");
         }
         if (name == "mustBeVector") {
-            return (!empty && (rows == 1 || columns == 1)) ||
+            return (!empty && dimensionCount == 2 &&
+                    (rows == 1 || columns == 1)) ||
                    propertyValidationError(instruction, property,
                                            "value must be a vector");
         }
         if (name == "mustBeRow") {
-            return rows == 1 || propertyValidationError(
-                                    instruction, property,
-                                    "value must be a row");
+            return (dimensionCount == 2 && rows == 1) ||
+                   propertyValidationError(instruction, property,
+                                           "value must be a row");
         }
         if (name == "mustBeColumn") {
-            return columns == 1 || propertyValidationError(
-                                       instruction, property,
-                                       "value must be a column");
+            return (dimensionCount == 2 && columns == 1) ||
+                   propertyValidationError(instruction, property,
+                                           "value must be a column");
         }
         if (name == "mustBeMatrix") {
-            return true;
+            return dimensionCount == 2 || propertyValidationError(
+                                              instruction, property,
+                                              "value must be a matrix");
         }
         if (name == "mustBeText" || name == "mustBeTextScalar") {
             return isString(value) || propertyValidationError(
@@ -5882,9 +6036,9 @@ private:
             return missingValue();
         }
 
-        size_t rows = 0;
-        size_t columns = 0;
+        std::vector<size_t> dimensions = {0, 0};
         if (!property.spec.dimensions.empty()) {
+            dimensions.clear();
             for (const auto& dimension : property.spec.dimensions) {
                 if (dimension.text != ":" && !propertyDimension(dimension)) {
                     propertyValidationError(
@@ -5892,43 +6046,44 @@ private:
                         "property dimension cannot be represented at runtime");
                     return std::nullopt;
                 }
+                dimensions.push_back(propertyDimension(dimension).value_or(0));
             }
-            rows = propertyDimension(property.spec.dimensions.front())
-                       .value_or(0);
-            columns = property.spec.dimensions.size() == 1
-                          ? 1
-                          : propertyDimension(property.spec.dimensions[1])
-                                .value_or(0);
+            if (dimensions.size() == 1) {
+                dimensions.push_back(1);
+            }
+            dimensions = normalizeRuntimeDimensions(std::move(dimensions));
         }
-        if (rows != 0 &&
-            columns > std::numeric_limits<size_t>::max() / rows) {
+        const auto count = checkedRuntimeDimensionProduct(dimensions);
+        if (!count) {
             propertyValidationError(instruction, property,
                                     "property dimensions are too large");
             return std::nullopt;
         }
-        const size_t count = rows * columns;
 
         if (type.empty() || type == "double" || type == "logical") {
-            return arrayValueForShape(rows, columns,
-                                      std::vector<double>(count, 0.0));
+            return arrayValueForDimensions(
+                dimensions, std::vector<double>(*count, 0.0));
         }
         if (type == "char") {
-            RuntimeValue value = stringValue(std::string(count, ' '));
-            value.rows = rows;
-            value.columns = columns;
+            if (dimensions.size() > 2) {
+                propertyValidationError(
+                    instruction, property,
+                    "implicit char defaults require two dimensions");
+                return std::nullopt;
+            }
+            RuntimeValue value = stringValue(std::string(*count, ' '));
+            setRuntimeDimensions(value, dimensions);
             return value;
         }
         if (type == "string") {
             if (property.spec.dimensions.empty()) {
                 RuntimeValue value = stringValue("");
-                value.rows = 0;
-                value.columns = 0;
+                setRuntimeDimensions(value, {0, 0});
                 return value;
             }
-            if (rows == 1 && columns == 1) {
+            if (*count == 1) {
                 RuntimeValue value = stringValue("");
-                value.rows = 1;
-                value.columns = 1;
+                setRuntimeDimensions(value, {1, 1});
                 return value;
             }
             propertyValidationError(
@@ -5938,21 +6093,22 @@ private:
             return std::nullopt;
         }
         if (type == "cell") {
-            return cellValueForShape(
-                rows, columns, std::vector<RuntimeValue>(count, missingValue()));
+            return cellValueForDimensions(
+                dimensions,
+                std::vector<RuntimeValue>(*count, missingValue()));
         }
         if (!classesByName_.contains(type)) {
             propertyValidationError(instruction, property,
                                     "property class is not available: " + type);
             return std::nullopt;
         }
-        if (property.spec.dimensions.empty() || count == 0) {
+        if (property.spec.dimensions.empty() || *count == 0) {
             return missingValue();
         }
-        if (rows != 1 || columns != 1) {
+        if (*count != 1) {
             propertyValidationError(
                 instruction, property,
-                "implicit object-array defaults currently require size (1,1)");
+                "implicit object-array defaults currently require scalar size");
             return std::nullopt;
         }
         const size_t diagnosticCount = diagnostics_.size();
@@ -6457,6 +6613,20 @@ private:
     RuntimeValue callBuiltin(const BytecodeInstruction& instruction,
                              const std::string& name,
                              const std::vector<RuntimeValue>& arguments) {
+        if (name == "cell") {
+            const auto shape = constructorShape(instruction, arguments);
+            if (!shape) {
+                return missingValue();
+            }
+            const auto count = checkedRuntimeDimensionProduct(*shape);
+            if (!count) {
+                addDiagnostic(instruction,
+                              "bytecode cell dimensions are too large");
+                return missingValue();
+            }
+            return cellValueForDimensions(
+                *shape, std::vector<RuntimeValue>(*count, missingValue()));
+        }
         if (name == "events") {
             return eventNamesBuiltin(instruction, arguments);
         }
@@ -6548,17 +6718,21 @@ private:
             return missingValue();
         }
         if (name == "length" || name == "numel" || name == "size" ||
-            name == "isempty") {
-            if (arguments.size() != 1) {
+            name == "ndims" || name == "isempty") {
+            const bool validSizeArguments =
+                name == "size" &&
+                (arguments.size() == 1 || arguments.size() == 2);
+            if (!validSizeArguments && arguments.size() != 1) {
                 addDiagnostic(instruction,
                               "bytecode " + name +
-                                  " expects one argument");
+                                  " expects one argument" +
+                                  (name == "size" ? " or a dimension" : ""));
                 return missingValue();
             }
             if (name == "length") {
-                return numberValue(static_cast<double>(
-                    std::max(rowCount(arguments.front()),
-                             columnCount(arguments.front()))));
+                const auto dimensions = runtimeDimensions(arguments.front());
+                return numberValue(static_cast<double>(*std::max_element(
+                    dimensions.begin(), dimensions.end())));
             }
             if (name == "numel") {
                 return numberValue(static_cast<double>(
@@ -6569,9 +6743,57 @@ private:
                                        ? 1.0
                                        : 0.0);
             }
-            return vectorValue(
-                {static_cast<double>(rowCount(arguments.front())),
-                 static_cast<double>(columnCount(arguments.front()))});
+            if (name == "ndims") {
+                return numberValue(static_cast<double>(
+                    runtimeDimensionCount(arguments.front())));
+            }
+
+            const auto dimensions = runtimeDimensions(arguments.front());
+            if (arguments.size() == 1) {
+                std::vector<double> values;
+                values.reserve(dimensions.size());
+                for (const size_t dimension : dimensions) {
+                    values.push_back(static_cast<double>(dimension));
+                }
+                return vectorValue(std::move(values));
+            }
+
+            const RuntimeValue& requested = arguments[1];
+            auto dimensionValue = [&](double raw) -> std::optional<double> {
+                const auto dimension =
+                    checkedRuntimeNonnegativeInteger(raw);
+                if (!dimension || *dimension == 0) {
+                    return std::nullopt;
+                }
+                return static_cast<double>(runtimeDimension(
+                    arguments.front(), *dimension - 1));
+            };
+            if (isNumber(requested)) {
+                const auto value = dimensionValue(requested.number);
+                if (!value) {
+                    addDiagnostic(instruction,
+                                  "bytecode size dimension must be a positive integer");
+                    return missingValue();
+                }
+                return numberValue(*value);
+            }
+            if (!isArray(requested)) {
+                addDiagnostic(instruction,
+                              "bytecode size dimensions must be numeric");
+                return missingValue();
+            }
+            std::vector<double> values;
+            values.reserve(requested.elements.size());
+            for (const double raw : requested.elements) {
+                const auto value = dimensionValue(raw);
+                if (!value) {
+                    addDiagnostic(instruction,
+                                  "bytecode size dimension must be a positive integer");
+                    return missingValue();
+                }
+                values.push_back(*value);
+            }
+            return vectorValue(std::move(values));
         }
         if (name == "zeros" || name == "ones" || name == "eye") {
             return arrayConstructor(instruction, name, arguments);
@@ -6647,43 +6869,62 @@ private:
         if (!shape) {
             return missingValue();
         }
+        if (name == "eye" && shape->size() > 2) {
+            addDiagnostic(instruction,
+                          "bytecode eye creates only two-dimensional arrays");
+            return missingValue();
+        }
 
-        const auto [rows, columns] = *shape;
-        std::vector<double> elements(rows * columns,
+        const auto count = checkedRuntimeDimensionProduct(*shape);
+        if (!count) {
+            addDiagnostic(instruction,
+                          "bytecode array constructor dimensions are too large");
+            return missingValue();
+        }
+        std::vector<double> elements(*count,
                                      name == "ones" ? 1.0 : 0.0);
         if (name == "eye") {
+            const size_t rows = (*shape)[0];
+            const size_t columns = (*shape)[1];
             const size_t diagonal = std::min(rows, columns);
             for (size_t index = 0; index < diagonal; ++index) {
                 elements[index * columns + index] = 1.0;
             }
         }
-        return arrayValueForShape(rows, columns, std::move(elements));
+        return arrayValueForDimensions(*shape, std::move(elements));
     }
 
-    std::optional<std::pair<size_t, size_t>>
+    std::optional<std::vector<size_t>>
     constructorShape(const BytecodeInstruction& instruction,
                      const std::vector<RuntimeValue>& arguments) {
-        if (arguments.empty() || arguments.size() > 2) {
+        if (arguments.empty()) {
             addDiagnostic(instruction,
-                          "bytecode array constructor expects one or two "
-                          "dimensions");
+                          "bytecode array constructor expects dimensions");
             return std::nullopt;
         }
 
-        if (arguments.size() == 2) {
-            if (!isNumber(arguments[0]) || !isNumber(arguments[1])) {
+        if (arguments.size() > 1) {
+            std::vector<size_t> dimensions;
+            dimensions.reserve(arguments.size());
+            for (const auto& argument : arguments) {
+                if (!isNumber(argument)) {
+                    addDiagnostic(instruction,
+                                  "bytecode constructor dimensions must be scalar");
+                    return std::nullopt;
+                }
+                const auto dimension =
+                    checkedDimension(instruction, argument.number);
+                if (!dimension) {
+                    return std::nullopt;
+                }
+                dimensions.push_back(*dimension);
+            }
+            if (dimensions.size() < 2) {
                 addDiagnostic(instruction,
-                              "bytecode constructor dimensions must be scalar");
+                              "bytecode constructor requires at least two dimensions");
                 return std::nullopt;
             }
-            const auto rows = checkedDimension(instruction,
-                                               arguments[0].number);
-            const auto columns = checkedDimension(instruction,
-                                                  arguments[1].number);
-            if (!rows || !columns) {
-                return std::nullopt;
-            }
-            return std::pair<size_t, size_t>{*rows, *columns};
+            return normalizeRuntimeDimensions(std::move(dimensions));
         }
 
         if (isNumber(arguments.front())) {
@@ -6692,34 +6933,40 @@ private:
             if (!dimension) {
                 return std::nullopt;
             }
-            return std::pair<size_t, size_t>{*dimension, *dimension};
+            return std::vector<size_t>{*dimension, *dimension};
         }
 
-        if (!isArray(arguments.front()) || arguments.front().elements.size() < 2) {
+        if (!isArray(arguments.front()) ||
+            arguments.front().elements.empty()) {
             addDiagnostic(instruction,
-                          "bytecode constructor shape must contain two "
-                          "dimensions");
+                          "bytecode constructor shape must contain dimensions");
             return std::nullopt;
         }
-        const auto rows = checkedDimension(instruction,
-                                           arguments.front().elements[0]);
-        const auto columns = checkedDimension(instruction,
-                                              arguments.front().elements[1]);
-        if (!rows || !columns) {
-            return std::nullopt;
+        std::vector<size_t> dimensions;
+        dimensions.reserve(arguments.front().elements.size());
+        for (const double raw : arguments.front().elements) {
+            const auto dimension = checkedDimension(instruction, raw);
+            if (!dimension) {
+                return std::nullopt;
+            }
+            dimensions.push_back(*dimension);
         }
-        return std::pair<size_t, size_t>{*rows, *columns};
+        if (dimensions.size() == 1) {
+            dimensions.push_back(dimensions.front());
+        }
+        return normalizeRuntimeDimensions(std::move(dimensions));
     }
 
     std::optional<size_t> checkedDimension(
         const BytecodeInstruction& instruction, double value) {
-        if (!isWholeNumber(value) || value < 0.0) {
+        const auto dimension = checkedRuntimeNonnegativeInteger(value);
+        if (!dimension) {
             addDiagnostic(instruction,
                           "bytecode constructor dimension must be a "
-                          "nonnegative integer");
+                          "representable nonnegative integer");
             return std::nullopt;
         }
-        return static_cast<size_t>(value);
+        return dimension;
     }
 
     RuntimeValue linspaceBuiltin(const BytecodeInstruction& instruction,
@@ -6767,35 +7014,76 @@ private:
     RuntimeValue indexValue(const BytecodeInstruction& instruction,
                             const RuntimeValue& target,
                             const std::vector<RuntimeValue>& arguments) {
-        if (arguments.size() != 1 && arguments.size() != 2) {
+        if (arguments.empty()) {
             addDiagnostic(instruction,
-                          "bytecode indexing supports one or two subscripts");
+                          "bytecode indexing requires subscripts");
             return missingValue();
         }
 
-        if (arguments.size() == 2) {
-            const auto row =
-                checkedIndices(instruction, arguments[0], rowCount(target));
-            const auto column =
-                checkedIndices(instruction, arguments[1],
-                               columnCount(target));
-            if (!row || !column) {
+        if (!isNumeric(target)) {
+            addDiagnostic(instruction,
+                          "bytecode indexing requires a numeric target");
+            return missingValue();
+        }
+        for (const auto& argument : arguments) {
+            if (!isNumeric(argument)) {
+                addDiagnostic(instruction,
+                              "bytecode indexing requires numeric subscripts");
                 return missingValue();
             }
+        }
 
-            std::vector<double> values;
-            values.reserve(row->size() * column->size());
-            for (size_t rowIndex : *row) {
-                for (size_t columnIndex : *column) {
-                    values.push_back(
-                        matrixElement(target, rowIndex, columnIndex));
+        if (arguments.size() > 1) {
+            const auto effectiveDimensions =
+                runtimeEffectiveSubscriptDimensions(target, arguments.size());
+            std::vector<std::vector<size_t>> selections;
+            std::vector<size_t> selectionDimensions;
+            selections.reserve(arguments.size());
+            selectionDimensions.reserve(arguments.size());
+            for (size_t index = 0; index < arguments.size(); ++index) {
+                auto selection = checkedIndices(instruction, arguments[index],
+                                                effectiveDimensions[index]);
+                if (!selection) {
+                    return missingValue();
                 }
+                selectionDimensions.push_back(selection->size());
+                selections.push_back(std::move(*selection));
+            }
+
+            const auto count =
+                checkedRuntimeDimensionProduct(selectionDimensions);
+            if (!count) {
+                addDiagnostic(instruction,
+                              "bytecode indexed result dimensions are too large");
+                return missingValue();
+            }
+            std::vector<double> values;
+            values.reserve(*count);
+            for (size_t outputOffset = 0; outputOffset < *count;
+                 ++outputOffset) {
+                const auto outputCoordinates = runtimeRowMajorCoordinates(
+                    outputOffset, selectionDimensions);
+                std::vector<size_t> sourceCoordinates(arguments.size(), 0);
+                for (size_t index = 0; index < arguments.size(); ++index) {
+                    sourceCoordinates[index] =
+                        selections[index][outputCoordinates[index]];
+                }
+                const auto storageOffset = runtimeSubscriptsToStorageOffset(
+                    target, sourceCoordinates, effectiveDimensions);
+                if (!storageOffset) {
+                    addDiagnostic(instruction,
+                                  "bytecode indexing could not map subscripts");
+                    return missingValue();
+                }
+                values.push_back(isNumber(target)
+                                     ? target.number
+                                     : target.elements[*storageOffset]);
             }
             if (values.size() == 1) {
                 return numberValue(values.front());
             }
-            return arrayValueForShape(row->size(), column->size(),
-                                      std::move(values));
+            return arrayValueForDimensions(selectionDimensions,
+                                           std::move(values));
         }
 
         if (isNumber(arguments.front())) {
@@ -6873,13 +7161,12 @@ private:
 
     double linearElement(const RuntimeValue& value,
                          size_t zeroBasedIndex) const {
-        if (!isMatrix(value)) {
-            return elementAt(value, zeroBasedIndex);
+        if (isNumber(value)) {
+            return value.number;
         }
-
-        const size_t row = zeroBasedIndex % value.rows;
-        const size_t column = zeroBasedIndex / value.rows;
-        return matrixElement(value, row, column);
+        const auto storageOffset =
+            runtimeColumnMajorLinearToStorageOffset(value, zeroBasedIndex);
+        return value.elements[*storageOffset];
     }
 
     void applyColon(const BytecodeInstruction& instruction,
@@ -6913,22 +7200,28 @@ private:
         }
 
         if (instruction.operand == "*" && isArray(left) && isArray(right)) {
+            if (runtimeDimensionCount(left) > 2 ||
+                runtimeDimensionCount(right) > 2) {
+                addDiagnostic(instruction,
+                              "bytecode matrix multiplication requires "
+                              "two-dimensional arrays");
+                return missingValue();
+            }
             return matrixMultiply(instruction, left, right);
         }
 
         if (isArray(left) && isArray(right) &&
-            (rowCount(left) != rowCount(right) ||
-             columnCount(left) != columnCount(right))) {
+            runtimeDimensions(left) != runtimeDimensions(right)) {
             addDiagnostic(instruction,
                           "bytecode elementwise operands must have the same "
                           "shape");
             return missingValue();
         }
 
-        const size_t rows = isArray(left) ? rowCount(left) : rowCount(right);
-        const size_t columns =
-            isArray(left) ? columnCount(left) : columnCount(right);
-        const size_t count = rows * columns;
+        const auto dimensions = isArray(left) ? runtimeDimensions(left)
+                                              : runtimeDimensions(right);
+        const size_t count =
+            checkedRuntimeDimensionProduct(dimensions).value_or(0);
         std::vector<double> elements;
         elements.reserve(count);
         for (size_t index = 0; index < count; ++index) {
@@ -6943,7 +7236,7 @@ private:
             }
             elements.push_back(value.number);
         }
-        return arrayValueForShape(rows, columns, std::move(elements));
+        return arrayValueForDimensions(dimensions, std::move(elements));
     }
 
     RuntimeValue applyScalarBinary(const BytecodeInstruction& instruction,
@@ -7037,8 +7330,8 @@ private:
         for (double element : value.elements) {
             mapped.push_back(operation(element));
         }
-        return arrayValueForShape(rowCount(value), columnCount(value),
-                                  std::move(mapped));
+        return arrayValueForDimensions(runtimeDimensions(value),
+                                       std::move(mapped));
     }
 
     bool truthyAny(const RuntimeValue& value) const {

@@ -11,6 +11,7 @@ struct BytecodeTypedValue {
     std::string kind;
     size_t rows = 0;
     size_t columns = 0;
+    std::vector<size_t> dimensions;
 };
 
 struct BytecodeTypedIrGuard {

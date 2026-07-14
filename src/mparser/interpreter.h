@@ -36,6 +36,7 @@ struct RuntimeValue {
     size_t opaqueId = 0;
     size_t rows = 0;
     size_t columns = 0;
+    std::vector<size_t> dimensions;
 };
 
 struct RuntimeVariable {

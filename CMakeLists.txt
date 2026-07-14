@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.41.0 LANGUAGES CXX)
+project(MParser VERSION 0.42.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,6 +20,7 @@ add_library(mparser_core
     src/mparser/optimization_plan.cpp
     src/mparser/parser.cpp
     src/mparser/runtime_benchmark.cpp
+    src/mparser/runtime_shape.cpp
     src/mparser/semantic.cpp
     src/mparser/semantic_dump.cpp
     src/mparser/source.cpp
@@ -60,6 +61,10 @@ add_test(NAME bytecode_smoke COMMAND bytecode_smoke_tests)
 add_executable(bytecode_vm_smoke_tests tests/bytecode_vm_smoke.cpp)
 target_link_libraries(bytecode_vm_smoke_tests PRIVATE mparser_core)
 add_test(NAME bytecode_vm_smoke COMMAND bytecode_vm_smoke_tests)
+
+add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
+target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)
+add_test(NAME nd_array_smoke COMMAND nd_array_smoke_tests)
 
 add_executable(optimization_plan_smoke_tests tests/optimization_plan_smoke.cpp)
 target_link_libraries(optimization_plan_smoke_tests PRIVATE mparser_core)
@@ -201,6 +206,20 @@ add_test(NAME event_listener_hir_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/app/run_demo.m)
 set_tests_properties(event_listener_hir_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "Event Tick type=signals.Pulse")
+
+add_test(NAME nd_array_bytecode_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/nd_arrays_demo.m)
+set_tests_properties(nd_array_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 171")
+
+add_test(NAME nd_array_interpreter_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/nd_arrays_demo.m)
+set_tests_properties(nd_array_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 171")
 
 add_test(NAME namespace_function_cli_smoke
     COMMAND $<TARGET_FILE:mparser>

@@ -1,5 +1,6 @@
 #include "mparser/interpreter.h"
 #include "mparser/function_signature.h"
+#include "mparser/runtime_shape.h"
 
 #include <algorithm>
 #include <cmath>
@@ -24,8 +25,7 @@ RuntimeValue numberValue(double value) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Number;
     result.number = value;
-    result.rows = 1;
-    result.columns = 1;
+    setRuntimeDimensions(result, {1, 1});
     return result;
 }
 
@@ -33,8 +33,7 @@ RuntimeValue stringValue(std::string value) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::String;
     result.text = std::move(value);
-    result.rows = 1;
-    result.columns = result.text.size();
+    setRuntimeDimensions(result, {1, result.text.size()});
     return result;
 }
 
@@ -42,8 +41,7 @@ RuntimeValue vectorValue(std::vector<double> values) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Vector;
     result.elements = std::move(values);
-    result.rows = 1;
-    result.columns = result.elements.size();
+    setRuntimeDimensions(result, {1, result.elements.size()});
     return result;
 }
 
@@ -52,8 +50,7 @@ RuntimeValue matrixValue(size_t rows, size_t columns,
     RuntimeValue result;
     result.kind = RuntimeValueKind::Matrix;
     result.elements = std::move(values);
-    result.rows = rows;
-    result.columns = columns;
+    setRuntimeDimensions(result, {rows, columns});
     return result;
 }
 
@@ -61,8 +58,16 @@ RuntimeValue cellValue(std::vector<RuntimeValue> values) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Cell;
     result.cells = std::move(values);
-    result.rows = 1;
-    result.columns = result.cells.size();
+    setRuntimeDimensions(result, {1, result.cells.size()});
+    return result;
+}
+
+RuntimeValue cellValueForDimensions(std::vector<size_t> dimensions,
+                                    std::vector<RuntimeValue> values) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::Cell;
+    result.cells = std::move(values);
+    setRuntimeDimensions(result, std::move(dimensions));
     return result;
 }
 
@@ -134,11 +139,11 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return left.text == right.text;
     }
     if (isArray(left) && isArray(right)) {
-        return left.rows == right.rows && left.columns == right.columns &&
+        return runtimeDimensions(left) == runtimeDimensions(right) &&
                left.elements == right.elements;
     }
     if (isCell(left) && isCell(right)) {
-        if (left.rows != right.rows || left.columns != right.columns ||
+        if (runtimeDimensions(left) != runtimeDimensions(right) ||
             left.cells.size() != right.cells.size()) {
             return false;
         }
@@ -186,24 +191,15 @@ RuntimeValue oneBasedIndexRange(size_t length) {
 }
 
 size_t rowCount(const RuntimeValue& value) {
-    if (isNumber(value)) {
-        return 1;
-    }
-    return value.rows;
+    return runtimeDimension(value, 0);
 }
 
 size_t columnCount(const RuntimeValue& value) {
-    if (isNumber(value)) {
-        return 1;
-    }
-    return value.columns;
+    return runtimeDimension(value, 1);
 }
 
 size_t elementCount(const RuntimeValue& value) {
-    if (isNumber(value)) {
-        return 1;
-    }
-    return value.elements.size();
+    return runtimeShapeElementCount(value);
 }
 
 double elementAt(const RuntimeValue& value, size_t index) {
@@ -216,6 +212,18 @@ RuntimeValue arrayValueForShape(size_t rows, size_t columns,
         return vectorValue(std::move(values));
     }
     return matrixValue(rows, columns, std::move(values));
+}
+
+RuntimeValue arrayValueForDimensions(std::vector<size_t> dimensions,
+                                     std::vector<double> values) {
+    dimensions = normalizeRuntimeDimensions(std::move(dimensions));
+    RuntimeValue result;
+    result.kind = dimensions.size() == 2 && dimensions[0] == 1
+                      ? RuntimeValueKind::Vector
+                      : RuntimeValueKind::Matrix;
+    result.elements = std::move(values);
+    setRuntimeDimensions(result, std::move(dimensions));
+    return result;
 }
 
 bool truthy(const RuntimeValue& value) {
@@ -243,8 +251,8 @@ RuntimeValue mapUnary(const RuntimeValue& value, double (*operation)(double)) {
     for (double element : value.elements) {
         mapped.push_back(operation(element));
     }
-    return arrayValueForShape(rowCount(value), columnCount(value),
-                              std::move(mapped));
+    return arrayValueForDimensions(runtimeDimensions(value),
+                                   std::move(mapped));
 }
 
 bool isWholeNumber(double value) {
@@ -709,10 +717,9 @@ private:
 
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(target, targetValue);
-        if (arguments.size() != 1 && arguments.size() != 2) {
+        if (arguments.empty()) {
             addDiagnostic(target,
-                          "indexed assignment currently supports one or two "
-                          "subscripts");
+                          "indexed assignment requires subscripts");
             return;
         }
         for (const auto& argument : arguments) {
@@ -723,9 +730,9 @@ private:
             }
         }
 
-        if (arguments.size() == 2) {
-            assignTwoSubscriptTarget(target, targetValue, arguments,
-                                     value.number);
+        if (arguments.size() > 1) {
+            assignSubscriptTarget(target, targetValue, arguments,
+                                  value.number);
             return;
         }
 
@@ -742,20 +749,6 @@ private:
             return;
         }
 
-        const std::vector<RuntimeValue> arguments = evaluateArguments(target);
-        if (arguments.size() != 1 || !isNumber(arguments.front())) {
-            addDiagnostic(target,
-                          "brace assignment currently requires one scalar index");
-            return;
-        }
-
-        const double rawIndex = arguments.front().number;
-        if (!isWholeNumber(rawIndex) || rawIndex < 1.0 ||
-            rawIndex > static_cast<double>(std::numeric_limits<size_t>::max())) {
-            addDiagnostic(target, "cell index must be a positive integer");
-            return;
-        }
-
         auto variable = currentFrame().find(target.children.front()->label);
         if (variable == currentFrame().end()) {
             addDiagnostic(target, "brace assignment target is not defined: " +
@@ -768,50 +761,96 @@ private:
             return;
         }
 
-        const size_t index = static_cast<size_t>(rawIndex) - 1;
-        if (index >= cell.cells.size()) {
-            cell.cells.resize(index + 1, missingValue());
-            cell.columns = cell.cells.size();
+        const std::vector<RuntimeValue> arguments =
+            evaluateIndexArguments(target, cell);
+        std::optional<size_t> storageOffset;
+        if (arguments.size() == 1 && isNumber(arguments.front())) {
+            const double rawIndex = arguments.front().number;
+            const auto oneBasedIndex =
+                checkedRuntimeNonnegativeInteger(rawIndex);
+            if (!oneBasedIndex || *oneBasedIndex == 0) {
+                addDiagnostic(target,
+                              "cell index must be a positive integer");
+                return;
+            }
+            const size_t index = *oneBasedIndex - 1;
+            if (index >= cell.cells.size()) {
+                if (runtimeDimensionCount(cell) > 2 || rowCount(cell) != 1) {
+                    addDiagnostic(
+                        target,
+                        "cell linear growth currently requires a row cell array");
+                    return;
+                }
+                cell.cells.resize(index + 1, missingValue());
+                setRuntimeDimensions(cell, {1, cell.cells.size()});
+                storageOffset = index;
+            } else {
+                storageOffset = runtimeColumnMajorLinearToStorageOffset(
+                    cell, index);
+            }
+        } else {
+            storageOffset = checkedCellStorageOffset(target, cell, arguments);
         }
-        cell.cells[index] = value;
-    }
-
-    void assignTwoSubscriptTarget(const HirNode& node, RuntimeValue& target,
-                                  const std::vector<RuntimeValue>& arguments,
-                                  double value) {
-        const auto rows = checkedIndices(node, arguments[0], rowCount(target));
-        const auto columns =
-            checkedIndices(node, arguments[1], columnCount(target));
-        if (!rows || !columns) {
+        if (!storageOffset) {
             return;
         }
+        cell.cells[*storageOffset] = value;
+    }
 
-        for (size_t row : *rows) {
-            for (size_t column : *columns) {
-                assignMatrixElement(target, row, column, value);
+    void assignSubscriptTarget(const HirNode& node, RuntimeValue& target,
+                               const std::vector<RuntimeValue>& arguments,
+                               double value) {
+        const auto effectiveDimensions =
+            runtimeEffectiveSubscriptDimensions(target, arguments.size());
+        std::vector<std::vector<size_t>> selections;
+        std::vector<size_t> selectionDimensions;
+        selections.reserve(arguments.size());
+        selectionDimensions.reserve(arguments.size());
+        for (size_t index = 0; index < arguments.size(); ++index) {
+            auto selection = checkedIndices(node, arguments[index],
+                                            effectiveDimensions[index]);
+            if (!selection) {
+                return;
+            }
+            selectionDimensions.push_back(selection->size());
+            selections.push_back(std::move(*selection));
+        }
+
+        const size_t count = checkedRuntimeDimensionProduct(
+                                 selectionDimensions)
+                                 .value_or(0);
+        for (size_t outputOffset = 0; outputOffset < count; ++outputOffset) {
+            const auto outputCoordinates = runtimeRowMajorCoordinates(
+                outputOffset, selectionDimensions);
+            std::vector<size_t> sourceCoordinates(arguments.size(), 0);
+            for (size_t index = 0; index < arguments.size(); ++index) {
+                sourceCoordinates[index] =
+                    selections[index][outputCoordinates[index]];
+            }
+            const auto storageOffset = runtimeSubscriptsToStorageOffset(
+                target, sourceCoordinates, effectiveDimensions);
+            if (!storageOffset) {
+                addDiagnostic(node,
+                              "indexed assignment could not map subscripts");
+                return;
+            }
+            if (isNumber(target)) {
+                target.number = value;
+            } else {
+                target.elements[*storageOffset] = value;
             }
         }
     }
 
     void assignLinearTarget(const HirNode& node, RuntimeValue& target,
                             const RuntimeValue& subscript, double value) {
-        if (isNumber(subscript)) {
-            const auto index = checkedIndex(node, subscript.number,
-                                            elementCount(target));
-            if (!index) {
-                return;
-            }
-            assignLinearElement(target, *index, value);
+        const auto indices =
+            checkedIndices(node, subscript, elementCount(target));
+        if (!indices) {
             return;
         }
-
-        for (double rawIndex : subscript.elements) {
-            const auto index = checkedIndex(node, rawIndex,
-                                            elementCount(target));
-            if (!index) {
-                return;
-            }
-            assignLinearElement(target, *index, value);
+        for (const size_t index : *indices) {
+            assignLinearElement(target, index, value);
         }
     }
 
@@ -821,23 +860,11 @@ private:
             target.number = value;
             return;
         }
-        if (!isMatrix(target)) {
-            target.elements[zeroBasedIndex] = value;
-            return;
+        const auto storageOffset =
+            runtimeColumnMajorLinearToStorageOffset(target, zeroBasedIndex);
+        if (storageOffset) {
+            target.elements[*storageOffset] = value;
         }
-
-        const size_t row = zeroBasedIndex % target.rows;
-        const size_t column = zeroBasedIndex / target.rows;
-        target.elements[row * target.columns + column] = value;
-    }
-
-    void assignMatrixElement(RuntimeValue& target, size_t row, size_t column,
-                             double value) {
-        if (isNumber(target)) {
-            target.number = value;
-            return;
-        }
-        target.elements[row * columnCount(target) + column] = value;
     }
 
     void executeControl(const HirNode& node) {
@@ -1213,6 +1240,11 @@ private:
             return matrixValue(value.elements.size(), 1, value.elements);
         }
         if (isMatrix(value)) {
+            if (runtimeDimensionCount(value) > 2) {
+                addDiagnostic(node,
+                              "transpose requires a two-dimensional array");
+                return missingValue();
+            }
             std::vector<double> transposed;
             transposed.reserve(value.elements.size());
             for (size_t column = 0; column < value.columns; ++column) {
@@ -1441,6 +1473,12 @@ private:
         }
 
         if (node.label == "*" && isArray(left) && isArray(right)) {
+            if (runtimeDimensionCount(left) > 2 ||
+                runtimeDimensionCount(right) > 2) {
+                addDiagnostic(node,
+                              "matrix multiplication requires two-dimensional arrays");
+                return missingValue();
+            }
             return applyMatrixMultiply(node, left, right);
         }
 
@@ -1453,17 +1491,16 @@ private:
         }
 
         if (isArray(left) && isArray(right) &&
-            (rowCount(left) != rowCount(right) ||
-             columnCount(left) != columnCount(right))) {
+            runtimeDimensions(left) != runtimeDimensions(right)) {
             addDiagnostic(node,
                           "elementwise operands must have the same shape");
             return missingValue();
         }
 
-        const size_t rows = isArray(left) ? rowCount(left) : rowCount(right);
-        const size_t columns =
-            isArray(left) ? columnCount(left) : columnCount(right);
-        const size_t count = rows * columns;
+        const auto dimensions = isArray(left) ? runtimeDimensions(left)
+                                              : runtimeDimensions(right);
+        const size_t count =
+            checkedRuntimeDimensionProduct(dimensions).value_or(0);
         std::vector<double> elements;
         elements.reserve(count);
         for (size_t index = 0; index < count; ++index) {
@@ -1479,7 +1516,7 @@ private:
             elements.push_back(value.number);
         }
 
-        return arrayValueForShape(rows, columns, std::move(elements));
+        return arrayValueForDimensions(dimensions, std::move(elements));
     }
 
     RuntimeValue applyMatrixMultiply(const HirNode& node,
@@ -1677,16 +1714,11 @@ private:
 
     double endValueForIndex(const RuntimeValue& target, size_t position,
                             size_t total) const {
-        if (total <= 1) {
-            return static_cast<double>(elementCount(target));
-        }
-        if (position == 0) {
-            return static_cast<double>(rowCount(target));
-        }
-        if (position == 1) {
-            return static_cast<double>(columnCount(target));
-        }
-        return 1.0;
+        const auto dimensions =
+            runtimeEffectiveSubscriptDimensions(target, total);
+        return position < dimensions.size()
+                   ? static_cast<double>(dimensions[position])
+                   : 1.0;
     }
 
     RuntimeValue evaluateUnaryWithIndexContext(const HirNode& node,
@@ -1920,30 +1952,74 @@ private:
         }
 
         const RuntimeValue target = evaluate(*node.children.front());
-        const std::vector<RuntimeValue> arguments = evaluateArguments(node);
         if (!isCell(target)) {
             addDiagnostic(node, "brace indexing requires a cell target");
             return missingValue();
         }
-        if (arguments.size() != 1 || !isNumber(arguments.front())) {
-            addDiagnostic(node,
-                          "brace indexing currently requires one scalar index");
+        const std::vector<RuntimeValue> arguments =
+            evaluateIndexArguments(node, target);
+        const auto storageOffset =
+            checkedCellStorageOffset(node, target, arguments);
+        if (!storageOffset) {
             return missingValue();
+        }
+        return target.cells[*storageOffset];
+    }
+
+    std::optional<size_t> checkedCellStorageOffset(
+        const HirNode& node, const RuntimeValue& target,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.empty()) {
+            addDiagnostic(node, "brace indexing requires subscripts");
+            return std::nullopt;
+        }
+        for (const auto& argument : arguments) {
+            if (!isNumber(argument)) {
+                addDiagnostic(node,
+                              "brace indexing requires scalar numeric subscripts");
+                return std::nullopt;
+            }
         }
 
-        const auto index =
-            checkedIndex(node, arguments.front().number, target.cells.size());
-        if (!index) {
-            return missingValue();
+        if (arguments.size() == 1) {
+            const auto index = checkedIndex(node, arguments.front().number,
+                                            target.cells.size());
+            if (!index) {
+                return std::nullopt;
+            }
+            const auto storageOffset =
+                runtimeColumnMajorLinearToStorageOffset(target, *index);
+            if (!storageOffset) {
+                addDiagnostic(node,
+                              "brace indexing could not map the linear subscript");
+            }
+            return storageOffset;
         }
-        return target.cells[*index];
+
+        const auto effectiveDimensions =
+            runtimeEffectiveSubscriptDimensions(target, arguments.size());
+        std::vector<size_t> coordinates;
+        coordinates.reserve(arguments.size());
+        for (size_t index = 0; index < arguments.size(); ++index) {
+            const auto coordinate = checkedIndex(
+                node, arguments[index].number, effectiveDimensions[index]);
+            if (!coordinate) {
+                return std::nullopt;
+            }
+            coordinates.push_back(*coordinate);
+        }
+        const auto storageOffset = runtimeSubscriptsToStorageOffset(
+            target, coordinates, effectiveDimensions);
+        if (!storageOffset) {
+            addDiagnostic(node, "brace indexing could not map the subscripts");
+        }
+        return storageOffset;
     }
 
     RuntimeValue evaluateIndex(const HirNode& node, const RuntimeValue& target,
                                const std::vector<RuntimeValue>& arguments) {
-        if (arguments.size() != 1 && arguments.size() != 2) {
-            addDiagnostic(node,
-                          "indexing currently supports one or two subscripts");
+        if (arguments.empty()) {
+            addDiagnostic(node, "indexing requires subscripts");
             return missingValue();
         }
 
@@ -1959,28 +2035,56 @@ private:
             }
         }
 
-        if (arguments.size() == 2) {
-            const auto rows =
-                checkedIndices(node, arguments[0], rowCount(target));
-            const auto columns =
-                checkedIndices(node, arguments[1], columnCount(target));
-            if (!rows || !columns) {
-                return missingValue();
+        if (arguments.size() > 1) {
+            const auto effectiveDimensions =
+                runtimeEffectiveSubscriptDimensions(target, arguments.size());
+            std::vector<std::vector<size_t>> selections;
+            std::vector<size_t> selectionDimensions;
+            selections.reserve(arguments.size());
+            selectionDimensions.reserve(arguments.size());
+            for (size_t index = 0; index < arguments.size(); ++index) {
+                auto selection = checkedIndices(node, arguments[index],
+                                                effectiveDimensions[index]);
+                if (!selection) {
+                    return missingValue();
+                }
+                selectionDimensions.push_back(selection->size());
+                selections.push_back(std::move(*selection));
             }
 
+            const auto count =
+                checkedRuntimeDimensionProduct(selectionDimensions);
+            if (!count) {
+                addDiagnostic(node, "indexed result dimensions are too large");
+                return missingValue();
+            }
             std::vector<double> values;
-            values.reserve(rows->size() * columns->size());
-            for (size_t row : *rows) {
-                for (size_t column : *columns) {
-                    values.push_back(matrixElement(target, row, column));
+            values.reserve(*count);
+            for (size_t outputOffset = 0; outputOffset < *count;
+                 ++outputOffset) {
+                const auto outputCoordinates = runtimeRowMajorCoordinates(
+                    outputOffset, selectionDimensions);
+                std::vector<size_t> sourceCoordinates(arguments.size(), 0);
+                for (size_t index = 0; index < arguments.size(); ++index) {
+                    sourceCoordinates[index] =
+                        selections[index][outputCoordinates[index]];
                 }
+                const auto storageOffset = runtimeSubscriptsToStorageOffset(
+                    target, sourceCoordinates, effectiveDimensions);
+                if (!storageOffset) {
+                    addDiagnostic(node, "indexing could not map subscripts");
+                    return missingValue();
+                }
+                values.push_back(isNumber(target)
+                                     ? target.number
+                                     : target.elements[*storageOffset]);
             }
 
             if (values.size() == 1) {
                 return numberValue(values.front());
             }
-            return arrayValueForShape(rows->size(), columns->size(),
-                                      std::move(values));
+            return arrayValueForDimensions(selectionDimensions,
+                                           std::move(values));
         }
 
         if (isNumber(arguments.front())) {
@@ -2054,13 +2158,12 @@ private:
     }
 
     double linearElement(const RuntimeValue& value, size_t zeroBasedIndex) const {
-        if (!isMatrix(value)) {
-            return elementAt(value, zeroBasedIndex);
+        if (isNumber(value)) {
+            return value.number;
         }
-
-        const size_t row = zeroBasedIndex % value.rows;
-        const size_t column = zeroBasedIndex / value.rows;
-        return matrixElement(value, row, column);
+        const auto storageOffset =
+            runtimeColumnMajorLinearToStorageOffset(value, zeroBasedIndex);
+        return value.elements[*storageOffset];
     }
 
     FunctionCallResult
@@ -2070,11 +2173,50 @@ private:
         if (name == "zeros" || name == "ones" || name == "eye") {
             return callArrayConstructorBuiltin(node, name, arguments);
         }
+        if (name == "cell") {
+            const auto shape = constructorShape(node, name, arguments);
+            if (!shape) {
+                return FunctionCallResult{{missingValue()}};
+            }
+            const auto count = checkedRuntimeDimensionProduct(*shape);
+            if (!count) {
+                addDiagnostic(node, "cell dimensions are too large");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{cellValueForDimensions(
+                *shape, std::vector<RuntimeValue>(*count, missingValue()))}};
+        }
         if (name == "linspace") {
             return callLinspaceBuiltin(node, arguments);
         }
         if (name == "strcmp") {
             return callStrcmpBuiltin(node, arguments);
+        }
+
+        if (name == "size") {
+            return callSizeBuiltin(node, arguments, requestedOutputCount);
+        }
+        if (name == "length" || name == "numel" || name == "ndims" ||
+            name == "isempty") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node, name + " expects one argument");
+                return FunctionCallResult{{missingValue()}};
+            }
+            if (name == "length") {
+                const auto dimensions = runtimeDimensions(arguments.front());
+                return FunctionCallResult{{numberValue(static_cast<double>(
+                    *std::max_element(dimensions.begin(), dimensions.end())))}};
+            }
+            if (name == "numel") {
+                return FunctionCallResult{{numberValue(static_cast<double>(
+                    elementCount(arguments.front())))}};
+            }
+            if (name == "ndims") {
+                return FunctionCallResult{{numberValue(static_cast<double>(
+                    runtimeDimensionCount(arguments.front())))}};
+            }
+            return FunctionCallResult{{numberValue(
+                elementCount(arguments.front()) == 0 ? 1.0 : 0.0)}};
         }
 
         if (arguments.size() != 1 || !isNumeric(arguments.front())) {
@@ -2123,19 +2265,6 @@ private:
         if (name == "tan") {
             return FunctionCallResult{{mapUnary(
                 arguments.front(), [](double value) { return std::tan(value); })}};
-        }
-        if (name == "length") {
-            return FunctionCallResult{{numberValue(static_cast<double>(
-                rowCount(arguments.front()) > columnCount(arguments.front())
-                    ? rowCount(arguments.front())
-                    : columnCount(arguments.front())))}};
-        }
-        if (name == "numel") {
-            return FunctionCallResult{{numberValue(static_cast<double>(
-                elementCount(arguments.front())))}};
-        }
-        if (name == "size") {
-            return callSizeBuiltin(arguments.front(), requestedOutputCount);
         }
         if (name == "sum") {
             return FunctionCallResult{{reduceBuiltin(
@@ -2188,20 +2317,88 @@ private:
             runtimeEqual(arguments[0], arguments[1]) ? 1.0 : 0.0)}};
     }
 
-    FunctionCallResult callSizeBuiltin(const RuntimeValue& value,
-                                       size_t requestedOutputCount) const {
-        const double rows = static_cast<double>(rowCount(value));
-        const double columns = static_cast<double>(columnCount(value));
-        if (requestedOutputCount <= 1) {
-            return FunctionCallResult{{vectorValue({rows, columns})}};
+    FunctionCallResult callSizeBuiltin(
+        const HirNode& node, const std::vector<RuntimeValue>& arguments,
+        size_t requestedOutputCount) {
+        if (arguments.empty() || arguments.size() > 2) {
+            addDiagnostic(node, "size expects an array and optional dimension");
+            return FunctionCallResult{{missingValue()}};
+        }
+        if (requestedOutputCount == 0) {
+            return FunctionCallResult{};
+        }
+
+        const RuntimeValue& value = arguments.front();
+        const auto dimensions = runtimeDimensions(value);
+        if (arguments.size() == 2) {
+            if (requestedOutputCount != 1) {
+                addDiagnostic(node,
+                              "size with a dimension produces one output");
+                return FunctionCallResult{{missingValue()}};
+            }
+
+            auto dimensionValue = [&](double raw) -> std::optional<double> {
+                const auto dimension =
+                    checkedRuntimeNonnegativeInteger(raw);
+                if (!dimension || *dimension == 0) {
+                    return std::nullopt;
+                }
+                return static_cast<double>(runtimeDimension(
+                    value, *dimension - 1));
+            };
+
+            const RuntimeValue& requested = arguments[1];
+            if (isNumber(requested)) {
+                const auto result = dimensionValue(requested.number);
+                if (!result) {
+                    addDiagnostic(node,
+                                  "size dimension must be a positive integer");
+                    return FunctionCallResult{{missingValue()}};
+                }
+                return FunctionCallResult{{numberValue(*result)}};
+            }
+            if (!isArray(requested)) {
+                addDiagnostic(node, "size dimensions must be numeric");
+                return FunctionCallResult{{missingValue()}};
+            }
+            std::vector<double> results;
+            results.reserve(requested.elements.size());
+            for (const double raw : requested.elements) {
+                const auto result = dimensionValue(raw);
+                if (!result) {
+                    addDiagnostic(node,
+                                  "size dimension must be a positive integer");
+                    return FunctionCallResult{{missingValue()}};
+                }
+                results.push_back(*result);
+            }
+            return FunctionCallResult{{vectorValue(std::move(results))}};
+        }
+
+        if (requestedOutputCount == 1) {
+            std::vector<double> results;
+            results.reserve(dimensions.size());
+            for (const size_t dimension : dimensions) {
+                results.push_back(static_cast<double>(dimension));
+            }
+            return FunctionCallResult{{vectorValue(std::move(results))}};
         }
 
         FunctionCallResult result;
         result.outputs.reserve(requestedOutputCount);
-        result.outputs.push_back(numberValue(rows));
-        result.outputs.push_back(numberValue(columns));
-        for (size_t index = 2; index < requestedOutputCount; ++index) {
-            result.outputs.push_back(numberValue(1.0));
+        for (size_t index = 0; index < requestedOutputCount; ++index) {
+            size_t dimension = 1;
+            if (index + 1 == requestedOutputCount &&
+                requestedOutputCount < dimensions.size()) {
+                std::vector<size_t> folded(dimensions.begin() + index,
+                                           dimensions.end());
+                dimension =
+                    checkedRuntimeDimensionProduct(folded).value_or(0);
+            } else if (index < dimensions.size()) {
+                dimension = dimensions[index];
+            }
+            result.outputs.push_back(
+                numberValue(static_cast<double>(dimension)));
         }
         return result;
     }
@@ -2214,42 +2411,57 @@ private:
             return FunctionCallResult{{missingValue()}};
         }
 
-        const auto [rows, columns] = *shape;
-        std::vector<double> elements(rows * columns, name == "ones" ? 1.0 : 0.0);
+        if (name == "eye" && shape->size() > 2) {
+            addDiagnostic(node, "eye creates only two-dimensional arrays");
+            return FunctionCallResult{{missingValue()}};
+        }
+        const auto count = checkedRuntimeDimensionProduct(*shape);
+        if (!count) {
+            addDiagnostic(node, "array constructor dimensions are too large");
+            return FunctionCallResult{{missingValue()}};
+        }
+        std::vector<double> elements(*count, name == "ones" ? 1.0 : 0.0);
         if (name == "eye") {
+            const size_t rows = (*shape)[0];
+            const size_t columns = (*shape)[1];
             const size_t diagonal = rows < columns ? rows : columns;
             for (size_t index = 0; index < diagonal; ++index) {
                 elements[index * columns + index] = 1.0;
             }
         }
 
-        return FunctionCallResult{{arrayValueForShape(rows, columns,
-                                                      std::move(elements))}};
+        return FunctionCallResult{{
+            arrayValueForDimensions(*shape, std::move(elements))}};
     }
 
-    std::optional<std::pair<size_t, size_t>>
+    std::optional<std::vector<size_t>>
     constructorShape(const HirNode& node, const std::string& name,
                      const std::vector<RuntimeValue>& arguments) {
-        if (arguments.empty() || arguments.size() > 2) {
-            addDiagnostic(node, "array constructor expects one or two dimensions: " +
-                                    name);
+        if (arguments.empty()) {
+            addDiagnostic(node,
+                          "array constructor expects dimensions: " + name);
             return std::nullopt;
         }
 
-        if (arguments.size() == 2) {
-            if (!isNumber(arguments[0]) || !isNumber(arguments[1])) {
-                addDiagnostic(node,
-                              "array constructor dimensions must be scalar numbers: " +
-                                  name);
-                return std::nullopt;
+        if (arguments.size() > 1) {
+            std::vector<size_t> dimensions;
+            dimensions.reserve(arguments.size());
+            for (const auto& argument : arguments) {
+                if (!isNumber(argument)) {
+                    addDiagnostic(
+                        node,
+                        "array constructor dimensions must be scalar numbers: " +
+                            name);
+                    return std::nullopt;
+                }
+                const auto dimension =
+                    dimensionFromNumber(node, argument.number);
+                if (!dimension) {
+                    return std::nullopt;
+                }
+                dimensions.push_back(*dimension);
             }
-
-            const auto rows = dimensionFromNumber(node, arguments[0].number);
-            const auto columns = dimensionFromNumber(node, arguments[1].number);
-            if (!rows || !columns) {
-                return std::nullopt;
-            }
-            return std::pair<size_t, size_t>{*rows, *columns};
+            return normalizeRuntimeDimensions(std::move(dimensions));
         }
 
         const RuntimeValue& shape = arguments.front();
@@ -2258,34 +2470,42 @@ private:
             if (!dimension) {
                 return std::nullopt;
             }
-            return std::pair<size_t, size_t>{*dimension, *dimension};
+            return std::vector<size_t>{*dimension, *dimension};
         }
 
-        if (!isArray(shape) || shape.elements.size() < 2) {
+        if (!isArray(shape) || shape.elements.empty()) {
             addDiagnostic(node,
-                          "array constructor shape vector must contain at "
-                          "least two dimensions: " +
+                          "array constructor shape vector must contain "
+                          "dimensions: " +
                               name);
             return std::nullopt;
         }
 
-        const auto rows = dimensionFromNumber(node, shape.elements[0]);
-        const auto columns = dimensionFromNumber(node, shape.elements[1]);
-        if (!rows || !columns) {
-            return std::nullopt;
+        std::vector<size_t> dimensions;
+        dimensions.reserve(shape.elements.size());
+        for (const double raw : shape.elements) {
+            const auto dimension = dimensionFromNumber(node, raw);
+            if (!dimension) {
+                return std::nullopt;
+            }
+            dimensions.push_back(*dimension);
         }
-        return std::pair<size_t, size_t>{*rows, *columns};
+        if (dimensions.size() == 1) {
+            dimensions.push_back(dimensions.front());
+        }
+        return normalizeRuntimeDimensions(std::move(dimensions));
     }
 
     std::optional<size_t> dimensionFromNumber(const HirNode& node,
                                               double value) {
-        if (!isWholeNumber(value) || value < 0.0) {
+        const auto dimension = checkedRuntimeNonnegativeInteger(value);
+        if (!dimension) {
             addDiagnostic(node,
-                          "dimension or count must be a "
+                          "dimension or count must be a representable "
                           "nonnegative integer");
             return std::nullopt;
         }
-        return static_cast<size_t>(value);
+        return dimension;
     }
 
     FunctionCallResult
@@ -2417,6 +2637,27 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         output << "]";
         return output.str();
     case RuntimeValueKind::Matrix:
+        if (runtimeDimensionCount(value) > 2) {
+            const auto dimensions = runtimeDimensions(value);
+            output << "array(";
+            for (size_t index = 0; index < dimensions.size(); ++index) {
+                if (index != 0) {
+                    output << "x";
+                }
+                output << dimensions[index];
+            }
+            output << ")[";
+            for (size_t index = 0; index < value.elements.size(); ++index) {
+                if (index != 0) {
+                    output << " ";
+                }
+                const auto storageOffset =
+                    runtimeColumnMajorLinearToStorageOffset(value, index);
+                output << value.elements[*storageOffset];
+            }
+            output << "]";
+            return output.str();
+        }
         output << "[";
         for (size_t row = 0; row < value.rows; ++row) {
             if (row > 0) {
@@ -2432,6 +2673,27 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         output << "]";
         return output.str();
     case RuntimeValueKind::Cell:
+        if (runtimeDimensionCount(value) > 2) {
+            const auto dimensions = runtimeDimensions(value);
+            output << "cell(";
+            for (size_t index = 0; index < dimensions.size(); ++index) {
+                if (index != 0) {
+                    output << "x";
+                }
+                output << dimensions[index];
+            }
+            output << "){";
+            for (size_t index = 0; index < value.cells.size(); ++index) {
+                if (index != 0) {
+                    output << ", ";
+                }
+                const auto storageOffset =
+                    runtimeColumnMajorLinearToStorageOffset(value, index);
+                output << runtimeValueToString(value.cells[*storageOffset]);
+            }
+            output << "}";
+            return output.str();
+        }
         output << "{";
         for (size_t index = 0; index < value.cells.size(); ++index) {
             if (index > 0) {

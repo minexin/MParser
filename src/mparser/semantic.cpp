@@ -165,7 +165,7 @@ bool isKnownBuiltinName(const std::string& name) {
         "isfield",  "isvalid",  "length",   "linspace", "listener",
         "log",      "logical",  "max",      "mean",     "min",
         "nan",      "notify",   "numel",    "ones",     "pi",
-        "plot",     "rand",     "randn",    "single",  "sin",
+        "ndims",    "plot",     "rand",     "randn",    "single",  "sin",
         "size",     "sqrt",     "strcmp",   "string",  "struct",
         "sum",      "table",    "tan",      "true",    "zeros",
         "nargin",   "nargout",

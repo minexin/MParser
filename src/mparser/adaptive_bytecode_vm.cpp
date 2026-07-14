@@ -20,12 +20,14 @@ void mergeObservation(BytecodeValueObservation& destination,
 
     const bool sameShape = destination.kind == source.kind &&
                            destination.rows == source.rows &&
-                           destination.columns == source.columns;
+                           destination.columns == source.columns &&
+                           destination.dimensions == source.dimensions;
     destination.observationCount += source.observationCount;
     if (!destination.stable || !source.stable || !sameShape) {
         destination.kind = "mixed";
         destination.rows = 0;
         destination.columns = 0;
+        destination.dimensions.clear();
         destination.stable = false;
     }
 }
@@ -51,6 +53,7 @@ void mergeObservations(
             destination[index].kind = "mixed";
             destination[index].rows = 0;
             destination[index].columns = 0;
+            destination[index].dimensions.clear();
             destination[index].stable = false;
         }
     } else if (destination.size() > source.size()) {
@@ -59,6 +62,7 @@ void mergeObservations(
             destination[index].kind = "mixed";
             destination[index].rows = 0;
             destination[index].columns = 0;
+            destination[index].dimensions.clear();
             destination[index].stable = false;
         }
     }
@@ -327,6 +331,7 @@ void AdaptiveBytecodeVmSession::mergeProfile(
             destination->receiverObservation.kind = "mixed";
             destination->receiverObservation.rows = 0;
             destination->receiverObservation.columns = 0;
+            destination->receiverObservation.dimensions.clear();
             destination->receiverObservation.stable = false;
         } else if (site.hasReceiverObservation) {
             mergeObservation(destination->receiverObservation,
@@ -386,12 +391,14 @@ void AdaptiveBytecodeVmSession::mergeProfile(
                 observation.kind = "mixed";
                 observation.rows = 0;
                 observation.columns = 0;
+                observation.dimensions.clear();
                 observation.stable = false;
             }
             for (auto& observation : destination->resultObservations) {
                 observation.kind = "mixed";
                 observation.rows = 0;
                 observation.columns = 0;
+                observation.dimensions.clear();
                 observation.stable = false;
             }
             continue;

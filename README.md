@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.41.0. See [docs/v0.41.md](docs/v0.41.md) for the
+Current milestone: v0.42.0. See [docs/v0.42.md](docs/v0.42.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.40.md](docs/v0.40.md),
+iteration plan. Previous boundaries are kept in [docs/v0.41.md](docs/v0.41.md),
+[docs/v0.40.md](docs/v0.40.md),
 [docs/v0.39.md](docs/v0.39.md),
 [docs/v0.38.md](docs/v0.38.md),
 [docs/v0.37.md](docs/v0.37.md),
@@ -77,10 +78,11 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.41 executes the core numeric/string subset,
+expression operators. v0.42 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
-call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
-vector subscripts, indexed assignment into existing arrays,
+call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
+`end`, `:`, vector subscripts, folded trailing dimensions, and scalar-fill
+indexed assignment into existing arrays,
 `switch/case/otherwise`, and `try/catch` diagnostic recovery. It also records
 bytecode VM execution profiles for functions, loops, instructions,
 call/index sites, and assignment sites, including runtime value kind and shape
@@ -311,8 +313,23 @@ behavior is implemented, including recursion suppression and source-coupled
 lifetime. Custom `event.EventData` subclasses receive `Source` and `EventName`,
 and named callback handles participate in package/path dependency loading.
 
+v0.42 replaces the runtime's two-field shape assumption with canonical
+N-dimensional metadata shared by the HIR interpreter, bytecode VM, profiler,
+optimization planner, typed IR, guard evaluator, benchmark comparator, and CLI.
+Numeric arrays and Cells support N-dimensional `zeros`, `ones`, and `cell`
+construction; `size`, `size(A,dim)`, dimension-vector `size`, multi-output
+`size`, `ndims`, `numel`, `length`, and `isempty`; MATLAB column-major linear
+indexing; folded trailing dimensions; and N-dimensional `end` evaluation.
+Numeric subscript reads and scalar-fill writes accept arbitrary dimensions,
+while scalar Cell brace reads and writes use the same mapping. Elementwise
+numeric operations retain the complete shape. Class property size declarations
+can now contain more than two dimensions, create typed N-dimensional defaults,
+and reshape numeric or Cell assignments while preserving MATLAB linear order.
+Runtime profiles and JIT guards carry the complete dimension vector, so a
+`2x3x2` observation cannot be confused with a two-dimensional `2x3` value.
+
 There is also a small reference interpreter over HIR. It executes scalar double
-expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
+expressions, N-dimensional numeric arrays,
 string literals,
 assignments, local, namespace, ordinary path, and private function calls with
 isolated stack frames,
@@ -323,13 +340,14 @@ ignored outputs with `~`, `for` ranges, `while` loops, `break`/`continue`,
 `if`/`elseif`/`else` blocks, `switch`/`case`/`otherwise`, `try`/`catch`
 diagnostic recovery, short-circuit `&&`/`||`, string equality comparisons, MATLAB
 constants such as `pi`, one-argument math builtins such as `sin` and `sqrt`,
-string builtin `strcmp`, reductions such as `sum`, row/column shape queries
-through `size` including `[rows, cols] = size(A)`, 1-based vector and matrix
-indexing such as `A(2)` and `A(2, 1)`, colon and vector subscripts, `end`
+string builtin `strcmp`, reductions such as `sum`, shape queries through `size`
+and `ndims` including multi-output and dimension-vector forms, 1-based
+N-dimensional numeric indexing such as `A(2)` and `A(2, 1, 3)`, colon and
+vector subscripts, `end`
 expressions inside indexing, scalar-fill indexed assignment into existing
-numeric arrays, array constructors `zeros`, `ones`, and `eye`, `linspace`
+numeric arrays, array constructors `zeros`, `ones`, and two-dimensional `eye`, `linspace`
 vector generation, transpose, basic numeric matrix multiplication, and
-one-dimensional Cell literals plus scalar brace indexing/mutation. It is
+N-dimensional Cells with scalar brace indexing/mutation. It is
 intentionally not a full MATLAB runtime yet: classes, automatic growth during
 indexed assignment, non-scalar right-hand-side indexed assignment shape
 matching, function handles, other builtin multi-output conventions beyond the
@@ -409,12 +427,14 @@ The bytecode VM profiling and type/shape observation subset can be tried with:
 ```powershell
 build\mparser.exe --profile-bytecode samples\bytecode_profile_demo.m
 build\mparser.exe --profile-bytecode samples\bytecode_indexing_demo.m
+build\mparser.exe --profile-bytecode samples\nd_arrays_demo.m
 ```
 
 The profile-driven bytecode optimization planner can be tried with:
 
 ```powershell
 build\mparser.exe --plan-bytecode samples\bytecode_profile_demo.m
+build\mparser.exe --plan-bytecode samples\nd_arrays_demo.m
 ```
 
 The typed optimization IR handoff can be tried with:

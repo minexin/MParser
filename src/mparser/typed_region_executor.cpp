@@ -1,4 +1,5 @@
 #include "mparser/typed_region_executor.h"
+#include "mparser/runtime_shape.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -15,8 +16,7 @@ RuntimeValue numberValue(double value) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Number;
     result.number = value;
-    result.rows = 1;
-    result.columns = 1;
+    setRuntimeDimensions(result, {1, 1});
     return result;
 }
 

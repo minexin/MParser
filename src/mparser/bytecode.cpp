@@ -146,9 +146,7 @@ private:
         case HirKind::BraceIndex:
             if (!node.children.empty()) {
                 lowerNode(*node.children.front());
-                for (size_t index = 1; index < node.children.size(); ++index) {
-                    lowerNode(*node.children[index]);
-                }
+                lowerIndexArguments(node);
             }
             emit(BytecodeOp::BraceIndex, node, argumentCount(node));
             break;
@@ -662,9 +660,7 @@ private:
                 break;
             }
             lowerNode(*node.children.front());
-            for (size_t index = 1; index < node.children.size(); ++index) {
-                lowerNode(*node.children[index]);
-            }
+            lowerIndexArguments(node);
             emit(BytecodeOp::StoreBraceIndex, *node.children.front(),
                  argumentCount(node));
             break;
