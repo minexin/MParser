@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.42.0. See [docs/v0.42.md](docs/v0.42.md) for the
+Current milestone: v0.43.0. See [docs/v0.43.md](docs/v0.43.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.41.md](docs/v0.41.md),
+iteration plan. Previous boundaries are kept in [docs/v0.42.md](docs/v0.42.md),
+[docs/v0.41.md](docs/v0.41.md),
 [docs/v0.40.md](docs/v0.40.md),
 [docs/v0.39.md](docs/v0.39.md),
 [docs/v0.38.md](docs/v0.38.md),
@@ -78,11 +79,12 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.42 executes the core numeric/string subset,
+expression operators. v0.43 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
-`end`, `:`, vector subscripts, folded trailing dimensions, and scalar-fill
-indexed assignment into existing arrays,
+`end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
+non-scalar indexed assignment, scalar expansion, and automatic numeric-array
+growth,
 `switch/case/otherwise`, and `try/catch` diagnostic recovery. It also records
 bytecode VM execution profiles for functions, loops, instructions,
 call/index sites, and assignment sites, including runtime value kind and shape
@@ -328,6 +330,15 @@ and reshape numeric or Cell assignments while preserving MATLAB linear order.
 Runtime profiles and JIT guards carry the complete dimension vector, so a
 `2x3x2` observation cannot be confused with a two-dimensional `2x3` value.
 
+v0.43 builds a shared numeric indexed-assignment engine on that shape model.
+Both baseline runtimes now accept shape-checked non-scalar right-hand values,
+apply repeated indices and matrix-shaped subscript arrays in MATLAB
+column-major order, grow scalar, vector, matrix, and N-dimensional targets,
+and zero-fill new elements while preserving existing coordinates. Basic
+numeric elementwise operators also implement MATLAB dimension-wise implicit
+expansion, including singleton expansion across significant third and later
+dimensions.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -344,13 +355,13 @@ string builtin `strcmp`, reductions such as `sum`, shape queries through `size`
 and `ndims` including multi-output and dimension-vector forms, 1-based
 N-dimensional numeric indexing such as `A(2)` and `A(2, 1, 3)`, colon and
 vector subscripts, `end`
-expressions inside indexing, scalar-fill indexed assignment into existing
-numeric arrays, array constructors `zeros`, `ones`, and two-dimensional `eye`, `linspace`
+expressions inside indexing, non-scalar and scalar-expanded indexed assignment
+with automatic numeric-array growth, array constructors `zeros`, `ones`, and
+two-dimensional `eye`, `linspace`
 vector generation, transpose, basic numeric matrix multiplication, and
 N-dimensional Cells with scalar brace indexing/mutation. It is
-intentionally not a full MATLAB runtime yet: classes, automatic growth during
-indexed assignment, non-scalar right-hand-side indexed assignment shape
-matching, function handles, other builtin multi-output conventions beyond the
+intentionally not a full MATLAB runtime yet: classes, logical indexing,
+deletion assignment, function handles, other builtin multi-output conventions beyond the
 scalar runtime subset, complex numbers, sparse arrays, and object dispatch
 still report runtime diagnostics instead of guessing.
 
@@ -420,6 +431,14 @@ The bytecode VM indexing and indexed-assignment subset can be tried with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\bytecode_indexing_demo.m
+```
+
+Run non-scalar assignment, numeric-array growth, repeated indices, and
+N-dimensional implicit expansion through either baseline runtime with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\array_assignment_demo.m
+build\mparser.exe --run samples\array_assignment_demo.m
 ```
 
 The bytecode VM profiling and type/shape observation subset can be tried with:

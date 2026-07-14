@@ -1,0 +1,19 @@
+#pragma once
+
+#include "mparser/interpreter.h"
+
+#include <string>
+#include <vector>
+
+namespace mparser {
+
+struct RuntimeNumericAssignmentResult {
+    bool succeeded = false;
+    std::string error;
+};
+
+RuntimeNumericAssignmentResult runtimeAssignNumericIndexed(
+    RuntimeValue& target, const std::vector<RuntimeValue>& subscripts,
+    const RuntimeValue& value);
+
+} // namespace mparser

@@ -1,5 +1,6 @@
 #include "mparser/runtime_shape.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -150,6 +151,47 @@ std::optional<size_t> runtimeColumnMajorLinearIndex(
     return linearIndex;
 }
 
+std::optional<std::vector<size_t>> runtimeColumnMajorCoordinates(
+    size_t linearIndex, const std::vector<size_t>& dimensions) {
+    const auto count = checkedRuntimeDimensionProduct(dimensions);
+    if (!count || linearIndex >= *count) {
+        return std::nullopt;
+    }
+
+    std::vector<size_t> coordinates(dimensions.size(), 0);
+    for (size_t index = 0; index < dimensions.size(); ++index) {
+        if (dimensions[index] == 0) {
+            return std::nullopt;
+        }
+        coordinates[index] = linearIndex % dimensions[index];
+        linearIndex /= dimensions[index];
+    }
+    return coordinates;
+}
+
+std::optional<size_t> runtimeRowMajorStorageOffset(
+    const std::vector<size_t>& coordinates,
+    const std::vector<size_t>& dimensions) {
+    if (coordinates.size() != dimensions.size()) {
+        return std::nullopt;
+    }
+
+    size_t storageOffset = 0;
+    for (size_t index = 0; index < dimensions.size(); ++index) {
+        if (coordinates[index] >= dimensions[index]) {
+            return std::nullopt;
+        }
+        if (storageOffset >
+            (std::numeric_limits<size_t>::max() - coordinates[index]) /
+                dimensions[index]) {
+            return std::nullopt;
+        }
+        storageOffset =
+            storageOffset * dimensions[index] + coordinates[index];
+    }
+    return storageOffset;
+}
+
 std::vector<size_t> runtimeRowMajorCoordinates(
     size_t storageOffset, const std::vector<size_t>& dimensions) {
     std::vector<size_t> coordinates(dimensions.size(), 0);
@@ -167,32 +209,12 @@ std::vector<size_t> runtimeRowMajorCoordinates(
 std::optional<size_t> runtimeColumnMajorLinearToStorageOffset(
     const RuntimeValue& value, size_t linearIndex) {
     const auto dimensions = runtimeDimensions(value);
-    const auto count = checkedRuntimeDimensionProduct(dimensions);
-    if (!count || linearIndex >= *count) {
+    const auto coordinates =
+        runtimeColumnMajorCoordinates(linearIndex, dimensions);
+    if (!coordinates) {
         return std::nullopt;
     }
-
-    std::vector<size_t> coordinates(dimensions.size(), 0);
-    size_t remaining = linearIndex;
-    for (size_t index = 0; index < dimensions.size(); ++index) {
-        if (dimensions[index] == 0) {
-            return std::nullopt;
-        }
-        coordinates[index] = remaining % dimensions[index];
-        remaining /= dimensions[index];
-    }
-
-    size_t storageOffset = 0;
-    for (size_t index = 0; index < dimensions.size(); ++index) {
-        if (storageOffset >
-            (std::numeric_limits<size_t>::max() - coordinates[index]) /
-                dimensions[index]) {
-            return std::nullopt;
-        }
-        storageOffset =
-            storageOffset * dimensions[index] + coordinates[index];
-    }
-    return storageOffset;
+    return runtimeRowMajorStorageOffset(*coordinates, dimensions);
 }
 
 std::optional<size_t> runtimeSubscriptsToStorageOffset(
@@ -204,6 +226,51 @@ std::optional<size_t> runtimeSubscriptsToStorageOffset(
         return std::nullopt;
     }
     return runtimeColumnMajorLinearToStorageOffset(value, *linearIndex);
+}
+
+std::optional<std::vector<size_t>> runtimeImplicitExpansionDimensions(
+    const std::vector<size_t>& leftDimensions,
+    const std::vector<size_t>& rightDimensions) {
+    const size_t dimensionCount =
+        std::max(leftDimensions.size(), rightDimensions.size());
+    std::vector<size_t> result(dimensionCount, 1);
+    for (size_t index = 0; index < dimensionCount; ++index) {
+        const size_t left =
+            index < leftDimensions.size() ? leftDimensions[index] : 1;
+        const size_t right =
+            index < rightDimensions.size() ? rightDimensions[index] : 1;
+        if (left == right) {
+            result[index] = left;
+        } else if (left == 1) {
+            result[index] = right;
+        } else if (right == 1) {
+            result[index] = left;
+        } else {
+            return std::nullopt;
+        }
+    }
+    return normalizeRuntimeDimensions(std::move(result));
+}
+
+std::optional<size_t> runtimeImplicitExpansionStorageOffset(
+    const std::vector<size_t>& outputCoordinates,
+    const std::vector<size_t>& sourceDimensions) {
+    if (sourceDimensions.size() > outputCoordinates.size()) {
+        return std::nullopt;
+    }
+
+    std::vector<size_t> sourceCoordinates(sourceDimensions.size(), 0);
+    for (size_t index = 0; index < sourceDimensions.size(); ++index) {
+        if (sourceDimensions[index] == 0) {
+            return std::nullopt;
+        }
+        sourceCoordinates[index] =
+            sourceDimensions[index] == 1 ? 0 : outputCoordinates[index];
+        if (sourceCoordinates[index] >= sourceDimensions[index]) {
+            return std::nullopt;
+        }
+    }
+    return runtimeRowMajorStorageOffset(sourceCoordinates, sourceDimensions);
 }
 
 } // namespace mparser

@@ -287,6 +287,114 @@ void runDimensionOverflowSmoke() {
             "unexpected VM dimension-overflow diagnostic");
 }
 
+template <typename Result>
+void verifyAssignmentRuntime(const Result& result) {
+    requireArray(variable(result, "B"), {4, 4},
+                 {0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 3, 4},
+                 "matrix growth and block assignment");
+    requireArray(variable(result, "v"), {1, 6}, {1, 2, 0, 40, 0, 60},
+                 "row-vector linear growth");
+    requireArray(variable(result, "L"), {2, 3}, {1, 2, 9, 3, 4, 0},
+                 "matrix linear growth");
+    requireArray(variable(result, "c"), {4, 1}, {1, 2, 0, 4},
+                 "column-vector linear growth");
+    requireArray(variable(result, "R"), {1, 2}, {40, 20},
+                 "column-major repeated-index assignment");
+    requireArray(variable(result, "N"), {3, 2, 3},
+                 {0, 5, 0, 0, 0, 0, 0, 6, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 7},
+                 "N-D assignment growth");
+    requireArray(variable(result, "E"), {2, 3},
+                 {11, 21, 31, 12, 22, 32},
+                 "matrix implicit expansion");
+    requireArray(variable(result, "Z"), {2, 3, 2},
+                 {11, 11, 21, 21, 31, 31,
+                  11, 11, 21, 21, 31, 31},
+                 "N-D implicit expansion");
+    requireArray(variable(result, "s"), {1, 3}, {1, 0, 5},
+                 "scalar linear growth");
+    requireArray(variable(result, "F"), {3, 2, 2},
+                 {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 9},
+                 "direct growth with a folded trailing subscript");
+    requireNumber(variable(result, "summary"), 860,
+                  "assignment demo summary");
+}
+
+void runAssignmentAndExpansionSmoke() {
+    const auto result = runBoth(R"(B = zeros(2, 2);
+B(3:4, 3:4) = [1 2; 3 4];
+B(1, 4) = 8;
+v = [1 2];
+v([4 6]) = [40 60];
+L = [1 2; 3 4];
+L(5) = 9;
+c = [1; 2];
+c(4) = 4;
+R = zeros(1, 2);
+ids = [1 2; 2 1];
+R(ids) = [10 20; 30 40];
+N = zeros(2, 2, 2);
+N(:, 1, 2) = [5; 6];
+N(3, 2, 3) = 7;
+E = [1; 2] + [10 20 30];
+Z = ones(2, 1, 2) + [10 20 30];
+s = 1;
+s(3) = 5;
+F = ones(2, 2, 2);
+F(3, 4) = 9;
+shape_score = sum(size(B)) + sum(size(L)) + sum(size(c)) + sum(size(N)) + ...
+    sum(size(E)) + sum(size(Z)) + length(v);
+value_score = sum(B) + sum(v) + sum(L) + sum(c) + sum(R) + sum(N) + ...
+    sum(E) + sum(Z) + sum(s);
+checks = B(2, 2) + B(3, 3) + B(4, 4) + v(4) + L(1, 3) + ...
+    c(4) + R(1) + R(2) + N(1, 1, 2) + N(2, 1, 2) + N(3, 2, 3) + ...
+    E(2, 3) + Z(2, 3, 2) + s(3);
+summary = shape_score + value_score + checks;
+)");
+    require(result.interpreter.diagnostics.empty(),
+            "interpreter rejected array assignment semantics");
+    require(result.vm.diagnostics.empty(),
+            "VM rejected array assignment semantics");
+    verifyAssignmentRuntime(result.interpreter);
+    verifyAssignmentRuntime(result.vm);
+}
+
+void runAssignmentShapeDiagnosticSmoke() {
+    const auto result = runBoth(R"(A = zeros(2, 2);
+A(3:4, 3:4) = [1 2 3 4];
+)");
+    require(!result.interpreter.diagnostics.empty(),
+            "interpreter accepted an incompatible assignment shape");
+    require(!result.vm.diagnostics.empty(),
+            "VM accepted an incompatible assignment shape");
+    require(result.interpreter.diagnostics.front().message.find(
+                "dimensions do not match") != std::string::npos,
+            "unexpected interpreter assignment-shape diagnostic");
+    require(result.vm.diagnostics.front().message.find(
+                "dimensions do not match") != std::string::npos,
+            "unexpected VM assignment-shape diagnostic");
+    requireArray(variable(result.interpreter, "A"), {2, 2},
+                 {0, 0, 0, 0},
+                 "interpreter assignment failure changed its target");
+    requireArray(variable(result.vm, "A"), {2, 2}, {0, 0, 0, 0},
+                 "VM assignment failure changed its target");
+}
+
+void runExpansionDiagnosticSmoke() {
+    const auto result = runBoth(R"(A = ones(2, 2) + ones(1, 3);
+)");
+    require(!result.interpreter.diagnostics.empty(),
+            "interpreter accepted incompatible implicit expansion");
+    require(!result.vm.diagnostics.empty(),
+            "VM accepted incompatible implicit expansion");
+    require(result.interpreter.diagnostics.front().message.find(
+                "incompatible dimensions") != std::string::npos,
+            "unexpected interpreter expansion diagnostic");
+    require(result.vm.diagnostics.front().message.find(
+                "incompatible dimensions") != std::string::npos,
+            "unexpected VM expansion diagnostic");
+}
+
 } // namespace
 
 int main() {
@@ -294,6 +402,9 @@ int main() {
         runNdArraySmoke();
         runInvalidTrailingSubscriptSmoke();
         runDimensionOverflowSmoke();
+        runAssignmentAndExpansionSmoke();
+        runAssignmentShapeDiagnosticSmoke();
+        runExpansionDiagnosticSmoke();
         std::cout << "N-D array smoke tests passed\n";
         return 0;
     } catch (const std::exception& error) {

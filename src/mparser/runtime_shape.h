@@ -35,6 +35,13 @@ std::optional<size_t> runtimeColumnMajorLinearIndex(
     const std::vector<size_t>& coordinates,
     const std::vector<size_t>& dimensions);
 
+std::optional<std::vector<size_t>> runtimeColumnMajorCoordinates(
+    size_t linearIndex, const std::vector<size_t>& dimensions);
+
+std::optional<size_t> runtimeRowMajorStorageOffset(
+    const std::vector<size_t>& coordinates,
+    const std::vector<size_t>& dimensions);
+
 std::optional<size_t> runtimeColumnMajorLinearToStorageOffset(
     const RuntimeValue& value, size_t linearIndex);
 
@@ -44,5 +51,13 @@ std::optional<size_t> runtimeSubscriptsToStorageOffset(
 
 std::vector<size_t> runtimeRowMajorCoordinates(
     size_t storageOffset, const std::vector<size_t>& dimensions);
+
+std::optional<std::vector<size_t>> runtimeImplicitExpansionDimensions(
+    const std::vector<size_t>& leftDimensions,
+    const std::vector<size_t>& rightDimensions);
+
+std::optional<size_t> runtimeImplicitExpansionStorageOffset(
+    const std::vector<size_t>& outputCoordinates,
+    const std::vector<size_t>& sourceDimensions);
 
 } // namespace mparser

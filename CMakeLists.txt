@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.42.0 LANGUAGES CXX)
+project(MParser VERSION 0.43.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,7 @@ add_library(mparser_core
     src/mparser/lexer.cpp
     src/mparser/optimization_plan.cpp
     src/mparser/parser.cpp
+    src/mparser/runtime_assignment.cpp
     src/mparser/runtime_benchmark.cpp
     src/mparser/runtime_shape.cpp
     src/mparser/semantic.cpp
@@ -220,6 +221,20 @@ add_test(NAME nd_array_interpreter_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/nd_arrays_demo.m)
 set_tests_properties(nd_array_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 171")
+
+add_test(NAME array_assignment_bytecode_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_assignment_demo.m)
+set_tests_properties(array_assignment_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 860")
+
+add_test(NAME array_assignment_interpreter_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_assignment_demo.m)
+set_tests_properties(array_assignment_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 860")
 
 add_test(NAME namespace_function_cli_smoke
     COMMAND $<TARGET_FILE:mparser>

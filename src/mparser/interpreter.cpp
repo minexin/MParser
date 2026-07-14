@@ -1,5 +1,6 @@
 #include "mparser/interpreter.h"
 #include "mparser/function_signature.h"
+#include "mparser/runtime_assignment.h"
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
@@ -686,10 +687,9 @@ private:
             addDiagnostic(target, "indexed assignment is missing a target");
             return;
         }
-        if (!isNumber(value)) {
+        if (!isNumeric(value)) {
             addDiagnostic(target,
-                          "indexed assignment currently requires a scalar "
-                          "numeric value");
+                          "indexed assignment requires a numeric value");
             return;
         }
 
@@ -730,14 +730,11 @@ private:
             }
         }
 
-        if (arguments.size() > 1) {
-            assignSubscriptTarget(target, targetValue, arguments,
-                                  value.number);
-            return;
+        const auto result =
+            runtimeAssignNumericIndexed(targetValue, arguments, value);
+        if (!result.succeeded) {
+            addDiagnostic(target, result.error);
         }
-
-        assignLinearTarget(target, targetValue, arguments.front(),
-                           value.number);
     }
 
     void assignBraceIndexedTarget(const HirNode& target,
@@ -795,76 +792,6 @@ private:
             return;
         }
         cell.cells[*storageOffset] = value;
-    }
-
-    void assignSubscriptTarget(const HirNode& node, RuntimeValue& target,
-                               const std::vector<RuntimeValue>& arguments,
-                               double value) {
-        const auto effectiveDimensions =
-            runtimeEffectiveSubscriptDimensions(target, arguments.size());
-        std::vector<std::vector<size_t>> selections;
-        std::vector<size_t> selectionDimensions;
-        selections.reserve(arguments.size());
-        selectionDimensions.reserve(arguments.size());
-        for (size_t index = 0; index < arguments.size(); ++index) {
-            auto selection = checkedIndices(node, arguments[index],
-                                            effectiveDimensions[index]);
-            if (!selection) {
-                return;
-            }
-            selectionDimensions.push_back(selection->size());
-            selections.push_back(std::move(*selection));
-        }
-
-        const size_t count = checkedRuntimeDimensionProduct(
-                                 selectionDimensions)
-                                 .value_or(0);
-        for (size_t outputOffset = 0; outputOffset < count; ++outputOffset) {
-            const auto outputCoordinates = runtimeRowMajorCoordinates(
-                outputOffset, selectionDimensions);
-            std::vector<size_t> sourceCoordinates(arguments.size(), 0);
-            for (size_t index = 0; index < arguments.size(); ++index) {
-                sourceCoordinates[index] =
-                    selections[index][outputCoordinates[index]];
-            }
-            const auto storageOffset = runtimeSubscriptsToStorageOffset(
-                target, sourceCoordinates, effectiveDimensions);
-            if (!storageOffset) {
-                addDiagnostic(node,
-                              "indexed assignment could not map subscripts");
-                return;
-            }
-            if (isNumber(target)) {
-                target.number = value;
-            } else {
-                target.elements[*storageOffset] = value;
-            }
-        }
-    }
-
-    void assignLinearTarget(const HirNode& node, RuntimeValue& target,
-                            const RuntimeValue& subscript, double value) {
-        const auto indices =
-            checkedIndices(node, subscript, elementCount(target));
-        if (!indices) {
-            return;
-        }
-        for (const size_t index : *indices) {
-            assignLinearElement(target, index, value);
-        }
-    }
-
-    void assignLinearElement(RuntimeValue& target, size_t zeroBasedIndex,
-                             double value) {
-        if (isNumber(target)) {
-            target.number = value;
-            return;
-        }
-        const auto storageOffset =
-            runtimeColumnMajorLinearToStorageOffset(target, zeroBasedIndex);
-        if (storageOffset) {
-            target.elements[*storageOffset] = value;
-        }
     }
 
     void executeControl(const HirNode& node) {
@@ -1490,24 +1417,47 @@ private:
             return missingValue();
         }
 
-        if (isArray(left) && isArray(right) &&
-            runtimeDimensions(left) != runtimeDimensions(right)) {
-            addDiagnostic(node,
-                          "elementwise operands must have the same shape");
-            return missingValue();
+        std::vector<size_t> dimensions;
+        if (isArray(left) && isArray(right)) {
+            const auto expanded = runtimeImplicitExpansionDimensions(
+                runtimeDimensions(left), runtimeDimensions(right));
+            if (!expanded) {
+                addDiagnostic(
+                    node,
+                    "elementwise operands have incompatible dimensions");
+                return missingValue();
+            }
+            dimensions = *expanded;
+        } else {
+            dimensions = isArray(left) ? runtimeDimensions(left)
+                                       : runtimeDimensions(right);
         }
-
-        const auto dimensions = isArray(left) ? runtimeDimensions(left)
-                                              : runtimeDimensions(right);
         const size_t count =
             checkedRuntimeDimensionProduct(dimensions).value_or(0);
         std::vector<double> elements;
         elements.reserve(count);
         for (size_t index = 0; index < count; ++index) {
+            const auto coordinates =
+                runtimeRowMajorCoordinates(index, dimensions);
+            const auto leftOffset =
+                isArray(left)
+                    ? runtimeImplicitExpansionStorageOffset(
+                          coordinates, runtimeDimensions(left))
+                    : std::optional<size_t>(0);
+            const auto rightOffset =
+                isArray(right)
+                    ? runtimeImplicitExpansionStorageOffset(
+                          coordinates, runtimeDimensions(right))
+                    : std::optional<size_t>(0);
+            if (!leftOffset || !rightOffset) {
+                addDiagnostic(node,
+                              "elementwise expansion could not map an operand");
+                return missingValue();
+            }
             const double leftValue =
-                isArray(left) ? left.elements[index] : left.number;
+                isArray(left) ? left.elements[*leftOffset] : left.number;
             const double rightValue =
-                isArray(right) ? right.elements[index] : right.number;
+                isArray(right) ? right.elements[*rightOffset] : right.number;
             const RuntimeValue value =
                 applyScalarBinary(node, leftValue, rightValue);
             if (!isNumber(value)) {
@@ -2102,7 +2052,10 @@ private:
         }
 
         std::vector<double> values;
-        for (double rawIndex : arguments.front().elements) {
+        for (size_t logicalIndex = 0;
+             logicalIndex < elementCount(arguments.front()); ++logicalIndex) {
+            const double rawIndex =
+                linearElement(arguments.front(), logicalIndex);
             const auto index =
                 checkedIndex(node, rawIndex, elementCount(target));
             if (!index) {
@@ -2134,7 +2087,9 @@ private:
         }
 
         indices.reserve(subscript.elements.size());
-        for (double rawIndex : subscript.elements) {
+        for (size_t logicalIndex = 0; logicalIndex < elementCount(subscript);
+             ++logicalIndex) {
+            const double rawIndex = linearElement(subscript, logicalIndex);
             const auto index = checkedIndex(node, rawIndex, length);
             if (!index) {
                 return std::nullopt;
