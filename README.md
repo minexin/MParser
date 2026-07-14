@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.36.0. See [docs/v0.36.md](docs/v0.36.md) for the
+Current milestone: v0.37.0. See [docs/v0.37.md](docs/v0.37.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.35.md](docs/v0.35.md),
+iteration plan. Previous boundaries are kept in [docs/v0.36.md](docs/v0.36.md),
+[docs/v0.35.md](docs/v0.35.md),
 [docs/v0.34.md](docs/v0.34.md),
 [docs/v0.33.md](docs/v0.33.md),
 [docs/v0.32.md](docs/v0.32.md),
@@ -63,14 +64,14 @@ predeclares local functions/classes and class members, resolves local names,
 forward local function calls, anonymous function parameters, knowable class
 member access across the loaded source graph, qualified namespace
 functions/classes/static methods, structured explicit and wildcard imports,
-and a small lazy registry of common MATLAB builtins. Dynamic calls, indexing,
-and unknown member access remain delayed bindings for later name and type
-resolution.
+caller-scoped ordinary and `private` function files, and a small lazy registry
+of common MATLAB builtins. Dynamic calls, indexing, and unknown member access
+remain delayed bindings for later name and type resolution.
 
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.36 executes the core numeric/string subset,
+expression operators. v0.37 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -240,11 +241,22 @@ over source-local functions, while source-local functions win over wildcard
 imports. Variables and parameters retain highest precedence. The loader follows
 qualified calls and imported names through nested `+namespace` folders with the
 same deterministic class-path ordering used for classes.
+v0.37 extends the graph to ordinary function files and caller-scoped `private`
+folders. For each caller, lookup checks its eligible `private` folder, the
+entry file directory, and repeated `--path` roots in order. Current-directory
+functions therefore beat search-path functions, while `private` functions are
+visible only to files in their parent directory. Dependency-loaded ordinary
+and private functions receive stable internal identities, so two libraries can
+use different private helpers with the same filename without colliding. The
+source graph records each caller's alias-to-identity binding and `--module-info`
+prints those edges. Explicit and wildcard imports retain their v0.36 semantic
+precedence. `--class-path` remains a compatibility alias for `--path`.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
 string literals,
-assignments, local and namespace function calls with isolated stack frames,
+assignments, local, namespace, ordinary path, and private function calls with
+isolated stack frames,
 first-output
 single-value calls, multiple-output destructuring such as `[a, b] = f(x)`,
 ignored outputs with `~`, `for` ranges, `while` loops, `break`/`continue`,
@@ -499,9 +511,10 @@ build\mparser.exe --run-bytecode `
   samples\cross_file_classes\run_demo.m
 ```
 
-`--class-path=DIR` may be repeated. It participates in semantic, bytecode,
-runtime, benchmark, and module modes; token and syntax-only inspection remain
-limited to the requested entry file.
+`--path=DIR` may be repeated and is the general source search-path option.
+`--class-path=DIR` remains a compatibility alias. Both participate in semantic,
+bytecode, runtime, benchmark, and module modes; token and syntax-only inspection
+remain limited to the requested entry file.
 
 Run qualified classes from multiple and nested namespace folders with:
 
@@ -533,6 +546,21 @@ build\mparser.exe --run `
 
 The complete demo uses `--run-bytecode` because the reference interpreter does
 not yet implement class objects.
+
+Run ordinary current-directory and search-path functions together with two
+caller-local `private/adjust.m` implementations using:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --path=samples\function_paths\first_library `
+  --path=samples\function_paths\second_library `
+  --path=samples\function_paths\global_library `
+  samples\function_paths\app\run_demo.m
+```
+
+The same pure-function graph executes through the reference HIR interpreter by
+replacing `--run-bytecode` with `--run`. Use `--module-info` to inspect the
+caller-specific binding edges and internal function identities.
 
 Compile once, inspect the reusable module catalog, and validate an entry with:
 

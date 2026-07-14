@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.36.0 LANGUAGES CXX)
+project(MParser VERSION 0.37.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -111,6 +111,12 @@ target_link_libraries(namespace_function_smoke_tests PRIVATE mparser_core)
 add_test(NAME namespace_function_smoke
     COMMAND namespace_function_smoke_tests)
 
+add_executable(function_path_smoke_tests
+    tests/function_path_smoke.cpp)
+target_link_libraries(function_path_smoke_tests PRIVATE mparser_core)
+add_test(NAME function_path_smoke
+    COMMAND function_path_smoke_tests)
+
 add_test(NAME cross_file_class_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
         --run-bytecode
@@ -142,6 +148,26 @@ add_test(NAME namespace_function_interpreter_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/namespace_functions/app/run_function_demo.m)
 set_tests_properties(namespace_function_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "nested_value = 102")
+
+add_test(NAME function_path_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/first_library
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/second_library
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/global_library
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/app/run_demo.m)
+set_tests_properties(function_path_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "outside_value = 101")
+
+add_test(NAME function_path_interpreter_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/first_library
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/second_library
+        --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/global_library
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/app/run_demo.m)
+set_tests_properties(function_path_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "outside_value = 101")
 
 add_test(NAME source_loader_diagnostic_cli_smoke
     COMMAND ${CMAKE_COMMAND}

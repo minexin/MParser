@@ -300,7 +300,7 @@ void runFileDependencyLoadingSmoke() {
 
     mparser::SourceLoader loader;
     mparser::SourceLoaderOptions loaderOptions;
-    loaderOptions.classPaths.push_back(classDirectory);
+    loaderOptions.searchPaths.push_back(classDirectory);
     const auto loaded = loader.load(entryPath, loaderOptions);
     assert(loaded.sources.size() == 3);
     assert(std::filesystem::path(loaded.sources[0].name).filename() ==
@@ -413,7 +413,7 @@ end
 )");
 
     mparser::SourceLoaderOptions loaderOptions;
-    loaderOptions.classPaths.push_back(temporary.path);
+    loaderOptions.searchPaths.push_back(temporary.path);
     const auto loaded =
         mparser::SourceLoader{}.load(entryPath, loaderOptions);
     assert(loaded.sources.size() == 5);
@@ -482,7 +482,7 @@ void runNamespacePathPrecedenceSmoke() {
               "end\n");
 
     mparser::SourceLoaderOptions options;
-    options.classPaths = {firstRoot, secondRoot};
+    options.searchPaths = {firstRoot, secondRoot};
     auto loaded = mparser::SourceLoader{}.load(entryPath, options);
     assert(loaded.sources.size() == 2);
     assert(std::filesystem::equivalent(
@@ -493,7 +493,7 @@ void runNamespacePathPrecedenceSmoke() {
     assert(runtime.diagnostics.empty());
     assertNumber(runtime, "selected", 1);
 
-    options.classPaths = {secondRoot, firstRoot};
+    options.searchPaths = {secondRoot, firstRoot};
     loaded = mparser::SourceLoader{}.load(entryPath, options);
     assert(loaded.sources.size() == 2);
     assert(std::filesystem::equivalent(

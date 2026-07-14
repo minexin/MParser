@@ -115,7 +115,9 @@ struct SemanticResult {
 
 class SemanticAnalyzer {
 public:
-    SemanticResult analyze(const SyntaxNode& root);
+    SemanticResult analyze(
+        const SyntaxNode& root,
+        const std::vector<SourceUnit>& sources = {});
 };
 
 const char* hirKindName(HirKind kind);

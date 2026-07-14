@@ -338,7 +338,7 @@ void runFilesystemNamespaceFunctionSmoke() {
               "end\n");
 
     mparser::SourceLoaderOptions options;
-    options.classPaths.push_back(temporary.path);
+    options.searchPaths.push_back(temporary.path);
     const auto loaded = mparser::SourceLoader{}.load(entry, options);
     assert(loaded.sources.size() == 6);
     std::set<std::string> namespaces;
@@ -400,7 +400,7 @@ void runNamespaceFunctionPathPrecedenceSmoke() {
               "end\n");
 
     mparser::SourceLoaderOptions options;
-    options.classPaths = {firstRoot, secondRoot};
+    options.searchPaths = {firstRoot, secondRoot};
     auto loaded = mparser::SourceLoader{}.load(entry, options);
     assert(loaded.sources.size() == 2);
     assert(std::filesystem::equivalent(
@@ -411,7 +411,7 @@ void runNamespaceFunctionPathPrecedenceSmoke() {
     assert(runtime.diagnostics.empty());
     assertNumber(runtime, "selected", 1);
 
-    options.classPaths = {secondRoot, firstRoot};
+    options.searchPaths = {secondRoot, firstRoot};
     loaded = mparser::SourceLoader{}.load(entry, options);
     assert(loaded.sources.size() == 2);
     assert(std::filesystem::equivalent(

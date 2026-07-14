@@ -3,16 +3,24 @@
 #include <cstddef>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace mparser {
 
 inline constexpr size_t kInvalidSourceId =
     std::numeric_limits<size_t>::max();
 
+struct SourceFunctionBinding {
+    std::string alias;
+    std::string target;
+};
+
 struct SourceUnit {
     std::string name;
     std::string content;
     std::string namespaceName;
+    std::string primaryFunctionIdentity;
+    std::vector<SourceFunctionBinding> functionBindings;
 };
 
 struct SourcePosition {

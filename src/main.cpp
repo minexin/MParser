@@ -32,7 +32,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.36.0"
+#define MPARSER_VERSION "0.37.0"
 #endif
 
 namespace {
@@ -65,7 +65,7 @@ void printUsage() {
                  "[--entry-function=name] [--argument=value] "
                  "[--outputs=N] "
                  "[--module-call=name[:value...]] "
-                 "[--class-path=DIR] "
+                 "[--path=DIR] [--class-path=DIR] "
                  "<file.m>\n";
 }
 
@@ -719,7 +719,15 @@ void printCompiledModuleInfo(const mparser::CompiledModule& module) {
         if (!source.namespaceName.empty()) {
             std::cout << " namespace=" << source.namespaceName;
         }
+        if (!source.primaryFunctionIdentity.empty()) {
+            std::cout << " function="
+                      << source.primaryFunctionIdentity;
+        }
         std::cout << "\n";
+        for (const auto& binding : source.functionBindings) {
+            std::cout << "      bind " << binding.alias << " -> "
+                      << binding.target << "\n";
+        }
     }
 
     if (module.functions().empty()) {
@@ -784,7 +792,7 @@ int main(int argc, char** argv) {
         std::vector<mparser::RuntimeValue> entryArguments;
         std::optional<size_t> requestedOutputCount;
         std::vector<ModuleCall> moduleCalls;
-        std::vector<std::filesystem::path> classPaths;
+        std::vector<std::filesystem::path> searchPaths;
         std::string path;
 
         for (int i = 1; i < argc; ++i) {
@@ -856,14 +864,18 @@ int main(int argc, char** argv) {
                     parseCountOption(arg, "--outputs=", true);
             } else if (arg.starts_with("--module-call=")) {
                 moduleCalls.push_back(parseModuleCallOption(arg));
-            } else if (arg.starts_with("--class-path=")) {
-                const auto classPath =
-                    arg.substr(std::string("--class-path=").size());
-                if (classPath.empty()) {
+            } else if (arg.starts_with("--path=") ||
+                       arg.starts_with("--class-path=")) {
+                const size_t prefixLength =
+                    arg.starts_with("--path=")
+                        ? std::string("--path=").size()
+                        : std::string("--class-path=").size();
+                const auto searchPath = arg.substr(prefixLength);
+                if (searchPath.empty()) {
                     throw std::invalid_argument(
-                        "class path cannot be empty");
+                        "search path cannot be empty");
                 }
-                classPaths.emplace_back(classPath);
+                searchPaths.emplace_back(searchPath);
             } else if (path.empty()) {
                 path = arg;
             } else {
@@ -879,7 +891,7 @@ int main(int argc, char** argv) {
 
         const auto compileSourceGraph = [&]() {
             mparser::SourceLoaderOptions loaderOptions;
-            loaderOptions.classPaths = classPaths;
+            loaderOptions.searchPaths = searchPaths;
             mparser::SourceLoader loader;
             auto loaded = loader.load(path, loaderOptions);
             return mparser::CompiledModule::compile(

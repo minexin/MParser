@@ -44,21 +44,27 @@ object.
 `SourceLoader` builds the executable multi-file boundary without coupling path
 lookup to semantic lowering. It starts with the requested entry file, inspects
 structured syntax for class/function references and imports, and recursively
-resolves matching source files. A simple `ClassName` maps to `ClassName.m`; a
-qualified `pkg.inner.member` maps to `+pkg/+inner/member.m` below a search root.
-The referring source root wins, followed by the entry root and repeatable class
-paths in command-line order. Candidate chains are tried longest-first so
+resolves matching source files. A simple class or ordinary function maps to a
+same-named `.m` file; a qualified `pkg.inner.member` maps to
+`+pkg/+inner/member.m` below a search root. Classes and namespaces prefer the
+referring source root, followed by the entry root and repeatable search paths.
+Ordinary function lookup is caller-sensitive: an eligible immediate
+`private` folder wins, followed by the entry directory and search paths in
+command-line order. Candidate chains are tried longest-first so
 `pkg.Class.staticMethod()` first resolves `pkg.Class`, not a spurious `pkg`
 class. A candidate is added only when its top-level class or first top-level
 function and physical namespace produce the requested full name, so unrelated
 files outside the dependency closure do not affect compilation. Every loaded
-`SourceUnit` receives a stable source index and namespace name. Explicit imports
-add direct dependency candidates. Wildcard imports combine their namespace
-prefix with names actually referenced in the source, avoiding an eager folder
-scan. Import inspection is intentionally conservative and file-wide for graph
-loading; semantic import visibility remains scope-correct. `@class` method
-folders, private folders, and ordinary non-namespace function-file discovery
-remain future stages.
+`SourceUnit` receives a stable source index and namespace name. Dependency-loaded
+ordinary and private function files also receive an internal primary identity,
+and each caller stores alias-to-identity edges. This prevents same-named private
+helpers in different libraries from collapsing into one module symbol. Explicit
+imports add direct dependency candidates. Wildcard imports combine their
+namespace prefix with names actually referenced in the source, avoiding an
+eager folder scan. Import inspection and ordinary call discovery are
+intentionally conservative and file-wide for graph loading; semantic visibility
+and precedence remain scope-correct. `@class` method folders remain a future
+stage.
 
 Control-flow headers use the same expression machinery. A `for` range header is
 represented through a `ControlHeader` child that can contain an assignment-like
@@ -87,7 +93,8 @@ property when the receiver type is clear.
 whole containing script or function, including statements textually before the
 declaration, and never leak into nested functions or classes. Variable-like
 bindings win first, followed by explicit imports, functions local to the same
-source, other lexical symbols, wildcard imports, and builtins. Explicit imports
+source, other lexical symbols, wildcard imports, caller-specific external
+function bindings, and builtins. Explicit imports
 can bind namespace functions, classes, and static class methods. Importing an
 instance method is rejected during semantic validation, conflicting explicit
 aliases and ambiguous wildcard matches receive diagnostics, and a fully
@@ -100,6 +107,14 @@ that file are private to the source graph as `pkg.work>helper`. Local functions
 in namespace scripts and class files use the same owner-qualified internal
 form. The invocable module catalog filters these internal identities while
 source-local aliases bind calls inside their owning file.
+
+An ordinary function dependency uses an internal identity such as
+`$path0>work`, while a private function uses an identity such as
+`$private1>adjust`. The prefix is compiler metadata, not MATLAB syntax. Every
+source resolves its own short alias through the binding edge selected during
+loading, so path order and private visibility remain stable throughout HIR,
+bytecode, and runtime execution. Entry-source functions retain the existing
+public `CompiledModule` entry catalog contract.
 
 The semantic fixup also canonicalizes a known dotted class reference. A syntax
 chain such as `pkg.inner.ClassName` remains ordinary member access until all
@@ -140,7 +155,8 @@ The current executable runtime is a small HIR interpreter. Its purpose is to
 define and test execution semantics before the bytecode VM and JIT harden. It
 supports scalar double values, one-dimensional numeric vectors,
 two-dimensional numeric matrices, string literals, variable assignment, local function calls
-with isolated stack frames, namespace function calls, first-output single-value
+with isolated stack frames, namespace, ordinary path, and private function calls,
+first-output single-value
 calls, multiple-output
 destructuring for local functions, ignored outputs with `~`, numeric ranges,
 `for` loops over ranges or vectors, `while` loops, `break`/`continue`,
@@ -172,7 +188,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.36 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.37 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -248,7 +264,8 @@ invocations, so retraining can prove a region input from a stable function
 parameter when no preceding assignment defines it.
 
 `CompiledModule` is the reusable embedding boundary above those runtime paths.
-It owns an ordered set of named, namespace-aware sources, semantic HIR,
+It owns an ordered set of named, namespace-aware sources, caller-specific
+function bindings, semantic HIR,
 bytecode, diagnostics, and the invocable
 top-level function catalog. Compilation stops after a failed parse, semantic
 analysis, or lowering phase. Valid modules can preflight a named entry, execute
@@ -260,8 +277,9 @@ constructor-dispatch contract. Source IDs survive the merge, so parser,
 semantic, bytecode, and runtime diagnostics can map a span back to the owning
 file. Duplicate top-level classes are rejected before semantic analysis.
 Public namespace functions are exposed by canonical name; source-local helper
-identities remain available to bytecode binding but are omitted from the public
-entry catalog.
+and dependency-loaded path/private identities remain available to bytecode
+binding but are omitted from the public entry catalog. `--module-info` exposes
+the source identity and caller binding graph for diagnostics.
 
 `AdaptiveModuleRuntime` partitions mutable tiering state by named entry
 function. Each lazily created function session owns its cumulative profiles,
@@ -411,8 +429,8 @@ The VM intentionally still rejects non-`handle` built-in superclass
 construction, full MATLAB property conversion,
 custom validators, validator set-membership/range functions, dimensions above
 two, non-scalar string arrays, `HandleCompatible` enforcement, cross-file
-ordinary function discovery outside `+namespace` folders, `@class` method
-folders, handle lifecycle operations
+function discovery from command-form calls, function handles, `.mlx`, `.p`, and
+MEX precedence, `@class` method folders, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 class methods as `CompiledModule` entry targets,
 function-handle execution, dynamic function handles, automatic numeric-array
@@ -430,7 +448,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.36
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.37
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -496,7 +514,10 @@ inheritance, same-short-name isolation, duplicate-full-name diagnostics, and
 first-class-path-member precedence. v0.36 adds public namespace function
 discovery, source-local helper identity, structured import scopes, explicit and
 wildcard import precedence, imported static-method validation, and namespace
-function execution in both baseline runtimes. The next steps are
+function execution in both baseline runtimes. v0.37 adds ordinary `.m` function
+discovery, caller-scoped private folders, current-directory and ordered search
+path precedence, stable external function identities, source binding graph
+inspection, and execution through both baseline runtimes. The next steps are
 multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

@@ -201,8 +201,15 @@ void collectImports(const SyntaxNode& node,
     }
 }
 
+void recordRawDependency(std::map<std::string, bool>& dependencies,
+                         const std::string& name,
+                         bool functionsAllowed) {
+    auto& existing = dependencies[name];
+    existing = existing || functionsAllowed;
+}
+
 void collectRawDependencies(const SyntaxNode& node,
-                            std::set<std::string>& dependencies) {
+                            std::map<std::string, bool>& dependencies) {
     if (node.kind == SyntaxKind::ImportStatement ||
         node.kind == SyntaxKind::ImportItem) {
         return;
@@ -210,7 +217,7 @@ void collectRawDependencies(const SyntaxNode& node,
     for (const auto& attribute : node.attributes) {
         for (const auto& className : attribute.metaClassNames) {
             if (!splitClassName(className).empty()) {
-                dependencies.insert(className);
+                recordRawDependency(dependencies, className, false);
             }
         }
     }
@@ -218,24 +225,24 @@ void collectRawDependencies(const SyntaxNode& node,
     if (node.kind == SyntaxKind::SuperclassList) {
         for (const auto& superclass : node.children) {
             if (!splitClassName(superclass->label).empty()) {
-                dependencies.insert(superclass->label);
+                recordRawDependency(dependencies, superclass->label, false);
             }
         }
     } else if (node.kind == SyntaxKind::PropertyDecl &&
                !splitClassName(node.property.className).empty()) {
-        dependencies.insert(node.property.className);
+        recordRawDependency(dependencies, node.property.className, false);
     } else if (node.kind == SyntaxKind::MetaClassExpr &&
                !splitClassName(node.label).empty()) {
-        dependencies.insert(node.label);
+        recordRawDependency(dependencies, node.label, false);
     } else if (node.kind == SyntaxKind::CallOrIndexExpr &&
                !node.children.empty()) {
         if (const auto name =
                 dottedExpressionName(*node.children.front())) {
-            dependencies.insert(*name);
+            recordRawDependency(dependencies, *name, true);
         }
     } else if (node.kind == SyntaxKind::MemberAccessExpr) {
         if (const auto name = dottedExpressionName(node)) {
-            dependencies.insert(*name);
+            recordRawDependency(dependencies, *name, true);
         }
     }
 
@@ -261,7 +268,7 @@ InspectedSource inspectSource(std::string_view source, size_t sourceId) {
     }
     collectDefinedSymbols(*parsed.root, inspected);
 
-    std::set<std::string> rawDependencies;
+    std::map<std::string, bool> rawDependencies;
     collectRawDependencies(*parsed.root, rawDependencies);
     std::vector<ImportSpec> imports;
     collectImports(*parsed.root, imports);
@@ -278,7 +285,7 @@ InspectedSource inspectSource(std::string_view source, size_t sourceId) {
                                    inspected.dependencies);
     }
 
-    for (const auto& dependency : rawDependencies) {
+    for (const auto& [dependency, rawFunctionsAllowed] : rawDependencies) {
         for (const auto& import : explicitImports) {
             const std::string alias = finalNameSegment(import.target);
             if (dependency == alias ||
@@ -289,7 +296,9 @@ InspectedSource inspectSource(std::string_view source, size_t sourceId) {
             }
         }
         appendSymbolNameCandidates(
-            dependency, dependency.find('.') != std::string::npos,
+            dependency,
+            rawFunctionsAllowed ||
+                dependency.find('.') != std::string::npos,
             inspected.dependencies);
         for (const auto& wildcard : wildcardImports) {
             appendSymbolNameCandidates(wildcard + "." + dependency, true,
@@ -312,10 +321,70 @@ std::vector<std::filesystem::path> buildSearchPaths(
     };
 
     append(sourceNamespaceLocation(entry).root);
-    for (const auto& path : options.classPaths) {
+    for (const auto& path : options.searchPaths) {
         append(path);
     }
     return result;
+}
+
+std::vector<std::filesystem::path> buildOrdinaryFunctionSearchPaths(
+    const std::filesystem::path& entry,
+    const SourceLoaderOptions& options) {
+    std::vector<std::filesystem::path> result;
+    std::set<std::filesystem::path> seen;
+    const auto append = [&](const std::filesystem::path& path) {
+        const auto normalized = normalizedPath(path);
+        if (seen.insert(normalized).second) {
+            result.push_back(normalized);
+        }
+    };
+
+    append(entry.parent_path());
+    for (const auto& path : options.searchPaths) {
+        append(path);
+    }
+    return result;
+}
+
+struct OrdinaryFunctionSource {
+    std::filesystem::path path;
+    bool privateFunction = false;
+};
+
+std::optional<OrdinaryFunctionSource> findOrdinaryFunctionSource(
+    const std::string& functionName,
+    const std::filesystem::path& sourcePath,
+    const std::vector<std::filesystem::path>& searchPaths) {
+    if (!isSimpleClassName(functionName)) {
+        return std::nullopt;
+    }
+
+    std::vector<std::pair<std::filesystem::path, bool>> directories;
+    const auto sourceDirectory = sourcePath.parent_path();
+    if (sourceDirectory.filename() == "private") {
+        directories.emplace_back(sourceDirectory, true);
+    } else {
+        directories.emplace_back(sourceDirectory / "private", true);
+    }
+    for (const auto& path : searchPaths) {
+        directories.emplace_back(path, false);
+    }
+
+    std::set<std::filesystem::path> visited;
+    for (const auto& [directory, privateFunction] : directories) {
+        const auto normalizedDirectory = normalizedPath(directory);
+        if (!visited.insert(normalizedDirectory).second) {
+            continue;
+        }
+        const auto candidate =
+            normalizedDirectory / (functionName + ".m");
+        std::error_code error;
+        if (std::filesystem::is_regular_file(candidate, error) && !error) {
+            return OrdinaryFunctionSource{normalizedPath(candidate),
+                                          privateFunction};
+        }
+    }
+    return std::nullopt;
 }
 
 std::filesystem::path symbolSourceRelativePath(
@@ -399,32 +468,61 @@ SourceLoaderResult SourceLoader::load(
     SourceLoaderResult result;
     std::vector<std::filesystem::path> sourcePaths;
     std::set<std::filesystem::path> loadedPaths;
+    std::map<std::filesystem::path, std::string>
+        functionIdentityByPath;
     std::set<std::string> knownClasses;
     std::set<std::string> knownFunctions;
     const auto searchPaths = buildSearchPaths(entry, options);
+    const auto ordinaryFunctionSearchPaths =
+        buildOrdinaryFunctionSearchPaths(entry, options);
+    size_t nextExternalFunctionId = 0;
 
     const auto appendSource = [&](const std::filesystem::path& path,
                                   std::string content,
                                   InspectedSource inspected,
-                                  std::string namespaceName) {
+                                  std::string namespaceName,
+                                  std::string functionIdentity = {}) {
         loadedPaths.insert(path);
         for (const auto& className : inspected.classes) {
             knownClasses.insert(
                 qualifyClassName(namespaceName, className));
         }
         for (const auto& functionName : inspected.functions) {
-            knownFunctions.insert(
-                qualifyClassName(namespaceName, functionName));
+            const std::string identity = functionIdentity.empty()
+                                             ? qualifyClassName(
+                                                   namespaceName,
+                                                   functionName)
+                                             : functionIdentity;
+            knownFunctions.insert(identity);
+            if (!functionIdentity.empty()) {
+                functionIdentityByPath[path] = identity;
+            }
         }
         sourcePaths.push_back(path);
         result.sources.push_back(SourceUnit{
-            path.string(), std::move(content), std::move(namespaceName)});
+            path.string(), std::move(content), std::move(namespaceName),
+            std::move(functionIdentity), {}});
+    };
+
+    const auto addFunctionBinding = [&](size_t sourceId,
+                                        const std::string& alias,
+                                        const std::string& target) {
+        auto& bindings = result.sources[sourceId].functionBindings;
+        const auto existing = std::find_if(
+            bindings.begin(), bindings.end(),
+            [&alias](const SourceFunctionBinding& binding) {
+                return binding.alias == alias;
+            });
+        if (existing == bindings.end() || existing->target != target) {
+            bindings.push_back(SourceFunctionBinding{alias, target});
+        }
     };
 
     std::string entryContent = readSourceFile(entry);
     const auto entryNamespace = sourceNamespaceLocation(entry).name;
-    appendSource(entry, entryContent,
-                 inspectSource(entryContent, result.sources.size()),
+    auto entryInspected =
+        inspectSource(entryContent, result.sources.size());
+    appendSource(entry, entryContent, std::move(entryInspected),
                  entryNamespace);
 
     for (size_t sourceId = 0; sourceId < result.sources.size(); ++sourceId) {
@@ -441,6 +539,49 @@ SourceLoaderResult SourceLoader::load(
                                  : left.first < right.first;
                   });
         for (const auto& [dependency, functionsAllowed] : dependencies) {
+            if (functionsAllowed &&
+                dependency.find('.') == std::string::npos) {
+                if (const auto ordinary = findOrdinaryFunctionSource(
+                        dependency, sourcePaths[sourceId],
+                        ordinaryFunctionSearchPaths)) {
+                    if (const auto identity =
+                            functionIdentityByPath.find(ordinary->path);
+                        identity != functionIdentityByPath.end()) {
+                        addFunctionBinding(sourceId, dependency,
+                                           identity->second);
+                        continue;
+                    }
+
+                    if (!loadedPaths.contains(ordinary->path)) {
+                        std::string content =
+                            readSourceFile(ordinary->path);
+                        auto candidate = inspectSource(
+                            content, result.sources.size());
+                        const auto namespaceName =
+                            sourceNamespaceLocation(ordinary->path).name;
+                        if (namespaceName.empty() &&
+                            candidate.functions.contains(dependency)) {
+                            const std::string identity =
+                                (ordinary->privateFunction
+                                     ? "$private"
+                                     : "$path") +
+                                std::to_string(nextExternalFunctionId++) +
+                                ">" + dependency;
+                            appendSource(
+                                ordinary->path, std::move(content),
+                                std::move(candidate), namespaceName,
+                                identity);
+                            addFunctionBinding(sourceId, dependency,
+                                               identity);
+                            continue;
+                        }
+                    }
+                    if (ordinary->privateFunction) {
+                        continue;
+                    }
+                }
+            }
+
             if (coveredByKnownSymbol(dependency, functionsAllowed,
                                      knownClasses, knownFunctions)) {
                 continue;

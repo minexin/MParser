@@ -8,7 +8,7 @@
 namespace mparser {
 
 struct SourceLoaderOptions {
-    std::vector<std::filesystem::path> classPaths;
+    std::vector<std::filesystem::path> searchPaths;
 };
 
 struct SourceLoaderResult {

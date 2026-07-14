@@ -47,14 +47,11 @@ void appendDiagnostics(std::vector<Diagnostic>& destination,
     destination.insert(destination.end(), source.begin(), source.end());
 }
 
-void applySourceNamespace(SyntaxNode& root,
-                          std::string_view namespaceName,
-                          std::string_view sourceName) {
-    if (namespaceName.empty()) {
-        return;
-    }
+void applySourceIdentity(SyntaxNode& root, const SourceUnit& source) {
+    const std::string_view namespaceName = source.namespaceName;
     for (auto& child : root.children) {
-        if (child->kind == SyntaxKind::ClassDef &&
+        if (!namespaceName.empty() &&
+            child->kind == SyntaxKind::ClassDef &&
             !child->label.empty()) {
             child->label = std::string(namespaceName) + "." + child->label;
         }
@@ -65,10 +62,18 @@ void applySourceNamespace(SyntaxNode& root,
     }
     const bool functionFile =
         root.children.front()->kind == SyntaxKind::FunctionDef;
+    if (namespaceName.empty() &&
+        (!functionFile || source.primaryFunctionIdentity.empty())) {
+        return;
+    }
+
     std::string owner;
     if (functionFile) {
-        owner = std::string(namespaceName) + "." +
-                root.children.front()->label;
+        owner = source.primaryFunctionIdentity;
+        if (owner.empty()) {
+            owner = std::string(namespaceName) + "." +
+                    root.children.front()->label;
+        }
     } else {
         for (const auto& child : root.children) {
             if (child->kind == SyntaxKind::ClassDef) {
@@ -78,7 +83,7 @@ void applySourceNamespace(SyntaxNode& root,
         }
         if (owner.empty()) {
             owner = std::string(namespaceName) + "." +
-                    std::filesystem::path(sourceName).stem().string();
+                    std::filesystem::path(source.name).stem().string();
         }
     }
 
@@ -154,8 +159,7 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
             continue;
         }
 
-        applySourceNamespace(*parse.root, source.namespaceName,
-                             source.name);
+        applySourceIdentity(*parse.root, source);
         collectTopLevelClasses(*parse.root, classDefinitions,
                                module.diagnostics_);
         if (!rootSpanInitialized) {
@@ -174,7 +178,7 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
     }
 
     SemanticAnalyzer analyzer;
-    module.semantic_ = analyzer.analyze(*root);
+    module.semantic_ = analyzer.analyze(*root, module.sources_);
     appendDiagnostics(module.diagnostics_, module.semantic_.diagnostics);
     if (!module.semantic_.root || !module.semantic_.diagnostics.empty()) {
         return module;

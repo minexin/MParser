@@ -235,10 +235,12 @@ FunctionSignature parseFunctionSignature(const SyntaxNode& functionNode) {
 
 class AnalyzerContext {
 public:
-    SemanticResult analyze(const SyntaxNode& root) {
+    SemanticResult analyze(const SyntaxNode& root,
+                           const std::vector<SourceUnit>& sources) {
         result_.root = makeNode(HirKind::Module, root);
         pushScope(ScopeKind::Module, "module");
         predeclareModuleSymbols(root);
+        registerExternalFunctionBindings(sources);
         predeclareClassScopes(root);
         collectImportsForCurrentScope(root);
         lowerChildren(root, *result_.root);
@@ -287,6 +289,34 @@ private:
             result_.diagnostics.push_back(Diagnostic{
                 function.span,
                 "duplicate source-local function: " + alias});
+        }
+    }
+
+    void registerExternalFunctionBindings(
+        const std::vector<SourceUnit>& sources) {
+        for (size_t sourceId = 0; sourceId < sources.size(); ++sourceId) {
+            for (const auto& binding : sources[sourceId].functionBindings) {
+                SourceSpan span;
+                span.begin.sourceId = sourceId;
+                span.end.sourceId = sourceId;
+                const BindingRef target = resolveFunction(binding.target);
+                if (target.kind != BindingKind::Function) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        span, "source function target is not available: " +
+                                  binding.target});
+                    continue;
+                }
+
+                auto& aliases = externalFunctionAliases_[sourceId];
+                const auto [existing, inserted] =
+                    aliases.emplace(binding.alias, target);
+                if (!inserted &&
+                    existing->second.symbolId != target.symbolId) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        span, "conflicting source function bindings for: " +
+                                  binding.alias});
+                }
+            }
         }
     }
 
@@ -964,6 +994,19 @@ private:
             return *wildcard;
         }
 
+        if (span.begin.sourceId != kInvalidSourceId) {
+            if (const auto sourceAliases =
+                    externalFunctionAliases_.find(span.begin.sourceId);
+                sourceAliases != externalFunctionAliases_.end()) {
+                if (const auto alias = sourceAliases->second.find(name);
+                    alias != sourceAliases->second.end()) {
+                    const auto& symbol = result_.symbols[
+                        static_cast<size_t>(alias->second.symbolId)];
+                    return NameResolution{alias->second, symbol.name};
+                }
+            }
+        }
+
         return NameResolution{resolveBuiltin(name), {}};
     }
 
@@ -1503,14 +1546,18 @@ private:
     std::unordered_map<
         size_t, std::unordered_map<std::string, BindingRef>>
         sourceFunctionAliases_;
+    std::unordered_map<
+        size_t, std::unordered_map<std::string, BindingRef>>
+        externalFunctionAliases_;
     std::vector<RegisteredImport> registeredImports_;
 };
 
 } // namespace
 
-SemanticResult SemanticAnalyzer::analyze(const SyntaxNode& root) {
+SemanticResult SemanticAnalyzer::analyze(
+    const SyntaxNode& root, const std::vector<SourceUnit>& sources) {
     AnalyzerContext context;
-    return context.analyze(root);
+    return context.analyze(root, sources);
 }
 
 const char* hirKindName(HirKind kind) {
