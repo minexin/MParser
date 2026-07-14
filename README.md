@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.33.0. See [docs/v0.33.md](docs/v0.33.md) for the
+Current milestone: v0.34.0. See [docs/v0.34.md](docs/v0.34.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.32.md](docs/v0.32.md),
+iteration plan. Previous boundaries are kept in [docs/v0.33.md](docs/v0.33.md),
+[docs/v0.32.md](docs/v0.32.md),
 [docs/v0.31.md](docs/v0.31.md),
 [docs/v0.30.md](docs/v0.30.md),
 [docs/v0.29.md](docs/v0.29.md),
@@ -66,7 +67,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.33 executes the core numeric/string subset,
+expression operators. v0.34 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -108,7 +109,7 @@ from the diagnostic variable snapshot. Full profiles record function parameter
 and result kind/shape observations, and adaptive sessions can retrain from
 changing argument values.
 The frontend pipeline is also available through `CompiledModule`: it owns the
-source, semantic HIR, lowered bytecode, compile diagnostics, and a catalog of
+source set, semantic HIR, lowered bytecode, compile diagnostics, and a catalog of
 invocable top-level function signatures. Embedders can compile once, validate
 an entry, invoke the ordinary VM repeatedly, or create an adaptive session over
 the same immutable artifacts. Class methods remain excluded from the top-level
@@ -206,6 +207,15 @@ candidate, while public/protected methods retain most-specific dynamic
 dispatch. Method references carry the chosen declaring class through the
 operand stack, static private methods use the same rule, diamond paths dedupe
 one definition, and named access-list override restrictions remain intact.
+v0.34 removes the single-file class boundary. A `SourceLoader` follows simple
+class dependencies into sibling directories and repeatable CLI class paths,
+then `CompiledModule` parses and merges the dependency closure while retaining
+a source ID on every token, syntax node, HIR node, bytecode span, and
+diagnostic. Cross-file inheritance, constructors, private property/method
+identity, selective access lists, and dynamic dispatch therefore reuse the
+same runtime metadata as same-file classes. Only referenced class files enter
+the module, deterministic path precedence selects one definition, and
+`--module-info` reports the complete source set.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
@@ -454,6 +464,19 @@ virtual dispatch with:
 ```powershell
 build\mparser.exe --run-bytecode samples\class_method_identity_demo.m
 ```
+
+Load a derived class beside the script and its base class from an additional
+class path with:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --class-path=samples\cross_file_classes\lib `
+  samples\cross_file_classes\run_demo.m
+```
+
+`--class-path=DIR` may be repeated. It participates in semantic, bytecode,
+runtime, benchmark, and module modes; token and syntax-only inspection remain
+limited to the requested entry file.
 
 Compile once, inspect the reusable module catalog, and validate an entry with:
 

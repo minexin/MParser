@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.33.0 LANGUAGES CXX)
+project(MParser VERSION 0.34.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,6 +23,7 @@ add_library(mparser_core
     src/mparser/semantic.cpp
     src/mparser/semantic_dump.cpp
     src/mparser/source.cpp
+    src/mparser/source_loader.cpp
     src/mparser/syntax.cpp
     src/mparser/syntax_dump.cpp
     src/mparser/typed_ir.cpp
@@ -99,6 +100,24 @@ add_executable(compiled_module_smoke_tests
     tests/compiled_module_smoke.cpp)
 target_link_libraries(compiled_module_smoke_tests PRIVATE mparser_core)
 add_test(NAME compiled_module_smoke COMMAND compiled_module_smoke_tests)
+
+add_executable(source_loader_smoke_tests tests/source_loader_smoke.cpp)
+target_link_libraries(source_loader_smoke_tests PRIVATE mparser_core)
+add_test(NAME source_loader_smoke COMMAND source_loader_smoke_tests)
+
+add_test(NAME cross_file_class_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/cross_file_classes/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/cross_file_classes/run_demo.m)
+set_tests_properties(cross_file_class_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "dynamic_code = 2")
+
+add_test(NAME source_loader_diagnostic_cli_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_EXECUTABLE=$<TARGET_FILE:mparser>
+        -DENTRY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/source_loader_diagnostic/main.m
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_source_diagnostic.cmake)
 
 add_executable(function_call_contract_smoke_tests
     tests/function_call_contract_smoke.cpp)

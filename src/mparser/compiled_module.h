@@ -3,10 +3,11 @@
 #include "mparser/adaptive_bytecode_vm.h"
 #include "mparser/bytecode.h"
 #include "mparser/function_signature.h"
+#include "mparser/source.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
-#include <optional>
 #include <vector>
 
 namespace mparser {
@@ -20,9 +21,13 @@ struct CompiledFunctionInfo {
 class CompiledModule {
 public:
     static CompiledModule compile(std::string source);
+    static CompiledModule compile(std::vector<SourceUnit> sources);
 
     bool valid() const;
     std::string_view source() const;
+    const std::vector<SourceUnit>& sources() const;
+    std::string_view sourceName(size_t sourceId) const;
+    std::string_view sourceName(SourceSpan span) const;
     const std::vector<Diagnostic>& diagnostics() const;
     const SemanticResult& semantic() const;
     const BytecodeProgram& bytecode() const;
@@ -40,7 +45,7 @@ public:
 private:
     CompiledModule() = default;
 
-    std::string source_;
+    std::vector<SourceUnit> sources_;
     SemanticResult semantic_;
     BytecodeProgram bytecode_;
     std::vector<CompiledFunctionInfo> functions_;

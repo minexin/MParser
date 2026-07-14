@@ -11,6 +11,7 @@ an enumeration member.
 
 ```text
 Source text
+  -> Source dependency graph
   -> Lossless token stream
   -> Syntax tree
   -> Semantic HIR
@@ -40,6 +41,17 @@ particular, `A(...)` becomes `CallOrIndexExpr` because only semantic analysis
 can decide whether `A` is a variable, function, constructor, or overloaded
 object.
 
+`SourceLoader` builds the first executable multi-file boundary without changing
+the parser grammar. It starts with the requested entry file, inspects structured
+syntax for simple class references, and recursively resolves matching
+`ClassName.m` files. The referring file's directory wins, followed by the entry
+directory and repeatable class paths in command-line order. A candidate is added
+only when it declares the requested top-level class, so unrelated or malformed
+files outside the dependency closure do not affect compilation. Every loaded
+`SourceUnit` receives a stable index that is copied into source positions.
+Package-qualified names, `@class` method folders, and ordinary function-file
+discovery remain separate future loader stages.
+
 Control-flow headers use the same expression machinery. A `for` range header is
 represented through a `ControlHeader` child that can contain an assignment-like
 node, while `if`, `elseif`, `while`, `switch`, and `case` headers can contain
@@ -63,7 +75,8 @@ minimal but useful: constructors and first method parameters can carry class
 type names, allowing member access such as `obj.Value` to bind to a known class
 property when the receiver type is clear.
 
-After every same-file class has been lowered, a hierarchy-aware fixup revisits
+After every class in the compiled source graph has been lowered, a
+hierarchy-aware fixup revisits
 unresolved member and call nodes. It walks superclass graphs, merges repeated
 paths to the same declaration, and prefers a declaration from a strictly more
 specific class. This makes inherited bindings independent of source order while
@@ -125,7 +138,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.33 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.34 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -201,14 +214,17 @@ invocations, so retraining can prove a region input from a stable function
 parameter when no preceding assignment defines it.
 
 `CompiledModule` is the reusable embedding boundary above those runtime paths.
-It owns source text, semantic HIR, bytecode, diagnostics, and the invocable
+It owns an ordered set of named sources, semantic HIR, bytecode, diagnostics,
+and the invocable
 top-level function catalog. Compilation stops after a failed parse, semantic
 analysis, or lowering phase. Valid modules can preflight a named entry, execute
 independent ordinary VM invocations, or construct adaptive sessions that point
 at the same immutable HIR and bytecode. The module must therefore outlive every
 adaptive session created from it. Class methods remain excluded from the entry
 catalog because module entries do not yet carry a class receiver or
-constructor-dispatch contract.
+constructor-dispatch contract. Source IDs survive the merge, so parser,
+semantic, bytecode, and runtime diagnostics can map a span back to the owning
+file. Duplicate top-level classes are rejected before semantic analysis.
 
 `AdaptiveModuleRuntime` partitions mutable tiering state by named entry
 function. Each lazily created function session owns its cumulative profiles,
@@ -354,11 +370,11 @@ unresolved list is equivalent to sealing the class. A class-list method may be
 overridden only by an authorized subclass, and the override must preserve the
 complete resolved access policy.
 
-The VM intentionally still rejects cross-file/package superclass lookup,
+The VM intentionally still rejects package-qualified superclass lookup,
 non-`handle` built-in superclass construction, full MATLAB property conversion,
 custom validators, validator set-membership/range functions, dimensions above
 two, non-scalar string arrays, `HandleCompatible` enforcement, cross-file
-class-list resolution, handle lifecycle operations
+ordinary function discovery, `@class` method folders, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 class methods as `CompiledModule` entry targets,
 function-handle execution, dynamic function handles, automatic numeric-array
@@ -376,7 +392,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.33
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.34
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -432,7 +448,11 @@ property redeclaration, lexical property selection, and compatible private
 property merging across multiple inheritance. v0.33 adds declaring-class-local
 private method candidates, lexical private dispatch, exact selected-method
 references, private static-method identity, and compatible private method
-merging without weakening visible virtual dispatch. The next steps are
+merging without weakening visible virtual dispatch. v0.34 adds ordered source
+units, recursive class dependency discovery, deterministic class-path lookup,
+multi-source compilation, duplicate-class rejection, and file-aware CLI
+diagnostics while preserving the existing class identity and runtime tables.
+The next steps are
 multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

@@ -3,6 +3,8 @@
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 
+#include <map>
+#include <memory>
 #include <stdexcept>
 #include <utility>
 
@@ -41,6 +43,23 @@ void appendDiagnostics(std::vector<Diagnostic>& destination,
     destination.insert(destination.end(), source.begin(), source.end());
 }
 
+void collectTopLevelClasses(
+    const SyntaxNode& root, std::map<std::string, SourceSpan>& definitions,
+    std::vector<Diagnostic>& diagnostics) {
+    for (const auto& child : root.children) {
+        if (child->kind != SyntaxKind::ClassDef || child->label.empty()) {
+            continue;
+        }
+        const bool inserted =
+            definitions.try_emplace(child->label, child->span).second;
+        if (!inserted) {
+            diagnostics.push_back(Diagnostic{
+                child->span,
+                "duplicate top-level class: " + child->label});
+        }
+    }
+}
+
 std::string firstDiagnosticMessage(
     const std::vector<Diagnostic>& diagnostics) {
     if (diagnostics.empty()) {
@@ -52,19 +71,56 @@ std::string firstDiagnosticMessage(
 } // namespace
 
 CompiledModule CompiledModule::compile(std::string source) {
-    CompiledModule module;
-    module.source_ = std::move(source);
+    std::vector<SourceUnit> sources;
+    sources.push_back(SourceUnit{"<memory>", std::move(source)});
+    return compile(std::move(sources));
+}
 
-    Lexer lexer(module.source_);
-    Parser parser(lexer.lex());
-    auto parse = parser.parse();
-    appendDiagnostics(module.diagnostics_, parse.diagnostics);
-    if (!parse.root || !parse.diagnostics.empty()) {
+CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
+    CompiledModule module;
+    module.sources_ = std::move(sources);
+    if (module.sources_.empty()) {
+        module.diagnostics_.push_back(Diagnostic{
+            SourceSpan{}, "compiled module requires at least one source"});
+        return module;
+    }
+
+    auto root = std::make_unique<SyntaxNode>(SyntaxKind::CompilationUnit);
+    bool rootSpanInitialized = false;
+    std::map<std::string, SourceSpan> classDefinitions;
+    for (size_t sourceId = 0; sourceId < module.sources_.size(); ++sourceId) {
+        auto& source = module.sources_[sourceId];
+        if (source.name.empty()) {
+            source.name = "<source:" + std::to_string(sourceId) + ">";
+        }
+
+        Lexer lexer(source.content, sourceId);
+        Parser parser(lexer.lex());
+        auto parse = parser.parse();
+        appendDiagnostics(module.diagnostics_, parse.diagnostics);
+        if (!parse.root) {
+            continue;
+        }
+
+        collectTopLevelClasses(*parse.root, classDefinitions,
+                               module.diagnostics_);
+        if (!rootSpanInitialized) {
+            root->span = parse.root->span;
+            rootSpanInitialized = true;
+        } else {
+            root->span.end = parse.root->span.end;
+        }
+        for (auto& child : parse.root->children) {
+            root->children.push_back(std::move(child));
+        }
+    }
+
+    if (!module.diagnostics_.empty()) {
         return module;
     }
 
     SemanticAnalyzer analyzer;
-    module.semantic_ = analyzer.analyze(*parse.root);
+    module.semantic_ = analyzer.analyze(*root);
     appendDiagnostics(module.diagnostics_, module.semantic_.diagnostics);
     if (!module.semantic_.root || !module.semantic_.diagnostics.empty()) {
         return module;
@@ -87,7 +143,23 @@ bool CompiledModule::valid() const {
 }
 
 std::string_view CompiledModule::source() const {
-    return source_;
+    return sources_.empty() ? std::string_view{}
+                            : std::string_view{sources_.front().content};
+}
+
+const std::vector<SourceUnit>& CompiledModule::sources() const {
+    return sources_;
+}
+
+std::string_view CompiledModule::sourceName(size_t sourceId) const {
+    if (sourceId >= sources_.size()) {
+        return {};
+    }
+    return sources_[sourceId].name;
+}
+
+std::string_view CompiledModule::sourceName(SourceSpan span) const {
+    return sourceName(span.begin.sourceId);
 }
 
 const std::vector<Diagnostic>& CompiledModule::diagnostics() const {

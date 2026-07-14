@@ -69,7 +69,8 @@ bool canEndExpression(TokenKind kind) {
 
 } // namespace
 
-Lexer::Lexer(std::string_view source) : source_(source) {}
+Lexer::Lexer(std::string_view source, size_t sourceId)
+    : source_(source), sourceId_(sourceId) {}
 
 std::vector<Token> Lexer::lex() {
     std::vector<Token> tokens;
@@ -117,7 +118,7 @@ bool Lexer::match(char expected) {
 }
 
 SourcePosition Lexer::position() const {
-    return SourcePosition{offset_, line_, column_};
+    return SourcePosition{offset_, line_, column_, sourceId_};
 }
 
 SourceSpan Lexer::spanFrom(SourcePosition begin) const {

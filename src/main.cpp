@@ -11,12 +11,14 @@
 #include "mparser/runtime_benchmark.h"
 #include "mparser/semantic.h"
 #include "mparser/semantic_dump.h"
+#include "mparser/source_loader.h"
 #include "mparser/syntax_dump.h"
 #include "mparser/typed_ir.h"
 #include "mparser/token.h"
 
 #include <algorithm>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -30,7 +32,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.30.0"
+#define MPARSER_VERSION "0.34.0"
 #endif
 
 namespace {
@@ -63,7 +65,36 @@ void printUsage() {
                  "[--entry-function=name] [--argument=value] "
                  "[--outputs=N] "
                  "[--module-call=name[:value...]] "
+                 "[--class-path=DIR] "
                  "<file.m>\n";
+}
+
+void printDiagnostics(
+    std::string_view header,
+    const std::vector<mparser::Diagnostic>& diagnostics,
+    const mparser::CompiledModule* module = nullptr,
+    std::string_view fallbackSource = {}) {
+    if (diagnostics.empty()) {
+        return;
+    }
+
+    std::cerr << "\n" << header << ":\n";
+    for (const auto& diagnostic : diagnostics) {
+        std::string_view sourceName = fallbackSource;
+        if (module != nullptr) {
+            const auto moduleSourceName =
+                module->sourceName(diagnostic.span);
+            if (!moduleSourceName.empty()) {
+                sourceName = moduleSourceName;
+            }
+        }
+        if (!sourceName.empty()) {
+            std::cerr << sourceName << ":";
+        }
+        std::cerr << diagnostic.span.begin.line << ":"
+                  << diagnostic.span.begin.column << ": "
+                  << diagnostic.message << "\n";
+    }
 }
 
 size_t parseCountOption(const std::string& argument,
@@ -664,14 +695,29 @@ void printNameList(const std::vector<std::string>& names,
 }
 
 void printCompiledModuleInfo(const mparser::CompiledModule& module) {
+    size_t sourceBytes = 0;
+    for (const auto& source : module.sources()) {
+        sourceBytes += source.content.size();
+    }
+
     std::cout << "Compiled module:\n"
               << "  status: " << (module.valid() ? "valid" : "invalid")
               << "\n"
-              << "  source bytes: " << module.source().size() << "\n"
+              << "  source files: " << module.sources().size() << "\n"
+              << "  source bytes: " << sourceBytes << "\n"
               << "  bytecode instructions: "
               << module.bytecode().instructions.size() << "\n"
               << "  invocable functions: " << module.functions().size()
               << "\n";
+
+    std::cout << "Sources:\n";
+    for (size_t sourceId = 0; sourceId < module.sources().size();
+         ++sourceId) {
+        const auto& source = module.sources()[sourceId];
+        std::cout << "  [" << sourceId << "] " << source.name << " ("
+                  << source.content.size() << " bytes)\n";
+    }
+
     if (module.functions().empty()) {
         return;
     }
@@ -682,7 +728,12 @@ void printCompiledModuleInfo(const mparser::CompiledModule& module) {
         printNameList(function.signature.parameters, "(", ")");
         std::cout << " -> ";
         printNameList(function.signature.outputs, "[", "]");
-        std::cout << " @ " << function.span.begin.line << ":"
+        const auto sourceName = module.sourceName(function.span);
+        std::cout << " @ ";
+        if (!sourceName.empty()) {
+            std::cout << sourceName << ":";
+        }
+        std::cout << function.span.begin.line << ":"
                   << function.span.begin.column << "\n";
     }
 }
@@ -729,6 +780,7 @@ int main(int argc, char** argv) {
         std::vector<mparser::RuntimeValue> entryArguments;
         std::optional<size_t> requestedOutputCount;
         std::vector<ModuleCall> moduleCalls;
+        std::vector<std::filesystem::path> classPaths;
         std::string path;
 
         for (int i = 1; i < argc; ++i) {
@@ -800,6 +852,14 @@ int main(int argc, char** argv) {
                     parseCountOption(arg, "--outputs=", true);
             } else if (arg.starts_with("--module-call=")) {
                 moduleCalls.push_back(parseModuleCallOption(arg));
+            } else if (arg.starts_with("--class-path=")) {
+                const auto classPath =
+                    arg.substr(std::string("--class-path=").size());
+                if (classPath.empty()) {
+                    throw std::invalid_argument(
+                        "class path cannot be empty");
+                }
+                classPaths.emplace_back(classPath);
             } else if (path.empty()) {
                 path = arg;
             } else {
@@ -813,17 +873,21 @@ int main(int argc, char** argv) {
             return 2;
         }
 
-        const std::string source = readFile(path);
+        const auto compileSourceGraph = [&]() {
+            mparser::SourceLoaderOptions loaderOptions;
+            loaderOptions.classPaths = classPaths;
+            mparser::SourceLoader loader;
+            auto loaded = loader.load(path, loaderOptions);
+            return mparser::CompiledModule::compile(
+                std::move(loaded.sources));
+        };
+
         if (printModuleInfo) {
-            const auto module = mparser::CompiledModule::compile(source);
+            const auto module = compileSourceGraph();
             printCompiledModuleInfo(module);
             if (!module.diagnostics().empty()) {
-                std::cerr << "\nModule diagnostics:\n";
-                for (const auto& diagnostic : module.diagnostics()) {
-                    std::cerr << diagnostic.span.begin.line << ":"
-                              << diagnostic.span.begin.column << ": "
-                              << diagnostic.message << "\n";
-                }
+                printDiagnostics("Module diagnostics",
+                                 module.diagnostics(), &module, path);
                 return 1;
             }
 
@@ -839,26 +903,18 @@ int main(int argc, char** argv) {
                           << "\n";
             }
             if (!validation.empty()) {
-                std::cerr << "\nEntry diagnostics:\n";
-                for (const auto& diagnostic : validation) {
-                    std::cerr << diagnostic.span.begin.line << ":"
-                              << diagnostic.span.begin.column << ": "
-                              << diagnostic.message << "\n";
-                }
+                printDiagnostics("Entry diagnostics", validation,
+                                 &module, path);
                 return 1;
             }
             return 0;
         }
 
         if (runModuleRuntime) {
-            const auto module = mparser::CompiledModule::compile(source);
+            const auto module = compileSourceGraph();
             if (!module.valid()) {
-                std::cerr << "\nModule diagnostics:\n";
-                for (const auto& diagnostic : module.diagnostics()) {
-                    std::cerr << diagnostic.span.begin.line << ":"
-                              << diagnostic.span.begin.column << ": "
-                              << diagnostic.message << "\n";
-                }
+                printDiagnostics("Module diagnostics",
+                                 module.diagnostics(), &module, path);
                 return 1;
             }
             if (moduleCalls.empty()) {
@@ -887,13 +943,10 @@ int main(int argc, char** argv) {
                           << "\n";
                 printAdaptiveRun(result.adaptive);
                 if (!result.adaptive.runtime.diagnostics.empty()) {
-                    std::cerr << "\nModule runtime diagnostics:\n";
-                    for (const auto& diagnostic :
-                         result.adaptive.runtime.diagnostics) {
-                        std::cerr << diagnostic.span.begin.line << ":"
-                                  << diagnostic.span.begin.column << ": "
-                                  << diagnostic.message << "\n";
-                    }
+                    printDiagnostics(
+                        "Module runtime diagnostics",
+                        result.adaptive.runtime.diagnostics, &module,
+                        path);
                     return 1;
                 }
                 printFunctionOutputs(result.adaptive.runtime);
@@ -906,6 +959,7 @@ int main(int argc, char** argv) {
             return 0;
         }
 
+        const std::string source = readFile(path);
         mparser::Lexer lexer(source);
         auto tokens = lexer.lex();
 
@@ -918,37 +972,27 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        mparser::Parser parser(tokens);
-        auto result = parser.parse();
-
         if (printHir || printBytecode || runProgram || runBytecode ||
             profileBytecode || planBytecode || typedIrBytecode ||
             checkTypedIrBytecode || runTypedBytecode ||
             runAdaptiveBytecode || benchmarkRuntime) {
-            if (!result.diagnostics.empty()) {
-                std::cerr << "\nDiagnostics:\n";
-                for (const auto& diagnostic : result.diagnostics) {
-                    std::cerr << diagnostic.span.begin.line << ":"
-                              << diagnostic.span.begin.column << ": "
-                              << diagnostic.message << "\n";
-                }
+            const auto module = compileSourceGraph();
+            if (!module.valid()) {
+                printDiagnostics("Diagnostics", module.diagnostics(),
+                                 &module, path);
                 return 1;
             }
 
-            mparser::SemanticAnalyzer analyzer;
-            auto semantic = analyzer.analyze(*result.root);
+            const auto& semantic = module.semantic();
+            const auto& bytecode = module.bytecode();
             if (printHir) {
                 mparser::dumpSemanticTree(std::cout, semantic);
             } else if (printBytecode) {
-                mparser::BytecodeLowerer lowerer;
-                const auto bytecode = lowerer.lower(semantic);
                 mparser::dumpBytecode(std::cout, bytecode, semantic);
             } else if (runBytecode || profileBytecode || planBytecode ||
                        typedIrBytecode || checkTypedIrBytecode ||
                        runTypedBytecode || runAdaptiveBytecode ||
                        benchmarkRuntime) {
-                mparser::BytecodeLowerer lowerer;
-                const auto bytecode = lowerer.lower(semantic);
                 if (runAdaptiveBytecode) {
                     mparser::AdaptiveBytecodeVmOptions adaptiveOptions;
                     adaptiveOptions.hotLoopThreshold =
@@ -972,14 +1016,10 @@ int main(int argc, char** argv) {
                         auto adaptive = session.run();
                         printAdaptiveRun(adaptive);
                         if (!adaptive.runtime.diagnostics.empty()) {
-                            std::cerr << "\nAdaptive bytecode VM diagnostics:\n";
-                            for (const auto& diagnostic :
-                                 adaptive.runtime.diagnostics) {
-                                std::cerr << diagnostic.span.begin.line << ":"
-                                          << diagnostic.span.begin.column
-                                          << ": " << diagnostic.message
-                                          << "\n";
-                            }
+                            printDiagnostics(
+                                "Adaptive bytecode VM diagnostics",
+                                adaptive.runtime.diagnostics, &module,
+                                path);
                             return 1;
                         }
                         lastRuntime = std::move(adaptive.runtime);
@@ -1003,44 +1043,31 @@ int main(int argc, char** argv) {
                             benchmarkWarmup, benchmarkIterations});
                     printRuntimeBenchmark(benchmark);
                     if (!benchmark.lastInterpreterResult.diagnostics.empty()) {
-                        std::cerr << "\nInterpreter diagnostics:\n";
-                        for (const auto& diagnostic :
-                             benchmark.lastInterpreterResult.diagnostics) {
-                            std::cerr << diagnostic.span.begin.line << ":"
-                                      << diagnostic.span.begin.column << ": "
-                                      << diagnostic.message << "\n";
-                        }
+                        printDiagnostics(
+                            "Interpreter diagnostics",
+                            benchmark.lastInterpreterResult.diagnostics,
+                            &module, path);
                     }
                     if (!benchmark.lastProfiledBytecodeVmResult.diagnostics
                              .empty()) {
-                        std::cerr << "\nProfiled bytecode VM diagnostics:\n";
-                        for (const auto& diagnostic :
-                             benchmark.lastProfiledBytecodeVmResult
-                                 .diagnostics) {
-                            std::cerr << diagnostic.span.begin.line << ":"
-                                      << diagnostic.span.begin.column << ": "
-                                      << diagnostic.message << "\n";
-                        }
+                        printDiagnostics(
+                            "Profiled bytecode VM diagnostics",
+                            benchmark.lastProfiledBytecodeVmResult
+                                .diagnostics,
+                            &module, path);
                     }
                     if (!benchmark.lastBytecodeVmResult.diagnostics.empty()) {
-                        std::cerr << "\nProfile-off bytecode VM diagnostics:\n";
-                        for (const auto& diagnostic :
-                             benchmark.lastBytecodeVmResult.diagnostics) {
-                            std::cerr << diagnostic.span.begin.line << ":"
-                                      << diagnostic.span.begin.column << ": "
-                                      << diagnostic.message << "\n";
-                        }
+                        printDiagnostics(
+                            "Profile-off bytecode VM diagnostics",
+                            benchmark.lastBytecodeVmResult.diagnostics,
+                            &module, path);
                     }
                     if (!benchmark.lastTypedBytecodeVmResult.diagnostics
                              .empty()) {
-                        std::cerr
-                            << "\nProfile-off typed bytecode VM diagnostics:\n";
-                        for (const auto& diagnostic :
-                             benchmark.lastTypedBytecodeVmResult.diagnostics) {
-                            std::cerr << diagnostic.span.begin.line << ":"
-                                      << diagnostic.span.begin.column << ": "
-                                      << diagnostic.message << "\n";
-                        }
+                        printDiagnostics(
+                            "Profile-off typed bytecode VM diagnostics",
+                            benchmark.lastTypedBytecodeVmResult.diagnostics,
+                            &module, path);
                     }
                     return semantic.diagnostics.empty() &&
                                    benchmark.outputsComparable &&
@@ -1087,12 +1114,8 @@ int main(int argc, char** argv) {
                 }
                 printFunctionOutputs(runtime);
                 if (!runtime.diagnostics.empty()) {
-                    std::cerr << "\nBytecode VM diagnostics:\n";
-                    for (const auto& diagnostic : runtime.diagnostics) {
-                        std::cerr << diagnostic.span.begin.line << ":"
-                                  << diagnostic.span.begin.column << ": "
-                                  << diagnostic.message << "\n";
-                    }
+                    printDiagnostics("Bytecode VM diagnostics",
+                                     runtime.diagnostics, &module, path);
                     return 1;
                 }
                 if (profileBytecode) {
@@ -1114,11 +1137,12 @@ int main(int argc, char** argv) {
                     mparser::BytecodeOptimizationPlanner planner;
                     mparser::BytecodeTypedIrBuilder builder;
                     mparser::BytecodeTypedIrGuardEvaluator evaluator;
-                    const auto module =
+                    const auto typedModule =
                         builder.build(
                             planner.plan(runtime.profile, bytecode));
                     printBytecodeTypedIrEvaluation(
-                        evaluator.evaluate(module, runtime.variables));
+                        evaluator.evaluate(typedModule,
+                                           runtime.variables));
                 }
                 if (runTypedBytecode) {
                     printTypedRegionExecutions(runtime, typedOutputsMatch);
@@ -1136,27 +1160,21 @@ int main(int argc, char** argv) {
                               << "\n";
                 }
                 if (!runtime.diagnostics.empty()) {
-                    std::cerr << "\nRuntime diagnostics:\n";
-                    for (const auto& diagnostic : runtime.diagnostics) {
-                        std::cerr << diagnostic.span.begin.line << ":"
-                                  << diagnostic.span.begin.column << ": "
-                                  << diagnostic.message << "\n";
-                    }
+                    printDiagnostics("Runtime diagnostics",
+                                     runtime.diagnostics, &module, path);
                     return 1;
                 }
             }
             return semantic.diagnostics.empty() ? 0 : 1;
         }
 
+        mparser::Parser parser(tokens);
+        auto result = parser.parse();
         mparser::dumpSyntaxTree(std::cout, *result.root);
 
         if (!result.diagnostics.empty()) {
-            std::cerr << "\nDiagnostics:\n";
-            for (const auto& diagnostic : result.diagnostics) {
-                std::cerr << diagnostic.span.begin.line << ":"
-                          << diagnostic.span.begin.column << ": "
-                          << diagnostic.message << "\n";
-            }
+            printDiagnostics("Diagnostics", result.diagnostics,
+                             nullptr, path);
             return 1;
         }
 

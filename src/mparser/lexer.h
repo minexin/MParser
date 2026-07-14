@@ -9,7 +9,8 @@ namespace mparser {
 
 class Lexer {
 public:
-    explicit Lexer(std::string_view source);
+    explicit Lexer(std::string_view source,
+                   size_t sourceId = kInvalidSourceId);
 
     std::vector<Token> lex();
 
@@ -36,6 +37,7 @@ private:
     void updatePreviousSignificant(TokenKind kind);
 
     std::string_view source_;
+    size_t sourceId_ = kInvalidSourceId;
     size_t offset_ = 0;
     int line_ = 1;
     int column_ = 1;
