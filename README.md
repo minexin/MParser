@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.35.0. See [docs/v0.35.md](docs/v0.35.md) for the
+Current milestone: v0.36.0. See [docs/v0.36.md](docs/v0.36.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.34.md](docs/v0.34.md),
+iteration plan. Previous boundaries are kept in [docs/v0.35.md](docs/v0.35.md),
+[docs/v0.34.md](docs/v0.34.md),
 [docs/v0.33.md](docs/v0.33.md),
 [docs/v0.32.md](docs/v0.32.md),
 [docs/v0.31.md](docs/v0.31.md),
@@ -60,15 +61,16 @@ header expression.
 The semantic layer lowers syntax into a HIR tree with scopes and symbols. It
 predeclares local functions/classes and class members, resolves local names,
 forward local function calls, anonymous function parameters, knowable class
-member access across the loaded source graph, qualified namespace class/static
-lookup, and a small lazy registry of common MATLAB builtins. Dynamic calls,
-indexing, namespace functions/imports, and unknown member access remain delayed
-bindings for later name and type resolution.
+member access across the loaded source graph, qualified namespace
+functions/classes/static methods, structured explicit and wildcard imports,
+and a small lazy registry of common MATLAB builtins. Dynamic calls, indexing,
+and unknown member access remain delayed bindings for later name and type
+resolution.
 
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.35 executes the core numeric/string subset,
+expression operators. v0.36 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style numeric indexing/mutation with `end`, `:`,
 vector subscripts, indexed assignment into existing arrays,
@@ -227,11 +229,23 @@ superclass calls, private member identity, and dynamic dispatch share the same
 class registry. Classes with the same short name can coexist in different
 namespaces, while duplicate full names are diagnosed. Multiple namespace roots
 merge naturally and the first matching class member in class-path order wins.
+v0.36 adds functions to the same namespace graph. A public function file such
+as `+pkg/scale.m` receives the canonical identity `pkg.scale`, while later
+functions in that file remain source-local under identities such as
+`pkg.scale>helper`. Structured `import` statements are collected for the whole
+containing script or function scope before name binding. Explicit imports can
+name namespace functions, classes, or static methods; wildcard imports are
+resolved lazily when an unqualified name is referenced. Explicit imports win
+over source-local functions, while source-local functions win over wildcard
+imports. Variables and parameters retain highest precedence. The loader follows
+qualified calls and imported names through nested `+namespace` folders with the
+same deterministic class-path ordering used for classes.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, one-dimensional numeric vectors, two-dimensional numeric matrices,
 string literals,
-assignments, local function calls with isolated stack frames, first-output
+assignments, local and namespace function calls with isolated stack frames,
+first-output
 single-value calls, multiple-output destructuring such as `[a, b] = f(x)`,
 ignored outputs with `~`, `for` ranges, `while` loops, `break`/`continue`,
 `return`,
@@ -499,6 +513,26 @@ build\mparser.exe --run-bytecode `
 
 Inspect the resolved namespace attached to each source with the same command
 using `--module-info` instead of `--run-bytecode`.
+
+Run qualified namespace functions, explicit and wildcard imports, same-file
+private helpers, an imported class, and an imported static method with:
+
+```powershell
+build\mparser.exe --run-bytecode `
+  --class-path=samples\namespace_functions `
+  samples\namespace_functions\app\run_demo.m
+```
+
+Run the pure function subset through the reference HIR interpreter with:
+
+```powershell
+build\mparser.exe --run `
+  --class-path=samples\namespace_functions `
+  samples\namespace_functions\app\run_function_demo.m
+```
+
+The complete demo uses `--run-bytecode` because the reference interpreter does
+not yet implement class objects.
 
 Compile once, inspect the reusable module catalog, and validate an entry with:
 

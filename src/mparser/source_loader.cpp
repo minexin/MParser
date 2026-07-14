@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -21,7 +22,13 @@ namespace {
 
 struct InspectedSource {
     std::set<std::string> classes;
-    std::set<std::string> dependencies;
+    std::set<std::string> functions;
+    std::map<std::string, bool> dependencies;
+};
+
+struct ImportSpec {
+    std::string target;
+    bool wildcard = false;
 };
 
 struct SourceNamespaceLocation {
@@ -143,26 +150,63 @@ std::optional<std::string> dottedExpressionName(const SyntaxNode& node) {
     return *prefix + "." + node.label;
 }
 
-void appendClassNameCandidates(
-    std::string_view name, std::set<std::string>& dependencies) {
+void appendSymbolNameCandidates(
+    std::string_view name, bool functionsAllowed,
+    std::map<std::string, bool>& dependencies) {
     const auto parts = splitClassName(name);
     for (size_t count = parts.size(); count > 0; --count) {
-        dependencies.insert(joinClassName(parts, count));
+        auto& allowFunctions = dependencies[joinClassName(parts, count)];
+        allowFunctions = allowFunctions || functionsAllowed;
     }
 }
 
-void collectDefinedClasses(const SyntaxNode& root,
-                           std::set<std::string>& classes) {
+void collectDefinedSymbols(const SyntaxNode& root,
+                           InspectedSource& inspected) {
     for (const auto& child : root.children) {
         if (child->kind == SyntaxKind::ClassDef &&
             isSimpleClassName(child->label)) {
-            classes.insert(child->label);
+            inspected.classes.insert(child->label);
         }
+    }
+    if (!root.children.empty() &&
+        root.children.front()->kind == SyntaxKind::FunctionDef &&
+        isSimpleClassName(root.children.front()->label)) {
+        inspected.functions.insert(root.children.front()->label);
     }
 }
 
-void collectDependencies(const SyntaxNode& node,
-                         std::set<std::string>& dependencies) {
+void collectImports(const SyntaxNode& node,
+                    std::vector<ImportSpec>& imports) {
+    if (node.kind == SyntaxKind::ImportStatement) {
+        for (const auto& item : node.children) {
+            if (item->kind != SyntaxKind::ImportItem ||
+                item->label.empty()) {
+                continue;
+            }
+            ImportSpec spec;
+            spec.target = item->label;
+            if (spec.target.ends_with(".*")) {
+                spec.target.resize(spec.target.size() - 2);
+                spec.wildcard = true;
+            }
+            if (!splitClassName(spec.target).empty()) {
+                imports.push_back(std::move(spec));
+            }
+        }
+        return;
+    }
+
+    for (const auto& child : node.children) {
+        collectImports(*child, imports);
+    }
+}
+
+void collectRawDependencies(const SyntaxNode& node,
+                            std::set<std::string>& dependencies) {
+    if (node.kind == SyntaxKind::ImportStatement ||
+        node.kind == SyntaxKind::ImportItem) {
+        return;
+    }
     for (const auto& attribute : node.attributes) {
         for (const auto& className : attribute.metaClassNames) {
             if (!splitClassName(className).empty()) {
@@ -187,17 +231,24 @@ void collectDependencies(const SyntaxNode& node,
                !node.children.empty()) {
         if (const auto name =
                 dottedExpressionName(*node.children.front())) {
-            appendClassNameCandidates(*name, dependencies);
+            dependencies.insert(*name);
         }
     } else if (node.kind == SyntaxKind::MemberAccessExpr) {
         if (const auto name = dottedExpressionName(node)) {
-            appendClassNameCandidates(*name, dependencies);
+            dependencies.insert(*name);
         }
     }
 
     for (const auto& child : node.children) {
-        collectDependencies(*child, dependencies);
+        collectRawDependencies(*child, dependencies);
     }
+}
+
+std::string finalNameSegment(std::string_view name) {
+    const size_t dot = name.find_last_of('.');
+    return std::string(dot == std::string_view::npos
+                           ? name
+                           : name.substr(dot + 1));
 }
 
 InspectedSource inspectSource(std::string_view source, size_t sourceId) {
@@ -208,8 +259,43 @@ InspectedSource inspectSource(std::string_view source, size_t sourceId) {
     if (!parsed.root) {
         return inspected;
     }
-    collectDefinedClasses(*parsed.root, inspected.classes);
-    collectDependencies(*parsed.root, inspected.dependencies);
+    collectDefinedSymbols(*parsed.root, inspected);
+
+    std::set<std::string> rawDependencies;
+    collectRawDependencies(*parsed.root, rawDependencies);
+    std::vector<ImportSpec> imports;
+    collectImports(*parsed.root, imports);
+
+    std::vector<ImportSpec> explicitImports;
+    std::vector<std::string> wildcardImports;
+    for (const auto& import : imports) {
+        if (import.wildcard) {
+            wildcardImports.push_back(import.target);
+            continue;
+        }
+        explicitImports.push_back(import);
+        appendSymbolNameCandidates(import.target, true,
+                                   inspected.dependencies);
+    }
+
+    for (const auto& dependency : rawDependencies) {
+        for (const auto& import : explicitImports) {
+            const std::string alias = finalNameSegment(import.target);
+            if (dependency == alias ||
+                dependency.starts_with(alias + ".")) {
+                appendSymbolNameCandidates(
+                    import.target + dependency.substr(alias.size()), true,
+                    inspected.dependencies);
+            }
+        }
+        appendSymbolNameCandidates(
+            dependency, dependency.find('.') != std::string::npos,
+            inspected.dependencies);
+        for (const auto& wildcard : wildcardImports) {
+            appendSymbolNameCandidates(wildcard + "." + dependency, true,
+                                       inspected.dependencies);
+        }
+    }
     return inspected;
 }
 
@@ -232,9 +318,9 @@ std::vector<std::filesystem::path> buildSearchPaths(
     return result;
 }
 
-std::filesystem::path classSourceRelativePath(
-    const std::string& className) {
-    const auto parts = splitClassName(className);
+std::filesystem::path symbolSourceRelativePath(
+    const std::string& symbolName) {
+    const auto parts = splitClassName(symbolName);
     std::filesystem::path result;
     for (size_t index = 0; index + 1 < parts.size(); ++index) {
         result /= "+" + parts[index];
@@ -245,11 +331,11 @@ std::filesystem::path classSourceRelativePath(
     return result;
 }
 
-std::optional<std::filesystem::path> findClassSource(
-    const std::string& className,
+std::optional<std::filesystem::path> findSymbolSource(
+    const std::string& symbolName,
     const std::filesystem::path& sourcePath,
     const std::vector<std::filesystem::path>& searchPaths) {
-    const auto relative = classSourceRelativePath(className);
+    const auto relative = symbolSourceRelativePath(symbolName);
     if (relative.empty()) {
         return std::nullopt;
     }
@@ -274,22 +360,28 @@ std::optional<std::filesystem::path> findClassSource(
     return std::nullopt;
 }
 
-size_t classNameDepth(std::string_view name) {
+size_t symbolNameDepth(std::string_view name) {
     return static_cast<size_t>(
                std::count(name.begin(), name.end(), '.')) +
            1;
 }
 
-bool coveredByKnownClass(const std::string& dependency,
-                         const std::set<std::string>& knownClasses) {
-    for (const auto& known : knownClasses) {
-        if (known == dependency ||
-            (known.size() > dependency.size() &&
-             known.starts_with(dependency + "."))) {
-            return true;
+bool coveredByKnownSymbol(const std::string& dependency,
+                          bool functionsAllowed,
+                          const std::set<std::string>& knownClasses,
+                          const std::set<std::string>& knownFunctions) {
+    const auto covered = [&dependency](const auto& knownSymbols) {
+        for (const auto& known : knownSymbols) {
+            if (known == dependency ||
+                (known.size() > dependency.size() &&
+                 known.starts_with(dependency + "."))) {
+                return true;
+            }
         }
-    }
-    return false;
+        return false;
+    };
+    return covered(knownClasses) ||
+           (functionsAllowed && covered(knownFunctions));
 }
 
 } // namespace
@@ -308,6 +400,7 @@ SourceLoaderResult SourceLoader::load(
     std::vector<std::filesystem::path> sourcePaths;
     std::set<std::filesystem::path> loadedPaths;
     std::set<std::string> knownClasses;
+    std::set<std::string> knownFunctions;
     const auto searchPaths = buildSearchPaths(entry, options);
 
     const auto appendSource = [&](const std::filesystem::path& path,
@@ -318,6 +411,10 @@ SourceLoaderResult SourceLoader::load(
         for (const auto& className : inspected.classes) {
             knownClasses.insert(
                 qualifyClassName(namespaceName, className));
+        }
+        for (const auto& functionName : inspected.functions) {
+            knownFunctions.insert(
+                qualifyClassName(namespaceName, functionName));
         }
         sourcePaths.push_back(path);
         result.sources.push_back(SourceUnit{
@@ -333,21 +430,22 @@ SourceLoaderResult SourceLoader::load(
     for (size_t sourceId = 0; sourceId < result.sources.size(); ++sourceId) {
         const auto inspected =
             inspectSource(result.sources[sourceId].content, sourceId);
-        std::vector<std::string> dependencies(
+        std::vector<std::pair<std::string, bool>> dependencies(
             inspected.dependencies.begin(), inspected.dependencies.end());
         std::sort(dependencies.begin(), dependencies.end(),
-                  [](const std::string& left, const std::string& right) {
-                      const size_t leftDepth = classNameDepth(left);
-                      const size_t rightDepth = classNameDepth(right);
+                  [](const auto& left, const auto& right) {
+                      const size_t leftDepth = symbolNameDepth(left.first);
+                      const size_t rightDepth = symbolNameDepth(right.first);
                       return leftDepth != rightDepth
                                  ? leftDepth > rightDepth
-                                 : left < right;
+                                 : left.first < right.first;
                   });
-        for (const auto& dependency : dependencies) {
-            if (coveredByKnownClass(dependency, knownClasses)) {
+        for (const auto& [dependency, functionsAllowed] : dependencies) {
+            if (coveredByKnownSymbol(dependency, functionsAllowed,
+                                     knownClasses, knownFunctions)) {
                 continue;
             }
-            const auto path = findClassSource(
+            const auto path = findSymbolSource(
                 dependency, sourcePaths[sourceId], searchPaths);
             if (!path || loadedPaths.contains(*path)) {
                 continue;
@@ -363,6 +461,15 @@ SourceLoaderResult SourceLoader::load(
                     dependency) {
                     definesDependency = true;
                     break;
+                }
+            }
+            if (!definesDependency && functionsAllowed) {
+                for (const auto& functionName : candidate.functions) {
+                    if (qualifyClassName(namespaceName, functionName) ==
+                        dependency) {
+                        definesDependency = true;
+                        break;
+                    }
                 }
             }
             if (!definesDependency) {

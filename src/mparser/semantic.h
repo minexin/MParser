@@ -14,6 +14,7 @@ enum class HirKind {
     Module,
     Class,
     Function,
+    Import,
     Property,
     MethodPrototype,
     Control,

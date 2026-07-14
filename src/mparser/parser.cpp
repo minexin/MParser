@@ -1542,6 +1542,10 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
         return parseArgumentsBlock();
     }
 
+    if (at(TokenKind::KeywordImport)) {
+        return parseImportStatement();
+    }
+
     if (isControlBlockStart(current().kind)) {
         return parseControlBlock();
     }
@@ -1550,6 +1554,69 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
     consumeSeparator();
 
     return buildStatementLikeNode(tokens, SyntaxKind::ExpressionStatement);
+}
+
+std::unique_ptr<SyntaxNode> Parser::parseImportStatement() {
+    auto node = makeNode(SyntaxKind::ImportStatement, current().span.begin);
+    advance();
+    const auto tokens = collectUntilSeparator();
+    node->raw = joinTokens(tokens);
+    consumeSeparator();
+
+    size_t index = 0;
+    while (index < tokens.size()) {
+        if (tokens[index].kind == TokenKind::Comma) {
+            ++index;
+            continue;
+        }
+        if (tokens[index].kind != TokenKind::Identifier) {
+            diagnostics_.push_back(Diagnostic{
+                tokens[index].span, "expected namespace name after import"});
+            ++index;
+            continue;
+        }
+
+        auto item = std::make_unique<SyntaxNode>(SyntaxKind::ImportItem);
+        item->span = tokens[index].span;
+        item->label = tokens[index].text;
+        ++index;
+
+        bool malformed = false;
+        while (index < tokens.size() &&
+               (tokens[index].kind == TokenKind::Dot ||
+                tokens[index].kind == TokenKind::DotStar)) {
+            if (tokens[index].kind == TokenKind::DotStar) {
+                item->label += ".*";
+                item->span.end = tokens[index].span.end;
+                ++index;
+                break;
+            }
+            const Token& dot = tokens[index++];
+            if (index >= tokens.size() ||
+                (tokens[index].kind != TokenKind::Identifier &&
+                 tokens[index].kind != TokenKind::Star)) {
+                diagnostics_.push_back(Diagnostic{
+                    dot.span, "expected namespace member after '.' in import"});
+                malformed = true;
+                break;
+            }
+            item->label += "." + tokens[index].text;
+            item->span.end = tokens[index].span.end;
+            const bool wildcard = tokens[index].kind == TokenKind::Star;
+            ++index;
+            if (wildcard) {
+                break;
+            }
+        }
+
+        item->raw = item->label;
+        if (!malformed) {
+            node->children.push_back(std::move(item));
+        }
+    }
+
+    finishNode(*node);
+    return node;
 }
 
 void Parser::parseBodyUntilEnd(SyntaxNode& parent) {

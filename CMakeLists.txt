@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.35.0 LANGUAGES CXX)
+project(MParser VERSION 0.36.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -105,6 +105,12 @@ add_executable(source_loader_smoke_tests tests/source_loader_smoke.cpp)
 target_link_libraries(source_loader_smoke_tests PRIVATE mparser_core)
 add_test(NAME source_loader_smoke COMMAND source_loader_smoke_tests)
 
+add_executable(namespace_function_smoke_tests
+    tests/namespace_function_smoke.cpp)
+target_link_libraries(namespace_function_smoke_tests PRIVATE mparser_core)
+add_test(NAME namespace_function_smoke
+    COMMAND namespace_function_smoke_tests)
+
 add_test(NAME cross_file_class_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
         --run-bytecode
@@ -120,6 +126,22 @@ add_test(NAME package_class_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/package_classes/app/run_demo.m)
 set_tests_properties(package_class_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "nested_code = 44")
+
+add_test(NAME namespace_function_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/namespace_functions
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/namespace_functions/app/run_demo.m)
+set_tests_properties(namespace_function_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "nested_value = 102")
+
+add_test(NAME namespace_function_interpreter_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run
+        --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/namespace_functions
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/namespace_functions/app/run_function_demo.m)
+set_tests_properties(namespace_function_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "nested_value = 102")
 
 add_test(NAME source_loader_diagnostic_cli_smoke
     COMMAND ${CMAKE_COMMAND}

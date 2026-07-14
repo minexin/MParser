@@ -41,19 +41,24 @@ particular, `A(...)` becomes `CallOrIndexExpr` because only semantic analysis
 can decide whether `A` is a variable, function, constructor, or overloaded
 object.
 
-`SourceLoader` builds the executable multi-file boundary without changing the
-parser grammar. It starts with the requested entry file, inspects structured
-syntax for class references, and recursively resolves matching class files.
-A simple `ClassName` maps to `ClassName.m`; a qualified
-`pkg.inner.ClassName` maps to `+pkg/+inner/ClassName.m` below a search root.
+`SourceLoader` builds the executable multi-file boundary without coupling path
+lookup to semantic lowering. It starts with the requested entry file, inspects
+structured syntax for class/function references and imports, and recursively
+resolves matching source files. A simple `ClassName` maps to `ClassName.m`; a
+qualified `pkg.inner.member` maps to `+pkg/+inner/member.m` below a search root.
 The referring source root wins, followed by the entry root and repeatable class
 paths in command-line order. Candidate chains are tried longest-first so
 `pkg.Class.staticMethod()` first resolves `pkg.Class`, not a spurious `pkg`
-class. A candidate is added only when its top-level class and physical namespace
-produce the requested full name, so unrelated files outside the dependency
-closure do not affect compilation. Every loaded `SourceUnit` receives a stable
-source index and namespace name. `@class` method folders, namespace functions,
-imports, and ordinary function-file discovery remain separate future stages.
+class. A candidate is added only when its top-level class or first top-level
+function and physical namespace produce the requested full name, so unrelated
+files outside the dependency closure do not affect compilation. Every loaded
+`SourceUnit` receives a stable source index and namespace name. Explicit imports
+add direct dependency candidates. Wildcard imports combine their namespace
+prefix with names actually referenced in the source, avoiding an eager folder
+scan. Import inspection is intentionally conservative and file-wide for graph
+loading; semantic import visibility remains scope-correct. `@class` method
+folders, private folders, and ordinary non-namespace function-file discovery
+remain future stages.
 
 Control-flow headers use the same expression machinery. A `for` range header is
 represented through a `ControlHeader` child that can contain an assignment-like
@@ -77,6 +82,24 @@ filling every symbol table dump with unused builtins. The current type hints are
 minimal but useful: constructors and first method parameters can carry class
 type names, allowing member access such as `obj.Value` to bind to a known class
 property when the receiver type is clear.
+
+`import` has dedicated syntax and HIR nodes. Imports are precollected for the
+whole containing script or function, including statements textually before the
+declaration, and never leak into nested functions or classes. Variable-like
+bindings win first, followed by explicit imports, functions local to the same
+source, other lexical symbols, wildcard imports, and builtins. Explicit imports
+can bind namespace functions, classes, and static class methods. Importing an
+instance method is rejected during semantic validation, conflicting explicit
+aliases and ambiguous wildcard matches receive diagnostics, and a fully
+qualified namespace function wins over interpreting the same dotted spelling as
+a class/static-method chain.
+
+Namespace function identity is independent of its source-level short spelling.
+The first function in `+pkg/work.m` is public as `pkg.work`; later functions in
+that file are private to the source graph as `pkg.work>helper`. Local functions
+in namespace scripts and class files use the same owner-qualified internal
+form. The invocable module catalog filters these internal identities while
+source-local aliases bind calls inside their owning file.
 
 The semantic fixup also canonicalizes a known dotted class reference. A syntax
 chain such as `pkg.inner.ClassName` remains ordinary member access until all
@@ -117,7 +140,8 @@ The current executable runtime is a small HIR interpreter. Its purpose is to
 define and test execution semantics before the bytecode VM and JIT harden. It
 supports scalar double values, one-dimensional numeric vectors,
 two-dimensional numeric matrices, string literals, variable assignment, local function calls
-with isolated stack frames, first-output single-value calls, multiple-output
+with isolated stack frames, namespace function calls, first-output single-value
+calls, multiple-output
 destructuring for local functions, ignored outputs with `~`, numeric ranges,
 `for` loops over ranges or vectors, `while` loops, `break`/`continue`,
 `return`, `if`/`elseif`/`else`, `switch`/`case`/`otherwise`, `try`/`catch`
@@ -148,7 +172,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.35 has an executable bytecode VM for scalar doubles, strings, numeric
+v0.36 has an executable bytecode VM for scalar doubles, strings, numeric
 vectors/matrices, one-dimensional heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -235,6 +259,9 @@ catalog because module entries do not yet carry a class receiver or
 constructor-dispatch contract. Source IDs survive the merge, so parser,
 semantic, bytecode, and runtime diagnostics can map a span back to the owning
 file. Duplicate top-level classes are rejected before semantic analysis.
+Public namespace functions are exposed by canonical name; source-local helper
+identities remain available to bytecode binding but are omitted from the public
+entry catalog.
 
 `AdaptiveModuleRuntime` partitions mutable tiering state by named entry
 function. Each lazily created function session owns its cumulative profiles,
@@ -383,8 +410,8 @@ complete resolved access policy.
 The VM intentionally still rejects non-`handle` built-in superclass
 construction, full MATLAB property conversion,
 custom validators, validator set-membership/range functions, dimensions above
-two, non-scalar string arrays, `HandleCompatible` enforcement, namespace
-functions/imports, cross-file ordinary function discovery, `@class` method
+two, non-scalar string arrays, `HandleCompatible` enforcement, cross-file
+ordinary function discovery outside `+namespace` folders, `@class` method
 folders, handle lifecycle operations
 such as `delete` and `isvalid`, cyclic object collection, events, enumerations,
 class methods as `CompiledModule` entry targets,
@@ -403,7 +430,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.35
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.36
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime kind/shape observations to
 stable profile positions. The optimization planner converts those observations
@@ -466,7 +493,10 @@ diagnostics while preserving the existing class identity and runtime tables.
 v0.35 adds physical `+namespace` discovery, nested namespaces, canonical full
 class identities, qualified constructor/static binding, cross-namespace
 inheritance, same-short-name isolation, duplicate-full-name diagnostics, and
-first-class-path-member precedence. The next steps are
+first-class-path-member precedence. v0.36 adds public namespace function
+discovery, source-local helper identity, structured import scopes, explicit and
+wildcard import precedence, imported static-method validation, and namespace
+function execution in both baseline runtimes. The next steps are
 multidimensional and comma-separated-list Cell semantics, persistent code
 caches, native lowering, and eventual on-stack replacement while preserving
 the same commit/fallback contract.

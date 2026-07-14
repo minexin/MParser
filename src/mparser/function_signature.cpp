@@ -56,7 +56,10 @@ FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
     FunctionSignature signature;
     std::string text = trim(functionNode.raw);
     std::string_view sourceName = functionNode.label;
-    if (const size_t dot = sourceName.find_last_of('.');
+    if (const size_t local = sourceName.find_last_of('>');
+        local != std::string_view::npos) {
+        sourceName.remove_prefix(local + 1);
+    } else if (const size_t dot = sourceName.find_last_of('.');
         dot != std::string_view::npos) {
         sourceName.remove_prefix(dot + 1);
     }

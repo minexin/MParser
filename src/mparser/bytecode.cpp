@@ -52,6 +52,8 @@ private:
             emitBlock(BytecodeOp::EnterFunction, BytecodeOp::LeaveFunction,
                       node);
             break;
+        case HirKind::Import:
+            break;
         case HirKind::Control:
             lowerControl(node);
             break;

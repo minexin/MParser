@@ -3,6 +3,7 @@
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -19,6 +20,9 @@ void collectInvocableFunctions(
     }
 
     if (node->kind == HirKind::Function) {
+        if (node->label.find('>') != std::string::npos) {
+            return;
+        }
         for (const auto& function : functions) {
             if (function.name == node->label) {
                 diagnostics.push_back(Diagnostic{
@@ -44,7 +48,8 @@ void appendDiagnostics(std::vector<Diagnostic>& destination,
 }
 
 void applySourceNamespace(SyntaxNode& root,
-                          std::string_view namespaceName) {
+                          std::string_view namespaceName,
+                          std::string_view sourceName) {
     if (namespaceName.empty()) {
         return;
     }
@@ -52,6 +57,40 @@ void applySourceNamespace(SyntaxNode& root,
         if (child->kind == SyntaxKind::ClassDef &&
             !child->label.empty()) {
             child->label = std::string(namespaceName) + "." + child->label;
+        }
+    }
+
+    if (root.children.empty()) {
+        return;
+    }
+    const bool functionFile =
+        root.children.front()->kind == SyntaxKind::FunctionDef;
+    std::string owner;
+    if (functionFile) {
+        owner = std::string(namespaceName) + "." +
+                root.children.front()->label;
+    } else {
+        for (const auto& child : root.children) {
+            if (child->kind == SyntaxKind::ClassDef) {
+                owner = child->label;
+                break;
+            }
+        }
+        if (owner.empty()) {
+            owner = std::string(namespaceName) + "." +
+                    std::filesystem::path(sourceName).stem().string();
+        }
+    }
+
+    for (auto& child : root.children) {
+        if (child->kind != SyntaxKind::FunctionDef ||
+            child->label.empty()) {
+            continue;
+        }
+        if (functionFile && child.get() == root.children.front().get()) {
+            child->label = owner;
+        } else {
+            child->label = owner + ">" + child->label;
         }
     }
 }
@@ -115,7 +154,8 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
             continue;
         }
 
-        applySourceNamespace(*parse.root, source.namespaceName);
+        applySourceNamespace(*parse.root, source.namespaceName,
+                             source.name);
         collectTopLevelClasses(*parse.root, classDefinitions,
                                module.diagnostics_);
         if (!rootSpanInitialized) {

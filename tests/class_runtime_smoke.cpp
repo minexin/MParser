@@ -74,6 +74,11 @@ created = Meter.make(2);
 created_value = created.Value;
 )");
 
+    for (const auto& diagnostic : result.diagnostics) {
+        std::cerr << diagnostic.span.begin.line << ":"
+                  << diagnostic.span.begin.column << ": "
+                  << diagnostic.message << "\n";
+    }
     assert(result.diagnostics.empty());
     const auto* meter = findVariable(result, "meter");
     assert(meter != nullptr);

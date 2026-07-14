@@ -3055,6 +3055,52 @@ private:
             return;
         }
 
+        if (instruction.binding.kind == BindingKind::Method && semantic_ &&
+            instruction.binding.symbolId >= 0 &&
+            instruction.operand.find('.') != std::string::npos) {
+            const size_t symbolIndex =
+                static_cast<size_t>(instruction.binding.symbolId);
+            if (symbolIndex >= semantic_->symbols.size()) {
+                addDiagnostic(instruction,
+                              "method binding has an invalid symbol");
+                return;
+            }
+            const auto& symbol = semantic_->symbols[symbolIndex];
+            if (symbol.scopeId < 0 ||
+                static_cast<size_t>(symbol.scopeId) >=
+                    semantic_->scopes.size()) {
+                addDiagnostic(instruction,
+                              "method binding has no declaring class");
+                return;
+            }
+
+            std::string className =
+                semantic_->scopes[static_cast<size_t>(symbol.scopeId)].label;
+            const std::string suffix = "." + symbol.name;
+            const bool qualifiedReference =
+                instruction.operand.size() > suffix.size() &&
+                instruction.operand.ends_with(suffix);
+            if (qualifiedReference) {
+                className = instruction.operand.substr(
+                    0, instruction.operand.size() - suffix.size());
+            }
+
+            const auto klass = classesByName_.find(className);
+            const FunctionInfo* method =
+                klass == classesByName_.end()
+                    ? nullptr
+                    : selectMethod(klass->second, symbol.name, false);
+            if (!method || (qualifiedReference && !method->staticMethod)) {
+                addDiagnostic(instruction,
+                              "imported static method is not available: " +
+                                  instruction.operand);
+                return;
+            }
+            stack_.push_back(methodStackValue(
+                className, symbol.name, method->declaringClass));
+            return;
+        }
+
         if (classesByName_.contains(instruction.operand)) {
             stack_.push_back(classStackValue(instruction.operand));
             return;

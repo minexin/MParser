@@ -56,6 +56,37 @@ std::vector<std::string> splitCommaList(const std::string& text) {
     return parts;
 }
 
+bool logicalAttributeEnabled(
+    const std::vector<AttributeSyntax>& attributes,
+    std::string_view expectedName) {
+    for (const auto& attribute : attributes) {
+        if (attribute.name.size() != expectedName.size() ||
+            !std::equal(attribute.name.begin(), attribute.name.end(),
+                        expectedName.begin(), expectedName.end(),
+                        [](char left, char right) {
+                            return std::tolower(
+                                       static_cast<unsigned char>(left)) ==
+                                   std::tolower(
+                                       static_cast<unsigned char>(right));
+                        })) {
+            continue;
+        }
+        if (attribute.negated) {
+            return false;
+        }
+        if (attribute.value.empty()) {
+            return true;
+        }
+        std::string value = trim(attribute.value);
+        std::transform(value.begin(), value.end(), value.begin(),
+                       [](unsigned char character) {
+                           return static_cast<char>(std::tolower(character));
+                       });
+        return value == "true";
+    }
+    return false;
+}
+
 bool isIdentifierText(const std::string& text) {
     if (text.empty()) {
         return false;
@@ -82,7 +113,8 @@ std::string unqualifiedClassName(std::string_view className) {
 std::optional<std::string> dottedReferenceName(const HirNode& node) {
     if (node.kind == HirKind::NameRef && !node.label.empty() &&
         (node.binding.kind == BindingKind::Unresolved ||
-         node.binding.kind == BindingKind::Class)) {
+         node.binding.kind == BindingKind::Class ||
+         node.binding.kind == BindingKind::Function)) {
         return node.label;
     }
     if (node.kind != HirKind::MemberAccess || node.children.empty() ||
@@ -207,18 +239,113 @@ public:
         result_.root = makeNode(HirKind::Module, root);
         pushScope(ScopeKind::Module, "module");
         predeclareModuleSymbols(root);
+        predeclareClassScopes(root);
+        collectImportsForCurrentScope(root);
         lowerChildren(root, *result_.root);
         popScope();
         resolveDeferredBindings(*result_.root);
+        validateImports();
         validateSuperclassCalls(*result_.root);
         return std::move(result_);
     }
 
 private:
+    struct NameResolution {
+        BindingRef binding;
+        std::string canonicalName;
+    };
+
+    struct ImportScope {
+        std::unordered_map<std::string, std::string> explicitTargets;
+        std::vector<std::string> wildcardTargets;
+    };
+
+    struct RegisteredImport {
+        std::string target;
+        SourceSpan span;
+    };
+
+    void registerSourceFunctionAlias(const SyntaxNode& function,
+                                     int symbolId) {
+        if (symbolId < 0 ||
+            function.span.begin.sourceId == kInvalidSourceId) {
+            return;
+        }
+        const size_t local = function.label.find_last_of('>');
+        const size_t dot = function.label.find_last_of('.');
+        const size_t separator = local != std::string::npos ? local : dot;
+        if (separator == std::string::npos ||
+            separator + 1 >= function.label.size()) {
+            return;
+        }
+        const std::string alias = function.label.substr(separator + 1);
+        auto& aliases =
+            sourceFunctionAliases_[function.span.begin.sourceId];
+        const auto [existing, inserted] = aliases.emplace(
+            alias, BindingRef{BindingKind::Function, symbolId});
+        if (!inserted && existing->second.symbolId != symbolId) {
+            result_.diagnostics.push_back(Diagnostic{
+                function.span,
+                "duplicate source-local function: " + alias});
+        }
+    }
+
+    void collectImportsForCurrentScope(const SyntaxNode& owner) {
+        collectImportsForCurrentScopeChildren(owner);
+    }
+
+    void collectImportsForCurrentScopeChildren(const SyntaxNode& node) {
+        for (const auto& child : node.children) {
+            if (child->kind == SyntaxKind::ImportStatement) {
+                for (const auto& item : child->children) {
+                    registerImport(*item);
+                }
+                continue;
+            }
+            if (child->kind == SyntaxKind::FunctionDef ||
+                child->kind == SyntaxKind::ClassDef) {
+                continue;
+            }
+            collectImportsForCurrentScopeChildren(*child);
+        }
+    }
+
+    void registerImport(const SyntaxNode& item) {
+        if (item.kind != SyntaxKind::ImportItem || item.label.empty()) {
+            return;
+        }
+        auto& imports = importsByScope_[currentScope().id];
+        if (item.label.ends_with(".*")) {
+            const std::string target =
+                item.label.substr(0, item.label.size() - 2);
+            if (std::find(imports.wildcardTargets.begin(),
+                          imports.wildcardTargets.end(), target) ==
+                imports.wildcardTargets.end()) {
+                imports.wildcardTargets.push_back(target);
+            }
+            return;
+        }
+
+        const std::string alias = unqualifiedClassName(item.label);
+        const auto [existing, inserted] =
+            imports.explicitTargets.emplace(alias, item.label);
+        if (!inserted && existing->second != item.label) {
+            result_.diagnostics.push_back(Diagnostic{
+                item.span, "conflicting explicit imports for: " + alias});
+            return;
+        }
+        if (inserted) {
+            registeredImports_.push_back(
+                RegisteredImport{item.label, item.span});
+        }
+    }
+
     void predeclareModuleSymbols(const SyntaxNode& root) {
         for (const auto& child : root.children) {
             if (child->kind == SyntaxKind::FunctionDef) {
-                declareSymbol(SymbolKind::Function, child->label, child->span);
+                const int symbolId = declareSymbol(
+                    SymbolKind::Function, child->label, child->span);
+                registerSourceFunctionAlias(*child, symbolId);
             } else if (child->kind == SyntaxKind::ClassDef) {
                 declareSymbol(SymbolKind::Class, child->label, child->span,
                               child->label);
@@ -248,11 +375,28 @@ private:
                                     unqualifiedClassName(classNode.label)
                                 ? classNode.label
                                 : child->label;
-                        declareSymbol(SymbolKind::Method, memberName,
-                                      child->span);
+                        const int symbolId = declareSymbol(
+                            SymbolKind::Method, memberName, child->span);
+                        if (symbolId >= 0 &&
+                            logicalAttributeEnabled(child->attributes,
+                                                    "Static")) {
+                            staticMethodSymbols_.insert(symbolId);
+                        }
                     }
                 }
             }
+        }
+    }
+
+    void predeclareClassScopes(const SyntaxNode& root) {
+        for (const auto& child : root.children) {
+            if (child->kind != SyntaxKind::ClassDef) {
+                continue;
+            }
+            const int classScope = pushScope(ScopeKind::Class, child->label);
+            classScopeByName_[child->label] = classScope;
+            predeclareClassMembers(*child);
+            popScope();
         }
     }
 
@@ -264,6 +408,10 @@ private:
             return lowerClass(syntax);
         case SyntaxKind::FunctionDef:
             return lowerFunction(syntax);
+        case SyntaxKind::ImportStatement:
+            return lowerGeneric(syntax, HirKind::Import);
+        case SyntaxKind::ImportItem:
+            return lowerGeneric(syntax, HirKind::Import);
         case SyntaxKind::PropertyDecl:
             return lowerDeclaration(syntax, HirKind::Property, SymbolKind::Property);
         case SyntaxKind::MethodPrototype:
@@ -354,10 +502,17 @@ private:
             }
         }
         classSuperclassesByName_[syntax.label] = node->superclasses;
-        const int classScope = pushScope(ScopeKind::Class, syntax.label);
-        classScopeByName_[syntax.label] = classScope;
+        int classScope = -1;
+        if (const auto existing = classScopeByName_.find(syntax.label);
+            existing != classScopeByName_.end()) {
+            classScope = existing->second;
+            scopeStack_.push_back(classScope);
+        } else {
+            classScope = pushScope(ScopeKind::Class, syntax.label);
+            classScopeByName_[syntax.label] = classScope;
+            predeclareClassMembers(syntax);
+        }
         classStack_.push_back(syntax.label);
-        predeclareClassMembers(syntax);
         for (const auto& child : syntax.children) {
             if (child->kind != SyntaxKind::SuperclassList) {
                 node->children.push_back(lower(*child));
@@ -383,6 +538,7 @@ private:
         auto node = makeNode(HirKind::Function, syntax);
         node->label = functionName;
         pushScope(ScopeKind::Function, functionName);
+        collectImportsForCurrentScope(syntax);
 
         const FunctionSignature signature = parseFunctionSignature(syntax);
         for (const auto& output : signature.outputs) {
@@ -439,13 +595,31 @@ private:
 
     std::unique_ptr<HirNode> lowerNameRef(const SyntaxNode& syntax) {
         auto node = makeNode(HirKind::NameRef, syntax);
-        node->binding = resolveName(syntax.label);
+        const auto resolution = resolveName(syntax.label, syntax.span);
+        node->binding = resolution.binding;
+        if (!resolution.canonicalName.empty()) {
+            node->label = resolution.canonicalName;
+        }
         return node;
     }
 
     std::unique_ptr<HirNode> lowerMemberAccess(const SyntaxNode& syntax) {
         auto node = makeNode(HirKind::MemberAccess, syntax);
         lowerChildren(syntax, *node);
+
+        if (node->binding.kind == BindingKind::Unresolved) {
+            if (const auto dottedName = dottedReferenceName(*node)) {
+                if (const auto imported =
+                        resolveWildcardImport(*dottedName, syntax.span)) {
+                    node->kind = HirKind::NameRef;
+                    node->label = imported->canonicalName;
+                    node->raw = syntax.raw;
+                    node->binding = imported->binding;
+                    node->children.clear();
+                    return node;
+                }
+            }
+        }
 
         if (!node->children.empty()) {
             const std::string className =
@@ -639,13 +813,158 @@ private:
         return BindingRef{};
     }
 
-    BindingRef resolveName(const std::string& name) {
-        const BindingRef local = resolveLocal(name);
-        if (local.kind != BindingKind::Unresolved) {
-            return local;
+    BindingRef resolveVariableLike(const std::string& name) const {
+        for (auto it = scopeStack_.rbegin(); it != scopeStack_.rend(); ++it) {
+            const auto& scope = result_.scopes[static_cast<size_t>(*it)];
+            for (int symbolId : scope.symbols) {
+                const auto& symbol =
+                    result_.symbols[static_cast<size_t>(symbolId)];
+                if (symbol.name != name ||
+                    (symbol.kind != SymbolKind::Variable &&
+                     symbol.kind != SymbolKind::FunctionParameter &&
+                     symbol.kind != SymbolKind::FunctionOutput)) {
+                    continue;
+                }
+                return BindingRef{bindingKindForSymbol(symbol.kind),
+                                  symbol.id};
+            }
+        }
+        return BindingRef{};
+    }
+
+    BindingRef resolveNonVariableLocal(const std::string& name) const {
+        for (auto it = scopeStack_.rbegin(); it != scopeStack_.rend(); ++it) {
+            const auto& scope = result_.scopes[static_cast<size_t>(*it)];
+            for (int symbolId : scope.symbols) {
+                const auto& symbol =
+                    result_.symbols[static_cast<size_t>(symbolId)];
+                if (symbol.name == name &&
+                    symbol.kind != SymbolKind::Variable &&
+                    symbol.kind != SymbolKind::FunctionParameter &&
+                    symbol.kind != SymbolKind::FunctionOutput) {
+                    return BindingRef{bindingKindForSymbol(symbol.kind),
+                                      symbol.id};
+                }
+            }
+        }
+        return BindingRef{};
+    }
+
+    BindingRef resolveFunction(const std::string& name) const {
+        for (const auto& symbol : result_.symbols) {
+            if (symbol.kind == SymbolKind::Function &&
+                symbol.name == name) {
+                return BindingRef{BindingKind::Function, symbol.id};
+            }
+        }
+        return BindingRef{};
+    }
+
+    BindingRef resolveQualifiedImportTarget(
+        const std::string& target) const {
+        if (const auto function = resolveFunction(target);
+            function.kind != BindingKind::Unresolved) {
+            return function;
+        }
+        if (const auto klass = resolveClass(target);
+            klass.kind != BindingKind::Unresolved) {
+            return klass;
         }
 
-        return resolveBuiltin(name);
+        const size_t dot = target.find_last_of('.');
+        if (dot == std::string::npos) {
+            return BindingRef{};
+        }
+        const auto member =
+            resolveClassMember(target.substr(0, dot), target.substr(dot + 1));
+        return member && member->kind == BindingKind::Method &&
+                       staticMethodSymbols_.contains(member->symbolId)
+                   ? *member
+                   : BindingRef{};
+    }
+
+    const ImportScope* currentImports() const {
+        if (scopeStack_.empty()) {
+            return nullptr;
+        }
+        const auto imports = importsByScope_.find(scopeStack_.back());
+        return imports == importsByScope_.end() ? nullptr
+                                                : &imports->second;
+    }
+
+    std::optional<NameResolution> resolveWildcardImport(
+        const std::string& name, SourceSpan span) {
+        const auto* imports = currentImports();
+        if (!imports) {
+            return std::nullopt;
+        }
+
+        std::vector<NameResolution> candidates;
+        for (const auto& wildcard : imports->wildcardTargets) {
+            const std::string target = wildcard + "." + name;
+            const BindingRef binding = resolveQualifiedImportTarget(target);
+            if (binding.kind == BindingKind::Unresolved) {
+                continue;
+            }
+            const bool duplicate = std::any_of(
+                candidates.begin(), candidates.end(),
+                [&target](const NameResolution& candidate) {
+                    return candidate.canonicalName == target;
+                });
+            if (!duplicate) {
+                candidates.push_back(NameResolution{binding, target});
+            }
+        }
+
+        if (candidates.size() > 1) {
+            result_.diagnostics.push_back(Diagnostic{
+                span, "ambiguous wildcard import for: " + name});
+            return std::nullopt;
+        }
+        return candidates.empty()
+                   ? std::nullopt
+                   : std::optional<NameResolution>(candidates.front());
+    }
+
+    NameResolution resolveName(const std::string& name, SourceSpan span) {
+        if (const auto variable = resolveVariableLike(name);
+            variable.kind != BindingKind::Unresolved) {
+            return NameResolution{variable, {}};
+        }
+
+        if (const auto* imports = currentImports()) {
+            if (const auto explicitImport =
+                    imports->explicitTargets.find(name);
+                explicitImport != imports->explicitTargets.end()) {
+                return NameResolution{
+                    resolveQualifiedImportTarget(explicitImport->second),
+                    explicitImport->second};
+            }
+        }
+
+        if (span.begin.sourceId != kInvalidSourceId) {
+            if (const auto sourceAliases =
+                    sourceFunctionAliases_.find(span.begin.sourceId);
+                sourceAliases != sourceFunctionAliases_.end()) {
+                if (const auto alias = sourceAliases->second.find(name);
+                    alias != sourceAliases->second.end()) {
+                    const auto& symbol = result_.symbols[
+                        static_cast<size_t>(alias->second.symbolId)];
+                    return NameResolution{alias->second, symbol.name};
+                }
+            }
+        }
+
+        if (const auto local = resolveNonVariableLocal(name);
+            local.kind != BindingKind::Unresolved) {
+            return NameResolution{local, {}};
+        }
+
+        if (const auto wildcard = resolveWildcardImport(name, span)) {
+            return *wildcard;
+        }
+
+        return NameResolution{resolveBuiltin(name), {}};
     }
 
     BindingRef resolveBuiltin(const std::string& name) {
@@ -808,15 +1127,36 @@ private:
             resolveDeferredBindings(*child);
         }
 
+        if (node.kind == HirKind::NameRef &&
+            node.binding.kind == BindingKind::Unresolved &&
+            !node.label.empty()) {
+            const BindingRef binding =
+                resolveQualifiedImportTarget(node.label);
+            if (binding.kind != BindingKind::Unresolved) {
+                node.binding = binding;
+                return;
+            }
+        }
+
         if (node.kind == HirKind::MemberAccess &&
             node.binding.kind == BindingKind::Unresolved &&
             !node.children.empty()) {
-            if (const auto className = dottedReferenceName(node)) {
-                const auto classBinding = resolveClass(*className);
+            if (const auto qualifiedName = dottedReferenceName(node)) {
+                const auto functionBinding = resolveFunction(*qualifiedName);
+                if (functionBinding.kind == BindingKind::Function) {
+                    node.kind = HirKind::NameRef;
+                    node.label = *qualifiedName;
+                    node.raw = *qualifiedName;
+                    node.binding = functionBinding;
+                    node.children.clear();
+                    return;
+                }
+
+                const auto classBinding = resolveClass(*qualifiedName);
                 if (classBinding.kind == BindingKind::Class) {
                     node.kind = HirKind::NameRef;
-                    node.label = *className;
-                    node.raw = *className;
+                    node.label = *qualifiedName;
+                    node.raw = *qualifiedName;
                     node.binding = classBinding;
                     node.children.clear();
                     return;
@@ -854,6 +1194,34 @@ private:
             calleeKind == BindingKind::Class ||
             calleeKind == BindingKind::Builtin) {
             node.binding = node.children.front()->binding;
+        }
+    }
+
+    void validateImports() {
+        for (const auto& import : registeredImports_) {
+            if (resolveQualifiedImportTarget(import.target).kind !=
+                BindingKind::Unresolved) {
+                continue;
+            }
+
+            const size_t dot = import.target.find_last_of('.');
+            if (dot != std::string::npos) {
+                const auto member = resolveClassMember(
+                    import.target.substr(0, dot),
+                    import.target.substr(dot + 1));
+                if (member && member->kind == BindingKind::Method &&
+                    !staticMethodSymbols_.contains(member->symbolId)) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        import.span,
+                        "imported class method is not static: " +
+                            import.target});
+                    continue;
+                }
+            }
+
+            result_.diagnostics.push_back(Diagnostic{
+                import.span,
+                "import target is not available: " + import.target});
         }
     }
 
@@ -1130,6 +1498,12 @@ private:
     std::unordered_map<std::string, std::vector<std::string>>
         classSuperclassesByName_;
     std::unordered_map<std::string, int> builtinSymbols_;
+    std::unordered_set<int> staticMethodSymbols_;
+    std::unordered_map<int, ImportScope> importsByScope_;
+    std::unordered_map<
+        size_t, std::unordered_map<std::string, BindingRef>>
+        sourceFunctionAliases_;
+    std::vector<RegisteredImport> registeredImports_;
 };
 
 } // namespace
@@ -1147,6 +1521,8 @@ const char* hirKindName(HirKind kind) {
         return "Class";
     case HirKind::Function:
         return "Function";
+    case HirKind::Import:
+        return "Import";
     case HirKind::Property:
         return "Property";
     case HirKind::MethodPrototype:

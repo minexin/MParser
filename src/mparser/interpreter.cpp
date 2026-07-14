@@ -505,6 +505,7 @@ private:
             executeControl(node);
             break;
         case HirKind::Class:
+        case HirKind::Import:
         case HirKind::Property:
         case HirKind::MethodPrototype:
         case HirKind::ControlArm:
@@ -1148,6 +1149,7 @@ private:
         case HirKind::Module:
         case HirKind::Class:
         case HirKind::Function:
+        case HirKind::Import:
         case HirKind::Property:
         case HirKind::MethodPrototype:
         case HirKind::Control:
