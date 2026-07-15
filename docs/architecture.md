@@ -224,7 +224,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.49 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.50 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -263,7 +263,10 @@ typed module, then all four paths share warmup and rotate measurement order.
 The report includes timing distributions, VM dispatch counts, typed
 attempts/executions/fallbacks, source typed instruction counts, and predecoded
 kernel instruction counts; exact four-way output equivalence is a required
-correctness gate.
+correctness gate. Two- and three-term colon expressions now lower as one
+bytecode range operation and use the same range planner as the HIR interpreter
+and typed executor. This keeps positive, negative, zero-step, and empty-range
+behavior aligned across tiers.
 
 `runtime_reduction` is the common reduction boundary for both baseline
 runtimes. It selects the first non-singleton dimension by default, accepts a
@@ -338,16 +341,21 @@ Optimization candidates also carry bytecode region
 contracts: half-open PC
 ranges, body boundaries, stack inputs/outputs, variable reads/inputs/writes,
 observable outputs, call targets, and conservative side-effect flags. Only
-closed scalar loops without unsupported calls, mutation, control flow, or
-operations are currently eligible for a typed execution path. Statically
+closed scalar loops without unsupported calls, mutation, unstructured control
+flow, or operations are currently eligible for a typed execution path.
+Perfectly structured nested `for` loops are part of the enclosing contract;
+the analyzer records their count and maximum depth and validates every header
+and latch boundary. Statically
 bound one-argument calls to `abs`, `acos`, `asin`, `atan`, `cos`, `exp`,
 `log`, `sin`, `sqrt`, and `tan` are scalar operations rather than generic
 calls; every other call retains the rejection boundary. The VM
-can now hand eligible scalar `for` loops to a transactional predecoded scalar
-kernel. Kernel preparation resolves variable names to contiguous slots,
+can now hand eligible scalar `for` loop trees to a transactional predecoded
+scalar kernel. Kernel preparation resolves variable names to contiguous slots,
 converts supported operations and pure math calls to enum opcodes, assigns
-expression temporaries to indexed registers, and fuses the final producer with
-its destination store. The executor commits scalar slots only after the
+expression temporaries to indexed registers, fuses the final producer with its
+destination store, and lowers nested boundaries to structured loop operations.
+Its span executor runs arbitrary well-nested scalar loops and uses a direct
+path for leaf bodies. The executor commits scalar slots only after the
 complete loop succeeds; a failed entry type or kernel compilation check leaves
 the VM state untouched and resumes the original bytecode loop. Its entry
 specialization remains double-only, while typed stack values retain the
@@ -588,9 +596,10 @@ kind/numeric-class/full-shape observations to
 stable profile positions. The optimization planner converts those observations
 into explicit candidates and guards. The typed IR builder now lowers those
 candidates into typed regions, and the guard evaluator can decide whether
-eligible regions may enter a typed path. v0.49 provides a portable predecoded
-register kernel for the first scalar-loop subset. Later passes should compile
-the same guarded contract to native code:
+eligible regions may enter a typed path. v0.50 provides a portable predecoded
+register kernel for complete structured scalar loop nests. This structured
+loop boundary is deliberately backend-neutral; later passes should compile the
+same guarded contract to native code:
 
 ```text
 bytecode -> cumulative profiling -> tier promotion -> typed IR
@@ -689,8 +698,11 @@ reverse cumulative scans, operation-specific NaN defaults, logical output-class
 rules, and fixed-dimension higher-order numeric differences. v0.49 replaces
 per-iteration typed stack interpretation with a predecoded scalar register
 kernel, fuses expression stores, removes disabled-profile loop reconstruction,
-and reports source-versus-kernel instruction work. The next steps are native
-lowering or nested-loop region formation, moving-window array operations,
+and reports source-versus-kernel instruction work. v0.50 forms complete
+well-nested scalar loop regions, unifies colon-range semantics across runtime
+tiers, preserves zero-trip definite-initialization behavior, and adds a leaf
+loop dispatch fast path. The next steps are optional native LLVM ORC lowering
+of this same structured contract, moving-window array operations,
 object/listener arrays,
 property event listeners,
 comma-separated-list Cell

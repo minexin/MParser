@@ -226,11 +226,33 @@ end
     assert(loopCheck->canEnterTypedPath);
 }
 
+void runNestedScalarLoopIrSmoke() {
+    const auto run = typedIr(R"(function y = main()
+y = 0;
+for j = 1:12
+    for i = 1:2:5
+        y = y + j * i;
+    end
+end
+end
+)");
+
+    const auto* loop = findRegion(run.module, "scalar-loop", "j");
+    assert(loop != nullptr);
+    assert(loop->region.eligibleForTypedExecution);
+    assert(loop->region.nestedLoopCount == 1);
+    assert(loop->region.maxLoopDepth == 2);
+    assert(hasOperation(*loop, "specialize-loop-nest"));
+    assert(!hasOperation(*loop, "specialize-loop"));
+    assert(!hasOperation(*loop, "reject-region"));
+}
+
 } // namespace
 
 int main() {
     runTypedIrSmoke();
     runClosedScalarLoopSmoke();
+    runNestedScalarLoopIrSmoke();
     std::cout << "typed IR smoke tests passed\n";
     return 0;
 }

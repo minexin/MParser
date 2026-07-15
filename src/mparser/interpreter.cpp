@@ -5,6 +5,7 @@
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_range.h"
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
@@ -1668,32 +1669,14 @@ private:
     RuntimeValue evaluateColon(const HirNode& node) {
         std::vector<double> terms;
         collectColonTerms(node, terms);
-        if (terms.size() != 2 && terms.size() != 3) {
-            addDiagnostic(node, "colon range must have two or three operands");
-            return missingValue();
+        const auto range = runtimePlanColonRange(terms);
+        if (!range.succeeded) {
+            addDiagnostic(node, range.error);
+            return range.error == "colon range step cannot be zero"
+                       ? vectorValue({})
+                       : missingValue();
         }
-
-        const double start = terms[0];
-        const double step = terms.size() == 3 ? terms[1] : 1.0;
-        const double stop = terms.size() == 3 ? terms[2] : terms[1];
-        std::vector<double> values;
-
-        if (step == 0.0) {
-            addDiagnostic(node, "colon range step cannot be zero");
-            return vectorValue(values);
-        }
-
-        if (step > 0.0) {
-            for (double value = start; value <= stop; value += step) {
-                values.push_back(value);
-            }
-        } else {
-            for (double value = start; value >= stop; value += step) {
-                values.push_back(value);
-            }
-        }
-
-        return vectorValue(std::move(values));
+        return vectorValue(runtimeMaterializeColonRange(range));
     }
 
     void collectColonTerms(const HirNode& node, std::vector<double>& terms) {
@@ -1836,32 +1819,14 @@ private:
                                                size_t position, size_t total) {
         std::vector<double> terms;
         collectColonTermsWithIndexContext(node, target, position, total, terms);
-        if (terms.size() != 2 && terms.size() != 3) {
-            addDiagnostic(node, "colon range must have two or three operands");
-            return missingValue();
+        const auto range = runtimePlanColonRange(terms);
+        if (!range.succeeded) {
+            addDiagnostic(node, range.error);
+            return range.error == "colon range step cannot be zero"
+                       ? vectorValue({})
+                       : missingValue();
         }
-
-        const double start = terms[0];
-        const double step = terms.size() == 3 ? terms[1] : 1.0;
-        const double stop = terms.size() == 3 ? terms[2] : terms[1];
-        std::vector<double> values;
-
-        if (step == 0.0) {
-            addDiagnostic(node, "colon range step cannot be zero");
-            return vectorValue(values);
-        }
-
-        if (step > 0.0) {
-            for (double value = start; value <= stop; value += step) {
-                values.push_back(value);
-            }
-        } else {
-            for (double value = start; value >= stop; value += step) {
-                values.push_back(value);
-            }
-        }
-
-        return vectorValue(std::move(values));
+        return vectorValue(runtimeMaterializeColonRange(range));
     }
 
     void collectColonTermsWithIndexContext(

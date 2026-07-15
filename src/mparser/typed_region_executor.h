@@ -19,6 +19,7 @@ struct TypedRegionExecutionResult {
         TypedRegionExecutionStatus::Fallback;
     std::map<std::string, RuntimeValue> variables;
     size_t iterationCount = 0;
+    size_t nestedIterationCount = 0;
     size_t executedInstructionCount = 0;
     size_t executedKernelInstructionCount = 0;
     std::string reason;

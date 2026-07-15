@@ -1,6 +1,7 @@
 #include "mparser/bytecode_region.h"
 #include "mparser/runtime_math.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdlib>
 #include <set>
@@ -46,6 +47,75 @@ bool isScalarBinary(std::string_view operation) {
     return supported.contains(operation);
 }
 
+struct LoopBoundary {
+    size_t beginPc = 0;
+    size_t latchPc = 0;
+    size_t exitPc = 0;
+    std::string variable;
+};
+
+struct LoopStructure {
+    bool valid = true;
+    std::set<size_t> beginPcs;
+    std::set<size_t> latchPcs;
+    size_t maxDepth = 0;
+};
+
+LoopStructure collectLoopStructure(const BytecodeProgram& program,
+                                   size_t sourcePc, size_t exitPc) {
+    LoopStructure structure;
+    std::vector<LoopBoundary> stack;
+    for (size_t pc = sourcePc; pc < exitPc; ++pc) {
+        const auto& instruction = program.instructions[pc];
+        if (instruction.op == BytecodeOp::ForBegin) {
+            if (instruction.target < 0) {
+                structure.valid = false;
+                continue;
+            }
+            const size_t nestedExit =
+                static_cast<size_t>(instruction.target);
+            if (nestedExit <= pc + 1 || nestedExit > exitPc) {
+                structure.valid = false;
+                continue;
+            }
+            const size_t latchPc = nestedExit - 1;
+            const auto& latch = program.instructions[latchPc];
+            if (latch.op != BytecodeOp::ForNext ||
+                latch.target != static_cast<int>(pc + 1) ||
+                (!instruction.operand.empty() &&
+                 latch.operand != instruction.operand) ||
+                (!stack.empty() && nestedExit > stack.back().latchPc)) {
+                structure.valid = false;
+                continue;
+            }
+            structure.beginPcs.insert(pc);
+            structure.latchPcs.insert(latchPc);
+            stack.push_back(LoopBoundary{pc, latchPc, nestedExit,
+                                         instruction.operand});
+            structure.maxDepth =
+                std::max(structure.maxDepth, stack.size());
+            continue;
+        }
+        if (instruction.op != BytecodeOp::ForNext) {
+            continue;
+        }
+        if (stack.empty() || stack.back().latchPc != pc ||
+            instruction.target !=
+                static_cast<int>(stack.back().beginPc + 1) ||
+            (!stack.back().variable.empty() &&
+             instruction.operand != stack.back().variable)) {
+            structure.valid = false;
+            continue;
+        }
+        stack.pop_back();
+    }
+    if (!stack.empty() || !structure.beginPcs.contains(sourcePc) ||
+        !structure.latchPcs.contains(exitPc - 1)) {
+        structure.valid = false;
+    }
+    return structure;
+}
+
 void copySet(const std::set<std::string>& source,
              std::vector<std::string>& destination) {
     destination.assign(source.begin(), source.end());
@@ -70,11 +140,13 @@ std::string rejectionReason(const BytecodeRegionContract& contract) {
     if (contract.hasUnsupportedOperations) {
         return "region contains unsupported bytecode operations";
     }
-    return "eligible closed scalar loop region";
+    return contract.nestedLoopCount > 0
+               ? "eligible closed nested scalar loop region"
+               : "eligible closed scalar loop region";
 }
 
 void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
-                        size_t loopBeginPc, size_t loopLatchPc,
+                        const LoopStructure& loops,
                         std::set<std::string>& definitions,
                         std::set<std::string>& reads,
                         std::set<std::string>& inputs,
@@ -84,7 +156,7 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
                         BytecodeRegionContract& contract) {
     switch (instruction.op) {
     case BytecodeOp::ForBegin:
-        if (pc != loopBeginPc) {
+        if (!loops.beginPcs.contains(pc)) {
             contract.hasUnsupportedControlFlow = true;
         }
         if (!instruction.operand.empty()) {
@@ -94,7 +166,7 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         }
         break;
     case BytecodeOp::ForNext:
-        if (pc != loopLatchPc) {
+        if (!loops.latchPcs.contains(pc)) {
             contract.hasUnsupportedControlFlow = true;
         }
         break;
@@ -135,7 +207,12 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         }
         break;
     case BytecodeOp::BinaryOp:
-        if (!isScalarBinary(instruction.operand)) {
+        if (instruction.operand == ":") {
+            if (instruction.operandCount != 2 &&
+                instruction.operandCount != 3) {
+                contract.hasUnsupportedOperations = true;
+            }
+        } else if (!isScalarBinary(instruction.operand)) {
             contract.hasUnsupportedOperations = true;
         }
         break;
@@ -283,16 +360,36 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
     contract.bodyEndPc = latchPc;
     contract.stackInputCount = 1;
 
+    const auto loops = collectLoopStructure(program, sourcePc, exitPc);
+    if (!loops.valid) {
+        contract.hasUnsupportedControlFlow = true;
+    }
+    contract.nestedLoopCount =
+        loops.beginPcs.empty() ? 0 : loops.beginPcs.size() - 1;
+    contract.maxLoopDepth = loops.maxDepth;
+
     std::set<std::string> definitions;
     std::set<std::string> reads;
     std::set<std::string> inputs;
     std::set<std::string> writes;
     std::set<std::string> outputs;
     std::set<std::string> calls;
+    std::vector<std::set<std::string>> definitionSnapshots;
     for (size_t pc = sourcePc; pc < exitPc; ++pc) {
-        analyzeInstruction(program.instructions[pc], pc, sourcePc, latchPc,
+        if (program.instructions[pc].op == BytecodeOp::ForBegin) {
+            definitionSnapshots.push_back(definitions);
+        }
+        analyzeInstruction(program.instructions[pc], pc, loops,
                            definitions, reads, inputs, writes, outputs, calls,
                            contract);
+        if (program.instructions[pc].op == BytecodeOp::ForNext) {
+            if (definitionSnapshots.empty()) {
+                contract.hasUnsupportedControlFlow = true;
+            } else {
+                definitions = std::move(definitionSnapshots.back());
+                definitionSnapshots.pop_back();
+            }
+        }
     }
 
     copySet(reads, contract.reads);

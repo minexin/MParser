@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.49.0. See [docs/v0.49.md](docs/v0.49.md) for the
+Current milestone: v0.50.0. See [docs/v0.50.md](docs/v0.50.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.48.md](docs/v0.48.md),
+iteration plan. Previous boundaries are kept in [docs/v0.49.md](docs/v0.49.md),
+[docs/v0.48.md](docs/v0.48.md),
 [docs/v0.47.md](docs/v0.47.md),
 [docs/v0.46.md](docs/v0.46.md),
 [docs/v0.45.md](docs/v0.45.md),
@@ -85,7 +86,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.49 executes the core numeric/string subset,
+expression operators. v0.50 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -117,9 +118,12 @@ counts, typed region activity, source bytecode work, and predecoded kernel
 instruction counts while requiring all four runtime outputs to match.
 Optimization candidates also carry concrete bytecode region contracts with PC
 ranges, stack boundaries, read/write/call summaries, and conservative typed
-execution eligibility. Eligible closed scalar `for` loops can now execute in a
-transactional predecoded register-kernel path and automatically fall back to
-unchanged-state bytecode execution when an entry value is not scalar numeric.
+execution eligibility. Eligible closed scalar `for` loops, including
+well-nested loop trees, can now execute in a transactional predecoded
+register-kernel path and automatically fall back to unchanged-state bytecode
+execution when an entry value is not scalar numeric. Two- and three-term colon
+ranges share one runtime planner across the interpreter, bytecode VM, and typed
+kernel.
 Statically bound
 scalar calls to `abs`, `acos`, `asin`, `atan`, `cos`, `exp`, `log`, `sin`,
 `sqrt`, and `tan` execute directly in that typed region; general builtins,
@@ -434,22 +438,34 @@ the current MATLAB behavior instead of carrying residual orders into a later
 dimension. The shared `runtime_numeric` result builder maps scan and difference
 outputs from MATLAB column-major logical order into the runtime payload once.
 
-v0.49 replaces per-iteration bytecode decoding, string operation dispatch,
-dynamic stacks, map lookups, and temporary `RuntimeValue` construction in
-eligible scalar loops with a predecoded register kernel. Loads are bound to
-contiguous scalar slots, expression temporaries use indexed registers, and the
-final expression producer writes directly to its destination slot. The VM
-also skips synthetic loop-profile reconstruction when profiling is disabled.
+v0.50 extends the v0.49 predecoded register kernel across complete structured
+scalar loop nests. The region analyzer validates matching `ForBegin` and
+`ForNext` boundaries, and the kernel lowers them to structured loop operations
+instead of entering the inner typed region once per outer iteration. A shared
+colon-range runtime gives the interpreter, bytecode VM, and typed executor the
+same positive-step, negative-step, and empty-range behavior. Leaf loops use a
+direct scalar span path while preserving transactional commit and fallback.
 
-On the development machine, the original nested `1000 x 1000` loop in
-`samples/timing_loop_demo.m` now reports about `0.068` to `0.079` seconds in
-the typed execution, down from about `1.51` seconds immediately before v0.49.
-The million inner iterations execute 14,000,000 source instructions as
-4,000,000 kernel instructions with no fallback. The user-reported MATLAB
-reference is about `0.02` seconds, so this milestone is roughly 19-22 times
-faster than the previous typed executor but remains about 3.4-4.0 times slower
-than that MATLAB result. These timings are machine-dependent. This is a
-portable C++ register interpreter, not native-code JIT compilation.
+The kernel replaces per-iteration bytecode decoding, string operation
+dispatch, dynamic stacks, map lookups, and temporary `RuntimeValue`
+construction. Loads are bound to contiguous scalar slots, expression
+temporaries use indexed registers, and the final expression producer writes
+directly to its destination slot. The VM also skips synthetic loop-profile
+reconstruction when profiling is disabled.
+
+On the development machine (Intel Core i5-1135G7), five consecutive final
+Release runs of the original nested `1000 x 1000` loop in
+`samples/timing_loop_demo.m` ranged from `0.0806` to `0.0949` seconds, with a
+`0.0828` second median. The whole nest enters one outer typed region, covers
+1,000 outer and 1,000,000 nested iterations, represents 15,004,000 source
+instructions, and dispatches 4,001,000 kernel instructions with no fallback.
+A single comparable v0.49 run was about `0.0786` seconds, which is not enough
+evidence to claim either a speedup or a regression at this noise level. The
+user-reported MATLAB reference of about `0.02` seconds was measured on a
+different Intel Core i7-12700 machine, so it is a useful target scale rather
+than a valid cross-machine speed ratio. This path is still a portable C++
+register interpreter; the structured nest is primarily the required boundary
+for native-code JIT compilation.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,

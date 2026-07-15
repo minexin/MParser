@@ -351,6 +351,116 @@ end
     assert(result.reason == "predecoded scalar kernel executed");
 }
 
+void runNestedTypedLoopExecutionSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for j = 1:12
+    for i = 1:2:5
+        y = y + j * i;
+    end
+end
+end
+)");
+
+    const auto* outer = findLoopRegion(pipeline.module, "j");
+    const auto* inner = findLoopRegion(pipeline.module, "i");
+    assert(outer != nullptr);
+    assert(inner != nullptr);
+    assert(outer->region.nestedLoopCount == 1);
+    assert(outer->region.maxLoopDepth == 2);
+    assert(outer->region.eligibleForTypedExecution);
+
+    mparser::BytecodeVm vm;
+    const auto optimized =
+        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
+    assert(findVariable(optimized.variables, "y")->number == 702.0);
+
+    const auto* outerExecution =
+        findExecution(optimized, "scalar-loop", "j");
+    const auto* innerExecution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(outerExecution != nullptr);
+    assert(innerExecution != nullptr);
+    assert(outerExecution->attemptCount == 1);
+    assert(outerExecution->executionCount == 1);
+    assert(outerExecution->fallbackCount == 0);
+    assert(outerExecution->iterationCount == 12);
+    assert(outerExecution->nestedIterationCount == 36);
+    assert(outerExecution->executedInstructionCount == 312);
+    assert(outerExecution->executedKernelInstructionCount == 84);
+    assert(outerExecution->lastReason ==
+           "predecoded nested scalar kernel executed");
+    assert(innerExecution->attemptCount == 0);
+}
+
+void runThreeLevelTypedLoopSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for a = 1:12
+    for b = 1:2
+        for c = 1:3
+            y = y + a + b + c;
+        end
+    end
+end
+end
+)");
+
+    const auto* outer = findLoopRegion(pipeline.module, "a");
+    assert(outer != nullptr);
+    assert(outer->region.nestedLoopCount == 2);
+    assert(outer->region.maxLoopDepth == 3);
+
+    mparser::BytecodeVm vm;
+    const auto optimized =
+        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
+    assert(findVariable(optimized.variables, "y")->number == 720.0);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "a");
+    assert(execution != nullptr);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+    assert(execution->iterationCount == 12);
+    assert(execution->nestedIterationCount == 96);
+}
+
+void runEmptyNestedLoopPreservesValuesSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 7;
+i = 42;
+for j = 1:12
+    for i = 5:1
+        y = 999;
+    end
+end
+end
+)");
+
+    const auto* outer = findLoopRegion(pipeline.module, "j");
+    assert(outer != nullptr);
+    assert(outer->region.nestedLoopCount == 1);
+
+    mparser::BytecodeVm vm;
+    const auto optimized =
+        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
+    assert(findVariable(optimized.variables, "i")->number == 42.0);
+    assert(findVariable(optimized.variables, "y")->number == 7.0);
+    assert(findVariable(optimized.variables, "j")->number == 12.0);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "j");
+    assert(execution != nullptr);
+    assert(execution->executionCount == 1);
+    assert(execution->nestedIterationCount == 0);
+}
+
 void runDirectTransactionalFallbackSmoke() {
     auto pipeline = prepare(R"(function y = main()
 y = 0;
@@ -396,6 +506,9 @@ int main() {
         runTypedPureMathBuiltinSmoke();
         runPredecodedOperationCoverageSmoke();
         runEmptyLoopPreservesWorkspaceSmoke();
+        runNestedTypedLoopExecutionSmoke();
+        runThreeLevelTypedLoopSmoke();
+        runEmptyNestedLoopPreservesValuesSmoke();
         runDirectTransactionalFallbackSmoke();
         std::cout << "typed region executor smoke tests passed\n";
         return 0;

@@ -114,8 +114,12 @@ private:
             emit(BytecodeOp::UnaryOp, node, childCount(node));
             break;
         case HirKind::Binary:
-            lowerChildren(node);
-            emit(BytecodeOp::BinaryOp, node, childCount(node));
+            if (node.label == ":") {
+                emitColon(node);
+            } else {
+                lowerChildren(node);
+                emit(BytecodeOp::BinaryOp, node, childCount(node));
+            }
             break;
         case HirKind::Postfix:
             lowerChildren(node);
@@ -541,6 +545,23 @@ private:
         for (const auto& child : node.children) {
             lowerNode(*child);
         }
+    }
+
+    size_t lowerColonTerms(const HirNode& node) {
+        if (node.kind == HirKind::Binary && node.label == ":") {
+            size_t count = 0;
+            for (const auto& child : node.children) {
+                count += lowerColonTerms(*child);
+            }
+            return count;
+        }
+        lowerNode(node);
+        return 1;
+    }
+
+    void emitColon(const HirNode& node) {
+        const size_t count = lowerColonTerms(node);
+        emit(BytecodeOp::BinaryOp, node, static_cast<int>(count));
     }
 
     void lowerExpression(const HirNode& node, int resultCount = 1) {

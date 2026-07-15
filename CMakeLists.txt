@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.49.0 LANGUAGES CXX)
+project(MParser VERSION 0.50.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,6 +25,7 @@ add_library(mparser_core
     src/mparser/runtime_index.cpp
     src/mparser/runtime_math.cpp
     src/mparser/runtime_numeric.cpp
+    src/mparser/runtime_range.cpp
     src/mparser/runtime_reduction.cpp
     src/mparser/runtime_scan.cpp
     src/mparser/runtime_shape.cpp
@@ -121,6 +122,24 @@ add_test(NAME scalar_kernel_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/typed_region_demo.m)
 set_tests_properties(scalar_kernel_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "predecoded scalar kernel executed")
+
+add_test(NAME nested_scalar_kernel_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-typed-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/nested_typed_loop_demo.m)
+set_tests_properties(nested_scalar_kernel_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "predecoded nested scalar kernel executed")
+
+add_test(NAME nested_adaptive_kernel_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-adaptive-bytecode
+        --adaptive-runs=3
+        --adaptive-hot-loop=10
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/nested_typed_loop_demo.m)
+set_tests_properties(nested_adaptive_kernel_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "predecoded nested scalar kernel executed")
 
 add_executable(runtime_benchmark_smoke_tests
     tests/runtime_benchmark_smoke.cpp)

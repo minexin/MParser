@@ -16,6 +16,8 @@ struct BytecodeRegionContract {
     size_t endPc = 0;
     size_t bodyBeginPc = 0;
     size_t bodyEndPc = 0;
+    size_t nestedLoopCount = 0;
+    size_t maxLoopDepth = 0;
     size_t stackInputCount = 0;
     size_t stackOutputCount = 0;
     std::vector<std::string> reads;

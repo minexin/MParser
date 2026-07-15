@@ -33,7 +33,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.49.0"
+#define MPARSER_VERSION "0.50.0"
 #endif
 
 namespace {
@@ -479,6 +479,8 @@ void printBytecodeOptimizationPlan(
                   << (region.closed ? "yes" : "no")
                   << ", typedEligible="
                   << (region.eligibleForTypedExecution ? "yes" : "no")
+                  << ", nestedLoops=" << region.nestedLoopCount
+                  << ", maxLoopDepth=" << region.maxLoopDepth
                   << ", stack=" << region.stackInputCount << "->"
                   << region.stackOutputCount << "\n";
         std::cout << "      inputs="
@@ -516,6 +518,9 @@ void printBytecodeTypedIr(const mparser::BytecodeTypedIrModule& module) {
                   << region.region.bodyBeginPc << ","
                   << region.region.bodyEndPc << "), typedEligible="
                   << (region.region.eligibleForTypedExecution ? "yes" : "no")
+                  << ", nestedLoops="
+                  << region.region.nestedLoopCount
+                  << ", maxLoopDepth=" << region.region.maxLoopDepth
                   << "\n";
         std::cout << "      inputs="
                   << stringListToString(region.region.inputs)
@@ -598,6 +603,8 @@ void printBenchmarkStatistics(
                   << statistics.meanTypedRegionExecutionCount
                   << ", typedFallbacks="
                   << statistics.meanTypedRegionFallbackCount
+                  << ", nestedIterations="
+                  << statistics.meanTypedNestedIterationCount
                   << ", typedInstructions="
                   << statistics.meanTypedInstructionCount
                   << ", kernelInstructions="
@@ -665,6 +672,8 @@ void printTypedRegionExecutions(
                   << ", executions=" << execution.executionCount
                   << ", fallbacks=" << execution.fallbackCount
                   << ", iterations=" << execution.iterationCount
+                  << ", nestedIterations="
+                  << execution.nestedIterationCount
                   << ", typedInstructions="
                   << execution.executedInstructionCount
                   << ", kernelInstructions="

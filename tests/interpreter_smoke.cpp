@@ -106,6 +106,14 @@ y = 0;
 for i = 1:2:5
     y = y + i;
 end
+reverse = 0;
+for j = 5:-2:1
+    reverse = reverse + j;
+end
+emptyCount = 0;
+for k = 5:1
+    emptyCount = emptyCount + 1;
+end
 end
 )";
 
@@ -113,6 +121,10 @@ end
     assert(result.diagnostics.empty());
     assertNumber(result, "i", 5.0);
     assertNumber(result, "y", 9.0);
+    assertNumber(result, "j", 1.0);
+    assertNumber(result, "reverse", 9.0);
+    assertNumber(result, "emptyCount", 0.0);
+    assert(findVariable(result, "k") == nullptr);
 }
 
 void runIfAndBuiltinSmoke() {

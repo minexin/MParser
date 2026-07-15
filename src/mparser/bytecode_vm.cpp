@@ -5,6 +5,7 @@
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_range.h"
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
@@ -3310,6 +3311,7 @@ private:
         currentFrame() = std::move(result.variables);
         ++execution.executionCount;
         execution.iterationCount += result.iterationCount;
+        execution.nestedIterationCount += result.nestedIterationCount;
         execution.executedInstructionCount +=
             result.executedInstructionCount;
         execution.executedKernelInstructionCount +=
@@ -4241,14 +4243,18 @@ private:
     }
 
     void applyBinary(const BytecodeInstruction& instruction) {
-        const auto right = popRuntime(instruction, "binary operator");
-        const auto left = popRuntime(instruction, "binary operator");
-        if (!left || !right) {
+        if (instruction.operand == ":") {
+            const auto operands = popRuntimeValues(
+                instruction, instruction.operandCount, "colon operator");
+            if (operands) {
+                applyColon(instruction, *operands);
+            }
             return;
         }
 
-        if (instruction.operand == ":") {
-            applyColon(instruction, *left, *right);
+        const auto right = popRuntime(instruction, "binary operator");
+        const auto left = popRuntime(instruction, "binary operator");
+        if (!left || !right) {
             return;
         }
 
@@ -7204,26 +7210,25 @@ private:
     }
 
     void applyColon(const BytecodeInstruction& instruction,
-                    const RuntimeValue& left, const RuntimeValue& right) {
-        if (!isNumber(left) || !isNumber(right)) {
-            addDiagnostic(instruction,
-                          "bytecode colon operands must be scalar numbers");
-            return;
+                    const std::vector<RuntimeValue>& operands) {
+        std::vector<double> terms;
+        terms.reserve(operands.size());
+        for (const auto& operand : operands) {
+            if (!isNumber(operand)) {
+                addDiagnostic(
+                    instruction,
+                    "bytecode colon operands must be scalar numbers");
+                return;
+            }
+            terms.push_back(operand.number);
         }
 
-        std::vector<double> values;
-        if (left.number <= right.number) {
-            for (double value = left.number; value <= right.number;
-                 value += 1.0) {
-                values.push_back(value);
-            }
-        } else {
-            for (double value = left.number; value >= right.number;
-                 value -= 1.0) {
-                values.push_back(value);
-            }
+        const auto range = runtimePlanColonRange(terms);
+        if (!range.succeeded) {
+            addDiagnostic(instruction, "bytecode " + range.error);
+            return;
         }
-        pushRuntime(vectorValue(std::move(values)));
+        pushRuntime(vectorValue(runtimeMaterializeColonRange(range)));
     }
 
     RuntimeValue applyNumericBinary(const BytecodeInstruction& instruction,

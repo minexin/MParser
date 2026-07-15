@@ -144,6 +144,7 @@ struct ExecutionTotals {
     size_t typedRegionAttemptCount = 0;
     size_t typedRegionExecutionCount = 0;
     size_t typedRegionFallbackCount = 0;
+    size_t typedNestedIterationCount = 0;
     size_t typedInstructionCount = 0;
     size_t typedKernelInstructionCount = 0;
 };
@@ -155,6 +156,8 @@ void accumulateTypedExecutions(
         totals.typedRegionAttemptCount += execution.attemptCount;
         totals.typedRegionExecutionCount += execution.executionCount;
         totals.typedRegionFallbackCount += execution.fallbackCount;
+        totals.typedNestedIterationCount +=
+            execution.nestedIterationCount;
         totals.typedInstructionCount += execution.executedInstructionCount;
         totals.typedKernelInstructionCount +=
             execution.executedKernelInstructionCount;
@@ -198,6 +201,9 @@ RuntimeBenchmarkStatistics statistics(
         static_cast<double>(samples.size());
     result.meanTypedRegionFallbackCount =
         static_cast<double>(totals.typedRegionFallbackCount) /
+        static_cast<double>(samples.size());
+    result.meanTypedNestedIterationCount =
+        static_cast<double>(totals.typedNestedIterationCount) /
         static_cast<double>(samples.size());
     result.meanTypedInstructionCount =
         static_cast<double>(totals.typedInstructionCount) /

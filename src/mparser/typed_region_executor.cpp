@@ -1,5 +1,6 @@
 #include "mparser/typed_region_executor.h"
 #include "mparser/runtime_math.h"
+#include "mparser/runtime_range.h"
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
@@ -47,6 +48,9 @@ enum class ScalarKernelOp {
     Sine,
     SquareRoot,
     Tangent,
+    Discard,
+    LoopBegin,
+    LoopNext,
 };
 
 enum class ScalarKernelStorage {
@@ -71,6 +75,38 @@ struct ScalarKernelInstruction {
     ScalarKernelDestination destination;
     ScalarKernelOperand left;
     ScalarKernelOperand right;
+    ScalarKernelOperand step;
+    size_t jumpTarget = 0;
+    size_t sourceInstructionCount = 0;
+    bool singleValueRange = false;
+    bool leafLoop = false;
+};
+
+struct ScalarKernelRange {
+    ScalarKernelOperand start;
+    ScalarKernelOperand step;
+    ScalarKernelOperand stop;
+    bool singleValue = false;
+};
+
+struct ScalarKernelStackValue {
+    bool isRange = false;
+    ScalarKernelOperand scalar;
+    ScalarKernelRange range;
+};
+
+struct ScalarKernelCompileLoop {
+    size_t beginInstruction = 0;
+    size_t expectedLatchPc = 0;
+    size_t loopSlot = 0;
+    std::string variable;
+    std::vector<bool> initializedBefore;
+};
+
+struct ScalarKernelExecutionCounters {
+    size_t sourceInstructions = 0;
+    size_t kernelInstructions = 0;
+    size_t nestedIterations = 0;
 };
 
 struct ScalarKernel {
@@ -78,10 +114,9 @@ struct ScalarKernel {
     std::vector<std::string> slotNames;
     std::vector<TypedScalar> slots;
     std::vector<bool> initialized;
-    std::vector<bool> written;
     size_t loopSlot = 0;
     size_t registerCount = 0;
-    size_t sourceInstructionCount = 0;
+    size_t nestedLoopCount = 0;
 };
 
 struct LoopRangeView {
@@ -244,7 +279,6 @@ size_t findOrAddSlot(ScalarKernel& kernel, std::string_view name,
     kernel.slotNames.emplace_back(name);
     kernel.slots.emplace_back();
     kernel.initialized.push_back(false);
-    kernel.written.push_back(false);
 
     const auto variable = variables.find(kernel.slotNames.back());
     if (variable != variables.end() &&
@@ -256,7 +290,7 @@ size_t findOrAddSlot(ScalarKernel& kernel, std::string_view name,
     return slot;
 }
 
-bool requireStack(const std::vector<ScalarKernelOperand>& stack,
+bool requireStack(const std::vector<ScalarKernelStackValue>& stack,
                   size_t required, std::string reason,
                   std::string& failureReason) {
     if (stack.size() >= required) {
@@ -272,24 +306,30 @@ std::optional<ScalarKernel> compileKernel(
     std::string& failureReason) {
     ScalarKernel kernel;
     kernel.instructions.reserve(region.bodyEndPc - region.bodyBeginPc);
-    kernel.sourceInstructionCount = region.bodyEndPc - region.bodyBeginPc;
 
     const auto& header = program.instructions[region.beginPc];
     kernel.loopSlot = findOrAddSlot(kernel, header.operand, variables);
     kernel.initialized[kernel.loopSlot] = true;
     kernel.slots[kernel.loopSlot] = TypedScalar{};
-    kernel.written[kernel.loopSlot] = true;
 
-    std::vector<ScalarKernelOperand> stack;
+    std::vector<ScalarKernelStackValue> stack;
     stack.reserve(region.bodyEndPc - region.bodyBeginPc);
+    std::vector<ScalarKernelCompileLoop> loops;
+    size_t pendingSourceInstructionCount = 0;
+
+    const auto appendInstruction = [&](ScalarKernelInstruction value) {
+        value.sourceInstructionCount = pendingSourceInstructionCount;
+        pendingSourceInstructionCount = 0;
+        kernel.instructions.push_back(std::move(value));
+    };
     const auto appendUnary = [&](ScalarKernelOp operation,
                                  ScalarKernelOperand operand) {
         const size_t result = kernel.registerCount++;
-        kernel.instructions.push_back(
-            {operation,
-             {ScalarKernelStorage::Register, result},
-             operand,
-             {}});
+        ScalarKernelInstruction value;
+        value.op = operation;
+        value.destination = {ScalarKernelStorage::Register, result};
+        value.left = operand;
+        appendInstruction(std::move(value));
         return ScalarKernelOperand{ScalarKernelStorage::Register, result,
                                    {}};
     };
@@ -297,17 +337,19 @@ std::optional<ScalarKernel> compileKernel(
                                   ScalarKernelOperand left,
                                   ScalarKernelOperand right) {
         const size_t result = kernel.registerCount++;
-        kernel.instructions.push_back(
-            {operation,
-             {ScalarKernelStorage::Register, result},
-             left,
-             right});
+        ScalarKernelInstruction value;
+        value.op = operation;
+        value.destination = {ScalarKernelStorage::Register, result};
+        value.left = left;
+        value.right = right;
+        appendInstruction(std::move(value));
         return ScalarKernelOperand{ScalarKernelStorage::Register, result,
                                    {}};
     };
 
     for (size_t pc = region.bodyBeginPc; pc < region.bodyEndPc; ++pc) {
         const auto& instruction = program.instructions[pc];
+        ++pendingSourceInstructionCount;
         switch (instruction.op) {
         case BytecodeOp::LoadName: {
             if (instruction.binding.kind == BindingKind::Builtin &&
@@ -321,8 +363,9 @@ std::optional<ScalarKernel> compileKernel(
                                 instruction.operand;
                 return std::nullopt;
             }
-            stack.push_back(
-                {ScalarKernelStorage::Slot, slot, {}});
+            ScalarKernelStackValue value;
+            value.scalar = {ScalarKernelStorage::Slot, slot, {}};
+            stack.push_back(value);
             break;
         }
         case BytecodeOp::LoadLiteral: {
@@ -331,8 +374,10 @@ std::optional<ScalarKernel> compileKernel(
                 failureReason = "typed region literal is not numeric";
                 return std::nullopt;
             }
-            stack.push_back({ScalarKernelStorage::Literal, 0,
-                             TypedScalar{*value}});
+            ScalarKernelStackValue stackValue;
+            stackValue.scalar = {ScalarKernelStorage::Literal, 0,
+                                 TypedScalar{*value}};
+            stack.push_back(stackValue);
             break;
         }
         case BytecodeOp::StoreName: {
@@ -341,9 +386,14 @@ std::optional<ScalarKernel> compileKernel(
                               failureReason)) {
                 return std::nullopt;
             }
-            const size_t slot =
-                findOrAddSlot(kernel, instruction.operand, variables);
-            const auto source = stack.back();
+            if (stack.back().isRange) {
+                failureReason =
+                    "typed region cannot store a colon range as a scalar";
+                return std::nullopt;
+            }
+            const size_t slot = findOrAddSlot(
+                kernel, instruction.operand, variables);
+            const auto source = stack.back().scalar;
             stack.pop_back();
             if (source.storage == ScalarKernelStorage::Register &&
                 !kernel.instructions.empty() &&
@@ -353,15 +403,17 @@ std::optional<ScalarKernel> compileKernel(
                     source.index) {
                 kernel.instructions.back().destination =
                     {ScalarKernelStorage::Slot, slot};
+                kernel.instructions.back().sourceInstructionCount +=
+                    pendingSourceInstructionCount;
+                pendingSourceInstructionCount = 0;
             } else {
-                kernel.instructions.push_back(
-                    {ScalarKernelOp::Copy,
-                     {ScalarKernelStorage::Slot, slot},
-                     source,
-                     {}});
+                ScalarKernelInstruction value;
+                value.op = ScalarKernelOp::Copy;
+                value.destination = {ScalarKernelStorage::Slot, slot};
+                value.left = source;
+                appendInstruction(std::move(value));
             }
             kernel.initialized[slot] = true;
-            kernel.written[slot] = true;
             break;
         }
         case BytecodeOp::UnaryOp: {
@@ -371,20 +423,71 @@ std::optional<ScalarKernel> compileKernel(
                     failureReason)) {
                 return std::nullopt;
             }
+            if (stack.back().isRange) {
+                failureReason =
+                    "typed region unary operation received a range";
+                return std::nullopt;
+            }
             const auto operation = unaryOperation(instruction.operand);
             if (!operation) {
                 failureReason =
                     "typed region unary operation is unsupported";
                 return std::nullopt;
             }
-            stack.back() = appendUnary(*operation, stack.back());
+            stack.back().scalar =
+                appendUnary(*operation, stack.back().scalar);
             break;
         }
         case BytecodeOp::BinaryOp: {
+            const size_t operandCount =
+                instruction.operandCount < 0
+                    ? 0
+                    : static_cast<size_t>(instruction.operandCount);
+            if (instruction.operand == ":") {
+                if ((operandCount != 2 && operandCount != 3) ||
+                    !requireStack(
+                        stack, operandCount,
+                        "typed region stack underflow at colon operation",
+                        failureReason)) {
+                    if (failureReason.empty()) {
+                        failureReason =
+                            "typed colon range needs two or three operands";
+                    }
+                    return std::nullopt;
+                }
+                const size_t begin = stack.size() - operandCount;
+                for (size_t index = begin; index < stack.size(); ++index) {
+                    if (stack[index].isRange) {
+                        failureReason =
+                            "typed colon range operand is not scalar";
+                        return std::nullopt;
+                    }
+                }
+                ScalarKernelStackValue value;
+                value.isRange = true;
+                value.range.start = stack[begin].scalar;
+                value.range.step =
+                    operandCount == 3
+                        ? stack[begin + 1].scalar
+                        : ScalarKernelOperand{
+                              ScalarKernelStorage::Literal, 0,
+                              TypedScalar{1.0}};
+                value.range.stop = stack.back().scalar;
+                stack.resize(begin);
+                stack.push_back(value);
+                break;
+            }
+
             if (!requireStack(
                     stack, 2,
                     "typed region stack underflow at binary operation",
                     failureReason)) {
+                return std::nullopt;
+            }
+            if (stack[stack.size() - 2].isRange ||
+                stack.back().isRange) {
+                failureReason =
+                    "typed region binary operation received a range";
                 return std::nullopt;
             }
             const auto operation = binaryOperation(instruction.operand);
@@ -393,10 +496,10 @@ std::optional<ScalarKernel> compileKernel(
                     "typed region binary operation is unsupported";
                 return std::nullopt;
             }
-            const auto right = stack.back();
+            const auto right = stack.back().scalar;
             stack.pop_back();
-            const auto left = stack.back();
-            stack.back() = appendBinary(*operation, left, right);
+            const auto left = stack.back().scalar;
+            stack.back().scalar = appendBinary(*operation, left, right);
             break;
         }
         case BytecodeOp::CallOrIndex: {
@@ -418,7 +521,13 @@ std::optional<ScalarKernel> compileKernel(
                     failureReason)) {
                 return std::nullopt;
             }
-            stack.back() = appendUnary(*operation, stack.back());
+            if (stack.back().isRange) {
+                failureReason =
+                    "typed region builtin received a colon range";
+                return std::nullopt;
+            }
+            stack.back().scalar =
+                appendUnary(*operation, stack.back().scalar);
             break;
         }
         case BytecodeOp::PostfixOp:
@@ -433,6 +542,11 @@ std::optional<ScalarKernel> compileKernel(
                     "typed region postfix operation is unsupported";
                 return std::nullopt;
             }
+            if (stack.back().isRange) {
+                failureReason =
+                    "typed region transpose received a colon range";
+                return std::nullopt;
+            }
             break;
         case BytecodeOp::Pop:
             if (!requireStack(stack, 1,
@@ -440,8 +554,103 @@ std::optional<ScalarKernel> compileKernel(
                               failureReason)) {
                 return std::nullopt;
             }
+            if (stack.back().isRange) {
+                failureReason =
+                    "typed region cannot discard a colon range";
+                return std::nullopt;
+            }
+            {
+                ScalarKernelInstruction value;
+                value.op = ScalarKernelOp::Discard;
+                value.left = stack.back().scalar;
+                appendInstruction(std::move(value));
+            }
             stack.pop_back();
             break;
+        case BytecodeOp::ForBegin: {
+            if (!requireStack(stack, 1,
+                              "typed nested loop range is missing",
+                              failureReason)) {
+                return std::nullopt;
+            }
+            if (instruction.target < 0 ||
+                static_cast<size_t>(instruction.target) >
+                    region.bodyEndPc ||
+                static_cast<size_t>(instruction.target) <= pc + 1) {
+                failureReason =
+                    "typed nested loop has invalid control boundaries";
+                return std::nullopt;
+            }
+
+            const auto rangeValue = stack.back();
+            stack.pop_back();
+            const size_t slot = findOrAddSlot(
+                kernel, instruction.operand, variables);
+            auto initializedBefore = kernel.initialized;
+            kernel.initialized[slot] = true;
+
+            ScalarKernelRange range;
+            if (rangeValue.isRange) {
+                range = rangeValue.range;
+            } else {
+                range.start = rangeValue.scalar;
+                range.step = {ScalarKernelStorage::Literal, 0,
+                              TypedScalar{1.0}};
+                range.stop = rangeValue.scalar;
+                range.singleValue = true;
+            }
+
+            ScalarKernelInstruction value;
+            value.op = ScalarKernelOp::LoopBegin;
+            value.destination = {ScalarKernelStorage::Slot, slot};
+            value.left = range.start;
+            value.right = range.stop;
+            value.step = range.step;
+            value.singleValueRange = range.singleValue;
+            appendInstruction(std::move(value));
+            const size_t beginInstruction =
+                kernel.instructions.size() - 1;
+            loops.push_back(ScalarKernelCompileLoop{
+                beginInstruction,
+                static_cast<size_t>(instruction.target) - 1,
+                slot,
+                instruction.operand,
+                std::move(initializedBefore)});
+            ++kernel.nestedLoopCount;
+            break;
+        }
+        case BytecodeOp::ForNext: {
+            if (loops.empty() || loops.back().expectedLatchPc != pc ||
+                loops.back().variable != instruction.operand) {
+                failureReason =
+                    "typed nested loop latch does not match its header";
+                return std::nullopt;
+            }
+            auto loop = std::move(loops.back());
+            loops.pop_back();
+
+            ScalarKernelInstruction value;
+            value.op = ScalarKernelOp::LoopNext;
+            value.destination = {ScalarKernelStorage::Slot,
+                                 loop.loopSlot};
+            value.jumpTarget = loop.beginInstruction + 1;
+            appendInstruction(std::move(value));
+            kernel.instructions[loop.beginInstruction].jumpTarget =
+                kernel.instructions.size();
+            kernel.instructions[loop.beginInstruction].leafLoop =
+                std::none_of(
+                    kernel.instructions.begin() +
+                        static_cast<std::ptrdiff_t>(
+                            loop.beginInstruction + 1),
+                    kernel.instructions.end() - 1,
+                    [](const ScalarKernelInstruction& instruction) {
+                        return instruction.op == ScalarKernelOp::LoopBegin;
+                    });
+
+            loop.initializedBefore.resize(kernel.initialized.size(), false);
+            kernel.initialized = std::move(loop.initializedBefore);
+            break;
+        }
         default:
             failureReason =
                 "typed region encountered an unsupported instruction";
@@ -452,6 +661,20 @@ std::optional<ScalarKernel> compileKernel(
     if (!stack.empty()) {
         failureReason =
             "typed region body did not restore its stack boundary";
+        return std::nullopt;
+    }
+    if (!loops.empty()) {
+        failureReason = "typed region has an unterminated nested loop";
+        return std::nullopt;
+    }
+    if (pendingSourceInstructionCount != 0) {
+        failureReason =
+            "typed region source instructions were not lowered";
+        return std::nullopt;
+    }
+    if (kernel.nestedLoopCount != region.nestedLoopCount) {
+        failureReason =
+            "typed region nested loop contract does not match bytecode";
         return std::nullopt;
     }
     return kernel;
@@ -543,10 +766,12 @@ TypedScalar readOperand(const ScalarKernelOperand& operand,
 }
 
 void writeDestination(const ScalarKernelDestination& destination,
-                      const TypedScalar& value, ScalarKernel& kernel,
-                      std::vector<TypedScalar>& registers) {
+                       const TypedScalar& value, ScalarKernel& kernel,
+                       std::vector<TypedScalar>& registers,
+                       std::vector<bool>& written) {
     if (destination.storage == ScalarKernelStorage::Slot) {
         kernel.slots[destination.index] = value;
+        written[destination.index] = true;
     } else {
         registers[destination.index] = value;
     }
@@ -554,7 +779,13 @@ void writeDestination(const ScalarKernelDestination& destination,
 
 void executeKernelInstruction(
     const ScalarKernelInstruction& instruction, ScalarKernel& kernel,
-    std::vector<TypedScalar>& registers) {
+    std::vector<TypedScalar>& registers, std::vector<bool>& written) {
+    if (instruction.op == ScalarKernelOp::Discard ||
+        instruction.op == ScalarKernelOp::LoopBegin ||
+        instruction.op == ScalarKernelOp::LoopNext) {
+        return;
+    }
+
     TypedScalar result;
     switch (instruction.op) {
     case ScalarKernelOp::Copy:
@@ -607,8 +838,109 @@ void executeKernelInstruction(
             instruction.op,
             readOperand(instruction.left, kernel, registers).value)};
         break;
+    case ScalarKernelOp::Discard:
+    case ScalarKernelOp::LoopBegin:
+    case ScalarKernelOp::LoopNext:
+        return;
     }
-    writeDestination(instruction.destination, result, kernel, registers);
+    writeDestination(instruction.destination, result, kernel, registers,
+                     written);
+}
+
+bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
+                       std::vector<TypedScalar>& registers,
+                       std::vector<bool>& written,
+                       ScalarKernelExecutionCounters& counters,
+                       std::string& failureReason) {
+    size_t pc = begin;
+    while (pc < end) {
+        const auto& instruction = kernel.instructions[pc];
+        if (instruction.op == ScalarKernelOp::LoopNext) {
+            failureReason =
+                "typed nested kernel reached an unmatched loop latch";
+            return false;
+        }
+
+        ++counters.kernelInstructions;
+        counters.sourceInstructions += instruction.sourceInstructionCount;
+        if (instruction.op != ScalarKernelOp::LoopBegin) {
+            executeKernelInstruction(instruction, kernel, registers,
+                                     written);
+            ++pc;
+            continue;
+        }
+
+        if (instruction.jumpTarget <= pc + 1 ||
+            instruction.jumpTarget > end ||
+            kernel.instructions[instruction.jumpTarget - 1].op !=
+                ScalarKernelOp::LoopNext) {
+            failureReason =
+                "typed nested kernel has invalid loop boundaries";
+            return false;
+        }
+
+        const size_t bodyBegin = pc + 1;
+        const size_t bodyEnd = instruction.jumpTarget - 1;
+        const auto& latch = kernel.instructions[bodyEnd];
+        const double start =
+            readOperand(instruction.left, kernel, registers).value;
+
+        const auto executeIteration = [&](double value) {
+            kernel.slots[instruction.destination.index] =
+                TypedScalar{value};
+            written[instruction.destination.index] = true;
+            ++counters.nestedIterations;
+            if (instruction.leafLoop) {
+                for (size_t bodyPc = bodyBegin; bodyPc < bodyEnd;
+                     ++bodyPc) {
+                    const auto& bodyInstruction =
+                        kernel.instructions[bodyPc];
+                    ++counters.kernelInstructions;
+                    counters.sourceInstructions +=
+                        bodyInstruction.sourceInstructionCount;
+                    executeKernelInstruction(bodyInstruction, kernel,
+                                             registers, written);
+                }
+            } else if (!executeKernelSpan(
+                           kernel, bodyBegin, bodyEnd, registers, written,
+                           counters, failureReason)) {
+                return false;
+            }
+            counters.sourceInstructions += latch.sourceInstructionCount;
+            return true;
+        };
+
+        if (instruction.singleValueRange) {
+            if (!executeIteration(start)) {
+                return false;
+            }
+            pc = instruction.jumpTarget;
+            continue;
+        }
+
+        const double step =
+            readOperand(instruction.step, kernel, registers).value;
+        const double stop =
+            readOperand(instruction.right, kernel, registers).value;
+        const auto range = runtimePlanColonRange(start, step, stop);
+        if (!range.succeeded) {
+            failureReason = "typed nested " + range.error;
+            return false;
+        }
+        for (double value = range.start;
+             runtimeColonRangeContains(range, value);) {
+            if (!executeIteration(value)) {
+                return false;
+            }
+            const double next = value + range.step;
+            if (next == value) {
+                break;
+            }
+            value = next;
+        }
+        pc = instruction.jumpTarget;
+    }
+    return true;
 }
 
 } // namespace
@@ -657,19 +989,22 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     }
 
     std::vector<TypedScalar> registers(kernel->registerCount);
+    std::vector<bool> written(kernel->slotNames.size(), false);
+    ScalarKernelExecutionCounters counters;
     for (size_t index = 0; index < values->size(); ++index) {
         kernel->slots[kernel->loopSlot] = TypedScalar{(*values)[index]};
-        for (const auto& instruction : kernel->instructions) {
-            executeKernelInstruction(instruction, *kernel, registers);
+        written[kernel->loopSlot] = true;
+        if (!executeKernelSpan(*kernel, 0, kernel->instructions.size(),
+                               registers, written, counters,
+                               compileFailure)) {
+            return fallback(std::move(compileFailure));
         }
     }
     std::map<std::string, RuntimeValue> workingVariables = variables;
-    if (values->size() != 0) {
-        for (size_t slot = 0; slot < kernel->slotNames.size(); ++slot) {
-            if (kernel->written[slot]) {
-                workingVariables[kernel->slotNames[slot]] =
-                    numberValue(kernel->slots[slot]);
-            }
+    for (size_t slot = 0; slot < kernel->slotNames.size(); ++slot) {
+        if (written[slot]) {
+            workingVariables[kernel->slotNames[slot]] =
+                numberValue(kernel->slots[slot]);
         }
     }
 
@@ -677,11 +1012,12 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     result.status = TypedRegionExecutionStatus::Executed;
     result.variables = std::move(workingVariables);
     result.iterationCount = values->size();
-    result.executedInstructionCount =
-        values->size() * kernel->sourceInstructionCount;
-    result.executedKernelInstructionCount =
-        values->size() * kernel->instructions.size();
-    result.reason = "predecoded scalar kernel executed";
+    result.nestedIterationCount = counters.nestedIterations;
+    result.executedInstructionCount = counters.sourceInstructions;
+    result.executedKernelInstructionCount = counters.kernelInstructions;
+    result.reason = kernel->nestedLoopCount == 0
+                        ? "predecoded scalar kernel executed"
+                        : "predecoded nested scalar kernel executed";
     return result;
 }
 

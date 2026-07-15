@@ -106,6 +106,34 @@ end
     assert(!loop->region.eligibleForTypedExecution);
 }
 
+void runNestedLoopRegionSmoke() {
+    const auto result = plan(R"(function y = main()
+y = 0;
+for j = 1:12
+    for i = 1:2:5
+        y = y + j * i;
+    end
+end
+end
+)");
+
+    const auto* loop = findLoop(result, "j");
+    assert(loop != nullptr);
+    const auto& region = loop->region;
+    assert(region.available);
+    assert(region.closed);
+    assert(region.nestedLoopCount == 1);
+    assert(region.maxLoopDepth == 2);
+    assert(!region.hasUnsupportedControlFlow);
+    assert(!region.hasUnsupportedOperations);
+    assert(region.eligibleForTypedExecution);
+    assert(hasName(region.reads, "i"));
+    assert(hasName(region.reads, "j"));
+    assert(hasName(region.inputs, "y"));
+    assert(region.reason ==
+           "eligible closed nested scalar loop region");
+}
+
 void runPureMathCallRegionSmoke() {
     const auto result = plan(R"(function y = main()
 y = 0;
@@ -147,6 +175,7 @@ end
 int main() {
     runClosedLoopSmoke();
     runControlFlowRejectionSmoke();
+    runNestedLoopRegionSmoke();
     runPureMathCallRegionSmoke();
     runGeneralBuiltinCallRejectionSmoke();
     std::cout << "bytecode region smoke tests passed\n";

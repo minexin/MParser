@@ -227,6 +227,48 @@ end
     assertNumber(result, "y", 113.0);
 }
 
+void runColonStepRangeSmoke() {
+    const auto result = run(R"(function y = f()
+forward = 0;
+for i = 1:2:5
+    forward = forward + i;
+end
+reverse = 0;
+for j = 5:-2:1
+    reverse = reverse + j;
+end
+emptyCount = 0;
+for k = 5:1
+    emptyCount = emptyCount + 1;
+end
+y = forward + reverse + emptyCount;
+end
+)");
+
+    assert(result.diagnostics.empty());
+    assertNumber(result, "forward", 9.0);
+    assertNumber(result, "reverse", 9.0);
+    assertNumber(result, "emptyCount", 0.0);
+    assertNumber(result, "i", 5.0);
+    assertNumber(result, "j", 1.0);
+    assert(findVariable(result, "k") == nullptr);
+    assertNumber(result, "y", 18.0);
+}
+
+void runColonZeroStepDiagnosticSmoke() {
+    const auto result = run(R"(function y = f()
+y = 1:0:5;
+end
+)");
+
+    assert(result.diagnostics.size() == 1);
+    assert(result.diagnostics.front().message ==
+           "bytecode colon range step cannot be zero");
+    const auto* value = findVariable(result, "y");
+    assert(value != nullptr);
+    assert(value->kind == mparser::RuntimeValueKind::Missing);
+}
+
 void runWhileSmoke() {
     const std::string source = R"(function y = f()
 i = 1;
@@ -813,6 +855,8 @@ int main() {
     runMatrixAndBuiltinSmoke();
     runScriptSkipsLocalFunctionSmoke();
     runForIfSmoke();
+    runColonStepRangeSmoke();
+    runColonZeroStepDiagnosticSmoke();
     runWhileSmoke();
     runBreakContinueSmoke();
     runReturnSmoke();
