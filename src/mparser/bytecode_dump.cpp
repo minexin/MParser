@@ -55,6 +55,15 @@ void dumpBytecode(std::ostream& output, const BytecodeProgram& program,
         if (instruction.resultCount != 1) {
             output << " results=" << instruction.resultCount;
         }
+        if (!instruction.calleeName.empty()) {
+            output << " callee=" << instruction.calleeName;
+        }
+        if (instruction.nullAssignment) {
+            output << " null-assignment";
+        }
+        if (instruction.nondeterministicAssignment) {
+            output << " nondeterministic-assignment";
+        }
         if (instruction.target >= 0) {
             output << " target=" << instruction.target;
         }

@@ -33,7 +33,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.38.0"
+#define MPARSER_VERSION "0.46.0"
 #endif
 
 namespace {
@@ -339,11 +339,16 @@ std::string dimensionListToString(const std::vector<size_t>& dimensions,
 
 bool runtimeVariablesEqual(
     const std::vector<mparser::RuntimeVariable>& left,
-    const std::vector<mparser::RuntimeVariable>& right) {
+    const std::vector<mparser::RuntimeVariable>& right,
+    const std::vector<std::string>& ignoredNames = {}) {
     if (left.size() != right.size()) {
         return false;
     }
     for (const auto& variable : left) {
+        if (std::find(ignoredNames.begin(), ignoredNames.end(),
+                      variable.name) != ignoredNames.end()) {
+            continue;
+        }
         const auto candidate = std::find_if(
             right.begin(), right.end(), [&](const auto& value) {
                 return value.name == variable.name;
@@ -354,6 +359,21 @@ bool runtimeVariablesEqual(
         }
     }
     return true;
+}
+
+std::vector<std::string> nondeterministicAssignmentTargets(
+    const mparser::BytecodeProgram& program) {
+    std::vector<std::string> result;
+    for (const auto& instruction : program.instructions) {
+        if (!instruction.nondeterministicAssignment ||
+            instruction.operand.empty() ||
+            std::find(result.begin(), result.end(), instruction.operand) !=
+                result.end()) {
+            continue;
+        }
+        result.push_back(instruction.operand);
+    }
+    return result;
 }
 
 void printBytecodeProfile(const mparser::BytecodeVmResult& runtime) {
@@ -627,7 +647,8 @@ void printRuntimeBenchmark(
 }
 
 void printTypedRegionExecutions(
-    const mparser::BytecodeVmResult& runtime, bool outputsMatch) {
+    const mparser::BytecodeVmResult& runtime, bool outputsMatch,
+    size_t ignoredOutputCount) {
     std::cout << "Typed region execution:\n";
     std::cout << "  regions: " << runtime.typedRegionExecutions.size()
               << "\n";
@@ -647,7 +668,13 @@ void printTypedRegionExecutions(
         std::cout << "      reason=" << execution.lastReason << "\n";
     }
     std::cout << "  baseline outputs: "
-              << (outputsMatch ? "match" : "mismatch") << "\n";
+              << (outputsMatch ? "match" : "mismatch");
+    if (ignoredOutputCount != 0) {
+        std::cout << " (excluding " << ignoredOutputCount
+                  << " nondeterministic timing assignment"
+                  << (ignoredOutputCount == 1 ? "" : "s") << ")";
+    }
+    std::cout << "\n";
 }
 
 void printAdaptiveRun(
@@ -1146,9 +1173,12 @@ int main(int argc, char** argv) {
                 }
                 auto runtime = vm.run(bytecode, semantic, vmOptions);
                 std::vector<mparser::RuntimeVariable> baselineVariables;
+                std::vector<std::string> nondeterministicTargets;
                 bool typedOutputsMatch = true;
                 if (runTypedBytecode && runtime.diagnostics.empty()) {
                     baselineVariables = runtime.variables;
+                    nondeterministicTargets =
+                        nondeterministicAssignmentTargets(bytecode);
                     mparser::BytecodeOptimizationPlanner planner;
                     mparser::BytecodeTypedIrBuilder builder;
                     const auto module = builder.build(
@@ -1161,7 +1191,8 @@ int main(int argc, char** argv) {
                         bytecode, semantic, module, steadyOptions);
                     runtime = std::move(typedRuntime);
                     typedOutputsMatch = runtimeVariablesEqual(
-                        baselineVariables, runtime.variables);
+                        baselineVariables, runtime.variables,
+                        nondeterministicTargets);
                 }
                 std::cout << "Variables:\n";
                 for (const auto& variable : runtime.variables) {
@@ -1202,7 +1233,9 @@ int main(int argc, char** argv) {
                                            runtime.variables));
                 }
                 if (runTypedBytecode) {
-                    printTypedRegionExecutions(runtime, typedOutputsMatch);
+                    printTypedRegionExecutions(
+                        runtime, typedOutputsMatch,
+                        nondeterministicTargets.size());
                     if (!typedOutputsMatch) {
                         return 1;
                     }

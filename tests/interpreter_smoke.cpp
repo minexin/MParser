@@ -699,6 +699,33 @@ end
     assertNumber(result, "y", 104.0);
 }
 
+void runSessionCommandSmoke() {
+    const auto result = run(R"(stale = 7;
+clear;
+clc;
+tic;
+total = 0;
+for i = 1:100
+    total = total + i;
+end
+elapsed = toc;
+)");
+
+    assert(result.diagnostics.empty());
+    assert(findVariable(result, "stale") == nullptr);
+    assertNumber(result, "i", 100.0);
+    assertNumber(result, "total", 5050.0);
+    const auto* elapsed = findVariable(result, "elapsed");
+    assert(elapsed != nullptr);
+    assert(elapsed->kind == mparser::RuntimeValueKind::Number);
+    assert(elapsed->number >= 0.0);
+
+    const auto missingTimer = run("elapsed = toc;");
+    assert(missingTimer.diagnostics.size() == 1);
+    assert(missingTimer.diagnostics.front().message.find(
+               "preceding tic") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -727,6 +754,7 @@ int main() {
     runStringCompareSmoke();
     runShortCircuitSmoke();
     runReturnSmoke();
+    runSessionCommandSmoke();
     std::cout << "interpreter smoke tests passed\n";
     return 0;
 }

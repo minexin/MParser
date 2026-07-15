@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.45.0. See [docs/v0.45.md](docs/v0.45.md) for the
+Current milestone: v0.46.0. See [docs/v0.46.md](docs/v0.46.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.44.md](docs/v0.44.md),
+iteration plan. Previous boundaries are kept in [docs/v0.45.md](docs/v0.45.md),
+[docs/v0.44.md](docs/v0.44.md),
 [docs/v0.43.md](docs/v0.43.md),
 [docs/v0.42.md](docs/v0.42.md),
 [docs/v0.41.md](docs/v0.41.md),
@@ -81,14 +82,15 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.45 executes the core numeric/string subset,
+expression operators. v0.46 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
-non-scalar indexed assignment, scalar expansion, and automatic numeric-array
-growth,
+non-scalar indexed assignment, scalar expansion, automatic numeric-array
+growth, and direct `A(...)=[]` vector/slice deletion,
 first-class logical scalars and arrays, logical-mask reads and writes,
-`logical`/`double` conversion, `class`/`isa`/`islogical`,
+`logical`/`double` conversion, `class`/`isa`/`islogical`, session commands
+`clear`, `clc`, `tic`, and `toc`,
 `switch/case/otherwise`, and `try/catch` diagnostic recovery. It also records
 bytecode VM execution profiles for functions, loops, instructions,
 call/index sites, and assignment sites, including runtime value kind, numeric
@@ -110,7 +112,11 @@ Optimization candidates also carry concrete bytecode region contracts with PC
 ranges, stack boundaries, read/write/call summaries, and conservative typed
 execution eligibility. Eligible closed scalar `for` loops can now execute in a
 transactional typed region path and automatically fall back to unchanged-state
-bytecode execution when an entry value is not scalar numeric. A long-lived
+bytecode execution when an entry value is not scalar numeric. Statically bound
+scalar calls to `abs`, `acos`, `asin`, `atan`, `cos`, `exp`, `log`, `sin`,
+`sqrt`, and `tan` execute directly in that typed region; general builtins,
+user functions, dynamic indexing, mutation, and control flow retain their
+conservative fallback boundary. A long-lived
 adaptive VM session can accumulate profiles across invocations, install an
 eligible typed module when a configurable loop threshold is reached, and use
 profile-off typed execution on later invocations. Consecutive typed fallbacks
@@ -367,6 +373,24 @@ adaptive retraining distinguish `logical` from `double`. The scalar typed
 loop tier also preserves logical intermediates produced inside a specialized
 double loop.
 
+v0.46 adds two runtime contracts that close visible MATLAB gaps. Direct empty
+syntax on an indexed target now deletes vector elements, complete matrix rows
+or columns, and complete N-dimensional slices in both baseline runtimes.
+Numeric and logical deletion subscripts are resolved transactionally, repeated
+indices are removed once, the target numeric class is preserved, and direct
+colon syntax is retained in bytecode metadata. An empty value stored in a
+variable or produced by `zeros(0,0)` remains an ordinary assignment value and
+does not trigger deletion. Literal `[]` now has its MATLAB 0-by-0 shape.
+
+The scalar typed loop tier also executes ten statically bound pure unary math
+builtins directly. On `samples/timing_loop_demo.m`, all one million inner-loop
+iterations enter the typed path with no fallback; the measured `toc` value on
+the development machine fell from roughly 14.1 seconds in the baseline VM to
+roughly 1.8 seconds in the typed steady run. `clear`, `clc`, `tic`, and `toc`
+are executable in command form. Typed baseline comparison excludes only values
+assigned from nondeterministic `toc` expressions while still checking every
+deterministic variable.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -384,7 +408,8 @@ and `ndims` including multi-output and dimension-vector forms, 1-based
 N-dimensional numeric indexing such as `A(2)` and `A(2, 1, 3)`, colon and
 vector subscripts, `end`
 expressions inside indexing, non-scalar and scalar-expanded indexed assignment
-with automatic numeric-array growth, logical-mask indexing and assignment,
+with automatic numeric-array growth, direct indexed `[]` deletion,
+logical-mask indexing and assignment,
 logical/double conversion and class queries, array constructors `zeros`,
 `ones`, and
 two-dimensional `eye`, `linspace` vector generation, numeric/Cell `reshape`,
@@ -392,7 +417,7 @@ two-dimensional `eye`, `linspace` vector generation, numeric/Cell `reshape`,
 transpose, basic numeric matrix multiplication, and
 N-dimensional Cells with scalar brace indexing/mutation. It is
 intentionally not a full MATLAB runtime yet: classes,
-deletion assignment, function handles, other builtin multi-output conventions beyond the
+function handles, other builtin multi-output conventions beyond the
 scalar runtime subset, complex numbers, sparse arrays, and object dispatch
 still report runtime diagnostics instead of guessing.
 
@@ -480,6 +505,14 @@ build\mparser.exe --run-bytecode samples\logical_index_demo.m
 build\mparser.exe --run samples\logical_index_demo.m
 ```
 
+Run direct empty deletion for vectors, rows, columns, logical selections, and
+N-dimensional slices through both baseline runtimes with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\array_deletion_demo.m
+build\mparser.exe --run samples\array_deletion_demo.m
+```
+
 The bytecode VM profiling and type/shape observation subset can be tried with:
 
 ```powershell
@@ -521,6 +554,14 @@ Execute the scalar typed region and verify its output against the baseline VM:
 build\mparser.exe --run-typed-bytecode samples\typed_region_demo.m
 build\mparser.exe --run-typed-bytecode `
   samples\typed_region_fallback_demo.m
+```
+
+Run the million-iteration math loop with `tic`/`toc` and pure-math typed
+specialization with:
+
+```powershell
+build-release\mparser.exe --run-bytecode samples\timing_loop_demo.m
+build-release\mparser.exe --run-typed-bytecode samples\timing_loop_demo.m
 ```
 
 Observe cross-invocation warmup and automatic typed-tier promotion with:

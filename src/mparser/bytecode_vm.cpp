@@ -3,6 +3,7 @@
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_assignment.h"
 #include "mparser/runtime_index.h"
+#include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/typed_ir.h"
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -3548,6 +3550,13 @@ private:
         }
 
         if (instruction.binding.kind == BindingKind::Builtin) {
+            if (instruction.operand == "clear" ||
+                instruction.operand == "clc" ||
+                instruction.operand == "tic" ||
+                instruction.operand == "toc") {
+                pushRuntime(callBuiltin(instruction, instruction.operand, {}));
+                return;
+            }
             if (instruction.operand == "pi") {
                 stack_.push_back(
                     runtimeStackValue(numberValue(3.14159265358979323846)));
@@ -4177,7 +4186,10 @@ private:
 
         RuntimeValue updated = *target;
         const auto result =
-            runtimeAssignNumericIndexed(updated, *arguments, *value);
+            instruction.nullAssignment
+                ? runtimeDeleteNumericIndexed(
+                      updated, *arguments, instruction.colonSubscripts)
+                : runtimeAssignNumericIndexed(updated, *arguments, *value);
         if (!result.succeeded) {
             addDiagnostic(instruction, "bytecode " + result.error);
             return;
@@ -4362,7 +4374,7 @@ private:
             return;
         }
         if (rows->empty()) {
-            pushRuntime(vectorValue({}));
+            pushRuntime(matrixValue(0, 0, {}));
             return;
         }
 
@@ -6591,6 +6603,34 @@ private:
     RuntimeValue callBuiltin(const BytecodeInstruction& instruction,
                              const std::string& name,
                              const std::vector<RuntimeValue>& arguments) {
+        if (name == "clear" || name == "clc" || name == "tic" ||
+            name == "toc") {
+            if (!arguments.empty()) {
+                addDiagnostic(instruction,
+                              "bytecode " + name +
+                                  " currently expects no arguments");
+                return missingValue();
+            }
+            if (name == "clear") {
+                currentFrame().clear();
+                return missingValue();
+            }
+            if (name == "clc") {
+                return missingValue();
+            }
+            if (name == "tic") {
+                ticStart_ = std::chrono::steady_clock::now();
+                return numberValue(0.0);
+            }
+            if (!ticStart_) {
+                addDiagnostic(instruction,
+                              "bytecode toc requires a preceding tic");
+                return missingValue();
+            }
+            const std::chrono::duration<double> elapsed =
+                std::chrono::steady_clock::now() - *ticStart_;
+            return numberValue(elapsed.count());
+        }
         if (isRuntimeArrayOperationBuiltin(name)) {
             auto result = runtimeArrayOperationBuiltin(name, arguments);
             if (!result.succeeded) {
@@ -6834,24 +6874,9 @@ private:
             return missingValue();
         }
 
-        if (name == "sin") {
-            return mapUnary(arguments.front(), [](double value) {
-                return std::sin(value);
-            });
-        }
-        if (name == "cos") {
-            return mapUnary(arguments.front(), [](double value) {
-                return std::cos(value);
-            });
-        }
-        if (name == "sqrt") {
-            return mapUnary(arguments.front(), [](double value) {
-                return std::sqrt(value);
-            });
-        }
-        if (name == "abs") {
-            return mapUnary(arguments.front(), [](double value) {
-                return std::fabs(value);
+        if (isRuntimePureUnaryMathBuiltin(name)) {
+            return mapUnary(arguments.front(), [&](double value) {
+                return *runtimeApplyPureUnaryMathBuiltin(name, value);
             });
         }
         if (name == "sum") {
@@ -7346,8 +7371,9 @@ private:
         return arrayValueForShape(leftRows, rightColumns, std::move(result));
     }
 
+    template <typename Operation>
     RuntimeValue mapUnary(
-        const RuntimeValue& value, double (*operation)(double),
+        const RuntimeValue& value, Operation operation,
         RuntimeNumericClass numericClass =
             RuntimeNumericClass::Double) const {
         if (isNumber(value)) {
@@ -7482,6 +7508,7 @@ private:
     std::map<std::string, ClassInfo> classesByName_;
     std::set<std::string> classHierarchyDiagnosticKeys_;
     std::vector<Diagnostic> diagnostics_;
+    std::optional<std::chrono::steady_clock::time_point> ticStart_;
     std::vector<size_t> instructionExecutionCounts_;
     std::map<std::string, BytecodeFunctionProfile> functionProfiles_;
     std::map<size_t, BytecodeLoopProfile> loopProfiles_;

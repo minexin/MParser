@@ -3,10 +3,12 @@
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_assignment.h"
 #include "mparser/runtime_index.h"
+#include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -266,8 +268,9 @@ bool truthy(const RuntimeValue& value) {
     return false;
 }
 
+template <typename Operation>
 RuntimeValue mapUnary(
-    const RuntimeValue& value, double (*operation)(double),
+    const RuntimeValue& value, Operation operation,
     RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
     if (isNumber(value)) {
         return numberValue(operation(value.number), numericClass);
@@ -640,7 +643,10 @@ private:
             return;
         }
 
-        assignTarget(target, evaluate(value));
+        const bool nullAssignment =
+            target.kind == HirKind::CallOrIndex &&
+            value.kind == HirKind::Matrix && value.children.empty();
+        assignTarget(target, evaluate(value), nullAssignment);
     }
 
     std::vector<RuntimeValue> evaluateValues(const HirNode& node,
@@ -682,7 +688,8 @@ private:
         }
     }
 
-    void assignTarget(const HirNode& target, const RuntimeValue& value) {
+    void assignTarget(const HirNode& target, const RuntimeValue& value,
+                      bool nullAssignment = false) {
         switch (target.kind) {
         case HirKind::NameRef:
             currentFrame()[target.label] = value;
@@ -704,7 +711,7 @@ private:
                           "interpreter yet");
             break;
         case HirKind::CallOrIndex:
-            assignIndexedTarget(target, value);
+            assignIndexedTarget(target, value, nullAssignment);
             break;
         case HirKind::BraceIndex:
             assignBraceIndexedTarget(target, value);
@@ -715,7 +722,8 @@ private:
         }
     }
 
-    void assignIndexedTarget(const HirNode& target, const RuntimeValue& value) {
+    void assignIndexedTarget(const HirNode& target, const RuntimeValue& value,
+                             bool nullAssignment) {
         if (target.children.empty()) {
             addDiagnostic(target, "indexed assignment is missing a target");
             return;
@@ -763,8 +771,22 @@ private:
             }
         }
 
-        const auto result =
-            runtimeAssignNumericIndexed(targetValue, arguments, value);
+        RuntimeNumericAssignmentResult result;
+        if (nullAssignment) {
+            std::vector<bool> colonSubscripts;
+            colonSubscripts.reserve(target.children.size() - 1);
+            for (size_t index = 1; index < target.children.size(); ++index) {
+                const HirNode& subscript = *target.children[index];
+                colonSubscripts.push_back(
+                    subscript.kind == HirKind::Literal &&
+                    subscript.label == ":");
+            }
+            result = runtimeDeleteNumericIndexed(
+                targetValue, arguments, colonSubscripts);
+        } else {
+            result = runtimeAssignNumericIndexed(
+                targetValue, arguments, value);
+        }
         if (!result.succeeded) {
             addDiagnostic(target, result.error);
         }
@@ -1230,6 +1252,10 @@ private:
         }
 
         if (node.binding.kind == BindingKind::Builtin) {
+            if (node.label == "clear" || node.label == "clc" ||
+                node.label == "tic" || node.label == "toc") {
+                return firstOutput(callBuiltin(node, node.label, {}, 1));
+            }
             if (node.label == "pi") {
                 return numberValue(3.14159265358979323846);
             }
@@ -1303,7 +1329,7 @@ private:
 
     RuntimeValue evaluateMatrix(const HirNode& node) {
         if (node.children.empty()) {
-            return vectorValue({});
+            return matrixValue(0, 0, {});
         }
 
         if (node.children.front()->kind != HirKind::MatrixRow) {
@@ -1860,7 +1886,7 @@ private:
                                                 const RuntimeValue& target,
                                                 size_t position, size_t total) {
         if (node.children.empty()) {
-            return vectorValue({});
+            return matrixValue(0, 0, {});
         }
 
         if (node.children.front()->kind != HirKind::MatrixRow) {
@@ -2178,6 +2204,31 @@ private:
     callBuiltin(const HirNode& node, const std::string& name,
                 const std::vector<RuntimeValue>& arguments,
                 size_t requestedOutputCount) {
+        if (name == "clear" || name == "clc" || name == "tic" ||
+            name == "toc") {
+            if (!arguments.empty()) {
+                addDiagnostic(node, name + " currently expects no arguments");
+                return FunctionCallResult{{missingValue()}};
+            }
+            if (name == "clear") {
+                currentFrame().clear();
+                return FunctionCallResult{{missingValue()}};
+            }
+            if (name == "clc") {
+                return FunctionCallResult{{missingValue()}};
+            }
+            if (name == "tic") {
+                ticStart_ = std::chrono::steady_clock::now();
+                return FunctionCallResult{{numberValue(0.0)}};
+            }
+            if (!ticStart_) {
+                addDiagnostic(node, "toc requires a preceding tic");
+                return FunctionCallResult{{missingValue()}};
+            }
+            const std::chrono::duration<double> elapsed =
+                std::chrono::steady_clock::now() - *ticStart_;
+            return FunctionCallResult{{numberValue(elapsed.count())}};
+        }
         if (isRuntimeArrayOperationBuiltin(name)) {
             auto result = runtimeArrayOperationBuiltin(name, arguments);
             if (!result.succeeded) {
@@ -2309,45 +2360,11 @@ private:
             return FunctionCallResult{{missingValue()}};
         }
 
-        if (name == "abs") {
+        if (isRuntimePureUnaryMathBuiltin(name)) {
             return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::fabs(value); })}};
-        }
-        if (name == "acos") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::acos(value); })}};
-        }
-        if (name == "asin") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::asin(value); })}};
-        }
-        if (name == "atan") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::atan(value); })}};
-        }
-        if (name == "cos") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::cos(value); })}};
-        }
-        if (name == "exp") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::exp(value); })}};
-        }
-        if (name == "log") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::log(value); })}};
-        }
-        if (name == "sin") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::sin(value); })}};
-        }
-        if (name == "sqrt") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::sqrt(value); })}};
-        }
-        if (name == "tan") {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [](double value) { return std::tan(value); })}};
+                arguments.front(), [&](double value) {
+                    return *runtimeApplyPureUnaryMathBuiltin(name, value);
+                })}};
         }
         if (name == "sum") {
             return FunctionCallResult{{reduceBuiltin(
@@ -2689,6 +2706,7 @@ private:
     std::map<std::string, RuntimeValue> resultFrame_;
     std::vector<Diagnostic> diagnostics_;
     std::optional<size_t> diagnosticTrapBase_;
+    std::optional<std::chrono::steady_clock::time_point> ticStart_;
     size_t loopDepth_ = 0;
     ControlSignal controlSignal_ = ControlSignal::None;
     static constexpr size_t kMaxWhileIterations = 1'000'000;

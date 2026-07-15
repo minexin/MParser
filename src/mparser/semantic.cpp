@@ -158,7 +158,8 @@ bool isKnownBuiltinName(const std::string& name) {
     static constexpr const char* kBuiltinNames[] = {
         "abs",      "acos",     "addlistener", "all",      "any",
         "asin",     "assert",   "atan",        "cat",      "cell",
-        "char",     "class",    "cos",         "delete",   "disp",
+        "char",     "class",    "clc",         "clear",    "cos",
+        "delete",   "disp",
         "double",   "empty",    "enumeration", "eps",      "error",
         "events",   "exp",      "eye",         "false",    "fprintf",
         "horzcat",  "inf",      "ipermute",    "isa",      "isenum",
@@ -170,7 +171,8 @@ bool isKnownBuiltinName(const std::string& name) {
         "plot",     "rand",     "randn",       "repmat",   "reshape",
         "single",   "sin",      "size",        "sqrt",     "squeeze",
         "strcmp",   "string",   "struct",      "sum",      "table",
-        "tan",      "true",     "vertcat",     "zeros",
+        "tan",      "tic",      "toc",         "true",     "vertcat",
+        "zeros",
     };
 
     for (const char* builtin : kBuiltinNames) {

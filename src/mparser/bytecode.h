@@ -71,6 +71,10 @@ struct BytecodeInstruction {
     int operandCount = 0;
     int target = -1;
     int resultCount = 1;
+    std::string calleeName;
+    bool nullAssignment = false;
+    std::vector<bool> colonSubscripts;
+    bool nondeterministicAssignment = false;
 };
 
 struct BytecodeProgram {

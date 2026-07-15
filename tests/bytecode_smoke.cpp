@@ -89,6 +89,7 @@ end
                              mparser::BindingKind::Builtin);
     assert(sinCall != nullptr);
     assert(sinCall->operandCount == 1);
+    assert(sinCall->calleeName == "sin");
 }
 
 void lowerClassMemberStoreSmoke() {
@@ -194,6 +195,15 @@ end
     assert(containsOp(program, mparser::BytecodeOp::TryEnd));
 }
 
+void lowerNondeterministicAssignmentSmoke() {
+    mparser::SemanticResult semantic;
+    const auto program = lower("tic; elapsed = toc;\n", semantic);
+    const auto* store = findInstruction(
+        program, mparser::BytecodeOp::StoreName, "elapsed");
+    assert(store != nullptr);
+    assert(store->nondeterministicAssignment);
+}
+
 } // namespace
 
 int main() {
@@ -202,6 +212,7 @@ int main() {
     lowerMultiOutputCallSmoke();
     lowerIndexedAssignmentSmoke();
     lowerSwitchAndTrySmoke();
+    lowerNondeterministicAssignmentSmoke();
     std::cout << "bytecode smoke tests passed\n";
     return 0;
 }

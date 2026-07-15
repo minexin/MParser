@@ -1,4 +1,5 @@
 #include "mparser/bytecode_region.h"
+#include "mparser/runtime_math.h"
 
 #include <cerrno>
 #include <cstdlib>
@@ -144,6 +145,15 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         }
         break;
     case BytecodeOp::CallOrIndex:
+        if (instruction.binding.kind == BindingKind::Builtin &&
+            instruction.operandCount == 1 &&
+            instruction.resultCount == 1 &&
+            isRuntimePureUnaryMathBuiltin(instruction.calleeName)) {
+            calls.insert(instruction.calleeName);
+            break;
+        }
+        contract.hasCalls = true;
+        break;
     case BytecodeOp::CallSuperclass:
         contract.hasCalls = true;
         break;

@@ -8,6 +8,7 @@
 #include "mparser/typed_region_executor.h"
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
 #include <map>
 #include <string>
@@ -210,6 +211,41 @@ end
     assert(execution->fallbackCount == 0);
 }
 
+void runTypedPureMathBuiltinSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = abs(i) + sin(i);
+end
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+    assert(region->region.callTargets ==
+           std::vector<std::string>({"abs", "sin"}));
+
+    mparser::BytecodeVm vm;
+    const auto optimized =
+        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
+
+    const auto* output = findVariable(optimized.variables, "y");
+    assert(output != nullptr);
+    assert(output->kind == mparser::RuntimeValueKind::Number);
+    assert(std::fabs(output->number - (12.0 + std::sin(12.0))) < 1e-12);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+    assert(execution->iterationCount == 12);
+    assert(execution->executedInstructionCount == 96);
+}
+
 void runDirectTransactionalFallbackSmoke() {
     auto pipeline = prepare(R"(function y = main()
 y = 0;
@@ -251,6 +287,7 @@ int main() {
     runTypedLoopExecutionSmoke();
     runTypedLoopFallbackSmoke();
     runTypedLogicalResultSmoke();
+    runTypedPureMathBuiltinSmoke();
     runDirectTransactionalFallbackSmoke();
     std::cout << "typed region executor smoke tests passed\n";
     return 0;

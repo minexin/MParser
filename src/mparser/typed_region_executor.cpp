@@ -1,4 +1,5 @@
 #include "mparser/typed_region_executor.h"
+#include "mparser/runtime_math.h"
 #include "mparser/runtime_shape.h"
 
 #include <cmath>
@@ -181,6 +182,10 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
             ++instructionCount;
             switch (instruction.op) {
             case BytecodeOp::LoadName: {
+                if (instruction.binding.kind == BindingKind::Builtin &&
+                    isRuntimePureUnaryMathBuiltin(instruction.operand)) {
+                    break;
+                }
                 const auto variable =
                     workingVariables.find(instruction.operand);
                 if (variable == workingVariables.end()) {
@@ -243,6 +248,28 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
                         "typed region binary operation is unsupported");
                 }
                 stack.push_back(*value);
+                break;
+            }
+            case BytecodeOp::CallOrIndex: {
+                if (instruction.binding.kind != BindingKind::Builtin ||
+                    instruction.operandCount != 1 ||
+                    instruction.resultCount != 1 ||
+                    !isRuntimePureUnaryMathBuiltin(
+                        instruction.calleeName)) {
+                    return fallback(
+                        "typed region call is not a pure unary builtin");
+                }
+                if (stack.empty()) {
+                    return fallback(
+                        "typed region stack underflow at builtin call");
+                }
+                const auto value = runtimeApplyPureUnaryMathBuiltin(
+                    instruction.calleeName, stack.back().value);
+                if (!value) {
+                    return fallback(
+                        "typed region builtin call is unsupported");
+                }
+                stack.back() = TypedScalar{*value};
                 break;
             }
             case BytecodeOp::PostfixOp:

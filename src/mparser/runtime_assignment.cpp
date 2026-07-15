@@ -315,6 +315,153 @@ RuntimeNumericAssignmentResult assignSubscripts(
     return success();
 }
 
+std::vector<size_t> uniqueIndices(std::vector<size_t> indices) {
+    std::sort(indices.begin(), indices.end());
+    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+    return indices;
+}
+
+void replaceNumericArray(RuntimeValue& target,
+                         std::vector<size_t> dimensions,
+                         std::vector<double> elements) {
+    dimensions = normalizeRuntimeDimensions(std::move(dimensions));
+    target.kind = dimensions.size() == 2 && dimensions[0] == 1
+                      ? RuntimeValueKind::Vector
+                      : RuntimeValueKind::Matrix;
+    target.number = 0.0;
+    target.elements = std::move(elements);
+    setRuntimeDimensions(target, std::move(dimensions));
+}
+
+RuntimeNumericAssignmentResult deleteLinear(
+    RuntimeValue& target, std::vector<size_t> indices) {
+    indices = uniqueIndices(std::move(indices));
+    if (indices.empty()) {
+        return success();
+    }
+
+    const size_t oldCount = runtimeShapeElementCount(target);
+    const auto oldDimensions = runtimeDimensions(target);
+    const bool vectorShape =
+        oldDimensions.size() == 2 &&
+        (oldDimensions[0] == 1 || oldDimensions[1] == 1);
+    if (!isNumber(target) && !vectorShape && indices.size() != oldCount) {
+        return failure(
+            "linear null assignment requires a vector or all elements");
+    }
+
+    std::vector<bool> removed(oldCount, false);
+    for (const size_t index : indices) {
+        if (index >= oldCount) {
+            return failure("index is out of bounds");
+        }
+        removed[index] = true;
+    }
+
+    std::vector<double> kept;
+    kept.reserve(oldCount - indices.size());
+    for (size_t logicalIndex = 0; logicalIndex < oldCount; ++logicalIndex) {
+        if (removed[logicalIndex]) {
+            continue;
+        }
+        const auto value = runtimeNumericElement(target, logicalIndex);
+        if (!value) {
+            return failure("null assignment could not read the target array");
+        }
+        kept.push_back(*value);
+    }
+
+    std::vector<size_t> newDimensions;
+    if (kept.empty() && (isNumber(target) || !vectorShape)) {
+        newDimensions = {0, 0};
+    } else if (oldDimensions[0] == 1) {
+        newDimensions = {1, kept.size()};
+    } else {
+        newDimensions = {kept.size(), 1};
+    }
+    replaceNumericArray(target, std::move(newDimensions), std::move(kept));
+    return success();
+}
+
+RuntimeNumericAssignmentResult deleteSlices(
+    RuntimeValue& target,
+    const std::vector<std::vector<size_t>>& selections,
+    const std::vector<bool>& colonSubscripts) {
+    size_t deletionDimension = selections.size();
+    for (size_t index = 0; index < colonSubscripts.size(); ++index) {
+        if (colonSubscripts[index]) {
+            continue;
+        }
+        if (deletionDimension != selections.size()) {
+            return failure(
+                "null assignment can have only one non-colon subscript");
+        }
+        deletionDimension = index;
+    }
+    if (deletionDimension == selections.size()) {
+        return failure(
+            "null assignment requires one non-colon subscript");
+    }
+
+    auto oldDimensions = runtimeDimensions(target);
+    if (selections.size() < oldDimensions.size()) {
+        return failure(
+            "N-dimensional null assignment requires one subscript per "
+            "dimension");
+    }
+    oldDimensions.resize(selections.size(), 1);
+    auto removedIndices =
+        uniqueIndices(selections[deletionDimension]);
+    if (removedIndices.empty()) {
+        return success();
+    }
+
+    const size_t oldExtent = oldDimensions[deletionDimension];
+    std::vector<bool> removed(oldExtent, false);
+    for (const size_t index : removedIndices) {
+        if (index >= oldExtent) {
+            return failure("index is out of bounds");
+        }
+        removed[index] = true;
+    }
+    std::vector<size_t> removedBefore(oldExtent + 1, 0);
+    for (size_t index = 0; index < oldExtent; ++index) {
+        removedBefore[index + 1] =
+            removedBefore[index] + (removed[index] ? 1 : 0);
+    }
+
+    auto newDimensions = oldDimensions;
+    newDimensions[deletionDimension] -= removedIndices.size();
+    const auto newCount = checkedRuntimeDimensionProduct(newDimensions);
+    const size_t oldCount = runtimeShapeElementCount(target);
+    if (!newCount) {
+        return failure("null assignment dimensions are too large");
+    }
+    std::vector<double> kept(*newCount, 0.0);
+    for (size_t logicalIndex = 0; logicalIndex < oldCount; ++logicalIndex) {
+        auto coordinates = runtimeColumnMajorCoordinates(
+            logicalIndex, oldDimensions);
+        const auto value = runtimeNumericElement(target, logicalIndex);
+        if (!coordinates || !value) {
+            return failure("null assignment could not map the target array");
+        }
+        const size_t selected = (*coordinates)[deletionDimension];
+        if (removed[selected]) {
+            continue;
+        }
+        (*coordinates)[deletionDimension] -= removedBefore[selected];
+        const auto storageOffset = runtimeRowMajorStorageOffset(
+            *coordinates, newDimensions);
+        if (!storageOffset || *storageOffset >= kept.size()) {
+            return failure("null assignment could not map the result array");
+        }
+        kept[*storageOffset] = *value;
+    }
+
+    replaceNumericArray(target, std::move(newDimensions), std::move(kept));
+    return success();
+}
+
 } // namespace
 
 RuntimeNumericAssignmentResult runtimeAssignNumericIndexed(
@@ -350,6 +497,41 @@ RuntimeNumericAssignmentResult runtimeAssignNumericIndexed(
         return assignLinear(target, selections.front(), value);
     }
     return assignSubscripts(target, selections, value);
+}
+
+RuntimeNumericAssignmentResult runtimeDeleteNumericIndexed(
+    RuntimeValue& target, const std::vector<RuntimeValue>& subscripts,
+    const std::vector<bool>& colonSubscripts) {
+    if (!isNumeric(target)) {
+        return failure("null assignment requires a numeric target");
+    }
+    if (subscripts.empty()) {
+        return failure("null assignment requires subscripts");
+    }
+    if (colonSubscripts.size() != subscripts.size()) {
+        return failure("null assignment subscript metadata is inconsistent");
+    }
+
+    std::vector<std::vector<size_t>> selections;
+    selections.reserve(subscripts.size());
+    const auto effectiveDimensions = runtimeEffectiveSubscriptDimensions(
+        target, subscripts.size());
+    for (size_t index = 0; index < subscripts.size(); ++index) {
+        const size_t extent = subscripts.size() == 1
+                                  ? runtimeShapeElementCount(target)
+                                  : effectiveDimensions[index];
+        auto selection = runtimeResolveIndexSelection(
+            subscripts[index], extent, false);
+        if (!selection.succeeded) {
+            return failure(std::move(selection.error));
+        }
+        selections.push_back(std::move(selection.indices));
+    }
+
+    if (selections.size() == 1) {
+        return deleteLinear(target, std::move(selections.front()));
+    }
+    return deleteSlices(target, selections, colonSubscripts);
 }
 
 } // namespace mparser

@@ -198,6 +198,7 @@ single row-vector output, selected dimensions, or multiple scalar outputs,
 1-based N-dimensional indexing, colon and vector subscripts, folded trailing
 dimensions, `end` expressions inside indexing, shape-checked non-scalar
 indexed assignment, scalar expansion, and automatic numeric-array growth,
+direct indexed empty deletion for vectors and complete array slices,
 logical-mask linear and multi-subscript reads/writes, preserved logical
 numeric classes and conversion/query builtins,
 N-dimensional `zeros`, `ones`, and `cell` constructors, two-dimensional `eye`,
@@ -206,7 +207,7 @@ N-dimensional `zeros`, `ones`, and `cell` constructors, two-dimensional `eye`,
 transpose, and basic numeric matrix multiplication.
 
 Unsupported dynamic features produce runtime diagnostics. That includes class
-instances, deletion assignment, function handles, other
+instances, function handles, other
 builtin multi-output conventions beyond the scalar runtime subset, complex
 numbers, sparse arrays, object dispatch, and general dynamic call resolution.
 This keeps the first interpreter useful for loop and expression validation
@@ -220,7 +221,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.45 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.46 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -228,6 +229,11 @@ named entry functions with positional arguments, `if`/`for`/`while` control flow
 call frames, multi-output call assignment, MATLAB-style numeric indexing with
 `end`, `:`, and vector subscripts, plus shape-checked non-scalar indexed
 assignment, logical-mask reads/writes, and automatic numeric-array growth.
+Direct `A(...)=[]` syntax carries a null-assignment bit and direct-colon mask
+on `StoreIndex`, allowing the shared assignment runtime to distinguish slice
+deletion from an ordinary empty right-hand value. Vector element deletion and
+complete row, column, or N-dimensional slice deletion are transactional and
+preserve the target numeric class. Literal `[]` is represented as 0-by-0.
 Linear and multi-subscript indexing use MATLAB column-major
 order, fold trailing dimensions when fewer subscripts are supplied, and expose
 trailing singleton dimensions when more subscripts are supplied. It also
@@ -309,13 +315,19 @@ contracts: half-open PC
 ranges, body boundaries, stack inputs/outputs, variable reads/inputs/writes,
 observable outputs, call targets, and conservative side-effect flags. Only
 closed scalar loops without unsupported calls, mutation, control flow, or
-operations are currently eligible for a typed execution path. The VM
+operations are currently eligible for a typed execution path. Statically
+bound one-argument calls to `abs`, `acos`, `asin`, `atan`, `cos`, `exp`,
+`log`, `sin`, `sqrt`, and `tan` are scalar operations rather than generic
+calls; every other call retains the rejection boundary. The VM
 can now hand eligible scalar `for` loops to a transactional typed stack
 executor. The executor works on a temporary variable frame and commits only
 after the complete loop succeeds; a failed runtime type or stack check leaves
 the VM state untouched and resumes the original bytecode loop. Its entry
 specialization remains double-only, while typed stack values retain the
 logical class produced by comparisons and logical operators inside the loop.
+Pure math dispatch is shared by the interpreter, baseline VM, region analyzer,
+and typed executor, preventing the optimized tier from acquiring a different
+function allowlist or numerical implementation.
 
 `AdaptiveBytecodeVmSession` owns a longer-lived tiering state. Before promotion,
 it merges instruction, function, loop, call-site, assignment, kind, and shape
@@ -526,7 +538,7 @@ precedence, class-folder Live Code/P-code/MEX methods, general handle deletion,
 `ObjectBeingDestroyed`, cyclic object collection, property change listeners,
 listener/source arrays, numeric/logical/character built-in enumeration bases,
 enumeration object arrays, class methods as `CompiledModule` entry targets,
-deletion assignment, structs, sparse arrays, and complex values until the IR grows
+structs, sparse arrays, and complex values until the IR grows
 richer mutation, layout, and dynamic dispatch conventions. Cell execution
 supports N-dimensional scalar brace reads/writes, but Cell parenthesis
 indexing, vector-valued brace selections, and comma-separated-list expansion
@@ -540,7 +552,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.45
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.46
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime
 kind/numeric-class/full-shape observations to
@@ -636,7 +648,10 @@ general N-dimensional concatenation for numeric arrays and Cells. v0.45 adds
 preserved logical numeric classes, conversion and class queries,
 MATLAB-style logical-mask selection and transactional assignment in both
 baseline runtimes, and numeric-class-aware profiling, guards, typed IR, and
-adaptive retraining. The next steps are deletion assignment, object/listener arrays,
+adaptive retraining. v0.46 adds syntax-sensitive empty deletion through the
+shared assignment engine, true 0-by-0 empty literals, command-form session
+builtins, and direct scalar typed execution for ten pure unary math builtins.
+The next steps are dimension-aware reductions, object/listener arrays,
 property event listeners,
 comma-separated-list Cell
 semantics, persistent code

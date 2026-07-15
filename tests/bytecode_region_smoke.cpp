@@ -106,11 +106,49 @@ end
     assert(!loop->region.eligibleForTypedExecution);
 }
 
+void runPureMathCallRegionSmoke() {
+    const auto result = plan(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = abs(i) + sin(i);
+end
+end
+)");
+
+    const auto* loop = findLoop(result, "i");
+    assert(loop != nullptr);
+    assert(loop->region.available);
+    assert(loop->region.closed);
+    assert(hasName(loop->region.callTargets, "abs"));
+    assert(hasName(loop->region.callTargets, "sin"));
+    assert(!loop->region.hasCalls);
+    assert(!loop->region.hasUnsupportedOperations);
+    assert(loop->region.eligibleForTypedExecution);
+}
+
+void runGeneralBuiltinCallRejectionSmoke() {
+    const auto result = plan(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = sum(i);
+end
+end
+)");
+
+    const auto* loop = findLoop(result, "i");
+    assert(loop != nullptr);
+    assert(hasName(loop->region.callTargets, "sum"));
+    assert(loop->region.hasCalls);
+    assert(!loop->region.eligibleForTypedExecution);
+}
+
 } // namespace
 
 int main() {
     runClosedLoopSmoke();
     runControlFlowRejectionSmoke();
+    runPureMathCallRegionSmoke();
+    runGeneralBuiltinCallRejectionSmoke();
     std::cout << "bytecode region smoke tests passed\n";
     return 0;
 }

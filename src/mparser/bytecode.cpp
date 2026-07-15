@@ -571,8 +571,15 @@ private:
         } else {
             lowerIndexArguments(node);
         }
-        emit(BytecodeOp::CallOrIndex, node, argumentCount(node), -1,
+        const size_t call =
+            emit(BytecodeOp::CallOrIndex, node, argumentCount(node), -1,
                  resultCount);
+        if ((node.binding.kind == BindingKind::Builtin ||
+             node.binding.kind == BindingKind::Function) &&
+            node.children.front()->kind == HirKind::NameRef) {
+            program_.instructions[call].calleeName =
+                node.children.front()->label;
+        }
     }
 
     void lowerSuperclassCall(const HirNode& node, int resultCount) {
@@ -603,24 +610,39 @@ private:
         }
 
         const HirNode& target = *node.children.front();
+        const bool nullAssignment =
+            node.children.size() == 2 &&
+            node.children[1]->kind == HirKind::Matrix &&
+            node.children[1]->children.empty();
+        const bool nondeterministicAssignment =
+            node.children.size() == 2 &&
+            containsBuiltin(*node.children[1], "toc");
         const int resultCount = target.kind == HirKind::OutputList
                                     ? childCount(target)
                                     : 1;
         for (size_t i = 1; i < node.children.size(); ++i) {
             lowerExpression(*node.children[i], resultCount);
         }
-        lowerAssignmentTarget(target);
+        lowerAssignmentTarget(target, nullAssignment,
+                              nondeterministicAssignment);
     }
 
-    void lowerAssignmentTarget(const HirNode& node) {
+    void lowerAssignmentTarget(const HirNode& node,
+                               bool nullAssignment = false,
+                               bool nondeterministicAssignment = false) {
         switch (node.kind) {
         case HirKind::NameRef:
-            emit(BytecodeOp::StoreName, node);
+            {
+                const size_t store = emit(BytecodeOp::StoreName, node);
+                program_.instructions[store].nondeterministicAssignment =
+                    nondeterministicAssignment;
+            }
             break;
         case HirKind::OutputList:
             for (auto it = node.children.rbegin();
                  it != node.children.rend(); ++it) {
-                lowerAssignmentTarget(**it);
+                lowerAssignmentTarget(**it, false,
+                                      nondeterministicAssignment);
             }
             break;
         case HirKind::Literal:
@@ -646,13 +668,30 @@ private:
             break;
         case HirKind::CallOrIndex:
             if (node.children.empty()) {
-                emit(BytecodeOp::StoreIndex, node, argumentCount(node));
+                const size_t store =
+                    emit(BytecodeOp::StoreIndex, node, argumentCount(node));
+                program_.instructions[store].nullAssignment = nullAssignment;
                 break;
             }
             lowerNode(*node.children.front());
             lowerIndexArguments(node);
-            emit(BytecodeOp::StoreIndex, *node.children.front(),
-                 argumentCount(node));
+            {
+                const size_t store =
+                    emit(BytecodeOp::StoreIndex, *node.children.front(),
+                         argumentCount(node));
+                auto& instruction = program_.instructions[store];
+                instruction.nullAssignment = nullAssignment;
+                instruction.nondeterministicAssignment =
+                    nondeterministicAssignment;
+                instruction.colonSubscripts.reserve(
+                    static_cast<size_t>(argumentCount(node)));
+                for (size_t index = 1; index < node.children.size(); ++index) {
+                    const HirNode& subscript = *node.children[index];
+                    instruction.colonSubscripts.push_back(
+                        subscript.kind == HirKind::Literal &&
+                        subscript.label == ":");
+                }
+            }
             break;
         case HirKind::BraceIndex:
             if (node.children.empty()) {
@@ -677,6 +716,21 @@ private:
     static int argumentCount(const HirNode& node) {
         const int count = childCount(node);
         return count > 0 ? count - 1 : 0;
+    }
+
+    static bool containsBuiltin(const HirNode& node,
+                                std::string_view name) {
+        if (node.kind == HirKind::NameRef &&
+            node.binding.kind == BindingKind::Builtin &&
+            node.label == name) {
+            return true;
+        }
+        for (const auto& child : node.children) {
+            if (containsBuiltin(*child, name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     BytecodeProgram program_;
