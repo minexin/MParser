@@ -43,6 +43,8 @@ enum class ScalarKernelOp {
     SquareRoot,
     Tangent,
     Discard,
+    Jump,
+    JumpIfFalse,
     LoopBegin,
     LoopNext,
 };

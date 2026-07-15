@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.51.0. See [docs/v0.51.md](docs/v0.51.md) for the
+Current milestone: v0.52.0. See [docs/v0.52.md](docs/v0.52.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.50.md](docs/v0.50.md),
+iteration plan. Previous boundaries are kept in [docs/v0.51.md](docs/v0.51.md),
+[docs/v0.50.md](docs/v0.50.md),
 [docs/v0.49.md](docs/v0.49.md),
 [docs/v0.48.md](docs/v0.48.md),
 [docs/v0.47.md](docs/v0.47.md),
@@ -62,6 +63,13 @@ blocks, functions, and control-flow blocks, while preserving enough source
 information for later diagnostics, formatting, semantic analysis, and JIT
 profiling.
 
+Cross-platform compatibility is a release constraint rather than a later
+porting task. CI builds and tests the SLJIT backend on Windows x64 and Linux
+x64, cross-compiles it for Linux AArch64, and exercises focused native and
+portable AArch64 runtime paths under QEMU. Platform-specific machine-code and
+calling-convention details remain behind SLJIT's public API; the portable typed
+kernel stays available when native JIT support is disabled.
+
 The parser also builds an initial expression tree for ordinary statements:
 assignments, output lists, member access, neutral call/index nodes, brace
 indexing, unary/binary operators, function handles, matrix/cell literals, and
@@ -87,7 +95,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.51 executes the core numeric/string subset,
+expression operators. v0.52 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -127,9 +135,11 @@ ranges share one runtime planner across the interpreter, bytecode VM, and typed
 kernel.
 Statically bound
 scalar calls to `abs`, `acos`, `asin`, `atan`, `cos`, `exp`, `log`, `sin`,
-`sqrt`, and `tan` execute directly in that typed region; general builtins,
-user functions, dynamic indexing, mutation, and control flow retain their
-conservative fallback boundary. A long-lived
+`sqrt`, and `tan` execute directly in that typed region. Structured forward
+`if`/`elseif`/`else` branches now execute in both the portable and native
+typed kernels; general builtins, user functions, dynamic indexing, mutation,
+backward jumps, loop control, and exception regions retain their conservative
+fallback boundary. A long-lived
 adaptive VM session can accumulate profiles across invocations, install an
 eligible typed module when a configurable loop threshold is reached, and use
 profile-off typed execution on later invocations. Consecutive typed fallbacks
@@ -487,6 +497,17 @@ runs, a same-process `3.36x` improvement. Both paths produced
 about `0.02` seconds came from an Intel Core i7-12700 and remains a target
 scale, not a direct cross-machine ratio.
 
+v0.52 extends the same typed loop boundary across structured
+`if`/`elseif`/`else` statements. Region analysis accepts only closed forward
+jumps that remain at the same loop depth, and a control-flow dataflow pass
+computes variables that are definitely assigned on every incoming path.
+Portable kernels execute explicit `Jump` and `JumpIfFalse` operations; SLJIT
+emits closed machine-code labels and branches for the identical kernel. Native
+branch kernels also collect path-accurate source and kernel instruction counts,
+so backend comparisons remain meaningful when different arms execute. The
+sample `samples/branched_typed_loop_demo.m` produces `summary = 23520` through
+both backends and exercises native code caching.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -543,6 +564,30 @@ cmake -S . -B build-nojit -DMPARSER_ENABLE_NATIVE_JIT=OFF
 Disabling the native backend does not remove the interpreter, bytecode VM, or
 portable typed kernel. It only removes machine-code generation and the SLJIT
 dependency from that build.
+
+On a Debian or Ubuntu x64 host with the GNU AArch64 cross compiler installed,
+the checked-in toolchain builds the same sources for Linux AArch64:
+
+```bash
+cmake -S . -B build-arm64 -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-aarch64.cmake \
+  -DMPARSER_ENABLE_NATIVE_JIT=ON
+cmake --build build-arm64 --parallel
+```
+
+The CI workflow additionally runs focused AArch64 native-JIT and portable
+tests under QEMU. Physical ARM hardware remains the authority for performance
+measurements.
+
+Run the structured-branch sample with either backend:
+
+```powershell
+build\mparser.exe --run-typed-bytecode --typed-backend=portable `
+  samples\branched_typed_loop_demo.m
+build\mparser.exe --run-typed-bytecode --typed-backend=native `
+  samples\branched_typed_loop_demo.m
+```
 
 ## Try the parser
 

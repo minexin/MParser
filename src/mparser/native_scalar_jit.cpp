@@ -28,6 +28,7 @@ struct NativeContext {
     const double* outerValues = nullptr;
     size_t outerValueCount = 0;
     size_t* loopIterations = nullptr;
+    size_t* instructionCounts = nullptr;
     int status = 0;
 };
 
@@ -118,7 +119,15 @@ class NativeKernelEmitter {
 public:
     NativeKernelEmitter(sljit_compiler* compiler,
                         const ScalarKernel& kernel)
-        : compiler_(compiler), kernel_(kernel) {}
+        : compiler_(compiler), kernel_(kernel),
+          kernelLabels_(kernel.instructions.size() + 1, nullptr),
+          pendingKernelJumps_(kernel.instructions.size() + 1),
+          tracksInstructionCounts_(std::any_of(
+              kernel.instructions.begin(), kernel.instructions.end(),
+              [](const ScalarKernelInstruction& instruction) {
+                  return instruction.op == ScalarKernelOp::Jump ||
+                         instruction.op == ScalarKernelOp::JumpIfFalse;
+              })) {}
 
     bool emit(std::string& failureReason) {
         if (kernel_.nestedLoopCount >
@@ -162,6 +171,9 @@ public:
         if (!emitSpan(0, kernel_.instructions.size(), failureReason)) {
             return false;
         }
+        if (!bindKernelLabel(kernel_.instructions.size(), failureReason)) {
+            return false;
+        }
 
         sljit_emit_op2(compiler_, SLJIT_ADD, SLJIT_S1, 0,
                        SLJIT_S1, 0, SLJIT_IMM, 1);
@@ -181,6 +193,13 @@ public:
                 SLJIT_IMM, 1);
             sljit_emit_return_void(compiler_);
         }
+        for (const auto& jumps : pendingKernelJumps_) {
+            if (!jumps.empty()) {
+                failureReason =
+                    "native scalar kernel has an unresolved branch target";
+                return false;
+            }
+        }
         return true;
     }
 
@@ -191,6 +210,61 @@ private:
     sljit_sw loopLocalOffset(size_t loopId, size_t field) const {
         return static_cast<sljit_sw>(loopId * kLoopLocalSize +
                                      field * sizeof(double));
+    }
+
+    bool bindKernelLabel(size_t pc, std::string& failureReason) {
+        if (pc >= kernelLabels_.size()) {
+            failureReason =
+                "native scalar kernel label is outside the instruction stream";
+            return false;
+        }
+        if (kernelLabels_[pc] != nullptr) {
+            failureReason =
+                "native scalar kernel instruction label was emitted twice";
+            return false;
+        }
+        auto* label = sljit_emit_label(compiler_);
+        if (label == nullptr) {
+            failureReason = "SLJIT could not allocate a branch label";
+            return false;
+        }
+        kernelLabels_[pc] = label;
+        bindJumps(pendingKernelJumps_[pc], label);
+        pendingKernelJumps_[pc].clear();
+        return true;
+    }
+
+    bool bindKernelJump(sljit_jump* jump, size_t target,
+                        std::string& failureReason) {
+        if (jump == nullptr || target >= kernelLabels_.size()) {
+            failureReason =
+                "native scalar kernel could not emit a closed branch";
+            return false;
+        }
+        if (kernelLabels_[target] != nullptr) {
+            bindJump(jump, kernelLabels_[target]);
+        } else {
+            pendingKernelJumps_[target].push_back(jump);
+        }
+        return true;
+    }
+
+    void incrementInstructionCount(size_t pc) {
+        if (!tracksInstructionCounts_) {
+            return;
+        }
+        sljit_emit_op1(
+            compiler_, SLJIT_MOV, SLJIT_R0, 0,
+            SLJIT_MEM1(SLJIT_S0),
+            SLJIT_OFFSETOF(NativeContext, instructionCounts));
+        const auto offset = static_cast<sljit_sw>(pc * sizeof(size_t));
+        sljit_emit_op1(compiler_, SLJIT_MOV, SLJIT_R1, 0,
+                       SLJIT_MEM1(SLJIT_R0), offset);
+        sljit_emit_op2(compiler_, SLJIT_ADD, SLJIT_R1, 0,
+                       SLJIT_R1, 0, SLJIT_IMM, 1);
+        sljit_emit_op1(compiler_, SLJIT_MOV,
+                       SLJIT_MEM1(SLJIT_R0), offset,
+                       SLJIT_R1, 0);
     }
 
     bool validateOperand(const ScalarKernelOperand& operand,
@@ -522,6 +596,8 @@ private:
             return true;
         case ScalarKernelOp::Discard:
             return true;
+        case ScalarKernelOp::Jump:
+        case ScalarKernelOp::JumpIfFalse:
         case ScalarKernelOp::LoopBegin:
         case ScalarKernelOp::LoopNext:
             failureReason =
@@ -579,7 +655,10 @@ private:
             writeDestination(
                 loop.destination, SLJIT_FR0, SLJIT_IMM,
                 static_cast<sljit_sw>(RuntimeNumericClass::Double));
-            return emitSpan(bodyBegin, bodyEnd, failureReason);
+            if (!emitSpan(bodyBegin, bodyEnd, failureReason)) {
+                return false;
+            }
+            return bindKernelLabel(bodyEnd, failureReason);
         }
 
         if (!validateOperand(loop.step, failureReason) ||
@@ -634,6 +713,9 @@ private:
         if (!emitSpan(bodyBegin, bodyEnd, failureReason)) {
             return false;
         }
+        if (!bindKernelLabel(bodyEnd, failureReason)) {
+            return false;
+        }
 
         sljit_emit_fop1(compiler_, SLJIT_MOV_F64, SLJIT_FR0, 0,
                         SLJIT_MEM1(SLJIT_SP), currentOffset);
@@ -658,10 +740,44 @@ private:
         size_t pc = begin;
         while (pc < end) {
             const auto& instruction = kernel_.instructions[pc];
+            if (!bindKernelLabel(pc, failureReason)) {
+                return false;
+            }
             if (instruction.op == ScalarKernelOp::LoopNext) {
                 failureReason =
                     "native scalar kernel reached an unmatched loop latch";
                 return false;
+            }
+            incrementInstructionCount(pc);
+            if (instruction.op == ScalarKernelOp::Jump ||
+                instruction.op == ScalarKernelOp::JumpIfFalse) {
+                if (instruction.jumpTarget <= pc ||
+                    instruction.jumpTarget > end) {
+                    failureReason =
+                        "native scalar kernel branch target escapes its control span";
+                    return false;
+                }
+
+                sljit_jump* jump = nullptr;
+                if (instruction.op == ScalarKernelOp::Jump) {
+                    jump = sljit_emit_jump(compiler_, SLJIT_JUMP);
+                } else {
+                    if (!validateOperand(instruction.left,
+                                         failureReason)) {
+                        return false;
+                    }
+                    loadOperand(instruction.left, SLJIT_FR0);
+                    sljit_emit_fset64(compiler_, SLJIT_FR1, 0.0);
+                    jump = sljit_emit_fcmp(
+                        compiler_, SLJIT_UNORDERED_OR_EQUAL,
+                        SLJIT_FR0, 0, SLJIT_FR1, 0);
+                }
+                if (!bindKernelJump(jump, instruction.jumpTarget,
+                                    failureReason)) {
+                    return false;
+                }
+                ++pc;
+                continue;
             }
             if (instruction.op == ScalarKernelOp::LoopBegin) {
                 if (!emitLoop(pc, instruction, failureReason)) {
@@ -681,6 +797,9 @@ private:
     sljit_compiler* compiler_ = nullptr;
     const ScalarKernel& kernel_;
     std::vector<sljit_jump*> rangeFailureJumps_;
+    std::vector<sljit_label*> kernelLabels_;
+    std::vector<std::vector<sljit_jump*>> pendingKernelJumps_;
+    bool tracksInstructionCounts_ = false;
 };
 
 struct CompiledKernel {
@@ -781,13 +900,15 @@ CompileResult compileKernel(const ScalarKernel& kernel) {
 
 ScalarKernelExecutionCounters deriveCounters(
     const ScalarKernel& kernel, size_t outerValueCount,
-    const std::vector<size_t>& loopIterations) {
+    const std::vector<size_t>& loopIterations,
+    const std::vector<size_t>& instructionCounts) {
     ScalarKernelExecutionCounters counters;
     counters.nestedIterations = std::accumulate(
         loopIterations.begin(), loopIterations.end(), size_t{0});
 
     std::vector<size_t> loopStack;
-    for (const auto& instruction : kernel.instructions) {
+    for (size_t pc = 0; pc < kernel.instructions.size(); ++pc) {
+        const auto& instruction = kernel.instructions[pc];
         if (instruction.op == ScalarKernelOp::LoopNext) {
             const size_t multiplier =
                 loopStack.empty() ? 0 : loopIterations[loopStack.back()];
@@ -799,9 +920,12 @@ ScalarKernelExecutionCounters deriveCounters(
             continue;
         }
 
-        const size_t multiplier =
-            loopStack.empty() ? outerValueCount
-                              : loopIterations[loopStack.back()];
+        const size_t multiplier = !instructionCounts.empty()
+                                      ? instructionCounts[pc]
+                                      : loopStack.empty()
+                                            ? outerValueCount
+                                            : loopIterations[
+                                                  loopStack.back()];
         counters.sourceInstructions +=
             instruction.sourceInstructionCount * multiplier;
         counters.kernelInstructions += multiplier;
@@ -864,6 +988,14 @@ NativeScalarJitResult executeNativeScalarKernel(
     std::vector<TypedScalar> registers(kernel.registerCount);
     result.writtenSlots.assign(kernel.slots.size(), 0);
     std::vector<size_t> loopIterations(kernel.nestedLoopCount, 0);
+    const bool hasBranches = std::any_of(
+        kernel.instructions.begin(), kernel.instructions.end(),
+        [](const ScalarKernelInstruction& instruction) {
+            return instruction.op == ScalarKernelOp::Jump ||
+                   instruction.op == ScalarKernelOp::JumpIfFalse;
+        });
+    std::vector<size_t> instructionCounts(
+        hasBranches ? kernel.instructions.size() : 0, 0);
     NativeContext context;
     context.slots = kernel.slots.data();
     context.registers = registers.data();
@@ -871,6 +1003,7 @@ NativeScalarJitResult executeNativeScalarKernel(
     context.outerValues = outerValues;
     context.outerValueCount = outerValueCount;
     context.loopIterations = loopIterations.data();
+    context.instructionCounts = instructionCounts.data();
     compiled->entry()(&context);
 
     result.codeSize = compiled->codeSize;
@@ -882,7 +1015,8 @@ NativeScalarJitResult executeNativeScalarKernel(
 
     result.status = NativeScalarJitStatus::Executed;
     result.counters =
-        deriveCounters(kernel, outerValueCount, loopIterations);
+        deriveCounters(kernel, outerValueCount, loopIterations,
+                       instructionCounts);
     result.reason = result.cacheHit
                         ? "cached SLJIT native scalar kernel executed"
                         : "compiled SLJIT native scalar kernel executed";

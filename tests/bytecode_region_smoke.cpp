@@ -87,12 +87,63 @@ end
     assert(region.eligibleForTypedExecution);
 }
 
-void runControlFlowRejectionSmoke() {
+void runStructuredBranchRegionSmoke() {
     const auto result = plan(R"(function y = main()
 y = 0;
 for i = 1:12
-    if i > 3
-        y = y + i;
+    if i > 8
+        branchValue = i;
+    elseif i > 3
+        branchValue = -i;
+    else
+        branchValue = 0;
+    end
+    y = y + branchValue;
+end
+end
+)");
+
+    const auto* loop = findLoop(result, "i");
+    assert(loop != nullptr);
+    const auto& region = loop->region;
+    assert(region.available);
+    assert(region.closed);
+    assert(region.conditionalBranchCount == 2);
+    assert(!region.hasUnsupportedControlFlow);
+    assert(region.eligibleForTypedExecution);
+    assert(!hasName(region.inputs, "branchValue"));
+    assert(hasName(region.inputs, "y"));
+    assert(region.reason ==
+           "eligible closed scalar loop region with structured branches");
+}
+
+void runConditionalInputMergeSmoke() {
+    const auto result = plan(R"(function y = main()
+y = 0;
+carry = 5;
+for i = 1:12
+    if i > 6
+        carry = i;
+    end
+    y = y + carry;
+end
+end
+)");
+
+    const auto* loop = findLoop(result, "i");
+    assert(loop != nullptr);
+    assert(loop->region.conditionalBranchCount == 1);
+    assert(loop->region.eligibleForTypedExecution);
+    assert(hasName(loop->region.inputs, "carry"));
+    assert(hasName(loop->region.inputs, "y"));
+}
+
+void runBackwardControlFlowRejectionSmoke() {
+    const auto result = plan(R"(function y = main()
+y = 0;
+for i = 1:12
+    while y < i
+        y = y + 1;
     end
 end
 end
@@ -174,7 +225,9 @@ end
 
 int main() {
     runClosedLoopSmoke();
-    runControlFlowRejectionSmoke();
+    runStructuredBranchRegionSmoke();
+    runConditionalInputMergeSmoke();
+    runBackwardControlFlowRejectionSmoke();
     runNestedLoopRegionSmoke();
     runPureMathCallRegionSmoke();
     runGeneralBuiltinCallRejectionSmoke();

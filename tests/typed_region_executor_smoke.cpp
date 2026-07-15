@@ -467,6 +467,131 @@ end
     assert(execution->nestedIterationCount == 0);
 }
 
+void runStructuredBranchTypedLoopSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+positive = 0;
+for j = 1:12
+    for i = -4:4
+        product = i * j;
+        if product > 20
+            branchValue = product;
+            positive = positive + 1;
+        elseif product < -20
+            branchValue = -product;
+        else
+            branchValue = abs(product);
+        end
+        y = y + branchValue;
+    end
+end
+end
+)");
+
+    const auto* outer = findLoopRegion(pipeline.module, "j");
+    assert(outer != nullptr);
+    assert(outer->region.nestedLoopCount == 1);
+    assert(outer->region.conditionalBranchCount == 2);
+    assert(outer->region.eligibleForTypedExecution);
+
+    const auto portable = runTyped(
+        pipeline, mparser::TypedRegionBackend::Portable);
+    assert(portable.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, portable.variables);
+    assert(findVariable(portable.variables, "y")->number == 1560.0);
+    assert(findVariable(portable.variables, "positive")->number == 15.0);
+
+    const auto* portableExecution =
+        findExecution(portable, "scalar-loop", "j");
+    assert(portableExecution != nullptr);
+    assert(portableExecution->backend == "portable");
+    assert(portableExecution->executionCount == 1);
+    assert(portableExecution->fallbackCount == 0);
+    assert(portableExecution->iterationCount == 12);
+    assert(portableExecution->nestedIterationCount == 108);
+
+    if (!mparser::nativeScalarJitAvailable()) {
+        return;
+    }
+
+    const auto native = runTyped(
+        pipeline, mparser::TypedRegionBackend::Native);
+    const auto cached = runTyped(
+        pipeline, mparser::TypedRegionBackend::Native);
+    assert(native.diagnostics.empty());
+    assert(cached.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, native.variables);
+    assertVariablesEqual(pipeline.baseline.variables, cached.variables);
+
+    const auto* nativeExecution =
+        findExecution(native, "scalar-loop", "j");
+    const auto* cachedExecution =
+        findExecution(cached, "scalar-loop", "j");
+    assert(nativeExecution != nullptr);
+    assert(cachedExecution != nullptr);
+    assert(nativeExecution->backend == "native");
+    assert(nativeExecution->executionCount == 1);
+    assert(nativeExecution->fallbackCount == 0);
+    assert(nativeExecution->iterationCount == 12);
+    assert(nativeExecution->nestedIterationCount == 108);
+    assert(nativeExecution->executedInstructionCount ==
+           portableExecution->executedInstructionCount);
+    assert(nativeExecution->executedKernelInstructionCount ==
+           portableExecution->executedKernelInstructionCount);
+    assert(nativeExecution->nativeCompilationCount +
+               nativeExecution->nativeCacheHitCount ==
+           1);
+    assert(nativeExecution->nativeCodeSize != 0);
+    assert(cachedExecution->nativeCompilationCount == 0);
+    assert(cachedExecution->nativeCacheHitCount == 1);
+    assert(cachedExecution->nativeCodeSize ==
+           nativeExecution->nativeCodeSize);
+}
+
+void runTailBranchTypedLoopSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for i = 1:12
+    if i > 6
+        y = y + i;
+    end
+end
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.conditionalBranchCount == 1);
+    assert(region->region.eligibleForTypedExecution);
+
+    const auto portable = runTyped(
+        pipeline, mparser::TypedRegionBackend::Portable);
+    assert(portable.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, portable.variables);
+    assert(findVariable(portable.variables, "y")->number == 57.0);
+
+    if (!mparser::nativeScalarJitAvailable()) {
+        return;
+    }
+
+    const auto native = runTyped(
+        pipeline, mparser::TypedRegionBackend::Native);
+    assert(native.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, native.variables);
+    const auto* portableExecution =
+        findExecution(portable, "scalar-loop", "i");
+    const auto* nativeExecution =
+        findExecution(native, "scalar-loop", "i");
+    assert(portableExecution != nullptr);
+    assert(nativeExecution != nullptr);
+    assert(nativeExecution->executionCount == 1);
+    assert(nativeExecution->fallbackCount == 0);
+    assert(nativeExecution->executedInstructionCount ==
+           portableExecution->executedInstructionCount);
+    assert(nativeExecution->executedKernelInstructionCount ==
+           portableExecution->executedKernelInstructionCount);
+}
+
 void runDirectTransactionalFallbackSmoke() {
     auto pipeline = prepare(R"(function y = main()
 y = 0;
@@ -643,6 +768,8 @@ int main() {
         runNestedTypedLoopExecutionSmoke();
         runThreeLevelTypedLoopSmoke();
         runEmptyNestedLoopPreservesValuesSmoke();
+        runStructuredBranchTypedLoopSmoke();
+        runTailBranchTypedLoopSmoke();
         runDirectTransactionalFallbackSmoke();
         runNativeNestedCacheSmoke();
         runNativeTransactionalRuntimeFallbackSmoke();

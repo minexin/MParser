@@ -85,7 +85,9 @@ void addCommonOperations(BytecodeTypedIrRegion& region,
                                          : "specialize-loop",
             "target=" + candidate.target +
                 ", nested=" +
-                std::to_string(contract.nestedLoopCount)});
+                std::to_string(contract.nestedLoopCount) +
+                ", branches=" +
+                std::to_string(contract.conditionalBranchCount)});
     } else if (candidate.kind == "function-site" ||
                candidate.kind == "builtin-site") {
         region.operations.push_back(BytecodeTypedIrOperation{

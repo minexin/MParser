@@ -499,6 +499,8 @@ void printBytecodeOptimizationPlan(
                   << (region.eligibleForTypedExecution ? "yes" : "no")
                   << ", nestedLoops=" << region.nestedLoopCount
                   << ", maxLoopDepth=" << region.maxLoopDepth
+                  << ", structuredBranches="
+                  << region.conditionalBranchCount
                   << ", stack=" << region.stackInputCount << "->"
                   << region.stackOutputCount << "\n";
         std::cout << "      inputs="
@@ -539,6 +541,8 @@ void printBytecodeTypedIr(const mparser::BytecodeTypedIrModule& module) {
                   << ", nestedLoops="
                   << region.region.nestedLoopCount
                   << ", maxLoopDepth=" << region.region.maxLoopDepth
+                  << ", structuredBranches="
+                  << region.region.conditionalBranchCount
                   << "\n";
         std::cout << "      inputs="
                   << stringListToString(region.region.inputs)

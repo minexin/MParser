@@ -4,9 +4,12 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstdlib>
+#include <deque>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace mparser {
 namespace {
@@ -58,14 +61,17 @@ struct LoopStructure {
     bool valid = true;
     std::set<size_t> beginPcs;
     std::set<size_t> latchPcs;
+    std::vector<size_t> depthAtPc;
     size_t maxDepth = 0;
 };
 
 LoopStructure collectLoopStructure(const BytecodeProgram& program,
                                    size_t sourcePc, size_t exitPc) {
     LoopStructure structure;
+    structure.depthAtPc.resize(program.instructions.size() + 1, 0);
     std::vector<LoopBoundary> stack;
     for (size_t pc = sourcePc; pc < exitPc; ++pc) {
+        structure.depthAtPc[pc] = stack.size();
         const auto& instruction = program.instructions[pc];
         if (instruction.op == BytecodeOp::ForBegin) {
             if (instruction.target < 0) {
@@ -109,11 +115,24 @@ LoopStructure collectLoopStructure(const BytecodeProgram& program,
         }
         stack.pop_back();
     }
+    structure.depthAtPc[exitPc] = stack.size();
     if (!stack.empty() || !structure.beginPcs.contains(sourcePc) ||
         !structure.latchPcs.contains(exitPc - 1)) {
         structure.valid = false;
     }
     return structure;
+}
+
+bool isStructuredForwardJump(const BytecodeInstruction& instruction,
+                             size_t pc, size_t exitPc,
+                             const LoopStructure& loops) {
+    if (instruction.target < 0) {
+        return false;
+    }
+    const size_t target = static_cast<size_t>(instruction.target);
+    return target > pc && target <= exitPc &&
+           target < loops.depthAtPc.size() &&
+           loops.depthAtPc[pc] == loops.depthAtPc[target];
 }
 
 void copySet(const std::set<std::string>& source,
@@ -140,16 +159,18 @@ std::string rejectionReason(const BytecodeRegionContract& contract) {
     if (contract.hasUnsupportedOperations) {
         return "region contains unsupported bytecode operations";
     }
-    return contract.nestedLoopCount > 0
-               ? "eligible closed nested scalar loop region"
-               : "eligible closed scalar loop region";
+    std::string reason = contract.nestedLoopCount > 0
+                             ? "eligible closed nested scalar loop region"
+                             : "eligible closed scalar loop region";
+    if (contract.conditionalBranchCount > 0) {
+        reason += " with structured branches";
+    }
+    return reason;
 }
 
 void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
-                        const LoopStructure& loops,
-                        std::set<std::string>& definitions,
+                        size_t exitPc, const LoopStructure& loops,
                         std::set<std::string>& reads,
-                        std::set<std::string>& inputs,
                         std::set<std::string>& writes,
                         std::set<std::string>& outputs,
                         std::set<std::string>& calls,
@@ -160,7 +181,6 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
             contract.hasUnsupportedControlFlow = true;
         }
         if (!instruction.operand.empty()) {
-            definitions.insert(instruction.operand);
             writes.insert(instruction.operand);
             outputs.insert(instruction.operand);
         }
@@ -183,16 +203,12 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
             break;
         }
         reads.insert(instruction.operand);
-        if (!definitions.contains(instruction.operand)) {
-            inputs.insert(instruction.operand);
-        }
         break;
     case BytecodeOp::StoreName:
         if (instruction.operand.empty()) {
             contract.hasUnsupportedOperations = true;
             break;
         }
-        definitions.insert(instruction.operand);
         writes.insert(instruction.operand);
         outputs.insert(instruction.operand);
         break;
@@ -236,6 +252,7 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         break;
     case BytecodeOp::StoreMember:
     case BytecodeOp::StoreIndex:
+    case BytecodeOp::StoreBraceIndex:
         contract.hasMutation = true;
         if (!instruction.operand.empty()) {
             writes.insert(instruction.operand);
@@ -243,7 +260,16 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         }
         break;
     case BytecodeOp::Jump:
+        if (!isStructuredForwardJump(instruction, pc, exitPc, loops)) {
+            contract.hasUnsupportedControlFlow = true;
+        }
+        break;
     case BytecodeOp::JumpIfFalse:
+        ++contract.conditionalBranchCount;
+        if (!isStructuredForwardJump(instruction, pc, exitPc, loops)) {
+            contract.hasUnsupportedControlFlow = true;
+        }
+        break;
     case BytecodeOp::Break:
     case BytecodeOp::Continue:
     case BytecodeOp::Return:
@@ -284,6 +310,120 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         contract.hasUnsupportedOperations = true;
         break;
     }
+}
+
+using DefinitionSet = std::set<std::string>;
+
+bool mergeDefinitions(std::optional<DefinitionSet>& destination,
+                      const DefinitionSet& incoming) {
+    if (!destination) {
+        destination = incoming;
+        return true;
+    }
+
+    bool changed = false;
+    for (auto iterator = destination->begin();
+         iterator != destination->end();) {
+        if (incoming.contains(*iterator)) {
+            ++iterator;
+        } else {
+            iterator = destination->erase(iterator);
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+bool collectDefiniteInputs(const BytecodeProgram& program,
+                           size_t sourcePc, size_t exitPc,
+                           std::set<std::string>& inputs) {
+    std::vector<std::optional<DefinitionSet>> states(
+        exitPc - sourcePc + 1);
+    std::deque<size_t> pending;
+    states.front() = DefinitionSet{};
+    pending.push_back(sourcePc);
+    bool valid = true;
+
+    const auto propagate = [&](size_t target,
+                               const DefinitionSet& definitions) {
+        if (target < sourcePc || target > exitPc) {
+            valid = false;
+            return;
+        }
+        auto& state = states[target - sourcePc];
+        if (mergeDefinitions(state, definitions)) {
+            pending.push_back(target);
+        }
+    };
+
+    while (!pending.empty()) {
+        const size_t pc = pending.front();
+        pending.pop_front();
+        if (pc == exitPc) {
+            continue;
+        }
+
+        const auto& instruction = program.instructions[pc];
+        DefinitionSet definitions = *states[pc - sourcePc];
+        if (instruction.op == BytecodeOp::LoadName &&
+            isVariableBinding(instruction.binding.kind) &&
+            !instruction.operand.empty() &&
+            !definitions.contains(instruction.operand)) {
+            inputs.insert(instruction.operand);
+        }
+        if (instruction.op == BytecodeOp::StoreName &&
+            !instruction.operand.empty()) {
+            definitions.insert(instruction.operand);
+        }
+
+        switch (instruction.op) {
+        case BytecodeOp::ForBegin: {
+            if (instruction.target < 0) {
+                valid = false;
+                break;
+            }
+            propagate(static_cast<size_t>(instruction.target),
+                      definitions);
+            if (!instruction.operand.empty()) {
+                definitions.insert(instruction.operand);
+            }
+            propagate(pc + 1, definitions);
+            break;
+        }
+        case BytecodeOp::ForNext:
+            if (instruction.target < 0) {
+                valid = false;
+                break;
+            }
+            propagate(static_cast<size_t>(instruction.target),
+                      definitions);
+            propagate(pc + 1, definitions);
+            break;
+        case BytecodeOp::Jump:
+            if (instruction.target < 0) {
+                valid = false;
+            } else {
+                propagate(static_cast<size_t>(instruction.target),
+                          definitions);
+            }
+            break;
+        case BytecodeOp::JumpIfFalse:
+            if (instruction.target < 0) {
+                valid = false;
+            } else {
+                propagate(static_cast<size_t>(instruction.target),
+                          definitions);
+                propagate(pc + 1, definitions);
+            }
+            break;
+        case BytecodeOp::Return:
+            break;
+        default:
+            propagate(pc + 1, definitions);
+            break;
+        }
+    }
+    return valid;
 }
 
 BytecodeRegionContract analyzePointRegion(const BytecodeProgram& program,
@@ -368,28 +508,17 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
         loops.beginPcs.empty() ? 0 : loops.beginPcs.size() - 1;
     contract.maxLoopDepth = loops.maxDepth;
 
-    std::set<std::string> definitions;
     std::set<std::string> reads;
     std::set<std::string> inputs;
     std::set<std::string> writes;
     std::set<std::string> outputs;
     std::set<std::string> calls;
-    std::vector<std::set<std::string>> definitionSnapshots;
     for (size_t pc = sourcePc; pc < exitPc; ++pc) {
-        if (program.instructions[pc].op == BytecodeOp::ForBegin) {
-            definitionSnapshots.push_back(definitions);
-        }
-        analyzeInstruction(program.instructions[pc], pc, loops,
-                           definitions, reads, inputs, writes, outputs, calls,
-                           contract);
-        if (program.instructions[pc].op == BytecodeOp::ForNext) {
-            if (definitionSnapshots.empty()) {
-                contract.hasUnsupportedControlFlow = true;
-            } else {
-                definitions = std::move(definitionSnapshots.back());
-                definitionSnapshots.pop_back();
-            }
-        }
+        analyzeInstruction(program.instructions[pc], pc, exitPc, loops,
+                           reads, writes, outputs, calls, contract);
+    }
+    if (!collectDefiniteInputs(program, sourcePc, exitPc, inputs)) {
+        contract.hasUnsupportedControlFlow = true;
     }
 
     copySet(reads, contract.reads);

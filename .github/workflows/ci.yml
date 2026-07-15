@@ -1,0 +1,90 @@
+name: Cross-platform CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mparser-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    name: Windows x64 / MSVC / SLJIT
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >-
+          cmake -S . -B build-ci -A x64
+          -DMPARSER_ENABLE_NATIVE_JIT=ON
+      - name: Build
+        run: cmake --build build-ci --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build-ci -C Release --output-on-failure
+
+  linux-x64:
+    name: Linux x64 / GCC / SLJIT
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >-
+          cmake -S . -B build-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DMPARSER_ENABLE_NATIVE_JIT=ON
+      - name: Build
+        run: cmake --build build-ci --parallel
+      - name: Test
+        run: ctest --test-dir build-ci --output-on-failure
+
+  linux-aarch64:
+    name: Linux AArch64 / GCC cross / QEMU
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install AArch64 toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user
+      - name: Configure native JIT build
+        run: >-
+          cmake -S . -B build-arm64-jit -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-aarch64.cmake
+          -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu"
+          -DMPARSER_ENABLE_NATIVE_JIT=ON
+      - name: Build native JIT targets
+        run: cmake --build build-arm64-jit --parallel
+      - name: Run native branch JIT smoke under QEMU
+        run: >-
+          ctest --test-dir build-arm64-jit --output-on-failure
+          -R "^typed_region_executor_smoke$"
+      - name: Configure portable fallback build
+        run: >-
+          cmake -S . -B build-arm64-portable -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-aarch64.cmake
+          -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu"
+          -DMPARSER_ENABLE_NATIVE_JIT=OFF
+      - name: Build portable fallback targets
+        run: cmake --build build-arm64-portable --parallel
+      - name: Run portable runtime smokes under QEMU
+        run: >-
+          ctest --test-dir build-arm64-portable --output-on-failure
+          -R "^(bytecode_region_smoke|typed_region_executor_smoke)$"
+      - name: Run portable branch sample under QEMU
+        shell: bash
+        run: |
+          qemu-aarch64 -L /usr/aarch64-linux-gnu \
+            ./build-arm64-portable/mparser \
+            --run-typed-bytecode --typed-backend=portable \
+            samples/branched_typed_loop_demo.m | tee arm64-branch-output.txt
+          grep --fixed-strings "summary = 23520" arm64-branch-output.txt

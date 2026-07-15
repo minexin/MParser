@@ -224,7 +224,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.51 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.52 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -345,7 +345,13 @@ closed scalar loops without unsupported calls, mutation, unstructured control
 flow, or operations are currently eligible for a typed execution path.
 Perfectly structured nested `for` loops are part of the enclosing contract;
 the analyzer records their count and maximum depth and validates every header
-and latch boundary. Statically
+and latch boundary. Structured `if`/`elseif`/`else` bytecode is accepted when
+each jump is forward, closed by the selected region, and remains at the same
+loop depth. A control-flow dataflow pass intersects incoming definition sets,
+so a variable assigned by every arm is local to the kernel while a value that
+may be read before assignment remains an external guarded input. Backward
+jumps, `break`, `continue`, `return`, and exception control flow retain the
+bytecode boundary. Statically
 bound one-argument calls to `abs`, `acos`, `asin`, `atan`, `cos`, `exp`,
 `log`, `sin`, `sqrt`, and `tan` are scalar operations rather than generic
 calls; every other call retains the rejection boundary. The VM
@@ -353,7 +359,8 @@ can now hand eligible scalar `for` loop trees to a transactional predecoded
 scalar kernel. Kernel preparation resolves variable names to contiguous slots,
 converts supported operations and pure math calls to enum opcodes, assigns
 expression temporaries to indexed registers, fuses the final producer with its
-destination store, and lowers nested boundaries to structured loop operations.
+destination store, lowers nested boundaries to structured loop operations,
+and patches bytecode branch targets to closed scalar-kernel instruction labels.
 Its span executor runs arbitrary well-nested scalar loops and uses a direct
 path for leaf bodies. The executor commits scalar slots only after the
 complete loop succeeds; a failed entry type or kernel compilation check leaves
@@ -598,8 +605,10 @@ into explicit candidates and guards. The typed IR builder now lowers those
 candidates into typed regions, and the guard evaluator can decide whether
 eligible regions may enter a typed path. v0.50 provides a portable predecoded
 register kernel for complete structured scalar loop nests. v0.51 compiles the
-same kernel contract to native machine code through optional SLJIT, while
-retaining the portable executor as a build-time and runtime fallback. The
+same kernel contract to native machine code through optional SLJIT. v0.52 adds
+closed forward branch operations and path-sensitive definite-input analysis to
+that shared kernel, while retaining the portable executor as a build-time and
+runtime fallback. The
 structured kernel IR remains backend-neutral so a future LLVM ORC backend can
 target richer regions without changing profiling, guards, or deoptimization:
 
@@ -607,6 +616,13 @@ The pinned SLJIT source is vendored under `third_party/sljit`. CMake compiles
 its single `sljitLir.c` entry translation unit into a private static target, so
 the default native build does not fetch dependencies or expose SLJIT types in
 MParser's public execution contract.
+
+For branch-bearing kernels, both executors use the same scalar truth contract
+and forward jump targets. The native emitter owns one label table for the
+kernel, binds jumps when their target is emitted, and rejects unresolved or
+cross-span targets before code installation. Per-instruction counters are
+enabled for branch kernels so source and kernel work reflect the arms actually
+executed rather than a static loop multiplier.
 
 ```text
 bytecode -> cumulative profiling -> tier promotion -> typed IR
@@ -712,7 +728,10 @@ well-nested scalar loop regions, unifies colon-range semantics across runtime
 tiers, preserves zero-trip definite-initialization behavior, and adds a leaf
 loop dispatch fast path. v0.51 adds optional native SLJIT lowering, executable
 capability reporting, structural process-wide code caching, backend selection,
-and transaction-safe portable or bytecode fallback. The next steps include
+and transaction-safe portable or bytecode fallback. v0.52 adds structured
+`if`/`elseif`/`else` regions, control-flow-aware definite assignment, portable
+kernel jumps, native SLJIT labels, exact branch-path counters, and branch-cache
+regressions. The next steps include
 richer typed values and regions, optional LLVM ORC lowering behind the same
 backend contract, persistent cross-process code caches, moving-window array operations,
 object/listener arrays,

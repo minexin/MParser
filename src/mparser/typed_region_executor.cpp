@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -49,6 +50,12 @@ struct ScalarKernelCompileLoop {
     size_t loopSlot = 0;
     std::string variable;
     std::vector<bool> initializedBefore;
+};
+
+struct ScalarKernelBranchPatch {
+    size_t instruction = 0;
+    size_t sourcePc = 0;
+    size_t targetPc = 0;
 };
 
 struct LoopRangeView {
@@ -243,10 +250,21 @@ std::optional<ScalarKernel> compileKernel(
     kernel.loopSlot = findOrAddSlot(kernel, header.operand, variables);
     kernel.initialized[kernel.loopSlot] = true;
     kernel.slots[kernel.loopSlot] = TypedScalar{};
+    for (const auto& input : region.inputs) {
+        const size_t slot = findOrAddSlot(kernel, input, variables);
+        if (!kernel.initialized[slot]) {
+            failureReason = "typed region input is unavailable: " + input;
+            return std::nullopt;
+        }
+    }
 
     std::vector<ScalarKernelStackValue> stack;
     stack.reserve(region.bodyEndPc - region.bodyBeginPc);
     std::vector<ScalarKernelCompileLoop> loops;
+    std::vector<ScalarKernelBranchPatch> branchPatches;
+    std::vector<size_t> pcToKernel(
+        region.bodyEndPc - region.bodyBeginPc + 1,
+        std::numeric_limits<size_t>::max());
     size_t pendingSourceInstructionCount = 0;
 
     const auto appendInstruction = [&](ScalarKernelInstruction value) {
@@ -280,6 +298,8 @@ std::optional<ScalarKernel> compileKernel(
     };
 
     for (size_t pc = region.bodyBeginPc; pc < region.bodyEndPc; ++pc) {
+        pcToKernel[pc - region.bodyBeginPc] =
+            kernel.instructions.size();
         const auto& instruction = program.instructions[pc];
         ++pendingSourceInstructionCount;
         switch (instruction.op) {
@@ -499,6 +519,45 @@ std::optional<ScalarKernel> compileKernel(
             }
             stack.pop_back();
             break;
+        case BytecodeOp::Jump:
+            if (!stack.empty() || instruction.target < 0) {
+                failureReason =
+                    "typed branch does not preserve the stack boundary";
+                return std::nullopt;
+            }
+            {
+                ScalarKernelInstruction value;
+                value.op = ScalarKernelOp::Jump;
+                appendInstruction(std::move(value));
+                branchPatches.push_back(ScalarKernelBranchPatch{
+                    kernel.instructions.size() - 1, pc,
+                    static_cast<size_t>(instruction.target)});
+            }
+            break;
+        case BytecodeOp::JumpIfFalse:
+            if (!requireStack(
+                    stack, 1,
+                    "typed branch condition is missing",
+                    failureReason)) {
+                return std::nullopt;
+            }
+            if (stack.size() != 1 || stack.back().isRange ||
+                instruction.target < 0) {
+                failureReason =
+                    "typed conditional branch has an invalid stack boundary";
+                return std::nullopt;
+            }
+            {
+                ScalarKernelInstruction value;
+                value.op = ScalarKernelOp::JumpIfFalse;
+                value.left = stack.back().scalar;
+                stack.pop_back();
+                appendInstruction(std::move(value));
+                branchPatches.push_back(ScalarKernelBranchPatch{
+                    kernel.instructions.size() - 1, pc,
+                    static_cast<size_t>(instruction.target)});
+            }
+            break;
         case BytecodeOp::ForBegin: {
             if (!requireStack(stack, 1,
                               "typed nested loop range is missing",
@@ -577,7 +636,10 @@ std::optional<ScalarKernel> compileKernel(
                             loop.beginInstruction + 1),
                     kernel.instructions.end() - 1,
                     [](const ScalarKernelInstruction& instruction) {
-                        return instruction.op == ScalarKernelOp::LoopBegin;
+                        return instruction.op == ScalarKernelOp::LoopBegin ||
+                               instruction.op == ScalarKernelOp::Jump ||
+                               instruction.op ==
+                                   ScalarKernelOp::JumpIfFalse;
                     });
 
             loop.initializedBefore.resize(kernel.initialized.size(), false);
@@ -589,6 +651,26 @@ std::optional<ScalarKernel> compileKernel(
                 "typed region encountered an unsupported instruction";
             return std::nullopt;
         }
+    }
+
+    pcToKernel.back() = kernel.instructions.size();
+    for (const auto& patch : branchPatches) {
+        if (patch.targetPc <= patch.sourcePc ||
+            patch.targetPc < region.bodyBeginPc ||
+            patch.targetPc > region.bodyEndPc) {
+            failureReason =
+                "typed branch target escapes the scalar loop body";
+            return std::nullopt;
+        }
+        const size_t target =
+            pcToKernel[patch.targetPc - region.bodyBeginPc];
+        if (target == std::numeric_limits<size_t>::max() ||
+            target <= patch.instruction ||
+            target > kernel.instructions.size()) {
+            failureReason = "typed branch target is not forward and closed";
+            return std::nullopt;
+        }
+        kernel.instructions[patch.instruction].jumpTarget = target;
     }
 
     if (!stack.empty()) {
@@ -714,6 +796,8 @@ void executeKernelInstruction(
     const ScalarKernelInstruction& instruction, ScalarKernel& kernel,
     std::vector<TypedScalar>& registers, std::vector<bool>& written) {
     if (instruction.op == ScalarKernelOp::Discard ||
+        instruction.op == ScalarKernelOp::Jump ||
+        instruction.op == ScalarKernelOp::JumpIfFalse ||
         instruction.op == ScalarKernelOp::LoopBegin ||
         instruction.op == ScalarKernelOp::LoopNext) {
         return;
@@ -772,6 +856,8 @@ void executeKernelInstruction(
             readOperand(instruction.left, kernel, registers).value)};
         break;
     case ScalarKernelOp::Discard:
+    case ScalarKernelOp::Jump:
+    case ScalarKernelOp::JumpIfFalse:
     case ScalarKernelOp::LoopBegin:
     case ScalarKernelOp::LoopNext:
         return;
@@ -796,6 +882,24 @@ bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
 
         ++counters.kernelInstructions;
         counters.sourceInstructions += instruction.sourceInstructionCount;
+        if (instruction.op == ScalarKernelOp::Jump ||
+            instruction.op == ScalarKernelOp::JumpIfFalse) {
+            if (instruction.jumpTarget <= pc ||
+                instruction.jumpTarget > end) {
+                failureReason =
+                    "typed kernel branch target escapes its control span";
+                return false;
+            }
+            if (instruction.op == ScalarKernelOp::Jump ||
+                !truthy(readOperand(instruction.left, kernel,
+                                    registers)
+                            .value)) {
+                pc = instruction.jumpTarget;
+            } else {
+                ++pc;
+            }
+            continue;
+        }
         if (instruction.op != ScalarKernelOp::LoopBegin) {
             executeKernelInstruction(instruction, kernel, registers,
                                      written);

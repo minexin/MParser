@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.51.0 LANGUAGES C CXX)
+project(MParser VERSION 0.52.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -188,6 +188,14 @@ set_tests_properties(nested_adaptive_kernel_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "predecoded nested scalar kernel executed")
 
+add_test(NAME branched_scalar_kernel_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-typed-bytecode
+        --typed-backend=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/branched_typed_loop_demo.m)
+set_tests_properties(branched_scalar_kernel_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 23520")
+
 if(MPARSER_ENABLE_NATIVE_JIT)
     add_test(NAME native_scalar_kernel_cli_smoke
         COMMAND $<TARGET_FILE:mparser>
@@ -205,6 +213,17 @@ if(MPARSER_ENABLE_NATIVE_JIT)
             --typed-backend=native
             ${CMAKE_CURRENT_SOURCE_DIR}/samples/nested_typed_loop_demo.m)
     set_tests_properties(native_kernel_cache_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "backend=native.*nativeCacheHits=1")
+
+    add_test(NAME native_branched_kernel_cache_cli_smoke
+        COMMAND $<TARGET_FILE:mparser>
+            --run-adaptive-bytecode
+            --adaptive-runs=3
+            --adaptive-hot-loop=10
+            --typed-backend=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/branched_typed_loop_demo.m)
+    set_tests_properties(native_branched_kernel_cache_cli_smoke PROPERTIES
         PASS_REGULAR_EXPRESSION
             "backend=native.*nativeCacheHits=1")
 else()
