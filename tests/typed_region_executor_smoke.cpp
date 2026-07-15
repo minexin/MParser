@@ -11,9 +11,21 @@
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#ifdef assert
+#undef assert
+#endif
+
+#define assert(condition)                                                   \
+    do {                                                                    \
+        if (!(condition)) {                                                 \
+            throw std::runtime_error("requirement failed: " #condition);   \
+        }                                                                   \
+    } while (false)
 
 namespace {
 
@@ -134,6 +146,9 @@ end
     assert(execution->fallbackCount == 0);
     assert(execution->iterationCount == 12);
     assert(execution->executedInstructionCount == 72);
+    assert(execution->executedKernelInstructionCount == 24);
+    assert(execution->lastReason ==
+           "predecoded scalar kernel executed");
 }
 
 void runTypedLoopFallbackSmoke() {
@@ -244,6 +259,96 @@ end
     assert(execution->fallbackCount == 0);
     assert(execution->iterationCount == 12);
     assert(execution->executedInstructionCount == 96);
+    assert(execution->executedKernelInstructionCount == 36);
+    assert(execution->lastReason ==
+           "predecoded scalar kernel executed");
+}
+
+void runPredecodedOperationCoverageSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for i = 1:12
+    a = +i;
+    b = -i;
+    c = ~i;
+    d = i + 2;
+    e = i - 2;
+    f = i * 2;
+    g = i / 2;
+    h = i ^ 2;
+    p = i > 2;
+    q = i < 2;
+    r = i >= 2;
+    s = i <= 2;
+    t = i == 2;
+    u = i ~= 2;
+    v = (i > 1) & (i < 4);
+    w = (i > 1) | (i < 0);
+    x = abs(b) + acos(1) + asin(0) + atan(0) + cos(i) + exp(0) + ...
+        log(1) + sin(i) + sqrt(i) + tan(0);
+    y = a + b + c + d + e + f + g + h + p + q + r + s + ...
+        t + u + v + w + x;
+end
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+
+    mparser::BytecodeVm vm;
+    const auto optimized =
+        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+    assert(execution->lastReason ==
+           "predecoded scalar kernel executed");
+}
+
+void runEmptyLoopPreservesWorkspaceSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 5;
+for i = 1:12
+    y = y + i;
+end
+end
+)");
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+
+    mparser::RuntimeValue emptyRange;
+    emptyRange.kind = mparser::RuntimeValueKind::Vector;
+    emptyRange.rows = 1;
+    emptyRange.columns = 0;
+
+    mparser::RuntimeValue y;
+    y.kind = mparser::RuntimeValueKind::Number;
+    y.number = 5.0;
+    y.rows = 1;
+    y.columns = 1;
+
+    mparser::RuntimeValue i = y;
+    i.number = 42.0;
+    const std::map<std::string, mparser::RuntimeValue> variables{
+        {"i", i}, {"y", y}};
+
+    mparser::ScalarTypedRegionExecutor executor;
+    const auto result = executor.execute(
+        pipeline.bytecode, region->region, emptyRange, variables);
+    assert(result.status ==
+           mparser::TypedRegionExecutionStatus::Executed);
+    assert(result.iterationCount == 0);
+    assert(result.executedInstructionCount == 0);
+    assert(result.executedKernelInstructionCount == 0);
+    assert(result.variables.at("i").number == 42.0);
+    assert(result.variables.at("y").number == 5.0);
+    assert(result.reason == "predecoded scalar kernel executed");
 }
 
 void runDirectTransactionalFallbackSmoke() {
@@ -284,11 +389,18 @@ end
 } // namespace
 
 int main() {
-    runTypedLoopExecutionSmoke();
-    runTypedLoopFallbackSmoke();
-    runTypedLogicalResultSmoke();
-    runTypedPureMathBuiltinSmoke();
-    runDirectTransactionalFallbackSmoke();
-    std::cout << "typed region executor smoke tests passed\n";
-    return 0;
+    try {
+        runTypedLoopExecutionSmoke();
+        runTypedLoopFallbackSmoke();
+        runTypedLogicalResultSmoke();
+        runTypedPureMathBuiltinSmoke();
+        runPredecodedOperationCoverageSmoke();
+        runEmptyLoopPreservesWorkspaceSmoke();
+        runDirectTransactionalFallbackSmoke();
+        std::cout << "typed region executor smoke tests passed\n";
+        return 0;
+    } catch (const std::exception& exception) {
+        std::cerr << exception.what() << "\n";
+        return 1;
+    }
 }

@@ -145,6 +145,8 @@ end
     assert(benchmark.typedBytecodeVm.meanTypedRegionExecutionCount == 1.0);
     assert(benchmark.typedBytecodeVm.meanTypedRegionFallbackCount == 0.0);
     assert(benchmark.typedBytecodeVm.meanTypedInstructionCount == 72.0);
+    assert(benchmark.typedBytecodeVm.meanTypedKernelInstructionCount ==
+           24.0);
     assert(benchmark.lastProfiledBytecodeVmResult.profile.collected);
     assert(!benchmark.lastBytecodeVmResult.profile.collected);
     assert(!benchmark.lastTypedBytecodeVmResult.profile.collected);
@@ -154,6 +156,7 @@ end
     assert(execution != nullptr);
     assert(execution->executionCount == 1);
     assert(execution->fallbackCount == 0);
+    assert(execution->executedKernelInstructionCount == 24);
 
     const auto* output = findVariable(
         benchmark.lastTypedBytecodeVmResult.variables, "y");

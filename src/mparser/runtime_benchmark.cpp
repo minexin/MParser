@@ -145,6 +145,7 @@ struct ExecutionTotals {
     size_t typedRegionExecutionCount = 0;
     size_t typedRegionFallbackCount = 0;
     size_t typedInstructionCount = 0;
+    size_t typedKernelInstructionCount = 0;
 };
 
 void accumulateTypedExecutions(
@@ -155,6 +156,8 @@ void accumulateTypedExecutions(
         totals.typedRegionExecutionCount += execution.executionCount;
         totals.typedRegionFallbackCount += execution.fallbackCount;
         totals.typedInstructionCount += execution.executedInstructionCount;
+        totals.typedKernelInstructionCount +=
+            execution.executedKernelInstructionCount;
     }
 }
 
@@ -198,6 +201,9 @@ RuntimeBenchmarkStatistics statistics(
         static_cast<double>(samples.size());
     result.meanTypedInstructionCount =
         static_cast<double>(totals.typedInstructionCount) /
+        static_cast<double>(samples.size());
+    result.meanTypedKernelInstructionCount =
+        static_cast<double>(totals.typedKernelInstructionCount) /
         static_cast<double>(samples.size());
     return result;
 }

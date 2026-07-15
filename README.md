@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.48.0. See [docs/v0.48.md](docs/v0.48.md) for the
+Current milestone: v0.49.0. See [docs/v0.49.md](docs/v0.49.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.47.md](docs/v0.47.md),
+iteration plan. Previous boundaries are kept in [docs/v0.48.md](docs/v0.48.md),
+[docs/v0.47.md](docs/v0.47.md),
 [docs/v0.46.md](docs/v0.46.md),
 [docs/v0.45.md](docs/v0.45.md),
 [docs/v0.44.md](docs/v0.44.md),
@@ -84,7 +85,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.48 executes the core numeric/string subset,
+expression operators. v0.49 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -112,13 +113,14 @@ evaluation can check eligible typed regions against real runtime values. A
 portable benchmark runner now measures the HIR interpreter, profiled bytecode
 VM, profile-off bytecode VM, and profile-off typed-region VM with common warmup
 and rotating measurement order. It reports timing distributions, VM dispatch
-counts, typed region activity, and typed instruction counts while requiring all
-four runtime outputs to match.
+counts, typed region activity, source bytecode work, and predecoded kernel
+instruction counts while requiring all four runtime outputs to match.
 Optimization candidates also carry concrete bytecode region contracts with PC
 ranges, stack boundaries, read/write/call summaries, and conservative typed
 execution eligibility. Eligible closed scalar `for` loops can now execute in a
-transactional typed region path and automatically fall back to unchanged-state
-bytecode execution when an entry value is not scalar numeric. Statically bound
+transactional predecoded register-kernel path and automatically fall back to
+unchanged-state bytecode execution when an entry value is not scalar numeric.
+Statically bound
 scalar calls to `abs`, `acos`, `asin`, `atan`, `cos`, `exp`, `log`, `sin`,
 `sqrt`, and `tan` execute directly in that typed region; general builtins,
 user functions, dynamic indexing, mutation, and control flow retain their
@@ -388,14 +390,14 @@ colon syntax is retained in bytecode metadata. An empty value stored in a
 variable or produced by `zeros(0,0)` remains an ordinary assignment value and
 does not trigger deletion. Literal `[]` now has its MATLAB 0-by-0 shape.
 
-The scalar typed loop tier also executes ten statically bound pure unary math
-builtins directly. On `samples/timing_loop_demo.m`, all one million inner-loop
-iterations enter the typed path with no fallback; the measured `toc` value on
-the development machine fell from roughly 14.1 seconds in the baseline VM to
-roughly 1.8 seconds in the typed steady run. `clear`, `clc`, `tic`, and `toc`
-are executable in command form. Typed baseline comparison excludes only values
-assigned from nondeterministic `toc` expressions while still checking every
-deterministic variable.
+The v0.46 scalar typed loop tier also introduced direct execution for ten
+statically bound pure unary math builtins. At that milestone,
+`samples/timing_loop_demo.m` entered the typed path with no fallback and moved
+from roughly 14.1 seconds in the baseline VM to roughly 1.8 seconds in the
+typed stack executor. `clear`, `clc`, `tic`, and `toc` are executable in
+command form. Typed baseline comparison excludes only values assigned from
+nondeterministic `toc` expressions while still checking every deterministic
+variable.
 
 v0.47 replaces the earlier scalar/global reduction shortcuts with a shared
 dimension-aware implementation used by the HIR interpreter and bytecode VM.
@@ -431,6 +433,23 @@ two-input form keeps every order on the initially selected dimension, matching
 the current MATLAB behavior instead of carrying residual orders into a later
 dimension. The shared `runtime_numeric` result builder maps scan and difference
 outputs from MATLAB column-major logical order into the runtime payload once.
+
+v0.49 replaces per-iteration bytecode decoding, string operation dispatch,
+dynamic stacks, map lookups, and temporary `RuntimeValue` construction in
+eligible scalar loops with a predecoded register kernel. Loads are bound to
+contiguous scalar slots, expression temporaries use indexed registers, and the
+final expression producer writes directly to its destination slot. The VM
+also skips synthetic loop-profile reconstruction when profiling is disabled.
+
+On the development machine, the original nested `1000 x 1000` loop in
+`samples/timing_loop_demo.m` now reports about `0.068` to `0.079` seconds in
+the typed execution, down from about `1.51` seconds immediately before v0.49.
+The million inner iterations execute 14,000,000 source instructions as
+4,000,000 kernel instructions with no fallback. The user-reported MATLAB
+reference is about `0.02` seconds, so this milestone is roughly 19-22 times
+faster than the previous typed executor but remains about 3.4-4.0 times slower
+than that MATLAB result. These timings are machine-dependent. This is a
+portable C++ register interpreter, not native-code JIT compilation.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
@@ -623,6 +642,7 @@ specialization with:
 ```powershell
 build-release\mparser.exe --run-bytecode samples\timing_loop_demo.m
 build-release\mparser.exe --run-typed-bytecode samples\timing_loop_demo.m
+build-release\mparser.exe --run-typed-bytecode samples\timing_flat_loop_demo.m
 ```
 
 Observe cross-invocation warmup and automatic typed-tier promotion with:

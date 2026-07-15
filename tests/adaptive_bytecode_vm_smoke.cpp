@@ -11,6 +11,17 @@
 #include <string_view>
 #include <utility>
 
+#ifdef assert
+#undef assert
+#endif
+
+#define assert(condition)                                                   \
+    do {                                                                    \
+        if (!(condition)) {                                                 \
+            throw std::runtime_error("requirement failed: " #condition);   \
+        }                                                                   \
+    } while (false)
+
 namespace {
 
 struct ProgramFixture {
@@ -445,11 +456,16 @@ end
 } // namespace
 
 int main() {
-    runAdaptivePromotionSmoke();
-    runAdaptiveFallbackSmoke();
-    runAdaptiveStaticRejectionSmoke();
-    runPersistentWorkspaceRetrainingSmoke();
-    runFunctionArgumentRetrainingSmoke();
-    std::cout << "adaptive bytecode VM smoke tests passed\n";
-    return 0;
+    try {
+        runAdaptivePromotionSmoke();
+        runAdaptiveFallbackSmoke();
+        runAdaptiveStaticRejectionSmoke();
+        runPersistentWorkspaceRetrainingSmoke();
+        runFunctionArgumentRetrainingSmoke();
+        std::cout << "adaptive bytecode VM smoke tests passed\n";
+        return 0;
+    } catch (const std::exception& exception) {
+        std::cerr << exception.what() << "\n";
+        return 1;
+    }
 }

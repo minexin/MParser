@@ -25,6 +25,7 @@ struct RuntimeBenchmarkStatistics {
     double meanTypedRegionExecutionCount = 0.0;
     double meanTypedRegionFallbackCount = 0.0;
     double meanTypedInstructionCount = 0.0;
+    double meanTypedKernelInstructionCount = 0.0;
 };
 
 struct RuntimeBenchmarkResult {

@@ -3277,11 +3277,33 @@ private:
             return std::nullopt;
         }
 
-        std::vector<double> loopValues;
-        if (isNumber(rangeValue.value)) {
-            loopValues.push_back(rangeValue.value.number);
-        } else if (isArray(rangeValue.value)) {
-            loopValues = rangeValue.value.elements;
+        if (profilingEnabled_) {
+            std::vector<double> loopValues;
+            if (isNumber(rangeValue.value)) {
+                loopValues.push_back(rangeValue.value.number);
+            } else if (isArray(rangeValue.value)) {
+                loopValues = rangeValue.value.elements;
+            }
+
+            RuntimeValue firstValue;
+            const RuntimeValue* observedValue = nullptr;
+            if (!loopValues.empty()) {
+                firstValue = numberValue(loopValues.front());
+                observedValue = &firstValue;
+            }
+            recordForEntry(instruction, loopValues.size(), observedValue);
+            if (!loopValues.empty()) {
+                const auto& latch = program_->instructions[
+                    active->second.contract.bodyEndPc];
+                ForLoopState state{instruction.operand, loopValues, 1,
+                                   currentPc_,
+                                   RuntimeNumericClass::Double};
+                for (size_t index = 1; index < loopValues.size(); ++index) {
+                    recordForBackedge(state, latch,
+                                      numberValue(loopValues[index]));
+                }
+                recordForCompletion(state, latch);
+            }
         }
 
         stack_.pop_back();
@@ -3290,26 +3312,10 @@ private:
         execution.iterationCount += result.iterationCount;
         execution.executedInstructionCount +=
             result.executedInstructionCount;
+        execution.executedKernelInstructionCount +=
+            result.executedKernelInstructionCount;
         execution.lastReason = result.reason;
 
-        RuntimeValue firstValue;
-        const RuntimeValue* observedValue = nullptr;
-        if (!loopValues.empty()) {
-            firstValue = numberValue(loopValues.front());
-            observedValue = &firstValue;
-        }
-        recordForEntry(instruction, loopValues.size(), observedValue);
-        if (!loopValues.empty()) {
-            const auto& latch =
-                program_->instructions[active->second.contract.bodyEndPc];
-            ForLoopState state{instruction.operand, loopValues, 1,
-                               currentPc_, RuntimeNumericClass::Double};
-            for (size_t index = 1; index < loopValues.size(); ++index) {
-                recordForBackedge(state, latch,
-                                  numberValue(loopValues[index]));
-            }
-            recordForCompletion(state, latch);
-        }
         return active->second.contract.endPc;
     }
 

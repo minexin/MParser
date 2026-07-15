@@ -123,6 +123,7 @@ struct BytecodeTypedRegionExecutionProfile {
     size_t fallbackCount = 0;
     size_t iterationCount = 0;
     size_t executedInstructionCount = 0;
+    size_t executedKernelInstructionCount = 0;
     std::string lastReason;
 };
 

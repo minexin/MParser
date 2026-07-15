@@ -224,7 +224,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.48 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.49 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -261,8 +261,9 @@ interpreter, profiled bytecode VM, profile-off bytecode VM, and profile-off
 typed-region VM after parsing/lowering. One unmeasured profiled run creates the
 typed module, then all four paths share warmup and rotate measurement order.
 The report includes timing distributions, VM dispatch counts, typed
-attempts/executions/fallbacks, and typed instruction counts; exact four-way
-output equivalence is a required correctness gate.
+attempts/executions/fallbacks, source typed instruction counts, and predecoded
+kernel instruction counts; exact four-way output equivalence is a required
+correctness gate.
 
 `runtime_reduction` is the common reduction boundary for both baseline
 runtimes. It selects the first non-singleton dimension by default, accepts a
@@ -342,15 +343,20 @@ operations are currently eligible for a typed execution path. Statically
 bound one-argument calls to `abs`, `acos`, `asin`, `atan`, `cos`, `exp`,
 `log`, `sin`, `sqrt`, and `tan` are scalar operations rather than generic
 calls; every other call retains the rejection boundary. The VM
-can now hand eligible scalar `for` loops to a transactional typed stack
-executor. The executor works on a temporary variable frame and commits only
-after the complete loop succeeds; a failed runtime type or stack check leaves
+can now hand eligible scalar `for` loops to a transactional predecoded scalar
+kernel. Kernel preparation resolves variable names to contiguous slots,
+converts supported operations and pure math calls to enum opcodes, assigns
+expression temporaries to indexed registers, and fuses the final producer with
+its destination store. The executor commits scalar slots only after the
+complete loop succeeds; a failed entry type or kernel compilation check leaves
 the VM state untouched and resumes the original bytecode loop. Its entry
 specialization remains double-only, while typed stack values retain the
 logical class produced by comparisons and logical operators inside the loop.
 Pure math dispatch is shared by the interpreter, baseline VM, region analyzer,
 and typed executor, preventing the optimized tier from acquiring a different
-function allowlist or numerical implementation.
+function allowlist or numerical implementation. Profile-off execution also
+skips reconstruction of per-iteration loop observations; aggregate source and
+kernel work remains available in the typed execution summary.
 
 `AdaptiveBytecodeVmSession` owns a longer-lived tiering state. Before promotion,
 it merges instruction, function, loop, call-site, assignment, kind, and shape
@@ -582,12 +588,13 @@ kind/numeric-class/full-shape observations to
 stable profile positions. The optimization planner converts those observations
 into explicit candidates and guards. The typed IR builder now lowers those
 candidates into typed regions, and the guard evaluator can decide whether
-eligible regions may enter a typed path. Later passes should execute or compile
-those regions:
+eligible regions may enter a typed path. v0.49 provides a portable predecoded
+register kernel for the first scalar-loop subset. Later passes should compile
+the same guarded contract to native code:
 
 ```text
 bytecode -> cumulative profiling -> tier promotion -> typed IR
-         -> guard check -> LLVM ORC JIT
+         -> guard check -> portable register kernel -> LLVM ORC JIT
 ```
 
 The v0.11 benchmark contract introduced the performance and
@@ -679,8 +686,12 @@ explicit-dimension, dimension-vector, and all-dimension selection, extrema
 indices and implicit expansion, missing-value policies, and one-to-three-output
 `find` in both baseline runtimes. v0.48 adds shared N-dimensional forward and
 reverse cumulative scans, operation-specific NaN defaults, logical output-class
-rules, and fixed-dimension higher-order numeric differences. The next steps are
-moving-window array operations, object/listener arrays,
+rules, and fixed-dimension higher-order numeric differences. v0.49 replaces
+per-iteration typed stack interpretation with a predecoded scalar register
+kernel, fuses expression stores, removes disabled-profile loop reconstruction,
+and reports source-versus-kernel instruction work. The next steps are native
+lowering or nested-loop region formation, moving-window array operations,
+object/listener arrays,
 property event listeners,
 comma-separated-list Cell
 semantics, persistent code

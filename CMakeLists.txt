@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.48.0 LANGUAGES CXX)
+project(MParser VERSION 0.49.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -114,6 +114,13 @@ add_executable(typed_region_executor_smoke_tests
 target_link_libraries(typed_region_executor_smoke_tests PRIVATE mparser_core)
 add_test(NAME typed_region_executor_smoke
     COMMAND typed_region_executor_smoke_tests)
+
+add_test(NAME scalar_kernel_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-typed-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/typed_region_demo.m)
+set_tests_properties(scalar_kernel_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "predecoded scalar kernel executed")
 
 add_executable(runtime_benchmark_smoke_tests
     tests/runtime_benchmark_smoke.cpp)

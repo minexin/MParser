@@ -33,7 +33,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.48.0"
+#define MPARSER_VERSION "0.49.0"
 #endif
 
 namespace {
@@ -599,7 +599,9 @@ void printBenchmarkStatistics(
                   << ", typedFallbacks="
                   << statistics.meanTypedRegionFallbackCount
                   << ", typedInstructions="
-                  << statistics.meanTypedInstructionCount;
+                  << statistics.meanTypedInstructionCount
+                  << ", kernelInstructions="
+                  << statistics.meanTypedKernelInstructionCount;
     }
     std::cout << "\n";
 }
@@ -664,7 +666,9 @@ void printTypedRegionExecutions(
                   << ", fallbacks=" << execution.fallbackCount
                   << ", iterations=" << execution.iterationCount
                   << ", typedInstructions="
-                  << execution.executedInstructionCount << "\n";
+                  << execution.executedInstructionCount
+                  << ", kernelInstructions="
+                  << execution.executedKernelInstructionCount << "\n";
         std::cout << "      reason=" << execution.lastReason << "\n";
     }
     std::cout << "  baseline outputs: "
