@@ -24,8 +24,8 @@ first.Samples = 4;
 state = first.State;
 state.Code = 9;
 
-first_sum = sum(first.Samples);
-second_sum = sum(second.Samples);
+first_sum = sum(first.Samples, "all");
+second_sum = sum(second.Samples, "all");
 shared_code = second.State.Code;
 gain = first.Gain;
 label = first.Name;

@@ -192,8 +192,9 @@ destructuring for local functions, ignored outputs with `~`, numeric ranges,
 diagnostic recovery, short-circuit `&&`/`||`, arithmetic and comparison
 operators with N-dimensional implicit expansion, string equality comparisons,
 MATLAB constants such as `pi`, one-argument math builtins such as `sin`,
-`cos`, `sqrt`, `exp`, and `log`, string builtin `strcmp`, reductions such as
-`sum`, `min`, `max`, and `mean`, full-shape `size` and `ndims` queries as a
+`cos`, `sqrt`, `exp`, and `log`, string builtin `strcmp`, dimension-aware
+`sum`, `prod`, `mean`, `min`, `max`, `any`, and `all`, one-to-three-output
+`find`, full-shape `size` and `ndims` queries as a
 single row-vector output, selected dimensions, or multiple scalar outputs,
 1-based N-dimensional indexing, colon and vector subscripts, folded trailing
 dimensions, `end` expressions inside indexing, shape-checked non-scalar
@@ -208,7 +209,8 @@ transpose, and basic numeric matrix multiplication.
 
 Unsupported dynamic features produce runtime diagnostics. That includes class
 instances, function handles, other
-builtin multi-output conventions beyond the scalar runtime subset, complex
+builtin multi-output conventions beyond the implemented
+`size`/`min`/`max`/`find` subset, complex
 numbers, sparse arrays, object dispatch, and general dynamic call resolution.
 This keeps the first interpreter useful for loop and expression validation
 without hiding missing MATLAB semantics behind incorrect fallbacks.
@@ -221,7 +223,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.46 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.47 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -260,6 +262,16 @@ typed module, then all four paths share warmup and rotate measurement order.
 The report includes timing distributions, VM dispatch counts, typed
 attempts/executions/fallbacks, and typed instruction counts; exact four-way
 output equivalence is a required correctness gate.
+
+`runtime_reduction` is the common reduction boundary for both baseline
+runtimes. It selects the first non-singleton dimension by default, accepts a
+scalar dimension, dimension vector, or all dimensions, and maps every input
+and output through the canonical column-major shape helpers. The same boundary
+implements empty identities, NaN policies, numeric output-class selection,
+extrema value/index pairs, elementwise extrema with implicit expansion, and
+`find` orientation and N-dimensional trailing-subscript folding. Keeping this
+logic below both dispatchers prevents interpreter and VM semantics from
+drifting before native lowering is introduced.
 
 `RuntimeValue::dimensions` is the canonical shape. It always exposes at least
 two dimensions and drops trailing singleton dimensions beyond the second,
@@ -552,7 +564,7 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.46
+The JIT should specialize hot bytecode regions, not raw AST nodes. The current
 runtime profiler can identify frequently executed loops, functions, and
 call/index sites, then attach conservative runtime
 kind/numeric-class/full-shape observations to
@@ -651,7 +663,11 @@ baseline runtimes, and numeric-class-aware profiling, guards, typed IR, and
 adaptive retraining. v0.46 adds syntax-sensitive empty deletion through the
 shared assignment engine, true 0-by-0 empty literals, command-form session
 builtins, and direct scalar typed execution for ten pure unary math builtins.
-The next steps are dimension-aware reductions, object/listener arrays,
+v0.47 adds a shared dimension-aware reduction runtime, first-non-singleton,
+explicit-dimension, dimension-vector, and all-dimension selection, extrema
+indices and implicit expansion, missing-value policies, and one-to-three-output
+`find` in both baseline runtimes. The next steps are cumulative and moving
+array operations, object/listener arrays,
 property event listeners,
 comma-separated-list Cell
 semantics, persistent code

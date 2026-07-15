@@ -134,7 +134,7 @@ void runVectorLiteralAndIndexSmoke() {
     const std::string source = R"(function y = f()
 A = [1 2 3];
 B = A .* 2 + 1;
-y = sum(A) + B(3) + length(B);
+y = sum(A, "all") + B(3) + length(B);
 end
 )";
 
@@ -172,7 +172,7 @@ void runVectorRangeAndBuiltinSmoke() {
     const std::string source = R"(function y = f()
 A = 1:3;
 B = sqrt(A .^ 2);
-y = sum(B) + numel(A);
+y = sum(B, "all") + numel(A);
 end
 )";
 
@@ -205,7 +205,7 @@ B = A .* 2;
 C = A';
 D = A * C;
 s = size(A);
-y = A(2, 1) + A(4) + sum(B) + s(1) + s(2) + D(2, 2);
+y = A(2, 1) + A(4) + sum(B, "all") + s(1) + s(2) + D(2, 2);
 end
 )";
 
@@ -285,7 +285,7 @@ y = total + rows + cols + doubled + firstOnly;
 end
 
 function [total, rows, cols] = summarize(A)
-total = sum(A);
+total = sum(A, "all");
 [rows, cols] = size(A);
 end
 
@@ -343,7 +343,8 @@ R = eye(2, 3);
 S = zeros(2);
 shape = [2 3];
 P = ones(shape);
-y = sum(Z) + sum(O) + sum(I) + sum(R) + sum(S) + sum(P);
+y = sum(Z, "all") + sum(O, "all") + sum(I, "all") + ...
+    sum(R, "all") + sum(S, "all") + sum(P, "all");
 end
 )";
 
@@ -372,7 +373,8 @@ defaultGrid = linspace(1, 3);
 grid = linspace(0, 1, 5);
 onePoint = linspace(5, 7, 1);
 emptyGrid = linspace(1, 2, 0);
-y = length(defaultGrid) + defaultGrid(1) + defaultGrid(100) + sum(grid) + onePoint(1) + numel(emptyGrid);
+y = length(defaultGrid) + defaultGrid(1) + defaultGrid(100) + ...
+    sum(grid, "all") + onePoint(1) + numel(emptyGrid);
 end
 )";
 
@@ -404,7 +406,7 @@ for i = 1:4
     v(i) = i * i;
 end
 v([1 3]) = 7;
-y = A(2, 2) + A(4) + sum(v);
+y = A(2, 2) + A(4) + sum(v, "all");
 end
 )";
 
@@ -424,7 +426,8 @@ void runEndIndexingSmoke() {
     const std::string source = R"(function y = f()
 v = [10 20 30 40 50];
 A = [1 2 3; 4 5 6];
-y = v(end) + v(end - 1) + sum(v(2:end - 1)) + sum(v([1 end]));
+y = v(end) + v(end - 1) + sum(v(2:end - 1), "all") + ...
+    sum(v([1 end]), "all");
 y = y + A(end, 2) + A(1, end) + A(end);
 v(end) = 99;
 A(end, end) = 42;
@@ -451,7 +454,8 @@ linear = A(:);
 v = [1 2 3 4];
 v(:) = 7;
 A(:, 3) = 10;
-y = sum(col) + sum(row) + sum(block) + sum(linear) + sum(v) + sum(A(:, 3));
+y = sum(col, "all") + sum(row, "all") + sum(block, "all") + ...
+    sum(linear, "all") + sum(v, "all") + sum(A(:, 3), "all");
 end
 )";
 

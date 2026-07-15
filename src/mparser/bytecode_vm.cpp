@@ -5,6 +5,7 @@
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_reduction.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/typed_ir.h"
 #include "mparser/typed_region_executor.h"
@@ -5257,6 +5258,17 @@ private:
                                              requestedCount);
         }
 
+        if (isRuntimeReductionBuiltin(name)) {
+            auto result = runtimeReductionBuiltin(
+                name, arguments, static_cast<size_t>(requestedCount));
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + std::move(result.error));
+                return missingOutputs(requestedCount);
+            }
+            return std::move(result.outputs);
+        }
+
         if (requestedCount == 0) {
             (void)callBuiltin(instruction, name, arguments);
             return {};
@@ -6879,24 +6891,6 @@ private:
                 return *runtimeApplyPureUnaryMathBuiltin(name, value);
             });
         }
-        if (name == "sum") {
-            double total = 0.0;
-            if (isNumber(arguments.front())) {
-                total = arguments.front().number;
-            } else {
-                for (double element : arguments.front().elements) {
-                    total += element;
-                }
-            }
-            return numberValue(total);
-        }
-        if (name == "any") {
-            return logicalValue(truthyAny(arguments.front()));
-        }
-        if (name == "all") {
-            return logicalValue(truthy(arguments.front()));
-        }
-
         addDiagnostic(instruction,
                       "bytecode builtin is not executable yet: " + name);
         return missingValue();
@@ -7387,18 +7381,6 @@ private:
         }
         return arrayValueForDimensions(runtimeDimensions(value),
                                         std::move(mapped), numericClass);
-    }
-
-    bool truthyAny(const RuntimeValue& value) const {
-        if (isNumber(value)) {
-            return truthy(value);
-        }
-        for (double element : value.elements) {
-            if (element != 0.0 && !std::isnan(element)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     std::optional<StackValue>

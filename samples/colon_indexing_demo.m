@@ -9,5 +9,6 @@ v = [1 2 3 4];
 v(:) = 7;
 A(:, 3) = 10;
 
-y = sum(col) + sum(row) + sum(block) + sum(linear) + sum(v) + sum(A(:, 3));
+y = sum(col, "all") + sum(row, "all") + sum(block, "all") + ...
+    sum(linear, "all") + sum(v, "all") + sum(A(:, 3), "all");
 end

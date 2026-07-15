@@ -5,6 +5,7 @@
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_reduction.h"
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
@@ -2229,6 +2230,17 @@ private:
                 std::chrono::steady_clock::now() - *ticStart_;
             return FunctionCallResult{{numberValue(elapsed.count())}};
         }
+        if (isRuntimeReductionBuiltin(name)) {
+            auto result = runtimeReductionBuiltin(
+                name, arguments, requestedOutputCount);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(requestedOutputCount,
+                                              missingValue())};
+            }
+            return FunctionCallResult{std::move(result.outputs)};
+        }
         if (isRuntimeArrayOperationBuiltin(name)) {
             auto result = runtimeArrayOperationBuiltin(name, arguments);
             if (!result.succeeded) {
@@ -2366,40 +2378,6 @@ private:
                     return *runtimeApplyPureUnaryMathBuiltin(name, value);
                 })}};
         }
-        if (name == "sum") {
-            return FunctionCallResult{{reduceBuiltin(
-                arguments.front(), 0.0, [](double total, double element) {
-                    return total + element;
-                })}};
-        }
-        if (name == "max") {
-            return FunctionCallResult{{reduceExtrema(node, arguments.front(), true)}};
-        }
-        if (name == "min") {
-            return FunctionCallResult{{reduceExtrema(node, arguments.front(), false)}};
-        }
-        if (name == "mean") {
-            const RuntimeValue total =
-                reduceBuiltin(arguments.front(), 0.0,
-                              [](double sum, double element) {
-                                  return sum + element;
-                              });
-            if (!isNumber(total)) {
-                return FunctionCallResult{{missingValue()}};
-            }
-            return FunctionCallResult{{numberValue(
-                total.number /
-                static_cast<double>(elementCount(arguments.front())))}};
-        }
-        if (name == "any") {
-            return FunctionCallResult{{
-                logicalValue(truthyAny(arguments.front()))}};
-        }
-        if (name == "all") {
-            return FunctionCallResult{{
-                logicalValue(truthy(arguments.front()))}};
-        }
-
         addDiagnostic(node, "builtin is not executable yet: " + name);
         return FunctionCallResult{{missingValue()}};
     }
@@ -2656,49 +2634,6 @@ private:
         }
 
         return FunctionCallResult{{vectorValue(std::move(values))}};
-    }
-
-    RuntimeValue reduceBuiltin(const RuntimeValue& value, double initial,
-                               double (*operation)(double, double)) {
-        if (isNumber(value)) {
-            return numberValue(value.number);
-        }
-
-        double result = initial;
-        for (double element : value.elements) {
-            result = operation(result, element);
-        }
-        return numberValue(result);
-    }
-
-    RuntimeValue reduceExtrema(const HirNode& node, const RuntimeValue& value,
-                               bool maximum) {
-        if (isNumber(value)) {
-            return value;
-        }
-        if (value.elements.empty()) {
-            addDiagnostic(node, "cannot reduce an empty vector");
-            return missingValue();
-        }
-
-        double result = value.elements.front();
-        for (double element : value.elements) {
-            result = maximum ? std::fmax(result, element)
-                             : std::fmin(result, element);
-        }
-        return numberValue(result);
-    }
-
-    bool truthyAny(const RuntimeValue& value) const {
-        if (isNumber(value)) {
-            return truthy(value);
-        }
-        for (double element : value.elements) {
-            if (element != 0.0 && !std::isnan(element)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     std::vector<std::map<std::string, RuntimeValue>> frames_;

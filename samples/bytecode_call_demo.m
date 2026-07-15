@@ -7,7 +7,7 @@ y = total + rows + cols + doubled + scope;
 end
 
 function [total, rows, cols] = summarize(A)
-total = sum(A);
+total = sum(A, "all");
 [rows, cols] = size(A);
 end
 

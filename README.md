@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.46.0. See [docs/v0.46.md](docs/v0.46.md) for the
+Current milestone: v0.47.0. See [docs/v0.47.md](docs/v0.47.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.45.md](docs/v0.45.md),
+iteration plan. Previous boundaries are kept in [docs/v0.46.md](docs/v0.46.md),
+[docs/v0.45.md](docs/v0.45.md),
 [docs/v0.44.md](docs/v0.44.md),
 [docs/v0.43.md](docs/v0.43.md),
 [docs/v0.42.md](docs/v0.42.md),
@@ -82,7 +83,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.46 executes the core numeric/string subset,
+expression operators. v0.47 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -91,6 +92,8 @@ growth, and direct `A(...)=[]` vector/slice deletion,
 first-class logical scalars and arrays, logical-mask reads and writes,
 `logical`/`double` conversion, `class`/`isa`/`islogical`, session commands
 `clear`, `clc`, `tic`, and `toc`,
+dimension-aware `sum`, `prod`, `mean`, `min`, `max`, `any`, and `all`, plus
+one-to-three-output `find`,
 `switch/case/otherwise`, and `try/catch` diagnostic recovery. It also records
 bytecode VM execution profiles for functions, loops, instructions,
 call/index sites, and assignment sites, including runtime value kind, numeric
@@ -391,6 +394,24 @@ are executable in command form. Typed baseline comparison excludes only values
 assigned from nondeterministic `toc` expressions while still checking every
 deterministic variable.
 
+v0.47 replaces the earlier scalar/global reduction shortcuts with a shared
+dimension-aware implementation used by the HIR interpreter and bytecode VM.
+`sum`, `prod`, `mean`, `min`, `max`, `any`, and `all` reduce the first
+non-singleton dimension by default and accept a scalar dimension, dimension
+vector, or `"all"`. Numeric reductions support missing-value policy flags;
+ordinary reductions support `"default"`, `"double"`, and `"native"` output
+selection. `min` and `max` add value/index outputs, optional linear indices,
+and elementwise two-input forms with N-dimensional implicit expansion.
+
+`find` now supports an optional result limit, `"first"` or `"last"`
+selection, and one to three outputs. It preserves row-vector orientation for a
+single linear-index output and folds trailing N-dimensional coordinates into
+the second subscript for multi-output calls. Reductions and `find` traverse
+the canonical shape in MATLAB column-major logical order, while their result
+payloads are mapped back into the runtime's existing storage representation.
+Historical demos that intentionally need a global total now spell that intent
+as `sum(A, "all")`.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -403,8 +424,10 @@ ignored outputs with `~`, `for` ranges, `while` loops, `break`/`continue`,
 `if`/`elseif`/`else` blocks, `switch`/`case`/`otherwise`, `try`/`catch`
 diagnostic recovery, short-circuit `&&`/`||`, string equality comparisons, MATLAB
 constants such as `pi`, one-argument math builtins such as `sin` and `sqrt`,
-string builtin `strcmp`, reductions such as `sum`, shape queries through `size`
-and `ndims` including multi-output and dimension-vector forms, 1-based
+string builtin `strcmp`, dimension-aware reductions through `sum`, `prod`,
+`mean`, `min`, `max`, `any`, and `all`, multi-output `find`, shape queries
+through `size` and `ndims` including multi-output and dimension-vector forms,
+1-based
 N-dimensional numeric indexing such as `A(2)` and `A(2, 1, 3)`, colon and
 vector subscripts, `end`
 expressions inside indexing, non-scalar and scalar-expanded indexed assignment
@@ -418,7 +441,8 @@ transpose, basic numeric matrix multiplication, and
 N-dimensional Cells with scalar brace indexing/mutation. It is
 intentionally not a full MATLAB runtime yet: classes,
 function handles, other builtin multi-output conventions beyond the
-scalar runtime subset, complex numbers, sparse arrays, and object dispatch
+implemented `size`/`min`/`max`/`find` subset, complex numbers, sparse arrays,
+and object dispatch
 still report runtime diagnostics instead of guessing.
 
 ## Build
@@ -511,6 +535,14 @@ N-dimensional slices through both baseline runtimes with:
 ```powershell
 build\mparser.exe --run-bytecode samples\array_deletion_demo.m
 build\mparser.exe --run samples\array_deletion_demo.m
+```
+
+Run dimension-aware reductions, extrema indices, NaN policies, and `find`
+through both baseline runtimes with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\reduction_find_demo.m
+build\mparser.exe --run samples\reduction_find_demo.m
 ```
 
 The bytecode VM profiling and type/shape observation subset can be tried with:

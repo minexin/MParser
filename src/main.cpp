@@ -33,7 +33,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.46.0"
+#define MPARSER_VERSION "0.47.0"
 #endif
 
 namespace {

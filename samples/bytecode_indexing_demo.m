@@ -10,5 +10,6 @@ v = [1 2 3 4];
 v(:) = 7;
 v(end) = 11;
 
-y = sum(col) + sum(linear) + sum(A(:, 3)) + sum(v) + A(end, end);
+y = sum(col, "all") + sum(linear, "all") + ...
+    sum(A(:, 3), "all") + sum(v, "all") + A(end, end);
 end

@@ -162,7 +162,7 @@ void runVectorAndIndexSmoke() {
     const std::string source = R"(function y = f()
 A = 1:4;
 B = A .* 2 + 1;
-y = sum(B) + B(2);
+y = sum(B, "all") + B(2);
 end
 )";
 
@@ -178,7 +178,7 @@ void runMatrixAndBuiltinSmoke() {
 A = [1 2; 3 4];
 B = A * A';
 s = size(B);
-y = B(2, 2) + sum(B) + s(1) + s(2);
+y = B(2, 2) + sum(B, "all") + s(1) + s(2);
 end
 )";
 
@@ -345,7 +345,7 @@ y = total + rows + cols + doubled + firstOnly;
 end
 
 function [total, rows, cols] = summarize(A)
-total = sum(A);
+total = sum(A, "all");
 [rows, cols] = size(A);
 end
 
@@ -408,7 +408,7 @@ for i = 1:4
 end
 v([1 3]) = 7;
 
-y = A(2, 2) + A(4) + sum(v);
+y = A(2, 2) + A(4) + sum(v, "all");
 end
 )";
 
@@ -431,7 +431,7 @@ void runEndIndexingSmoke() {
 v = [10 20 30 40 50];
 A = [1 2 3; 4 5 6];
 
-y = v(end) + v(end - 1) + sum(v(2:end - 1)) + sum(v([1 end]));
+y = v(end) + v(end - 1) + sum(v(2:end - 1), "all") + sum(v([1 end]), "all");
 y = y + A(end, 2) + A(1, end) + A(end);
 
 v(end) = 99;
@@ -460,7 +460,8 @@ v = [1 2 3 4];
 v(:) = 7;
 A(:, 3) = 10;
 
-y = sum(col) + sum(row) + sum(block) + sum(linear) + sum(v) + sum(A(:, 3));
+y = sum(col, "all") + sum(row, "all") + sum(block, "all") + ...
+    sum(linear, "all") + sum(v, "all") + sum(A(:, 3), "all");
 end
 )";
 

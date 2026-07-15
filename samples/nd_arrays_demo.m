@@ -22,7 +22,7 @@ cell_last = C{end};
 
 M = zeros(2, 3, 2);
 M(:, 2:3, 2) = 5;
-filled_total = sum(M);
+filled_total = sum(M, "all");
 
 summary = same + folded_end + third_end + rows + tail + dimensions + ...
     count + cell_value + cell_last + slice_check + filled_total;

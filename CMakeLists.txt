@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.46.0 LANGUAGES CXX)
+project(MParser VERSION 0.47.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,6 +25,7 @@ add_library(mparser_core
     src/mparser/runtime_index.cpp
     src/mparser/runtime_math.cpp
     src/mparser/runtime_numeric.cpp
+    src/mparser/runtime_reduction.cpp
     src/mparser/runtime_shape.cpp
     src/mparser/semantic.cpp
     src/mparser/semantic_dump.cpp
@@ -85,6 +86,11 @@ add_executable(array_deletion_smoke_tests
     tests/array_deletion_smoke.cpp)
 target_link_libraries(array_deletion_smoke_tests PRIVATE mparser_core)
 add_test(NAME array_deletion_smoke COMMAND array_deletion_smoke_tests)
+
+add_executable(reduction_find_smoke_tests
+    tests/reduction_find_smoke.cpp)
+target_link_libraries(reduction_find_smoke_tests PRIVATE mparser_core)
+add_test(NAME reduction_find_smoke COMMAND reduction_find_smoke_tests)
 
 add_executable(optimization_plan_smoke_tests tests/optimization_plan_smoke.cpp)
 target_link_libraries(optimization_plan_smoke_tests PRIVATE mparser_core)
@@ -296,6 +302,20 @@ add_test(NAME array_deletion_interpreter_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_deletion_demo.m)
 set_tests_properties(array_deletion_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 252")
+
+add_test(NAME reduction_find_bytecode_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/reduction_find_demo.m)
+set_tests_properties(reduction_find_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 1450")
+
+add_test(NAME reduction_find_interpreter_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/reduction_find_demo.m)
+set_tests_properties(reduction_find_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 1450")
 
 add_test(NAME namespace_function_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
