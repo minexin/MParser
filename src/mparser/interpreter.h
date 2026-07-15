@@ -22,6 +22,11 @@ enum class RuntimeValueKind {
     Object,
 };
 
+enum class RuntimeNumericClass {
+    Double,
+    Logical,
+};
+
 struct RuntimeValue {
     RuntimeValueKind kind = RuntimeValueKind::Missing;
     double number = 0.0;
@@ -37,6 +42,7 @@ struct RuntimeValue {
     size_t rows = 0;
     size_t columns = 0;
     std::vector<size_t> dimensions;
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
 };
 
 struct RuntimeVariable {

@@ -2,6 +2,8 @@
 #include "mparser/function_signature.h"
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_assignment.h"
+#include "mparser/runtime_index.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/typed_ir.h"
 #include "mparser/typed_region_executor.h"
@@ -63,12 +65,20 @@ RuntimeValue missingValue() {
     return RuntimeValue{};
 }
 
-RuntimeValue numberValue(double value) {
+RuntimeValue numberValue(
+    double value,
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Number;
     result.number = value;
+    result.numericClass = numericClass;
     setRuntimeDimensions(result, {1, 1});
     return result;
+}
+
+RuntimeValue logicalValue(bool value) {
+    return numberValue(value ? 1.0 : 0.0,
+                       RuntimeNumericClass::Logical);
 }
 
 RuntimeValue stringValue(std::string value) {
@@ -79,20 +89,26 @@ RuntimeValue stringValue(std::string value) {
     return result;
 }
 
-RuntimeValue vectorValue(std::vector<double> values) {
+RuntimeValue vectorValue(
+    std::vector<double> values,
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Vector;
     result.elements = std::move(values);
+    result.numericClass = numericClass;
     setRuntimeDimensions(result, {1, result.elements.size()});
     return result;
 }
 
 RuntimeValue matrixValue(size_t rows, size_t columns,
-                         std::vector<double> values) {
+                         std::vector<double> values,
+                         RuntimeNumericClass numericClass =
+                             RuntimeNumericClass::Double) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Matrix;
     setRuntimeDimensions(result, {rows, columns});
     result.elements = std::move(values);
+    result.numericClass = numericClass;
     return result;
 }
 
@@ -236,12 +252,17 @@ std::string runtimeKindName(const RuntimeValue& value) {
 void observeValue(BytecodeValueObservation& observation,
                   const RuntimeValue& value) {
     const std::string kind = runtimeKindName(value);
+    const std::string numericClass =
+        isRuntimeNumericValue(value)
+            ? std::string(runtimeNumericClassName(value.numericClass))
+            : std::string{};
     const size_t rows = rowCount(value);
     const size_t columns = columnCount(value);
     const auto dimensions = runtimeDimensions(value);
 
     if (observation.observationCount == 0) {
         observation.kind = kind;
+        observation.numericClass = numericClass;
         observation.rows = rows;
         observation.columns = columns;
         observation.dimensions = dimensions;
@@ -255,10 +276,13 @@ void observeValue(BytecodeValueObservation& observation,
         return;
     }
 
-    if (observation.kind != kind || observation.rows != rows ||
+    if (observation.kind != kind ||
+        observation.numericClass != numericClass ||
+        observation.rows != rows ||
         observation.columns != columns ||
         observation.dimensions != dimensions) {
         observation.kind = "mixed";
+        observation.numericClass.clear();
         observation.rows = 0;
         observation.columns = 0;
         observation.dimensions.clear();
@@ -281,6 +305,7 @@ void observeValues(std::vector<BytecodeValueObservation>& observations,
              ++index) {
             observations[index].stable = false;
             observations[index].kind = "mixed";
+            observations[index].numericClass.clear();
             observations[index].dimensions.clear();
         }
     }
@@ -291,21 +316,26 @@ size_t elementCount(const RuntimeValue& value) {
 }
 
 RuntimeValue arrayValueForShape(size_t rows, size_t columns,
-                                std::vector<double> values) {
+                                std::vector<double> values,
+                                RuntimeNumericClass numericClass =
+                                    RuntimeNumericClass::Double) {
     if (rows == 1) {
-        return vectorValue(std::move(values));
+        return vectorValue(std::move(values), numericClass);
     }
-    return matrixValue(rows, columns, std::move(values));
+    return matrixValue(rows, columns, std::move(values), numericClass);
 }
 
 RuntimeValue arrayValueForDimensions(std::vector<size_t> dimensions,
-                                     std::vector<double> values) {
+                                     std::vector<double> values,
+                                     RuntimeNumericClass numericClass =
+                                         RuntimeNumericClass::Double) {
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
     RuntimeValue result;
     result.kind = dimensions.size() == 2 && dimensions[0] == 1
                       ? RuntimeValueKind::Vector
                       : RuntimeValueKind::Matrix;
     result.elements = std::move(values);
+    result.numericClass = numericClass;
     setRuntimeDimensions(result, std::move(dimensions));
     return result;
 }
@@ -349,6 +379,13 @@ bool isWholeNumber(double value) {
     return std::isfinite(value) && std::floor(value) == value;
 }
 
+bool isLogicalBinaryOperator(std::string_view operation) {
+    return operation == ">" || operation == "<" || operation == ">=" ||
+           operation == "<=" || operation == "==" || operation == "~=" ||
+           operation == "&" || operation == "|" || operation == "&&" ||
+           operation == "||";
+}
+
 std::optional<double> parseNumber(std::string_view text) {
     std::string buffer(text);
     char* end = nullptr;
@@ -385,13 +422,15 @@ std::string decodeStringLiteral(std::string_view text) {
 
 bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     if (isNumber(left) && isNumber(right)) {
-        return left.number == right.number;
+        return left.numericClass == right.numericClass &&
+               left.number == right.number;
     }
     if (isString(left) && isString(right)) {
         return left.text == right.text;
     }
     if (isArray(left) && isArray(right)) {
-        return runtimeDimensions(left) == runtimeDimensions(right) &&
+        return left.numericClass == right.numericClass &&
+               runtimeDimensions(left) == runtimeDimensions(right) &&
                left.elements == right.elements;
     }
     if (isCell(left) && isCell(right)) {
@@ -460,6 +499,7 @@ struct ForLoopState {
     std::vector<double> values;
     size_t nextIndex = 0;
     size_t headerPc = 0;
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
 };
 
 struct IndexContext {
@@ -3184,7 +3224,7 @@ private:
         RuntimeValue firstValue;
         const RuntimeValue* observedValue = nullptr;
         if (!values->empty()) {
-            firstValue = numberValue(values->front());
+            firstValue = numberValue(values->front(), range->numericClass);
             observedValue = &firstValue;
         }
         recordForEntry(instruction, values->size(), observedValue);
@@ -3194,7 +3234,8 @@ private:
 
         currentFrame()[instruction.operand] = firstValue;
         forLoopStack_.push_back(
-            ForLoopState{instruction.operand, *values, 1, currentPc_});
+            ForLoopState{instruction.operand, *values, 1, currentPc_,
+                         range->numericClass});
         return std::nullopt;
     }
 
@@ -3258,7 +3299,7 @@ private:
             const auto& latch =
                 program_->instructions[active->second.contract.bodyEndPc];
             ForLoopState state{instruction.operand, loopValues, 1,
-                               currentPc_};
+                               currentPc_, RuntimeNumericClass::Double};
             for (size_t index = 1; index < loopValues.size(); ++index) {
                 recordForBackedge(state, latch,
                                   numberValue(loopValues[index]));
@@ -3284,7 +3325,8 @@ private:
             return std::nullopt;
         }
 
-        RuntimeValue nextValue = numberValue(state.values[state.nextIndex]);
+        RuntimeValue nextValue = numberValue(
+            state.values[state.nextIndex], state.numericClass);
         currentFrame()[state.variable] = nextValue;
         ++state.nextIndex;
         recordForBackedge(state, instruction, nextValue);
@@ -3527,11 +3569,11 @@ private:
                 return;
             }
             if (instruction.operand == "true") {
-                stack_.push_back(runtimeStackValue(numberValue(1.0)));
+                stack_.push_back(runtimeStackValue(logicalValue(true)));
                 return;
             }
             if (instruction.operand == "false") {
-                stack_.push_back(runtimeStackValue(numberValue(0.0)));
+                stack_.push_back(runtimeStackValue(logicalValue(false)));
                 return;
             }
 
@@ -4155,7 +4197,9 @@ private:
             return;
         }
         if (instruction.operand == "+") {
-            pushRuntime(*value);
+            pushRuntime(mapUnary(*value, [](double element) {
+                return element;
+            }));
             return;
         }
         if (instruction.operand == "-") {
@@ -4166,8 +4210,8 @@ private:
         }
         if (instruction.operand == "~") {
             pushRuntime(mapUnary(*value, [](double element) {
-                return (element != 0.0 && !std::isnan(element)) ? 0.0 : 1.0;
-            }));
+                return element == 0.0 ? 1.0 : 0.0;
+            }, RuntimeNumericClass::Logical));
             return;
         }
 
@@ -4192,9 +4236,8 @@ private:
             if (isString(*left) && isString(*right) &&
                 (instruction.operand == "==" || instruction.operand == "~=")) {
                 const bool equal = runtimeEqual(*left, *right);
-                pushRuntime(numberValue((instruction.operand == "==") == equal
-                                            ? 1.0
-                                            : 0.0));
+                pushRuntime(
+                    logicalValue((instruction.operand == "==") == equal));
                 return;
             }
             addDiagnostic(instruction,
@@ -4207,9 +4250,8 @@ private:
                 (instruction.operand == "==" ||
                  instruction.operand == "~=")) {
                 const bool equal = runtimeEqual(*left, *right);
-                pushRuntime(numberValue((instruction.operand == "==") == equal
-                                            ? 1.0
-                                            : 0.0));
+                pushRuntime(
+                    logicalValue((instruction.operand == "==") == equal));
                 return;
             }
             addDiagnostic(
@@ -4246,7 +4288,8 @@ private:
         }
         if (isVector(*value)) {
             pushRuntime(matrixValue(value->elements.size(), 1,
-                                    value->elements));
+                                    value->elements,
+                                    value->numericClass));
             return;
         }
         if (isMatrix(*value)) {
@@ -4265,7 +4308,8 @@ private:
                 }
             }
             pushRuntime(matrixValue(value->columns, value->rows,
-                                    std::move(transposed)));
+                                    std::move(transposed),
+                                    value->numericClass));
             return;
         }
 
@@ -4281,19 +4325,34 @@ private:
         }
 
         std::vector<double> elements;
+        std::optional<RuntimeNumericClass> numericClass;
         for (const auto& value : *values) {
-            if (isNumber(value)) {
-                elements.push_back(value.number);
-            } else if (isArray(value)) {
-                elements.insert(elements.end(), value.elements.begin(),
-                                value.elements.end());
-            } else {
+            if (!isNumeric(value)) {
                 addDiagnostic(instruction,
                               "bytecode matrix rows require numeric values");
                 return;
             }
+            if (!numericClass) {
+                numericClass = value.numericClass;
+            }
+            const size_t count = isNumber(value) ? 1 : value.elements.size();
+            for (size_t index = 0; index < count; ++index) {
+                const double element =
+                    isNumber(value) ? value.number : value.elements[index];
+                const auto converted = runtimeCoerceNumericElement(
+                    element, *numericClass);
+                if (!converted) {
+                    addDiagnostic(
+                        instruction,
+                        "bytecode matrix literal cannot convert NaN to logical");
+                    return;
+                }
+                elements.push_back(*converted);
+            }
         }
-        pushRuntime(vectorValue(std::move(elements)));
+        pushRuntime(vectorValue(
+            std::move(elements),
+            numericClass.value_or(RuntimeNumericClass::Double)));
     }
 
     void makeMatrix(const BytecodeInstruction& instruction) {
@@ -4313,13 +4372,15 @@ private:
                 return;
             }
             if (isNumber(rows->front())) {
-                pushRuntime(vectorValue({rows->front().number}));
+                pushRuntime(vectorValue({rows->front().number},
+                                        rows->front().numericClass));
                 return;
             }
         }
 
         size_t columns = 0;
         std::vector<double> elements;
+        std::optional<RuntimeNumericClass> numericClass;
         for (const auto& row : *rows) {
             if (!isVector(row)) {
                 addDiagnostic(instruction,
@@ -4333,11 +4394,25 @@ private:
                               "bytecode matrix rows must have equal length");
                 return;
             }
-            elements.insert(elements.end(), row.elements.begin(),
-                            row.elements.end());
+            if (!numericClass) {
+                numericClass = row.numericClass;
+            }
+            for (const double element : row.elements) {
+                const auto converted = runtimeCoerceNumericElement(
+                    element, *numericClass);
+                if (!converted) {
+                    addDiagnostic(
+                        instruction,
+                        "bytecode matrix literal cannot convert NaN to logical");
+                    return;
+                }
+                elements.push_back(*converted);
+            }
         }
 
-        pushRuntime(matrixValue(rows->size(), columns, std::move(elements)));
+        pushRuntime(matrixValue(
+            rows->size(), columns, std::move(elements),
+            numericClass.value_or(RuntimeNumericClass::Double)));
     }
 
     void makeCell(const BytecodeInstruction& instruction) {
@@ -4998,15 +5073,12 @@ private:
         if (!isObject(value) ||
             value.className != kEventListenerClassName ||
             !value.sharedFields) {
-            return numberValue(isObject(value) && value.handleObject ? 1.0
-                                                                     : 0.0);
+            return logicalValue(isObject(value) && value.handleObject);
         }
         const auto valid = value.sharedFields->find(
             std::string(kListenerValidityField));
-        return numberValue(valid != value.sharedFields->end() &&
-                                   truthy(valid->second)
-                               ? 1.0
-                               : 0.0);
+        return logicalValue(valid != value.sharedFields->end() &&
+                            truthy(valid->second));
     }
 
     void deleteEventListener(const BytecodeInstruction& instruction,
@@ -5508,7 +5580,8 @@ private:
         }
         if (type == "double") {
             if (isNumeric(value)) {
-                return value;
+                return runtimeConvertNumericClass(
+                    std::move(value), RuntimeNumericClass::Double);
             }
             propertyValidationError(instruction, property,
                                     "value must be numeric for class double");
@@ -5521,9 +5594,14 @@ private:
                     "value must be numeric or logical for class logical");
                 return std::nullopt;
             }
-            return mapUnary(value, [](double element) {
-                return element == 0.0 ? 0.0 : 1.0;
-            });
+            auto converted = runtimeConvertNumericClass(
+                std::move(value), RuntimeNumericClass::Logical);
+            if (!converted) {
+                propertyValidationError(
+                    instruction, property,
+                    "NaN cannot be converted to class logical");
+            }
+            return converted;
         }
         if (type == "char") {
             if (isString(value)) {
@@ -5960,7 +6038,9 @@ private:
 
         if (type.empty() || type == "double" || type == "logical") {
             return arrayValueForDimensions(
-                dimensions, std::vector<double>(*count, 0.0));
+                dimensions, std::vector<double>(*count, 0.0),
+                type == "logical" ? RuntimeNumericClass::Logical
+                                  : RuntimeNumericClass::Double);
         }
         if (type == "char") {
             if (dimensions.size() > 2) {
@@ -6550,11 +6630,9 @@ private:
                               "bytecode isenum expects one argument");
                 return missingValue();
             }
-            return numberValue(
+            return logicalValue(
                 isObject(arguments.front()) &&
-                        !arguments.front().enumerationMemberName.empty()
-                    ? 1.0
-                    : 0.0);
+                !arguments.front().enumerationMemberName.empty());
         }
         if (name == "class") {
             if (arguments.size() != 1) {
@@ -6567,7 +6645,8 @@ private:
                 return stringValue(value.className);
             }
             if (isNumeric(value)) {
-                return stringValue("double");
+                return stringValue(std::string(
+                    runtimeNumericClassName(value.numericClass)));
             }
             if (isString(value)) {
                 return stringValue("char");
@@ -6593,7 +6672,9 @@ private:
             if (isObject(value)) {
                 matches = classDerivesFrom(value.className, target);
             } else if (isNumeric(value)) {
-                matches = target == "double" || target == "numeric";
+                matches = isRuntimeLogical(value)
+                              ? target == "logical"
+                              : target == "double" || target == "numeric";
             } else if (isString(value)) {
                 matches = target == "char" || target == "string";
             } else if (isCell(value)) {
@@ -6601,7 +6682,33 @@ private:
             } else if (isFunctionHandle(value)) {
                 matches = target == "function_handle";
             }
-            return numberValue(matches ? 1.0 : 0.0);
+            return logicalValue(matches);
+        }
+        if (name == "logical" || name == "double") {
+            if (arguments.size() != 1 || !isNumeric(arguments.front())) {
+                addDiagnostic(instruction,
+                              "bytecode " + name +
+                                  " expects one numeric argument");
+                return missingValue();
+            }
+            const auto converted = runtimeConvertNumericClass(
+                arguments.front(),
+                name == "logical" ? RuntimeNumericClass::Logical
+                                  : RuntimeNumericClass::Double);
+            if (!converted) {
+                addDiagnostic(instruction,
+                              "bytecode logical cannot convert NaN values");
+                return missingValue();
+            }
+            return std::move(*converted);
+        }
+        if (name == "islogical") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode islogical expects one argument");
+                return missingValue();
+            }
+            return logicalValue(isRuntimeLogical(arguments.front()));
         }
         if (name == "char" || name == "string") {
             if (arguments.size() != 1) {
@@ -6645,9 +6752,7 @@ private:
                     elementCount(arguments.front())));
             }
             if (name == "isempty") {
-                return numberValue(elementCount(arguments.front()) == 0
-                                       ? 1.0
-                                       : 0.0);
+                return logicalValue(elementCount(arguments.front()) == 0);
             }
             if (name == "ndims") {
                 return numberValue(static_cast<double>(
@@ -6701,7 +6806,12 @@ private:
             }
             return vectorValue(std::move(values));
         }
-        if (name == "zeros" || name == "ones" || name == "eye") {
+        if (name == "zeros" || name == "ones" || name == "eye" ||
+            name == "true" || name == "false") {
+            if ((name == "true" || name == "false") &&
+                arguments.empty()) {
+                return logicalValue(name == "true");
+            }
             return arrayConstructor(instruction, name, arguments);
         }
         if (name == "linspace") {
@@ -6714,8 +6824,7 @@ private:
                               "bytecode strcmp expects two string arguments");
                 return missingValue();
             }
-            return numberValue(runtimeEqual(arguments[0], arguments[1]) ? 1.0
-                                                                         : 0.0);
+            return logicalValue(runtimeEqual(arguments[0], arguments[1]));
         }
 
         if (arguments.size() != 1 || !isNumeric(arguments.front())) {
@@ -6757,10 +6866,10 @@ private:
             return numberValue(total);
         }
         if (name == "any") {
-            return numberValue(truthyAny(arguments.front()) ? 1.0 : 0.0);
+            return logicalValue(truthyAny(arguments.front()));
         }
         if (name == "all") {
-            return numberValue(truthy(arguments.front()) ? 1.0 : 0.0);
+            return logicalValue(truthy(arguments.front()));
         }
 
         addDiagnostic(instruction,
@@ -6787,8 +6896,9 @@ private:
                           "bytecode array constructor dimensions are too large");
             return missingValue();
         }
-        std::vector<double> elements(*count,
-                                     name == "ones" ? 1.0 : 0.0);
+        const bool logical = name == "true" || name == "false";
+        std::vector<double> elements(
+            *count, name == "ones" || name == "true" ? 1.0 : 0.0);
         if (name == "eye") {
             const size_t rows = (*shape)[0];
             const size_t columns = (*shape)[1];
@@ -6797,7 +6907,10 @@ private:
                 elements[index * columns + index] = 1.0;
             }
         }
-        return arrayValueForDimensions(*shape, std::move(elements));
+        return arrayValueForDimensions(
+            *shape, std::move(elements),
+            logical ? RuntimeNumericClass::Logical
+                    : RuntimeNumericClass::Double);
     }
 
     std::optional<std::vector<size_t>>
@@ -6934,7 +7047,8 @@ private:
         for (const auto& argument : arguments) {
             if (!isNumeric(argument)) {
                 addDiagnostic(instruction,
-                              "bytecode indexing requires numeric subscripts");
+                              "bytecode indexing requires numeric or logical "
+                              "subscripts");
                 return missingValue();
             }
         }
@@ -6986,74 +7100,47 @@ private:
                                      : target.elements[*storageOffset]);
             }
             if (values.size() == 1) {
-                return numberValue(values.front());
+                return numberValue(values.front(), target.numericClass);
             }
             return arrayValueForDimensions(selectionDimensions,
-                                           std::move(values));
+                                           std::move(values),
+                                           target.numericClass);
         }
 
-        if (isNumber(arguments.front())) {
-            const auto index =
-                checkedIndex(instruction, arguments.front().number,
-                             elementCount(target));
-            if (!index) {
-                return missingValue();
-            }
-            return numberValue(linearElement(target, *index));
-        }
-
-        if (!isArray(arguments.front())) {
+        const RuntimeValue& subscript = arguments.front();
+        auto selection = runtimeResolveIndexSelection(
+            subscript, elementCount(target), false);
+        if (!selection.succeeded) {
             addDiagnostic(instruction,
-                          "bytecode indexing requires numeric subscripts");
+                          "bytecode " + std::move(selection.error));
             return missingValue();
         }
 
         std::vector<double> values;
-        for (size_t logicalIndex = 0;
-             logicalIndex < elementCount(arguments.front()); ++logicalIndex) {
-            const double rawIndex =
-                linearElement(arguments.front(), logicalIndex);
-            const auto index =
-                checkedIndex(instruction, rawIndex, elementCount(target));
-            if (!index) {
-                return missingValue();
-            }
-            values.push_back(linearElement(target, *index));
+        values.reserve(selection.indices.size());
+        for (const size_t index : selection.indices) {
+            values.push_back(linearElement(target, index));
         }
-        return vectorValue(std::move(values));
+        if (values.size() == 1) {
+            return numberValue(values.front(), target.numericClass);
+        }
+        const auto dimensions = runtimeLinearIndexResultDimensions(
+            target, subscript, values.size(), selection.logicalMask);
+        return arrayValueForDimensions(dimensions, std::move(values),
+                                       target.numericClass);
     }
 
     std::optional<std::vector<size_t>>
     checkedIndices(const BytecodeInstruction& instruction,
                    const RuntimeValue& subscript, size_t length) {
-        std::vector<size_t> indices;
-        if (isNumber(subscript)) {
-            const auto index = checkedIndex(instruction, subscript.number,
-                                            length);
-            if (!index) {
-                return std::nullopt;
-            }
-            indices.push_back(*index);
-            return indices;
-        }
-
-        if (!isArray(subscript)) {
+        auto selection =
+            runtimeResolveIndexSelection(subscript, length, false);
+        if (!selection.succeeded) {
             addDiagnostic(instruction,
-                          "bytecode indexing requires numeric subscripts");
+                          "bytecode " + std::move(selection.error));
             return std::nullopt;
         }
-
-        indices.reserve(subscript.elements.size());
-        for (size_t logicalIndex = 0; logicalIndex < elementCount(subscript);
-             ++logicalIndex) {
-            const double rawIndex = linearElement(subscript, logicalIndex);
-            const auto index = checkedIndex(instruction, rawIndex, length);
-            if (!index) {
-                return std::nullopt;
-            }
-            indices.push_back(*index);
-        }
-        return indices;
+        return std::move(selection.indices);
     }
 
     std::optional<size_t> checkedIndex(const BytecodeInstruction& instruction,
@@ -7171,7 +7258,12 @@ private:
             }
             elements.push_back(value.number);
         }
-        return arrayValueForDimensions(dimensions, std::move(elements));
+        const RuntimeNumericClass resultClass =
+            isLogicalBinaryOperator(instruction.operand)
+                ? RuntimeNumericClass::Logical
+                : RuntimeNumericClass::Double;
+        return arrayValueForDimensions(dimensions, std::move(elements),
+                                       resultClass);
     }
 
     RuntimeValue applyScalarBinary(const BytecodeInstruction& instruction,
@@ -7192,28 +7284,28 @@ private:
             return numberValue(std::pow(left, right));
         }
         if (instruction.operand == ">") {
-            return numberValue(left > right ? 1.0 : 0.0);
+            return logicalValue(left > right);
         }
         if (instruction.operand == "<") {
-            return numberValue(left < right ? 1.0 : 0.0);
+            return logicalValue(left < right);
         }
         if (instruction.operand == ">=") {
-            return numberValue(left >= right ? 1.0 : 0.0);
+            return logicalValue(left >= right);
         }
         if (instruction.operand == "<=") {
-            return numberValue(left <= right ? 1.0 : 0.0);
+            return logicalValue(left <= right);
         }
         if (instruction.operand == "==") {
-            return numberValue(left == right ? 1.0 : 0.0);
+            return logicalValue(left == right);
         }
         if (instruction.operand == "~=") {
-            return numberValue(left != right ? 1.0 : 0.0);
+            return logicalValue(left != right);
         }
         if (instruction.operand == "&" || instruction.operand == "&&") {
-            return numberValue((left != 0.0 && right != 0.0) ? 1.0 : 0.0);
+            return logicalValue(left != 0.0 && right != 0.0);
         }
         if (instruction.operand == "|" || instruction.operand == "||") {
-            return numberValue((left != 0.0 || right != 0.0) ? 1.0 : 0.0);
+            return logicalValue(left != 0.0 || right != 0.0);
         }
 
         addDiagnostic(instruction,
@@ -7254,10 +7346,12 @@ private:
         return arrayValueForShape(leftRows, rightColumns, std::move(result));
     }
 
-    RuntimeValue mapUnary(const RuntimeValue& value,
-                          double (*operation)(double)) const {
+    RuntimeValue mapUnary(
+        const RuntimeValue& value, double (*operation)(double),
+        RuntimeNumericClass numericClass =
+            RuntimeNumericClass::Double) const {
         if (isNumber(value)) {
-            return numberValue(operation(value.number));
+            return numberValue(operation(value.number), numericClass);
         }
 
         std::vector<double> mapped;
@@ -7266,7 +7360,7 @@ private:
             mapped.push_back(operation(element));
         }
         return arrayValueForDimensions(runtimeDimensions(value),
-                                       std::move(mapped));
+                                        std::move(mapped), numericClass);
     }
 
     bool truthyAny(const RuntimeValue& value) const {

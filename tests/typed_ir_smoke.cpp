@@ -102,6 +102,7 @@ void assertScalarGuard(const mparser::BytecodeTypedIrRegion& region,
             continue;
         }
         assert(guard.value.kind == "number");
+        assert(guard.value.numericClass == "double");
         assert(guard.value.rows == 1);
         assert(guard.value.columns == 1);
         assert(guard.observationCount == observations);

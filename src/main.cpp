@@ -259,7 +259,11 @@ std::string observationToString(
                 ? std::vector<size_t>{observation.rows,
                                       observation.columns}
                 : observation.dimensions;
-        output << observation.kind << "(";
+        output << observation.kind;
+        if (!observation.numericClass.empty()) {
+            output << "<" << observation.numericClass << ">";
+        }
+        output << "(";
         for (size_t index = 0; index < dimensions.size(); ++index) {
             if (index != 0) {
                 output << "x";
@@ -311,7 +315,9 @@ std::string stringListToString(const std::vector<std::string>& values) {
 
 bool runtimeValueEqual(const mparser::RuntimeValue& left,
                        const mparser::RuntimeValue& right) {
-    return left.kind == right.kind && left.number == right.number &&
+    return left.kind == right.kind &&
+           left.numericClass == right.numericClass &&
+           left.number == right.number &&
            left.text == right.text && left.elements == right.elements &&
            mparser::runtimeDimensions(left) ==
                mparser::runtimeDimensions(right);

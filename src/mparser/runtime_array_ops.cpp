@@ -1,5 +1,6 @@
 #include "mparser/runtime_array_ops.h"
 
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
@@ -43,13 +44,15 @@ RuntimeArrayOperationResult success(RuntimeValue value) {
 
 RuntimeValue numericResult(std::vector<size_t> dimensions,
                            std::vector<double> elements,
-                           bool preferNumber) {
+                           bool preferNumber,
+                           RuntimeNumericClass numericClass) {
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
     if (preferNumber && elements.size() == 1 && dimensions[0] == 1 &&
         dimensions[1] == 1) {
         RuntimeValue result;
         result.kind = RuntimeValueKind::Number;
         result.number = elements.front();
+        result.numericClass = numericClass;
         setRuntimeDimensions(result, {1, 1});
         return result;
     }
@@ -59,6 +62,7 @@ RuntimeValue numericResult(std::vector<size_t> dimensions,
                       ? RuntimeValueKind::Vector
                       : RuntimeValueKind::Matrix;
     result.elements = std::move(elements);
+    result.numericClass = numericClass;
     setRuntimeDimensions(result, std::move(dimensions));
     return result;
 }
@@ -298,7 +302,7 @@ RuntimeArrayOperationResult permuteValue(
             elements[*outputOffset] = *element;
         }
         return success(numericResult(outputDimensions, std::move(elements),
-                                     isNumber(value)));
+                                     isNumber(value), value.numericClass));
     }
 
     std::vector<RuntimeValue> cells(*count);
@@ -468,7 +472,8 @@ RuntimeArrayOperationResult repmatBuiltin(
             elements[outputOffset] = *element;
         }
         return success(numericResult(outputDimensions, std::move(elements),
-                                     isNumber(arguments.front())));
+                                     isNumber(arguments.front()),
+                                     arguments.front().numericClass));
     }
 
     std::vector<RuntimeValue> cells(*outputCount);
@@ -553,6 +558,8 @@ RuntimeArrayOperationResult concatenate(
         std::vector<double> elements(*outputCount, 0.0);
         size_t axisOffset = 0;
         bool preferNumber = true;
+        const RuntimeNumericClass numericClass =
+            values.front().numericClass;
         for (size_t valueIndex = 0; valueIndex < values.size(); ++valueIndex) {
             const RuntimeValue& value = values[valueIndex];
             preferNumber = preferNumber && isNumber(value);
@@ -565,16 +572,22 @@ RuntimeArrayOperationResult concatenate(
                 const auto outputOffset = runtimeRowMajorStorageOffset(
                     coordinates, outputDimensions);
                 const auto element = numericStorageElement(value, sourceOffset);
-                if (!outputOffset || !element) {
+                const auto converted =
+                    element ? runtimeCoerceNumericElement(*element,
+                                                          numericClass)
+                            : std::nullopt;
+                if (!outputOffset || !converted) {
                     return failure(
-                        "concatenation could not map a numeric element");
+                        numericClass == RuntimeNumericClass::Logical
+                            ? "concatenation cannot convert NaN to logical"
+                            : "concatenation could not map a numeric element");
                 }
-                elements[*outputOffset] = *element;
+                elements[*outputOffset] = *converted;
             }
             axisOffset += inputDimensions[valueIndex][axis];
         }
         return success(numericResult(outputDimensions, std::move(elements),
-                                     preferNumber));
+                                     preferNumber, numericClass));
     }
 
     std::vector<RuntimeValue> outputCells(*outputCount);
@@ -684,7 +697,7 @@ RuntimeArrayOperationResult runtimeReshapeValue(
             elements[*targetOffset] = *element;
         }
         return success(numericResult(dimensions, std::move(elements),
-                                     isNumber(value)));
+                                     isNumber(value), value.numericClass));
     }
 
     std::vector<RuntimeValue> cells(*count);

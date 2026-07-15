@@ -12,10 +12,16 @@
 namespace mparser {
 namespace {
 
-RuntimeValue numberValue(double value) {
+struct TypedScalar {
+    double value = 0.0;
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
+};
+
+RuntimeValue numberValue(const TypedScalar& value) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Number;
-    result.number = value;
+    result.number = value.value;
+    result.numericClass = value.numericClass;
     setRuntimeDimensions(result, {1, 1});
     return result;
 }
@@ -30,64 +36,84 @@ std::optional<double> parseNumber(std::string_view text) {
     return value;
 }
 
-std::optional<double> applyUnary(std::string_view operation, double value) {
+bool truthy(double value) {
+    return value != 0.0 && !std::isnan(value);
+}
+
+std::optional<TypedScalar> applyUnary(std::string_view operation,
+                                      const TypedScalar& value) {
     if (operation == "+") {
-        return value;
+        return TypedScalar{value.value, RuntimeNumericClass::Double};
     }
     if (operation == "-") {
-        return -value;
+        return TypedScalar{-value.value, RuntimeNumericClass::Double};
     }
     if (operation == "~") {
-        return value != 0.0 && !std::isnan(value) ? 0.0 : 1.0;
+        return TypedScalar{truthy(value.value) ? 0.0 : 1.0,
+                           RuntimeNumericClass::Logical};
     }
     return std::nullopt;
 }
 
-std::optional<double> applyBinary(std::string_view operation, double left,
-                                  double right) {
+std::optional<TypedScalar> applyBinary(std::string_view operation,
+                                       const TypedScalar& left,
+                                       const TypedScalar& right) {
     if (operation == "+") {
-        return left + right;
+        return TypedScalar{left.value + right.value};
     }
     if (operation == "-") {
-        return left - right;
+        return TypedScalar{left.value - right.value};
     }
     if (operation == "*" || operation == ".*") {
-        return left * right;
+        return TypedScalar{left.value * right.value};
     }
     if (operation == "/" || operation == "./") {
-        return left / right;
+        return TypedScalar{left.value / right.value};
     }
     if (operation == "^" || operation == ".^") {
-        return std::pow(left, right);
+        return TypedScalar{std::pow(left.value, right.value)};
     }
     if (operation == ">") {
-        return left > right ? 1.0 : 0.0;
+        return TypedScalar{left.value > right.value ? 1.0 : 0.0,
+                           RuntimeNumericClass::Logical};
     }
     if (operation == "<") {
-        return left < right ? 1.0 : 0.0;
+        return TypedScalar{left.value < right.value ? 1.0 : 0.0,
+                           RuntimeNumericClass::Logical};
     }
     if (operation == ">=") {
-        return left >= right ? 1.0 : 0.0;
+        return TypedScalar{left.value >= right.value ? 1.0 : 0.0,
+                           RuntimeNumericClass::Logical};
     }
     if (operation == "<=") {
-        return left <= right ? 1.0 : 0.0;
+        return TypedScalar{left.value <= right.value ? 1.0 : 0.0,
+                           RuntimeNumericClass::Logical};
     }
     if (operation == "==") {
-        return left == right ? 1.0 : 0.0;
+        return TypedScalar{left.value == right.value ? 1.0 : 0.0,
+                           RuntimeNumericClass::Logical};
     }
     if (operation == "~=") {
-        return left != right ? 1.0 : 0.0;
+        return TypedScalar{left.value != right.value ? 1.0 : 0.0,
+                           RuntimeNumericClass::Logical};
     }
     if (operation == "&" || operation == "&&") {
-        return left != 0.0 && right != 0.0 ? 1.0 : 0.0;
+        return TypedScalar{truthy(left.value) && truthy(right.value) ? 1.0
+                                                                    : 0.0,
+                           RuntimeNumericClass::Logical};
     }
     if (operation == "|" || operation == "||") {
-        return left != 0.0 || right != 0.0 ? 1.0 : 0.0;
+        return TypedScalar{truthy(left.value) || truthy(right.value) ? 1.0
+                                                                    : 0.0,
+                           RuntimeNumericClass::Logical};
     }
     return std::nullopt;
 }
 
 std::optional<std::vector<double>> loopValues(const RuntimeValue& range) {
+    if (range.numericClass != RuntimeNumericClass::Double) {
+        return std::nullopt;
+    }
     if (range.kind == RuntimeValueKind::Number) {
         return std::vector<double>{range.number};
     }
@@ -136,7 +162,8 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
         if (variable == variables.end()) {
             return fallback("typed region input is unavailable: " + input);
         }
-        if (variable->second.kind != RuntimeValueKind::Number) {
+        if (variable->second.kind != RuntimeValueKind::Number ||
+            variable->second.numericClass != RuntimeNumericClass::Double) {
             return fallback("typed region input is not scalar numeric: " +
                             input);
         }
@@ -145,8 +172,9 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     std::map<std::string, RuntimeValue> workingVariables = variables;
     size_t instructionCount = 0;
     for (double loopValue : *values) {
-        workingVariables[header.operand] = numberValue(loopValue);
-        std::vector<double> stack;
+        workingVariables[header.operand] =
+            numberValue(TypedScalar{loopValue});
+        std::vector<TypedScalar> stack;
 
         for (size_t pc = region.bodyBeginPc; pc < region.bodyEndPc; ++pc) {
             const auto& instruction = program.instructions[pc];
@@ -165,7 +193,8 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
                         "typed region load is not scalar numeric: " +
                         instruction.operand);
                 }
-                stack.push_back(variable->second.number);
+                stack.push_back(TypedScalar{variable->second.number,
+                                            variable->second.numericClass});
                 break;
             }
             case BytecodeOp::LoadLiteral: {
@@ -173,7 +202,7 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
                 if (!value) {
                     return fallback("typed region literal is not numeric");
                 }
-                stack.push_back(*value);
+                stack.push_back(TypedScalar{*value});
                 break;
             }
             case BytecodeOp::StoreName:
@@ -203,9 +232,9 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
                     return fallback(
                         "typed region stack underflow at binary operation");
                 }
-                const double right = stack.back();
+                const TypedScalar right = stack.back();
                 stack.pop_back();
-                const double left = stack.back();
+                const TypedScalar left = stack.back();
                 stack.pop_back();
                 const auto value =
                     applyBinary(instruction.operand, left, right);

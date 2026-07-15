@@ -198,13 +198,15 @@ single row-vector output, selected dimensions, or multiple scalar outputs,
 1-based N-dimensional indexing, colon and vector subscripts, folded trailing
 dimensions, `end` expressions inside indexing, shape-checked non-scalar
 indexed assignment, scalar expansion, and automatic numeric-array growth,
+logical-mask linear and multi-subscript reads/writes, preserved logical
+numeric classes and conversion/query builtins,
 N-dimensional `zeros`, `ones`, and `cell` constructors, two-dimensional `eye`,
 `linspace` vector generation, and shared numeric/Cell `reshape`, `permute`,
 `ipermute`, `squeeze`, `repmat`, `cat`, `horzcat`, and `vertcat` operations,
 transpose, and basic numeric matrix multiplication.
 
 Unsupported dynamic features produce runtime diagnostics. That includes class
-instances, logical indexing, deletion assignment, function handles, other
+instances, deletion assignment, function handles, other
 builtin multi-output conventions beyond the scalar runtime subset, complex
 numbers, sparse arrays, object dispatch, and general dynamic call resolution.
 This keeps the first interpreter useful for loop and expression validation
@@ -218,15 +220,15 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.44 has an executable bytecode VM for scalar doubles, strings,
+v0.45 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
 `break`, `continue`, and `return`, same-file local function calls, isolated
 call frames, multi-output call assignment, MATLAB-style numeric indexing with
 `end`, `:`, and vector subscripts, plus shape-checked non-scalar indexed
-assignment and automatic numeric-array growth. Linear and multi-subscript
-indexing use MATLAB column-major
+assignment, logical-mask reads/writes, and automatic numeric-array growth.
+Linear and multi-subscript indexing use MATLAB column-major
 order, fold trailing dimensions when fewer subscripts are supplied, and expose
 trailing singleton dimensions when more subscripts are supplied. It also
 executes coordinate-preserving numeric/Cell array transformations and
@@ -234,7 +236,8 @@ concatenation through the same checked implementation as the reference
 interpreter, plus `switch`/`case`/`otherwise` dispatch and
 `try`/`catch` diagnostic recovery. When enabled, runtime profiles record
 instruction PCs, functions, loops, call/index sites, and assignment sites,
-including hot-loop marking plus structured runtime kind/shape observations.
+including hot-loop marking plus structured runtime kind/numeric-class/shape
+observations.
 `BytecodeVmOptions` can disable those detailed observations after planning;
 aggregate dispatcher counts and typed-region execution summaries remain
 available for auditability. The same options can inject an initial workspace
@@ -310,7 +313,9 @@ operations are currently eligible for a typed execution path. The VM
 can now hand eligible scalar `for` loops to a transactional typed stack
 executor. The executor works on a temporary variable frame and commits only
 after the complete loop succeeds; a failed runtime type or stack check leaves
-the VM state untouched and resumes the original bytecode loop.
+the VM state untouched and resumes the original bytecode loop. Its entry
+specialization remains double-only, while typed stack values retain the
+logical class produced by comparisons and logical operators inside the loop.
 
 `AdaptiveBytecodeVmSession` owns a longer-lived tiering state. Before promotion,
 it merges instruction, function, loop, call-site, assignment, kind, and shape
@@ -521,7 +526,7 @@ precedence, class-folder Live Code/P-code/MEX methods, general handle deletion,
 `ObjectBeingDestroyed`, cyclic object collection, property change listeners,
 listener/source arrays, numeric/logical/character built-in enumeration bases,
 enumeration object arrays, class methods as `CompiledModule` entry targets,
-logical indexing, deletion assignment, structs, sparse arrays, and complex values until the IR grows
+deletion assignment, structs, sparse arrays, and complex values until the IR grows
 richer mutation, layout, and dynamic dispatch conventions. Cell execution
 supports N-dimensional scalar brace reads/writes, but Cell parenthesis
 indexing, vector-valued brace selections, and comma-separated-list expansion
@@ -535,9 +540,10 @@ for future runtime name lookup, profiling, and hot-loop specialization.
 
 ## JIT direction
 
-The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.44
+The JIT should specialize hot bytecode regions, not raw AST nodes. The v0.45
 runtime profiler can identify frequently executed loops, functions, and
-call/index sites, then attach conservative runtime kind/full-shape observations to
+call/index sites, then attach conservative runtime
+kind/numeric-class/full-shape observations to
 stable profile positions. The optimization planner converts those observations
 into explicit candidates and guards. The typed IR builder now lowers those
 candidates into typed regions, and the guard evaluator can decide whether
@@ -626,8 +632,11 @@ metadata. v0.43 adds shared column-major numeric-array assignment, checked
 automatic growth, repeated-index ordering, and N-dimensional implicit expansion
 to both baseline runtimes. v0.44 adds shared logical-order reshape, dimension
 permutation and inversion, singleton squeezing, checked replication, and
-general N-dimensional concatenation for numeric arrays and Cells. The next
-steps are logical indexing and deletion assignment, object/listener arrays,
+general N-dimensional concatenation for numeric arrays and Cells. v0.45 adds
+preserved logical numeric classes, conversion and class queries,
+MATLAB-style logical-mask selection and transactional assignment in both
+baseline runtimes, and numeric-class-aware profiling, guards, typed IR, and
+adaptive retraining. The next steps are deletion assignment, object/listener arrays,
 property event listeners,
 comma-separated-list Cell
 semantics, persistent code

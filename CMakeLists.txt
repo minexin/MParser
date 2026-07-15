@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.44.0 LANGUAGES CXX)
+project(MParser VERSION 0.45.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +22,8 @@ add_library(mparser_core
     src/mparser/runtime_array_ops.cpp
     src/mparser/runtime_assignment.cpp
     src/mparser/runtime_benchmark.cpp
+    src/mparser/runtime_index.cpp
+    src/mparser/runtime_numeric.cpp
     src/mparser/runtime_shape.cpp
     src/mparser/semantic.cpp
     src/mparser/semantic_dump.cpp
@@ -72,6 +74,11 @@ add_executable(array_transform_smoke_tests
     tests/array_transform_smoke.cpp)
 target_link_libraries(array_transform_smoke_tests PRIVATE mparser_core)
 add_test(NAME array_transform_smoke COMMAND array_transform_smoke_tests)
+
+add_executable(logical_index_smoke_tests
+    tests/logical_index_smoke.cpp)
+target_link_libraries(logical_index_smoke_tests PRIVATE mparser_core)
+add_test(NAME logical_index_smoke COMMAND logical_index_smoke_tests)
 
 add_executable(optimization_plan_smoke_tests tests/optimization_plan_smoke.cpp)
 target_link_libraries(optimization_plan_smoke_tests PRIVATE mparser_core)
@@ -255,6 +262,20 @@ add_test(NAME array_transform_interpreter_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_transform_demo.m)
 set_tests_properties(array_transform_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 2126")
+
+add_test(NAME logical_index_bytecode_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/logical_index_demo.m)
+set_tests_properties(logical_index_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 996")
+
+add_test(NAME logical_index_interpreter_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/logical_index_demo.m)
+set_tests_properties(logical_index_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 996")
 
 add_test(NAME namespace_function_cli_smoke
     COMMAND $<TARGET_FILE:mparser>

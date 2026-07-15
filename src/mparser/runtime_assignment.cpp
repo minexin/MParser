@@ -1,5 +1,7 @@
 #include "mparser/runtime_assignment.h"
 
+#include "mparser/runtime_index.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
@@ -29,48 +31,6 @@ RuntimeNumericAssignmentResult failure(std::string message) {
 
 RuntimeNumericAssignmentResult success() {
     return RuntimeNumericAssignmentResult{true, {}};
-}
-
-std::optional<double> logicalElement(const RuntimeValue& value,
-                                     size_t logicalIndex) {
-    if (isNumber(value)) {
-        return logicalIndex == 0 ? std::optional<double>(value.number)
-                                 : std::nullopt;
-    }
-    if (!isArray(value)) {
-        return std::nullopt;
-    }
-    const auto storageOffset =
-        runtimeColumnMajorLinearToStorageOffset(value, logicalIndex);
-    if (!storageOffset || *storageOffset >= value.elements.size()) {
-        return std::nullopt;
-    }
-    return value.elements[*storageOffset];
-}
-
-std::optional<std::vector<size_t>> assignmentIndices(
-    const RuntimeValue& subscript, std::string& error) {
-    std::vector<size_t> indices;
-    const size_t count = runtimeShapeElementCount(subscript);
-    if (!isNumeric(subscript)) {
-        error = "indexed assignment requires numeric subscripts";
-        return std::nullopt;
-    }
-
-    indices.reserve(count);
-    for (size_t logicalIndex = 0; logicalIndex < count; ++logicalIndex) {
-        const auto rawIndex = logicalElement(subscript, logicalIndex);
-        const auto oneBasedIndex = rawIndex
-                                       ? checkedRuntimeNonnegativeInteger(
-                                             *rawIndex)
-                                       : std::nullopt;
-        if (!oneBasedIndex || *oneBasedIndex == 0) {
-            error = "index must be a positive integer";
-            return std::nullopt;
-        }
-        indices.push_back(*oneBasedIndex - 1);
-    }
-    return indices;
 }
 
 std::vector<size_t>
@@ -111,7 +71,7 @@ bool growNumericTarget(RuntimeValue& target,
 
     std::vector<double> grown(*newCount, 0.0);
     for (size_t logicalIndex = 0; logicalIndex < oldCount; ++logicalIndex) {
-        const auto value = logicalElement(target, logicalIndex);
+        const auto value = runtimeNumericElement(target, logicalIndex);
         auto coordinates = runtimeColumnMajorCoordinates(
             logicalIndex, oldViewDimensions);
         if (!value || !coordinates) {
@@ -237,18 +197,31 @@ RuntimeNumericAssignmentResult assignLinear(
             "on both sides");
     }
 
+    std::vector<double> assignedValues;
+    assignedValues.reserve(indices.size());
+    for (size_t ordinal = 0; ordinal < indices.size(); ++ordinal) {
+        const auto assigned = runtimeNumericElement(
+            value, scalarExpansion ? 0 : ordinal);
+        const auto converted =
+            assigned ? runtimeCoerceNumericElement(*assigned,
+                                                   target.numericClass)
+                     : std::nullopt;
+        if (!converted) {
+            return failure(
+                target.numericClass == RuntimeNumericClass::Logical
+                    ? "NaN cannot be converted to logical for indexed assignment"
+                    : "indexed assignment value has an invalid shape");
+        }
+        assignedValues.push_back(*converted);
+    }
+
     auto capacity = ensureLinearCapacity(target, indices);
     if (!capacity.succeeded) {
         return capacity;
     }
     for (size_t ordinal = 0; ordinal < indices.size(); ++ordinal) {
-        const auto assigned =
-            logicalElement(value, scalarExpansion ? 0 : ordinal);
-        if (!assigned) {
-            return failure("indexed assignment value has an invalid shape");
-        }
         if (isNumber(target)) {
-            target.number = *assigned;
+            target.number = assignedValues[ordinal];
             continue;
         }
         const auto storageOffset = runtimeColumnMajorLinearToStorageOffset(
@@ -256,7 +229,7 @@ RuntimeNumericAssignmentResult assignLinear(
         if (!storageOffset || *storageOffset >= target.elements.size()) {
             return failure("indexed assignment could not map a linear index");
         }
-        target.elements[*storageOffset] = *assigned;
+        target.elements[*storageOffset] = assignedValues[ordinal];
     }
     return success();
 }
@@ -290,6 +263,24 @@ RuntimeNumericAssignmentResult assignSubscripts(
             "sides");
     }
 
+    std::vector<double> assignedValues;
+    assignedValues.reserve(*selectionCount);
+    for (size_t ordinal = 0; ordinal < *selectionCount; ++ordinal) {
+        const auto assigned = runtimeNumericElement(
+            value, scalarExpansion ? 0 : ordinal);
+        const auto converted =
+            assigned ? runtimeCoerceNumericElement(*assigned,
+                                                   target.numericClass)
+                     : std::nullopt;
+        if (!converted) {
+            return failure(
+                target.numericClass == RuntimeNumericClass::Logical
+                    ? "NaN cannot be converted to logical for indexed assignment"
+                    : "indexed assignment value has an invalid shape");
+        }
+        assignedValues.push_back(*converted);
+    }
+
     auto capacity = ensureSubscriptCapacity(target, selections);
     if (!capacity.succeeded) {
         return capacity;
@@ -299,9 +290,7 @@ RuntimeNumericAssignmentResult assignSubscripts(
     for (size_t ordinal = 0; ordinal < *selectionCount; ++ordinal) {
         const auto selectionCoordinates = runtimeColumnMajorCoordinates(
             ordinal, selectionDimensions);
-        const auto assigned =
-            logicalElement(value, scalarExpansion ? 0 : ordinal);
-        if (!selectionCoordinates || !assigned) {
+        if (!selectionCoordinates) {
             return failure("indexed assignment value has an invalid shape");
         }
 
@@ -316,9 +305,9 @@ RuntimeNumericAssignmentResult assignSubscripts(
             return failure("indexed assignment could not map subscripts");
         }
         if (isNumber(target)) {
-            target.number = *assigned;
+            target.number = assignedValues[ordinal];
         } else if (*storageOffset < target.elements.size()) {
-            target.elements[*storageOffset] = *assigned;
+            target.elements[*storageOffset] = assignedValues[ordinal];
         } else {
             return failure("indexed assignment could not map subscripts");
         }
@@ -343,13 +332,18 @@ RuntimeNumericAssignmentResult runtimeAssignNumericIndexed(
 
     std::vector<std::vector<size_t>> selections;
     selections.reserve(subscripts.size());
-    for (const auto& subscript : subscripts) {
-        std::string error;
-        auto selection = assignmentIndices(subscript, error);
-        if (!selection) {
-            return failure(std::move(error));
+    const auto effectiveDimensions = runtimeEffectiveSubscriptDimensions(
+        target, subscripts.size());
+    for (size_t index = 0; index < subscripts.size(); ++index) {
+        const size_t extent = subscripts.size() == 1
+                                  ? runtimeShapeElementCount(target)
+                                  : effectiveDimensions[index];
+        auto selection = runtimeResolveIndexSelection(
+            subscripts[index], extent, true);
+        if (!selection.succeeded) {
+            return failure(std::move(selection.error));
         }
-        selections.push_back(std::move(*selection));
+        selections.push_back(std::move(selection.indices));
     }
 
     if (selections.size() == 1) {

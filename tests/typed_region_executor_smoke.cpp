@@ -83,7 +83,8 @@ bool runtimeValueEqual(const mparser::RuntimeValue& left,
                        const mparser::RuntimeValue& right) {
     return left.kind == right.kind && left.number == right.number &&
            left.text == right.text && left.elements == right.elements &&
-           left.rows == right.rows && left.columns == right.columns;
+           left.rows == right.rows && left.columns == right.columns &&
+           left.numericClass == right.numericClass;
 }
 
 void assertVariablesEqual(
@@ -167,6 +168,48 @@ end
     assert(output->elements == std::vector<double>({650.0, 650.0}));
 }
 
+void runTypedLogicalResultSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+flag = false;
+for i = 1:12
+    flag = i > 6;
+    y = flag + i;
+end
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+
+    mparser::BytecodeVm vm;
+    const auto optimized =
+        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
+
+    const auto* flag = findVariable(optimized.variables, "flag");
+    assert(flag != nullptr);
+    assert(flag->kind == mparser::RuntimeValueKind::Number);
+    assert(flag->number == 1.0);
+    assert(flag->numericClass ==
+           mparser::RuntimeNumericClass::Logical);
+
+    const auto* output = findVariable(optimized.variables, "y");
+    assert(output != nullptr);
+    assert(output->kind == mparser::RuntimeValueKind::Number);
+    assert(output->number == 13.0);
+    assert(output->numericClass ==
+           mparser::RuntimeNumericClass::Double);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+}
+
 void runDirectTransactionalFallbackSmoke() {
     auto pipeline = prepare(R"(function y = main()
 y = 0;
@@ -207,6 +250,7 @@ end
 int main() {
     runTypedLoopExecutionSmoke();
     runTypedLoopFallbackSmoke();
+    runTypedLogicalResultSmoke();
     runDirectTransactionalFallbackSmoke();
     std::cout << "typed region executor smoke tests passed\n";
     return 0;

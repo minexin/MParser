@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.44.0. See [docs/v0.44.md](docs/v0.44.md) for the
+Current milestone: v0.45.0. See [docs/v0.45.md](docs/v0.45.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.43.md](docs/v0.43.md),
+iteration plan. Previous boundaries are kept in [docs/v0.44.md](docs/v0.44.md),
+[docs/v0.43.md](docs/v0.43.md),
 [docs/v0.42.md](docs/v0.42.md),
 [docs/v0.41.md](docs/v0.41.md),
 [docs/v0.40.md](docs/v0.40.md),
@@ -80,16 +81,19 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.44 executes the core numeric/string subset,
+expression operators. v0.45 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
 non-scalar indexed assignment, scalar expansion, and automatic numeric-array
 growth,
+first-class logical scalars and arrays, logical-mask reads and writes,
+`logical`/`double` conversion, `class`/`isa`/`islogical`,
 `switch/case/otherwise`, and `try/catch` diagnostic recovery. It also records
 bytecode VM execution profiles for functions, loops, instructions,
-call/index sites, and assignment sites, including runtime value kind and shape
-observations. Profile collection is now an explicit VM policy: analysis and
+call/index sites, and assignment sites, including runtime value kind, numeric
+class, and shape observations. Profile collection is now an explicit VM
+policy: analysis and
 planning commands collect the complete profile, while ordinary bytecode and
 post-specialization execution skip per-PC, function, loop, call-site, and
 assignment observations. A first optimization planner consumes full profiles
@@ -349,6 +353,20 @@ perform coordinate-preserving concatenation with strict shape validation.
 The HIR interpreter, bytecode VM, and class-property reshape path now use the
 same transformation contract.
 
+v0.45 makes logical data a preserved runtime numeric class instead of an
+untyped double `0`/`1` convention. Comparisons, logical operators, predicates,
+and `true`/`false` constructors produce logical values; ordinary arithmetic
+produces doubles. Linear and multi-subscript logical masks work in both
+baseline runtimes, including MATLAB-compatible column-major selection,
+vector-orientation rules, shorter masks, ignored out-of-range `false` entries,
+and diagnostics for out-of-range `true` entries. Logical-mask assignment is
+transactional, never grows the target, and coerces right-hand values to the
+target numeric class before mutation. Runtime transformations preserve the
+logical class, while profiler observations, optimization guards, typed IR, and
+adaptive retraining distinguish `logical` from `double`. The scalar typed
+loop tier also preserves logical intermediates produced inside a specialized
+double loop.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -366,12 +384,14 @@ and `ndims` including multi-output and dimension-vector forms, 1-based
 N-dimensional numeric indexing such as `A(2)` and `A(2, 1, 3)`, colon and
 vector subscripts, `end`
 expressions inside indexing, non-scalar and scalar-expanded indexed assignment
-with automatic numeric-array growth, array constructors `zeros`, `ones`, and
+with automatic numeric-array growth, logical-mask indexing and assignment,
+logical/double conversion and class queries, array constructors `zeros`,
+`ones`, and
 two-dimensional `eye`, `linspace` vector generation, numeric/Cell `reshape`,
 `permute`, `ipermute`, `squeeze`, `repmat`, `cat`, `horzcat`, and `vertcat`,
 transpose, basic numeric matrix multiplication, and
 N-dimensional Cells with scalar brace indexing/mutation. It is
-intentionally not a full MATLAB runtime yet: classes, logical indexing,
+intentionally not a full MATLAB runtime yet: classes,
 deletion assignment, function handles, other builtin multi-output conventions beyond the
 scalar runtime subset, complex numbers, sparse arrays, and object dispatch
 still report runtime diagnostics instead of guessing.
@@ -450,6 +470,14 @@ N-dimensional implicit expansion through either baseline runtime with:
 ```powershell
 build\mparser.exe --run-bytecode samples\array_assignment_demo.m
 build\mparser.exe --run samples\array_assignment_demo.m
+```
+
+Run first-class logical arrays, mask selection, mask assignment, conversion,
+and transformed logical shapes through both baseline runtimes with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\logical_index_demo.m
+build\mparser.exe --run samples\logical_index_demo.m
 ```
 
 The bytecode VM profiling and type/shape observation subset can be tried with:

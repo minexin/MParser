@@ -33,6 +33,7 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
                             const RuntimeValue& right,
                             ComparedHandleObjects& comparedHandles) {
     if (left.kind != right.kind ||
+        left.numericClass != right.numericClass ||
         runtimeDimensions(left) != runtimeDimensions(right)) {
         return false;
     }

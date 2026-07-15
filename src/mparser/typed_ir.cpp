@@ -1,4 +1,5 @@
 #include "mparser/typed_ir.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 
 #include <optional>
@@ -9,7 +10,8 @@ namespace mparser {
 namespace {
 
 bool isScalarNumber(const BytecodeOptimizationGuard& guard) {
-    return guard.kind == "number" && guard.rows == 1 && guard.columns == 1;
+    return guard.kind == "number" && guard.numericClass == "double" &&
+           guard.rows == 1 && guard.columns == 1;
 }
 
 bool allScalarNumberGuards(
@@ -52,7 +54,8 @@ BytecodeTypedIrGuard typedGuard(
     return BytecodeTypedIrGuard{
         guard.source,
         guard.role,
-        BytecodeTypedValue{guard.kind, guard.rows, guard.columns,
+        BytecodeTypedValue{guard.kind, guard.numericClass, guard.rows,
+                           guard.columns,
                            dimensions},
         guard.observationCount};
 }
@@ -122,8 +125,13 @@ std::string runtimeKindName(const RuntimeValue& value) {
 }
 
 std::string shapeText(std::string_view kind,
+                      std::string_view numericClass,
                       const std::vector<size_t>& dimensions) {
-    std::string result = std::string(kind) + "(";
+    std::string result = std::string(kind);
+    if (!numericClass.empty()) {
+        result += "<" + std::string(numericClass) + ">";
+    }
+    result += "(";
     for (size_t index = 0; index < dimensions.size(); ++index) {
         if (index != 0) {
             result += "x";
@@ -176,6 +184,10 @@ BytecodeTypedIrGuardCheck evaluateGuard(
 
     check.checked = true;
     const std::string actualKind = runtimeKindName(*value);
+    const std::string actualNumericClass =
+        isRuntimeNumericValue(*value)
+            ? std::string(runtimeNumericClassName(value->numericClass))
+            : std::string{};
     const auto actualDimensions = runtimeDimensions(*value);
     const auto expectedDimensions =
         guard.value.dimensions.empty()
@@ -183,14 +195,20 @@ BytecodeTypedIrGuardCheck evaluateGuard(
                   {guard.value.rows, guard.value.columns})
             : normalizeRuntimeDimensions(guard.value.dimensions);
     check.passed = actualKind == guard.value.kind &&
+                   actualNumericClass == guard.value.numericClass &&
                    actualDimensions == expectedDimensions;
     if (check.passed) {
-        check.reason = "matched " + shapeText(actualKind, actualDimensions);
+        check.reason = "matched " +
+                       shapeText(actualKind, actualNumericClass,
+                                 actualDimensions);
     } else {
         check.reason = "expected " +
-                       shapeText(guard.value.kind, expectedDimensions) +
+                       shapeText(guard.value.kind,
+                                 guard.value.numericClass,
+                                 expectedDimensions) +
                        ", got " +
-                       shapeText(actualKind, actualDimensions);
+                       shapeText(actualKind, actualNumericClass,
+                                 actualDimensions);
     }
     return check;
 }

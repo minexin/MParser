@@ -97,6 +97,7 @@ void assertObservation(const mparser::BytecodeValueObservation& observation,
                        std::string_view kind, size_t rows, size_t columns,
                        size_t count) {
     assert(observation.kind == kind);
+    assert(observation.numericClass == "double");
     assert(observation.rows == rows);
     assert(observation.columns == columns);
     assert(observation.observationCount == count);

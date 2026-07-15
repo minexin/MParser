@@ -61,6 +61,7 @@ void assertScalarNumberGuard(
     const auto* guard = findGuard(candidate, role);
     assert(guard != nullptr);
     assert(guard->kind == "number");
+    assert(guard->numericClass == "double");
     assert(guard->rows == 1);
     assert(guard->columns == 1);
     assert(guard->observationCount == observations);

@@ -2,6 +2,8 @@
 #include "mparser/function_signature.h"
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_assignment.h"
+#include "mparser/runtime_index.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
@@ -23,12 +25,20 @@ RuntimeValue missingValue() {
     return RuntimeValue{};
 }
 
-RuntimeValue numberValue(double value) {
+RuntimeValue numberValue(
+    double value,
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Number;
     result.number = value;
+    result.numericClass = numericClass;
     setRuntimeDimensions(result, {1, 1});
     return result;
+}
+
+RuntimeValue logicalValue(bool value) {
+    return numberValue(value ? 1.0 : 0.0,
+                       RuntimeNumericClass::Logical);
 }
 
 RuntimeValue stringValue(std::string value) {
@@ -39,19 +49,25 @@ RuntimeValue stringValue(std::string value) {
     return result;
 }
 
-RuntimeValue vectorValue(std::vector<double> values) {
+RuntimeValue vectorValue(
+    std::vector<double> values,
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Vector;
     result.elements = std::move(values);
+    result.numericClass = numericClass;
     setRuntimeDimensions(result, {1, result.elements.size()});
     return result;
 }
 
 RuntimeValue matrixValue(size_t rows, size_t columns,
-                         std::vector<double> values) {
+                         std::vector<double> values,
+                         RuntimeNumericClass numericClass =
+                             RuntimeNumericClass::Double) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Matrix;
     result.elements = std::move(values);
+    result.numericClass = numericClass;
     setRuntimeDimensions(result, {rows, columns});
     return result;
 }
@@ -135,13 +151,15 @@ std::string decodeStringLiteral(std::string_view text) {
 
 bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     if (isNumber(left) && isNumber(right)) {
-        return left.number == right.number;
+        return left.numericClass == right.numericClass &&
+               left.number == right.number;
     }
     if (isString(left) && isString(right)) {
         return left.text == right.text;
     }
     if (isArray(left) && isArray(right)) {
-        return runtimeDimensions(left) == runtimeDimensions(right) &&
+        return left.numericClass == right.numericClass &&
+               runtimeDimensions(left) == runtimeDimensions(right) &&
                left.elements == right.elements;
     }
     if (isCell(left) && isCell(right)) {
@@ -209,21 +227,26 @@ double elementAt(const RuntimeValue& value, size_t index) {
 }
 
 RuntimeValue arrayValueForShape(size_t rows, size_t columns,
-                                std::vector<double> values) {
+                                std::vector<double> values,
+                                RuntimeNumericClass numericClass =
+                                    RuntimeNumericClass::Double) {
     if (rows == 1) {
-        return vectorValue(std::move(values));
+        return vectorValue(std::move(values), numericClass);
     }
-    return matrixValue(rows, columns, std::move(values));
+    return matrixValue(rows, columns, std::move(values), numericClass);
 }
 
 RuntimeValue arrayValueForDimensions(std::vector<size_t> dimensions,
-                                     std::vector<double> values) {
+                                     std::vector<double> values,
+                                     RuntimeNumericClass numericClass =
+                                         RuntimeNumericClass::Double) {
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
     RuntimeValue result;
     result.kind = dimensions.size() == 2 && dimensions[0] == 1
                       ? RuntimeValueKind::Vector
                       : RuntimeValueKind::Matrix;
     result.elements = std::move(values);
+    result.numericClass = numericClass;
     setRuntimeDimensions(result, std::move(dimensions));
     return result;
 }
@@ -243,9 +266,11 @@ bool truthy(const RuntimeValue& value) {
     return false;
 }
 
-RuntimeValue mapUnary(const RuntimeValue& value, double (*operation)(double)) {
+RuntimeValue mapUnary(
+    const RuntimeValue& value, double (*operation)(double),
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
     if (isNumber(value)) {
-        return numberValue(operation(value.number));
+        return numberValue(operation(value.number), numericClass);
     }
 
     std::vector<double> mapped;
@@ -254,11 +279,18 @@ RuntimeValue mapUnary(const RuntimeValue& value, double (*operation)(double)) {
         mapped.push_back(operation(element));
     }
     return arrayValueForDimensions(runtimeDimensions(value),
-                                   std::move(mapped));
+                                   std::move(mapped), numericClass);
 }
 
 bool isWholeNumber(double value) {
     return std::isfinite(value) && std::floor(value) == value;
+}
+
+bool isLogicalBinaryOperator(std::string_view operation) {
+    return operation == ">" || operation == "<" || operation == ">=" ||
+           operation == "<=" || operation == "==" || operation == "~=" ||
+           operation == "&" || operation == "|" || operation == "&&" ||
+           operation == "||";
 }
 
 std::optional<double> parseNumber(std::string_view text) {
@@ -847,7 +879,8 @@ private:
 
         LoopDepthGuard loop(loopDepth_);
         for (double value : values) {
-            currentFrame()[loopVariable] = numberValue(value);
+            currentFrame()[loopVariable] =
+                numberValue(value, range.numericClass);
             executeRange(node, 1, node.children.size());
             if (diagnosticTrapTriggered()) {
                 return;
@@ -1165,7 +1198,8 @@ private:
             return value;
         }
         if (isVector(value)) {
-            return matrixValue(value.elements.size(), 1, value.elements);
+            return matrixValue(value.elements.size(), 1, value.elements,
+                               value.numericClass);
         }
         if (isMatrix(value)) {
             if (runtimeDimensionCount(value) > 2) {
@@ -1182,7 +1216,7 @@ private:
                 }
             }
             return matrixValue(value.columns, value.rows,
-                               std::move(transposed));
+                               std::move(transposed), value.numericClass);
         }
 
         addDiagnostic(node, "transpose requires numeric input");
@@ -1209,10 +1243,10 @@ private:
                 return numberValue(std::numeric_limits<double>::quiet_NaN());
             }
             if (node.label == "true") {
-                return numberValue(1.0);
+                return logicalValue(true);
             }
             if (node.label == "false") {
-                return numberValue(0.0);
+                return logicalValue(false);
             }
         }
 
@@ -1252,15 +1286,15 @@ private:
         }
 
         if (node.label == "+") {
-            return value;
+            return mapUnary(value, [](double element) { return element; });
         }
         if (node.label == "-") {
             return mapUnary(value, [](double element) { return -element; });
         }
         if (node.label == "~") {
             return mapUnary(value, [](double element) {
-                return (element != 0.0 && !std::isnan(element)) ? 0.0 : 1.0;
-            });
+                return element == 0.0 ? 1.0 : 0.0;
+            }, RuntimeNumericClass::Logical);
         }
 
         addDiagnostic(node, "unsupported unary operator: " + node.label);
@@ -1274,14 +1308,21 @@ private:
 
         if (node.children.front()->kind != HirKind::MatrixRow) {
             std::vector<double> elements;
+            std::optional<RuntimeNumericClass> numericClass;
             for (const auto& child : node.children) {
-                appendNumericElements(*child, elements);
+                if (!appendNumericElements(*child, elements,
+                                           numericClass)) {
+                    return missingValue();
+                }
             }
-            return vectorValue(std::move(elements));
+            return vectorValue(
+                std::move(elements),
+                numericClass.value_or(RuntimeNumericClass::Double));
         }
 
         std::vector<double> elements;
         size_t columns = 0;
+        std::optional<RuntimeNumericClass> numericClass;
         for (const auto& child : node.children) {
             const RuntimeValue value = evaluate(*child);
             if (isVector(value)) {
@@ -1292,8 +1333,20 @@ private:
                                   "matrix rows must have the same length");
                     return missingValue();
                 }
-                elements.insert(elements.end(), value.elements.begin(),
-                                value.elements.end());
+                if (!numericClass) {
+                    numericClass = value.numericClass;
+                }
+                for (const double element : value.elements) {
+                    const auto converted = runtimeCoerceNumericElement(
+                        element, *numericClass);
+                    if (!converted) {
+                        addDiagnostic(
+                            *child,
+                            "matrix literal cannot convert NaN to logical");
+                        return missingValue();
+                    }
+                    elements.push_back(*converted);
+                }
                 continue;
             }
 
@@ -1302,33 +1355,56 @@ private:
         }
 
         if (node.children.size() == 1) {
-            return vectorValue(std::move(elements));
+            return vectorValue(
+                std::move(elements),
+                numericClass.value_or(RuntimeNumericClass::Double));
         }
-        return matrixValue(node.children.size(), columns, std::move(elements));
+        return matrixValue(
+            node.children.size(), columns, std::move(elements),
+            numericClass.value_or(RuntimeNumericClass::Double));
     }
 
     RuntimeValue evaluateMatrixRow(const HirNode& node) {
         std::vector<double> elements;
+        std::optional<RuntimeNumericClass> numericClass;
         for (const auto& child : node.children) {
-            appendNumericElements(*child, elements);
+            if (!appendNumericElements(*child, elements, numericClass)) {
+                return missingValue();
+            }
         }
 
-        return vectorValue(std::move(elements));
+        return vectorValue(
+            std::move(elements),
+            numericClass.value_or(RuntimeNumericClass::Double));
     }
 
-    void appendNumericElements(const HirNode& node, std::vector<double>& elements) {
+    bool appendNumericElements(
+        const HirNode& node, std::vector<double>& elements,
+        std::optional<RuntimeNumericClass>& numericClass) {
         const RuntimeValue value = evaluate(node);
-        if (isNumber(value)) {
-            elements.push_back(value.number);
-            return;
-        }
-        if (isArray(value)) {
-            elements.insert(elements.end(), value.elements.begin(),
-                            value.elements.end());
-            return;
+        if (!isNumeric(value)) {
+            addDiagnostic(node,
+                          "matrix literal currently supports numeric values");
+            return false;
         }
 
-        addDiagnostic(node, "matrix literal currently supports numeric values");
+        if (!numericClass) {
+            numericClass = value.numericClass;
+        }
+        const size_t count = isNumber(value) ? 1 : value.elements.size();
+        for (size_t index = 0; index < count; ++index) {
+            const double element =
+                isNumber(value) ? value.number : value.elements[index];
+            const auto converted =
+                runtimeCoerceNumericElement(element, *numericClass);
+            if (!converted) {
+                addDiagnostic(node,
+                              "matrix literal cannot convert NaN to logical");
+                return false;
+            }
+            elements.push_back(*converted);
+        }
+        return true;
     }
 
     RuntimeValue evaluateBinary(const HirNode& node) {
@@ -1353,10 +1429,10 @@ private:
 
             const bool leftValue = truthy(left);
             if (node.label == "&&" && !leftValue) {
-                return numberValue(0.0);
+                return logicalValue(false);
             }
             if (node.label == "||" && leftValue) {
-                return numberValue(1.0);
+                return logicalValue(true);
             }
 
             const size_t rightDiagnosticBase = diagnostics_.size();
@@ -1369,7 +1445,7 @@ private:
                 }
                 return missingValue();
             }
-            return numberValue(truthy(right) ? 1.0 : 0.0);
+            return logicalValue(truthy(right));
         }
 
         const RuntimeValue right = evaluate(*node.children[1]);
@@ -1377,8 +1453,7 @@ private:
             if (isString(left) && isString(right) &&
                 (node.label == "==" || node.label == "~=")) {
                 const bool equal = runtimeEqual(left, right);
-                return numberValue((node.label == "==") == equal ? 1.0
-                                                                 : 0.0);
+                return logicalValue((node.label == "==") == equal);
             }
 
             addDiagnostic(node,
@@ -1467,7 +1542,12 @@ private:
             elements.push_back(value.number);
         }
 
-        return arrayValueForDimensions(dimensions, std::move(elements));
+        const RuntimeNumericClass resultClass =
+            isLogicalBinaryOperator(node.label)
+                ? RuntimeNumericClass::Logical
+                : RuntimeNumericClass::Double;
+        return arrayValueForDimensions(dimensions, std::move(elements),
+                                       resultClass);
     }
 
     RuntimeValue applyMatrixMultiply(const HirNode& node,
@@ -1527,34 +1607,30 @@ private:
             return numberValue(std::pow(left, right));
         }
         if (node.label == ">") {
-            return numberValue(left > right ? 1.0 : 0.0);
+            return logicalValue(left > right);
         }
         if (node.label == "<") {
-            return numberValue(left < right ? 1.0 : 0.0);
+            return logicalValue(left < right);
         }
         if (node.label == ">=") {
-            return numberValue(left >= right ? 1.0 : 0.0);
+            return logicalValue(left >= right);
         }
         if (node.label == "<=") {
-            return numberValue(left <= right ? 1.0 : 0.0);
+            return logicalValue(left <= right);
         }
         if (node.label == "==") {
-            return numberValue(left == right ? 1.0 : 0.0);
+            return logicalValue(left == right);
         }
         if (node.label == "~=") {
-            return numberValue(left != right ? 1.0 : 0.0);
+            return logicalValue(left != right);
         }
         if (node.label == "&" || node.label == "&&") {
-            return numberValue((truthy(numberValue(left)) &&
-                                truthy(numberValue(right)))
-                                   ? 1.0
-                                   : 0.0);
+            return logicalValue(truthy(numberValue(left)) &&
+                                truthy(numberValue(right)));
         }
         if (node.label == "|" || node.label == "||") {
-            return numberValue((truthy(numberValue(left)) ||
-                                truthy(numberValue(right)))
-                                   ? 1.0
-                                   : 0.0);
+            return logicalValue(truthy(numberValue(left)) ||
+                                truthy(numberValue(right)));
         }
 
         addDiagnostic(node, "unsupported binary operator: " + node.label);
@@ -1981,7 +2057,9 @@ private:
 
         for (const auto& argument : arguments) {
             if (!isNumeric(argument)) {
-                addDiagnostic(node, "indexing requires numeric subscripts");
+                addDiagnostic(
+                    node,
+                    "indexing requires numeric or logical subscripts");
                 return missingValue();
             }
         }
@@ -2032,72 +2110,46 @@ private:
             }
 
             if (values.size() == 1) {
-                return numberValue(values.front());
+                return numberValue(values.front(), target.numericClass);
             }
             return arrayValueForDimensions(selectionDimensions,
-                                           std::move(values));
+                                           std::move(values),
+                                           target.numericClass);
         }
 
-        if (isNumber(arguments.front())) {
-            const auto index =
-                checkedIndex(node, arguments.front().number,
-                             elementCount(target));
-            if (!index) {
-                return missingValue();
-            }
-
-            if (isNumber(target)) {
-                return target;
-            }
-            return numberValue(linearElement(target, *index));
+        const RuntimeValue& subscript = arguments.front();
+        auto selection = runtimeResolveIndexSelection(
+            subscript, elementCount(target), false);
+        if (!selection.succeeded) {
+            addDiagnostic(node, std::move(selection.error));
+            return missingValue();
         }
 
         std::vector<double> values;
-        for (size_t logicalIndex = 0;
-             logicalIndex < elementCount(arguments.front()); ++logicalIndex) {
-            const double rawIndex =
-                linearElement(arguments.front(), logicalIndex);
-            const auto index =
-                checkedIndex(node, rawIndex, elementCount(target));
-            if (!index) {
-                return missingValue();
-            }
+        values.reserve(selection.indices.size());
+        for (const size_t index : selection.indices) {
             values.push_back(isNumber(target) ? target.number
-                                              : linearElement(target, *index));
+                                              : linearElement(target, index));
         }
-
-        return vectorValue(std::move(values));
+        if (values.size() == 1) {
+            return numberValue(values.front(), target.numericClass);
+        }
+        const auto dimensions = runtimeLinearIndexResultDimensions(
+            target, subscript, values.size(), selection.logicalMask);
+        return arrayValueForDimensions(dimensions, std::move(values),
+                                       target.numericClass);
     }
 
     std::optional<std::vector<size_t>>
     checkedIndices(const HirNode& node, const RuntimeValue& subscript,
                    size_t length) {
-        std::vector<size_t> indices;
-        if (isNumber(subscript)) {
-            const auto index = checkedIndex(node, subscript.number, length);
-            if (!index) {
-                return std::nullopt;
-            }
-            indices.push_back(*index);
-            return indices;
-        }
-
-        if (!isArray(subscript)) {
-            addDiagnostic(node, "indexing requires numeric subscripts");
+        auto selection =
+            runtimeResolveIndexSelection(subscript, length, false);
+        if (!selection.succeeded) {
+            addDiagnostic(node, std::move(selection.error));
             return std::nullopt;
         }
-
-        indices.reserve(subscript.elements.size());
-        for (size_t logicalIndex = 0; logicalIndex < elementCount(subscript);
-             ++logicalIndex) {
-            const double rawIndex = linearElement(subscript, logicalIndex);
-            const auto index = checkedIndex(node, rawIndex, length);
-            if (!index) {
-                return std::nullopt;
-            }
-            indices.push_back(*index);
-        }
-        return indices;
+        return std::move(selection.indices);
     }
 
     std::optional<size_t> checkedIndex(const HirNode& node, double rawIndex,
@@ -2134,7 +2186,12 @@ private:
             }
             return FunctionCallResult{{std::move(result.value)}};
         }
-        if (name == "zeros" || name == "ones" || name == "eye") {
+        if (name == "zeros" || name == "ones" || name == "eye" ||
+            name == "true" || name == "false") {
+            if ((name == "true" || name == "false") &&
+                arguments.empty()) {
+                return FunctionCallResult{{logicalValue(name == "true")}};
+            }
             return callArrayConstructorBuiltin(node, name, arguments);
         }
         if (name == "cell") {
@@ -2155,6 +2212,68 @@ private:
         }
         if (name == "strcmp") {
             return callStrcmpBuiltin(node, arguments);
+        }
+        if (name == "logical" || name == "double") {
+            if (arguments.size() != 1 || !isNumeric(arguments.front())) {
+                addDiagnostic(node,
+                              name + " expects one numeric argument");
+                return FunctionCallResult{{missingValue()}};
+            }
+            const auto converted = runtimeConvertNumericClass(
+                arguments.front(),
+                name == "logical" ? RuntimeNumericClass::Logical
+                                  : RuntimeNumericClass::Double);
+            if (!converted) {
+                addDiagnostic(node, "logical cannot convert NaN values");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{std::move(*converted)}};
+        }
+        if (name == "islogical") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node, "islogical expects one argument");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{
+                logicalValue(isRuntimeLogical(arguments.front()))}};
+        }
+        if (name == "class") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node, "class expects one argument");
+                return FunctionCallResult{{missingValue()}};
+            }
+            const RuntimeValue& value = arguments.front();
+            if (isNumeric(value)) {
+                return FunctionCallResult{{stringValue(std::string(
+                    runtimeNumericClassName(value.numericClass)))}};
+            }
+            if (isString(value)) {
+                return FunctionCallResult{{stringValue("char")}};
+            }
+            if (isCell(value)) {
+                return FunctionCallResult{{stringValue("cell")}};
+            }
+            return FunctionCallResult{{stringValue("missing")}};
+        }
+        if (name == "isa") {
+            if (arguments.size() != 2 || !isString(arguments[1])) {
+                addDiagnostic(node,
+                              "isa expects a value and class-name string");
+                return FunctionCallResult{{missingValue()}};
+            }
+            const RuntimeValue& value = arguments.front();
+            const std::string& target = arguments[1].text;
+            bool matches = false;
+            if (isNumeric(value)) {
+                matches = isRuntimeLogical(value)
+                              ? target == "logical"
+                              : target == "double" || target == "numeric";
+            } else if (isString(value)) {
+                matches = target == "char" || target == "string";
+            } else if (isCell(value)) {
+                matches = target == "cell";
+            }
+            return FunctionCallResult{{logicalValue(matches)}};
         }
 
         if (name == "size") {
@@ -2179,8 +2298,8 @@ private:
                 return FunctionCallResult{{numberValue(static_cast<double>(
                     runtimeDimensionCount(arguments.front())))}};
             }
-            return FunctionCallResult{{numberValue(
-                elementCount(arguments.front()) == 0 ? 1.0 : 0.0)}};
+            return FunctionCallResult{{logicalValue(
+                elementCount(arguments.front()) == 0)}};
         }
 
         if (arguments.size() != 1 || !isNumeric(arguments.front())) {
@@ -2256,12 +2375,12 @@ private:
                 static_cast<double>(elementCount(arguments.front())))}};
         }
         if (name == "any") {
-            return FunctionCallResult{{numberValue(
-                truthyAny(arguments.front()) ? 1.0 : 0.0)}};
+            return FunctionCallResult{{
+                logicalValue(truthyAny(arguments.front()))}};
         }
         if (name == "all") {
-            return FunctionCallResult{{numberValue(
-                truthy(arguments.front()) ? 1.0 : 0.0)}};
+            return FunctionCallResult{{
+                logicalValue(truthy(arguments.front()))}};
         }
 
         addDiagnostic(node, "builtin is not executable yet: " + name);
@@ -2277,8 +2396,8 @@ private:
             return FunctionCallResult{{missingValue()}};
         }
 
-        return FunctionCallResult{{numberValue(
-            runtimeEqual(arguments[0], arguments[1]) ? 1.0 : 0.0)}};
+        return FunctionCallResult{{
+            logicalValue(runtimeEqual(arguments[0], arguments[1]))}};
     }
 
     FunctionCallResult callSizeBuiltin(
@@ -2384,7 +2503,9 @@ private:
             addDiagnostic(node, "array constructor dimensions are too large");
             return FunctionCallResult{{missingValue()}};
         }
-        std::vector<double> elements(*count, name == "ones" ? 1.0 : 0.0);
+        const bool logical = name == "true" || name == "false";
+        std::vector<double> elements(
+            *count, name == "ones" || name == "true" ? 1.0 : 0.0);
         if (name == "eye") {
             const size_t rows = (*shape)[0];
             const size_t columns = (*shape)[1];
@@ -2395,7 +2516,10 @@ private:
         }
 
         return FunctionCallResult{{
-            arrayValueForDimensions(*shape, std::move(elements))}};
+            arrayValueForDimensions(
+                *shape, std::move(elements),
+                logical ? RuntimeNumericClass::Logical
+                        : RuntimeNumericClass::Double)}};
     }
 
     std::optional<std::vector<size_t>>

@@ -19,12 +19,14 @@ void mergeObservation(BytecodeValueObservation& destination,
     }
 
     const bool sameShape = destination.kind == source.kind &&
+                           destination.numericClass == source.numericClass &&
                            destination.rows == source.rows &&
                            destination.columns == source.columns &&
                            destination.dimensions == source.dimensions;
     destination.observationCount += source.observationCount;
     if (!destination.stable || !source.stable || !sameShape) {
         destination.kind = "mixed";
+        destination.numericClass.clear();
         destination.rows = 0;
         destination.columns = 0;
         destination.dimensions.clear();
@@ -51,6 +53,7 @@ void mergeObservations(
                            source.end());
         for (size_t index = oldSize; index < destination.size(); ++index) {
             destination[index].kind = "mixed";
+            destination[index].numericClass.clear();
             destination[index].rows = 0;
             destination[index].columns = 0;
             destination[index].dimensions.clear();
@@ -60,6 +63,7 @@ void mergeObservations(
         for (size_t index = source.size(); index < destination.size();
              ++index) {
             destination[index].kind = "mixed";
+            destination[index].numericClass.clear();
             destination[index].rows = 0;
             destination[index].columns = 0;
             destination[index].dimensions.clear();
@@ -329,6 +333,7 @@ void AdaptiveBytecodeVmSession::mergeProfile(
         if (destination->hasReceiverObservation !=
             site.hasReceiverObservation) {
             destination->receiverObservation.kind = "mixed";
+            destination->receiverObservation.numericClass.clear();
             destination->receiverObservation.rows = 0;
             destination->receiverObservation.columns = 0;
             destination->receiverObservation.dimensions.clear();
@@ -389,6 +394,7 @@ void AdaptiveBytecodeVmSession::mergeProfile(
             for (auto& observation :
                  destination->argumentObservations) {
                 observation.kind = "mixed";
+                observation.numericClass.clear();
                 observation.rows = 0;
                 observation.columns = 0;
                 observation.dimensions.clear();
@@ -396,6 +402,7 @@ void AdaptiveBytecodeVmSession::mergeProfile(
             }
             for (auto& observation : destination->resultObservations) {
                 observation.kind = "mixed";
+                observation.numericClass.clear();
                 observation.rows = 0;
                 observation.columns = 0;
                 observation.dimensions.clear();
@@ -537,6 +544,7 @@ AdaptiveBytecodeVmSession::hasRetrainingEvidence(
             observedBeforeRegion = true;
             const auto& value = assignment.valueObservation;
             if (!value.stable || value.kind != "number" ||
+                value.numericClass != "double" ||
                 value.rows != 1 || value.columns != 1) {
                 return {false,
                         "input is not stable scalar numeric: " + input};
@@ -556,6 +564,7 @@ AdaptiveBytecodeVmSession::hasRetrainingEvidence(
                 observedArgument = true;
                 const auto& value = entry.argumentObservations[index];
                 if (!value.stable || value.kind != "number" ||
+                    value.numericClass != "double" ||
                     value.rows != 1 || value.columns != 1) {
                     return {false,
                             "function argument is not stable scalar numeric: " +
@@ -577,7 +586,8 @@ AdaptiveBytecodeVmSession::hasRetrainingEvidence(
             return {false, "input has no entry observation: " + input};
         }
         const auto& value = workspaceInput->valueObservation;
-        if (!value.stable || value.kind != "number" || value.rows != 1 ||
+        if (!value.stable || value.kind != "number" ||
+            value.numericClass != "double" || value.rows != 1 ||
             value.columns != 1) {
             return {false,
                     "workspace input is not stable scalar numeric: " +

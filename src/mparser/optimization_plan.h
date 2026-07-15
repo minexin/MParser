@@ -13,6 +13,7 @@ struct BytecodeOptimizationGuard {
     std::string source;
     std::string role;
     std::string kind;
+    std::string numericClass;
     size_t rows = 0;
     size_t columns = 0;
     std::vector<size_t> dimensions;
