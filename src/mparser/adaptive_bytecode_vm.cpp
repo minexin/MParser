@@ -132,6 +132,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
         vmOptions.entryFunction = options_.entryFunction;
         vmOptions.arguments = arguments_;
         vmOptions.requestedOutputCount = options_.requestedOutputCount;
+        vmOptions.typedRegionBackend = options_.typedRegionBackend;
         result.runtime =
             vm.run(*program_, *semantic_, typedModule_, vmOptions);
         if (options_.preserveWorkspace &&
@@ -152,6 +153,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
     vmOptions.entryFunction = options_.entryFunction;
     vmOptions.arguments = arguments_;
     vmOptions.requestedOutputCount = options_.requestedOutputCount;
+    vmOptions.typedRegionBackend = options_.typedRegionBackend;
     result.runtime = vm.run(*program_, *semantic_, vmOptions);
     if (!result.runtime.diagnostics.empty()) {
         populateSessionState(result);

@@ -820,6 +820,7 @@ public:
         semantic_ = &semantic;
         profilingEnabled_ =
             options.profiling == BytecodeVmProfilingMode::Full;
+        typedRegionBackend_ = options.typedRegionBackend;
         requestedEntryFunction_ = options.entryFunction;
         entryArguments_ = options.arguments;
         requestedEntryOutputCount_ = options.requestedOutputCount;
@@ -2632,6 +2633,7 @@ private:
             execution.target = region.target;
             execution.eligible =
                 region.region.eligibleForTypedExecution;
+            execution.backend = "none";
             execution.lastReason = region.region.reason;
             typedRegionExecutions_[region.id] = execution;
 
@@ -3271,9 +3273,15 @@ private:
         ScalarTypedRegionExecutor executor;
         auto result = executor.execute(
             *program_, active->second.contract, rangeValue.value,
-            currentFrame());
+            currentFrame(), typedRegionBackend_);
         if (result.status != TypedRegionExecutionStatus::Executed) {
             ++execution.fallbackCount;
+            execution.backend =
+                typedRegionBackendName(typedRegionBackend_);
+            execution.nativePlatform =
+                std::move(result.nativePlatform);
+            execution.nativeFallbackReason =
+                std::move(result.nativeFallbackReason);
             execution.lastReason = result.reason;
             return std::nullopt;
         }
@@ -3316,6 +3324,15 @@ private:
             result.executedInstructionCount;
         execution.executedKernelInstructionCount +=
             result.executedKernelInstructionCount;
+        execution.backend = typedRegionBackendName(result.backend);
+        execution.nativeCompilationCount +=
+            result.nativeCompiled ? 1 : 0;
+        execution.nativeCacheHitCount +=
+            result.nativeCacheHit ? 1 : 0;
+        execution.nativeCodeSize = result.nativeCodeSize;
+        execution.nativePlatform = std::move(result.nativePlatform);
+        execution.nativeFallbackReason =
+            std::move(result.nativeFallbackReason);
         execution.lastReason = result.reason;
 
         return active->second.contract.endPc;
@@ -7530,6 +7547,7 @@ private:
     size_t currentPc_ = 0;
     bool returnRequested_ = false;
     bool profilingEnabled_ = true;
+    TypedRegionBackend typedRegionBackend_ = TypedRegionBackend::Auto;
     std::string requestedEntryFunction_;
     std::vector<RuntimeValue> entryArguments_;
     std::optional<size_t> requestedEntryOutputCount_;

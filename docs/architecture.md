@@ -224,7 +224,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.50 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.51 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -597,13 +597,22 @@ stable profile positions. The optimization planner converts those observations
 into explicit candidates and guards. The typed IR builder now lowers those
 candidates into typed regions, and the guard evaluator can decide whether
 eligible regions may enter a typed path. v0.50 provides a portable predecoded
-register kernel for complete structured scalar loop nests. This structured
-loop boundary is deliberately backend-neutral; later passes should compile the
-same guarded contract to native code:
+register kernel for complete structured scalar loop nests. v0.51 compiles the
+same kernel contract to native machine code through optional SLJIT, while
+retaining the portable executor as a build-time and runtime fallback. The
+structured kernel IR remains backend-neutral so a future LLVM ORC backend can
+target richer regions without changing profiling, guards, or deoptimization:
+
+The pinned SLJIT source is vendored under `third_party/sljit`. CMake compiles
+its single `sljitLir.c` entry translation unit into a private static target, so
+the default native build does not fetch dependencies or expose SLJIT types in
+MParser's public execution contract.
 
 ```text
 bytecode -> cumulative profiling -> tier promotion -> typed IR
-         -> guard check -> portable register kernel -> LLVM ORC JIT
+         -> guard check -> structured scalar kernel
+                        -> SLJIT native code + process cache
+                        -> portable register-kernel fallback
 ```
 
 The v0.11 benchmark contract introduced the performance and
@@ -701,13 +710,15 @@ kernel, fuses expression stores, removes disabled-profile loop reconstruction,
 and reports source-versus-kernel instruction work. v0.50 forms complete
 well-nested scalar loop regions, unifies colon-range semantics across runtime
 tiers, preserves zero-trip definite-initialization behavior, and adds a leaf
-loop dispatch fast path. The next steps are optional native LLVM ORC lowering
-of this same structured contract, moving-window array operations,
+loop dispatch fast path. v0.51 adds optional native SLJIT lowering, executable
+capability reporting, structural process-wide code caching, backend selection,
+and transaction-safe portable or bytecode fallback. The next steps include
+richer typed values and regions, optional LLVM ORC lowering behind the same
+backend contract, persistent cross-process code caches, moving-window array operations,
 object/listener arrays,
 property event listeners,
 comma-separated-list Cell
-semantics, persistent code
-caches, native lowering, and eventual on-stack replacement while preserving
+semantics, and eventual on-stack replacement while preserving
 the same commit/fallback contract.
 
 When dynamic features invalidate assumptions, execution should deopt back to

@@ -1,10 +1,48 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.50.0 LANGUAGES CXX)
+project(MParser VERSION 0.51.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(MPARSER_ENABLE_NATIVE_JIT
+    "Build the optional SLJIT native scalar-loop backend" ON)
+set(MPARSER_SLJIT_SOURCE_DIR "" CACHE PATH
+    "SLJIT source override; empty uses third_party/sljit")
+
+if(MPARSER_ENABLE_NATIVE_JIT)
+    if(MPARSER_SLJIT_SOURCE_DIR)
+        set(_mparser_sljit_source_dir
+            "${MPARSER_SLJIT_SOURCE_DIR}")
+        message(STATUS
+            "MParser native JIT: external SLJIT at "
+            "${_mparser_sljit_source_dir}")
+    else()
+        set(_mparser_sljit_source_dir
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sljit")
+        message(STATUS
+            "MParser native JIT: bundled SLJIT revision "
+            "3907e69005ba6e30b225000f24aaef3632f88347")
+    endif()
+
+    if(NOT EXISTS
+       "${_mparser_sljit_source_dir}/sljit_src/sljitLir.c")
+        message(FATAL_ERROR
+            "SLJIT source tree is incomplete: "
+            "${_mparser_sljit_source_dir}; expected sljit_src/sljitLir.c")
+    endif()
+
+    add_library(mparser_sljit STATIC
+        "${_mparser_sljit_source_dir}/sljit_src/sljitLir.c")
+    target_include_directories(mparser_sljit SYSTEM PUBLIC
+        "${_mparser_sljit_source_dir}/sljit_src")
+    if(MSVC)
+        target_compile_options(mparser_sljit PRIVATE /W0)
+    else()
+        target_compile_options(mparser_sljit PRIVATE -w)
+    endif()
+endif()
 
 add_library(mparser_core
     src/mparser/adaptive_module_runtime.cpp
@@ -17,6 +55,7 @@ add_library(mparser_core
     src/mparser/function_signature.cpp
     src/mparser/interpreter.cpp
     src/mparser/lexer.cpp
+    src/mparser/native_scalar_jit.cpp
     src/mparser/optimization_plan.cpp
     src/mparser/parser.cpp
     src/mparser/runtime_array_ops.cpp
@@ -41,6 +80,11 @@ add_library(mparser_core
 )
 
 target_include_directories(mparser_core PUBLIC src)
+
+if(MPARSER_ENABLE_NATIVE_JIT)
+    target_link_libraries(mparser_core PRIVATE mparser_sljit)
+    target_compile_definitions(mparser_core PRIVATE MPARSER_HAS_SLJIT=1)
+endif()
 
 if(MSVC)
     target_compile_options(mparser_core PRIVATE /W4 /permissive-)
@@ -119,6 +163,7 @@ add_test(NAME typed_region_executor_smoke
 add_test(NAME scalar_kernel_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
         --run-typed-bytecode
+        --typed-backend=portable
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/typed_region_demo.m)
 set_tests_properties(scalar_kernel_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "predecoded scalar kernel executed")
@@ -126,6 +171,7 @@ set_tests_properties(scalar_kernel_cli_smoke PROPERTIES
 add_test(NAME nested_scalar_kernel_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
         --run-typed-bytecode
+        --typed-backend=portable
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/nested_typed_loop_demo.m)
 set_tests_properties(nested_scalar_kernel_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
@@ -136,10 +182,41 @@ add_test(NAME nested_adaptive_kernel_cli_smoke
         --run-adaptive-bytecode
         --adaptive-runs=3
         --adaptive-hot-loop=10
+        --typed-backend=portable
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/nested_typed_loop_demo.m)
 set_tests_properties(nested_adaptive_kernel_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "predecoded nested scalar kernel executed")
+
+if(MPARSER_ENABLE_NATIVE_JIT)
+    add_test(NAME native_scalar_kernel_cli_smoke
+        COMMAND $<TARGET_FILE:mparser>
+            --run-typed-bytecode
+            --typed-backend=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/typed_region_demo.m)
+    set_tests_properties(native_scalar_kernel_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "backend=native")
+
+    add_test(NAME native_kernel_cache_cli_smoke
+        COMMAND $<TARGET_FILE:mparser>
+            --run-adaptive-bytecode
+            --adaptive-runs=3
+            --adaptive-hot-loop=10
+            --typed-backend=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/nested_typed_loop_demo.m)
+    set_tests_properties(native_kernel_cache_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "backend=native.*nativeCacheHits=1")
+else()
+    add_test(NAME native_jit_disabled_cli_smoke
+        COMMAND $<TARGET_FILE:mparser>
+            --run-typed-bytecode
+            --typed-backend=auto
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/typed_region_demo.m)
+    set_tests_properties(native_jit_disabled_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "native scalar JIT support was disabled at build time")
+endif()
 
 add_executable(runtime_benchmark_smoke_tests
     tests/runtime_benchmark_smoke.cpp)

@@ -251,6 +251,7 @@ RuntimeBenchmarkResult RuntimeBenchmarkRunner::run(
     result.typedRegionCount = typedIr.regions.size();
     BytecodeVmOptions steadyOptions;
     steadyOptions.profiling = BytecodeVmProfilingMode::Disabled;
+    steadyOptions.typedRegionBackend = options.typedRegionBackend;
 
     for (size_t iteration = 0; iteration < options.warmupIterations;
          ++iteration) {

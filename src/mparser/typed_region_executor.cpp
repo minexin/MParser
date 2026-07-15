@@ -1,7 +1,9 @@
 #include "mparser/typed_region_executor.h"
+#include "mparser/native_scalar_jit.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_range.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/typed_scalar_kernel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,74 +15,20 @@
 #include <vector>
 
 namespace mparser {
+
+std::string_view typedRegionBackendName(TypedRegionBackend backend) {
+    switch (backend) {
+    case TypedRegionBackend::Auto:
+        return "auto";
+    case TypedRegionBackend::Portable:
+        return "portable";
+    case TypedRegionBackend::Native:
+        return "native";
+    }
+    return "unknown";
+}
+
 namespace {
-
-struct TypedScalar {
-    double value = 0.0;
-    RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
-};
-
-enum class ScalarKernelOp {
-    Copy,
-    UnaryPlus,
-    UnaryMinus,
-    LogicalNot,
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Power,
-    Greater,
-    Less,
-    GreaterEqual,
-    LessEqual,
-    Equal,
-    NotEqual,
-    LogicalAnd,
-    LogicalOr,
-    Absolute,
-    ArcCosine,
-    ArcSine,
-    ArcTangent,
-    Cosine,
-    Exponential,
-    Logarithm,
-    Sine,
-    SquareRoot,
-    Tangent,
-    Discard,
-    LoopBegin,
-    LoopNext,
-};
-
-enum class ScalarKernelStorage {
-    Slot,
-    Register,
-    Literal,
-};
-
-struct ScalarKernelOperand {
-    ScalarKernelStorage storage = ScalarKernelStorage::Literal;
-    size_t index = 0;
-    TypedScalar literal;
-};
-
-struct ScalarKernelDestination {
-    ScalarKernelStorage storage = ScalarKernelStorage::Register;
-    size_t index = 0;
-};
-
-struct ScalarKernelInstruction {
-    ScalarKernelOp op = ScalarKernelOp::Copy;
-    ScalarKernelDestination destination;
-    ScalarKernelOperand left;
-    ScalarKernelOperand right;
-    ScalarKernelOperand step;
-    size_t jumpTarget = 0;
-    size_t sourceInstructionCount = 0;
-    bool singleValueRange = false;
-    bool leafLoop = false;
-};
 
 struct ScalarKernelRange {
     ScalarKernelOperand start;
@@ -101,22 +49,6 @@ struct ScalarKernelCompileLoop {
     size_t loopSlot = 0;
     std::string variable;
     std::vector<bool> initializedBefore;
-};
-
-struct ScalarKernelExecutionCounters {
-    size_t sourceInstructions = 0;
-    size_t kernelInstructions = 0;
-    size_t nestedIterations = 0;
-};
-
-struct ScalarKernel {
-    std::vector<ScalarKernelInstruction> instructions;
-    std::vector<std::string> slotNames;
-    std::vector<TypedScalar> slots;
-    std::vector<bool> initialized;
-    size_t loopSlot = 0;
-    size_t registerCount = 0;
-    size_t nestedLoopCount = 0;
 };
 
 struct LoopRangeView {
@@ -606,6 +538,7 @@ std::optional<ScalarKernel> compileKernel(
             value.left = range.start;
             value.right = range.stop;
             value.step = range.step;
+            value.loopId = kernel.nestedLoopCount;
             value.singleValueRange = range.singleValue;
             appendInstruction(std::move(value));
             const size_t beginInstruction =
@@ -948,7 +881,8 @@ bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
 TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     const BytecodeProgram& program, const BytecodeRegionContract& region,
     const RuntimeValue& loopRange,
-    const std::map<std::string, RuntimeValue>& variables) const {
+    const std::map<std::string, RuntimeValue>& variables,
+    TypedRegionBackend backend) const {
     if (!region.available || !region.closed ||
         !region.eligibleForTypedExecution) {
         return fallback("typed region contract is not executable");
@@ -988,6 +922,57 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
         return fallback(std::move(compileFailure));
     }
 
+    std::string nativeFallbackReason;
+    if (backend != TypedRegionBackend::Portable) {
+        std::vector<double> nativeOuterValues;
+        nativeOuterValues.reserve(values->size());
+        for (size_t index = 0; index < values->size(); ++index) {
+            nativeOuterValues.push_back((*values)[index]);
+        }
+
+        ScalarKernel nativeKernel = *kernel;
+        auto native = executeNativeScalarKernel(
+            nativeKernel, nativeOuterValues.data(),
+            nativeOuterValues.size());
+        if (native.status == NativeScalarJitStatus::Executed) {
+            std::map<std::string, RuntimeValue> workingVariables =
+                variables;
+            for (size_t slot = 0;
+                 slot < nativeKernel.slotNames.size(); ++slot) {
+                if (native.writtenSlots[slot] != 0) {
+                    workingVariables[nativeKernel.slotNames[slot]] =
+                        numberValue(nativeKernel.slots[slot]);
+                }
+            }
+
+            TypedRegionExecutionResult result;
+            result.status = TypedRegionExecutionStatus::Executed;
+            result.variables = std::move(workingVariables);
+            result.iterationCount = nativeOuterValues.size();
+            result.nestedIterationCount =
+                native.counters.nestedIterations;
+            result.executedInstructionCount =
+                native.counters.sourceInstructions;
+            result.executedKernelInstructionCount =
+                native.counters.kernelInstructions;
+            result.backend = TypedRegionBackend::Native;
+            result.nativeCompiled = native.compiled;
+            result.nativeCacheHit = native.cacheHit;
+            result.nativeCodeSize = native.codeSize;
+            result.nativePlatform = nativeScalarJitPlatform();
+            result.reason = std::move(native.reason);
+            return result;
+        }
+        if (backend == TypedRegionBackend::Native) {
+            auto result = fallback(std::move(native.reason));
+            result.backend = TypedRegionBackend::Native;
+            result.nativePlatform = nativeScalarJitPlatform();
+            result.nativeFallbackReason = result.reason;
+            return result;
+        }
+        nativeFallbackReason = std::move(native.reason);
+    }
+
     std::vector<TypedScalar> registers(kernel->registerCount);
     std::vector<bool> written(kernel->slotNames.size(), false);
     ScalarKernelExecutionCounters counters;
@@ -1015,6 +1000,8 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     result.nestedIterationCount = counters.nestedIterations;
     result.executedInstructionCount = counters.sourceInstructions;
     result.executedKernelInstructionCount = counters.kernelInstructions;
+    result.backend = TypedRegionBackend::Portable;
+    result.nativeFallbackReason = std::move(nativeFallbackReason);
     result.reason = kernel->nestedLoopCount == 0
                         ? "predecoded scalar kernel executed"
                         : "predecoded nested scalar kernel executed";

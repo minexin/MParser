@@ -3,6 +3,7 @@
 #include "mparser/bytecode.h"
 #include "mparser/interpreter.h"
 #include "mparser/semantic.h"
+#include "mparser/typed_region_executor.h"
 
 #include <optional>
 
@@ -110,6 +111,7 @@ struct BytecodeVmOptions {
     std::string entryFunction;
     std::vector<RuntimeValue> arguments;
     std::optional<size_t> requestedOutputCount;
+    TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
 };
 
 struct BytecodeTypedRegionExecutionProfile {
@@ -125,6 +127,12 @@ struct BytecodeTypedRegionExecutionProfile {
     size_t nestedIterationCount = 0;
     size_t executedInstructionCount = 0;
     size_t executedKernelInstructionCount = 0;
+    std::string backend;
+    size_t nativeCompilationCount = 0;
+    size_t nativeCacheHitCount = 0;
+    size_t nativeCodeSize = 0;
+    std::string nativePlatform;
+    std::string nativeFallbackReason;
     std::string lastReason;
 };
 

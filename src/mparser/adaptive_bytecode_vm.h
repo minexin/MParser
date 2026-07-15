@@ -50,6 +50,7 @@ struct AdaptiveBytecodeVmOptions {
     std::string entryFunction;
     std::vector<RuntimeValue> arguments;
     std::optional<size_t> requestedOutputCount;
+    TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
 };
 
 struct AdaptiveBytecodeVmRunResult {

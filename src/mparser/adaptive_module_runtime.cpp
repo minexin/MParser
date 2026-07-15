@@ -52,6 +52,7 @@ AdaptiveModuleInvocationResult AdaptiveModuleRuntime::invoke(
             options_.fallbackInvalidationThreshold;
         sessionOptions.preserveWorkspace = options_.preserveWorkspace;
         sessionOptions.initialWorkspace = options_.initialWorkspace;
+        sessionOptions.typedRegionBackend = options_.typedRegionBackend;
         sessionOptions.entryFunction = entryFunction;
         sessionOptions.arguments = std::move(arguments);
         sessionOptions.requestedOutputCount = requestedOutputCount;

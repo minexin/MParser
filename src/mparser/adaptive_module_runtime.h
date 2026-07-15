@@ -16,6 +16,7 @@ struct AdaptiveModuleRuntimeOptions {
     size_t fallbackInvalidationThreshold = 3;
     bool preserveWorkspace = false;
     std::vector<RuntimeVariable> initialWorkspace;
+    TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
 };
 
 struct AdaptiveModuleFunctionState {

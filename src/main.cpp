@@ -33,7 +33,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.50.0"
+#define MPARSER_VERSION "0.51.0"
 #endif
 
 namespace {
@@ -59,6 +59,7 @@ void printUsage() {
                  "--run-module-runtime | "
                  "--benchmark-runtime] "
                  "[--benchmark-warmup=N] [--benchmark-iterations=N] "
+                 "[--typed-backend=auto|portable|native] "
                  "[--adaptive-runs=N] [--adaptive-hot-loop=N] "
                  "[--adaptive-fallback-limit=N] "
                  "[--adaptive-persist-workspace] "
@@ -124,6 +125,23 @@ size_t parseCountOption(const std::string& argument,
         throw std::invalid_argument("invalid count for option: " + argument);
     }
     return static_cast<size_t>(value);
+}
+
+mparser::TypedRegionBackend parseTypedRegionBackendOption(
+    const std::string& argument) {
+    constexpr std::string_view prefix = "--typed-backend=";
+    const std::string value = argument.substr(prefix.size());
+    if (value == "auto") {
+        return mparser::TypedRegionBackend::Auto;
+    }
+    if (value == "portable") {
+        return mparser::TypedRegionBackend::Portable;
+    }
+    if (value == "native") {
+        return mparser::TypedRegionBackend::Native;
+    }
+    throw std::invalid_argument(
+        "typed backend must be auto, portable, or native");
 }
 
 mparser::RuntimeValue parseRuntimeValue(const std::string& valueText) {
@@ -621,6 +639,10 @@ void printRuntimeBenchmark(
               << benchmark.options.warmupIterations << "\n";
     std::cout << "  measured iterations: "
               << benchmark.options.measuredIterations << "\n";
+    std::cout << "  typed backend: "
+              << mparser::typedRegionBackendName(
+                     benchmark.options.typedRegionBackend)
+              << "\n";
     std::cout << "  typed IR regions: " << benchmark.typedRegionCount
               << "\n";
     printBenchmarkStatistics("HIR interpreter", benchmark.interpreter);
@@ -677,7 +699,25 @@ void printTypedRegionExecutions(
                   << ", typedInstructions="
                   << execution.executedInstructionCount
                   << ", kernelInstructions="
-                  << execution.executedKernelInstructionCount << "\n";
+                  << execution.executedKernelInstructionCount
+                  << ", backend=" << execution.backend;
+        if (execution.nativeCompilationCount != 0 ||
+            execution.nativeCacheHitCount != 0 ||
+            execution.nativeCodeSize != 0) {
+            std::cout << ", nativeCompilations="
+                      << execution.nativeCompilationCount
+                      << ", nativeCacheHits="
+                      << execution.nativeCacheHitCount
+                      << ", nativeCodeBytes="
+                      << execution.nativeCodeSize
+                      << ", nativePlatform="
+                      << execution.nativePlatform;
+        }
+        std::cout << "\n";
+        if (!execution.nativeFallbackReason.empty()) {
+            std::cout << "      nativeFallback="
+                      << execution.nativeFallbackReason << "\n";
+        }
         std::cout << "      reason=" << execution.lastReason << "\n";
     }
     std::cout << "  baseline outputs: "
@@ -695,10 +735,28 @@ void printAdaptiveRun(
     size_t typedAttempts = 0;
     size_t typedExecutions = 0;
     size_t typedFallbacks = 0;
+    size_t nativeCompilations = 0;
+    size_t nativeCacheHits = 0;
+    size_t nativeCodeBytes = 0;
+    std::string typedBackend;
+    std::string nativePlatform;
     for (const auto& region : result.runtime.typedRegionExecutions) {
         typedAttempts += region.attemptCount;
         typedExecutions += region.executionCount;
         typedFallbacks += region.fallbackCount;
+        nativeCompilations += region.nativeCompilationCount;
+        nativeCacheHits += region.nativeCacheHitCount;
+        nativeCodeBytes += region.nativeCodeSize;
+        if (region.attemptCount != 0 && !region.backend.empty()) {
+            if (typedBackend.empty()) {
+                typedBackend = region.backend;
+            } else if (typedBackend != region.backend) {
+                typedBackend = "mixed";
+            }
+        }
+        if (nativePlatform.empty() && !region.nativePlatform.empty()) {
+            nativePlatform = region.nativePlatform;
+        }
     }
 
     std::cout << "  invocation=" << result.invocation
@@ -722,6 +780,18 @@ void printAdaptiveRun(
         std::cout << ", typedAttempts=" << typedAttempts
                   << ", typedExecutions=" << typedExecutions
                   << ", typedFallbacks=" << typedFallbacks;
+        if (!typedBackend.empty()) {
+            std::cout << ", backend=" << typedBackend;
+        }
+        if (nativeCompilations != 0 || nativeCacheHits != 0 ||
+            nativeCodeBytes != 0) {
+            std::cout << ", nativeCompilations=" << nativeCompilations
+                      << ", nativeCacheHits=" << nativeCacheHits
+                      << ", nativeCodeBytes=" << nativeCodeBytes;
+            if (!nativePlatform.empty()) {
+                std::cout << ", nativePlatform=" << nativePlatform;
+            }
+        }
     }
     std::cout << "\n";
 }
@@ -867,6 +937,8 @@ int main(int argc, char** argv) {
         size_t adaptiveRuns = 3;
         size_t adaptiveHotLoopThreshold = 10;
         size_t adaptiveFallbackLimit = 3;
+        mparser::TypedRegionBackend typedRegionBackend =
+            mparser::TypedRegionBackend::Auto;
         bool adaptivePersistWorkspace = false;
         std::vector<mparser::RuntimeVariable> adaptiveInitialWorkspace;
         std::string entryFunction;
@@ -915,6 +987,9 @@ int main(int argc, char** argv) {
             } else if (arg.starts_with("--benchmark-iterations=")) {
                 benchmarkIterations = parseCountOption(
                     arg, "--benchmark-iterations=", false);
+            } else if (arg.starts_with("--typed-backend=")) {
+                typedRegionBackend =
+                    parseTypedRegionBackendOption(arg);
             } else if (arg.starts_with("--adaptive-runs=")) {
                 adaptiveRuns = parseCountOption(
                     arg, "--adaptive-runs=", false);
@@ -1026,6 +1101,7 @@ int main(int argc, char** argv) {
                 adaptiveFallbackLimit;
             runtimeOptions.preserveWorkspace = adaptivePersistWorkspace;
             runtimeOptions.initialWorkspace = adaptiveInitialWorkspace;
+            runtimeOptions.typedRegionBackend = typedRegionBackend;
             mparser::AdaptiveModuleRuntime runtime(module, runtimeOptions);
 
             std::cout << "Adaptive module runtime:\n";
@@ -1104,6 +1180,8 @@ int main(int argc, char** argv) {
                     adaptiveOptions.arguments = entryArguments;
                     adaptiveOptions.requestedOutputCount =
                         requestedOutputCount;
+                    adaptiveOptions.typedRegionBackend =
+                        typedRegionBackend;
                     mparser::AdaptiveBytecodeVmSession session(
                         bytecode, semantic, adaptiveOptions);
                     mparser::BytecodeVmResult lastRuntime;
@@ -1137,7 +1215,8 @@ int main(int argc, char** argv) {
                     const auto benchmark = benchmarkRunner.run(
                         semantic, bytecode,
                         mparser::RuntimeBenchmarkOptions{
-                            benchmarkWarmup, benchmarkIterations});
+                            benchmarkWarmup, benchmarkIterations,
+                            typedRegionBackend});
                     printRuntimeBenchmark(benchmark);
                     if (!benchmark.lastInterpreterResult.diagnostics.empty()) {
                         printDiagnostics(
@@ -1177,6 +1256,7 @@ int main(int argc, char** argv) {
                 vmOptions.entryFunction = entryFunction;
                 vmOptions.arguments = entryArguments;
                 vmOptions.requestedOutputCount = requestedOutputCount;
+                vmOptions.typedRegionBackend = typedRegionBackend;
                 const bool needsProfile =
                     profileBytecode || planBytecode || typedIrBytecode ||
                     checkTypedIrBytecode || runTypedBytecode;

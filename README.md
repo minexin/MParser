@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.50.0. See [docs/v0.50.md](docs/v0.50.md) for the
+Current milestone: v0.51.0. See [docs/v0.51.md](docs/v0.51.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.49.md](docs/v0.49.md),
+iteration plan. Previous boundaries are kept in [docs/v0.50.md](docs/v0.50.md),
+[docs/v0.49.md](docs/v0.49.md),
 [docs/v0.48.md](docs/v0.48.md),
 [docs/v0.47.md](docs/v0.47.md),
 [docs/v0.46.md](docs/v0.46.md),
@@ -86,7 +87,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.50 executes the core numeric/string subset,
+expression operators. v0.51 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -467,6 +468,25 @@ than a valid cross-machine speed ratio. This path is still a portable C++
 register interpreter; the structured nest is primarily the required boundary
 for native-code JIT compilation.
 
+v0.51 adds that first native-code boundary. Eligible structured scalar loop
+kernels can now be compiled through SLJIT into executable machine code and
+cached by structural kernel identity. Native execution preserves the same
+entry guards, nested colon-range semantics, transactional workspace commit,
+output-equivalence check, counters, and bytecode fallback contract as the
+portable register kernel. `--typed-backend=auto` is the default and selects
+native code when available; `portable` provides a same-binary comparison path,
+while `native` requires a successful native entry and otherwise resumes at the
+unchanged bytecode boundary. The backend is optional at build time so targets
+that cannot provide executable memory can retain the portable runtime.
+
+In one eight-invocation Release session on the same Intel Core i5-1135G7,
+`samples/native_jit_benchmark.m` produced a `0.0330` second median across six
+native cache hits versus a `0.1108` second median across seven portable typed
+runs, a same-process `3.36x` improvement. Both paths produced
+`finalValue = 834.32145639679`. The separate user-reported MATLAB result of
+about `0.02` seconds came from an Intel Core i7-12700 and remains a target
+scale, not a direct cross-machine ratio.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -508,6 +528,21 @@ cmake -S . -B build
 cmake --build build
 ctest --test-dir build
 ```
+
+Native scalar-loop JIT support is enabled by default. The pinned SLJIT source
+is vendored under `third_party/sljit`, so a default configure does not require
+network access. An existing source checkout can still be supplied explicitly,
+or the native backend can be omitted:
+
+```powershell
+cmake -S . -B build-local-sljit `
+  -DMPARSER_SLJIT_SOURCE_DIR=C:\path\to\sljit
+cmake -S . -B build-nojit -DMPARSER_ENABLE_NATIVE_JIT=OFF
+```
+
+Disabling the native backend does not remove the interpreter, bytecode VM, or
+portable typed kernel. It only removes machine-code generation and the SLJIT
+dependency from that build.
 
 ## Try the parser
 
@@ -648,6 +683,10 @@ Execute the scalar typed region and verify its output against the baseline VM:
 
 ```powershell
 build\mparser.exe --run-typed-bytecode samples\typed_region_demo.m
+build\mparser.exe --run-typed-bytecode --typed-backend=native `
+  samples\nested_typed_loop_demo.m
+build\mparser.exe --run-typed-bytecode --typed-backend=portable `
+  samples\nested_typed_loop_demo.m
 build\mparser.exe --run-typed-bytecode `
   samples\typed_region_fallback_demo.m
 ```
@@ -657,8 +696,16 @@ specialization with:
 
 ```powershell
 build-release\mparser.exe --run-bytecode samples\timing_loop_demo.m
-build-release\mparser.exe --run-typed-bytecode samples\timing_loop_demo.m
+build-release\mparser.exe --run-typed-bytecode --typed-backend=native `
+  samples\timing_loop_demo.m
+build-release\mparser.exe --run-typed-bytecode --typed-backend=portable `
+  samples\timing_loop_demo.m
 build-release\mparser.exe --run-typed-bytecode samples\timing_flat_loop_demo.m
+
+build-release\mparser.exe --run-adaptive-bytecode `
+  --typed-backend=native --adaptive-runs=8 --adaptive-hot-loop=1 `
+  --adaptive-persist-workspace --adaptive-workspace=runCount=0 `
+  samples\native_jit_benchmark.m
 ```
 
 Observe cross-invocation warmup and automatic typed-tier promotion with:

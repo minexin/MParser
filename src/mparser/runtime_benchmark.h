@@ -11,6 +11,7 @@ namespace mparser {
 struct RuntimeBenchmarkOptions {
     size_t warmupIterations = 3;
     size_t measuredIterations = 20;
+    TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
 };
 
 struct RuntimeBenchmarkStatistics {

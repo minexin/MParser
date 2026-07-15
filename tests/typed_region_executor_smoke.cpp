@@ -1,6 +1,7 @@
 #include "mparser/bytecode.h"
 #include "mparser/bytecode_vm.h"
 #include "mparser/lexer.h"
+#include "mparser/native_scalar_jit.h"
 #include "mparser/optimization_plan.h"
 #include "mparser/parser.h"
 #include "mparser/semantic.h"
@@ -57,6 +58,17 @@ Pipeline prepare(std::string_view source) {
     auto module = builder.build(planner.plan(baseline.profile, bytecode));
     return Pipeline{std::move(semantic), std::move(bytecode),
                     std::move(baseline), std::move(module)};
+}
+
+mparser::BytecodeVmResult runTyped(
+    const Pipeline& pipeline,
+    mparser::TypedRegionBackend backend =
+        mparser::TypedRegionBackend::Portable) {
+    mparser::BytecodeVmOptions options;
+    options.typedRegionBackend = backend;
+    mparser::BytecodeVm vm;
+    return vm.run(pipeline.bytecode, pipeline.semantic,
+                  pipeline.module, options);
 }
 
 const mparser::RuntimeValue* findVariable(
@@ -124,9 +136,7 @@ end
     assert(region != nullptr);
     assert(region->region.eligibleForTypedExecution);
 
-    mparser::BytecodeVm vm;
-    const auto optimized =
-        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    const auto optimized = runTyped(pipeline);
     assert(optimized.diagnostics.empty());
     assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
     assert(optimized.executedInstructionCount <
@@ -164,9 +174,7 @@ end
     assert(region != nullptr);
     assert(region->region.eligibleForTypedExecution);
 
-    mparser::BytecodeVm vm;
-    const auto optimized =
-        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    const auto optimized = runTyped(pipeline);
     assert(optimized.diagnostics.empty());
     assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
 
@@ -199,9 +207,7 @@ end
     assert(region != nullptr);
     assert(region->region.eligibleForTypedExecution);
 
-    mparser::BytecodeVm vm;
-    const auto optimized =
-        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    const auto optimized = runTyped(pipeline);
     assert(optimized.diagnostics.empty());
     assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
 
@@ -241,9 +247,7 @@ end
     assert(region->region.callTargets ==
            std::vector<std::string>({"abs", "sin"}));
 
-    mparser::BytecodeVm vm;
-    const auto optimized =
-        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    const auto optimized = runTyped(pipeline);
     assert(optimized.diagnostics.empty());
     assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
 
@@ -264,7 +268,8 @@ end
            "predecoded scalar kernel executed");
 }
 
-void runPredecodedOperationCoverageSmoke() {
+void runPredecodedOperationCoverageSmoke(
+    mparser::TypedRegionBackend backend) {
     auto pipeline = prepare(R"(function y = main()
 y = 0;
 for i = 1:12
@@ -296,9 +301,7 @@ end
     assert(region != nullptr);
     assert(region->region.eligibleForTypedExecution);
 
-    mparser::BytecodeVm vm;
-    const auto optimized =
-        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    const auto optimized = runTyped(pipeline, backend);
     assert(optimized.diagnostics.empty());
     assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
 
@@ -307,8 +310,16 @@ end
     assert(execution != nullptr);
     assert(execution->executionCount == 1);
     assert(execution->fallbackCount == 0);
-    assert(execution->lastReason ==
-           "predecoded scalar kernel executed");
+    if (backend == mparser::TypedRegionBackend::Native) {
+        assert(execution->backend == "native");
+        assert(execution->nativeCodeSize != 0);
+        assert(execution->lastReason.find("SLJIT native") !=
+               std::string::npos);
+    } else {
+        assert(execution->backend == "portable");
+        assert(execution->lastReason ==
+               "predecoded scalar kernel executed");
+    }
 }
 
 void runEmptyLoopPreservesWorkspaceSmoke() {
@@ -340,7 +351,8 @@ end
 
     mparser::ScalarTypedRegionExecutor executor;
     const auto result = executor.execute(
-        pipeline.bytecode, region->region, emptyRange, variables);
+        pipeline.bytecode, region->region, emptyRange, variables,
+        mparser::TypedRegionBackend::Portable);
     assert(result.status ==
            mparser::TypedRegionExecutionStatus::Executed);
     assert(result.iterationCount == 0);
@@ -370,9 +382,7 @@ end
     assert(outer->region.maxLoopDepth == 2);
     assert(outer->region.eligibleForTypedExecution);
 
-    mparser::BytecodeVm vm;
-    const auto optimized =
-        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    const auto optimized = runTyped(pipeline);
     assert(optimized.diagnostics.empty());
     assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
     assert(findVariable(optimized.variables, "y")->number == 702.0);
@@ -413,9 +423,7 @@ end
     assert(outer->region.nestedLoopCount == 2);
     assert(outer->region.maxLoopDepth == 3);
 
-    mparser::BytecodeVm vm;
-    const auto optimized =
-        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    const auto optimized = runTyped(pipeline);
     assert(optimized.diagnostics.empty());
     assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
     assert(findVariable(optimized.variables, "y")->number == 720.0);
@@ -445,9 +453,7 @@ end
     assert(outer != nullptr);
     assert(outer->region.nestedLoopCount == 1);
 
-    mparser::BytecodeVm vm;
-    const auto optimized =
-        vm.run(pipeline.bytecode, pipeline.semantic, pipeline.module);
+    const auto optimized = runTyped(pipeline);
     assert(optimized.diagnostics.empty());
     assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
     assert(findVariable(optimized.variables, "i")->number == 42.0);
@@ -488,12 +494,135 @@ end
 
     mparser::ScalarTypedRegionExecutor executor;
     const auto result = executor.execute(
-        pipeline.bytecode, region->region, range, variables);
+        pipeline.bytecode, region->region, range, variables,
+        mparser::TypedRegionBackend::Portable);
     assert(result.status ==
            mparser::TypedRegionExecutionStatus::Fallback);
     assert(result.variables.empty());
     assert(variables.at("y").elements ==
            std::vector<double>({10.0, 20.0}));
+}
+
+void runNativeNestedCacheSmoke() {
+    if (!mparser::nativeScalarJitAvailable()) {
+        return;
+    }
+
+    auto pipeline = prepare(R"(function y = main()
+y = 1;
+for a = 1:12
+    for b = 2:-1:0
+        y = y + a * b;
+    end
+end
+end
+)");
+
+    const auto first = runTyped(
+        pipeline, mparser::TypedRegionBackend::Native);
+    const auto second = runTyped(
+        pipeline, mparser::TypedRegionBackend::Native);
+    assert(first.diagnostics.empty());
+    assert(second.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, first.variables);
+    assertVariablesEqual(pipeline.baseline.variables, second.variables);
+
+    const auto* firstExecution =
+        findExecution(first, "scalar-loop", "a");
+    const auto* secondExecution =
+        findExecution(second, "scalar-loop", "a");
+    assert(firstExecution != nullptr);
+    assert(secondExecution != nullptr);
+    assert(firstExecution->backend == "native");
+    assert(firstExecution->nativeCompilationCount +
+               firstExecution->nativeCacheHitCount ==
+           1);
+    assert(firstExecution->nativeCodeSize != 0);
+    assert(firstExecution->nativePlatform ==
+           mparser::nativeScalarJitPlatform());
+    assert(firstExecution->nestedIterationCount == 36);
+    assert(secondExecution->backend == "native");
+    assert(secondExecution->nativeCompilationCount == 0);
+    assert(secondExecution->nativeCacheHitCount == 1);
+    assert(secondExecution->nativeCodeSize ==
+           firstExecution->nativeCodeSize);
+    assert(secondExecution->lastReason.find("cached SLJIT native") !=
+           std::string::npos);
+}
+
+void runNativeTransactionalRuntimeFallbackSmoke() {
+    if (!mparser::nativeScalarJitAvailable()) {
+        return;
+    }
+
+    auto pipeline = prepare(R"(function y = main()
+step = 1;
+y = 0;
+for j = 1:12
+    for i = 1:step:3
+        y = y + j * i;
+    end
+end
+end
+)");
+    const auto* outer = findLoopRegion(pipeline.module, "j");
+    assert(outer != nullptr);
+
+    mparser::RuntimeValue range;
+    range.kind = mparser::RuntimeValueKind::Vector;
+    range.elements = {1.0, 2.0, 3.0};
+    range.rows = 1;
+    range.columns = 3;
+
+    mparser::RuntimeValue scalar;
+    scalar.kind = mparser::RuntimeValueKind::Number;
+    scalar.rows = 1;
+    scalar.columns = 1;
+    const std::map<std::string, mparser::RuntimeValue> variables{
+        {"j", mparser::RuntimeValue(scalar)},
+        {"step", mparser::RuntimeValue(scalar)},
+        {"y", mparser::RuntimeValue(scalar)}};
+    auto workingVariables = variables;
+    workingVariables.at("j").number = 77.0;
+    workingVariables.at("step").number = 0.0;
+    workingVariables.at("y").number = 5.0;
+
+    mparser::ScalarTypedRegionExecutor executor;
+    const auto result = executor.execute(
+        pipeline.bytecode, outer->region, range, workingVariables,
+        mparser::TypedRegionBackend::Native);
+    assert(result.status ==
+           mparser::TypedRegionExecutionStatus::Fallback);
+    assert(result.variables.empty());
+    assert(result.reason.find("step cannot be zero") !=
+           std::string::npos);
+    assert(workingVariables.at("j").number == 77.0);
+    assert(workingVariables.at("step").number == 0.0);
+    assert(workingVariables.at("y").number == 5.0);
+}
+
+void runDisabledNativeAutoFallbackSmoke() {
+    if (mparser::nativeScalarJitAvailable()) {
+        return;
+    }
+
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + i;
+end
+end
+)");
+    const auto optimized = runTyped(
+        pipeline, mparser::TypedRegionBackend::Auto);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->backend == "portable");
+    assert(execution->nativeFallbackReason.find("disabled") !=
+           std::string::npos);
 }
 
 } // namespace
@@ -504,12 +633,20 @@ int main() {
         runTypedLoopFallbackSmoke();
         runTypedLogicalResultSmoke();
         runTypedPureMathBuiltinSmoke();
-        runPredecodedOperationCoverageSmoke();
+        runPredecodedOperationCoverageSmoke(
+            mparser::TypedRegionBackend::Portable);
+        if (mparser::nativeScalarJitAvailable()) {
+            runPredecodedOperationCoverageSmoke(
+                mparser::TypedRegionBackend::Native);
+        }
         runEmptyLoopPreservesWorkspaceSmoke();
         runNestedTypedLoopExecutionSmoke();
         runThreeLevelTypedLoopSmoke();
         runEmptyNestedLoopPreservesValuesSmoke();
         runDirectTransactionalFallbackSmoke();
+        runNativeNestedCacheSmoke();
+        runNativeTransactionalRuntimeFallbackSmoke();
+        runDisabledNativeAutoFallbackSmoke();
         std::cout << "typed region executor smoke tests passed\n";
         return 0;
     } catch (const std::exception& exception) {
