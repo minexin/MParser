@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.47.0. See [docs/v0.47.md](docs/v0.47.md) for the
+Current milestone: v0.48.0. See [docs/v0.48.md](docs/v0.48.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.46.md](docs/v0.46.md),
+iteration plan. Previous boundaries are kept in [docs/v0.47.md](docs/v0.47.md),
+[docs/v0.46.md](docs/v0.46.md),
 [docs/v0.45.md](docs/v0.45.md),
 [docs/v0.44.md](docs/v0.44.md),
 [docs/v0.43.md](docs/v0.43.md),
@@ -83,7 +84,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.47 executes the core numeric/string subset,
+expression operators. v0.48 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -94,6 +95,8 @@ first-class logical scalars and arrays, logical-mask reads and writes,
 `clear`, `clc`, `tic`, and `toc`,
 dimension-aware `sum`, `prod`, `mean`, `min`, `max`, `any`, and `all`, plus
 one-to-three-output `find`,
+shape-preserving `cumsum`, `cumprod`, `cummin`, and `cummax`, and numeric
+first- or higher-order `diff`,
 `switch/case/otherwise`, and `try/catch` diagnostic recovery. It also records
 bytecode VM execution profiles for functions, loops, instructions,
 call/index sites, and assignment sites, including runtime value kind, numeric
@@ -412,6 +415,23 @@ payloads are mapped back into the runtime's existing storage representation.
 Historical demos that intentionally need a global total now spell that intent
 as `sum(A, "all")`.
 
+v0.48 builds shape-preserving scans and shape-reducing differences on the same
+logical-order substrate. `cumsum`, `cumprod`, `cummin`, and `cummax` select the
+first non-singleton dimension by default, accept one explicit positive scalar
+dimension, preserve arbitrary N-dimensional shapes, and support `"forward"`
+or `"reverse"` traversal. Include/omit missing-value policies are shared by
+both baseline runtimes; sums and products include NaN by default, while
+cumulative extrema omit NaN by default. Logical cumulative sums and products
+return double values, while cumulative extrema preserve the logical class.
+
+Numeric `diff` supports default first differences, a positive order, an
+explicit dimension, `[]` as the default order placeholder, empty inputs,
+logical-to-double results, and dimensions beyond the current rank. Its
+two-input form keeps every order on the initially selected dimension, matching
+the current MATLAB behavior instead of carrying residual orders into a later
+dimension. The shared `runtime_numeric` result builder maps scan and difference
+outputs from MATLAB column-major logical order into the runtime payload once.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -425,7 +445,8 @@ ignored outputs with `~`, `for` ranges, `while` loops, `break`/`continue`,
 diagnostic recovery, short-circuit `&&`/`||`, string equality comparisons, MATLAB
 constants such as `pi`, one-argument math builtins such as `sin` and `sqrt`,
 string builtin `strcmp`, dimension-aware reductions through `sum`, `prod`,
-`mean`, `min`, `max`, `any`, and `all`, multi-output `find`, shape queries
+`mean`, `min`, `max`, `any`, and `all`, multi-output `find`, cumulative
+`cumsum`, `cumprod`, `cummin`, and `cummax`, numeric `diff`, shape queries
 through `size` and `ndims` including multi-output and dimension-vector forms,
 1-based
 N-dimensional numeric indexing such as `A(2)` and `A(2, 1, 3)`, colon and
@@ -543,6 +564,14 @@ through both baseline runtimes with:
 ```powershell
 build\mparser.exe --run-bytecode samples\reduction_find_demo.m
 build\mparser.exe --run samples\reduction_find_demo.m
+```
+
+Run N-dimensional cumulative operations, reverse traversal, NaN policies, and
+first- or higher-order differences through both baseline runtimes with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\scan_diff_demo.m
+build\mparser.exe --run samples\scan_diff_demo.m
 ```
 
 The bytecode VM profiling and type/shape observation subset can be tried with:

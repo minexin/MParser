@@ -6,6 +6,7 @@
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_reduction.h"
+#include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
@@ -2232,6 +2233,17 @@ private:
         }
         if (isRuntimeReductionBuiltin(name)) {
             auto result = runtimeReductionBuiltin(
+                name, arguments, requestedOutputCount);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(requestedOutputCount,
+                                              missingValue())};
+            }
+            return FunctionCallResult{std::move(result.outputs)};
+        }
+        if (isRuntimeScanBuiltin(name)) {
+            auto result = runtimeScanBuiltin(
                 name, arguments, requestedOutputCount);
             if (!result.succeeded) {
                 addDiagnostic(node, std::move(result.error));

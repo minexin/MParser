@@ -99,53 +99,6 @@ std::optional<double> scalarNumeric(const RuntimeValue& value) {
     return runtimeNumericElement(value, 0);
 }
 
-std::optional<RuntimeValue> numericValueFromLogicalOrder(
-    std::vector<size_t> dimensions, std::vector<double> values,
-    RuntimeNumericClass numericClass) {
-    dimensions = normalizeRuntimeDimensions(std::move(dimensions));
-    const auto count = checkedRuntimeDimensionProduct(dimensions);
-    if (!count || *count != values.size()) {
-        return std::nullopt;
-    }
-
-    for (double& value : values) {
-        const auto converted =
-            runtimeCoerceNumericElement(value, numericClass);
-        if (!converted) {
-            return std::nullopt;
-        }
-        value = *converted;
-    }
-
-    RuntimeValue result;
-    result.numericClass = numericClass;
-    if (*count == 1) {
-        result.kind = RuntimeValueKind::Number;
-        result.number = values.front();
-        setRuntimeDimensions(result, {1, 1});
-        return result;
-    }
-
-    result.kind = dimensions.size() == 2 && dimensions[0] == 1
-                      ? RuntimeValueKind::Vector
-                      : RuntimeValueKind::Matrix;
-    result.elements.resize(*count);
-    for (size_t logicalIndex = 0; logicalIndex < *count; ++logicalIndex) {
-        const auto coordinates = runtimeColumnMajorCoordinates(
-            logicalIndex, dimensions);
-        const auto storageOffset = coordinates
-                                       ? runtimeRowMajorStorageOffset(
-                                             *coordinates, dimensions)
-                                       : std::nullopt;
-        if (!storageOffset || *storageOffset >= result.elements.size()) {
-            return std::nullopt;
-        }
-        result.elements[*storageOffset] = values[logicalIndex];
-    }
-    setRuntimeDimensions(result, std::move(dimensions));
-    return result;
-}
-
 bool parsePositiveDimensions(const RuntimeValue& value,
                              std::vector<size_t>& dimensions,
                              std::string& error) {
@@ -458,7 +411,7 @@ RuntimeReductionResult reduceNumeric(
     } else if (isExtrema(kind)) {
         outputClass = input.numericClass;
     }
-    const auto valueResult = numericValueFromLogicalOrder(
+    const auto valueResult = runtimeNumericValueFromLogicalOrder(
         outputDimensions, std::move(values), outputClass);
     if (!valueResult) {
         return failure("reduction result could not be represented");
@@ -466,7 +419,7 @@ RuntimeReductionResult reduceNumeric(
 
     std::vector<RuntimeValue> outputs{*valueResult};
     if (isExtrema(kind) && requestedOutputCount > 1) {
-        const auto indexResult = numericValueFromLogicalOrder(
+        const auto indexResult = runtimeNumericValueFromLogicalOrder(
             outputDimensions, std::move(indices),
             RuntimeNumericClass::Double);
         if (!indexResult) {
@@ -537,7 +490,7 @@ RuntimeReductionResult elementwiseExtrema(
                 right.numericClass == RuntimeNumericClass::Logical
             ? RuntimeNumericClass::Logical
             : RuntimeNumericClass::Double;
-    const auto result = numericValueFromLogicalOrder(
+    const auto result = runtimeNumericValueFromLogicalOrder(
         *dimensions, std::move(values), outputClass);
     if (!result) {
         return failure("elementwise min/max result could not be represented");
@@ -717,7 +670,7 @@ RuntimeReductionResult findBuiltin(
     std::vector<RuntimeValue> outputs;
     outputs.reserve(effectiveRequested);
     if (effectiveRequested == 1) {
-        const auto result = numericValueFromLogicalOrder(
+        const auto result = runtimeNumericValueFromLogicalOrder(
             findVectorDimensions(arguments.front(), matches.size(), true),
             std::move(linearIndices), RuntimeNumericClass::Double);
         if (!result) {
@@ -726,10 +679,10 @@ RuntimeReductionResult findBuiltin(
         outputs.push_back(*result);
     } else {
         const std::vector<size_t> dimensions{matches.size(), 1};
-        const auto rows = numericValueFromLogicalOrder(
+        const auto rows = runtimeNumericValueFromLogicalOrder(
             dimensions, std::move(rowIndices),
             RuntimeNumericClass::Double);
-        const auto columns = numericValueFromLogicalOrder(
+        const auto columns = runtimeNumericValueFromLogicalOrder(
             dimensions, std::move(columnIndices),
             RuntimeNumericClass::Double);
         if (!rows || !columns) {
@@ -738,7 +691,7 @@ RuntimeReductionResult findBuiltin(
         outputs.push_back(*rows);
         outputs.push_back(*columns);
         if (effectiveRequested == 3) {
-            const auto values = numericValueFromLogicalOrder(
+            const auto values = runtimeNumericValueFromLogicalOrder(
                 dimensions, std::move(foundValues),
                 arguments.front().numericClass);
             if (!values) {

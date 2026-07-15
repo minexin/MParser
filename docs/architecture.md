@@ -194,7 +194,8 @@ operators with N-dimensional implicit expansion, string equality comparisons,
 MATLAB constants such as `pi`, one-argument math builtins such as `sin`,
 `cos`, `sqrt`, `exp`, and `log`, string builtin `strcmp`, dimension-aware
 `sum`, `prod`, `mean`, `min`, `max`, `any`, and `all`, one-to-three-output
-`find`, full-shape `size` and `ndims` queries as a
+`find`, shape-preserving `cumsum`, `cumprod`, `cummin`, and `cummax`, numeric
+`diff`, full-shape `size` and `ndims` queries as a
 single row-vector output, selected dimensions, or multiple scalar outputs,
 1-based N-dimensional indexing, colon and vector subscripts, folded trailing
 dimensions, `end` expressions inside indexing, shape-checked non-scalar
@@ -223,7 +224,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.47 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.48 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -272,6 +273,16 @@ extrema value/index pairs, elementwise extrema with implicit expansion, and
 `find` orientation and N-dimensional trailing-subscript folding. Keeping this
 logic below both dispatchers prevents interpreter and VM semantics from
 drifting before native lowering is introduced.
+
+`runtime_scan` owns cumulative and finite-difference array traversal. The four
+cumulative operations retain the complete input shape and walk independent
+lines along a selected dimension in either direction. Each line carries an
+explicit accumulator and missing-value state, including the different default
+NaN policies of arithmetic scans and extrema scans. Numeric `diff` applies a
+positive order repeatedly along one fixed dimension and constructs each
+smaller result in column-major logical order. Both facilities use
+`runtimeNumericValueFromLogicalOrder`, which is shared with reductions and
+centralizes logical-class coercion plus row-major payload mapping.
 
 `RuntimeValue::dimensions` is the canonical shape. It always exposes at least
 two dimensions and drops trailing singleton dimensions beyond the second,
@@ -666,8 +677,10 @@ builtins, and direct scalar typed execution for ten pure unary math builtins.
 v0.47 adds a shared dimension-aware reduction runtime, first-non-singleton,
 explicit-dimension, dimension-vector, and all-dimension selection, extrema
 indices and implicit expansion, missing-value policies, and one-to-three-output
-`find` in both baseline runtimes. The next steps are cumulative and moving
-array operations, object/listener arrays,
+`find` in both baseline runtimes. v0.48 adds shared N-dimensional forward and
+reverse cumulative scans, operation-specific NaN defaults, logical output-class
+rules, and fixed-dimension higher-order numeric differences. The next steps are
+moving-window array operations, object/listener arrays,
 property event listeners,
 comma-separated-list Cell
 semantics, persistent code

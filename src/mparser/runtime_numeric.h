@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace mparser {
 
@@ -19,6 +20,10 @@ std::optional<double> runtimeCoerceNumericElement(
 
 std::optional<double> runtimeNumericElement(
     const RuntimeValue& value, size_t logicalIndex);
+
+std::optional<RuntimeValue> runtimeNumericValueFromLogicalOrder(
+    std::vector<size_t> dimensions, std::vector<double> values,
+    RuntimeNumericClass numericClass);
 
 std::optional<RuntimeValue> runtimeConvertNumericClass(
     RuntimeValue value, RuntimeNumericClass numericClass);

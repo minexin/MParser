@@ -6,6 +6,7 @@
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_reduction.h"
+#include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/typed_ir.h"
 #include "mparser/typed_region_executor.h"
@@ -5260,6 +5261,16 @@ private:
 
         if (isRuntimeReductionBuiltin(name)) {
             auto result = runtimeReductionBuiltin(
+                name, arguments, static_cast<size_t>(requestedCount));
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + std::move(result.error));
+                return missingOutputs(requestedCount);
+            }
+            return std::move(result.outputs);
+        }
+        if (isRuntimeScanBuiltin(name)) {
+            auto result = runtimeScanBuiltin(
                 name, arguments, static_cast<size_t>(requestedCount));
             if (!result.succeeded) {
                 addDiagnostic(instruction,

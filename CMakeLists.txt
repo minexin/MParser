@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.47.0 LANGUAGES CXX)
+project(MParser VERSION 0.48.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +26,7 @@ add_library(mparser_core
     src/mparser/runtime_math.cpp
     src/mparser/runtime_numeric.cpp
     src/mparser/runtime_reduction.cpp
+    src/mparser/runtime_scan.cpp
     src/mparser/runtime_shape.cpp
     src/mparser/semantic.cpp
     src/mparser/semantic_dump.cpp
@@ -91,6 +92,10 @@ add_executable(reduction_find_smoke_tests
     tests/reduction_find_smoke.cpp)
 target_link_libraries(reduction_find_smoke_tests PRIVATE mparser_core)
 add_test(NAME reduction_find_smoke COMMAND reduction_find_smoke_tests)
+
+add_executable(scan_diff_smoke_tests tests/scan_diff_smoke.cpp)
+target_link_libraries(scan_diff_smoke_tests PRIVATE mparser_core)
+add_test(NAME scan_diff_smoke COMMAND scan_diff_smoke_tests)
 
 add_executable(optimization_plan_smoke_tests tests/optimization_plan_smoke.cpp)
 target_link_libraries(optimization_plan_smoke_tests PRIVATE mparser_core)
@@ -316,6 +321,20 @@ add_test(NAME reduction_find_interpreter_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/reduction_find_demo.m)
 set_tests_properties(reduction_find_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 1450")
+
+add_test(NAME scan_diff_bytecode_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/scan_diff_demo.m)
+set_tests_properties(scan_diff_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2359")
+
+add_test(NAME scan_diff_interpreter_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/scan_diff_demo.m)
+set_tests_properties(scan_diff_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2359")
 
 add_test(NAME namespace_function_cli_smoke
     COMMAND $<TARGET_FILE:mparser>

@@ -3,6 +3,7 @@
 #include "mparser/runtime_shape.h"
 
 #include <cmath>
+#include <utility>
 
 namespace mparser {
 
@@ -50,6 +51,53 @@ std::optional<double> runtimeNumericElement(
         return std::nullopt;
     }
     return value.elements[*storageOffset];
+}
+
+std::optional<RuntimeValue> runtimeNumericValueFromLogicalOrder(
+    std::vector<size_t> dimensions, std::vector<double> values,
+    RuntimeNumericClass numericClass) {
+    dimensions = normalizeRuntimeDimensions(std::move(dimensions));
+    const auto count = checkedRuntimeDimensionProduct(dimensions);
+    if (!count || *count != values.size()) {
+        return std::nullopt;
+    }
+
+    for (double& value : values) {
+        const auto converted =
+            runtimeCoerceNumericElement(value, numericClass);
+        if (!converted) {
+            return std::nullopt;
+        }
+        value = *converted;
+    }
+
+    RuntimeValue result;
+    result.numericClass = numericClass;
+    if (*count == 1) {
+        result.kind = RuntimeValueKind::Number;
+        result.number = values.front();
+        setRuntimeDimensions(result, {1, 1});
+        return result;
+    }
+
+    result.kind = dimensions.size() == 2 && dimensions[0] == 1
+                      ? RuntimeValueKind::Vector
+                      : RuntimeValueKind::Matrix;
+    result.elements.resize(*count);
+    for (size_t logicalIndex = 0; logicalIndex < *count; ++logicalIndex) {
+        const auto coordinates = runtimeColumnMajorCoordinates(
+            logicalIndex, dimensions);
+        const auto storageOffset = coordinates
+                                       ? runtimeRowMajorStorageOffset(
+                                             *coordinates, dimensions)
+                                       : std::nullopt;
+        if (!storageOffset || *storageOffset >= result.elements.size()) {
+            return std::nullopt;
+        }
+        result.elements[*storageOffset] = values[logicalIndex];
+    }
+    setRuntimeDimensions(result, std::move(dimensions));
+    return result;
 }
 
 std::optional<RuntimeValue> runtimeConvertNumericClass(
