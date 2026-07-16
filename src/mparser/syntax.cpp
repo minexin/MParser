@@ -34,6 +34,8 @@ const char* syntaxKindName(SyntaxKind kind) {
         return "EnumMember";
     case SyntaxKind::ArgumentsBlock:
         return "ArgumentsBlock";
+    case SyntaxKind::ArgumentDecl:
+        return "ArgumentDecl";
     case SyntaxKind::ImportStatement:
         return "ImportStatement";
     case SyntaxKind::ImportItem:

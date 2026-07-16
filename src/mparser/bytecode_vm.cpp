@@ -547,6 +547,27 @@ struct MemberAccessPolicy {
     }
 };
 
+struct ArgumentContract {
+    std::string name;
+    PropertySpec spec;
+    SourceSpan span;
+};
+
+void collectArgumentContracts(
+    const HirNode& node, std::vector<ArgumentContract>& contracts) {
+    for (const auto& child : node.children) {
+        if (child->kind == HirKind::Function) {
+            continue;
+        }
+        if (child->kind == HirKind::Argument) {
+            contracts.push_back(ArgumentContract{
+                child->label, child->property, child->span});
+            continue;
+        }
+        collectArgumentContracts(*child, contracts);
+    }
+}
+
 struct FunctionInfo {
     std::string name;
     std::string declaringClass;
@@ -563,6 +584,7 @@ struct FunctionInfo {
     size_t entry = 0;
     size_t end = 0;
     SourceSpan span;
+    std::vector<ArgumentContract> argumentContracts;
 };
 
 using MethodCandidates = std::vector<FunctionInfo>;
@@ -589,6 +611,7 @@ struct PropertyInfo {
     bool defaultEvaluationActive = false;
     bool defaultEvaluated = false;
     RuntimeValue defaultValue;
+    bool argumentContract = false;
 };
 
 using PropertyInfoPtr = std::shared_ptr<PropertyInfo>;
@@ -1422,6 +1445,8 @@ private:
                     info.signature = parseFunctionSignature(*hir->second);
                     info.declaringClass =
                         hir->second->lexicalClassName;
+                    collectArgumentContracts(
+                        *hir->second, info.argumentContracts);
                 }
                 functionsByName_[info.name] = std::move(info);
             } else {
@@ -1431,6 +1456,8 @@ private:
                     hir != classFunctionNodes_.end()) {
                     info.signature = parseFunctionSignature(*hir->second);
                     info.attributes = hir->second->attributes;
+                    collectArgumentContracts(
+                        *hir->second, info.argumentContracts);
                     collectExplicitSuperclassConstructors(
                         *hir->second,
                         info.explicitSuperclassConstructors);
@@ -2771,6 +2798,45 @@ private:
         }
     }
 
+    std::optional<std::vector<RuntimeValue>> validateFunctionArguments(
+        const BytecodeInstruction& instruction, const std::string& name,
+        const FunctionInfo& info,
+        const std::vector<RuntimeValue>& arguments) {
+        std::vector<RuntimeValue> validated = arguments;
+        for (const auto& contract : info.argumentContracts) {
+            const auto parameter = std::find(
+                info.signature.parameters.begin(),
+                info.signature.parameters.end(), contract.name);
+            if (parameter == info.signature.parameters.end()) {
+                addDiagnostic(instruction,
+                              "arguments block declares a non-parameter in " +
+                                  name + ": " + contract.name);
+                return std::nullopt;
+            }
+            const size_t index = static_cast<size_t>(
+                std::distance(info.signature.parameters.begin(), parameter));
+            if (index >= validated.size()) {
+                addDiagnostic(instruction,
+                              "argument is unavailable for validation in " +
+                                  name + ": " + contract.name);
+                return std::nullopt;
+            }
+            PropertyInfo validation;
+            validation.name = contract.name;
+            validation.declaringClass = name;
+            validation.spec = contract.spec;
+            validation.span = contract.span;
+            validation.argumentContract = true;
+            auto value = validatePropertyValue(
+                instruction, validation, std::move(validated[index]));
+            if (!value) {
+                return std::nullopt;
+            }
+            validated[index] = std::move(*value);
+        }
+        return validated;
+    }
+
     bool prepareEntryFunction(const BytecodeInstruction& instruction) {
         const auto function = functionsByName_.find(instruction.operand);
         if (function == functionsByName_.end()) {
@@ -2795,6 +2861,14 @@ private:
                               instruction.operand);
             return false;
         }
+
+        auto validated = validateFunctionArguments(
+            instruction, instruction.operand, function->second,
+            entryArguments_);
+        if (!validated) {
+            return false;
+        }
+        entryArguments_ = std::move(*validated);
 
         initializeFunctionFrame(signature, entryArguments_, requestedOutputCount);
         executedEntryFunction_ = instruction.operand;
@@ -5586,7 +5660,9 @@ private:
     }
 
     std::string propertyDisplayName(const PropertyInfo& property) const {
-        return property.declaringClass + "." + property.name;
+        return property.declaringClass.empty()
+                   ? property.name
+                   : property.declaringClass + "." + property.name;
     }
 
     std::optional<size_t> propertyDimension(
@@ -5637,7 +5713,10 @@ private:
     bool propertyValidationError(const BytecodeInstruction& instruction,
                                  const PropertyInfo& property,
                                  std::string message) {
-        addDiagnostic(instruction, "property validation failed for " +
+        addDiagnostic(instruction,
+                      std::string(property.argumentContract ? "argument"
+                                                            : "property") +
+                          " validation failed for " +
                                        propertyDisplayName(property) + ": " +
                                        std::move(message));
         return false;
@@ -6594,6 +6673,12 @@ private:
             return missingOutputs(requestedCount);
         }
 
+        auto validatedArguments = validateFunctionArguments(
+            instruction, name, info, arguments);
+        if (!validatedArguments) {
+            return missingOutputs(requestedCount);
+        }
+
         const bool savedReturnRequested = returnRequested_;
         auto savedForLoopStack = std::move(forLoopStack_);
         auto savedIndexContextStack = std::move(indexContextStack_);
@@ -6606,7 +6691,7 @@ private:
         tryContextStack_.clear();
 
         frames_.push_back({});
-        initializeFunctionFrame(info.signature, arguments,
+        initializeFunctionFrame(info.signature, *validatedArguments,
                                 static_cast<size_t>(requestedCount));
         if (constructorObject && !info.signature.outputs.empty()) {
             currentFrame()[info.signature.outputs.front()] = *constructorObject;

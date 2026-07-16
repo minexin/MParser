@@ -88,6 +88,7 @@ private:
                       node);
             break;
         case HirKind::Import:
+        case HirKind::Argument:
             break;
         case HirKind::Control:
             lowerControl(node);

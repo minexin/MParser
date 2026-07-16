@@ -25,6 +25,7 @@ enum class SyntaxKind {
     EnumerationBlock,
     EnumMember,
     ArgumentsBlock,
+    ArgumentDecl,
     ImportStatement,
     ImportItem,
     IfBlock,

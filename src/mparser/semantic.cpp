@@ -544,6 +544,8 @@ private:
             return lowerClass(syntax);
         case SyntaxKind::FunctionDef:
             return lowerFunction(syntax);
+        case SyntaxKind::ArgumentDecl:
+            return lowerGeneric(syntax, HirKind::Argument);
         case SyntaxKind::ImportStatement:
             return lowerGeneric(syntax, HirKind::Import);
         case SyntaxKind::ImportItem:
@@ -711,6 +713,45 @@ private:
         if (signature.hasVarargout) {
             declareSymbol(SymbolKind::FunctionOutput, "varargout",
                           syntax.span);
+        }
+
+        std::unordered_set<std::string> declaredArguments;
+        for (const auto& child : syntax.children) {
+            if (child->kind != SyntaxKind::ArgumentsBlock) {
+                continue;
+            }
+            if (!child->raw.empty()) {
+                result_.diagnostics.push_back(Diagnostic{
+                    child->span,
+                    "arguments block attributes are not executable yet: " +
+                        child->raw});
+            }
+            for (const auto& declaration : child->children) {
+                if (declaration->kind != SyntaxKind::ArgumentDecl) {
+                    continue;
+                }
+                if (std::find(signature.parameters.begin(),
+                              signature.parameters.end(),
+                              declaration->label) ==
+                    signature.parameters.end()) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "arguments block name is not a function parameter: " +
+                            declaration->label});
+                }
+                if (!declaredArguments.insert(declaration->label).second) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "duplicate arguments block declaration: " +
+                            declaration->label});
+                }
+                if (declaration->property.hasExplicitDefault) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "default argument values are not executable yet: " +
+                            declaration->label});
+                }
+            }
         }
 
         functionStack_.push_back(FunctionContext{
@@ -1777,6 +1818,8 @@ const char* hirKindName(HirKind kind) {
         return "Class";
     case HirKind::Function:
         return "Function";
+    case HirKind::Argument:
+        return "Argument";
     case HirKind::Import:
         return "Import";
     case HirKind::Property:

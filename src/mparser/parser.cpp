@@ -1563,7 +1563,37 @@ std::unique_ptr<SyntaxNode> Parser::parseArgumentsBlock() {
         if (at(TokenKind::KeywordEnd) || isAtEnd()) {
             break;
         }
-        node->children.push_back(parseStatement());
+        auto declaration =
+            makeNode(SyntaxKind::ArgumentDecl, current().span.begin);
+        const auto tokens = collectUntilSeparator();
+        declaration->raw = joinTokens(tokens);
+        auto parsed = parsePropertyDeclarationTokens(tokens);
+        declaration->label = std::move(parsed.label);
+        declaration->property = std::move(parsed.spec);
+        for (auto& diagnostic : parsed.diagnostics) {
+            std::string message = std::move(diagnostic.message);
+            const std::string property = "property";
+            if (const size_t at = message.find(property);
+                at != std::string::npos) {
+                message.replace(at, property.size(), "argument");
+            }
+            diagnostics_.push_back(
+                Diagnostic{diagnostic.span, std::move(message)});
+        }
+        if (declaration->property.hasExplicitDefault &&
+            !parsed.defaultTokens.empty()) {
+            auto expression = parseExpressionTokens(parsed.defaultTokens);
+            if (expression.root && expression.consumedAll) {
+                declaration->children.push_back(std::move(expression.root));
+            } else {
+                diagnostics_.push_back(Diagnostic{
+                    spanFromTokens(parsed.defaultTokens),
+                    "unable to parse argument default expression"});
+            }
+        }
+        consumeSeparator();
+        finishNode(*declaration);
+        node->children.push_back(std::move(declaration));
     }
 
     consumeExpectedEnd("arguments block");
