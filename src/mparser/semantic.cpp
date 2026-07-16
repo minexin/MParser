@@ -169,17 +169,18 @@ bool isKnownBuiltinName(const std::string& name) {
         "events",   "exp",      "eye",         "false",    "find",
         "fprintf",
         "horzcat",  "inf",      "ipermute",    "isa",      "isenum",
-        "isempty",  "isfield",  "islogical",   "isvalid",  "length",
-        "linspace",
-        "listener", "log",      "logical",     "max",      "mean",
-        "min",      "nan",      "nargin",      "nargout",  "ndims",
-        "notify",   "numel",    "ones",        "permute",  "pi",
-        "plot",     "prod",     "rand",        "randn",    "repmat",
-        "reshape",
+        "isempty",  "isfield",  "islogical",   "ismethod", "isprop",
+        "isvalid",  "length",   "linspace",    "listener", "log",
+        "logical",  "max",      "mean",        "metaclass",
+        "metafunction", "methods", "min",      "nan",      "nargin",
+        "nargout",  "ndims",    "notify",      "numel",    "ones",
+        "permute",  "pi",       "plot",        "prod",     "properties",
+        "rand",     "randn",    "repmat",      "reshape",
         "single",   "sin",      "size",        "sqrt",     "squeeze",
         "strcmp",   "string",   "struct",      "sum",      "table",
         "tan",      "tic",      "toc",         "true",     "vertcat",
-        "zeros",
+        "zeros",    "matlab.metadata.Class.fromName",
+        "meta.class.fromName",
     };
 
     for (const char* builtin : kBuiltinNames) {
@@ -1880,6 +1881,17 @@ private:
             node.binding.kind == BindingKind::Unresolved &&
             !node.children.empty()) {
             if (const auto qualifiedName = dottedReferenceName(node)) {
+                const auto builtinBinding =
+                    resolveBuiltin(*qualifiedName);
+                if (builtinBinding.kind == BindingKind::Builtin) {
+                    node.kind = HirKind::NameRef;
+                    node.label = *qualifiedName;
+                    node.raw = *qualifiedName;
+                    node.binding = builtinBinding;
+                    node.children.clear();
+                    return;
+                }
+
                 const auto functionBinding = resolveFunction(*qualifiedName);
                 if (functionBinding.kind == BindingKind::Function) {
                     node.kind = HirKind::NameRef;

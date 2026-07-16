@@ -6,6 +6,7 @@
 #include "mparser/runtime_assignment.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
+#include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_range.h"
 #include "mparser/runtime_reduction.h"
@@ -3073,6 +3074,24 @@ std::string runtimeValueToString(const RuntimeValue& value) {
                (value.cells.empty() ? std::string("<missing>")
                                     : runtimeValueToString(value.cells.front()));
     case RuntimeValueKind::Object:
+        if (isRuntimeMetadataObject(value)) {
+            output << "<"
+                   << canonicalRuntimeMetadataClassName(value.className);
+            if (isRuntimeMetadataScalar(value)) {
+                output << " " << value.text;
+            } else {
+                const auto dimensions = runtimeDimensions(value);
+                output << " ";
+                for (size_t index = 0; index < dimensions.size(); ++index) {
+                    if (index != 0) {
+                        output << "x";
+                    }
+                    output << dimensions[index];
+                }
+            }
+            output << ">";
+            return output.str();
+        }
         output << "<" << value.className;
         if (!value.enumerationMemberName.empty()) {
             output << "." << value.enumerationMemberName;

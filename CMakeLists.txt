@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.62.0 LANGUAGES C CXX)
+project(MParser VERSION 0.63.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -67,6 +67,7 @@ add_library(mparser_core
     src/mparser/runtime_benchmark.cpp
     src/mparser/runtime_index.cpp
     src/mparser/runtime_math.cpp
+    src/mparser/runtime_metadata.cpp
     src/mparser/runtime_numeric.cpp
     src/mparser/runtime_range.cpp
     src/mparser/runtime_reduction.cpp
@@ -778,6 +779,18 @@ add_executable(class_method_identity_smoke_tests
 target_link_libraries(class_method_identity_smoke_tests PRIVATE mparser_core)
 add_test(NAME class_method_identity_smoke
     COMMAND class_method_identity_smoke_tests)
+
+add_executable(class_metadata_smoke_tests
+    tests/class_metadata_smoke.cpp)
+target_link_libraries(class_metadata_smoke_tests PRIVATE mparser_core)
+add_test(NAME class_metadata_smoke
+    COMMAND class_metadata_smoke_tests)
+
+add_test(NAME class_metadata_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_metadata_demo.m)
+set_tests_properties(class_metadata_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 10")
 
 add_executable(interpreter_smoke_tests tests/interpreter_smoke.cpp)
 target_link_libraries(interpreter_smoke_tests PRIVATE mparser_core)

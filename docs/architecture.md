@@ -398,6 +398,17 @@ object. Per-listener active state suppresses recursive delivery unless
 construction and receive the built-in `Source` and `EventName` fields at
 notification time.
 
+`runtime_metadata` gives metadata values a runtime representation that does not
+hold pointers into VM-private class tables. A scalar descriptor stores a
+canonical `matlab.metadata.*` class and a stable textual identity; a descriptor
+array stores scalar descriptors in `RuntimeValue::cells` and uses the shared
+shape contract. Member access resolves that identity back through the current
+VM class catalog. This keeps values copyable across frames and reusable module
+invocations while avoiding lifetime coupling to `ClassInfo`, `PropertyInfo`,
+or `FunctionInfo` addresses. Current `meta.*` compatibility names are
+canonicalized at the boundary, so equality, `isa`, display, and metadata
+queries do not fork into two type systems.
+
 Optimization candidates also carry bytecode region
 contracts: half-open PC
 ranges, body boundaries, stack inputs/outputs, variable reads/inputs/writes,
@@ -840,11 +851,15 @@ repeating output validation, including named repeating output expansion across
 baseline, compiled-module, adaptive, and class call paths. v0.62 adds
 `options.?ClassName` class-property contract expansion across syntax, HIR,
 semantic validation, both baseline runtimes, compiled modules, constructors,
-and reusable runtime tiers. The next steps
+and reusable runtime tiers. v0.63 executes class metadata lookup, read-only
+descriptor access, inherited member lists, visibility queries, metadata
+indexing, class-relation operators, current and legacy metadata names, and
+method introspection in the bytecode VM. The next steps
 include richer typed values and regions, direct inlined bounds checks and
 SIMD/vector kernels, optional LLVM ORC lowering behind the same backend
 contract, persistent cross-process code caches, moving-window array
-operations, object/listener arrays, property event listeners,
+operations, object/listener arrays, full function and call-signature metadata,
+reference-interpreter class execution, property event listeners,
 comma-separated-list Cell semantics, and eventual on-stack replacement while
 preserving the same commit/fallback contract.
 

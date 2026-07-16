@@ -6,6 +6,7 @@
 #include "mparser/runtime_assignment.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
+#include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_range.h"
 #include "mparser/runtime_reduction.h"
@@ -42,6 +43,41 @@ constexpr std::string_view kCoupledListenersField =
 
 bool isBuiltinHandleSuperclass(std::string_view name) {
     return name == "handle" || name == kEventDataClassName;
+}
+
+bool isBuiltinReflectableClass(std::string_view name) {
+    const std::string canonical =
+        canonicalRuntimeMetadataClassName(name);
+    return canonical == "double" || canonical == "logical" ||
+           canonical == "char" || canonical == "cell" ||
+           canonical == "struct" || canonical == "function_handle" ||
+           canonical == "numeric" || canonical == "handle" ||
+           canonical == kEventDataClassName ||
+           canonical == kEventListenerClassName ||
+           canonical == runtimeMetadataClassName(
+                            RuntimeMetadataKind::MetaData) ||
+           canonical == runtimeMetadataClassName(
+                            RuntimeMetadataKind::Class) ||
+           canonical == runtimeMetadataClassName(
+                            RuntimeMetadataKind::Property) ||
+           canonical == runtimeMetadataClassName(
+                            RuntimeMetadataKind::Method) ||
+           canonical == runtimeMetadataClassName(
+                            RuntimeMetadataKind::Event) ||
+           canonical == runtimeMetadataClassName(
+                            RuntimeMetadataKind::EnumerationMember) ||
+           canonical == runtimeMetadataClassName(
+                            RuntimeMetadataKind::Namespace);
+}
+
+std::pair<std::string, std::string>
+splitMetadataIdentity(std::string_view identity) {
+    const size_t separator = identity.find('/');
+    if (separator == std::string_view::npos) {
+        return {std::string(identity), {}};
+    }
+    return {std::string(identity.substr(0, separator)),
+            std::string(identity.substr(separator + 1))};
 }
 
 std::string trimAscii(std::string_view text) {
@@ -479,6 +515,31 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         }
         return true;
     }
+    if (isRuntimeMetadataObject(left) ||
+        isRuntimeMetadataObject(right)) {
+        if (!isRuntimeMetadataObject(left) ||
+            !isRuntimeMetadataObject(right) ||
+            canonicalRuntimeMetadataClassName(left.className) !=
+                canonicalRuntimeMetadataClassName(right.className)) {
+            return false;
+        }
+        if (isRuntimeMetadataScalar(left) ||
+            isRuntimeMetadataScalar(right)) {
+            return isRuntimeMetadataScalar(left) &&
+                   isRuntimeMetadataScalar(right) &&
+                   left.text == right.text;
+        }
+        if (runtimeDimensions(left) != runtimeDimensions(right) ||
+            left.cells.size() != right.cells.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < left.cells.size(); ++index) {
+            if (!runtimeEqual(left.cells[index], right.cells[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
     if (isObject(left) && isObject(right)) {
         if (!left.enumerationMemberName.empty() ||
             !right.enumerationMemberName.empty()) {
@@ -609,6 +670,7 @@ struct FunctionInfo {
     bool staticMethod = false;
     bool abstractMethod = false;
     bool sealedMethod = false;
+    bool hidden = false;
     bool hasBody = true;
     bool propertyAccessor = false;
     std::string accessorProperty;
@@ -633,6 +695,13 @@ struct PropertyInfo {
     bool dependent = false;
     bool abortSet = false;
     bool abstractProperty = false;
+    bool transient = false;
+    bool hidden = false;
+    bool getObservable = false;
+    bool setObservable = false;
+    bool nonCopyable = false;
+    bool weakHandle = false;
+    double partialMatchPriority = 1.0;
     std::string getterName;
     std::string setterName;
     SourceSpan span;
@@ -684,6 +753,9 @@ struct ClassInfo {
     bool abstractClass = false;
     bool sealedClass = false;
     bool enumerationClass = false;
+    bool hidden = false;
+    bool constructOnLoad = false;
+    bool handleCompatible = false;
     bool restrictsSubclassing = false;
     std::vector<std::string> allowedSubclasses;
     bool hierarchyValid = true;
@@ -1595,6 +1667,21 @@ private:
                         logicalAttributeValue(attribute, klass.name)) {
                     klass.sealedClass = *value;
                 }
+            } else if (name == "hidden") {
+                if (const auto value =
+                        logicalAttributeValue(attribute, klass.name)) {
+                    klass.hidden = *value;
+                }
+            } else if (name == "constructonload") {
+                if (const auto value =
+                        logicalAttributeValue(attribute, klass.name)) {
+                    klass.constructOnLoad = *value;
+                }
+            } else if (name == "handlecompatible") {
+                if (const auto value =
+                        logicalAttributeValue(attribute, klass.name)) {
+                    klass.handleCompatible = *value;
+                }
             } else if (name == "allowedsubclasses") {
                 if (attribute.negated || attribute.value.empty() ||
                     !attribute.hasMetaClassList) {
@@ -1709,6 +1796,42 @@ private:
                 if (const auto value = logicalAttributeValue(attribute, owner)) {
                     property.abstractProperty = *value;
                 }
+            } else if (name == "transient") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.transient = *value;
+                }
+            } else if (name == "hidden") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.hidden = *value;
+                }
+            } else if (name == "getobservable") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.getObservable = *value;
+                }
+            } else if (name == "setobservable") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.setObservable = *value;
+                }
+            } else if (name == "noncopyable") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.nonCopyable = *value;
+                }
+            } else if (name == "weakhandle" ||
+                       name == "weakreference") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    property.weakHandle = *value;
+                }
+            } else if (name == "partialmatchpriority") {
+                const auto value = parseNumber(trimAscii(attribute.value));
+                if (attribute.negated || !value || !std::isfinite(*value) ||
+                    *value < 1.0 || std::floor(*value) != *value) {
+                    diagnostics_.push_back(Diagnostic{
+                        attribute.span,
+                        "PartialMatchPriority requires a positive integer: " +
+                            owner});
+                } else {
+                    property.partialMatchPriority = *value;
+                }
             }
         }
 
@@ -1758,6 +1881,10 @@ private:
             } else if (name == "sealed") {
                 if (const auto value = logicalAttributeValue(attribute, owner)) {
                     method.sealedMethod = *value;
+                }
+            } else if (name == "hidden") {
+                if (const auto value = logicalAttributeValue(attribute, owner)) {
+                    method.hidden = *value;
                 }
             }
         }
@@ -2642,6 +2769,160 @@ private:
         return false;
     }
 
+    bool reflectableClassExists(std::string_view className) const {
+        const std::string canonical =
+            canonicalRuntimeMetadataClassName(className);
+        return classesByName_.contains(canonical) ||
+               isBuiltinReflectableClass(canonical);
+    }
+
+    bool reflectableClassDerivesFrom(
+        std::string_view className,
+        std::string_view possibleSuperclass) const {
+        const std::string actual =
+            canonicalRuntimeMetadataClassName(className);
+        const std::string expected =
+            canonicalRuntimeMetadataClassName(possibleSuperclass);
+        if (actual == expected) {
+            return true;
+        }
+
+        const RuntimeValue metadataProbe =
+            makeRuntimeMetadataObject(RuntimeMetadataKind::MetaData,
+                                      "<probe>");
+        RuntimeValue typedProbe = metadataProbe;
+        typedProbe.className = actual;
+        if (runtimeMetadataIsa(typedProbe, expected)) {
+            return true;
+        }
+
+        if (expected == "handle" &&
+            (actual == kEventDataClassName ||
+             actual == kEventListenerClassName)) {
+            return true;
+        }
+        if (expected == "numeric" && actual == "double") {
+            return true;
+        }
+        return classDerivesFrom(actual, expected);
+    }
+
+    RuntimeValue metadataClassValue(std::string className) const {
+        return makeRuntimeMetadataObject(
+            RuntimeMetadataKind::Class,
+            canonicalRuntimeMetadataClassName(className));
+    }
+
+    RuntimeValue metadataClassArray(
+        const std::vector<std::string>& classNames) const {
+        std::vector<RuntimeValue> values;
+        values.reserve(classNames.size());
+        for (const auto& className : classNames) {
+            values.push_back(metadataClassValue(className));
+        }
+        return makeRuntimeMetadataArray(
+            RuntimeMetadataKind::Class, std::move(values),
+            {classNames.size(), 1});
+    }
+
+    std::string propertyMetadataIdentity(
+        const ClassInfo& viewClass,
+        const PropertyInfo& property) const {
+        return viewClass.name + "/" + property.storageKey;
+    }
+
+    std::string methodMetadataIdentity(
+        const ClassInfo& viewClass,
+        const FunctionInfo& method) const {
+        return viewClass.name + "/" + method.declaringClass + "/" +
+               method.name;
+    }
+
+    std::string eventMetadataIdentity(
+        const ClassInfo& viewClass, const EventInfo& event) const {
+        return viewClass.name + "/" + event.declaringClass + "/" +
+               event.name;
+    }
+
+    PropertyInfoPtr propertyForMetadata(
+        std::string_view identity) const {
+        const auto [viewClassName, storageKey] =
+            splitMetadataIdentity(identity);
+        const auto view = classesByName_.find(viewClassName);
+        if (view == classesByName_.end() || storageKey.empty()) {
+            return nullptr;
+        }
+        const auto property = std::find_if(
+            view->second.propertyOrder.begin(),
+            view->second.propertyOrder.end(),
+            [&](const PropertyInfoPtr& candidate) {
+                return candidate->storageKey == storageKey;
+            });
+        if (property != view->second.propertyOrder.end()) {
+            return *property;
+        }
+        for (const auto& [name, candidate] :
+             view->second.abstractProperties) {
+            (void)name;
+            if (candidate->storageKey == storageKey) {
+                return candidate;
+            }
+        }
+        return nullptr;
+    }
+
+    const FunctionInfo* methodForMetadata(
+        std::string_view identity) const {
+        const auto [viewClassName, memberIdentity] =
+            splitMetadataIdentity(identity);
+        (void)viewClassName;
+        const auto [declaringClass, methodName] =
+            splitMetadataIdentity(memberIdentity);
+        const auto owner = classesByName_.find(declaringClass);
+        if (owner == classesByName_.end() || methodName.empty()) {
+            return nullptr;
+        }
+        const auto method =
+            owner->second.declaredMethods.find(methodName);
+        return method == owner->second.declaredMethods.end()
+                   ? nullptr
+                   : &method->second;
+    }
+
+    const EventInfo* eventForMetadata(
+        std::string_view identity) const {
+        const auto [viewClassName, memberIdentity] =
+            splitMetadataIdentity(identity);
+        (void)viewClassName;
+        const auto [declaringClass, eventName] =
+            splitMetadataIdentity(memberIdentity);
+        const auto owner = classesByName_.find(declaringClass);
+        if (owner == classesByName_.end() || eventName.empty()) {
+            return nullptr;
+        }
+        const auto event =
+            owner->second.declaredEvents.find(eventName);
+        return event == owner->second.declaredEvents.end()
+                   ? nullptr
+                   : &event->second;
+    }
+
+    const EnumerationMemberInfo* enumerationMemberForMetadata(
+        std::string_view identity) const {
+        const auto [className, memberName] =
+            splitMetadataIdentity(identity);
+        const auto owner = classesByName_.find(className);
+        if (owner == classesByName_.end() || memberName.empty()) {
+            return nullptr;
+        }
+        const auto member =
+            owner->second.declaredEnumerationMembers.find(memberName);
+        return member ==
+                       owner->second.declaredEnumerationMembers.end()
+                   ? nullptr
+                   : &member->second;
+    }
+
     bool policyAllowsClass(const MemberAccessPolicy& access,
                            const std::string& declaringClass,
                            const std::string& requestingClass) const {
@@ -3323,6 +3604,9 @@ private:
         case BytecodeOp::LoadLiteral:
             loadLiteral(instruction);
             break;
+        case BytecodeOp::LoadMetaClass:
+            loadMetaClass(instruction);
+            break;
         case BytecodeOp::StoreName:
             storeName(instruction);
             break;
@@ -3429,7 +3713,6 @@ private:
                 break;
             }
             return static_cast<size_t>(instruction.target);
-        case BytecodeOp::LoadMetaClass:
         case BytecodeOp::EnterModule:
         case BytecodeOp::LeaveModule:
         case BytecodeOp::EnterClass:
@@ -3926,10 +4209,11 @@ private:
                 missingValue(), static_cast<size_t>(instruction.operandCount), 0});
             return;
         }
-        if (!isNumeric(target.value) && !isCell(target.value)) {
+        if (!isNumeric(target.value) && !isCell(target.value) &&
+            !isRuntimeMetadataObject(target.value)) {
             addDiagnostic(instruction,
-                          "bytecode index context requires a numeric or cell "
-                          "target");
+                          "bytecode index context requires a numeric, cell, or "
+                          "metadata target");
             return;
         }
 
@@ -4144,6 +4428,17 @@ private:
                           instruction.operand);
     }
 
+    void loadMetaClass(const BytecodeInstruction& instruction) {
+        const std::string className =
+            canonicalRuntimeMetadataClassName(instruction.operand);
+        if (!reflectableClassExists(className)) {
+            addDiagnostic(instruction,
+                          "class metadata is not available: " + className);
+            return;
+        }
+        pushRuntime(metadataClassValue(className));
+    }
+
     void storeName(const BytecodeInstruction& instruction) {
         const auto value = popRuntime(instruction, "store");
         if (!value) {
@@ -4274,6 +4569,714 @@ private:
         }
     }
 
+    RuntimeValue stringColumnCell(
+        const std::vector<std::string>& values) const {
+        std::vector<RuntimeValue> cells;
+        cells.reserve(values.size());
+        for (const auto& value : values) {
+            cells.push_back(stringValue(value));
+        }
+        return cellValueForShape(values.size(), 1, std::move(cells));
+    }
+
+    RuntimeValue accessMetadataValue(
+        const MemberAccessPolicy& access) const {
+        if (access.selectiveClassList) {
+            if (access.classNames.empty()) {
+                return metadataClassArray({});
+            }
+            if (access.classNames.size() == 1) {
+                return metadataClassValue(access.classNames.front());
+            }
+            return metadataClassArray(access.classNames);
+        }
+        switch (access.level) {
+        case MemberAccessLevel::Public:
+            return stringValue("public");
+        case MemberAccessLevel::Protected:
+            return stringValue("protected");
+        case MemberAccessLevel::Private:
+            return stringValue("private");
+        case MemberAccessLevel::Immutable:
+            return stringValue("immutable");
+        case MemberAccessLevel::ClassList:
+            return metadataClassArray(access.classNames);
+        }
+        return stringValue("public");
+    }
+
+    RuntimeValue propertyMetadataList(const ClassInfo& klass) const {
+        std::vector<RuntimeValue> values;
+        std::set<std::string> seen;
+        auto append = [&](const PropertyInfoPtr& property) {
+            if (!property ||
+                (property->declaringClass != klass.name &&
+                 isFullyPrivateProperty(*property)) ||
+                !seen.insert(property->storageKey).second) {
+                return;
+            }
+            values.push_back(makeRuntimeMetadataObject(
+                RuntimeMetadataKind::Property,
+                propertyMetadataIdentity(klass, *property)));
+        };
+        for (const auto& property : klass.propertyOrder) {
+            append(property);
+        }
+        for (const auto& [name, property] : klass.abstractProperties) {
+            (void)name;
+            append(property);
+        }
+        const size_t valueCount = values.size();
+        return makeRuntimeMetadataArray(
+            RuntimeMetadataKind::Property, std::move(values),
+            {valueCount, 1});
+    }
+
+    RuntimeValue methodMetadataList(const ClassInfo& klass) const {
+        std::vector<RuntimeValue> values;
+        std::set<std::string> seen;
+        auto append = [&](const FunctionInfo& method) {
+            if (method.declaringClass != klass.name &&
+                method.access.level == MemberAccessLevel::Private &&
+                method.access.privateMemberIdentity) {
+                return;
+            }
+            const std::string identity =
+                methodMetadataIdentity(klass, method);
+            if (!seen.insert(identity).second) {
+                return;
+            }
+            values.push_back(makeRuntimeMetadataObject(
+                RuntimeMetadataKind::Method, identity));
+        };
+        for (const auto& [name, method] : klass.methods) {
+            (void)name;
+            append(method);
+        }
+        for (const auto& [name, method] : klass.abstractMethods) {
+            (void)name;
+            append(method);
+        }
+        for (const auto& [name, method] : klass.declaredMethods) {
+            (void)name;
+            append(method);
+        }
+        const size_t valueCount = values.size();
+        return makeRuntimeMetadataArray(
+            RuntimeMetadataKind::Method, std::move(values),
+            {valueCount, 1});
+    }
+
+    RuntimeValue eventMetadataList(const ClassInfo& klass) const {
+        std::vector<RuntimeValue> values;
+        values.reserve(klass.eventOrder.size());
+        for (const auto& eventName : klass.eventOrder) {
+            const auto event = klass.events.find(eventName);
+            if (event == klass.events.end()) {
+                continue;
+            }
+            values.push_back(makeRuntimeMetadataObject(
+                RuntimeMetadataKind::Event,
+                eventMetadataIdentity(klass, event->second)));
+        }
+        const size_t valueCount = values.size();
+        return makeRuntimeMetadataArray(
+            RuntimeMetadataKind::Event, std::move(values),
+            {valueCount, 1});
+    }
+
+    RuntimeValue enumerationMetadataList(const ClassInfo& klass) const {
+        std::vector<RuntimeValue> values;
+        values.reserve(klass.declaredEnumerationOrder.size());
+        for (const auto& memberName : klass.declaredEnumerationOrder) {
+            values.push_back(makeRuntimeMetadataObject(
+                RuntimeMetadataKind::EnumerationMember,
+                klass.name + "/" + memberName));
+        }
+        const size_t valueCount = values.size();
+        return makeRuntimeMetadataArray(
+            RuntimeMetadataKind::EnumerationMember, std::move(values),
+            {valueCount, 1});
+    }
+
+    std::vector<std::string> builtinMetadataPropertyNames(
+        std::string_view className) const {
+        const std::string canonical =
+            canonicalRuntimeMetadataClassName(className);
+        if (canonical ==
+            runtimeMetadataClassName(RuntimeMetadataKind::Class)) {
+            return {
+                "Name", "Description", "DetailedDescription", "Hidden",
+                "Sealed", "Abstract", "Enumeration", "ConstructOnLoad",
+                "HandleCompatible", "InferiorClasses", "Namespace",
+                "Aliases", "RestrictsSubclassing", "PropertyList",
+                "MethodList", "EventList", "EnumerationMemberList",
+                "SuperclassList"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(RuntimeMetadataKind::Property)) {
+            return {
+                "Name", "Description", "DetailedDescription", "GetAccess",
+                "SetAccess", "Dependent", "Constant", "Abstract",
+                "Transient", "Hidden", "GetObservable", "SetObservable",
+                "AbortSet", "NonCopyable", "WeakHandle",
+                "PartialMatchPriority", "HasDefault", "DefaultValue",
+                "GetMethod", "SetMethod", "DefiningClass"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(RuntimeMetadataKind::Method)) {
+            return {
+                "Name", "Description", "DetailedDescription", "Access",
+                "Static", "Abstract", "Sealed", "Hidden", "InputNames",
+                "OutputNames", "Signature", "DefiningClass"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(RuntimeMetadataKind::Event)) {
+            return {
+                "Name", "Description", "DetailedDescription", "Hidden",
+                "ListenAccess", "NotifyAccess", "DefiningClass"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(
+                RuntimeMetadataKind::EnumerationMember)) {
+            return {"Name", "Hidden", "DefiningClass"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(RuntimeMetadataKind::Namespace)) {
+            return {
+                "Name", "Description", "DetailedDescription", "ClassList",
+                "FunctionList", "InnerNamespaces", "OuterNamespace"};
+        }
+        if (canonical == kEventDataClassName) {
+            return {"Source", "EventName"};
+        }
+        if (canonical == kEventListenerClassName) {
+            return {"Source", "EventName", "Callback", "Enabled",
+                    "Recursive"};
+        }
+        return {};
+    }
+
+    std::vector<std::string> builtinMetadataMethodNames(
+        std::string_view className) const {
+        const std::string canonical =
+            canonicalRuntimeMetadataClassName(className);
+        if (canonical ==
+            runtimeMetadataClassName(RuntimeMetadataKind::Class)) {
+            return {"fromName", "eq", "ne", "lt", "le", "gt", "ge"};
+        }
+        if (canonical.rfind("matlab.metadata.", 0) == 0) {
+            return {"eq", "ne"};
+        }
+        if (canonical == "handle") {
+            return {"addlistener", "delete", "findobj", "findprop",
+                    "isvalid", "listener", "notify"};
+        }
+        if (canonical == kEventListenerClassName) {
+            return {"delete", "isvalid"};
+        }
+        return {};
+    }
+
+    RuntimeValue namespaceMetadataValue(
+        std::string_view className) const {
+        const size_t dot = className.find_last_of('.');
+        if (dot == std::string_view::npos) {
+            return makeRuntimeMetadataArray(
+                RuntimeMetadataKind::Namespace, {}, {0, 1});
+        }
+        return makeRuntimeMetadataObject(
+            RuntimeMetadataKind::Namespace,
+            std::string(className.substr(0, dot)));
+    }
+
+    RuntimeValue metadataClassMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const std::string className =
+            canonicalRuntimeMetadataClassName(target.text);
+        const auto found = classesByName_.find(className);
+        const ClassInfo* klass =
+            found == classesByName_.end() ? nullptr : &found->second;
+        if (!klass && !isBuiltinReflectableClass(className)) {
+            addDiagnostic(instruction,
+                          "metadata class is not available: " + className);
+            return missingValue();
+        }
+
+        if (memberName == "Name") {
+            return stringValue(className);
+        }
+        if (memberName == "Description" ||
+            memberName == "DetailedDescription") {
+            return stringValue("");
+        }
+        if (memberName == "Hidden") {
+            return logicalValue(
+                klass ? klass->hidden
+                      : className ==
+                            runtimeMetadataClassName(
+                                RuntimeMetadataKind::Namespace));
+        }
+        if (memberName == "Sealed") {
+            const bool metadataNamespace =
+                className ==
+                runtimeMetadataClassName(RuntimeMetadataKind::Namespace);
+            return logicalValue(klass ? klass->sealedClass
+                                      : metadataNamespace);
+        }
+        if (memberName == "Abstract") {
+            const bool metadataClass =
+                className.rfind("matlab.metadata.", 0) == 0;
+            return logicalValue(
+                klass ? klass->abstractClass
+                      : metadataClass || className == "handle" ||
+                            className == "numeric");
+        }
+        if (memberName == "Enumeration") {
+            return logicalValue(klass && klass->enumerationClass);
+        }
+        if (memberName == "ConstructOnLoad") {
+            return logicalValue(klass && klass->constructOnLoad);
+        }
+        if (memberName == "HandleCompatible") {
+            const bool builtInHandleCompatible =
+                className == "handle" ||
+                className == kEventDataClassName ||
+                className == kEventListenerClassName ||
+                className.rfind("matlab.metadata.", 0) == 0;
+            return logicalValue(
+                klass ? klass->handleClass ||
+                            klass->handleCompatible
+                      : builtInHandleCompatible);
+        }
+        if (memberName == "RestrictsSubclassing") {
+            return logicalValue(
+                klass ? klass->sealedClass ||
+                            klass->restrictsSubclassing
+                      : className ==
+                            runtimeMetadataClassName(
+                                RuntimeMetadataKind::Namespace));
+        }
+        if (memberName == "InferiorClasses") {
+            return metadataClassArray({});
+        }
+        if (memberName == "Namespace" ||
+            memberName == "ContainingPackage") {
+            return namespaceMetadataValue(className);
+        }
+        if (memberName == "Aliases") {
+            return cellValueForShape(0, 1, {});
+        }
+        if (memberName == "PropertyList") {
+            return klass
+                       ? propertyMetadataList(*klass)
+                       : makeRuntimeMetadataArray(
+                             RuntimeMetadataKind::Property, {}, {0, 1});
+        }
+        if (memberName == "MethodList") {
+            return klass
+                       ? methodMetadataList(*klass)
+                       : makeRuntimeMetadataArray(
+                             RuntimeMetadataKind::Method, {}, {0, 1});
+        }
+        if (memberName == "EventList") {
+            return klass
+                       ? eventMetadataList(*klass)
+                       : makeRuntimeMetadataArray(
+                             RuntimeMetadataKind::Event, {}, {0, 1});
+        }
+        if (memberName == "EnumerationMemberList") {
+            return klass
+                       ? enumerationMetadataList(*klass)
+                       : makeRuntimeMetadataArray(
+                             RuntimeMetadataKind::EnumerationMember, {},
+                             {0, 1});
+        }
+        if (memberName == "SuperclassList") {
+            if (klass) {
+                return metadataClassArray(klass->superclasses);
+            }
+            if (className ==
+                    runtimeMetadataClassName(
+                        RuntimeMetadataKind::Property) ||
+                className ==
+                    runtimeMetadataClassName(
+                        RuntimeMetadataKind::Method) ||
+                className ==
+                    runtimeMetadataClassName(
+                        RuntimeMetadataKind::Event) ||
+                className ==
+                    runtimeMetadataClassName(
+                        RuntimeMetadataKind::EnumerationMember) ||
+                className ==
+                    runtimeMetadataClassName(
+                        RuntimeMetadataKind::Class) ||
+                className ==
+                    runtimeMetadataClassName(
+                        RuntimeMetadataKind::Namespace)) {
+                return metadataClassArray(
+                    {std::string(runtimeMetadataClassName(
+                        RuntimeMetadataKind::MetaData))});
+            }
+            if (className == kEventDataClassName ||
+                className == kEventListenerClassName) {
+                return metadataClassArray({"handle"});
+            }
+            if (className == "double") {
+                return metadataClassArray({"numeric"});
+            }
+            return metadataClassArray({});
+        }
+
+        addDiagnostic(instruction,
+                      "metadata class property is not available: " +
+                          className + "." + std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataPropertyMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        PropertyInfoPtr property = propertyForMetadata(target.text);
+        if (!property) {
+            addDiagnostic(instruction,
+                          "metadata property descriptor is not available");
+            return missingValue();
+        }
+        if (memberName == "Name") {
+            return stringValue(property->name);
+        }
+        if (memberName == "Description" ||
+            memberName == "DetailedDescription") {
+            return stringValue("");
+        }
+        if (memberName == "GetAccess") {
+            return accessMetadataValue(property->getAccess);
+        }
+        if (memberName == "SetAccess") {
+            return accessMetadataValue(property->setAccess);
+        }
+        if (memberName == "Dependent") {
+            return logicalValue(property->dependent);
+        }
+        if (memberName == "Constant") {
+            return logicalValue(property->constant);
+        }
+        if (memberName == "Abstract") {
+            return logicalValue(property->abstractProperty);
+        }
+        if (memberName == "Transient") {
+            return logicalValue(property->transient);
+        }
+        if (memberName == "Hidden") {
+            return logicalValue(property->hidden);
+        }
+        if (memberName == "GetObservable") {
+            return logicalValue(property->getObservable);
+        }
+        if (memberName == "SetObservable") {
+            return logicalValue(property->setObservable);
+        }
+        if (memberName == "AbortSet") {
+            return logicalValue(property->abortSet);
+        }
+        if (memberName == "NonCopyable") {
+            return logicalValue(property->nonCopyable);
+        }
+        if (memberName == "WeakHandle") {
+            return logicalValue(property->weakHandle);
+        }
+        if (memberName == "PartialMatchPriority") {
+            return numberValue(property->partialMatchPriority);
+        }
+        if (memberName == "HasDefault") {
+            return logicalValue(property->spec.hasExplicitDefault);
+        }
+        if (memberName == "DefaultValue") {
+            if (!property->spec.hasExplicitDefault) {
+                addDiagnostic(instruction,
+                              "metadata property has no default value: " +
+                                  propertyDisplayName(*property));
+                return missingValue();
+            }
+            const auto value = propertyDefault(*property);
+            return value.value_or(missingValue());
+        }
+        if (memberName == "GetMethod" ||
+            memberName == "SetMethod") {
+            return missingValue();
+        }
+        if (memberName == "DefiningClass") {
+            return metadataClassValue(property->declaringClass);
+        }
+
+        addDiagnostic(instruction,
+                      "metadata property field is not available: " +
+                          propertyDisplayName(*property) + "." +
+                          std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataMethodMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const FunctionInfo* method = methodForMetadata(target.text);
+        if (!method) {
+            addDiagnostic(instruction,
+                          "metadata method descriptor is not available");
+            return missingValue();
+        }
+        if (memberName == "Name") {
+            return stringValue(method->name);
+        }
+        if (memberName == "Description" ||
+            memberName == "DetailedDescription") {
+            return stringValue("");
+        }
+        if (memberName == "Access") {
+            return accessMetadataValue(method->access);
+        }
+        if (memberName == "Static") {
+            return logicalValue(method->staticMethod);
+        }
+        if (memberName == "Abstract") {
+            return logicalValue(method->abstractMethod);
+        }
+        if (memberName == "Sealed") {
+            return logicalValue(method->sealedMethod);
+        }
+        if (memberName == "Hidden") {
+            return logicalValue(method->hidden);
+        }
+        if (memberName == "InputNames") {
+            std::vector<std::string> names = method->signature.parameters;
+            if (method->signature.hasVarargin) {
+                names.push_back("varargin");
+            }
+            return stringColumnCell(names);
+        }
+        if (memberName == "OutputNames") {
+            std::vector<std::string> names = method->signature.outputs;
+            if (method->signature.hasVarargout) {
+                names.push_back("varargout");
+            }
+            return stringColumnCell(names);
+        }
+        if (memberName == "Signature") {
+            bool inputValidation = false;
+            bool outputValidation = false;
+            for (const auto& contract : method->argumentContracts) {
+                inputValidation =
+                    inputValidation ||
+                    contract.blockKind == ArgumentBlockKind::Input ||
+                    contract.blockKind ==
+                        ArgumentBlockKind::RepeatingInput;
+                outputValidation =
+                    outputValidation ||
+                    contract.blockKind == ArgumentBlockKind::Output ||
+                    contract.blockKind ==
+                        ArgumentBlockKind::RepeatingOutput;
+            }
+            return makeRuntimeStructValue({
+                {"Inputs",
+                 metadataMethodMember(instruction, target,
+                                      "InputNames")},
+                {"Outputs",
+                 metadataMethodMember(instruction, target,
+                                      "OutputNames")},
+                {"HasInputValidation",
+                 logicalValue(inputValidation)},
+                {"HasOutputValidation",
+                 logicalValue(outputValidation)}});
+        }
+        if (memberName == "DefiningClass") {
+            return metadataClassValue(method->declaringClass);
+        }
+
+        addDiagnostic(instruction,
+                      "metadata method field is not available: " +
+                          method->declaringClass + "." + method->name +
+                          "." + std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataEventMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const EventInfo* event = eventForMetadata(target.text);
+        if (!event) {
+            addDiagnostic(instruction,
+                          "metadata event descriptor is not available");
+            return missingValue();
+        }
+        if (memberName == "Name") {
+            return stringValue(event->name);
+        }
+        if (memberName == "Description" ||
+            memberName == "DetailedDescription") {
+            return stringValue("");
+        }
+        if (memberName == "Hidden") {
+            return logicalValue(event->hidden);
+        }
+        if (memberName == "ListenAccess") {
+            return accessMetadataValue(event->listenAccess);
+        }
+        if (memberName == "NotifyAccess") {
+            return accessMetadataValue(event->notifyAccess);
+        }
+        if (memberName == "DefiningClass") {
+            return metadataClassValue(event->declaringClass);
+        }
+
+        addDiagnostic(instruction,
+                      "metadata event field is not available: " +
+                          event->declaringClass + "." + event->name +
+                          "." + std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataEnumerationMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const EnumerationMemberInfo* member =
+            enumerationMemberForMetadata(target.text);
+        if (!member) {
+            addDiagnostic(
+                instruction,
+                "metadata enumeration descriptor is not available");
+            return missingValue();
+        }
+        if (memberName == "Name") {
+            return stringValue(member->name);
+        }
+        if (memberName == "Hidden") {
+            return logicalValue(member->hidden);
+        }
+        if (memberName == "DefiningClass") {
+            return metadataClassValue(member->declaringClass);
+        }
+        addDiagnostic(
+            instruction,
+            "metadata enumeration field is not available: " +
+                member->declaringClass + "." + member->name + "." +
+                std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataNamespaceMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const std::string& namespaceName = target.text;
+        if (memberName == "Name") {
+            return stringValue(namespaceName);
+        }
+        if (memberName == "Description" ||
+            memberName == "DetailedDescription") {
+            return stringValue("");
+        }
+        if (memberName == "ClassList") {
+            std::vector<std::string> classes;
+            const std::string prefix = namespaceName + ".";
+            for (const auto& [className, klass] : classesByName_) {
+                (void)klass;
+                if (className.rfind(prefix, 0) != 0 ||
+                    className.find('.', prefix.size()) !=
+                        std::string::npos) {
+                    continue;
+                }
+                classes.push_back(className);
+            }
+            return metadataClassArray(classes);
+        }
+        if (memberName == "FunctionList") {
+            return makeRuntimeMetadataArray(
+                RuntimeMetadataKind::Method, {}, {0, 1});
+        }
+        if (memberName == "InnerNamespaces") {
+            std::set<std::string> namespaces;
+            const std::string prefix = namespaceName + ".";
+            for (const auto& [className, klass] : classesByName_) {
+                (void)klass;
+                if (className.rfind(prefix, 0) != 0) {
+                    continue;
+                }
+                const size_t nextDot =
+                    className.find('.', prefix.size());
+                if (nextDot != std::string::npos) {
+                    namespaces.insert(
+                        className.substr(0, nextDot));
+                }
+            }
+            std::vector<RuntimeValue> values;
+            values.reserve(namespaces.size());
+            for (const auto& name : namespaces) {
+                values.push_back(makeRuntimeMetadataObject(
+                    RuntimeMetadataKind::Namespace, name));
+            }
+            const size_t valueCount = values.size();
+            return makeRuntimeMetadataArray(
+                RuntimeMetadataKind::Namespace, std::move(values),
+                {valueCount, 1});
+        }
+        if (memberName == "OuterNamespace" ||
+            memberName == "ContainingPackage") {
+            const size_t dot = namespaceName.find_last_of('.');
+            if (dot == std::string::npos) {
+                return makeRuntimeMetadataArray(
+                    RuntimeMetadataKind::Namespace, {}, {0, 1});
+            }
+            return makeRuntimeMetadataObject(
+                RuntimeMetadataKind::Namespace,
+                namespaceName.substr(0, dot));
+        }
+        addDiagnostic(instruction,
+                      "metadata namespace field is not available: " +
+                          namespaceName + "." +
+                          std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataMemberValue(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        if (!isRuntimeMetadataScalar(target)) {
+            addDiagnostic(
+                instruction,
+                "metadata member access requires a scalar metadata object");
+            return missingValue();
+        }
+        switch (*runtimeMetadataKind(target)) {
+        case RuntimeMetadataKind::Class:
+            return metadataClassMember(instruction, target, memberName);
+        case RuntimeMetadataKind::Property:
+            return metadataPropertyMember(instruction, target, memberName);
+        case RuntimeMetadataKind::Method:
+            return metadataMethodMember(instruction, target, memberName);
+        case RuntimeMetadataKind::Event:
+            return metadataEventMember(instruction, target, memberName);
+        case RuntimeMetadataKind::EnumerationMember:
+            return metadataEnumerationMember(instruction, target,
+                                             memberName);
+        case RuntimeMetadataKind::Namespace:
+            return metadataNamespaceMember(instruction, target, memberName);
+        case RuntimeMetadataKind::MetaData:
+            break;
+        }
+        addDiagnostic(instruction,
+                      "metadata member is not available: " +
+                          std::string(memberName));
+        return missingValue();
+    }
+
     void memberAccess(const BytecodeInstruction& instruction) {
         const auto target = popStackValue(instruction, "member access target");
         if (!target) {
@@ -4350,6 +5353,11 @@ private:
         if (!isObject(target->value)) {
             addDiagnostic(instruction,
                           "member access requires a class object target");
+            return;
+        }
+        if (isRuntimeMetadataObject(target->value)) {
+            stack_.push_back(runtimeStackValue(metadataMemberValue(
+                instruction, target->value, instruction.operand)));
             return;
         }
         const bool builtInEventData =
@@ -4463,6 +5471,13 @@ private:
         }
 
         RuntimeValue updated = target->value;
+        if (isRuntimeMetadataObject(updated)) {
+            addDiagnostic(instruction,
+                          "metadata properties are read-only: " +
+                              updated.className + "." +
+                              instruction.operand);
+            return;
+        }
         if (updated.className == kEventListenerClassName) {
             if (!updated.sharedFields) {
                 addDiagnostic(instruction,
@@ -4731,6 +5746,38 @@ private:
         }
 
         if (isObject(*left) || isObject(*right)) {
+            const bool classMetadataOperands =
+                isRuntimeMetadataScalar(*left) &&
+                isRuntimeMetadataScalar(*right) &&
+                runtimeMetadataKind(*left) ==
+                    RuntimeMetadataKind::Class &&
+                runtimeMetadataKind(*right) ==
+                    RuntimeMetadataKind::Class;
+            if (classMetadataOperands &&
+                (instruction.operand == "<" ||
+                 instruction.operand == "<=" ||
+                 instruction.operand == ">" ||
+                 instruction.operand == ">=")) {
+                const bool equal =
+                    canonicalRuntimeMetadataClassName(left->text) ==
+                    canonicalRuntimeMetadataClassName(right->text);
+                const bool leftSubclass =
+                    reflectableClassDerivesFrom(left->text, right->text);
+                const bool rightSubclass =
+                    reflectableClassDerivesFrom(right->text, left->text);
+                bool result = false;
+                if (instruction.operand == "<") {
+                    result = leftSubclass && !equal;
+                } else if (instruction.operand == "<=") {
+                    result = leftSubclass;
+                } else if (instruction.operand == ">") {
+                    result = rightSubclass && !equal;
+                } else {
+                    result = rightSubclass;
+                }
+                pushRuntime(logicalValue(result));
+                return;
+            }
             if (isObject(*left) && isObject(*right) &&
                 (instruction.operand == "==" ||
                  instruction.operand == "~=")) {
@@ -4741,7 +5788,8 @@ private:
             }
             addDiagnostic(
                 instruction,
-                "bytecode object operators support only == and ~=");
+                "bytecode object operators support equality; metadata class "
+                "objects also support <, <=, >, and >=");
             return;
         }
 
@@ -5131,10 +6179,12 @@ private:
             return;
         }
 
-        if (!isNumeric(callee->value)) {
+        if (!isNumeric(callee->value) &&
+            !isRuntimeMetadataObject(callee->value)) {
             finishIndexContext();
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric target");
+                          "bytecode indexing requires a numeric or metadata "
+                          "target");
             return;
         }
         BytecodeCallSiteProfile* profile = nullptr;
@@ -5531,17 +6581,20 @@ private:
                           "events expects a class-name string or object");
             return missingValue();
         }
-        const std::string className = isString(arguments[0])
-                                          ? arguments[0].text
-                                          : arguments[0].className;
+        const std::string className = canonicalRuntimeMetadataClassName(
+            isString(arguments[0]) ? arguments[0].text
+                                   : arguments[0].className);
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end()) {
+            if (isBuiltinReflectableClass(className)) {
+                return stringColumnCell({});
+            }
             addDiagnostic(instruction,
                           "event class is not available: " + className);
             return missingValue();
         }
 
-        std::vector<RuntimeValue> names;
+        std::vector<std::string> names;
         for (const auto& eventName : klass->second.eventOrder) {
             const auto event = klass->second.events.find(eventName);
             if (event == klass->second.events.end() || event->second.hidden ||
@@ -5549,9 +6602,221 @@ private:
                     MemberAccessLevel::Public) {
                 continue;
             }
-            names.push_back(stringValue(eventName));
+            names.push_back(eventName);
         }
-        return cellValue(std::move(names));
+        return stringColumnCell(names);
+    }
+
+    RuntimeValue metaclassBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1) {
+            addDiagnostic(instruction, "metaclass expects one object");
+            return missingValue();
+        }
+        const std::string className =
+            runtimeValueClassName(arguments.front());
+        if (!reflectableClassExists(className)) {
+            addDiagnostic(instruction,
+                          "class metadata is not available: " + className);
+            return missingValue();
+        }
+        return metadataClassValue(className);
+    }
+
+    RuntimeValue metadataClassFromNameBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1 || !isString(arguments.front())) {
+            addDiagnostic(
+                instruction,
+                "matlab.metadata.Class.fromName expects one class-name string");
+            return missingValue();
+        }
+        const std::string className =
+            canonicalRuntimeMetadataClassName(arguments.front().text);
+        if (!reflectableClassExists(className)) {
+            return makeRuntimeMetadataArray(
+                RuntimeMetadataKind::Class, {}, {0, 1});
+        }
+        return metadataClassValue(className);
+    }
+
+    RuntimeValue metafunctionBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1 || !isString(arguments.front())) {
+            addDiagnostic(
+                instruction,
+                "metafunction currently expects one method identifier string");
+            return missingValue();
+        }
+        const std::string& identifier = arguments.front().text;
+        const size_t separator = identifier.find_last_of('/');
+        if (separator == std::string::npos || separator == 0 ||
+            separator + 1 >= identifier.size()) {
+            addDiagnostic(
+                instruction,
+                "metafunction currently supports ClassName/MethodName");
+            return missingValue();
+        }
+        const std::string className = identifier.substr(0, separator);
+        const std::string methodName = identifier.substr(separator + 1);
+        const auto klass = classesByName_.find(className);
+        const FunctionInfo* method =
+            klass == classesByName_.end()
+                ? nullptr
+                : selectMethod(klass->second, methodName, false);
+        if (!method) {
+            addDiagnostic(instruction,
+                          "method metadata is not available: " +
+                              identifier);
+            return missingValue();
+        }
+        return makeRuntimeMetadataObject(
+            RuntimeMetadataKind::Method,
+            methodMetadataIdentity(klass->second, *method));
+    }
+
+    RuntimeValue propertyNamesBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1 ||
+            (!isString(arguments.front()) &&
+             !isObject(arguments.front()))) {
+            addDiagnostic(
+                instruction,
+                "properties expects a class-name string or object");
+            return missingValue();
+        }
+        const std::string className = canonicalRuntimeMetadataClassName(
+            isString(arguments.front()) ? arguments.front().text
+                                        : arguments.front().className);
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end()) {
+            if (isBuiltinReflectableClass(className)) {
+                return stringColumnCell(
+                    builtinMetadataPropertyNames(className));
+            }
+            addDiagnostic(instruction,
+                          "property class is not available: " + className);
+            return missingValue();
+        }
+
+        std::vector<std::string> names;
+        std::set<std::string> seen;
+        for (const auto& property : klass->second.propertyOrder) {
+            if (!property || property->hidden ||
+                property->getAccess.level != MemberAccessLevel::Public ||
+                property->getAccess.selectiveClassList ||
+                !seen.insert(property->name).second) {
+                continue;
+            }
+            names.push_back(property->name);
+        }
+        return stringColumnCell(names);
+    }
+
+    RuntimeValue methodNamesBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.empty() || arguments.size() > 2 ||
+            (!isString(arguments.front()) &&
+             !isObject(arguments.front())) ||
+            (arguments.size() == 2 &&
+             (!isString(arguments[1]) ||
+              arguments[1].text != "-full"))) {
+            addDiagnostic(
+                instruction,
+                "methods expects a class-name string or object and optional "
+                "'-full'");
+            return missingValue();
+        }
+        if (arguments.size() == 2) {
+            addDiagnostic(
+                instruction,
+                "methods '-full' descriptions are not implemented yet");
+            return missingValue();
+        }
+        const std::string className = canonicalRuntimeMetadataClassName(
+            isString(arguments.front()) ? arguments.front().text
+                                        : arguments.front().className);
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end()) {
+            if (isBuiltinReflectableClass(className)) {
+                return stringColumnCell(
+                    builtinMetadataMethodNames(className));
+            }
+            addDiagnostic(instruction,
+                          "method class is not available: " + className);
+            return missingValue();
+        }
+
+        std::vector<std::string> names;
+        for (const auto& [methodName, method] : klass->second.methods) {
+            if (method.hidden || method.propertyAccessor ||
+                method.access.level != MemberAccessLevel::Public ||
+                method.access.selectiveClassList) {
+                continue;
+            }
+            names.push_back(methodName);
+        }
+        return stringColumnCell(names);
+    }
+
+    RuntimeValue isPropertyBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 2 || !isObject(arguments[0]) ||
+            !isString(arguments[1])) {
+            addDiagnostic(instruction,
+                          "isprop expects an object and property-name string");
+            return missingValue();
+        }
+        const std::string className =
+            canonicalRuntimeMetadataClassName(arguments[0].className);
+        const auto klass = classesByName_.find(className);
+        if (klass != classesByName_.end()) {
+            return logicalValue(
+                klass->second.properties.contains(arguments[1].text));
+        }
+        if (isBuiltinReflectableClass(className)) {
+            const auto names = builtinMetadataPropertyNames(className);
+            return logicalValue(std::find(names.begin(), names.end(),
+                                          arguments[1].text) != names.end());
+        }
+        return logicalValue(false);
+    }
+
+    RuntimeValue isMethodBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 2 || !isObject(arguments[0]) ||
+            !isString(arguments[1])) {
+            addDiagnostic(instruction,
+                          "ismethod expects an object and method-name string");
+            return missingValue();
+        }
+        const std::string className =
+            canonicalRuntimeMetadataClassName(arguments[0].className);
+        const auto klass = classesByName_.find(className);
+        if (klass != classesByName_.end()) {
+            const auto method =
+                klass->second.methods.find(arguments[1].text);
+            return logicalValue(
+                method != klass->second.methods.end() &&
+                !method->second.hidden &&
+                !method->second.propertyAccessor &&
+                method->second.access.level ==
+                    MemberAccessLevel::Public &&
+                !method->second.access.selectiveClassList);
+        }
+        if (isBuiltinReflectableClass(className)) {
+            const auto names = builtinMetadataMethodNames(className);
+            return logicalValue(std::find(names.begin(), names.end(),
+                                          arguments[1].text) != names.end());
+        }
+        return logicalValue(false);
     }
 
     RuntimeValue eventListenerIsValid(const RuntimeValue& value) const {
@@ -7157,6 +8422,22 @@ private:
             return cellValueForDimensions(
                 *shape, std::vector<RuntimeValue>(*count, missingValue()));
         }
+        if (name == "metaclass") {
+            return metaclassBuiltin(instruction, arguments);
+        }
+        if (name == "matlab.metadata.Class.fromName" ||
+            name == "meta.class.fromName") {
+            return metadataClassFromNameBuiltin(instruction, arguments);
+        }
+        if (name == "metafunction") {
+            return metafunctionBuiltin(instruction, arguments);
+        }
+        if (name == "properties") {
+            return propertyNamesBuiltin(instruction, arguments);
+        }
+        if (name == "methods") {
+            return methodNamesBuiltin(instruction, arguments);
+        }
         if (name == "events") {
             return eventNamesBuiltin(instruction, arguments);
         }
@@ -7180,6 +8461,12 @@ private:
             }
             return logicalValue(
                 arguments[0].fields.contains(arguments[1].text));
+        }
+        if (name == "isprop") {
+            return isPropertyBuiltin(instruction, arguments);
+        }
+        if (name == "ismethod") {
+            return isMethodBuiltin(instruction, arguments);
         }
         if (name == "isvalid") {
             if (arguments.size() != 1) {
@@ -7205,27 +8492,7 @@ private:
                               "bytecode class expects one argument");
                 return missingValue();
             }
-            const RuntimeValue& value = arguments.front();
-            if (isObject(value)) {
-                return stringValue(value.className);
-            }
-            if (isNumeric(value)) {
-                return stringValue(std::string(
-                    runtimeNumericClassName(value.numericClass)));
-            }
-            if (isString(value)) {
-                return stringValue("char");
-            }
-            if (isCell(value)) {
-                return stringValue("cell");
-            }
-            if (value.kind == RuntimeValueKind::Struct) {
-                return stringValue("struct");
-            }
-            if (isFunctionHandle(value)) {
-                return stringValue("function_handle");
-            }
-            return stringValue("missing");
+            return stringValue(runtimeValueClassName(arguments.front()));
         }
         if (name == "isa") {
             if (arguments.size() != 2 || !isString(arguments[1])) {
@@ -7235,10 +8502,14 @@ private:
                 return missingValue();
             }
             const RuntimeValue& value = arguments.front();
-            const std::string& target = arguments[1].text;
+            const std::string target =
+                canonicalRuntimeMetadataClassName(arguments[1].text);
             bool matches = false;
-            if (isObject(value)) {
-                matches = classDerivesFrom(value.className, target);
+            if (isRuntimeMetadataObject(value)) {
+                matches = runtimeMetadataIsa(value, target);
+            } else if (isObject(value)) {
+                matches =
+                    reflectableClassDerivesFrom(value.className, target);
             } else if (isNumeric(value)) {
                 matches = isRuntimeLogical(value)
                               ? target == "logical"
@@ -7576,6 +8847,9 @@ private:
             return missingValue();
         }
 
+        if (isRuntimeMetadataObject(target)) {
+            return indexMetadataValue(instruction, target, arguments);
+        }
         if (!isNumeric(target)) {
             addDiagnostic(instruction,
                           "bytecode indexing requires a numeric target");
@@ -7665,6 +8939,124 @@ private:
             target, subscript, values.size(), selection.logicalMask);
         return arrayValueForDimensions(dimensions, std::move(values),
                                        target.numericClass);
+    }
+
+    RuntimeValue indexMetadataValue(
+        const BytecodeInstruction& instruction, const RuntimeValue& target,
+        const std::vector<RuntimeValue>& arguments) {
+        const auto metadataKind = runtimeMetadataKind(target);
+        if (!metadataKind || arguments.empty()) {
+            addDiagnostic(instruction,
+                          "bytecode metadata indexing requires subscripts");
+            return missingValue();
+        }
+        for (const auto& argument : arguments) {
+            if (!isNumeric(argument)) {
+                addDiagnostic(
+                    instruction,
+                    "bytecode metadata indexing requires numeric or logical "
+                    "subscripts");
+                return missingValue();
+            }
+        }
+
+        auto elementAtLinearIndex =
+            [&](size_t linearIndex) -> std::optional<RuntimeValue> {
+            if (isRuntimeMetadataScalar(target)) {
+                return linearIndex == 0
+                           ? std::optional<RuntimeValue>{target}
+                           : std::nullopt;
+            }
+            const auto storageOffset =
+                runtimeColumnMajorLinearToStorageOffset(target, linearIndex);
+            if (!storageOffset || *storageOffset >= target.cells.size()) {
+                return std::nullopt;
+            }
+            return target.cells[*storageOffset];
+        };
+
+        if (arguments.size() > 1) {
+            const auto effectiveDimensions =
+                runtimeEffectiveSubscriptDimensions(target, arguments.size());
+            std::vector<std::vector<size_t>> selections;
+            std::vector<size_t> selectionDimensions;
+            selections.reserve(arguments.size());
+            selectionDimensions.reserve(arguments.size());
+            for (size_t index = 0; index < arguments.size(); ++index) {
+                auto selection = checkedIndices(
+                    instruction, arguments[index], effectiveDimensions[index]);
+                if (!selection) {
+                    return missingValue();
+                }
+                selectionDimensions.push_back(selection->size());
+                selections.push_back(std::move(*selection));
+            }
+
+            const auto count =
+                checkedRuntimeDimensionProduct(selectionDimensions);
+            if (!count) {
+                addDiagnostic(
+                    instruction,
+                    "bytecode metadata indexed result dimensions are too large");
+                return missingValue();
+            }
+            std::vector<RuntimeValue> values;
+            values.reserve(*count);
+            for (size_t outputOffset = 0; outputOffset < *count;
+                 ++outputOffset) {
+                const auto outputCoordinates = runtimeRowMajorCoordinates(
+                    outputOffset, selectionDimensions);
+                std::vector<size_t> sourceCoordinates(arguments.size(), 0);
+                for (size_t index = 0; index < arguments.size(); ++index) {
+                    sourceCoordinates[index] =
+                        selections[index][outputCoordinates[index]];
+                }
+                const auto storageOffset = runtimeSubscriptsToStorageOffset(
+                    target, sourceCoordinates, effectiveDimensions);
+                if (!storageOffset || *storageOffset >= target.cells.size()) {
+                    addDiagnostic(
+                        instruction,
+                        "bytecode metadata indexing could not map subscripts");
+                    return missingValue();
+                }
+                values.push_back(target.cells[*storageOffset]);
+            }
+            if (values.size() == 1) {
+                return values.front();
+            }
+            return makeRuntimeMetadataArray(
+                *metadataKind, std::move(values), selectionDimensions);
+        }
+
+        const RuntimeValue& subscript = arguments.front();
+        auto selection = runtimeResolveIndexSelection(
+            subscript, elementCount(target), false);
+        if (!selection.succeeded) {
+            addDiagnostic(instruction,
+                          "bytecode metadata " +
+                              std::move(selection.error));
+            return missingValue();
+        }
+
+        std::vector<RuntimeValue> values;
+        values.reserve(selection.indices.size());
+        for (const size_t linearIndex : selection.indices) {
+            const auto value = elementAtLinearIndex(linearIndex);
+            if (!value) {
+                addDiagnostic(
+                    instruction,
+                    "bytecode metadata index could not map storage");
+                return missingValue();
+            }
+            values.push_back(*value);
+        }
+        if (values.size() == 1) {
+            return values.front();
+        }
+        const auto dimensions = runtimeLinearIndexResultDimensions(
+            target, subscript, values.size(), selection.logicalMask);
+        return makeRuntimeMetadataArray(
+            *metadataKind, std::move(values), dimensions);
     }
 
     std::optional<std::vector<size_t>>

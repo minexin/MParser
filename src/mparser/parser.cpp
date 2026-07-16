@@ -329,6 +329,8 @@ private:
         case TokenKind::Identifier:
         case TokenKind::KeywordEnumeration:
         case TokenKind::KeywordEvents:
+        case TokenKind::KeywordMethods:
+        case TokenKind::KeywordProperties:
             return makeLeaf(SyntaxKind::IdentifierExpr, token);
         case TokenKind::Number:
             return makeLeaf(SyntaxKind::NumberLiteralExpr, token);

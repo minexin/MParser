@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.62.0. See [docs/v0.62.md](docs/v0.62.md) for the
+Current milestone: v0.63.0. See [docs/v0.63.md](docs/v0.63.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.61.md](docs/v0.61.md),
+iteration plan. Previous boundaries are kept in [docs/v0.62.md](docs/v0.62.md),
+[docs/v0.61.md](docs/v0.61.md),
 [docs/v0.60.md](docs/v0.60.md),
 [docs/v0.59.md](docs/v0.59.md),
 [docs/v0.58.md](docs/v0.58.md),
@@ -577,6 +578,21 @@ last-value-wins duplicates, validation, and `nargin` retain the v0.60 calling
 convention. The Windows CLI also disables operating-system crash dialogs at
 startup while preserving nonzero exits and terminal diagnostics.
 
+v0.63 makes the loaded class catalog introspectable from executable MATLAB
+code. The bytecode VM now evaluates `?ClassName`, `metaclass(obj)`,
+`matlab.metadata.Class.fromName`, and the legacy `meta.class.fromName` alias.
+Read-only `matlab.metadata.Class`, `Property`, `Method`, `Event`,
+`EnumerationMember`, and `Namespace` values expose class attributes, direct
+superclasses, inherited member lists, defining classes, access policies,
+method signatures, property defaults, and namespace membership. Metadata
+arrays use the normal N-dimensional shape and column-major indexing contract.
+Scalar class metadata supports equality plus subclass and superclass
+comparisons. `properties`, `methods`, `events`, `isprop`, and `ismethod`
+apply MATLAB visibility rules to loaded classes, and method-form
+`metafunction("Class/Method")` returns a method descriptor. Current
+`matlab.metadata.*` names and the renamed `meta.*` aliases share one canonical
+runtime identity.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -608,7 +624,7 @@ N-dimensional Cells with scalar brace indexing/mutation. It is
 intentionally not a full MATLAB runtime yet: classes,
 function handles, other builtin multi-output conventions beyond the
 implemented `size`/`min`/`max`/`find` subset, complex numbers, sparse arrays,
-and object dispatch
+class reflection, and object dispatch
 still report runtime diagnostics instead of guessing.
 
 ## Build
@@ -1054,6 +1070,17 @@ build\mparser.exe --run-bytecode `
 The demo reports `summary = 56`, prints members as
 `<palette.Status.Ready>`, and filters the `Hidden` member from the two Cells
 returned by `enumeration`.
+
+Run class metadata lookup, inherited member discovery, visibility filtering,
+metadata comparison, and method introspection with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\class_metadata_demo.m
+```
+
+The demo reports `summary = 10` and displays metadata values with their
+canonical class and identity, such as
+`<matlab.metadata.Class MetadataChild>`.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:
