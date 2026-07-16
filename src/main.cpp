@@ -18,6 +18,17 @@
 #include "mparser/typed_ir.h"
 #include "mparser/token.h"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <werapi.h>
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <exception>
@@ -39,6 +50,15 @@
 #endif
 
 namespace {
+
+void configureProcessErrorMode() noexcept {
+#if defined(_WIN32)
+    const UINT previousMode = SetErrorMode(0);
+    SetErrorMode(previousMode | SEM_FAILCRITICALERRORS |
+                 SEM_NOGPFAULTERRORBOX);
+    (void)WerSetFlags(WER_FAULT_REPORTING_NO_UI);
+#endif
+}
 
 std::string readFile(const std::string& path) {
     std::ifstream input(path, std::ios::binary);
@@ -1040,6 +1060,7 @@ struct NativeCacheStatisticsReporter {
 } // namespace
 
 int main(int argc, char** argv) {
+    configureProcessErrorMode();
     NativeCacheStatisticsReporter nativeCacheReporter;
     try {
         bool printTokens = false;

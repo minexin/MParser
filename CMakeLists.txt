@@ -99,6 +99,9 @@ endif()
 add_executable(mparser src/main.cpp)
 target_link_libraries(mparser PRIVATE mparser_core)
 target_compile_definitions(mparser PRIVATE MPARSER_VERSION="${PROJECT_VERSION}")
+if(WIN32)
+    target_link_libraries(mparser PRIVATE Wer)
+endif()
 
 enable_testing()
 
