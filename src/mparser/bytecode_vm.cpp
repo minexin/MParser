@@ -1,6 +1,7 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/function_signature.h"
 #include "mparser/runtime_array_ops.h"
+#include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_assignment.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
@@ -611,7 +612,6 @@ struct PropertyInfo {
     bool defaultEvaluationActive = false;
     bool defaultEvaluated = false;
     RuntimeValue defaultValue;
-    bool argumentContract = false;
 };
 
 using PropertyInfoPtr = std::shared_ptr<PropertyInfo>;
@@ -2821,18 +2821,27 @@ private:
                                   name + ": " + contract.name);
                 return std::nullopt;
             }
-            PropertyInfo validation;
-            validation.name = contract.name;
-            validation.declaringClass = name;
-            validation.spec = contract.spec;
-            validation.span = contract.span;
-            validation.argumentContract = true;
-            auto value = validatePropertyValue(
-                instruction, validation, std::move(validated[index]));
-            if (!value) {
+            RuntimeArgumentValidationOptions validationOptions;
+            validationOptions.objectIsA =
+                [this](const std::string& actual,
+                       const std::string& expected) {
+                    return classDerivesFrom(actual, expected);
+                };
+            validationOptions.classAvailable =
+                [this](const std::string& className) {
+                    return classesByName_.contains(className);
+                };
+            auto result = validateRuntimeArgument(
+                std::move(validated[index]), contract.spec,
+                validationOptions);
+            if (!result.succeeded) {
+                addDiagnostic(
+                    instruction,
+                    "argument validation failed for " + name + "." +
+                        contract.name + ": " + std::move(result.error));
                 return std::nullopt;
             }
-            validated[index] = std::move(*value);
+            validated[index] = std::move(result.value);
         }
         return validated;
     }
@@ -5713,10 +5722,7 @@ private:
     bool propertyValidationError(const BytecodeInstruction& instruction,
                                  const PropertyInfo& property,
                                  std::string message) {
-        addDiagnostic(instruction,
-                      std::string(property.argumentContract ? "argument"
-                                                            : "property") +
-                          " validation failed for " +
+        addDiagnostic(instruction, "property validation failed for " +
                                        propertyDisplayName(property) + ": " +
                                        std::move(message));
         return false;

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.56.0 LANGUAGES C CXX)
+project(MParser VERSION 0.57.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -61,6 +61,7 @@ add_library(mparser_core
     src/mparser/optimization_plan.cpp
     src/mparser/parser.cpp
     src/mparser/runtime_array_ops.cpp
+    src/mparser/runtime_argument_validation.cpp
     src/mparser/runtime_assignment.cpp
     src/mparser/runtime_benchmark.cpp
     src/mparser/runtime_index.cpp
@@ -650,6 +651,13 @@ add_executable(argument_validation_smoke_tests
 target_link_libraries(argument_validation_smoke_tests PRIVATE mparser_core)
 add_test(NAME argument_validation_smoke
     COMMAND argument_validation_smoke_tests)
+
+add_executable(runtime_argument_validation_smoke_tests
+    tests/runtime_argument_validation_smoke.cpp)
+target_link_libraries(runtime_argument_validation_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME runtime_argument_validation_smoke
+    COMMAND runtime_argument_validation_smoke_tests)
 
 add_executable(class_member_access_smoke_tests
     tests/class_member_access_smoke.cpp)

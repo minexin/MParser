@@ -1,6 +1,7 @@
 #include "mparser/interpreter.h"
 #include "mparser/function_signature.h"
 #include "mparser/runtime_array_ops.h"
+#include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_assignment.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
@@ -313,6 +314,20 @@ struct FunctionCallResult {
     std::vector<RuntimeValue> outputs;
 };
 
+void collectArgumentContracts(const HirNode& node,
+                              std::vector<const HirNode*>& contracts) {
+    for (const auto& child : node.children) {
+        if (child->kind == HirKind::Function) {
+            continue;
+        }
+        if (child->kind == HirKind::Argument) {
+            contracts.push_back(child.get());
+            continue;
+        }
+        collectArgumentContracts(*child, contracts);
+    }
+}
+
 class InterpreterContext {
 public:
     InterpreterResult run(const SemanticResult& semantic) {
@@ -484,14 +499,52 @@ private:
                 std::vector<RuntimeValue>(outputCount, missingValue())};
         }
 
+        std::vector<RuntimeValue> validatedArguments = arguments;
+        std::vector<const HirNode*> contracts;
+        collectArgumentContracts(node, contracts);
+        for (const HirNode* contract : contracts) {
+            const auto parameter = std::find(
+                signature.parameters.begin(), signature.parameters.end(),
+                contract->label);
+            if (parameter == signature.parameters.end()) {
+                addDiagnostic(*contract,
+                              "arguments block declares a non-parameter in " +
+                                  node.label + ": " + contract->label);
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(outputCount, missingValue())};
+            }
+            const size_t index = static_cast<size_t>(
+                std::distance(signature.parameters.begin(), parameter));
+            if (index >= validatedArguments.size()) {
+                addDiagnostic(*contract,
+                              "argument is unavailable for validation in " +
+                                  node.label + ": " + contract->label);
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(outputCount, missingValue())};
+            }
+            auto validation = validateRuntimeArgument(
+                std::move(validatedArguments[index]), contract->property);
+            if (!validation.succeeded) {
+                addDiagnostic(
+                    *contract,
+                    "argument validation failed for " + node.label + "." +
+                        contract->label + ": " +
+                        std::move(validation.error));
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(outputCount, missingValue())};
+            }
+            validatedArguments[index] = std::move(validation.value);
+        }
+
         FunctionControlContext controlContext(loopDepth_, controlSignal_);
         frames_.push_back({});
         for (size_t i = 0; i < signature.parameters.size(); ++i) {
-            currentFrame()[signature.parameters[i]] = arguments[i];
+            currentFrame()[signature.parameters[i]] = validatedArguments[i];
         }
         if (signature.hasVarargin) {
             std::vector<RuntimeValue> values(
-                arguments.begin() + signature.parameters.size(), arguments.end());
+                validatedArguments.begin() + signature.parameters.size(),
+                validatedArguments.end());
             currentFrame()["varargin"] = cellValue(std::move(values));
         }
         for (const auto& output : signature.outputs) {

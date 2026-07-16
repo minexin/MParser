@@ -39,6 +39,14 @@ mparser::BytecodeVmResult run(std::string_view source) {
     return vm.run(compilation.bytecode, compilation.semantic);
 }
 
+mparser::InterpreterResult runInterpreter(std::string_view source) {
+    auto compilation = compile(source);
+    assert(compilation.parsed.diagnostics.empty());
+    assert(compilation.semantic.diagnostics.empty());
+    mparser::Interpreter interpreter;
+    return interpreter.run(compilation.semantic);
+}
+
 bool hasDiagnostic(const std::vector<mparser::Diagnostic>& diagnostics,
                    std::string_view text) {
     for (const auto& diagnostic : diagnostics) {
@@ -59,34 +67,57 @@ const mparser::RuntimeValue* variable(
     return nullptr;
 }
 
+const mparser::RuntimeValue* variable(
+    const mparser::InterpreterResult& result, std::string_view name) {
+    for (const auto& candidate : result.variables) {
+        if (candidate.name == name) {
+            return &candidate.value;
+        }
+    }
+    return nullptr;
+}
+
 void successfulFunctionContract() {
-    const auto result = run(R"(answer = scale(3);
+    constexpr std::string_view source = R"(answer = scale(3);
 function y = scale(x)
 arguments
     x (1,1) double {mustBePositive, mustBeInteger}
 end
 y = x * 2;
 end
-)");
+)";
+    const auto result = run(source);
     assert(result.diagnostics.empty());
     const auto* answer = variable(result, "answer");
     assert(answer != nullptr);
     assert(answer->kind == mparser::RuntimeValueKind::Number);
     assert(std::fabs(answer->number - 6.0) < 1e-9);
+
+    const auto interpreted = runInterpreter(source);
+    assert(interpreted.diagnostics.empty());
+    const auto* interpretedAnswer = variable(interpreted, "answer");
+    assert(interpretedAnswer != nullptr);
+    assert(std::fabs(interpretedAnswer->number - 6.0) < 1e-9);
 }
 
 void rejectedFunctionContracts() {
-    const auto negative = run(R"(answer = scale(-2);
+    constexpr std::string_view negativeSource = R"(answer = scale(-2);
 function y = scale(x)
 arguments
     x (1,1) double {mustBePositive}
 end
 y = x;
 end
-)");
+)";
+    const auto negative = run(negativeSource);
     assert(hasDiagnostic(negative.diagnostics,
                          "argument validation failed for scale.x"));
     assert(hasDiagnostic(negative.diagnostics, "value must be positive"));
+    const auto interpretedNegative = runInterpreter(negativeSource);
+    assert(hasDiagnostic(interpretedNegative.diagnostics,
+                         "argument validation failed for scale.x"));
+    assert(hasDiagnostic(interpretedNegative.diagnostics,
+                         "value must be positive"));
 
     const auto vector = run(R"(answer = scale([1 2]);
 function y = scale(x)
@@ -200,6 +231,26 @@ end
                          "argument validation failed for checked.x"));
 }
 
+void stringScalarContract() {
+    constexpr std::string_view source = R"(answer = checked("hello");
+function y = checked(text)
+arguments
+    text (1,1) string {mustBeScalarOrEmpty, mustBeNonzeroLengthText}
+end
+y = text;
+end
+)";
+    const auto bytecode = run(source);
+    assert(bytecode.diagnostics.empty());
+    const auto* bytecodeAnswer = variable(bytecode, "answer");
+    assert(bytecodeAnswer != nullptr && bytecodeAnswer->text == "hello");
+
+    const auto interpreted = runInterpreter(source);
+    assert(interpreted.diagnostics.empty());
+    const auto* interpretedAnswer = variable(interpreted, "answer");
+    assert(interpretedAnswer != nullptr && interpretedAnswer->text == "hello");
+}
+
 } // namespace
 
 int main() {
@@ -208,6 +259,7 @@ int main() {
     classMethodContract();
     semanticContractDiagnostics();
     entryFunctionContract();
+    stringScalarContract();
     std::cout << "argument validation smoke tests passed\n";
     return 0;
 }
