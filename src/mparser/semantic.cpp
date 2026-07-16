@@ -745,12 +745,36 @@ private:
                         "duplicate arguments block declaration: " +
                             declaration->label});
                 }
-                if (declaration->property.hasExplicitDefault) {
-                    result_.diagnostics.push_back(Diagnostic{
-                        declaration->span,
-                        "default argument values are not executable yet: " +
-                            declaration->label});
+            }
+        }
+
+        bool optionalParameterSeen = false;
+        for (const auto& parameter : signature.parameters) {
+            const SyntaxNode* declaration = nullptr;
+            for (const auto& block : syntax.children) {
+                if (block->kind != SyntaxKind::ArgumentsBlock) {
+                    continue;
                 }
+                for (const auto& candidate : block->children) {
+                    if (candidate->kind == SyntaxKind::ArgumentDecl &&
+                        candidate->label == parameter) {
+                        declaration = candidate.get();
+                        break;
+                    }
+                }
+                if (declaration != nullptr) {
+                    break;
+                }
+            }
+            const bool optional = declaration != nullptr &&
+                                  declaration->property.hasExplicitDefault;
+            if (optional) {
+                optionalParameterSeen = true;
+            } else if (optionalParameterSeen) {
+                result_.diagnostics.push_back(Diagnostic{
+                    declaration != nullptr ? declaration->span : syntax.span,
+                    "required argument follows an optional argument: " +
+                        parameter});
             }
         }
 

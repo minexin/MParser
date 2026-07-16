@@ -552,6 +552,9 @@ struct ArgumentContract {
     std::string name;
     PropertySpec spec;
     SourceSpan span;
+    size_t defaultEntry = 0;
+    size_t defaultEnd = 0;
+    bool hasDefaultRange = false;
 };
 
 void collectArgumentContracts(
@@ -562,7 +565,7 @@ void collectArgumentContracts(
         }
         if (child->kind == HirKind::Argument) {
             contracts.push_back(ArgumentContract{
-                child->label, child->property, child->span});
+                child->label, child->property, child->span, 0, 0, false});
             continue;
         }
         collectArgumentContracts(*child, contracts);
@@ -781,6 +784,7 @@ bool isBoundaryEnter(BytecodeOp op) {
     return op == BytecodeOp::EnterClass ||
            op == BytecodeOp::EnterPropertyInitializer ||
            op == BytecodeOp::EnterEnumerationMemberInitializer ||
+           op == BytecodeOp::EnterArgumentDefault ||
            op == BytecodeOp::EnterFunction || op == BytecodeOp::EnterControl;
 }
 
@@ -788,6 +792,7 @@ bool isBoundaryLeave(BytecodeOp op) {
     return op == BytecodeOp::LeaveClass ||
            op == BytecodeOp::LeavePropertyInitializer ||
            op == BytecodeOp::LeaveEnumerationMemberInitializer ||
+           op == BytecodeOp::LeaveArgumentDefault ||
            op == BytecodeOp::LeaveFunction || op == BytecodeOp::LeaveControl;
 }
 
@@ -1305,6 +1310,39 @@ private:
         }
     }
 
+    void collectArgumentDefaultRanges(const BytecodeProgram& program,
+                                      size_t begin, size_t end,
+                                      FunctionInfo& info) {
+        for (size_t pc = begin; pc < end; ++pc) {
+            const auto& instruction = program.instructions[pc];
+            if (instruction.op != BytecodeOp::EnterArgumentDefault) {
+                continue;
+            }
+            if (instruction.target <= static_cast<int>(pc + 1) ||
+                instruction.target > static_cast<int>(end)) {
+                addDiagnostic(instruction,
+                              "argument default has an invalid bytecode range");
+                return;
+            }
+            const auto contract = std::find_if(
+                info.argumentContracts.begin(), info.argumentContracts.end(),
+                [&](const ArgumentContract& candidate) {
+                    return candidate.name == instruction.operand;
+                });
+            if (contract == info.argumentContracts.end()) {
+                addDiagnostic(instruction,
+                              "argument default has no declaration: " +
+                                  instruction.operand);
+                return;
+            }
+            contract->defaultEntry = pc + 1;
+            contract->defaultEnd =
+                static_cast<size_t>(instruction.target - 1);
+            contract->hasDefaultRange = true;
+            pc = static_cast<size_t>(instruction.target - 1);
+        }
+    }
+
     void collectFunctionRanges(const BytecodeProgram& program) {
         std::vector<std::string> classStack;
         for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
@@ -1447,6 +1485,8 @@ private:
                         hir->second->lexicalClassName;
                     collectArgumentContracts(
                         *hir->second, info.argumentContracts);
+                    collectArgumentDefaultRanges(program, info.entry, info.end,
+                                                 info);
                 }
                 functionsByName_[info.name] = std::move(info);
             } else {
@@ -1458,6 +1498,8 @@ private:
                     info.attributes = hir->second->attributes;
                     collectArgumentContracts(
                         *hir->second, info.argumentContracts);
+                    collectArgumentDefaultRanges(program, info.entry, info.end,
+                                                 info);
                     collectExplicitSuperclassConstructors(
                         *hir->second,
                         info.explicitSuperclassConstructors);
@@ -2798,51 +2840,155 @@ private:
         }
     }
 
+    const ArgumentContract* argumentContract(const FunctionInfo& info,
+                                             std::string_view name) const {
+        const auto found = std::find_if(
+            info.argumentContracts.begin(), info.argumentContracts.end(),
+            [&](const ArgumentContract& candidate) {
+                return candidate.name == name;
+            });
+        return found == info.argumentContracts.end() ? nullptr : &*found;
+    }
+
+    size_t requiredFunctionArgumentCount(const FunctionInfo& info) const {
+        size_t required = 0;
+        for (size_t index = 0; index < info.signature.parameters.size(); ++index) {
+            const auto* contract =
+                argumentContract(info, info.signature.parameters[index]);
+            if (contract == nullptr || !contract->spec.hasExplicitDefault) {
+                required = index + 1;
+            }
+        }
+        return required;
+    }
+
+    bool acceptsFunctionArgumentCount(const FunctionInfo& info,
+                                      size_t count) const {
+        return count >= requiredFunctionArgumentCount(info) &&
+               (info.signature.hasVarargin ||
+                count <= info.signature.parameters.size());
+    }
+
+    std::optional<RuntimeValue> evaluateArgumentDefault(
+        const BytecodeInstruction& instruction, const std::string& functionName,
+        const ArgumentContract& contract) {
+        if (!contract.hasDefaultRange) {
+            addDiagnostic(instruction,
+                          "argument default expression has no bytecode range: " +
+                              functionName + "." + contract.name);
+            return std::nullopt;
+        }
+
+        auto savedStack = std::move(stack_);
+        auto savedForLoops = std::move(forLoopStack_);
+        auto savedIndexContexts = std::move(indexContextStack_);
+        auto savedSwitchContexts = std::move(switchContextStack_);
+        auto savedTryContexts = std::move(tryContextStack_);
+        const bool savedReturnRequested = returnRequested_;
+        stack_.clear();
+        forLoopStack_.clear();
+        indexContextStack_.clear();
+        switchContextStack_.clear();
+        tryContextStack_.clear();
+        returnRequested_ = false;
+
+        const size_t diagnosticCount = diagnostics_.size();
+        executeFunctionBody(contract.defaultEntry, contract.defaultEnd);
+        std::optional<RuntimeValue> value;
+        if (diagnostics_.size() == diagnosticCount) {
+            if (stack_.size() != 1) {
+                addDiagnostic(instruction,
+                              "argument default expression must produce one "
+                              "value: " + functionName + "." + contract.name);
+            } else {
+                value = popRuntime(instruction, "argument default expression");
+            }
+        }
+
+        stack_ = std::move(savedStack);
+        forLoopStack_ = std::move(savedForLoops);
+        indexContextStack_ = std::move(savedIndexContexts);
+        switchContextStack_ = std::move(savedSwitchContexts);
+        tryContextStack_ = std::move(savedTryContexts);
+        returnRequested_ = savedReturnRequested;
+        return value;
+    }
+
     std::optional<std::vector<RuntimeValue>> validateFunctionArguments(
         const BytecodeInstruction& instruction, const std::string& name,
         const FunctionInfo& info,
-        const std::vector<RuntimeValue>& arguments) {
-        std::vector<RuntimeValue> validated = arguments;
+        const std::vector<RuntimeValue>& arguments,
+        size_t requestedOutputCount) {
+        currentFrame()["nargin"] =
+            numberValue(static_cast<double>(arguments.size()));
+        currentFrame()["nargout"] =
+            numberValue(static_cast<double>(requestedOutputCount));
         for (const auto& contract : info.argumentContracts) {
-            const auto parameter = std::find(
-                info.signature.parameters.begin(),
-                info.signature.parameters.end(), contract.name);
-            if (parameter == info.signature.parameters.end()) {
+            if (std::find(info.signature.parameters.begin(),
+                          info.signature.parameters.end(), contract.name) ==
+                info.signature.parameters.end()) {
                 addDiagnostic(instruction,
                               "arguments block declares a non-parameter in " +
                                   name + ": " + contract.name);
                 return std::nullopt;
             }
-            const size_t index = static_cast<size_t>(
-                std::distance(info.signature.parameters.begin(), parameter));
-            if (index >= validated.size()) {
-                addDiagnostic(instruction,
-                              "argument is unavailable for validation in " +
-                                  name + ": " + contract.name);
-                return std::nullopt;
-            }
-            RuntimeArgumentValidationOptions validationOptions;
-            validationOptions.objectIsA =
-                [this](const std::string& actual,
-                       const std::string& expected) {
-                    return classDerivesFrom(actual, expected);
-                };
-            validationOptions.classAvailable =
-                [this](const std::string& className) {
-                    return classesByName_.contains(className);
-                };
-            auto result = validateRuntimeArgument(
-                std::move(validated[index]), contract.spec,
-                validationOptions);
-            if (!result.succeeded) {
-                addDiagnostic(
-                    instruction,
-                    "argument validation failed for " + name + "." +
-                        contract.name + ": " + std::move(result.error));
-                return std::nullopt;
-            }
-            validated[index] = std::move(result.value);
         }
+        std::vector<RuntimeValue> validated;
+        validated.reserve(std::max(arguments.size(),
+                                   info.signature.parameters.size()));
+        for (size_t index = 0; index < info.signature.parameters.size(); ++index) {
+            const std::string& parameterName = info.signature.parameters[index];
+            const ArgumentContract* contract =
+                argumentContract(info, parameterName);
+            RuntimeValue value;
+            if (index < arguments.size()) {
+                value = arguments[index];
+            } else if (contract != nullptr &&
+                       contract->spec.hasExplicitDefault) {
+                auto defaultValue =
+                    evaluateArgumentDefault(instruction, name, *contract);
+                if (!defaultValue) {
+                    return std::nullopt;
+                }
+                value = std::move(*defaultValue);
+            } else {
+                addDiagnostic(instruction,
+                              "required argument is missing for " + name +
+                                  ": " + parameterName);
+                return std::nullopt;
+            }
+
+            if (contract != nullptr) {
+                RuntimeArgumentValidationOptions validationOptions;
+                validationOptions.objectIsA =
+                    [this](const std::string& actual,
+                           const std::string& expected) {
+                        return classDerivesFrom(actual, expected);
+                    };
+                validationOptions.classAvailable =
+                    [this](const std::string& className) {
+                        return classesByName_.contains(className);
+                    };
+                auto result = validateRuntimeArgument(
+                    std::move(value), contract->spec, validationOptions);
+                if (!result.succeeded) {
+                    addDiagnostic(
+                        instruction,
+                        "argument validation failed for " + name + "." +
+                            contract->name + ": " + std::move(result.error));
+                    return std::nullopt;
+                }
+                value = std::move(result.value);
+            }
+            currentFrame()[parameterName] = value;
+            validated.push_back(std::move(value));
+        }
+
+        validated.insert(validated.end(),
+                         arguments.begin() +
+                             std::min(arguments.size(),
+                                      info.signature.parameters.size()),
+                         arguments.end());
         return validated;
     }
 
@@ -2853,9 +2999,8 @@ private:
         }
 
         const auto& signature = function->second.signature;
-        if (entryArguments_.size() < signature.parameters.size() ||
-            (!signature.hasVarargin &&
-             entryArguments_.size() != signature.parameters.size())) {
+        if (!acceptsFunctionArgumentCount(function->second,
+                                          entryArguments_.size())) {
             addDiagnostic(instruction,
                           "function argument count mismatch for: " +
                               instruction.operand);
@@ -2871,15 +3016,17 @@ private:
             return false;
         }
 
+        const size_t providedArgumentCount = entryArguments_.size();
         auto validated = validateFunctionArguments(
             instruction, instruction.operand, function->second,
-            entryArguments_);
+            entryArguments_, requestedOutputCount);
         if (!validated) {
             return false;
         }
         entryArguments_ = std::move(*validated);
 
-        initializeFunctionFrame(signature, entryArguments_, requestedOutputCount);
+        initializeFunctionFrame(signature, entryArguments_, requestedOutputCount,
+                                providedArgumentCount);
         executedEntryFunction_ = instruction.operand;
         executedRequestedOutputCount_ = requestedOutputCount;
         entrySignature_ = signature;
@@ -2917,7 +3064,8 @@ private:
 
     void initializeFunctionFrame(const FunctionSignature& signature,
                                  const std::vector<RuntimeValue>& arguments,
-                                 size_t requestedOutputCount) {
+                                 size_t requestedOutputCount,
+                                 size_t providedArgumentCount) {
         for (size_t index = 0; index < signature.parameters.size(); ++index) {
             currentFrame()[signature.parameters[index]] = arguments[index];
         }
@@ -2933,7 +3081,7 @@ private:
             currentFrame()["varargout"] = cellValue({});
         }
         currentFrame()["nargin"] =
-            numberValue(static_cast<double>(arguments.size()));
+            numberValue(static_cast<double>(providedArgumentCount));
         currentFrame()["nargout"] =
             numberValue(static_cast<double>(requestedOutputCount));
     }
@@ -3104,6 +3252,13 @@ private:
             break;
         case BytecodeOp::MakeFunctionHandle:
             return makeFunctionHandle(instruction);
+        case BytecodeOp::EnterArgumentDefault:
+            if (instruction.target < 0) {
+                addDiagnostic(instruction,
+                              "argument default has no continuation target");
+                break;
+            }
+            return static_cast<size_t>(instruction.target);
         case BytecodeOp::LoadMetaClass:
         case BytecodeOp::EnterModule:
         case BytecodeOp::LeaveModule:
@@ -3113,6 +3268,7 @@ private:
         case BytecodeOp::LeavePropertyInitializer:
         case BytecodeOp::EnterEnumerationMemberInitializer:
         case BytecodeOp::LeaveEnumerationMemberInitializer:
+        case BytecodeOp::LeaveArgumentDefault:
         case BytecodeOp::EnterFunction:
         case BytecodeOp::LeaveFunction:
         case BytecodeOp::EnterControl:
@@ -6665,9 +6821,7 @@ private:
             return missingOutputs(requestedCount);
         }
 
-        if (arguments.size() < info.signature.parameters.size() ||
-            (!info.signature.hasVarargin &&
-             arguments.size() != info.signature.parameters.size())) {
+        if (!acceptsFunctionArgumentCount(info, arguments.size())) {
             addDiagnostic(instruction,
                           "function argument count mismatch for: " + name);
             return missingOutputs(requestedCount);
@@ -6679,8 +6833,11 @@ private:
             return missingOutputs(requestedCount);
         }
 
-        auto validatedArguments = validateFunctionArguments(
-            instruction, name, info, arguments);
+        frames_.push_back({});
+        auto validatedArguments =
+            validateFunctionArguments(instruction, name, info, arguments,
+                                      static_cast<size_t>(requestedCount));
+        frames_.pop_back();
         if (!validatedArguments) {
             return missingOutputs(requestedCount);
         }
@@ -6698,7 +6855,8 @@ private:
 
         frames_.push_back({});
         initializeFunctionFrame(info.signature, *validatedArguments,
-                                static_cast<size_t>(requestedCount));
+                                static_cast<size_t>(requestedCount),
+                                arguments.size());
         if (constructorObject && !info.signature.outputs.empty()) {
             currentFrame()[info.signature.outputs.front()] = *constructorObject;
         }

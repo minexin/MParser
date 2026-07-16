@@ -483,9 +483,27 @@ private:
                                     std::optional<size_t> requestedOutputCount =
                                         std::nullopt) {
         const FunctionSignature signature = parseFunctionSignature(node);
-        if (arguments.size() < signature.parameters.size() ||
+        std::vector<const HirNode*> contracts;
+        collectArgumentContracts(node, contracts);
+        auto contractFor = [&](std::string_view parameter) -> const HirNode* {
+            const auto found = std::find_if(
+                contracts.begin(), contracts.end(),
+                [&](const HirNode* contract) {
+                    return contract->label == parameter;
+                });
+            return found == contracts.end() ? nullptr : *found;
+        };
+        size_t requiredArgumentCount = 0;
+        for (size_t index = 0; index < signature.parameters.size(); ++index) {
+            const HirNode* contract = contractFor(signature.parameters[index]);
+            if (contract == nullptr ||
+                !contract->property.hasExplicitDefault) {
+                requiredArgumentCount = index + 1;
+            }
+        }
+        if (arguments.size() < requiredArgumentCount ||
             (!signature.hasVarargin &&
-             arguments.size() != signature.parameters.size())) {
+             arguments.size() > signature.parameters.size())) {
             addDiagnostic(node, "function argument count mismatch for: " +
                                     node.label);
             return FunctionCallResult{{missingValue()}};
@@ -498,49 +516,75 @@ private:
             return FunctionCallResult{
                 std::vector<RuntimeValue>(outputCount, missingValue())};
         }
-
-        std::vector<RuntimeValue> validatedArguments = arguments;
-        std::vector<const HirNode*> contracts;
-        collectArgumentContracts(node, contracts);
         for (const HirNode* contract : contracts) {
-            const auto parameter = std::find(
-                signature.parameters.begin(), signature.parameters.end(),
-                contract->label);
-            if (parameter == signature.parameters.end()) {
+            if (std::find(signature.parameters.begin(),
+                          signature.parameters.end(), contract->label) ==
+                signature.parameters.end()) {
                 addDiagnostic(*contract,
                               "arguments block declares a non-parameter in " +
                                   node.label + ": " + contract->label);
                 return FunctionCallResult{
                     std::vector<RuntimeValue>(outputCount, missingValue())};
             }
-            const size_t index = static_cast<size_t>(
-                std::distance(signature.parameters.begin(), parameter));
-            if (index >= validatedArguments.size()) {
-                addDiagnostic(*contract,
-                              "argument is unavailable for validation in " +
-                                  node.label + ": " + contract->label);
-                return FunctionCallResult{
-                    std::vector<RuntimeValue>(outputCount, missingValue())};
-            }
-            auto validation = validateRuntimeArgument(
-                std::move(validatedArguments[index]), contract->property);
-            if (!validation.succeeded) {
-                addDiagnostic(
-                    *contract,
-                    "argument validation failed for " + node.label + "." +
-                        contract->label + ": " +
-                        std::move(validation.error));
-                return FunctionCallResult{
-                    std::vector<RuntimeValue>(outputCount, missingValue())};
-            }
-            validatedArguments[index] = std::move(validation.value);
         }
 
-        FunctionControlContext controlContext(loopDepth_, controlSignal_);
         frames_.push_back({});
-        for (size_t i = 0; i < signature.parameters.size(); ++i) {
-            currentFrame()[signature.parameters[i]] = validatedArguments[i];
+        currentFrame()["nargin"] =
+            numberValue(static_cast<double>(arguments.size()));
+        currentFrame()["nargout"] =
+            numberValue(static_cast<double>(outputCount));
+        std::vector<RuntimeValue> validatedArguments;
+        validatedArguments.reserve(
+            std::max(arguments.size(), signature.parameters.size()));
+        for (size_t index = 0; index < signature.parameters.size(); ++index) {
+            const std::string& parameterName = signature.parameters[index];
+            const HirNode* contract = contractFor(parameterName);
+            RuntimeValue value;
+            if (index < arguments.size()) {
+                value = arguments[index];
+            } else if (contract != nullptr &&
+                       contract->property.hasExplicitDefault &&
+                       !contract->children.empty()) {
+                const size_t diagnosticCount = diagnostics_.size();
+                value = evaluate(*contract->children.front());
+                if (diagnostics_.size() != diagnosticCount) {
+                    frames_.pop_back();
+                    return FunctionCallResult{
+                        std::vector<RuntimeValue>(outputCount, missingValue())};
+                }
+            } else {
+                addDiagnostic(node, "required argument is missing for " +
+                                        node.label + ": " + parameterName);
+                frames_.pop_back();
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(outputCount, missingValue())};
+            }
+
+            if (contract != nullptr) {
+                auto validation = validateRuntimeArgument(
+                    std::move(value), contract->property);
+                if (!validation.succeeded) {
+                    addDiagnostic(
+                        *contract,
+                        "argument validation failed for " + node.label + "." +
+                            contract->label + ": " +
+                            std::move(validation.error));
+                    frames_.pop_back();
+                    return FunctionCallResult{
+                        std::vector<RuntimeValue>(outputCount, missingValue())};
+                }
+                value = std::move(validation.value);
+            }
+            currentFrame()[parameterName] = value;
+            validatedArguments.push_back(std::move(value));
         }
+        validatedArguments.insert(
+            validatedArguments.end(),
+            arguments.begin() +
+                std::min(arguments.size(), signature.parameters.size()),
+            arguments.end());
+
+        FunctionControlContext controlContext(loopDepth_, controlSignal_);
         if (signature.hasVarargin) {
             std::vector<RuntimeValue> values(
                 validatedArguments.begin() + signature.parameters.size(),

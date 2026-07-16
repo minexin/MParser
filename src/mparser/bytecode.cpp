@@ -88,7 +88,14 @@ private:
                       node);
             break;
         case HirKind::Import:
+            break;
         case HirKind::Argument:
+            if (node.property.hasExplicitDefault && !node.children.empty()) {
+                const size_t enter = emit(BytecodeOp::EnterArgumentDefault, node);
+                lowerExpression(*node.children.front());
+                emit(BytecodeOp::LeaveArgumentDefault, node);
+                patchTarget(enter, program_.instructions.size());
+            }
             break;
         case HirKind::Control:
             lowerControl(node);
@@ -784,6 +791,10 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "EnterEnumerationMemberInitializer";
     case BytecodeOp::LeaveEnumerationMemberInitializer:
         return "LeaveEnumerationMemberInitializer";
+    case BytecodeOp::EnterArgumentDefault:
+        return "EnterArgumentDefault";
+    case BytecodeOp::LeaveArgumentDefault:
+        return "LeaveArgumentDefault";
     case BytecodeOp::EnterFunction:
         return "EnterFunction";
     case BytecodeOp::LeaveFunction:

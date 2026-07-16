@@ -171,6 +171,33 @@ m = Meter(-1);
 )");
     assert(hasDiagnostic(rejected.diagnostics,
                          "argument validation failed for Meter.value"));
+
+    const auto defaults = run(R"(classdef Meter
+    properties
+        Value
+    end
+    methods
+        function obj = Meter(value)
+        arguments
+            value (1,1) double {mustBePositive} = 4
+        end
+            obj.Value = value;
+        end
+        function y = scale(obj, factor)
+        arguments
+            factor (1,1) double {mustBePositive} = 3
+        end
+            y = obj.Value * factor;
+        end
+    end
+end
+m = Meter();
+answer = m.scale();
+)");
+    assert(defaults.diagnostics.empty());
+    const auto* defaultAnswer = variable(defaults, "answer");
+    assert(defaultAnswer != nullptr &&
+           std::fabs(defaultAnswer->number - 12.0) < 1e-9);
 }
 
 void semanticContractDiagnostics() {
@@ -193,14 +220,83 @@ y = x;
 end
 )");
     assert(defaults.parsed.diagnostics.empty());
-    assert(hasDiagnostic(defaults.semantic.diagnostics,
-                         "default argument values are not executable yet"));
+    assert(defaults.semantic.diagnostics.empty());
+
+    const auto requiredAfterOptional = compile(R"(function y = f(x, y)
+arguments
+    x (1,1) double = 2
+    y (1,1) double
+end
+y = x + y;
+end
+)");
+    assert(hasDiagnostic(requiredAfterOptional.semantic.diagnostics,
+                         "required argument follows an optional argument: y"));
+}
+
+void positionalDefaults() {
+    constexpr std::string_view source = R"(answer = combine(3);
+explicit = combine(3, 4, 5);
+defaultNargin = observeNargin();
+function y = combine(x, factor, offset)
+arguments
+    x (1,1) double {mustBePositive}
+    factor (1,1) double {mustBePositive} = x + 1
+    offset (1,1) double {mustBePositive} = factor * 2
+end
+y = x + factor + offset + nargin * 100;
+end
+function y = observeNargin(x)
+arguments
+    x (1,1) double = nargin + 2
+end
+y = x;
+end
+)";
+    const auto bytecode = run(source);
+    assert(bytecode.diagnostics.empty());
+    const auto* bytecodeAnswer = variable(bytecode, "answer");
+    const auto* bytecodeExplicit = variable(bytecode, "explicit");
+    const auto* bytecodeNargin = variable(bytecode, "defaultNargin");
+    assert(bytecodeAnswer != nullptr &&
+           std::fabs(bytecodeAnswer->number - 115.0) < 1e-9);
+    assert(bytecodeExplicit != nullptr &&
+           std::fabs(bytecodeExplicit->number - 312.0) < 1e-9);
+    assert(bytecodeNargin != nullptr &&
+           std::fabs(bytecodeNargin->number - 2.0) < 1e-9);
+
+    const auto interpreted = runInterpreter(source);
+    assert(interpreted.diagnostics.empty());
+    const auto* interpretedAnswer = variable(interpreted, "answer");
+    const auto* interpretedExplicit = variable(interpreted, "explicit");
+    const auto* interpretedNargin = variable(interpreted, "defaultNargin");
+    assert(interpretedAnswer != nullptr &&
+           std::fabs(interpretedAnswer->number - 115.0) < 1e-9);
+    assert(interpretedExplicit != nullptr &&
+           std::fabs(interpretedExplicit->number - 312.0) < 1e-9);
+    assert(interpretedNargin != nullptr &&
+           std::fabs(interpretedNargin->number - 2.0) < 1e-9);
+
+    constexpr std::string_view rejectedSource = R"(answer = invalid();
+function y = invalid(x)
+arguments
+    x (1,1) double {mustBePositive} = -1
+end
+y = x;
+end
+)";
+    const auto rejectedBytecode = run(rejectedSource);
+    assert(hasDiagnostic(rejectedBytecode.diagnostics,
+                         "argument validation failed for invalid.x"));
+    const auto rejectedInterpreter = runInterpreter(rejectedSource);
+    assert(hasDiagnostic(rejectedInterpreter.diagnostics,
+                         "argument validation failed for invalid.x"));
 }
 
 void entryFunctionContract() {
     auto compilation = compile(R"(function y = checked(x)
 arguments
-    x (1,1) double {mustBeGreaterThan(x, 4)}
+    x (1,1) double {mustBeGreaterThan(x, 4)} = 5
 end
 y = x;
 end
@@ -224,7 +320,15 @@ end
     assert(accepted.outputs.size() == 1);
     assert(std::fabs(accepted.outputs.front().number - 5.0) < 1e-9);
 
-    options.arguments.front().number = 4;
+    options.arguments.clear();
+    const auto defaulted = vm.run(
+        compilation.bytecode, compilation.semantic, options);
+    assert(defaulted.diagnostics.empty());
+    assert(defaulted.outputs.size() == 1);
+    assert(std::fabs(defaulted.outputs.front().number - 5.0) < 1e-9);
+
+    input.number = 4;
+    options.arguments = {input};
     const auto rejected = vm.run(
         compilation.bytecode, compilation.semantic, options);
     assert(hasDiagnostic(rejected.diagnostics,
@@ -258,6 +362,7 @@ int main() {
     rejectedFunctionContracts();
     classMethodContract();
     semanticContractDiagnostics();
+    positionalDefaults();
     entryFunctionContract();
     stringScalarContract();
     std::cout << "argument validation smoke tests passed\n";
