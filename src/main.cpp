@@ -56,7 +56,8 @@ void printUsage() {
                  "--module-info | "
                  "--profile-bytecode | --plan-bytecode | "
                  "--typed-ir-bytecode | --check-typed-ir-bytecode | "
-                 "--run-typed-bytecode | --run-adaptive-bytecode | "
+                 "--run-jit | --run-typed-bytecode | "
+                 "--run-adaptive-bytecode | "
                  "--run-module-runtime | "
                  "--benchmark-runtime] "
                  "[--benchmark-warmup=N] [--benchmark-iterations=N] "
@@ -694,7 +695,7 @@ void printRuntimeBenchmark(
 
 void printTypedRegionExecutions(
     const mparser::BytecodeVmResult& runtime, bool outputsMatch,
-    size_t ignoredOutputCount) {
+    size_t ignoredOutputCount, bool baselineValidated = true) {
     std::cout << "Typed region execution:\n";
     std::cout << "  regions: " << runtime.typedRegionExecutions.size()
               << "\n";
@@ -745,6 +746,10 @@ void printTypedRegionExecutions(
                       << execution.nativeFallbackReason << "\n";
         }
         std::cout << "      reason=" << execution.lastReason << "\n";
+    }
+    if (!baselineValidated) {
+        std::cout << "  baseline validation: skipped (guarded JIT mode)\n";
+        return;
     }
     std::cout << "  baseline outputs: "
               << (outputsMatch ? "match" : "mismatch");
@@ -1018,6 +1023,7 @@ int main(int argc, char** argv) {
         bool planBytecode = false;
         bool typedIrBytecode = false;
         bool checkTypedIrBytecode = false;
+        bool runJit = false;
         bool runTypedBytecode = false;
         bool runAdaptiveBytecode = false;
         bool runModuleRuntime = false;
@@ -1064,6 +1070,8 @@ int main(int argc, char** argv) {
                 typedIrBytecode = true;
             } else if (arg == "--check-typed-ir-bytecode") {
                 checkTypedIrBytecode = true;
+            } else if (arg == "--run-jit") {
+                runJit = true;
             } else if (arg == "--run-typed-bytecode") {
                 runTypedBytecode = true;
             } else if (arg == "--run-adaptive-bytecode") {
@@ -1258,7 +1266,7 @@ int main(int argc, char** argv) {
 
         if (printHir || printBytecode || runProgram || runBytecode ||
             profileBytecode || planBytecode || typedIrBytecode ||
-            checkTypedIrBytecode || runTypedBytecode ||
+            checkTypedIrBytecode || runJit || runTypedBytecode ||
             runAdaptiveBytecode || benchmarkRuntime) {
             const auto module = compileSourceGraph();
             if (!module.valid()) {
@@ -1275,7 +1283,7 @@ int main(int argc, char** argv) {
                 mparser::dumpBytecode(std::cout, bytecode, semantic);
             } else if (runBytecode || profileBytecode || planBytecode ||
                        typedIrBytecode || checkTypedIrBytecode ||
-                       runTypedBytecode || runAdaptiveBytecode ||
+                       runJit || runTypedBytecode || runAdaptiveBytecode ||
                        benchmarkRuntime) {
                 if (runAdaptiveBytecode) {
                     mparser::AdaptiveBytecodeVmOptions adaptiveOptions;
@@ -1375,7 +1383,17 @@ int main(int argc, char** argv) {
                     vmOptions.profiling =
                         mparser::BytecodeVmProfilingMode::Disabled;
                 }
-                auto runtime = vm.run(bytecode, semantic, vmOptions);
+                mparser::BytecodeVmResult runtime;
+                if (runJit) {
+                    mparser::BytecodeOptimizationPlanner planner;
+                    mparser::BytecodeTypedIrBuilder builder;
+                    const auto typedModule = builder.build(
+                        planner.planStaticLoops(bytecode));
+                    runtime = vm.run(
+                        bytecode, semantic, typedModule, vmOptions);
+                } else {
+                    runtime = vm.run(bytecode, semantic, vmOptions);
+                }
                 std::vector<mparser::RuntimeVariable> baselineVariables;
                 std::vector<std::string> nondeterministicTargets;
                 bool typedOutputsMatch = true;
@@ -1436,10 +1454,10 @@ int main(int argc, char** argv) {
                         evaluator.evaluate(typedModule,
                                            runtime.variables));
                 }
-                if (runTypedBytecode) {
+                if (runJit || runTypedBytecode) {
                     printTypedRegionExecutions(
                         runtime, typedOutputsMatch,
-                        nondeterministicTargets.size());
+                        nondeterministicTargets.size(), !runJit);
                     if (!typedOutputsMatch) {
                         return 1;
                     }

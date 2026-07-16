@@ -39,6 +39,8 @@ class BytecodeOptimizationPlanner {
 public:
     BytecodeOptimizationPlan plan(const BytecodeVmProfile& profile,
                                   const BytecodeProgram& program) const;
+    BytecodeOptimizationPlan planStaticLoops(
+        const BytecodeProgram& program) const;
 };
 
 } // namespace mparser

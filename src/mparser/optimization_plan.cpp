@@ -147,4 +147,38 @@ BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
     return result;
 }
 
+BytecodeOptimizationPlan BytecodeOptimizationPlanner::planStaticLoops(
+    const BytecodeProgram& program) const {
+    BytecodeOptimizationPlan result;
+    BytecodeRegionAnalyzer regionAnalyzer;
+
+    for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
+        const auto& instruction = program.instructions[pc];
+        if (instruction.op != BytecodeOp::ForBegin ||
+            instruction.operand.empty()) {
+            continue;
+        }
+
+        auto region = regionAnalyzer.analyze(
+            program, "hot-loop", pc, instruction.operand);
+        if (!region.eligibleForTypedExecution) {
+            continue;
+        }
+
+        BytecodeOptimizationCandidate candidate;
+        candidate.kind = "hot-loop";
+        candidate.pc = pc;
+        candidate.target = instruction.operand;
+        candidate.reason =
+            "statically eligible loop with runtime scalar guards";
+        candidate.guards.push_back(BytecodeOptimizationGuard{
+            pc, "loop", "variable", "number", "double", 1, 1,
+            {1, 1}, 0});
+        candidate.region = std::move(region);
+        result.candidates.push_back(std::move(candidate));
+    }
+
+    return result;
+}
+
 } // namespace mparser

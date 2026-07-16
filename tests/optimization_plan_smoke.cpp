@@ -119,10 +119,39 @@ end
     assert(!loopAssignment->region.eligibleForTypedExecution);
 }
 
+void runStaticLoopPlanSmoke() {
+    mparser::Lexer lexer(R"(y = 0;
+for i = 1:12
+    y = y + i;
+end
+for j = 1:12
+    y = kernel(j);
+end
+)");
+    mparser::Parser parser(lexer.lex());
+    auto parseResult = parser.parse();
+    assert(parseResult.diagnostics.empty());
+    mparser::SemanticAnalyzer analyzer;
+    const auto semantic = analyzer.analyze(*parseResult.root);
+    assert(semantic.diagnostics.empty());
+    mparser::BytecodeLowerer lowerer;
+    const auto bytecode = lowerer.lower(semantic);
+
+    mparser::BytecodeOptimizationPlanner planner;
+    const auto result = planner.planStaticLoops(bytecode);
+    const auto* loop = findCandidate(result, "hot-loop", "i");
+    assert(loop != nullptr);
+    assert(loop->executionCount == 0);
+    assert(loop->region.eligibleForTypedExecution);
+    assertScalarNumberGuard(*loop, "variable", 0);
+    assert(findCandidate(result, "hot-loop", "j") == nullptr);
+}
+
 } // namespace
 
 int main() {
     runHotLoopPlanSmoke();
+    runStaticLoopPlanSmoke();
     std::cout << "optimization plan smoke tests passed\n";
     return 0;
 }

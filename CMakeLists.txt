@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.54.0 LANGUAGES C CXX)
+project(MParser VERSION 0.55.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -177,6 +177,15 @@ add_test(NAME scalar_kernel_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/typed_region_demo.m)
 set_tests_properties(scalar_kernel_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "predecoded scalar kernel executed")
+
+add_test(NAME guarded_jit_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-jit
+        --typed-backend=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/nested_typed_loop_demo.m)
+set_tests_properties(guarded_jit_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "predecoded nested scalar kernel executed.*baseline validation: skipped")
 
 add_test(NAME nested_scalar_kernel_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
