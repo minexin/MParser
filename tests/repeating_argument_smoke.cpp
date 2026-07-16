@@ -518,13 +518,13 @@ end
     require(output.semantic.diagnostics.empty(),
             "output metadata source must compile");
     const auto interpretedOutput = interpreter.run(output.semantic);
-    require(hasDiagnostic(interpretedOutput.diagnostics,
-                          "output arguments blocks are not executable yet"),
-            "interpreter must not silently ignore output contracts");
+    require(interpretedOutput.diagnostics.empty(),
+            "interpreter must execute output contracts");
+    requireNumber(interpretedOutput.variables, "answer", 2);
     const auto bytecodeOutput = vm.run(output.bytecode, output.semantic);
-    require(hasDiagnostic(bytecodeOutput.diagnostics,
-                          "output arguments blocks are not executable yet"),
-            "bytecode VM must not silently ignore output contracts");
+    require(bytecodeOutput.diagnostics.empty(),
+            "bytecode VM must execute output contracts");
+    requireNumber(bytecodeOutput.variables, "answer", 2);
 }
 
 } // namespace

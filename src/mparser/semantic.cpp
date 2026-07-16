@@ -780,6 +780,8 @@ private:
         std::unordered_map<std::string, const SyntaxNode*> positionalContracts;
         std::vector<std::string> repeatingOrder;
         const SyntaxNode* repeatingBlock = nullptr;
+        const SyntaxNode* repeatingOutputBlock = nullptr;
+        std::string repeatingOutputName;
         bool executableSeen = false;
         bool inputBlockSeen = false;
         bool outputBlockSeen = false;
@@ -867,6 +869,12 @@ private:
             if (outputBlock) {
                 outputBlockSeen = true;
             }
+            if (blockKind == ArgumentBlockKind::Output &&
+                repeatingOutputSeen) {
+                result_.diagnostics.push_back(Diagnostic{
+                    child->span,
+                    "fixed output block cannot follow a repeating output block"});
+            }
             if (blockKind == ArgumentBlockKind::RepeatingInput) {
                 if (repeatingInputSeen) {
                     result_.diagnostics.push_back(Diagnostic{
@@ -888,6 +896,7 @@ private:
                         "function can contain only one repeating output block"});
                 }
                 repeatingOutputSeen = true;
+                repeatingOutputBlock = child.get();
                 if (child->children.size() != 1) {
                     result_.diagnostics.push_back(Diagnostic{
                         child->span,
@@ -1036,6 +1045,35 @@ private:
                         "output argument cannot define a default: " +
                             declaration->label});
                 }
+                if (blockKind == ArgumentBlockKind::RepeatingOutput &&
+                    repeatingOutputName.empty()) {
+                    repeatingOutputName = declaration->label;
+                }
+                if (declaration->label != "varargout") {
+                    const auto current =
+                        std::find(signature.outputs.begin(),
+                                  signature.outputs.end(),
+                                  declaration->label);
+                    if (current != signature.outputs.end()) {
+                        for (const auto& validator :
+                             declaration->property.validators) {
+                            for (const auto& argument :
+                                 validator.arguments) {
+                                const auto earlier = std::find(
+                                    signature.outputs.begin(), current,
+                                    argument);
+                                if (earlier == current) {
+                                    continue;
+                                }
+                                result_.diagnostics.push_back(Diagnostic{
+                                    validator.span,
+                                    "output argument validator cannot reference an earlier output: " +
+                                        argument});
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (declaration->label == "varargout") {
                     varargoutDeclared = true;
                     if (!signature.hasVarargout) {
@@ -1074,6 +1112,16 @@ private:
             result_.diagnostics.push_back(Diagnostic{
                 function.span,
                 "varargout must be declared in a Repeating output arguments block"});
+        }
+        if (!repeatingOutputName.empty() &&
+            repeatingOutputName != "varargout" &&
+            (signature.outputs.empty() ||
+             signature.outputs.back() != repeatingOutputName)) {
+            result_.diagnostics.push_back(Diagnostic{
+                repeatingOutputBlock != nullptr ? repeatingOutputBlock->span
+                                                : function.span,
+                "repeating output argument must be last in the function signature: " +
+                    repeatingOutputName});
         }
 
         int parameterPhase = 0;

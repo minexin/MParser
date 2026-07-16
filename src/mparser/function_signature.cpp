@@ -146,6 +146,12 @@ FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
         if (block->kind != HirKind::ArgumentBlock) {
             continue;
         }
+        if (block->argumentBlock.kind ==
+                ArgumentBlockKind::RepeatingOutput &&
+            !block->children.empty() &&
+            block->children.front()->kind == HirKind::Argument) {
+            signature.repeatingOutput = block->children.front()->label;
+        }
         if (block->argumentBlock.kind != ArgumentBlockKind::Input &&
             block->argumentBlock.kind != ArgumentBlockKind::RepeatingInput) {
             continue;
@@ -234,6 +240,39 @@ bool functionHasNameValueParameters(const FunctionSignature& signature) {
                      signature.parameterKinds.end(),
                      FunctionParameterKind::NameValue) !=
            signature.parameterKinds.end();
+}
+
+bool functionHasRepeatingOutput(const FunctionSignature& signature) {
+    return signature.hasVarargout || !signature.repeatingOutput.empty();
+}
+
+size_t functionFixedOutputCount(const FunctionSignature& signature) {
+    if (signature.repeatingOutput.empty() ||
+        signature.repeatingOutput == "varargout") {
+        return signature.outputs.size();
+    }
+    const auto repeating =
+        std::find(signature.outputs.begin(), signature.outputs.end(),
+                  signature.repeatingOutput);
+    return repeating == signature.outputs.end()
+               ? signature.outputs.size()
+               : static_cast<size_t>(
+                     std::distance(signature.outputs.begin(), repeating));
+}
+
+std::string_view functionRepeatingOutputName(
+    const FunctionSignature& signature) {
+    if (!signature.repeatingOutput.empty()) {
+        return signature.repeatingOutput;
+    }
+    return signature.hasVarargout ? std::string_view{"varargout"}
+                                  : std::string_view{};
+}
+
+bool functionOutputCountIsValid(const FunctionSignature& signature,
+                                size_t outputCount) {
+    return functionHasRepeatingOutput(signature) ||
+           outputCount <= signature.outputs.size();
 }
 
 FunctionArgumentCountStatus functionArgumentCountStatus(

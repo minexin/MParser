@@ -1953,7 +1953,7 @@ private:
                     const auto& getter =
                         klass.declaredMethods.at(property->getterName);
                     if (getter.staticMethod || getter.signature.hasVarargin ||
-                        getter.signature.hasVarargout ||
+                        functionHasRepeatingOutput(getter.signature) ||
                         getter.signature.parameters.size() != 1 ||
                         getter.signature.outputs.size() != 1) {
                         diagnostics_.push_back(Diagnostic{
@@ -1972,7 +1972,7 @@ private:
                             ? setter.signature.outputs.size() <= 1
                             : setter.signature.outputs.size() == expectedOutputs;
                     if (setter.staticMethod || setter.signature.hasVarargin ||
-                        setter.signature.hasVarargout ||
+                        functionHasRepeatingOutput(setter.signature) ||
                         setter.signature.parameters.size() != 2 ||
                         !outputCountValid) {
                         diagnostics_.push_back(Diagnostic{
@@ -2885,6 +2885,40 @@ private:
         return found == info.argumentContracts.end() ? nullptr : &*found;
     }
 
+    bool validateFunctionOutputs(
+        const std::string& name, const FunctionInfo& info,
+        std::map<std::string, RuntimeValue>& frame) {
+        std::vector<RuntimeOutputArgumentContract> contracts;
+        for (const auto& contract : info.argumentContracts) {
+            if (contract.blockKind != ArgumentBlockKind::Output &&
+                contract.blockKind != ArgumentBlockKind::RepeatingOutput) {
+                continue;
+            }
+            contracts.push_back(RuntimeOutputArgumentContract{
+                contract.name, contract.spec, contract.span,
+                contract.blockKind == ArgumentBlockKind::RepeatingOutput});
+        }
+
+        RuntimeArgumentValidationOptions options;
+        options.objectIsA =
+            [this](const std::string& actual, const std::string& expected) {
+                return classDerivesFrom(actual, expected);
+            };
+        options.classAvailable = [this](const std::string& className) {
+            return classesByName_.contains(className);
+        };
+        const auto validation =
+            validateRuntimeFunctionOutputs(frame, contracts, options);
+        if (validation.succeeded) {
+            return true;
+        }
+        diagnostics_.push_back(Diagnostic{
+            validation.span,
+            "output argument validation failed for " + name + "." +
+                validation.argumentName + ": " + validation.error});
+        return false;
+    }
+
     std::optional<RuntimeValue> evaluateArgumentDefault(
         const BytecodeInstruction& instruction, const std::string& functionName,
         const ArgumentContract& contract) {
@@ -2935,19 +2969,6 @@ private:
         const FunctionInfo& info,
         const std::vector<RuntimeValue>& arguments,
         size_t requestedOutputCount) {
-        if (std::any_of(
-                info.argumentContracts.begin(), info.argumentContracts.end(),
-                [](const ArgumentContract& contract) {
-                    return contract.blockKind == ArgumentBlockKind::Output ||
-                           contract.blockKind ==
-                               ArgumentBlockKind::RepeatingOutput;
-                })) {
-            addDiagnostic(
-                instruction,
-                "output arguments blocks are not executable yet for: " + name);
-            return std::nullopt;
-        }
-
         std::vector<std::string> nameValueDeclarations;
         for (const auto& contract : info.argumentContracts) {
             if (contract.blockKind == ArgumentBlockKind::Input &&
@@ -3167,8 +3188,7 @@ private:
         const auto& signature = function->second.signature;
         const size_t requestedOutputCount =
             requestedEntryOutputCount_.value_or(signature.outputs.size());
-        if (!signature.hasVarargout &&
-            requestedOutputCount > signature.outputs.size()) {
+        if (!functionOutputCountIsValid(signature, requestedOutputCount)) {
             addDiagnostic(instruction,
                           "function output count mismatch for: " +
                               instruction.operand);
@@ -3211,7 +3231,19 @@ private:
         if (!entrySignature_) {
             return;
         }
-        const auto& frame = frames_.front();
+        auto& frame = frames_.front();
+        if (diagnostics_.empty()) {
+            const auto function = functionsByName_.find(executedEntryFunction_);
+            if (function != functionsByName_.end() &&
+                !validateFunctionOutputs(executedEntryFunction_,
+                                         function->second, frame)) {
+                entryOutputs_.assign(executedRequestedOutputCount_,
+                                     missingValue());
+                entryOutputNames_ = runtimeFunctionOutputNames(
+                    *entrySignature_, executedRequestedOutputCount_);
+                return;
+            }
+        }
         entryOutputs_ = collectFunctionOutputs(
             frame, *entrySignature_, executedRequestedOutputCount_);
         entryOutputNames_ = collectFunctionOutputNames(
@@ -3234,12 +3266,7 @@ private:
                 arguments.begin() + signature.parameters.size(), arguments.end());
             currentFrame()["varargin"] = cellValue(std::move(values));
         }
-        for (const auto& output : signature.outputs) {
-            currentFrame().try_emplace(output, missingValue());
-        }
-        if (signature.hasVarargout) {
-            currentFrame()["varargout"] = cellValue({});
-        }
+        initializeRuntimeFunctionOutputs(currentFrame(), signature);
         currentFrame()["nargin"] =
             numberValue(static_cast<double>(providedArgumentCount));
         currentFrame()["nargout"] =
@@ -3249,40 +3276,13 @@ private:
     std::vector<RuntimeValue> collectFunctionOutputs(
         const std::map<std::string, RuntimeValue>& frame,
         const FunctionSignature& signature, size_t requestedOutputCount) const {
-        std::vector<RuntimeValue> outputs;
-        outputs.reserve(requestedOutputCount);
-        const auto varargout = frame.find("varargout");
-        for (size_t index = 0; index < requestedOutputCount; ++index) {
-            if (index < signature.outputs.size()) {
-                const auto value = frame.find(signature.outputs[index]);
-                outputs.push_back(value == frame.end() ? missingValue()
-                                                       : value->second);
-                continue;
-            }
-            const size_t variableIndex = index - signature.outputs.size();
-            outputs.push_back(
-                varargout != frame.end() && isCell(varargout->second) &&
-                        variableIndex < varargout->second.cells.size()
-                    ? varargout->second.cells[variableIndex]
-                    : missingValue());
-        }
-        return outputs;
+        return collectRuntimeFunctionOutputs(frame, signature,
+                                             requestedOutputCount);
     }
 
     std::vector<std::string> collectFunctionOutputNames(
         const FunctionSignature& signature, size_t requestedOutputCount) const {
-        std::vector<std::string> names;
-        names.reserve(requestedOutputCount);
-        for (size_t index = 0; index < requestedOutputCount; ++index) {
-            if (index < signature.outputs.size()) {
-                names.push_back(signature.outputs[index]);
-            } else {
-                names.push_back("varargout" +
-                                std::to_string(index - signature.outputs.size() +
-                                               1));
-            }
-        }
-        return names;
+        return runtimeFunctionOutputNames(signature, requestedOutputCount);
     }
 
     void executeFunctionBody(size_t entry, size_t end) {
@@ -7015,8 +7015,8 @@ private:
             return missingOutputs(requestedCount);
         }
 
-        if (!info.signature.hasVarargout &&
-            requestedCount > static_cast<int>(info.signature.outputs.size())) {
+        if (!functionOutputCountIsValid(
+                info.signature, static_cast<size_t>(requestedCount))) {
             addDiagnostic(instruction,
                           "function output count mismatch for: " + name);
             return missingOutputs(requestedCount);
@@ -7058,6 +7058,7 @@ private:
             construction});
 
         enterFunctionProfile(name, info.span);
+        const size_t bodyDiagnosticCount = diagnostics_.size();
         executeFunctionBody(info.entry, info.end);
         leaveFunctionProfile();
 
@@ -7071,6 +7072,10 @@ private:
         switchContextStack_ = std::move(savedSwitchContextStack);
         tryContextStack_ = std::move(savedTryContextStack);
 
+        if (diagnostics_.size() == bodyDiagnosticCount &&
+            !validateFunctionOutputs(name, info, completedFrame)) {
+            return missingOutputs(requestedCount);
+        }
         return collectFunctionOutputs(completedFrame, info.signature,
                                       static_cast<size_t>(requestedCount));
     }

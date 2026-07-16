@@ -30,6 +30,20 @@ struct RuntimeInvocationNormalizationResult {
     std::string error;
 };
 
+struct RuntimeOutputArgumentContract {
+    std::string name;
+    PropertySpec spec;
+    SourceSpan span;
+    bool repeating = false;
+};
+
+struct RuntimeOutputValidationResult {
+    bool succeeded = true;
+    std::string argumentName;
+    SourceSpan span;
+    std::string error;
+};
+
 RuntimeArgumentValidationResult validateRuntimeArgument(
     RuntimeValue value, const PropertySpec& spec,
     const RuntimeArgumentValidationOptions& options = {});
@@ -38,5 +52,21 @@ RuntimeInvocationNormalizationResult normalizeRuntimeInvocationArguments(
     const FunctionSignature& signature,
     const std::vector<std::string>& nameValueDeclarations,
     const std::vector<RuntimeValue>& arguments);
+
+void initializeRuntimeFunctionOutputs(
+    std::map<std::string, RuntimeValue>& frame,
+    const FunctionSignature& signature);
+
+RuntimeOutputValidationResult validateRuntimeFunctionOutputs(
+    std::map<std::string, RuntimeValue>& frame,
+    const std::vector<RuntimeOutputArgumentContract>& contracts,
+    const RuntimeArgumentValidationOptions& options = {});
+
+std::vector<RuntimeValue> collectRuntimeFunctionOutputs(
+    const std::map<std::string, RuntimeValue>& frame,
+    const FunctionSignature& signature, size_t requestedOutputCount);
+
+std::vector<std::string> runtimeFunctionOutputNames(
+    const FunctionSignature& signature, size_t requestedOutputCount);
 
 } // namespace mparser

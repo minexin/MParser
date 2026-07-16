@@ -463,8 +463,9 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
             function->span,
             "function argument count mismatch for: " + function->name}};
     }
-    if (!function->signature.hasVarargout && requestedOutputCount &&
-        *requestedOutputCount > function->signature.outputs.size()) {
+    if (requestedOutputCount &&
+        !functionOutputCountIsValid(function->signature,
+                                    *requestedOutputCount)) {
         return {Diagnostic{
             function->span,
             "function output count mismatch for: " + function->name}};
@@ -497,8 +498,9 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
             "function invocation failed for " + function->name + ": " +
                 normalized.error}};
     }
-    if (!function->signature.hasVarargout && requestedOutputCount &&
-        *requestedOutputCount > function->signature.outputs.size()) {
+    if (requestedOutputCount &&
+        !functionOutputCountIsValid(function->signature,
+                                    *requestedOutputCount)) {
         return {Diagnostic{
             function->span,
             "function output count mismatch for: " + function->name}};

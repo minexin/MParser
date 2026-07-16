@@ -531,17 +531,16 @@ private:
             return FunctionCallResult{
                 std::vector<RuntimeValue>(outputCount, missingValue())};
         };
-        if (std::any_of(contracts.begin(), contracts.end(),
-                        [](const ArgumentContractRef& contract) {
-                            return contract.blockKind ==
-                                       ArgumentBlockKind::Output ||
-                                   contract.blockKind ==
-                                       ArgumentBlockKind::RepeatingOutput;
-                        })) {
-            addDiagnostic(node,
-                          "output arguments blocks are not executable yet for: " +
-                              node.label);
-            return missingOutputs();
+        std::vector<RuntimeOutputArgumentContract> outputContracts;
+        for (const auto& contract : contracts) {
+            if (contract.blockKind != ArgumentBlockKind::Output &&
+                contract.blockKind != ArgumentBlockKind::RepeatingOutput) {
+                continue;
+            }
+            outputContracts.push_back(RuntimeOutputArgumentContract{
+                contract.declaration->label, contract.declaration->property,
+                contract.declaration->span,
+                contract.blockKind == ArgumentBlockKind::RepeatingOutput});
         }
 
         std::vector<std::string> nameValueDeclarations;
@@ -568,7 +567,7 @@ private:
             positionalArguments.size() > fixedParameterCount
                 ? positionalArguments.size() - fixedParameterCount
                 : 0;
-        if (!signature.hasVarargout && outputCount > signature.outputs.size()) {
+        if (!functionOutputCountIsValid(signature, outputCount)) {
             addDiagnostic(node, "function output count mismatch for: " +
                                     node.label);
             return missingOutputs();
@@ -744,12 +743,7 @@ private:
         for (auto& [name, structure] : nameValueStructures) {
             currentFrame()[name] = std::move(structure);
         }
-        for (const auto& output : signature.outputs) {
-            currentFrame()[output] = missingValue();
-        }
-        if (signature.hasVarargout) {
-            currentFrame()["varargout"] = cellValue({});
-        }
+        initializeRuntimeFunctionOutputs(currentFrame(), signature);
         currentFrame()["nargin"] =
             numberValue(static_cast<double>(
                 normalized.positionalArgumentCount));
@@ -760,25 +754,20 @@ private:
 
         auto completedFrame = std::move(currentFrame());
         frames_.pop_back();
+        const auto outputValidation =
+            validateRuntimeFunctionOutputs(completedFrame, outputContracts);
+        if (!outputValidation.succeeded) {
+            diagnostics_.push_back(Diagnostic{
+                outputValidation.span,
+                "output argument validation failed for " + node.label + "." +
+                    outputValidation.argumentName + ": " +
+                    outputValidation.error});
+            return missingOutputs();
+        }
 
         FunctionCallResult result;
-        result.outputs.reserve(outputCount);
-        for (size_t index = 0; index < outputCount; ++index) {
-            if (index < signature.outputs.size()) {
-                const auto output = completedFrame.find(signature.outputs[index]);
-                result.outputs.push_back(output == completedFrame.end()
-                                             ? missingValue()
-                                             : output->second);
-                continue;
-            }
-            const auto varargout = completedFrame.find("varargout");
-            const size_t variableIndex = index - signature.outputs.size();
-            result.outputs.push_back(
-                varargout != completedFrame.end() && isCell(varargout->second) &&
-                        variableIndex < varargout->second.cells.size()
-                    ? varargout->second.cells[variableIndex]
-                    : missingValue());
-        }
+        result.outputs = collectRuntimeFunctionOutputs(
+            completedFrame, signature, outputCount);
 
         if (captureResultFrame) {
             resultFrame_ = std::move(completedFrame);

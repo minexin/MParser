@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.60.0. See [docs/v0.60.md](docs/v0.60.md) for the
+Current milestone: v0.61.0. See [docs/v0.61.md](docs/v0.61.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.59.md](docs/v0.59.md),
+iteration plan. Previous boundaries are kept in [docs/v0.60.md](docs/v0.60.md),
+[docs/v0.59.md](docs/v0.59.md),
 [docs/v0.58.md](docs/v0.58.md),
 [docs/v0.57.md](docs/v0.57.md), [docs/v0.56.md](docs/v0.56.md),
 [docs/v0.55.md](docs/v0.55.md),
@@ -550,6 +551,17 @@ only positional values, omitted fields without defaults remain absent, and
 compiled-module preflight validates actual argument values rather than only
 their count.
 
+v0.61 executes fixed and repeating output `arguments` blocks after the
+function body completes. Assigned fixed outputs pass through the same class,
+shape, and validator pipeline as inputs, and converted values are written back
+before they cross the call boundary. A named repeating output or validated
+`varargout` remains a Cell inside the function and expands into the requested
+output tail at the call site. Fixed outputs can precede one repeating output;
+the repeating declaration must be last. The HIR interpreter, bytecode VM,
+constructors and methods, named entries, compiled modules, and adaptive module
+runtime share the same output initialization, validation, collection, and
+slot-naming helpers.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -887,6 +899,16 @@ build\mparser.exe --run-bytecode --entry-function=configure `
   samples\name_value_arguments_demo.m
 build\mparser.exe --run-module-runtime --module-call=configure:2:Scale=4 `
   samples\name_value_arguments_demo.m
+```
+
+Run fixed output conversion and named repeating output expansion through both
+baseline runtimes with:
+
+```powershell
+build\mparser.exe --run samples\output_arguments_demo.m
+build\mparser.exe --run-bytecode samples\output_arguments_demo.m
+build\mparser.exe --run-bytecode --entry-function=repeatedOutputs `
+  --argument=4 --outputs=2 samples\output_arguments_demo.m
 ```
 
 Request a prefix of declared outputs and inspect `nargin`/`nargout` with:

@@ -580,4 +580,112 @@ RuntimeInvocationNormalizationResult normalizeRuntimeInvocationArguments(
         positionalCountError(signature, arguments.size()));
 }
 
+void initializeRuntimeFunctionOutputs(
+    std::map<std::string, RuntimeValue>& frame,
+    const FunctionSignature& signature) {
+    const std::string_view repeatingName =
+        functionRepeatingOutputName(signature);
+    for (const auto& output : signature.outputs) {
+        if (output != repeatingName) {
+            frame.try_emplace(output, RuntimeValue{});
+        }
+    }
+    if (!repeatingName.empty()) {
+        RuntimeValue repeating;
+        repeating.kind = RuntimeValueKind::Cell;
+        setRuntimeDimensions(repeating, {1, 0});
+        frame[std::string(repeatingName)] = std::move(repeating);
+    }
+}
+
+RuntimeOutputValidationResult validateRuntimeFunctionOutputs(
+    std::map<std::string, RuntimeValue>& frame,
+    const std::vector<RuntimeOutputArgumentContract>& contracts,
+    const RuntimeArgumentValidationOptions& options) {
+    for (const auto& contract : contracts) {
+        const auto found = frame.find(contract.name);
+        if (found == frame.end() ||
+            found->second.kind == RuntimeValueKind::Missing) {
+            continue;
+        }
+
+        if (!contract.repeating) {
+            auto validation = validateRuntimeArgument(
+                std::move(found->second), contract.spec, options);
+            if (!validation.succeeded) {
+                return RuntimeOutputValidationResult{
+                    false, contract.name, contract.span,
+                    std::move(validation.error)};
+            }
+            found->second = std::move(validation.value);
+            continue;
+        }
+
+        if (!isCell(found->second)) {
+            return RuntimeOutputValidationResult{
+                false, contract.name, contract.span,
+                "repeating output must be a Cell"};
+        }
+        for (size_t index = 0; index < found->second.cells.size(); ++index) {
+            auto validation = validateRuntimeArgument(
+                std::move(found->second.cells[index]), contract.spec, options);
+            if (!validation.succeeded) {
+                return RuntimeOutputValidationResult{
+                    false,
+                    contract.name + "{" + std::to_string(index + 1) + "}",
+                    contract.span, std::move(validation.error)};
+            }
+            found->second.cells[index] = std::move(validation.value);
+        }
+    }
+    return {};
+}
+
+std::vector<RuntimeValue> collectRuntimeFunctionOutputs(
+    const std::map<std::string, RuntimeValue>& frame,
+    const FunctionSignature& signature, size_t requestedOutputCount) {
+    std::vector<RuntimeValue> outputs;
+    outputs.reserve(requestedOutputCount);
+    const size_t fixedCount = functionFixedOutputCount(signature);
+    const std::string_view repeatingName =
+        functionRepeatingOutputName(signature);
+    const auto repeating = repeatingName.empty()
+                               ? frame.end()
+                               : frame.find(std::string(repeatingName));
+
+    for (size_t index = 0; index < requestedOutputCount; ++index) {
+        if (index < fixedCount) {
+            const auto value = frame.find(signature.outputs[index]);
+            outputs.push_back(value == frame.end() ? RuntimeValue{}
+                                                   : value->second);
+            continue;
+        }
+        const size_t repeatingIndex = index - fixedCount;
+        outputs.push_back(
+            repeating != frame.end() && isCell(repeating->second) &&
+                    repeatingIndex < repeating->second.cells.size()
+                ? repeating->second.cells[repeatingIndex]
+                : RuntimeValue{});
+    }
+    return outputs;
+}
+
+std::vector<std::string> runtimeFunctionOutputNames(
+    const FunctionSignature& signature, size_t requestedOutputCount) {
+    std::vector<std::string> names;
+    names.reserve(requestedOutputCount);
+    const size_t fixedCount = functionFixedOutputCount(signature);
+    const std::string repeatingName(
+        functionRepeatingOutputName(signature));
+    for (size_t index = 0; index < requestedOutputCount; ++index) {
+        if (index < fixedCount) {
+            names.push_back(signature.outputs[index]);
+            continue;
+        }
+        names.push_back(repeatingName +
+                        std::to_string(index - fixedCount + 1));
+    }
+    return names;
+}
+
 } // namespace mparser

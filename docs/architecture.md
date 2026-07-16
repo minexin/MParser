@@ -202,9 +202,19 @@ the same conversion, size, and validator pipeline as positional inputs; an
 omitted field without a default is absent. `nargin` remains the caller-provided
 positional count. `CompiledModule` preflight and adaptive module sessions use
 the value-aware normalizer, including optional fixed inputs, repeating groups,
-unknown/ambiguous names, and malformed legacy tails. Output argument groups
-remain explicit metadata and still produce a runtime diagnostic until
-post-execution output validation is implemented.
+unknown/ambiguous names, and malformed legacy tails.
+
+Output argument groups run after the function body and reuse the same runtime
+class conversion, shape adaptation, and validator service. Assigned fixed
+outputs are validated and any converted value is written back into the
+completed frame before result collection. Missing, unassigned outputs are not
+validated. A repeating output is represented by one explicit
+`FunctionSignature::repeatingOutput` name and a Cell in the function frame.
+The fixed output prefix is followed by zero or more elements from that Cell,
+so a named repeating output and `varargout` share one collection convention.
+Validation applies to each assigned Cell element and identifies failures with
+an occurrence suffix such as `values{2}`. Output initialization, validation,
+collection, and public slot naming are shared by the HIR interpreter and VM.
 
 Dynamic MATLAB constructs intentionally remain delayed. `CallOrIndex`,
 `BraceIndex`, and `MemberAccess` HIR nodes preserve the surface operation and
@@ -471,15 +481,18 @@ function's specialization installed. The runtime exposes compact per-function
 state summaries and supports targeted or complete state reset.
 
 Function invocation carries a requested output count separately from the
-declared signature. Top-level callers can request zero through all declared
-outputs; assignment lowering supplies the same count for local calls. Every
-active function frame initializes numeric `nargin` and `nargout` values before
-executing its body. A function with `varargin` receives all positional excess
-arguments in a one-dimensional Cell; a function with `varargout` may satisfy
-requested outputs beyond its fixed output names from `varargout{n}`. Results
-expose only the requested output prefix, while the diagnostic frame snapshot
-retains all declared outputs and call-introspection variables. The HIR
-interpreter and all bytecode tiers share this contract.
+declared signature. Functions without a repeating output accept zero through
+all declared outputs; functions with a final named repeating output or
+`varargout` accept an expanded result count. Assignment lowering supplies the
+same count for local calls. Every active function frame initializes numeric
+`nargin` and `nargout` values before executing its body. A function with
+`varargin` receives all positional excess arguments in a one-dimensional Cell.
+A repeating output receives a Cell and satisfies requested outputs beyond the
+fixed prefix from its elements. Results expose only the requested slots, while
+the diagnostic frame snapshot retains all declared outputs and
+call-introspection variables. Post-body output contracts can convert or reject
+assigned values before result collection. The HIR interpreter and all bytecode
+tiers share this contract.
 
 The VM also has an initial executable class object model. A class declaration
 registers its properties and method bytecode ranges; a constructor call creates
@@ -489,7 +502,9 @@ object. Direct `obj.Property` reads and direct variable-backed
 receiver as their first positional argument, while class-qualified calls are
 accepted only for methods declared in a `methods (Static)` block. Objects use
 the ordinary function-frame contract, so method inputs, outputs, `nargin`, and
-`nargout` retain the same runtime behavior as local functions.
+`nargout` retain the same runtime behavior as local functions. Constructor,
+instance, and static-method outputs also pass through ordinary or repeating
+output argument validation before they leave the class call boundary.
 
 Superclass names are retained explicitly in HIR instead of being flattened
 into generic statements. A class whose superclass list contains the built-in
@@ -798,14 +813,20 @@ shrink and clear operations, cache activity/lifecycle metrics, CLI controls,
 and concurrent cache regression coverage. v0.54 adds transactional dense-double
 vector element loads and stores to portable and native typed loop kernels,
 checked 1-based indexing, structural cache reuse, observable index counts, and
-AArch64 QEMU execution coverage. The next steps include richer typed values and
-regions, direct inlined bounds checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
-backend contract, persistent cross-process code caches, moving-window array operations,
-object/listener arrays,
-property event listeners,
-comma-separated-list Cell
-semantics, and eventual on-stack replacement while preserving
-the same commit/fallback contract.
+AArch64 QEMU execution coverage. v0.55 adds guarded first-invocation JIT
+execution. v0.56 makes positional `arguments` blocks executable in the VM,
+v0.57 shares their validation service with the HIR interpreter, and v0.58
+executes trailing positional defaults. v0.59 stabilizes all argument-group
+kinds and executes repeating inputs. v0.60 adds modern and legacy name-value
+invocation with Struct-backed roots. v0.61 completes post-body fixed and
+repeating output validation, including named repeating output expansion across
+baseline, compiled-module, adaptive, and class call paths. The next steps
+include richer typed values and regions, direct inlined bounds checks and
+SIMD/vector kernels, optional LLVM ORC lowering behind the same backend
+contract, persistent cross-process code caches, moving-window array
+operations, object/listener arrays, property event listeners,
+comma-separated-list Cell semantics, and eventual on-stack replacement while
+preserving the same commit/fallback contract.
 
 When dynamic features invalidate assumptions, execution should deopt back to
 the interpreter. This is the path that keeps full MATLAB semantics compatible
