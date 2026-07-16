@@ -1,5 +1,6 @@
 #include "mparser/semantic.h"
 
+#include "mparser/argument_contract.h"
 #include "mparser/function_signature.h"
 
 #include <algorithm>
@@ -304,6 +305,14 @@ public:
         collectImportsForCurrentScope(root);
         lowerChildren(root, *result_.root);
         popScope();
+        const ArgumentContractCatalog argumentCatalog =
+            buildArgumentContractCatalog(*result_.root);
+        const auto argumentDiagnostics =
+            validateClassPropertyArgumentContracts(*result_.root,
+                                                   argumentCatalog);
+        result_.diagnostics.insert(result_.diagnostics.end(),
+                                   argumentDiagnostics.begin(),
+                                   argumentDiagnostics.end());
         resolveDeferredBindings(*result_.root);
         validateImports();
         validateSuperclassCalls(*result_.root);
@@ -807,8 +816,14 @@ private:
                 continue;
             }
             for (const auto& declaration : child->children) {
-                if (declaration->kind != SyntaxKind::ArgumentDecl ||
-                    !isNameValueArgument(declaration->label)) {
+                if (declaration->kind != SyntaxKind::ArgumentDecl) {
+                    continue;
+                }
+                if (!declaration->nameValueSourceClass.empty()) {
+                    nameValueRoots.insert(declaration->label);
+                    continue;
+                }
+                if (!isNameValueArgument(declaration->label)) {
                     continue;
                 }
                 nameValueRoots.insert(argumentNameRoot(declaration->label));
@@ -955,6 +970,19 @@ private:
                 }
 
                 if (blockKind == ArgumentBlockKind::Input) {
+                    if (!declaration->nameValueSourceClass.empty()) {
+                        const std::string& root = declaration->label;
+                        if (!isParameter(root)) {
+                            result_.diagnostics.push_back(Diagnostic{
+                                declaration->span,
+                                "name-value structure is not a function parameter: " +
+                                    root});
+                        }
+                        nameValueRoots.insert(root);
+                        nameValueSeen = true;
+                        nameValueSeenInBlock = true;
+                        continue;
+                    }
                     if (isNameValueArgument(declaration->label)) {
                         const std::string root =
                             argumentNameRoot(declaration->label);
@@ -996,6 +1024,13 @@ private:
                 }
 
                 if (blockKind == ArgumentBlockKind::RepeatingInput) {
+                    if (!declaration->nameValueSourceClass.empty()) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "class-property name-value source cannot appear in a Repeating block: " +
+                                declaration->label});
+                        continue;
+                    }
                     if (isNameValueArgument(declaration->label)) {
                         result_.diagnostics.push_back(Diagnostic{
                             declaration->span,
@@ -1033,7 +1068,12 @@ private:
                     continue;
                 }
 
-                if (isNameValueArgument(declaration->label)) {
+                if (!declaration->nameValueSourceClass.empty()) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "output arguments cannot use a class-property name-value source: " +
+                            declaration->label});
+                } else if (isNameValueArgument(declaration->label)) {
                     result_.diagnostics.push_back(Diagnostic{
                         declaration->span,
                         "output arguments cannot use name-value field syntax: " +
@@ -1390,6 +1430,8 @@ private:
         node->span = syntax.span;
         node->attributes = syntax.attributes;
         node->argumentBlock = syntax.argumentBlock;
+        node->nameValueSourceClass = syntax.nameValueSourceClass;
+        node->nameValueSourceSpan = syntax.nameValueSourceSpan;
         node->property = syntax.property;
         return node;
     }

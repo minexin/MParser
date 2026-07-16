@@ -518,7 +518,8 @@ RuntimeInvocationNormalizationResult normalizeRuntimeInvocationArguments(
     const std::vector<std::string>& nameValueDeclarations,
     const std::vector<RuntimeValue>& arguments) {
     const auto fields = collectNameValueFields(nameValueDeclarations);
-    if (fields.empty()) {
+    if (fields.empty() &&
+        !functionHasNameValueParameters(signature)) {
         const auto status =
             functionPositionalArgumentCountStatus(signature, arguments.size());
         if (status != FunctionArgumentCountStatus::Valid) {

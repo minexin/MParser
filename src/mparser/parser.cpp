@@ -833,6 +833,8 @@ struct PropertyParseDiagnostic {
 
 struct PropertyDeclarationParseResult {
     std::string label;
+    std::string nameValueSourceClass;
+    SourceSpan nameValueSourceSpan;
     PropertySpec spec;
     std::vector<Token> defaultTokens;
     std::vector<PropertyParseDiagnostic> diagnostics;
@@ -966,6 +968,28 @@ PropertyDeclarationParseResult parsePropertyDeclarationTokens(
 
     size_t cursor = 1;
     if (allowDottedName) {
+        if (tokens.size() >= 3 &&
+            tokens[1].kind == TokenKind::Dot &&
+            tokens[2].kind == TokenKind::Question) {
+            result.label = tokens.front().text;
+            const auto [className, classEnd] =
+                parseDottedName(tokens, 3);
+            if (className.empty()) {
+                result.diagnostics.push_back(
+                    {tokens[2].span,
+                     "expected class name after '.?' in argument declaration"});
+                return result;
+            }
+            result.nameValueSourceClass = className;
+            result.nameValueSourceSpan =
+                mergeSpans(tokens[2].span, tokens[classEnd - 1].span);
+            if (classEnd != tokens.size()) {
+                result.diagnostics.push_back(
+                    {tokens[classEnd].span,
+                     "unexpected tokens after class-property argument source"});
+            }
+            return result;
+        }
         auto [name, end] = parseDottedName(tokens, 0);
         result.label = std::move(name);
         cursor = end;
@@ -1678,6 +1702,9 @@ std::unique_ptr<SyntaxNode> Parser::parseArgumentsBlock() {
         declaration->raw = joinTokens(tokens);
         auto parsed = parsePropertyDeclarationTokens(tokens, true);
         declaration->label = std::move(parsed.label);
+        declaration->nameValueSourceClass =
+            std::move(parsed.nameValueSourceClass);
+        declaration->nameValueSourceSpan = parsed.nameValueSourceSpan;
         declaration->property = std::move(parsed.spec);
         for (auto& diagnostic : parsed.diagnostics) {
             std::string message = std::move(diagnostic.message);

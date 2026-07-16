@@ -99,6 +99,8 @@ struct SyntaxNode {
     SourceSpan span;
     std::vector<AttributeSyntax> attributes;
     ArgumentBlockSpec argumentBlock;
+    std::string nameValueSourceClass;
+    SourceSpan nameValueSourceSpan;
     PropertySpec property;
     std::vector<std::unique_ptr<SyntaxNode>> children;
 };

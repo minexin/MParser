@@ -76,6 +76,9 @@ void dumpNode(std::ostream& output, const SyntaxNode& node, int depth) {
     if (node.kind == SyntaxKind::ArgumentsBlock) {
         output << " group=" << argumentBlockKindName(node.argumentBlock.kind);
     }
+    if (!node.nameValueSourceClass.empty()) {
+        output << " name-value-source=?" << node.nameValueSourceClass;
+    }
     if (node.kind == SyntaxKind::PropertyDecl ||
         node.kind == SyntaxKind::ArgumentDecl) {
         dumpPropertySpec(output, node.property);

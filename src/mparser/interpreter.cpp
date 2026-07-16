@@ -1,4 +1,5 @@
 #include "mparser/interpreter.h"
+#include "mparser/argument_contract.h"
 #include "mparser/function_signature.h"
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
@@ -337,32 +338,13 @@ struct FunctionCallResult {
     std::vector<RuntimeValue> outputs;
 };
 
-struct ArgumentContractRef {
-    const HirNode* declaration = nullptr;
-    ArgumentBlockKind blockKind = ArgumentBlockKind::Input;
-};
-
-void collectArgumentContracts(const HirNode& function,
-                              std::vector<ArgumentContractRef>& contracts) {
-    for (const auto& block : function.children) {
-        if (block->kind != HirKind::ArgumentBlock) {
-            continue;
-        }
-        for (const auto& declaration : block->children) {
-            if (declaration->kind == HirKind::Argument) {
-                contracts.push_back(
-                    ArgumentContractRef{declaration.get(),
-                                        block->argumentBlock.kind});
-            }
-        }
-    }
-}
-
 class InterpreterContext {
 public:
     InterpreterResult run(const SemanticResult& semantic) {
         frames_.push_back({});
         if (semantic.root) {
+            argumentCatalog_ =
+                buildArgumentContractCatalog(*semantic.root);
             collectFunctions(*semantic.root);
             executeModule(*semantic.root);
         }
@@ -513,23 +495,31 @@ private:
                                     std::optional<size_t> requestedOutputCount =
                                         std::nullopt) {
         const FunctionSignature signature = parseFunctionSignature(node);
-        std::vector<ArgumentContractRef> contracts;
-        collectArgumentContracts(node, contracts);
-        auto contractFor = [&](std::string_view parameter,
-                               ArgumentBlockKind blockKind) -> const HirNode* {
-            const auto found = std::find_if(
-                contracts.begin(), contracts.end(),
-                [&](const ArgumentContractRef& contract) {
-                    return contract.blockKind == blockKind &&
-                           contract.declaration->label == parameter;
-                });
-            return found == contracts.end() ? nullptr : found->declaration;
-        };
         const size_t outputCount =
             requestedOutputCount.value_or(signature.outputs.size());
         const auto missingOutputs = [&] {
             return FunctionCallResult{
                 std::vector<RuntimeValue>(outputCount, missingValue())};
+        };
+        const auto resolution =
+            resolveArgumentContracts(node, argumentCatalog_);
+        if (!resolution.diagnostics.empty()) {
+            diagnostics_.insert(diagnostics_.end(),
+                                resolution.diagnostics.begin(),
+                                resolution.diagnostics.end());
+            return missingOutputs();
+        }
+        const auto& contracts = resolution.contracts;
+        auto contractFor = [&](std::string_view parameter,
+                               ArgumentBlockKind blockKind)
+            -> const ResolvedArgumentContract* {
+            const auto found = std::find_if(
+                contracts.begin(), contracts.end(),
+                [&](const ResolvedArgumentContract& contract) {
+                    return contract.blockKind == blockKind &&
+                           contract.name == parameter;
+                });
+            return found == contracts.end() ? nullptr : &*found;
         };
         std::vector<RuntimeOutputArgumentContract> outputContracts;
         for (const auto& contract : contracts) {
@@ -538,16 +528,15 @@ private:
                 continue;
             }
             outputContracts.push_back(RuntimeOutputArgumentContract{
-                contract.declaration->label, contract.declaration->property,
-                contract.declaration->span,
+                contract.name, contract.property, contract.span,
                 contract.blockKind == ArgumentBlockKind::RepeatingOutput});
         }
 
         std::vector<std::string> nameValueDeclarations;
         for (const auto& contract : contracts) {
             if (contract.blockKind == ArgumentBlockKind::Input &&
-                contract.declaration->label.find('.') != std::string::npos) {
-                nameValueDeclarations.push_back(contract.declaration->label);
+                contract.name.find('.') != std::string::npos) {
+                nameValueDeclarations.push_back(contract.name);
             }
         }
         auto normalized = normalizeRuntimeInvocationArguments(
@@ -579,7 +568,8 @@ private:
                 normalized.positionalArgumentCount));
         currentFrame()["nargout"] =
             numberValue(static_cast<double>(outputCount));
-        auto validateValue = [&](RuntimeValue value, const HirNode* contract,
+        auto validateValue = [&](RuntimeValue value,
+                                 const ResolvedArgumentContract* contract,
                                  std::optional<size_t> occurrence =
                                      std::nullopt)
             -> std::optional<RuntimeValue> {
@@ -589,15 +579,16 @@ private:
             auto validation =
                 validateRuntimeArgument(std::move(value), contract->property);
             if (!validation.succeeded) {
-                std::string argumentName = contract->label;
+                std::string argumentName = contract->name;
                 if (occurrence) {
                     argumentName += "{" + std::to_string(*occurrence + 1) +
                                     "}";
                 }
-                addDiagnostic(*contract,
-                              "argument validation failed for " + node.label +
-                                  "." + argumentName + ": " +
-                                  std::move(validation.error));
+                diagnostics_.push_back(Diagnostic{
+                    contract->span,
+                    "argument validation failed for " + node.label + "." +
+                        argumentName + ": " +
+                        std::move(validation.error)});
                 return std::nullopt;
             }
             return std::move(validation.value);
@@ -605,16 +596,18 @@ private:
 
         for (size_t index = 0; index < fixedParameterCount; ++index) {
             const std::string& parameterName = signature.parameters[index];
-            const HirNode* contract =
+            const ResolvedArgumentContract* contract =
                 contractFor(parameterName, ArgumentBlockKind::Input);
             RuntimeValue value;
             if (index < positionalArguments.size()) {
                 value = positionalArguments[index];
             } else if (contract != nullptr &&
                        contract->property.hasExplicitDefault &&
-                       !contract->children.empty()) {
+                       contract->declaration != nullptr &&
+                       !contract->declaration->children.empty()) {
                 const size_t diagnosticCount = diagnostics_.size();
-                value = evaluate(*contract->children.front());
+                value =
+                    evaluate(*contract->declaration->children.front());
                 if (diagnostics_.size() != diagnosticCount) {
                     frames_.pop_back();
                     return missingOutputs();
@@ -647,7 +640,7 @@ private:
                     continue;
                 }
                 const std::string& parameterName = signature.parameters[index];
-                const HirNode* contract = contractFor(
+                const ResolvedArgumentContract* contract = contractFor(
                     parameterName, ArgumentBlockKind::RepeatingInput);
                 std::vector<RuntimeValue> values;
                 values.reserve(occurrenceCount);
@@ -672,7 +665,7 @@ private:
 
         FunctionControlContext controlContext(loopDepth_, controlSignal_);
         if (signature.hasVarargin) {
-            const HirNode* contract = contractFor(
+            const ResolvedArgumentContract* contract = contractFor(
                 "varargin", ArgumentBlockKind::RepeatingInput);
             std::vector<RuntimeValue> values;
             const size_t begin =
@@ -702,15 +695,14 @@ private:
                     signature.parameters[index], makeRuntimeStructValue());
             }
         }
-        for (const auto& contractRef : contracts) {
-            const HirNode& contract = *contractRef.declaration;
-            const size_t dot = contract.label.find('.');
-            if (contractRef.blockKind != ArgumentBlockKind::Input ||
+        for (const auto& contract : contracts) {
+            const size_t dot = contract.name.find('.');
+            if (contract.blockKind != ArgumentBlockKind::Input ||
                 dot == std::string::npos) {
                 continue;
             }
-            const std::string root = contract.label.substr(0, dot);
-            const std::string field = contract.label.substr(dot + 1);
+            const std::string root = contract.name.substr(0, dot);
+            const std::string field = contract.name.substr(dot + 1);
             auto structure = nameValueStructures.find(root);
             if (structure == nameValueStructures.end()) {
                 continue;
@@ -718,13 +710,15 @@ private:
 
             std::optional<RuntimeValue> value;
             if (const auto supplied =
-                    normalized.nameValueArguments.find(contract.label);
+                    normalized.nameValueArguments.find(contract.name);
                 supplied != normalized.nameValueArguments.end()) {
                 value = supplied->second;
             } else if (contract.property.hasExplicitDefault &&
-                       !contract.children.empty()) {
+                       contract.declaration != nullptr &&
+                       !contract.declaration->children.empty()) {
                 const size_t diagnosticCount = diagnostics_.size();
-                value = evaluate(*contract.children.front());
+                value =
+                    evaluate(*contract.declaration->children.front());
                 if (diagnostics_.size() != diagnosticCount) {
                     frames_.pop_back();
                     return missingOutputs();
@@ -2934,6 +2928,7 @@ private:
 
     std::vector<std::map<std::string, RuntimeValue>> frames_;
     std::map<std::string, const HirNode*> functionsByName_;
+    ArgumentContractCatalog argumentCatalog_;
     std::map<std::string, RuntimeValue> resultFrame_;
     std::vector<Diagnostic> diagnostics_;
     std::optional<size_t> diagnosticTrapBase_;

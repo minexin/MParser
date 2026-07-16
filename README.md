@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.61.0. See [docs/v0.61.md](docs/v0.61.md) for the
+Current milestone: v0.62.0. See [docs/v0.62.md](docs/v0.62.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.60.md](docs/v0.60.md),
+iteration plan. Previous boundaries are kept in [docs/v0.61.md](docs/v0.61.md),
+[docs/v0.60.md](docs/v0.60.md),
 [docs/v0.59.md](docs/v0.59.md),
 [docs/v0.58.md](docs/v0.58.md),
 [docs/v0.57.md](docs/v0.57.md), [docs/v0.56.md](docs/v0.56.md),
@@ -562,6 +563,20 @@ constructors and methods, named entries, compiled modules, and adaptive module
 runtime share the same output initialization, validation, collection, and
 slot-naming helpers.
 
+v0.62 executes MATLAB class-derived name-value declarations such as
+`options.?PlotOptions`. The source root and qualified class survive syntax and
+HIR lowering, then a shared argument-contract catalog expands inherited public
+settable properties for the HIR interpreter, bytecode VM, compiled-module
+preflight, and adaptive/module call paths. Constant, private, protected, and
+selectively accessible properties are excluded. Constructor-only immutable
+properties are included only in their declaring class's constructor. An
+explicit declaration such as `options.Height` overrides the class-derived
+validation regardless of declaration order, while class property defaults are
+never copied into the options Struct. Exact names, partial matching,
+last-value-wins duplicates, validation, and `nargin` retain the v0.60 calling
+convention. The Windows CLI also disables operating-system crash dialogs at
+startup while preserving nonzero exits and terminal diagnostics.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -888,6 +903,13 @@ Run modern and legacy name-value calls through both baseline runtimes with:
 ```powershell
 build\mparser.exe --run samples\name_value_arguments_demo.m
 build\mparser.exe --run-bytecode samples\name_value_arguments_demo.m
+```
+
+Run inherited class-property name-value contracts with:
+
+```powershell
+build\mparser.exe --run samples\class_property_arguments_demo.m
+build\mparser.exe --run-bytecode samples\class_property_arguments_demo.m
 ```
 
 Named entries accept `--argument=Name=value`, and module-runtime calls accept

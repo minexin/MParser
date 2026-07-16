@@ -160,6 +160,11 @@ FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
             if (declaration->kind != HirKind::Argument) {
                 continue;
             }
+            if (!declaration->nameValueSourceClass.empty()) {
+                setParameterKind(signature, declaration->label,
+                                 FunctionParameterKind::NameValue);
+                continue;
+            }
             if (const std::string_view root =
                     nameValueRoot(declaration->label);
                 !root.empty()) {

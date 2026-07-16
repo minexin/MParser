@@ -1,4 +1,5 @@
 #include "mparser/bytecode_vm.h"
+#include "mparser/argument_contract.h"
 #include "mparser/function_signature.h"
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
@@ -588,19 +589,13 @@ struct ValidatedFunctionArguments {
 };
 
 void collectArgumentContracts(
-    const HirNode& function, std::vector<ArgumentContract>& contracts) {
-    for (const auto& block : function.children) {
-        if (block->kind != HirKind::ArgumentBlock) {
-            continue;
-        }
-        for (const auto& declaration : block->children) {
-            if (declaration->kind != HirKind::Argument) {
-                continue;
-            }
-            contracts.push_back(ArgumentContract{
-                declaration->label, declaration->property, declaration->span,
-                block->argumentBlock.kind, 0, 0, false});
-        }
+    const HirNode& function, const ArgumentContractCatalog& catalog,
+    std::vector<ArgumentContract>& contracts) {
+    const auto resolution = resolveArgumentContracts(function, catalog);
+    for (const auto& contract : resolution.contracts) {
+        contracts.push_back(ArgumentContract{
+            contract.name, contract.property, contract.span,
+            contract.blockKind, 0, 0, false});
     }
 }
 
@@ -899,6 +894,10 @@ public:
         nextEventListenerId_ = 1;
         resetProfiling(program.instructions.size());
         initializeWorkspace(options.initialWorkspace);
+        if (semantic.root) {
+            argumentContractCatalog_ =
+                buildArgumentContractCatalog(*semantic.root);
+        }
         collectFunctionNodes(semantic.root.get());
         collectFunctionRanges(program);
         configureDeclaredClassMembers();
@@ -1517,7 +1516,8 @@ private:
                     info.declaringClass =
                         hir->second->lexicalClassName;
                     collectArgumentContracts(
-                        *hir->second, info.argumentContracts);
+                        *hir->second, argumentContractCatalog_,
+                        info.argumentContracts);
                     collectArgumentDefaultRanges(program, info.entry, info.end,
                                                  info);
                 }
@@ -1530,7 +1530,8 @@ private:
                     info.signature = parseFunctionSignature(*hir->second);
                     info.attributes = hir->second->attributes;
                     collectArgumentContracts(
-                        *hir->second, info.argumentContracts);
+                        *hir->second, argumentContractCatalog_,
+                        info.argumentContracts);
                     collectArgumentDefaultRanges(program, info.entry, info.end,
                                                  info);
                     collectExplicitSuperclassConstructors(
@@ -7989,6 +7990,7 @@ private:
 
     const BytecodeProgram* program_ = nullptr;
     const SemanticResult* semantic_ = nullptr;
+    ArgumentContractCatalog argumentContractCatalog_;
     std::vector<StackValue> stack_;
     std::vector<ForLoopState> forLoopStack_;
     std::vector<IndexContext> indexContextStack_;

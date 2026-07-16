@@ -78,6 +78,9 @@ void dumpNode(std::ostream& output, const SemanticResult& result,
     if (node.kind == HirKind::ArgumentBlock) {
         output << " group=" << argumentBlockKindName(node.argumentBlock.kind);
     }
+    if (!node.nameValueSourceClass.empty()) {
+        output << " name-value-source=?" << node.nameValueSourceClass;
+    }
     if (node.kind == HirKind::Property || node.kind == HirKind::Argument) {
         dumpPropertySpec(output, node.property);
     }

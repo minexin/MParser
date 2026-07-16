@@ -95,6 +95,8 @@ struct HirNode {
     BindingRef binding;
     std::vector<AttributeSyntax> attributes;
     ArgumentBlockSpec argumentBlock;
+    std::string nameValueSourceClass;
+    SourceSpan nameValueSourceSpan;
     std::vector<std::string> superclasses;
     PropertySpec property;
     std::vector<std::unique_ptr<HirNode>> children;

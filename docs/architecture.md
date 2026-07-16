@@ -204,6 +204,23 @@ positional count. `CompiledModule` preflight and adaptive module sessions use
 the value-aware normalizer, including optional fixed inputs, repeating groups,
 unknown/ambiguous names, and malformed legacy tails.
 
+An argument declaration of the form `options.?ClassName` remains an ordinary
+`Argument` node with an explicit `nameValueSourceClass` field; the structure
+root is not encoded into a synthetic dotted field. After HIR lowering, a shared
+`ArgumentContractCatalog` projects the loaded class graph into the subset
+needed by function invocation. It resolves inherited property order, keeps
+public `SetAccess` properties, excludes constants and non-public policies, and
+admits an immutable property only in the constructor of its declaring class.
+The resulting contracts are materialized as `options.Property` names before
+normal invocation normalization. Explicit dotted declarations are collected
+first and override a class-derived property regardless of source order. Only
+the property's class, shape, and validator contract is copied; its class
+default is deliberately removed, so omitted fields remain absent from the
+Struct. Semantic validation uses the same expansion to diagnose unavailable
+source classes, multiple class-property sources, field collisions, and
+positional-parameter collisions. The interpreter, bytecode function table,
+and `CompiledModule` entry catalog consume this one resolved contract view.
+
 Output argument groups run after the function body and reuse the same runtime
 class conversion, shape adaptation, and validator service. Assigned fixed
 outputs are validated and any converted value is written back into the
@@ -820,7 +837,10 @@ executes trailing positional defaults. v0.59 stabilizes all argument-group
 kinds and executes repeating inputs. v0.60 adds modern and legacy name-value
 invocation with Struct-backed roots. v0.61 completes post-body fixed and
 repeating output validation, including named repeating output expansion across
-baseline, compiled-module, adaptive, and class call paths. The next steps
+baseline, compiled-module, adaptive, and class call paths. v0.62 adds
+`options.?ClassName` class-property contract expansion across syntax, HIR,
+semantic validation, both baseline runtimes, compiled modules, constructors,
+and reusable runtime tiers. The next steps
 include richer typed values and regions, direct inlined bounds checks and
 SIMD/vector kernels, optional LLVM ORC lowering behind the same backend
 contract, persistent cross-process code caches, moving-window array

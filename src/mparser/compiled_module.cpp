@@ -1,5 +1,6 @@
 #include "mparser/compiled_module.h"
 
+#include "mparser/argument_contract.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_argument_validation.h"
@@ -17,7 +18,8 @@ namespace {
 
 void collectInvocableFunctions(
     const HirNode* node, std::vector<CompiledFunctionInfo>& functions,
-    std::vector<Diagnostic>& diagnostics) {
+    std::vector<Diagnostic>& diagnostics,
+    const ArgumentContractCatalog& argumentCatalog) {
     if (!node || node->kind == HirKind::Class) {
         return;
     }
@@ -35,17 +37,16 @@ void collectInvocableFunctions(
             }
         }
 
+        const auto resolution =
+            resolveArgumentContracts(*node, argumentCatalog);
+        diagnostics.insert(diagnostics.end(),
+                           resolution.diagnostics.begin(),
+                           resolution.diagnostics.end());
         std::vector<std::string> nameValueArguments;
-        for (const auto& child : node->children) {
-            if (child->kind != HirKind::ArgumentBlock ||
-                child->argumentBlock.kind != ArgumentBlockKind::Input) {
-                continue;
-            }
-            for (const auto& declaration : child->children) {
-                if (declaration->kind == HirKind::Argument &&
-                    declaration->label.find('.') != std::string::npos) {
-                    nameValueArguments.push_back(declaration->label);
-                }
+        for (const auto& contract : resolution.contracts) {
+            if (contract.blockKind == ArgumentBlockKind::Input &&
+                contract.name.find('.') != std::string::npos) {
+                nameValueArguments.push_back(contract.name);
             }
         }
         functions.push_back(CompiledFunctionInfo{
@@ -55,7 +56,8 @@ void collectInvocableFunctions(
     }
 
     for (const auto& child : node->children) {
-        collectInvocableFunctions(child.get(), functions, diagnostics);
+        collectInvocableFunctions(child.get(), functions, diagnostics,
+                                  argumentCatalog);
     }
 }
 
@@ -375,8 +377,10 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
         return module;
     }
 
+    const ArgumentContractCatalog argumentCatalog =
+        buildArgumentContractCatalog(*module.semantic_.root);
     collectInvocableFunctions(module.semantic_.root.get(), module.functions_,
-                              module.diagnostics_);
+                              module.diagnostics_, argumentCatalog);
     return module;
 }
 
