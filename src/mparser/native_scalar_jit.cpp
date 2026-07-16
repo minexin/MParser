@@ -1,4 +1,5 @@
 #include "mparser/native_scalar_jit.h"
+#include "mparser/runtime_shape.h"
 
 #include <algorithm>
 #include <cmath>
@@ -8,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -22,10 +24,26 @@ namespace mparser {
 #if defined(MPARSER_HAS_SLJIT)
 namespace {
 
+enum class NativeRuntimeStatus : int {
+    Success = 0,
+    InvalidColonRange = 1,
+    InvalidLinearIndex = 2,
+    LinearIndexOutOfBounds = 3,
+    InvalidArraySlot = 4,
+};
+
+struct NativeArrayView {
+    double* elements = nullptr;
+    size_t count = 0;
+};
+
 struct NativeContext {
     TypedScalar* slots = nullptr;
     TypedScalar* registers = nullptr;
     uint8_t* writtenSlots = nullptr;
+    NativeArrayView* arrays = nullptr;
+    size_t arrayCount = 0;
+    uint8_t* writtenArrays = nullptr;
     const double* outerValues = nullptr;
     size_t outerValueCount = 0;
     size_t* loopIterations = nullptr;
@@ -34,12 +52,59 @@ struct NativeContext {
 };
 
 static_assert(std::is_standard_layout_v<TypedScalar>);
+static_assert(std::is_standard_layout_v<NativeArrayView>);
 static_assert(std::is_standard_layout_v<NativeContext>);
+static_assert(sizeof(size_t) == sizeof(sljit_sw));
 
 using NativeEntry = void(SLJIT_FUNC*)(NativeContext*);
 
 double SLJIT_FUNC nativePower(double left, double right) {
     return std::pow(left, right);
+}
+
+std::optional<size_t> nativeLinearArrayOffset(
+    NativeContext* context, sljit_sw arraySlot, double oneBasedIndex) {
+    if (arraySlot < 0 ||
+        static_cast<size_t>(arraySlot) >= context->arrayCount) {
+        context->status =
+            static_cast<int>(NativeRuntimeStatus::InvalidArraySlot);
+        return std::nullopt;
+    }
+    const auto index =
+        checkedRuntimeNonnegativeInteger(oneBasedIndex);
+    if (!index || *index == 0) {
+        context->status =
+            static_cast<int>(NativeRuntimeStatus::InvalidLinearIndex);
+        return std::nullopt;
+    }
+    if (*index > context->arrays[arraySlot].count) {
+        context->status = static_cast<int>(
+            NativeRuntimeStatus::LinearIndexOutOfBounds);
+        return std::nullopt;
+    }
+    return *index - 1;
+}
+
+double SLJIT_FUNC nativeLoadArrayElement(
+    NativeContext* context, sljit_sw arraySlot, double oneBasedIndex) {
+    const auto offset = nativeLinearArrayOffset(
+        context, arraySlot, oneBasedIndex);
+    if (!offset) {
+        return 0.0;
+    }
+    return context->arrays[arraySlot].elements[*offset];
+}
+
+void SLJIT_FUNC nativeStoreArrayElement(
+    NativeContext* context, sljit_sw arraySlot, double oneBasedIndex,
+    double value) {
+    const auto offset = nativeLinearArrayOffset(
+        context, arraySlot, oneBasedIndex);
+    if (!offset) {
+        return;
+    }
+    context->arrays[arraySlot].elements[*offset] = value;
+    context->writtenArrays[arraySlot] = 1;
 }
 
 double SLJIT_FUNC nativeArcCosine(double value) {
@@ -191,7 +256,14 @@ public:
                 compiler_, SLJIT_MOV_S32,
                 SLJIT_MEM1(SLJIT_S0),
                 SLJIT_OFFSETOF(NativeContext, status),
-                SLJIT_IMM, 1);
+                SLJIT_IMM,
+                static_cast<sljit_sw>(
+                    NativeRuntimeStatus::InvalidColonRange));
+            sljit_emit_return_void(compiler_);
+        }
+        if (!arrayFailureJumps_.empty()) {
+            auto* arrayFailure = sljit_emit_label(compiler_);
+            bindJumps(arrayFailureJumps_, arrayFailure);
             sljit_emit_return_void(compiler_);
         }
         for (const auto& jumps : pendingKernelJumps_) {
@@ -298,6 +370,26 @@ private:
         failureReason =
             "native scalar kernel has an invalid destination";
         return false;
+    }
+
+    bool validateArraySlot(size_t arraySlot,
+                           std::string& failureReason) const {
+        if (arraySlot < kernel_.arrays.size()) {
+            return true;
+        }
+        failureReason =
+            "native scalar kernel has an invalid array slot";
+        return false;
+    }
+
+    void appendArrayFailureJump() {
+        sljit_emit_op1(
+            compiler_, SLJIT_MOV_S32, SLJIT_R0, 0,
+            SLJIT_MEM1(SLJIT_S0),
+            SLJIT_OFFSETOF(NativeContext, status));
+        arrayFailureJumps_.push_back(sljit_emit_cmp(
+            compiler_, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
+            SLJIT_IMM, 0));
     }
 
     void loadOperand(const ScalarKernelOperand& operand,
@@ -454,6 +546,51 @@ private:
         if (instruction.op == ScalarKernelOp::Discard) {
             return true;
         }
+        if (instruction.op == ScalarKernelOp::LoadArrayElement) {
+            if (!validateDestination(instruction.destination,
+                                     failureReason) ||
+                !validateOperand(instruction.left, failureReason) ||
+                !validateArraySlot(instruction.arraySlot,
+                                   failureReason)) {
+                return false;
+            }
+            loadOperand(instruction.left, SLJIT_FR0);
+            sljit_emit_op1(compiler_, SLJIT_MOV, SLJIT_R0, 0,
+                           SLJIT_S0, 0);
+            sljit_emit_op1(
+                compiler_, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM,
+                static_cast<sljit_sw>(instruction.arraySlot));
+            sljit_emit_icall(
+                compiler_, SLJIT_CALL,
+                SLJIT_ARGS3(F64, P, W, F64), SLJIT_IMM,
+                SLJIT_FUNC_ADDR(nativeLoadArrayElement));
+            appendArrayFailureJump();
+            writeDestination(
+                instruction.destination, SLJIT_FR0, SLJIT_IMM,
+                static_cast<sljit_sw>(RuntimeNumericClass::Double));
+            return true;
+        }
+        if (instruction.op == ScalarKernelOp::StoreArrayElement) {
+            if (!validateOperand(instruction.left, failureReason) ||
+                !validateOperand(instruction.right, failureReason) ||
+                !validateArraySlot(instruction.arraySlot,
+                                   failureReason)) {
+                return false;
+            }
+            loadOperand(instruction.left, SLJIT_FR0);
+            loadOperand(instruction.right, SLJIT_FR1);
+            sljit_emit_op1(compiler_, SLJIT_MOV, SLJIT_R0, 0,
+                           SLJIT_S0, 0);
+            sljit_emit_op1(
+                compiler_, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM,
+                static_cast<sljit_sw>(instruction.arraySlot));
+            sljit_emit_icall(
+                compiler_, SLJIT_CALL,
+                SLJIT_ARGS4V(P, W, F64, F64), SLJIT_IMM,
+                SLJIT_FUNC_ADDR(nativeStoreArrayElement));
+            appendArrayFailureJump();
+            return true;
+        }
         if (!validateDestination(instruction.destination,
                                  failureReason) ||
             !validateOperand(instruction.left, failureReason)) {
@@ -595,6 +732,11 @@ private:
                 SLJIT_IMM, unaryMathAddress(instruction.op));
             writeDouble();
             return true;
+        case ScalarKernelOp::LoadArrayElement:
+        case ScalarKernelOp::StoreArrayElement:
+            failureReason =
+                "native scalar kernel reached an unlowered array operation";
+            return false;
         case ScalarKernelOp::Discard:
             return true;
         case ScalarKernelOp::Jump:
@@ -798,6 +940,7 @@ private:
     sljit_compiler* compiler_ = nullptr;
     const ScalarKernel& kernel_;
     std::vector<sljit_jump*> rangeFailureJumps_;
+    std::vector<sljit_jump*> arrayFailureJumps_;
     std::vector<sljit_label*> kernelLabels_;
     std::vector<std::vector<sljit_jump*>> pendingKernelJumps_;
     bool tracksInstructionCounts_ = false;
@@ -1027,6 +1170,7 @@ std::string kernelCacheKey(const ScalarKernel& kernel) {
     std::string key;
     key.reserve(kernel.instructions.size() * 128);
     appendKeyValue(key, kernel.slots.size());
+    appendKeyValue(key, kernel.arrays.size());
     appendKeyValue(key, kernel.loopSlot);
     appendKeyValue(key, kernel.registerCount);
     appendKeyValue(key, kernel.nestedLoopCount);
@@ -1039,6 +1183,7 @@ std::string kernelCacheKey(const ScalarKernel& kernel) {
         appendOperandKey(key, instruction.right);
         appendOperandKey(key, instruction.step);
         appendKeyValue(key, instruction.jumpTarget);
+        appendKeyValue(key, instruction.arraySlot);
         appendKeyValue(key, instruction.loopId);
         appendKeyValue(key, instruction.singleValueRange);
     }
@@ -1153,6 +1298,12 @@ NativeScalarJitResult executeNativeScalarKernel(
     ScalarKernel& kernel, const double* outerValues,
     size_t outerValueCount) {
     NativeScalarJitResult result;
+    if (kernel.arraySlotNames.size() != kernel.arrays.size()) {
+        result.status = NativeScalarJitStatus::Unsupported;
+        result.reason =
+            "native scalar kernel array metadata is inconsistent";
+        return result;
+    }
     const auto key = kernelCacheKey(kernel);
     auto compiled = nativeKernelCache().find(key);
     result.cacheHit = static_cast<bool>(compiled);
@@ -1182,6 +1333,14 @@ NativeScalarJitResult executeNativeScalarKernel(
 
     std::vector<TypedScalar> registers(kernel.registerCount);
     result.writtenSlots.assign(kernel.slots.size(), 0);
+    result.writtenArrays.assign(kernel.arrays.size(), 0);
+    std::vector<NativeArrayView> arrays;
+    arrays.reserve(kernel.arrays.size());
+    for (auto& array : kernel.arrays) {
+        arrays.push_back(
+            NativeArrayView{array.elements.data(),
+                            array.elements.size()});
+    }
     std::vector<size_t> loopIterations(kernel.nestedLoopCount, 0);
     const bool hasBranches = std::any_of(
         kernel.instructions.begin(), kernel.instructions.end(),
@@ -1195,6 +1354,9 @@ NativeScalarJitResult executeNativeScalarKernel(
     context.slots = kernel.slots.data();
     context.registers = registers.data();
     context.writtenSlots = result.writtenSlots.data();
+    context.arrays = arrays.data();
+    context.arrayCount = arrays.size();
+    context.writtenArrays = result.writtenArrays.data();
     context.outerValues = outerValues;
     context.outerValueCount = outerValueCount;
     context.loopIterations = loopIterations.data();
@@ -1204,7 +1366,27 @@ NativeScalarJitResult executeNativeScalarKernel(
     result.codeSize = compiled->codeSize;
     if (context.status != 0) {
         result.status = NativeScalarJitStatus::RuntimeFailed;
-        result.reason = "native typed nested colon range step cannot be zero";
+        switch (static_cast<NativeRuntimeStatus>(context.status)) {
+        case NativeRuntimeStatus::InvalidColonRange:
+            result.reason =
+                "native typed nested colon range step cannot be zero";
+            break;
+        case NativeRuntimeStatus::InvalidLinearIndex:
+            result.reason =
+                "native typed linear index must be a finite positive integer";
+            break;
+        case NativeRuntimeStatus::LinearIndexOutOfBounds:
+            result.reason =
+                "native typed linear index exceeds the preallocated array bounds";
+            break;
+        case NativeRuntimeStatus::InvalidArraySlot:
+            result.reason =
+                "native typed kernel referenced an invalid array slot";
+            break;
+        case NativeRuntimeStatus::Success:
+            result.reason = "native typed kernel failed at runtime";
+            break;
+        }
         return result;
     }
 
@@ -1212,13 +1394,18 @@ NativeScalarJitResult executeNativeScalarKernel(
     result.counters =
         deriveCounters(kernel, outerValueCount, loopIterations,
                        instructionCounts);
+    const std::string kernelKind = kernel.arrays.empty()
+                                       ? "scalar kernel"
+                                       : "linear-array scalar kernel";
     if (result.cacheHit) {
-        result.reason = "cached SLJIT native scalar kernel executed";
-    } else if (result.cacheBypassed) {
         result.reason =
-            "compiled uncached SLJIT native scalar kernel executed";
+            "cached SLJIT native " + kernelKind + " executed";
+    } else if (result.cacheBypassed) {
+        result.reason = "compiled uncached SLJIT native " +
+                        kernelKind + " executed";
     } else {
-        result.reason = "compiled SLJIT native scalar kernel executed";
+        result.reason =
+            "compiled SLJIT native " + kernelKind + " executed";
     }
     return result;
 }

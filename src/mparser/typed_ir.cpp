@@ -87,7 +87,11 @@ void addCommonOperations(BytecodeTypedIrRegion& region,
                 ", nested=" +
                 std::to_string(contract.nestedLoopCount) +
                 ", branches=" +
-                std::to_string(contract.conditionalBranchCount)});
+                std::to_string(contract.conditionalBranchCount) +
+                ", linear-index-reads=" +
+                std::to_string(contract.linearIndexReadCount) +
+                ", linear-index-writes=" +
+                std::to_string(contract.linearIndexWriteCount)});
     } else if (candidate.kind == "function-site" ||
                candidate.kind == "builtin-site") {
         region.operations.push_back(BytecodeTypedIrOperation{

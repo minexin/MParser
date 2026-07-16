@@ -34,7 +34,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.53.0"
+#define MPARSER_VERSION "0.54.0"
 #endif
 
 namespace {
@@ -504,6 +504,10 @@ void printBytecodeOptimizationPlan(
                   << ", maxLoopDepth=" << region.maxLoopDepth
                   << ", structuredBranches="
                   << region.conditionalBranchCount
+                  << ", linearIndexReads="
+                  << region.linearIndexReadCount
+                  << ", linearIndexWrites="
+                  << region.linearIndexWriteCount
                   << ", stack=" << region.stackInputCount << "->"
                   << region.stackOutputCount << "\n";
         std::cout << "      inputs="
@@ -546,6 +550,10 @@ void printBytecodeTypedIr(const mparser::BytecodeTypedIrModule& module) {
                   << ", maxLoopDepth=" << region.region.maxLoopDepth
                   << ", structuredBranches="
                   << region.region.conditionalBranchCount
+                  << ", linearIndexReads="
+                  << region.region.linearIndexReadCount
+                  << ", linearIndexWrites="
+                  << region.region.linearIndexWriteCount
                   << "\n";
         std::cout << "      inputs="
                   << stringListToString(region.region.inputs)

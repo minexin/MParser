@@ -14,6 +14,12 @@ struct TypedScalar {
     RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
 };
 
+struct TypedNumericArray {
+    RuntimeValueKind kind = RuntimeValueKind::Matrix;
+    std::vector<double> elements;
+    std::vector<size_t> dimensions;
+};
+
 enum class ScalarKernelOp {
     Copy,
     UnaryPlus,
@@ -42,6 +48,8 @@ enum class ScalarKernelOp {
     Sine,
     SquareRoot,
     Tangent,
+    LoadArrayElement,
+    StoreArrayElement,
     Discard,
     Jump,
     JumpIfFalse,
@@ -74,6 +82,7 @@ struct ScalarKernelInstruction {
     ScalarKernelOperand step;
     size_t jumpTarget = 0;
     size_t sourceInstructionCount = 0;
+    size_t arraySlot = std::numeric_limits<size_t>::max();
     size_t loopId = std::numeric_limits<size_t>::max();
     bool singleValueRange = false;
     bool leafLoop = false;
@@ -90,6 +99,8 @@ struct ScalarKernel {
     std::vector<std::string> slotNames;
     std::vector<TypedScalar> slots;
     std::vector<bool> initialized;
+    std::vector<std::string> arraySlotNames;
+    std::vector<TypedNumericArray> arrays;
     size_t loopSlot = 0;
     size_t registerCount = 0;
     size_t nestedLoopCount = 0;

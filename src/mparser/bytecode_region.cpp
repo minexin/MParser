@@ -150,8 +150,8 @@ std::string rejectionReason(const BytecodeRegionContract& contract) {
     if (contract.hasCalls) {
         return "region contains a call or dynamic index operation";
     }
-    if (contract.hasMutation) {
-        return "region contains indexed or member mutation";
+    if (contract.hasUnsupportedMutation) {
+        return "region contains unsupported indexed or member mutation";
     }
     if (contract.hasUnsupportedControlFlow) {
         return "region contains unsupported control flow";
@@ -164,6 +164,10 @@ std::string rejectionReason(const BytecodeRegionContract& contract) {
                              : "eligible closed scalar loop region";
     if (contract.conditionalBranchCount > 0) {
         reason += " with structured branches";
+    }
+    if (contract.linearIndexReadCount > 0 ||
+        contract.linearIndexWriteCount > 0) {
+        reason += " with linear numeric indexing";
     }
     return reason;
 }
@@ -245,15 +249,41 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
             calls.insert(instruction.calleeName);
             break;
         }
+        if (!isCallableBinding(instruction.binding.kind) &&
+            instruction.calleeName.empty() &&
+            instruction.operandCount == 1 &&
+            instruction.resultCount == 1 &&
+            (instruction.colonSubscripts.empty() ||
+             !instruction.colonSubscripts.front())) {
+            ++contract.linearIndexReadCount;
+            break;
+        }
         contract.hasCalls = true;
         break;
     case BytecodeOp::CallSuperclass:
         contract.hasCalls = true;
         break;
-    case BytecodeOp::StoreMember:
     case BytecodeOp::StoreIndex:
+        contract.hasMutation = true;
+        if (!instruction.operand.empty()) {
+            writes.insert(instruction.operand);
+            outputs.insert(instruction.operand);
+        }
+        if (isVariableBinding(instruction.binding.kind) &&
+            instruction.operandCount == 1 &&
+            !instruction.nullAssignment &&
+            !instruction.nondeterministicAssignment &&
+            (instruction.colonSubscripts.empty() ||
+             !instruction.colonSubscripts.front())) {
+            ++contract.linearIndexWriteCount;
+        } else {
+            contract.hasUnsupportedMutation = true;
+        }
+        break;
+    case BytecodeOp::StoreMember:
     case BytecodeOp::StoreBraceIndex:
         contract.hasMutation = true;
+        contract.hasUnsupportedMutation = true;
         if (!instruction.operand.empty()) {
             writes.insert(instruction.operand);
             outputs.insert(instruction.operand);
@@ -288,7 +318,12 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
     case BytecodeOp::Pop:
         break;
     case BytecodeOp::BeginIndexContext:
+        if (instruction.operandCount != 1) {
+            contract.hasUnsupportedOperations = true;
+        }
+        break;
     case BytecodeOp::BeginIndexArgument:
+        break;
     case BytecodeOp::MemberAccess:
     case BytecodeOp::BraceIndex:
     case BytecodeOp::MakeMatrix:
@@ -446,6 +481,8 @@ BytecodeRegionContract analyzePointRegion(const BytecodeProgram& program,
         contract.writes.push_back(std::string(target));
         contract.outputs.push_back(std::string(target));
         contract.hasMutation = instruction.op == BytecodeOp::StoreIndex;
+        contract.hasUnsupportedMutation =
+            instruction.op == BytecodeOp::StoreIndex;
     }
     if (instruction.op == BytecodeOp::CallOrIndex ||
         instruction.op == BytecodeOp::CallSuperclass) {
@@ -527,7 +564,7 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
     copySet(outputs, contract.outputs);
     copySet(calls, contract.callTargets);
     contract.eligibleForTypedExecution =
-        !contract.hasCalls && !contract.hasMutation &&
+        !contract.hasCalls && !contract.hasUnsupportedMutation &&
         !contract.hasUnsupportedControlFlow &&
         !contract.hasUnsupportedOperations;
     contract.reason = rejectionReason(contract);

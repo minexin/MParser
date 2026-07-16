@@ -207,7 +207,7 @@ end
     assert(execution->executionCount == 0);
     assert(execution->fallbackCount == 1);
     assert(execution->lastReason ==
-           "typed region input is not scalar numeric: y");
+           "typed region binary operation received a non-scalar");
 
     const auto* output = findVariable(fallback.runtime, "y");
     assert(output != nullptr);

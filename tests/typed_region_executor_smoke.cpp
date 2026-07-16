@@ -109,6 +109,7 @@ bool runtimeValueEqual(const mparser::RuntimeValue& left,
     return left.kind == right.kind && left.number == right.number &&
            left.text == right.text && left.elements == right.elements &&
            left.rows == right.rows && left.columns == right.columns &&
+           left.dimensions == right.dimensions &&
            left.numericClass == right.numericClass;
 }
 
@@ -121,6 +122,16 @@ void assertVariablesEqual(
         assert(candidate != nullptr);
         assert(runtimeValueEqual(variable.value, *candidate));
     }
+}
+
+mparser::RuntimeValue rowVector(std::vector<double> elements) {
+    mparser::RuntimeValue value;
+    value.kind = mparser::RuntimeValueKind::Vector;
+    value.elements = std::move(elements);
+    value.rows = 1;
+    value.columns = value.elements.size();
+    value.dimensions = {value.rows, value.columns};
+    return value;
 }
 
 void runTypedLoopExecutionSmoke() {
@@ -190,6 +201,291 @@ end
     assert(output != nullptr);
     assert(output->kind == mparser::RuntimeValueKind::Vector);
     assert(output->elements == std::vector<double>({650.0, 650.0}));
+}
+
+void runLinearArrayTypedLoopSmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function total = main()
+x = 1:12;
+y = zeros(1, 12);
+total = 0;
+for i = 1:12
+    y(i) = sin(x(i)) + i;
+    total = total + y(i);
+end
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+    assert(region->region.linearIndexReadCount == 2);
+    assert(region->region.linearIndexWriteCount == 1);
+
+    const auto optimized = runTyped(pipeline, backend);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+
+    const auto* output = findVariable(optimized.variables, "y");
+    const auto* total = findVariable(optimized.variables, "total");
+    assert(output != nullptr);
+    assert(total != nullptr);
+    assert(output->elements.size() == 12);
+    double expectedTotal = 0.0;
+    for (size_t index = 0; index < output->elements.size(); ++index) {
+        const double expected =
+            std::sin(static_cast<double>(index + 1)) +
+            static_cast<double>(index + 1);
+        assert(output->elements[index] == expected);
+        expectedTotal += expected;
+    }
+    assert(total->number == expectedTotal);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+    assert(execution->iterationCount == 12);
+    assert(execution->backend ==
+           mparser::typedRegionBackendName(backend));
+    assert(execution->lastReason.find("linear-array") !=
+           std::string::npos);
+    if (backend == mparser::TypedRegionBackend::Native) {
+        assert(execution->nativeCompilationCount +
+                   execution->nativeCacheHitCount ==
+               1);
+        assert(execution->nativeCodeSize != 0);
+    }
+}
+
+void runColumnVectorLinearArraySmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function total = main()
+x = (1:12)';
+y = zeros(12, 1);
+total = 0;
+for i = 1:12
+    y(i) = x(i) * 3;
+    total = total + y(i);
+end
+end
+)");
+
+    const auto optimized = runTyped(pipeline, backend);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+    const auto* output = findVariable(optimized.variables, "y");
+    assert(output != nullptr);
+    assert(output->rows == 12);
+    assert(output->columns == 1);
+    assert(output->elements.front() == 3.0);
+    assert(output->elements.back() == 36.0);
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+}
+
+void runNestedBranchedLinearArraySmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function y = main()
+x = 1:5;
+y = zeros(1, 5);
+for pass = 1:12
+    for i = 1:5
+        if i > 2
+            y(i) = y(i) + x(i);
+        else
+            y(i) = y(i) + 2 * x(i);
+        end
+    end
+end
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "pass");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+    assert(region->region.nestedLoopCount == 1);
+    assert(region->region.conditionalBranchCount == 1);
+
+    const auto optimized = runTyped(pipeline, backend);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+    const auto* output = findVariable(optimized.variables, "y");
+    assert(output != nullptr);
+    assert(output->elements ==
+           std::vector<double>({24.0, 48.0, 36.0, 48.0, 60.0}));
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "pass");
+    assert(execution != nullptr);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+    assert(execution->iterationCount == 12);
+    assert(execution->nestedIterationCount == 60);
+    assert(execution->lastReason.find("linear-array") !=
+           std::string::npos);
+}
+
+void runLinearArrayGrowthFallbackSmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function y = main()
+y = zeros(1, 2);
+for i = 1:12
+    y(i) = i * 2;
+end
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+
+    const auto optimized = runTyped(pipeline, backend);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+    const auto* output = findVariable(optimized.variables, "y");
+    assert(output != nullptr);
+    assert(output->elements.size() == 12);
+    assert(output->elements.front() == 2.0);
+    assert(output->elements.back() == 24.0);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 0);
+    assert(execution->fallbackCount == 1);
+    assert(execution->lastReason.find("preallocated array bounds") !=
+           std::string::npos);
+}
+
+void runMatrixLinearIndexFallbackSmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function total = main()
+A = [1 2 3; 4 5 6];
+total = 0;
+for i = 1:12
+    if i <= 6
+        total = total + A(i);
+    else
+        total = total + A(i - 6);
+    end
+end
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.linearIndexReadCount == 2);
+    assert(region->region.eligibleForTypedExecution);
+
+    const auto optimized = runTyped(pipeline, backend);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->executionCount == 0);
+    assert(execution->fallbackCount == 1);
+    assert(execution->lastReason.find("A") != std::string::npos);
+}
+
+void runDirectLinearArrayTransactionalFallbackSmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function y = main()
+x = 1:12;
+y = zeros(1, 12);
+for i = 1:12
+    y(i) = x(i) + 1;
+end
+end
+)");
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+
+    const std::map<std::string, mparser::RuntimeValue> variables{
+        {"x", rowVector({1.0, 2.0, 3.0})},
+        {"y", rowVector({10.0, 20.0, 30.0})}};
+    mparser::ScalarTypedRegionExecutor executor;
+
+    const auto boundsFailure = executor.execute(
+        pipeline.bytecode, region->region,
+        rowVector({1.0, 2.0, 4.0}), variables, backend);
+    assert(boundsFailure.status ==
+           mparser::TypedRegionExecutionStatus::Fallback);
+    assert(boundsFailure.variables.empty());
+    assert(boundsFailure.reason.find("preallocated array bounds") !=
+           std::string::npos);
+    assert(variables.at("y").elements ==
+           std::vector<double>({10.0, 20.0, 30.0}));
+
+    const auto integerFailure = executor.execute(
+        pipeline.bytecode, region->region, rowVector({1.5}),
+        variables, backend);
+    assert(integerFailure.status ==
+           mparser::TypedRegionExecutionStatus::Fallback);
+    assert(integerFailure.variables.empty());
+    assert(integerFailure.reason.find("finite positive integer") !=
+           std::string::npos);
+    assert(variables.at("y").elements ==
+           std::vector<double>({10.0, 20.0, 30.0}));
+}
+
+void runNativeLinearArrayDynamicLengthCacheSmoke() {
+    if (!mparser::nativeScalarJitAvailable()) {
+        return;
+    }
+
+    auto pipeline = prepare(R"(function y = main()
+x = 1:12;
+y = zeros(1, 12);
+for i = 1:12
+    y(i) = x(i) + 1;
+end
+end
+)");
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+
+    mparser::clearNativeScalarJitCache();
+    mparser::resetNativeScalarJitCacheStatistics();
+    mparser::ScalarTypedRegionExecutor executor;
+    const std::map<std::string, mparser::RuntimeValue> shortVariables{
+        {"x", rowVector({1.0, 2.0, 3.0})},
+        {"y", rowVector({0.0, 0.0, 0.0})}};
+    const auto first = executor.execute(
+        pipeline.bytecode, region->region,
+        rowVector({1.0, 2.0, 3.0}), shortVariables,
+        mparser::TypedRegionBackend::Native);
+    assert(first.status ==
+           mparser::TypedRegionExecutionStatus::Executed);
+    assert(first.nativeCompiled);
+    assert(!first.nativeCacheHit);
+    assert(first.variables.at("y").elements ==
+           std::vector<double>({2.0, 3.0, 4.0}));
+
+    const std::map<std::string, mparser::RuntimeValue> longVariables{
+        {"x", rowVector({10.0, 20.0, 30.0, 40.0, 50.0})},
+        {"y", rowVector({0.0, 0.0, 0.0, 0.0, 0.0})}};
+    const auto second = executor.execute(
+        pipeline.bytecode, region->region,
+        rowVector({1.0, 2.0, 3.0, 4.0, 5.0}), longVariables,
+        mparser::TypedRegionBackend::Native);
+    assert(second.status ==
+           mparser::TypedRegionExecutionStatus::Executed);
+    assert(!second.nativeCompiled);
+    assert(second.nativeCacheHit);
+    assert(second.variables.at("y").elements ==
+           std::vector<double>({11.0, 21.0, 31.0, 41.0, 51.0}));
 }
 
 void runTypedLogicalResultSmoke() {
@@ -756,6 +1052,33 @@ int main() {
     try {
         runTypedLoopExecutionSmoke();
         runTypedLoopFallbackSmoke();
+        runLinearArrayTypedLoopSmoke(
+            mparser::TypedRegionBackend::Portable);
+        runColumnVectorLinearArraySmoke(
+            mparser::TypedRegionBackend::Portable);
+        runNestedBranchedLinearArraySmoke(
+            mparser::TypedRegionBackend::Portable);
+        runLinearArrayGrowthFallbackSmoke(
+            mparser::TypedRegionBackend::Portable);
+        runMatrixLinearIndexFallbackSmoke(
+            mparser::TypedRegionBackend::Portable);
+        runDirectLinearArrayTransactionalFallbackSmoke(
+            mparser::TypedRegionBackend::Portable);
+        if (mparser::nativeScalarJitAvailable()) {
+            runLinearArrayTypedLoopSmoke(
+                mparser::TypedRegionBackend::Native);
+            runColumnVectorLinearArraySmoke(
+                mparser::TypedRegionBackend::Native);
+            runNestedBranchedLinearArraySmoke(
+                mparser::TypedRegionBackend::Native);
+            runLinearArrayGrowthFallbackSmoke(
+                mparser::TypedRegionBackend::Native);
+            runMatrixLinearIndexFallbackSmoke(
+                mparser::TypedRegionBackend::Native);
+            runDirectLinearArrayTransactionalFallbackSmoke(
+                mparser::TypedRegionBackend::Native);
+            runNativeLinearArrayDynamicLengthCacheSmoke();
+        }
         runTypedLogicalResultSmoke();
         runTypedPureMathBuiltinSmoke();
         runPredecodedOperationCoverageSmoke(

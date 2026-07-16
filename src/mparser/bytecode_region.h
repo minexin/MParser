@@ -19,6 +19,8 @@ struct BytecodeRegionContract {
     size_t nestedLoopCount = 0;
     size_t maxLoopDepth = 0;
     size_t conditionalBranchCount = 0;
+    size_t linearIndexReadCount = 0;
+    size_t linearIndexWriteCount = 0;
     size_t stackInputCount = 0;
     size_t stackOutputCount = 0;
     std::vector<std::string> reads;
@@ -28,6 +30,7 @@ struct BytecodeRegionContract {
     std::vector<std::string> callTargets;
     bool hasCalls = false;
     bool hasMutation = false;
+    bool hasUnsupportedMutation = false;
     bool hasUnsupportedControlFlow = false;
     bool hasUnsupportedOperations = false;
     bool eligibleForTypedExecution = false;

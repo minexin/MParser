@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.53.0 LANGUAGES C CXX)
+project(MParser VERSION 0.54.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -206,6 +206,15 @@ add_test(NAME branched_scalar_kernel_cli_smoke
 set_tests_properties(branched_scalar_kernel_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 23520")
 
+add_test(NAME linear_array_kernel_cli_smoke
+    COMMAND $<TARGET_FILE:mparser>
+        --run-typed-bytecode
+        --typed-backend=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/typed_linear_array_demo.m)
+set_tests_properties(linear_array_kernel_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "predecoded linear-array scalar kernel executed")
+
 if(MPARSER_ENABLE_NATIVE_JIT)
     add_test(NAME native_scalar_kernel_cli_smoke
         COMMAND $<TARGET_FILE:mparser>
@@ -236,6 +245,15 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     set_tests_properties(native_branched_kernel_cache_cli_smoke PROPERTIES
         PASS_REGULAR_EXPRESSION
             "backend=native.*nativeCacheHits=1")
+
+    add_test(NAME native_linear_array_kernel_cli_smoke
+        COMMAND $<TARGET_FILE:mparser>
+            --run-typed-bytecode
+            --typed-backend=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/typed_linear_array_demo.m)
+    set_tests_properties(native_linear_array_kernel_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "backend=native.*linear-array scalar kernel executed")
 
     add_test(NAME native_cache_lifecycle_cli_smoke
         COMMAND $<TARGET_FILE:mparser>

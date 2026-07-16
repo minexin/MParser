@@ -45,6 +45,7 @@ struct NativeScalarJitCacheStatistics {
 struct NativeScalarJitResult {
     NativeScalarJitStatus status = NativeScalarJitStatus::Unavailable;
     std::vector<uint8_t> writtenSlots;
+    std::vector<uint8_t> writtenArrays;
     ScalarKernelExecutionCounters counters;
     bool compiled = false;
     bool cacheHit = false;

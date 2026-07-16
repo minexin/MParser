@@ -40,6 +40,8 @@ struct ScalarKernelRange {
 
 struct ScalarKernelStackValue {
     bool isRange = false;
+    bool isArray = false;
+    size_t arraySlot = std::numeric_limits<size_t>::max();
     ScalarKernelOperand scalar;
     ScalarKernelRange range;
 };
@@ -79,6 +81,36 @@ RuntimeValue numberValue(const TypedScalar& value) {
     result.numericClass = value.numericClass;
     setRuntimeDimensions(result, {1, 1});
     return result;
+}
+
+RuntimeValue arrayValue(const TypedNumericArray& value) {
+    RuntimeValue result;
+    result.kind = value.kind;
+    result.elements = value.elements;
+    result.numericClass = RuntimeNumericClass::Double;
+    setRuntimeDimensions(result, value.dimensions);
+    return result;
+}
+
+bool isDirectLinearDoubleArray(const RuntimeValue& value) {
+    if ((value.kind != RuntimeValueKind::Vector &&
+         value.kind != RuntimeValueKind::Matrix) ||
+        value.numericClass != RuntimeNumericClass::Double) {
+        return false;
+    }
+    const auto dimensions = runtimeDimensions(value);
+    const auto elementCount =
+        checkedRuntimeDimensionProduct(dimensions);
+    if (!elementCount || *elementCount != value.elements.size()) {
+        return false;
+    }
+    return std::count_if(
+               dimensions.begin(), dimensions.end(),
+               [](size_t dimension) { return dimension != 1; }) <= 1;
+}
+
+bool isScalarStackValue(const ScalarKernelStackValue& value) {
+    return !value.isRange && !value.isArray;
 }
 
 std::optional<double> parseNumber(std::string_view text) {
@@ -229,6 +261,41 @@ size_t findOrAddSlot(ScalarKernel& kernel, std::string_view name,
     return slot;
 }
 
+std::optional<size_t> findSlot(const ScalarKernel& kernel,
+                               std::string_view name) {
+    const auto found =
+        std::find(kernel.slotNames.begin(), kernel.slotNames.end(), name);
+    if (found == kernel.slotNames.end()) {
+        return std::nullopt;
+    }
+    return static_cast<size_t>(
+        std::distance(kernel.slotNames.begin(), found));
+}
+
+std::optional<size_t> findArraySlot(const ScalarKernel& kernel,
+                                    std::string_view name) {
+    const auto found = std::find(kernel.arraySlotNames.begin(),
+                                 kernel.arraySlotNames.end(), name);
+    if (found == kernel.arraySlotNames.end()) {
+        return std::nullopt;
+    }
+    return static_cast<size_t>(
+        std::distance(kernel.arraySlotNames.begin(), found));
+}
+
+size_t findOrAddArraySlot(
+    ScalarKernel& kernel, std::string_view name,
+    const RuntimeValue& value) {
+    if (const auto existing = findArraySlot(kernel, name)) {
+        return *existing;
+    }
+    const size_t slot = kernel.arraySlotNames.size();
+    kernel.arraySlotNames.emplace_back(name);
+    kernel.arrays.push_back(TypedNumericArray{
+        value.kind, value.elements, runtimeDimensions(value)});
+    return slot;
+}
+
 bool requireStack(const std::vector<ScalarKernelStackValue>& stack,
                   size_t required, std::string reason,
                   std::string& failureReason) {
@@ -251,11 +318,29 @@ std::optional<ScalarKernel> compileKernel(
     kernel.initialized[kernel.loopSlot] = true;
     kernel.slots[kernel.loopSlot] = TypedScalar{};
     for (const auto& input : region.inputs) {
-        const size_t slot = findOrAddSlot(kernel, input, variables);
-        if (!kernel.initialized[slot]) {
+        const auto variable = variables.find(input);
+        if (variable == variables.end()) {
             failureReason = "typed region input is unavailable: " + input;
             return std::nullopt;
         }
+        if (variable->second.kind == RuntimeValueKind::Number &&
+            variable->second.numericClass == RuntimeNumericClass::Double) {
+            const size_t slot = findOrAddSlot(kernel, input, variables);
+            if (!kernel.initialized[slot]) {
+                failureReason =
+                    "typed region input is unavailable: " + input;
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (isDirectLinearDoubleArray(variable->second)) {
+            findOrAddArraySlot(kernel, input, variable->second);
+            continue;
+        }
+        failureReason =
+            "typed region input is not a supported double scalar or linear array: " +
+            input;
+        return std::nullopt;
     }
 
     std::vector<ScalarKernelStackValue> stack;
@@ -308,17 +393,58 @@ std::optional<ScalarKernel> compileKernel(
                 isRuntimePureUnaryMathBuiltin(instruction.operand)) {
                 break;
             }
-            const size_t slot =
-                findOrAddSlot(kernel, instruction.operand, variables);
-            if (!kernel.initialized[slot]) {
+            if (const auto slot = findSlot(kernel, instruction.operand)) {
+                if (!kernel.initialized[*slot]) {
+                    failureReason =
+                        "typed region load is unavailable: " +
+                        instruction.operand;
+                    return std::nullopt;
+                }
+                ScalarKernelStackValue value;
+                value.scalar = {ScalarKernelStorage::Slot, *slot, {}};
+                stack.push_back(value);
+                break;
+            }
+            if (const auto arraySlot =
+                    findArraySlot(kernel, instruction.operand)) {
+                ScalarKernelStackValue value;
+                value.isArray = true;
+                value.arraySlot = *arraySlot;
+                stack.push_back(value);
+                break;
+            }
+            const auto variable = variables.find(instruction.operand);
+            if (variable == variables.end()) {
                 failureReason = "typed region load is unavailable: " +
                                 instruction.operand;
                 return std::nullopt;
             }
-            ScalarKernelStackValue value;
-            value.scalar = {ScalarKernelStorage::Slot, slot, {}};
-            stack.push_back(value);
-            break;
+            if (variable->second.kind == RuntimeValueKind::Number) {
+                const size_t slot = findOrAddSlot(
+                    kernel, instruction.operand, variables);
+                if (!kernel.initialized[slot]) {
+                    failureReason =
+                        "typed region load is unavailable: " +
+                        instruction.operand;
+                    return std::nullopt;
+                }
+                ScalarKernelStackValue value;
+                value.scalar = {ScalarKernelStorage::Slot, slot, {}};
+                stack.push_back(value);
+                break;
+            }
+            if (isDirectLinearDoubleArray(variable->second)) {
+                ScalarKernelStackValue value;
+                value.isArray = true;
+                value.arraySlot = findOrAddArraySlot(
+                    kernel, instruction.operand, variable->second);
+                stack.push_back(value);
+                break;
+            }
+            failureReason =
+                "typed region load is not a supported scalar or linear array: " +
+                instruction.operand;
+            return std::nullopt;
         }
         case BytecodeOp::LoadLiteral: {
             const auto value = parseNumber(instruction.operand);
@@ -338,9 +464,14 @@ std::optional<ScalarKernel> compileKernel(
                               failureReason)) {
                 return std::nullopt;
             }
-            if (stack.back().isRange) {
+            if (!isScalarStackValue(stack.back())) {
                 failureReason =
-                    "typed region cannot store a colon range as a scalar";
+                    "typed region cannot store a range or array as a scalar";
+                return std::nullopt;
+            }
+            if (findArraySlot(kernel, instruction.operand)) {
+                failureReason =
+                    "typed region cannot change an array binding to a scalar";
                 return std::nullopt;
             }
             const size_t slot = findOrAddSlot(
@@ -375,9 +506,9 @@ std::optional<ScalarKernel> compileKernel(
                     failureReason)) {
                 return std::nullopt;
             }
-            if (stack.back().isRange) {
+            if (!isScalarStackValue(stack.back())) {
                 failureReason =
-                    "typed region unary operation received a range";
+                    "typed region unary operation received a non-scalar";
                 return std::nullopt;
             }
             const auto operation = unaryOperation(instruction.operand);
@@ -409,7 +540,7 @@ std::optional<ScalarKernel> compileKernel(
                 }
                 const size_t begin = stack.size() - operandCount;
                 for (size_t index = begin; index < stack.size(); ++index) {
-                    if (stack[index].isRange) {
+                    if (!isScalarStackValue(stack[index])) {
                         failureReason =
                             "typed colon range operand is not scalar";
                         return std::nullopt;
@@ -436,10 +567,10 @@ std::optional<ScalarKernel> compileKernel(
                     failureReason)) {
                 return std::nullopt;
             }
-            if (stack[stack.size() - 2].isRange ||
-                stack.back().isRange) {
+            if (!isScalarStackValue(stack[stack.size() - 2]) ||
+                !isScalarStackValue(stack.back())) {
                 failureReason =
-                    "typed region binary operation received a range";
+                    "typed region binary operation received a non-scalar";
                 return std::nullopt;
             }
             const auto operation = binaryOperation(instruction.operand);
@@ -455,33 +586,118 @@ std::optional<ScalarKernel> compileKernel(
             break;
         }
         case BytecodeOp::CallOrIndex: {
-            if (instruction.binding.kind != BindingKind::Builtin ||
-                instruction.operandCount != 1 ||
-                instruction.resultCount != 1) {
-                failureReason =
-                    "typed region call is not a pure unary builtin";
-                return std::nullopt;
+            if (instruction.binding.kind == BindingKind::Builtin) {
+                if (instruction.operandCount != 1 ||
+                    instruction.resultCount != 1) {
+                    failureReason =
+                        "typed region builtin call has an invalid arity";
+                    return std::nullopt;
+                }
+                const auto operation =
+                    mathOperation(instruction.calleeName);
+                if (!operation) {
+                    failureReason =
+                        "typed region builtin call is unsupported";
+                    return std::nullopt;
+                }
+                if (!requireStack(
+                        stack, 1,
+                        "typed region stack underflow at builtin call",
+                        failureReason)) {
+                    return std::nullopt;
+                }
+                if (!isScalarStackValue(stack.back())) {
+                    failureReason =
+                        "typed region builtin received a non-scalar";
+                    return std::nullopt;
+                }
+                stack.back().scalar =
+                    appendUnary(*operation, stack.back().scalar);
+                break;
             }
-            const auto operation = mathOperation(instruction.calleeName);
-            if (!operation) {
-                failureReason = "typed region builtin call is unsupported";
+
+            if (instruction.operandCount != 1 ||
+                instruction.resultCount != 1 ||
+                !instruction.calleeName.empty() ||
+                (!instruction.colonSubscripts.empty() &&
+                 instruction.colonSubscripts.front())) {
+                failureReason =
+                    "typed region index is not a direct linear read";
                 return std::nullopt;
             }
             if (!requireStack(
-                    stack, 1,
-                    "typed region stack underflow at builtin call",
+                    stack, 2,
+                    "typed region stack underflow at linear index read",
                     failureReason)) {
                 return std::nullopt;
             }
-            if (stack.back().isRange) {
+            const size_t arrayPosition = stack.size() - 2;
+            if (!stack[arrayPosition].isArray ||
+                !isScalarStackValue(stack.back())) {
                 failureReason =
-                    "typed region builtin received a colon range";
+                    "typed region linear index read needs an array and scalar index";
                 return std::nullopt;
             }
-            stack.back().scalar =
-                appendUnary(*operation, stack.back().scalar);
+            const size_t resultRegister = kernel.registerCount++;
+            ScalarKernelInstruction value;
+            value.op = ScalarKernelOp::LoadArrayElement;
+            value.destination = {ScalarKernelStorage::Register,
+                                 resultRegister};
+            value.left = stack.back().scalar;
+            value.arraySlot = stack[arrayPosition].arraySlot;
+            appendInstruction(std::move(value));
+            stack.resize(arrayPosition);
+            ScalarKernelStackValue resultValue;
+            resultValue.scalar = {ScalarKernelStorage::Register,
+                                  resultRegister, {}};
+            stack.push_back(resultValue);
             break;
         }
+        case BytecodeOp::StoreIndex: {
+            if (instruction.operandCount != 1 ||
+                instruction.nullAssignment ||
+                instruction.nondeterministicAssignment ||
+                (!instruction.colonSubscripts.empty() &&
+                 instruction.colonSubscripts.front())) {
+                failureReason =
+                    "typed region index is not a direct preallocated linear write";
+                return std::nullopt;
+            }
+            if (!requireStack(
+                    stack, 3,
+                    "typed region stack underflow at linear index write",
+                    failureReason)) {
+                return std::nullopt;
+            }
+            const size_t valuePosition = stack.size() - 3;
+            const size_t arrayPosition = stack.size() - 2;
+            const size_t indexPosition = stack.size() - 1;
+            if (!isScalarStackValue(stack[valuePosition]) ||
+                !stack[arrayPosition].isArray ||
+                !isScalarStackValue(stack[indexPosition])) {
+                failureReason =
+                    "typed region linear index write needs a scalar value, array, and scalar index";
+                return std::nullopt;
+            }
+            const size_t arraySlot = stack[arrayPosition].arraySlot;
+            if (arraySlot >= kernel.arraySlotNames.size() ||
+                kernel.arraySlotNames[arraySlot] != instruction.operand) {
+                failureReason =
+                    "typed region linear index target does not match its array binding";
+                return std::nullopt;
+            }
+            ScalarKernelInstruction value;
+            value.op = ScalarKernelOp::StoreArrayElement;
+            value.left = stack[indexPosition].scalar;
+            value.right = stack[valuePosition].scalar;
+            value.arraySlot = arraySlot;
+            appendInstruction(std::move(value));
+            stack.resize(valuePosition);
+            break;
+        }
+        case BytecodeOp::BeginIndexContext:
+        case BytecodeOp::BeginIndexArgument:
+            break;
         case BytecodeOp::PostfixOp:
             if (!requireStack(
                     stack, 1,
@@ -494,9 +710,9 @@ std::optional<ScalarKernel> compileKernel(
                     "typed region postfix operation is unsupported";
                 return std::nullopt;
             }
-            if (stack.back().isRange) {
+            if (!isScalarStackValue(stack.back())) {
                 failureReason =
-                    "typed region transpose received a colon range";
+                    "typed region transpose received a non-scalar";
                 return std::nullopt;
             }
             break;
@@ -506,9 +722,9 @@ std::optional<ScalarKernel> compileKernel(
                               failureReason)) {
                 return std::nullopt;
             }
-            if (stack.back().isRange) {
+            if (!isScalarStackValue(stack.back())) {
                 failureReason =
-                    "typed region cannot discard a colon range";
+                    "typed region cannot discard a non-scalar";
                 return std::nullopt;
             }
             {
@@ -541,7 +757,8 @@ std::optional<ScalarKernel> compileKernel(
                     failureReason)) {
                 return std::nullopt;
             }
-            if (stack.size() != 1 || stack.back().isRange ||
+            if (stack.size() != 1 ||
+                !isScalarStackValue(stack.back()) ||
                 instruction.target < 0) {
                 failureReason =
                     "typed conditional branch has an invalid stack boundary";
@@ -575,6 +792,16 @@ std::optional<ScalarKernel> compileKernel(
 
             const auto rangeValue = stack.back();
             stack.pop_back();
+            if (rangeValue.isArray) {
+                failureReason =
+                    "typed nested loop range cannot be an array binding";
+                return std::nullopt;
+            }
+            if (findArraySlot(kernel, instruction.operand)) {
+                failureReason =
+                    "typed nested loop cannot replace an array binding";
+                return std::nullopt;
+            }
             const size_t slot = findOrAddSlot(
                 kernel, instruction.operand, variables);
             auto initializedBefore = kernel.initialized;
@@ -792,15 +1019,34 @@ void writeDestination(const ScalarKernelDestination& destination,
     }
 }
 
-void executeKernelInstruction(
+std::optional<size_t> checkedLinearArrayOffset(
+    double oneBasedIndex, const TypedNumericArray& array,
+    std::string& failureReason) {
+    const auto index =
+        checkedRuntimeNonnegativeInteger(oneBasedIndex);
+    if (!index || *index == 0) {
+        failureReason =
+            "typed linear index must be a finite positive integer";
+        return std::nullopt;
+    }
+    if (*index > array.elements.size()) {
+        failureReason =
+            "typed linear index exceeds the preallocated array bounds";
+        return std::nullopt;
+    }
+    return *index - 1;
+}
+
+bool executeKernelInstruction(
     const ScalarKernelInstruction& instruction, ScalarKernel& kernel,
-    std::vector<TypedScalar>& registers, std::vector<bool>& written) {
+    std::vector<TypedScalar>& registers, std::vector<bool>& written,
+    std::vector<bool>& writtenArrays, std::string& failureReason) {
     if (instruction.op == ScalarKernelOp::Discard ||
         instruction.op == ScalarKernelOp::Jump ||
         instruction.op == ScalarKernelOp::JumpIfFalse ||
         instruction.op == ScalarKernelOp::LoopBegin ||
         instruction.op == ScalarKernelOp::LoopNext) {
-        return;
+        return true;
     }
 
     TypedScalar result;
@@ -855,20 +1101,55 @@ void executeKernelInstruction(
             instruction.op,
             readOperand(instruction.left, kernel, registers).value)};
         break;
+    case ScalarKernelOp::LoadArrayElement: {
+        if (instruction.arraySlot >= kernel.arrays.size()) {
+            failureReason =
+                "typed kernel references an invalid array slot";
+            return false;
+        }
+        const auto offset = checkedLinearArrayOffset(
+            readOperand(instruction.left, kernel, registers).value,
+            kernel.arrays[instruction.arraySlot], failureReason);
+        if (!offset) {
+            return false;
+        }
+        result = TypedScalar{
+            kernel.arrays[instruction.arraySlot].elements[*offset]};
+        break;
+    }
+    case ScalarKernelOp::StoreArrayElement: {
+        if (instruction.arraySlot >= kernel.arrays.size()) {
+            failureReason =
+                "typed kernel references an invalid array slot";
+            return false;
+        }
+        const auto offset = checkedLinearArrayOffset(
+            readOperand(instruction.left, kernel, registers).value,
+            kernel.arrays[instruction.arraySlot], failureReason);
+        if (!offset) {
+            return false;
+        }
+        kernel.arrays[instruction.arraySlot].elements[*offset] =
+            readOperand(instruction.right, kernel, registers).value;
+        writtenArrays[instruction.arraySlot] = true;
+        return true;
+    }
     case ScalarKernelOp::Discard:
     case ScalarKernelOp::Jump:
     case ScalarKernelOp::JumpIfFalse:
     case ScalarKernelOp::LoopBegin:
     case ScalarKernelOp::LoopNext:
-        return;
+        return true;
     }
     writeDestination(instruction.destination, result, kernel, registers,
                      written);
+    return true;
 }
 
 bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
                        std::vector<TypedScalar>& registers,
                        std::vector<bool>& written,
+                       std::vector<bool>& writtenArrays,
                        ScalarKernelExecutionCounters& counters,
                        std::string& failureReason) {
     size_t pc = begin;
@@ -901,8 +1182,11 @@ bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
             continue;
         }
         if (instruction.op != ScalarKernelOp::LoopBegin) {
-            executeKernelInstruction(instruction, kernel, registers,
-                                     written);
+            if (!executeKernelInstruction(
+                    instruction, kernel, registers, written,
+                    writtenArrays, failureReason)) {
+                return false;
+            }
             ++pc;
             continue;
         }
@@ -935,12 +1219,15 @@ bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
                     ++counters.kernelInstructions;
                     counters.sourceInstructions +=
                         bodyInstruction.sourceInstructionCount;
-                    executeKernelInstruction(bodyInstruction, kernel,
-                                             registers, written);
+                    if (!executeKernelInstruction(
+                            bodyInstruction, kernel, registers, written,
+                            writtenArrays, failureReason)) {
+                        return false;
+                    }
                 }
             } else if (!executeKernelSpan(
                            kernel, bodyBegin, bodyEnd, registers, written,
-                           counters, failureReason)) {
+                           writtenArrays, counters, failureReason)) {
                 return false;
             }
             counters.sourceInstructions += latch.sourceInstructionCount;
@@ -1013,10 +1300,14 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
         if (variable == variables.end()) {
             return fallback("typed region input is unavailable: " + input);
         }
-        if (variable->second.kind != RuntimeValueKind::Number ||
-            variable->second.numericClass != RuntimeNumericClass::Double) {
-            return fallback("typed region input is not scalar numeric: " +
-                            input);
+        const bool supportedScalar =
+            variable->second.kind == RuntimeValueKind::Number &&
+            variable->second.numericClass == RuntimeNumericClass::Double;
+        if (!supportedScalar &&
+            !isDirectLinearDoubleArray(variable->second)) {
+            return fallback(
+                "typed region input is not a supported double scalar or linear array: " +
+                input);
         }
     }
 
@@ -1046,6 +1337,15 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
                 if (native.writtenSlots[slot] != 0) {
                     workingVariables[nativeKernel.slotNames[slot]] =
                         numberValue(nativeKernel.slots[slot]);
+                }
+            }
+            for (size_t slot = 0;
+                 slot < nativeKernel.arraySlotNames.size(); ++slot) {
+                if (slot < native.writtenArrays.size() &&
+                    native.writtenArrays[slot] != 0) {
+                    workingVariables[
+                        nativeKernel.arraySlotNames[slot]] =
+                        arrayValue(nativeKernel.arrays[slot]);
                 }
             }
 
@@ -1085,12 +1385,14 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
 
     std::vector<TypedScalar> registers(kernel->registerCount);
     std::vector<bool> written(kernel->slotNames.size(), false);
+    std::vector<bool> writtenArrays(
+        kernel->arraySlotNames.size(), false);
     ScalarKernelExecutionCounters counters;
     for (size_t index = 0; index < values->size(); ++index) {
         kernel->slots[kernel->loopSlot] = TypedScalar{(*values)[index]};
         written[kernel->loopSlot] = true;
         if (!executeKernelSpan(*kernel, 0, kernel->instructions.size(),
-                               registers, written, counters,
+                               registers, written, writtenArrays, counters,
                                compileFailure)) {
             return fallback(std::move(compileFailure));
         }
@@ -1100,6 +1402,12 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
         if (written[slot]) {
             workingVariables[kernel->slotNames[slot]] =
                 numberValue(kernel->slots[slot]);
+        }
+    }
+    for (size_t slot = 0; slot < kernel->arraySlotNames.size(); ++slot) {
+        if (writtenArrays[slot]) {
+            workingVariables[kernel->arraySlotNames[slot]] =
+                arrayValue(kernel->arrays[slot]);
         }
     }
 
@@ -1112,9 +1420,15 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     result.executedKernelInstructionCount = counters.kernelInstructions;
     result.backend = TypedRegionBackend::Portable;
     result.nativeFallbackReason = std::move(nativeFallbackReason);
-    result.reason = kernel->nestedLoopCount == 0
-                        ? "predecoded scalar kernel executed"
-                        : "predecoded nested scalar kernel executed";
+    if (!kernel->arrays.empty()) {
+        result.reason = kernel->nestedLoopCount == 0
+                            ? "predecoded linear-array scalar kernel executed"
+                            : "predecoded nested linear-array scalar kernel executed";
+    } else {
+        result.reason = kernel->nestedLoopCount == 0
+                            ? "predecoded scalar kernel executed"
+                            : "predecoded nested scalar kernel executed";
+    }
     return result;
 }
 

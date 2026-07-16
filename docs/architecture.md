@@ -224,7 +224,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.53 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.54 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -609,7 +609,10 @@ same kernel contract to native machine code through optional SLJIT. v0.52 adds
 closed forward branch operations and path-sensitive definite-input analysis to
 that shared kernel. v0.53 adds a bounded, thread-safe native-code LRU with
 explicit limits, lifecycle operations, and statistics, while retaining the
-portable executor as a build-time and runtime fallback. The
+portable executor as a build-time and runtime fallback. v0.54 adds backend-
+neutral linear array load/store operations for preallocated dense double
+vectors. Both backends copy array state before entry and publish it only after
+the complete region succeeds. The
 structured kernel IR remains backend-neutral so a future LLVM ORC backend can
 target richer regions without changing profiling, guards, or deoptimization:
 
@@ -624,6 +627,19 @@ kernel, binds jumps when their target is emitted, and rejects unresolved or
 cross-span targets before code installation. Per-instruction counters are
 enabled for branch kernels so source and kernel work reflect the arms actually
 executed rather than a static loop multiplier.
+
+For linear-array kernels, the region analyzer admits only one direct numeric
+subscript at each indexed read or write. Runtime specialization then requires a
+dense double `Vector` or `Matrix` whose shape has at most one non-singleton
+dimension, so the existing row-major payload offset is identical to MATLAB's
+column-major linear offset. Indexes must be finite positive integers and must
+remain within the preallocated payload. The typed kernel owns copied elements
+and a written-array bitmap; failure returns no workspace, while success rebuilds
+the original runtime kind and dimensions. The SLJIT emitter calls checked load
+and store helpers through `SLJIT_ARGS3(F64, P, W, F64)` and
+`SLJIT_ARGS4V(P, W, F64, F64)`, leaving platform register assignment to SLJIT.
+The structural cache key includes array-slot count and each instruction's slot
+identity, but excludes runtime pointers, values, dimensions, and lengths.
 
 The native cache defaults to 256 entries and 16 MiB of generated code. Lookup
 and LRU mutation are serialized by a standard C++ mutex, while expensive SLJIT
@@ -745,8 +761,11 @@ and transaction-safe portable or bytecode fallback. v0.52 adds structured
 kernel jumps, native SLJIT labels, exact branch-path counters, and branch-cache
 regressions. v0.53 adds entry and code-byte limits, LRU eviction, safe dynamic
 shrink and clear operations, cache activity/lifecycle metrics, CLI controls,
-and concurrent cache regression coverage. The next steps include
-richer typed values and regions, optional LLVM ORC lowering behind the same
+and concurrent cache regression coverage. v0.54 adds transactional dense-double
+vector element loads and stores to portable and native typed loop kernels,
+checked 1-based indexing, structural cache reuse, observable index counts, and
+AArch64 QEMU execution coverage. The next steps include richer typed values and
+regions, direct inlined bounds checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
 backend contract, persistent cross-process code caches, moving-window array operations,
 object/listener arrays,
 property event listeners,

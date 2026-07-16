@@ -221,6 +221,54 @@ end
     assert(!loop->region.eligibleForTypedExecution);
 }
 
+void runLinearIndexRegionSmoke() {
+    const auto result = plan(R"(function total = main()
+x = 1:12;
+y = zeros(1, 12);
+total = 0;
+for i = 1:12
+    y(i) = sin(x(i)) + i;
+    total = total + y(i);
+end
+end
+)");
+
+    const auto* loop = findLoop(result, "i");
+    assert(loop != nullptr);
+    const auto& region = loop->region;
+    assert(region.available);
+    assert(region.closed);
+    assert(region.linearIndexReadCount == 2);
+    assert(region.linearIndexWriteCount == 1);
+    assert(region.hasMutation);
+    assert(!region.hasUnsupportedMutation);
+    assert(!region.hasCalls);
+    assert(!region.hasUnsupportedOperations);
+    assert(region.eligibleForTypedExecution);
+    assert(hasName(region.inputs, "x"));
+    assert(hasName(region.inputs, "y"));
+    assert(hasName(region.outputs, "y"));
+    assert(region.reason ==
+           "eligible closed scalar loop region with linear numeric indexing");
+}
+
+void runMultidimensionalIndexRejectionSmoke() {
+    const auto result = plan(R"(function A = main()
+A = zeros(4, 4);
+for i = 1:12
+    A(2, 2) = i;
+end
+end
+)");
+
+    const auto* loop = findLoop(result, "i");
+    assert(loop != nullptr);
+    assert(loop->region.hasMutation);
+    assert(loop->region.hasUnsupportedMutation);
+    assert(loop->region.hasUnsupportedOperations);
+    assert(!loop->region.eligibleForTypedExecution);
+}
+
 } // namespace
 
 int main() {
@@ -231,6 +279,8 @@ int main() {
     runNestedLoopRegionSmoke();
     runPureMathCallRegionSmoke();
     runGeneralBuiltinCallRejectionSmoke();
+    runLinearIndexRegionSmoke();
+    runMultidimensionalIndexRejectionSmoke();
     std::cout << "bytecode region smoke tests passed\n";
     return 0;
 }

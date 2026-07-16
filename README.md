@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.53.0. See [docs/v0.53.md](docs/v0.53.md) for the
+Current milestone: v0.54.0. See [docs/v0.54.md](docs/v0.54.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.52.md](docs/v0.52.md),
+iteration plan. Previous boundaries are kept in [docs/v0.53.md](docs/v0.53.md),
+[docs/v0.52.md](docs/v0.52.md),
 [docs/v0.51.md](docs/v0.51.md),
 [docs/v0.50.md](docs/v0.50.md),
 [docs/v0.49.md](docs/v0.49.md),
@@ -96,7 +97,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.53 executes the core numeric/string subset,
+expression operators. v0.54 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -519,6 +520,18 @@ mutex, concurrent same-key compilations converge on one resident entry, and an
 active execution keeps its generated code alive even if another thread clears
 or evicts it.
 
+v0.54 broadens the shared typed-loop contract from scalar workspaces to
+preallocated dense double vectors. Closed `for` regions can now read and write
+scalar elements through MATLAB 1-based linear indexing, including write-then-
+read data flow and pure scalar math around each access. The portable kernel and
+SLJIT backend execute the same `LoadArrayElement` and `StoreArrayElement` IR.
+Both work on private array copies and commit only after the entire region
+succeeds; a non-integer or out-of-bounds index, an unsupported shape, or a
+request for growth resumes the unchanged bytecode frame. General matrices,
+logical/vector/colon subscripts, multiple subscripts, deletion, and growth stay
+on the full VM path. The native helper calls use SLJIT's public mixed integer/
+floating-point call ABI and are exercised in Linux AArch64 QEMU CI.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -599,6 +612,19 @@ build\mparser.exe --run-typed-bytecode --typed-backend=portable `
 build\mparser.exe --run-typed-bytecode --typed-backend=native `
   samples\branched_typed_loop_demo.m
 ```
+
+Run the typed linear-array sample with either backend:
+
+```powershell
+build\mparser.exe --run-typed-bytecode --typed-backend=portable `
+  samples\typed_linear_array_demo.m
+build\mparser.exe --run-typed-bytecode --typed-backend=native `
+  samples\typed_linear_array_demo.m
+```
+
+Both executions produce `first = 2.8414709848079`,
+`last = 40.9129452507276`, and `checksum = 420.99822188442`, then report that
+their outputs match the baseline bytecode VM.
 
 Inspect or tune the native cache with `--native-cache-entries=N`,
 `--native-cache-bytes=N`, and `--native-cache-stats`. This module-runtime
