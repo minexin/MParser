@@ -325,6 +325,7 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
     case BytecodeOp::BeginIndexArgument:
         break;
     case BytecodeOp::MemberAccess:
+    case BytecodeOp::MakeNameValueArgument:
     case BytecodeOp::BraceIndex:
     case BytecodeOp::MakeMatrix:
     case BytecodeOp::MakeMatrixRow:

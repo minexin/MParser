@@ -115,6 +115,10 @@ bool isCell(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Cell;
 }
 
+bool isStruct(const RuntimeValue& value) {
+    return value.kind == RuntimeValueKind::Struct;
+}
+
 const std::map<std::string, RuntimeValue>& objectFields(
     const RuntimeValue& value) {
     if (value.handleObject && value.sharedFields) {
@@ -179,6 +183,25 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
             }
         }
         return true;
+    }
+    if (isStruct(left) && isStruct(right)) {
+        if (left.fields.size() != right.fields.size()) {
+            return false;
+        }
+        for (const auto& [name, value] : left.fields) {
+            const auto other = right.fields.find(name);
+            if (other == right.fields.end() ||
+                !runtimeEqual(value, other->second)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (left.kind == RuntimeValueKind::NameValueArgument &&
+        right.kind == RuntimeValueKind::NameValueArgument) {
+        return left.text == right.text && left.cells.size() == 1 &&
+               right.cells.size() == 1 &&
+               runtimeEqual(left.cells.front(), right.cells.front());
     }
     if (left.kind == RuntimeValueKind::Object &&
         right.kind == RuntimeValueKind::Object) {
@@ -520,37 +543,31 @@ private:
                               node.label);
             return missingOutputs();
         }
-        if (functionHasNameValueParameters(signature)) {
-            addDiagnostic(node,
-                          "name-value arguments are not executable yet for: " +
-                              node.label);
+
+        std::vector<std::string> nameValueDeclarations;
+        for (const auto& contract : contracts) {
+            if (contract.blockKind == ArgumentBlockKind::Input &&
+                contract.declaration->label.find('.') != std::string::npos) {
+                nameValueDeclarations.push_back(contract.declaration->label);
+            }
+        }
+        auto normalized = normalizeRuntimeInvocationArguments(
+            signature, nameValueDeclarations, arguments);
+        if (!normalized.succeeded) {
+            addDiagnostic(node, "function invocation failed for " + node.label +
+                                    ": " + normalized.error);
             return missingOutputs();
         }
+        const auto& positionalArguments = normalized.positionalArguments;
 
         const size_t fixedParameterCount =
             functionPositionalParameterCount(signature);
         const size_t repeatingGroupWidth =
             functionRepeatingParameterCount(signature);
-        const auto argumentCountStatus =
-            functionArgumentCountStatus(signature, arguments.size());
-        if (argumentCountStatus == FunctionArgumentCountStatus::Mismatch) {
-            addDiagnostic(node, "function argument count mismatch for: " +
-                                    node.label);
-            return missingOutputs();
-        }
         const size_t repeatingValueCount =
-            arguments.size() > fixedParameterCount
-                ? arguments.size() - fixedParameterCount
+            positionalArguments.size() > fixedParameterCount
+                ? positionalArguments.size() - fixedParameterCount
                 : 0;
-        if (argumentCountStatus ==
-            FunctionArgumentCountStatus::IncompleteRepeatingGroup) {
-            addDiagnostic(
-                node,
-                "incomplete repeating argument group for " + node.label +
-                    ": expected a multiple of " +
-                    std::to_string(repeatingGroupWidth) + " values");
-            return missingOutputs();
-        }
         if (!signature.hasVarargout && outputCount > signature.outputs.size()) {
             addDiagnostic(node, "function output count mismatch for: " +
                                     node.label);
@@ -559,7 +576,8 @@ private:
 
         frames_.push_back({});
         currentFrame()["nargin"] =
-            numberValue(static_cast<double>(arguments.size()));
+            numberValue(static_cast<double>(
+                normalized.positionalArgumentCount));
         currentFrame()["nargout"] =
             numberValue(static_cast<double>(outputCount));
         auto validateValue = [&](RuntimeValue value, const HirNode* contract,
@@ -591,8 +609,8 @@ private:
             const HirNode* contract =
                 contractFor(parameterName, ArgumentBlockKind::Input);
             RuntimeValue value;
-            if (index < arguments.size()) {
-                value = arguments[index];
+            if (index < positionalArguments.size()) {
+                value = positionalArguments[index];
             } else if (contract != nullptr &&
                        contract->property.hasExplicitDefault &&
                        !contract->children.empty()) {
@@ -619,7 +637,7 @@ private:
 
         if (repeatingGroupWidth != 0) {
             const size_t occurrenceCount =
-                arguments.size() < fixedParameterCount
+                positionalArguments.size() < fixedParameterCount
                     ? 0
                     : repeatingValueCount / repeatingGroupWidth;
             size_t groupIndex = 0;
@@ -640,7 +658,8 @@ private:
                         fixedParameterCount +
                         occurrence * repeatingGroupWidth + groupIndex;
                     auto validated = validateValue(
-                        arguments[argumentIndex], contract, occurrence);
+                        positionalArguments[argumentIndex], contract,
+                        occurrence);
                     if (!validated) {
                         frames_.pop_back();
                         return missingOutputs();
@@ -659,12 +678,14 @@ private:
             std::vector<RuntimeValue> values;
             const size_t begin =
                 repeatingGroupWidth == 0
-                    ? std::min(arguments.size(), fixedParameterCount)
-                    : arguments.size();
-            values.reserve(arguments.size() - begin);
-            for (size_t index = begin; index < arguments.size(); ++index) {
+                    ? std::min(positionalArguments.size(), fixedParameterCount)
+                    : positionalArguments.size();
+            values.reserve(positionalArguments.size() - begin);
+            for (size_t index = begin; index < positionalArguments.size();
+                 ++index) {
                 auto validated =
-                    validateValue(arguments[index], contract, index - begin);
+                    validateValue(positionalArguments[index], contract,
+                                  index - begin);
                 if (!validated) {
                     frames_.pop_back();
                     return missingOutputs();
@@ -673,6 +694,56 @@ private:
             }
             currentFrame()["varargin"] = cellValue(std::move(values));
         }
+
+        std::map<std::string, RuntimeValue> nameValueStructures;
+        for (size_t index = 0; index < signature.parameters.size(); ++index) {
+            if (functionParameterKind(signature, index) ==
+                FunctionParameterKind::NameValue) {
+                nameValueStructures.emplace(
+                    signature.parameters[index], makeRuntimeStructValue());
+            }
+        }
+        for (const auto& contractRef : contracts) {
+            const HirNode& contract = *contractRef.declaration;
+            const size_t dot = contract.label.find('.');
+            if (contractRef.blockKind != ArgumentBlockKind::Input ||
+                dot == std::string::npos) {
+                continue;
+            }
+            const std::string root = contract.label.substr(0, dot);
+            const std::string field = contract.label.substr(dot + 1);
+            auto structure = nameValueStructures.find(root);
+            if (structure == nameValueStructures.end()) {
+                continue;
+            }
+
+            std::optional<RuntimeValue> value;
+            if (const auto supplied =
+                    normalized.nameValueArguments.find(contract.label);
+                supplied != normalized.nameValueArguments.end()) {
+                value = supplied->second;
+            } else if (contract.property.hasExplicitDefault &&
+                       !contract.children.empty()) {
+                const size_t diagnosticCount = diagnostics_.size();
+                value = evaluate(*contract.children.front());
+                if (diagnostics_.size() != diagnosticCount) {
+                    frames_.pop_back();
+                    return missingOutputs();
+                }
+            }
+            if (!value) {
+                continue;
+            }
+            auto validated = validateValue(std::move(*value), &contract);
+            if (!validated) {
+                frames_.pop_back();
+                return missingOutputs();
+            }
+            structure->second.fields[field] = std::move(*validated);
+        }
+        for (auto& [name, structure] : nameValueStructures) {
+            currentFrame()[name] = std::move(structure);
+        }
         for (const auto& output : signature.outputs) {
             currentFrame()[output] = missingValue();
         }
@@ -680,7 +751,8 @@ private:
             currentFrame()["varargout"] = cellValue({});
         }
         currentFrame()["nargin"] =
-            numberValue(static_cast<double>(arguments.size()));
+            numberValue(static_cast<double>(
+                normalized.positionalArgumentCount));
         currentFrame()["nargout"] =
             numberValue(static_cast<double>(outputCount));
 
@@ -758,6 +830,7 @@ private:
         case HirKind::MatrixRow:
         case HirKind::Cell:
         case HirKind::MemberAccess:
+        case HirKind::NameValueArgument:
         case HirKind::CallOrIndex:
         case HirKind::SuperclassCall:
         case HirKind::BraceIndex:
@@ -890,9 +963,7 @@ private:
             addDiagnostic(target, "unsupported assignment target");
             break;
         case HirKind::MemberAccess:
-            addDiagnostic(target,
-                          "member assignment is not executable in the reference "
-                          "interpreter yet");
+            assignMemberTarget(target, value);
             break;
         case HirKind::CallOrIndex:
             assignIndexedTarget(target, value, nullAssignment);
@@ -904,6 +975,26 @@ private:
             addDiagnostic(target, "unsupported assignment target");
             break;
         }
+    }
+
+    void assignMemberTarget(const HirNode& target,
+                            const RuntimeValue& value) {
+        if (target.children.empty() ||
+            target.children.front()->kind != HirKind::NameRef) {
+            addDiagnostic(target,
+                          "structure member assignment currently requires a "
+                          "variable target");
+            return;
+        }
+        const std::string& name = target.children.front()->label;
+        const auto variable = currentFrame().find(name);
+        if (variable == currentFrame().end() || !isStruct(variable->second)) {
+            addDiagnostic(target,
+                          "member assignment requires a structure target: " +
+                              name);
+            return;
+        }
+        variable->second.fields[target.label] = value;
     }
 
     void assignIndexedTarget(const HirNode& target, const RuntimeValue& value,
@@ -1339,6 +1430,10 @@ private:
             return evaluateMatrixRow(node);
         case HirKind::Cell:
             return evaluateCell(node);
+        case HirKind::MemberAccess:
+            return evaluateMemberAccess(node);
+        case HirKind::NameValueArgument:
+            return evaluateNameValueArgument(node);
         case HirKind::CallOrIndex:
             return evaluateCallOrIndex(node);
         case HirKind::BraceIndex:
@@ -1362,7 +1457,6 @@ private:
         case HirKind::ControlArm:
         case HirKind::OutputList:
         case HirKind::ParameterList:
-        case HirKind::MemberAccess:
         case HirKind::SuperclassCall:
         case HirKind::FunctionHandle:
         case HirKind::MetaClass:
@@ -1389,6 +1483,36 @@ private:
             values.push_back(evaluate(*child));
         }
         return cellValue(std::move(values));
+    }
+
+    RuntimeValue evaluateNameValueArgument(const HirNode& node) {
+        if (node.children.size() != 1) {
+            addDiagnostic(node, "name=value argument requires one value");
+            return missingValue();
+        }
+        return makeRuntimeNameValueArgument(node.label,
+                                            evaluate(*node.children.front()));
+    }
+
+    RuntimeValue evaluateMemberAccess(const HirNode& node) {
+        if (node.children.empty()) {
+            addDiagnostic(node, "member access is missing a target");
+            return missingValue();
+        }
+        const RuntimeValue target = evaluate(*node.children.front());
+        if (!isStruct(target)) {
+            addDiagnostic(node,
+                          "member access requires a structure in the reference "
+                          "interpreter");
+            return missingValue();
+        }
+        const auto field = target.fields.find(node.label);
+        if (field == target.fields.end()) {
+            addDiagnostic(node, "structure field is not available: " +
+                                    node.label);
+            return missingValue();
+        }
+        return field->second;
     }
 
     RuntimeValue evaluatePostfix(const HirNode& node) {
@@ -2436,6 +2560,24 @@ private:
         if (name == "strcmp") {
             return callStrcmpBuiltin(node, arguments);
         }
+        if (name == "struct") {
+            if (!arguments.empty()) {
+                addDiagnostic(node,
+                              "struct currently supports only the empty form");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{makeRuntimeStructValue()}};
+        }
+        if (name == "isfield") {
+            if (arguments.size() != 2 || !isStruct(arguments[0]) ||
+                !isString(arguments[1])) {
+                addDiagnostic(node,
+                              "isfield expects a structure and field-name string");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{logicalValue(
+                arguments[0].fields.contains(arguments[1].text))}};
+        }
         if (name == "logical" || name == "double") {
             if (arguments.size() != 1 || !isNumeric(arguments.front())) {
                 addDiagnostic(node,
@@ -2476,6 +2618,9 @@ private:
             if (isCell(value)) {
                 return FunctionCallResult{{stringValue("cell")}};
             }
+            if (isStruct(value)) {
+                return FunctionCallResult{{stringValue("struct")}};
+            }
             return FunctionCallResult{{stringValue("missing")}};
         }
         if (name == "isa") {
@@ -2495,6 +2640,8 @@ private:
                 matches = target == "char" || target == "string";
             } else if (isCell(value)) {
                 matches = target == "cell";
+            } else if (isStruct(value)) {
+                matches = target == "struct";
             }
             return FunctionCallResult{{logicalValue(matches)}};
         }
@@ -2814,6 +2961,25 @@ InterpreterResult Interpreter::run(const SemanticResult& semantic) {
     return context.run(semantic);
 }
 
+RuntimeValue makeRuntimeStructValue(
+    std::map<std::string, RuntimeValue> fields) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::Struct;
+    result.fields = std::move(fields);
+    setRuntimeDimensions(result, {1, 1});
+    return result;
+}
+
+RuntimeValue makeRuntimeNameValueArgument(std::string name,
+                                          RuntimeValue value) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::NameValueArgument;
+    result.text = std::move(name);
+    result.cells.push_back(std::move(value));
+    setRuntimeDimensions(result, {1, 1});
+    return result;
+}
+
 std::string runtimeValueToString(const RuntimeValue& value) {
     std::ostringstream output;
     output << std::setprecision(15);
@@ -2906,6 +3072,22 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         return output.str();
     case RuntimeValueKind::FunctionHandle:
         return value.text.empty() ? "<function_handle>" : value.text;
+    case RuntimeValueKind::Struct:
+        output << "struct(";
+        for (auto field = value.fields.begin(); field != value.fields.end();
+             ++field) {
+            if (field != value.fields.begin()) {
+                output << ", ";
+            }
+            output << field->first << "="
+                   << runtimeValueToString(field->second);
+        }
+        output << ")";
+        return output.str();
+    case RuntimeValueKind::NameValueArgument:
+        return value.text + "=" +
+               (value.cells.empty() ? std::string("<missing>")
+                                    : runtimeValueToString(value.cells.front()));
     case RuntimeValueKind::Object:
         output << "<" << value.className;
         if (!value.enumerationMemberName.empty()) {

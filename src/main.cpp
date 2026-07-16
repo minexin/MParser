@@ -19,6 +19,7 @@
 #include "mparser/token.h"
 
 #include <algorithm>
+#include <cctype>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -34,7 +35,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.59.0"
+#define MPARSER_VERSION "0.60.0"
 #endif
 
 namespace {
@@ -68,7 +69,7 @@ void printUsage() {
                  "[--adaptive-fallback-limit=N] "
                  "[--adaptive-persist-workspace] "
                  "[--adaptive-workspace=name=value] "
-                 "[--entry-function=name] [--argument=value] "
+                 "[--entry-function=name] [--argument=value|name=value] "
                  "[--outputs=N] "
                  "[--module-call=name[:value...]] "
                  "[--path=DIR] [--class-path=DIR] "
@@ -189,6 +190,34 @@ mparser::RuntimeValue parseRuntimeValue(const std::string& valueText) {
     return value;
 }
 
+bool isInvocationArgumentName(std::string_view name) {
+    if (name.empty()) {
+        return false;
+    }
+    const unsigned char first = static_cast<unsigned char>(name.front());
+    if (std::isalpha(first) == 0 && name.front() != '_') {
+        return false;
+    }
+    return std::all_of(name.begin() + 1, name.end(), [](char character) {
+        const unsigned char value = static_cast<unsigned char>(character);
+        return std::isalnum(value) != 0 || character == '_';
+    });
+}
+
+mparser::RuntimeValue parseInvocationArgument(
+    const std::string& valueText) {
+    const size_t separator = valueText.find('=');
+    if (separator != std::string::npos && separator != 0 &&
+        separator + 1 < valueText.size() &&
+        isInvocationArgumentName(
+            std::string_view(valueText).substr(0, separator))) {
+        return mparser::makeRuntimeNameValueArgument(
+            valueText.substr(0, separator),
+            parseRuntimeValue(valueText.substr(separator + 1)));
+    }
+    return parseRuntimeValue(valueText);
+}
+
 struct ModuleCall {
     std::string entryFunction;
     std::vector<mparser::RuntimeValue> arguments;
@@ -219,7 +248,7 @@ ModuleCall parseModuleCallOption(const std::string& argument) {
             throw std::invalid_argument(
                 "module call argument cannot be empty: " + argument);
         }
-        call.arguments.push_back(parseRuntimeValue(valueText));
+        call.arguments.push_back(parseInvocationArgument(valueText));
     }
     return call;
 }
@@ -1120,7 +1149,7 @@ int main(int argc, char** argv) {
                         "entry function name cannot be empty");
                 }
             } else if (arg.starts_with("--argument=")) {
-                entryArguments.push_back(parseRuntimeValue(
+                entryArguments.push_back(parseInvocationArgument(
                     arg.substr(std::string("--argument=").size())));
             } else if (arg.starts_with("--outputs=")) {
                 requestedOutputCount =
@@ -1183,7 +1212,7 @@ int main(int argc, char** argv) {
             }
 
             const auto validation = module.validateInvocation(
-                entryFunction, entryArguments.size(), requestedOutputCount);
+                entryFunction, entryArguments, requestedOutputCount);
             if (!entryFunction.empty()) {
                 std::cout << "Entry validation:\n"
                           << "  function: " << entryFunction << "\n"

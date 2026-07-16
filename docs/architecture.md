@@ -183,19 +183,28 @@ shared argument-count check combines that value with the fixed parameter count,
 repeating-group width, and `varargin` flag, so interpreters and reusable module
 entries do not reconstruct calling conventions from raw source.
 
-The interpreter and bytecode VM execute repeating input groups with the same
-layout. Fixed positional parameters bind first and may evaluate trailing
-defaults. Remaining inputs must contain zero or more complete repetitions of
-the declared group. Every repeating parameter receives a one-dimensional Cell,
-and each Cell element is converted and validated independently before the
-function body runs. A repeating `varargin` declaration validates each excess
-input while retaining the ordinary `varargin` Cell interface. `nargin` remains
-the caller-provided positional count. `CompiledModule` preflight and adaptive
-module sessions use the same arity contract, including optional fixed inputs,
-zero repetitions, and incomplete-group diagnostics. Name-value and output
-groups are retained for the next calling-convention stages and currently
-produce explicit runtime diagnostics rather than silently skipping their
-contracts.
+The interpreter and bytecode VM execute repeating and name-value input groups
+with the same layout. Fixed positional parameters bind first and may evaluate
+trailing defaults. Remaining positional inputs must contain zero or more
+complete repetitions of the declared group. Every repeating parameter receives
+a one-dimensional Cell, and each Cell element is converted and validated
+independently before the function body runs. A repeating `varargin`
+declaration validates each excess input while retaining the ordinary
+`varargin` Cell interface.
+
+Modern `Name=value` call operands lower through a dedicated syntax/HIR node and
+`MakeNameValueArgument` bytecode operation. A shared invocation normalizer also
+accepts legacy string/value tails, resolves exact or unambiguous partial field
+names across all declared structures, applies last-value-wins duplicate
+semantics, and separates the positional prefix from named values. Each
+name-value root is bound as a Struct. Supplied or defaulted fields run through
+the same conversion, size, and validator pipeline as positional inputs; an
+omitted field without a default is absent. `nargin` remains the caller-provided
+positional count. `CompiledModule` preflight and adaptive module sessions use
+the value-aware normalizer, including optional fixed inputs, repeating groups,
+unknown/ambiguous names, and malformed legacy tails. Output argument groups
+remain explicit metadata and still produce a runtime diagnostic until
+post-execution output validation is implemented.
 
 Dynamic MATLAB constructs intentionally remain delayed. `CallOrIndex`,
 `BraceIndex`, and `MemberAccess` HIR nodes preserve the surface operation and

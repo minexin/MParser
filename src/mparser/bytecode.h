@@ -52,6 +52,7 @@ enum class BytecodeOp {
     BinaryOp,
     PostfixOp,
     MemberAccess,
+    MakeNameValueArgument,
     CallOrIndex,
     CallSuperclass,
     BraceIndex,

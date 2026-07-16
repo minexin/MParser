@@ -152,6 +152,10 @@ private:
             lowerChildren(node);
             emit(BytecodeOp::MemberAccess, node, childCount(node));
             break;
+        case HirKind::NameValueArgument:
+            lowerChildren(node);
+            emit(BytecodeOp::MakeNameValueArgument, node, childCount(node));
+            break;
         case HirKind::CallOrIndex:
             lowerCallOrIndex(node, 1);
             break;
@@ -862,6 +866,8 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "PostfixOp";
     case BytecodeOp::MemberAccess:
         return "MemberAccess";
+    case BytecodeOp::MakeNameValueArgument:
+        return "MakeNameValueArgument";
     case BytecodeOp::CallOrIndex:
         return "CallOrIndex";
     case BytecodeOp::CallSuperclass:

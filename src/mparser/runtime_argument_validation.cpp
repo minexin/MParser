@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <optional>
+#include <sstream>
 #include <string_view>
 
 namespace mparser {
@@ -74,6 +75,175 @@ RuntimeArgumentValidationResult failure(std::string message) {
 
 RuntimeArgumentValidationResult success(RuntimeValue value) {
     return RuntimeArgumentValidationResult{true, std::move(value), {}};
+}
+
+struct NameValueField {
+    std::string declaration;
+    std::string field;
+};
+
+enum class NameMatchKind {
+    None,
+    Resolved,
+    Ambiguous,
+};
+
+struct NameMatch {
+    NameMatchKind kind = NameMatchKind::None;
+    std::string declaration;
+    std::vector<std::string> candidates;
+};
+
+std::vector<NameValueField> collectNameValueFields(
+    const std::vector<std::string>& declarations) {
+    std::vector<NameValueField> fields;
+    fields.reserve(declarations.size());
+    for (const auto& declaration : declarations) {
+        const size_t dot = declaration.find('.');
+        if (dot == std::string::npos || dot == 0 ||
+            dot + 1 >= declaration.size()) {
+            continue;
+        }
+        fields.push_back(NameValueField{
+            declaration, declaration.substr(dot + 1)});
+    }
+    return fields;
+}
+
+NameMatch resolveNameValueName(const std::vector<NameValueField>& fields,
+                               std::string_view supplied) {
+    NameMatch match;
+    for (const auto& field : fields) {
+        if (field.field == supplied) {
+            match.candidates.push_back(field.declaration);
+        }
+    }
+    if (match.candidates.size() == 1) {
+        match.kind = NameMatchKind::Resolved;
+        match.declaration = match.candidates.front();
+        return match;
+    }
+    if (match.candidates.size() > 1) {
+        match.kind = NameMatchKind::Ambiguous;
+        return match;
+    }
+
+    for (const auto& field : fields) {
+        if (field.field.starts_with(supplied)) {
+            match.candidates.push_back(field.declaration);
+        }
+    }
+    if (match.candidates.size() == 1) {
+        match.kind = NameMatchKind::Resolved;
+        match.declaration = match.candidates.front();
+    } else if (!match.candidates.empty()) {
+        match.kind = NameMatchKind::Ambiguous;
+    }
+    return match;
+}
+
+std::string ambiguousNameMessage(std::string_view supplied,
+                                 const NameMatch& match) {
+    std::ostringstream message;
+    message << "ambiguous name-value argument: " << supplied;
+    if (!match.candidates.empty()) {
+        message << " (matches ";
+        for (size_t index = 0; index < match.candidates.size(); ++index) {
+            if (index != 0) {
+                message << ", ";
+            }
+            const auto& declaration = match.candidates[index];
+            const size_t dot = declaration.find('.');
+            message << (dot == std::string::npos
+                            ? declaration
+                            : declaration.substr(dot + 1));
+        }
+        message << ")";
+    }
+    return message.str();
+}
+
+bool isNameValueWrapper(const RuntimeValue& value) {
+    return value.kind == RuntimeValueKind::NameValueArgument;
+}
+
+bool positionalPrefixIsValid(const FunctionSignature& signature,
+                             size_t count) {
+    return functionPositionalArgumentCountStatus(signature, count) ==
+           FunctionArgumentCountStatus::Valid;
+}
+
+std::string positionalCountError(const FunctionSignature& signature,
+                                 size_t count) {
+    if (functionPositionalArgumentCountStatus(signature, count) ==
+        FunctionArgumentCountStatus::IncompleteRepeatingGroup) {
+        return "incomplete repeating argument group: expected a multiple of " +
+               std::to_string(functionRepeatingParameterCount(signature)) +
+               " values";
+    }
+    return "function argument count mismatch";
+}
+
+RuntimeInvocationNormalizationResult normalizationFailure(
+    std::string error) {
+    RuntimeInvocationNormalizationResult result;
+    result.error = std::move(error);
+    return result;
+}
+
+RuntimeInvocationNormalizationResult parseNameValueTail(
+    const FunctionSignature& signature,
+    const std::vector<NameValueField>& fields,
+    const std::vector<RuntimeValue>& arguments, size_t tailBegin) {
+    if (!positionalPrefixIsValid(signature, tailBegin)) {
+        return normalizationFailure(positionalCountError(signature, tailBegin));
+    }
+
+    RuntimeInvocationNormalizationResult result;
+    result.positionalArguments.assign(arguments.begin(),
+                                      arguments.begin() + tailBegin);
+    result.positionalArgumentCount = tailBegin;
+    size_t index = tailBegin;
+    while (index < arguments.size()) {
+        std::string suppliedName;
+        RuntimeValue value;
+        if (isNameValueWrapper(arguments[index])) {
+            if (arguments[index].text.empty() ||
+                arguments[index].cells.size() != 1) {
+                return normalizationFailure(
+                    "malformed name=value argument");
+            }
+            suppliedName = arguments[index].text;
+            value = arguments[index].cells.front();
+            ++index;
+        } else {
+            if (arguments[index].kind != RuntimeValueKind::String) {
+                return normalizationFailure(
+                    "positional argument cannot follow a name-value argument");
+            }
+            suppliedName = arguments[index].text;
+            if (index + 1 >= arguments.size()) {
+                return normalizationFailure(
+                    "name-value argument is missing a value: " +
+                    suppliedName);
+            }
+            value = arguments[index + 1];
+            index += 2;
+        }
+
+        const NameMatch match = resolveNameValueName(fields, suppliedName);
+        if (match.kind == NameMatchKind::None) {
+            return normalizationFailure("unknown name-value argument: " +
+                                        suppliedName);
+        }
+        if (match.kind == NameMatchKind::Ambiguous) {
+            return normalizationFailure(
+                ambiguousNameMessage(suppliedName, match));
+        }
+        result.nameValueArguments[match.declaration] = std::move(value);
+    }
+    result.succeeded = true;
+    return result;
 }
 
 RuntimeArgumentValidationResult coerceClass(
@@ -341,6 +511,73 @@ RuntimeArgumentValidationResult validateRuntimeArgument(
         }
     }
     return sizeResult;
+}
+
+RuntimeInvocationNormalizationResult normalizeRuntimeInvocationArguments(
+    const FunctionSignature& signature,
+    const std::vector<std::string>& nameValueDeclarations,
+    const std::vector<RuntimeValue>& arguments) {
+    const auto fields = collectNameValueFields(nameValueDeclarations);
+    if (fields.empty()) {
+        const auto status =
+            functionPositionalArgumentCountStatus(signature, arguments.size());
+        if (status != FunctionArgumentCountStatus::Valid) {
+            return normalizationFailure(
+                positionalCountError(signature, arguments.size()));
+        }
+        RuntimeInvocationNormalizationResult result;
+        result.succeeded = true;
+        result.positionalArguments = arguments;
+        result.positionalArgumentCount = arguments.size();
+        return result;
+    }
+
+    const size_t required =
+        functionRequiredPositionalParameterCount(signature);
+    std::optional<size_t> firstWrapper;
+    for (size_t index = 0; index < arguments.size(); ++index) {
+        if (isNameValueWrapper(arguments[index])) {
+            firstWrapper = index;
+            break;
+        }
+    }
+
+    const size_t scanEnd = firstWrapper.value_or(arguments.size());
+    for (size_t index = required; index < scanEnd; ++index) {
+        if (!positionalPrefixIsValid(signature, index) ||
+            arguments[index].kind != RuntimeValueKind::String) {
+            continue;
+        }
+        const NameMatch match =
+            resolveNameValueName(fields, arguments[index].text);
+        if (match.kind != NameMatchKind::None) {
+            return parseNameValueTail(signature, fields, arguments, index);
+        }
+    }
+
+    if (firstWrapper) {
+        return parseNameValueTail(signature, fields, arguments,
+                                  *firstWrapper);
+    }
+
+    const auto positionalStatus =
+        functionPositionalArgumentCountStatus(signature, arguments.size());
+    if (positionalStatus == FunctionArgumentCountStatus::Valid) {
+        RuntimeInvocationNormalizationResult result;
+        result.succeeded = true;
+        result.positionalArguments = arguments;
+        result.positionalArgumentCount = arguments.size();
+        return result;
+    }
+
+    for (size_t index = required; index < arguments.size(); ++index) {
+        if (positionalPrefixIsValid(signature, index) &&
+            arguments[index].kind == RuntimeValueKind::String) {
+            return parseNameValueTail(signature, fields, arguments, index);
+        }
+    }
+    return normalizationFailure(
+        positionalCountError(signature, arguments.size()));
 }
 
 } // namespace mparser

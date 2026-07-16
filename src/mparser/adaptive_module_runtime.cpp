@@ -37,7 +37,7 @@ AdaptiveModuleInvocationResult AdaptiveModuleRuntime::invoke(
     }
 
     const auto validation =
-        module_->validateInvocation(entryFunction, arguments.size(),
+        module_->validateInvocation(entryFunction, arguments,
                                     requestedOutputCount);
     if (!validation.empty()) {
         result.adaptive.runtime.diagnostics = validation;

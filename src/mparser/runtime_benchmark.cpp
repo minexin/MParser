@@ -61,6 +61,24 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
         return true;
     case RuntimeValueKind::FunctionHandle:
         return left.opaqueId == right.opaqueId && left.text == right.text;
+    case RuntimeValueKind::NameValueArgument:
+        return left.text == right.text && left.cells.size() == 1 &&
+               right.cells.size() == 1 &&
+               runtimeValuesEqualImpl(left.cells.front(), right.cells.front(),
+                                      comparedHandles);
+    case RuntimeValueKind::Struct:
+        if (left.fields.size() != right.fields.size()) {
+            return false;
+        }
+        for (const auto& [name, value] : left.fields) {
+            const auto other = right.fields.find(name);
+            if (other == right.fields.end() ||
+                !runtimeValuesEqualImpl(value, other->second,
+                                        comparedHandles)) {
+                return false;
+            }
+        }
+        return true;
     case RuntimeValueKind::Object: {
         const auto& leftFields = objectFields(left);
         const auto& rightFields = objectFields(right);

@@ -30,6 +30,8 @@ std::vector<size_t> runtimeDimensions(const RuntimeValue& value) {
         return {0, 0};
     case RuntimeValueKind::Number:
     case RuntimeValueKind::FunctionHandle:
+    case RuntimeValueKind::Struct:
+    case RuntimeValueKind::NameValueArgument:
     case RuntimeValueKind::Object:
         return {1, 1};
     case RuntimeValueKind::String:

@@ -2,6 +2,7 @@
 
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_argument_validation.h"
 
 #include <filesystem>
 #include <map>
@@ -34,8 +35,22 @@ void collectInvocableFunctions(
             }
         }
 
+        std::vector<std::string> nameValueArguments;
+        for (const auto& child : node->children) {
+            if (child->kind != HirKind::ArgumentBlock ||
+                child->argumentBlock.kind != ArgumentBlockKind::Input) {
+                continue;
+            }
+            for (const auto& declaration : child->children) {
+                if (declaration->kind == HirKind::Argument &&
+                    declaration->label.find('.') != std::string::npos) {
+                    nameValueArguments.push_back(declaration->label);
+                }
+            }
+        }
         functions.push_back(CompiledFunctionInfo{
-            node->label, parseFunctionSignature(*node), node->span});
+            node->label, parseFunctionSignature(*node),
+            std::move(nameValueArguments), node->span});
         return;
     }
 
@@ -457,10 +472,44 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
     return {};
 }
 
+std::vector<Diagnostic> CompiledModule::validateInvocation(
+    std::string_view entryFunction,
+    const std::vector<RuntimeValue>& arguments,
+    std::optional<size_t> requestedOutputCount) const {
+    if (!valid()) {
+        return diagnostics_;
+    }
+    if (entryFunction.empty()) {
+        return {};
+    }
+
+    const auto* function = findFunction(entryFunction);
+    if (!function) {
+        return {Diagnostic{SourceSpan{},
+                           "entry function is not available: " +
+                               std::string(entryFunction)}};
+    }
+    const auto normalized = normalizeRuntimeInvocationArguments(
+        function->signature, function->nameValueArguments, arguments);
+    if (!normalized.succeeded) {
+        return {Diagnostic{
+            function->span,
+            "function invocation failed for " + function->name + ": " +
+                normalized.error}};
+    }
+    if (!function->signature.hasVarargout && requestedOutputCount &&
+        *requestedOutputCount > function->signature.outputs.size()) {
+        return {Diagnostic{
+            function->span,
+            "function output count mismatch for: " + function->name}};
+    }
+    return {};
+}
+
 BytecodeVmResult CompiledModule::invoke(
     const BytecodeVmOptions& options) const {
     const auto validation =
-        validateInvocation(options.entryFunction, options.arguments.size(),
+        validateInvocation(options.entryFunction, options.arguments,
                            options.requestedOutputCount);
     if (!validation.empty()) {
         BytecodeVmResult result;
@@ -475,7 +524,7 @@ BytecodeVmResult CompiledModule::invoke(
 AdaptiveBytecodeVmSession CompiledModule::createAdaptiveSession(
     const AdaptiveBytecodeVmOptions& options) const {
     const auto validation =
-        validateInvocation(options.entryFunction, options.arguments.size(),
+        validateInvocation(options.entryFunction, options.arguments,
                            options.requestedOutputCount);
     if (!validation.empty()) {
         throw std::invalid_argument(firstDiagnosticMessage(validation));

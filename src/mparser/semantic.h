@@ -37,6 +37,7 @@ enum class HirKind {
     MatrixRow,
     Cell,
     MemberAccess,
+    NameValueArgument,
     CallOrIndex,
     SuperclassCall,
     BraceIndex,

@@ -15,6 +15,7 @@ namespace mparser {
 struct CompiledFunctionInfo {
     std::string name;
     FunctionSignature signature;
+    std::vector<std::string> nameValueArguments;
     SourceSpan span;
 };
 
@@ -37,6 +38,10 @@ public:
     std::vector<Diagnostic> validateInvocation(
         std::string_view entryFunction,
         size_t argumentCount,
+        std::optional<size_t> requestedOutputCount = std::nullopt) const;
+    std::vector<Diagnostic> validateInvocation(
+        std::string_view entryFunction,
+        const std::vector<RuntimeValue>& arguments,
         std::optional<size_t> requestedOutputCount = std::nullopt) const;
     BytecodeVmResult invoke(const BytecodeVmOptions& options = {}) const;
     AdaptiveBytecodeVmSession createAdaptiveSession(

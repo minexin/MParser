@@ -478,7 +478,7 @@ end
             "varargout must use a repeating output block");
 }
 
-void unsupportedRuntimeGroupsAreExplicit() {
+void nameValueGroupsExecuteAndOutputGroupsRemainExplicit() {
     constexpr std::string_view nameValueSource = R"(answer = configured(2);
 function y = configured(x,options)
 arguments
@@ -493,15 +493,15 @@ end
             "name-value metadata source must compile");
     mparser::Interpreter interpreter;
     const auto interpretedNameValue = interpreter.run(nameValue.semantic);
-    require(hasDiagnostic(interpretedNameValue.diagnostics,
-                          "name-value arguments are not executable yet"),
-            "interpreter must not silently ignore name-value contracts");
+    require(interpretedNameValue.diagnostics.empty(),
+            "interpreter must execute defaulted name-value contracts");
+    requireNumber(interpretedNameValue.variables, "answer", 2);
     mparser::BytecodeVm vm;
     const auto bytecodeNameValue =
         vm.run(nameValue.bytecode, nameValue.semantic);
-    require(hasDiagnostic(bytecodeNameValue.diagnostics,
-                          "name-value arguments are not executable yet"),
-            "bytecode VM must not silently ignore name-value contracts");
+    require(bytecodeNameValue.diagnostics.empty(),
+            "bytecode VM must execute defaulted name-value contracts");
+    requireNumber(bytecodeNameValue.variables, "answer", 2);
 
     constexpr std::string_view outputSource = R"(answer = checkedOutput(2);
 function y = checkedOutput(x)
@@ -539,7 +539,7 @@ int main() {
         repeatingNamedEntry();
         reusableModuleInvocation();
         semanticRestrictions();
-        unsupportedRuntimeGroupsAreExplicit();
+        nameValueGroupsExecuteAndOutputGroupsRemainExplicit();
         std::cout << "repeating argument smoke tests passed\n";
         return 0;
     } catch (const std::exception& error) {

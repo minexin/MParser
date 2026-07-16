@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.59.0 LANGUAGES C CXX)
+project(MParser VERSION 0.60.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -658,6 +658,31 @@ add_executable(repeating_argument_smoke_tests
 target_link_libraries(repeating_argument_smoke_tests PRIVATE mparser_core)
 add_test(NAME repeating_argument_smoke
     COMMAND repeating_argument_smoke_tests)
+
+add_executable(name_value_argument_smoke_tests
+    tests/name_value_argument_smoke.cpp)
+target_link_libraries(name_value_argument_smoke_tests PRIVATE mparser_core)
+add_test(NAME name_value_argument_smoke
+    COMMAND name_value_argument_smoke_tests)
+
+add_test(NAME name_value_arguments_interpreter_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/name_value_arguments_demo.m)
+set_tests_properties(name_value_arguments_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 65")
+
+add_test(NAME name_value_arguments_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/name_value_arguments_demo.m)
+set_tests_properties(name_value_arguments_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 65")
+
+add_test(NAME name_value_arguments_entry_cli_smoke
+    COMMAND mparser --run-bytecode --entry-function=configure
+        --argument=2 --argument=Scale=4 --outputs=2
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/name_value_arguments_demo.m)
+set_tests_properties(name_value_arguments_entry_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "y = 9")
 
 add_test(NAME repeating_arguments_interpreter_cli_smoke
     COMMAND mparser --run

@@ -56,6 +56,7 @@ enum class SyntaxKind {
     MatrixRow,
     CellExpr,
     MemberAccessExpr,
+    NameValueArgumentExpr,
     CallOrIndexExpr,
     SuperclassCallExpr,
     BraceIndexExpr,

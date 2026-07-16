@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.59.0. See [docs/v0.59.md](docs/v0.59.md) for the
+Current milestone: v0.60.0. See [docs/v0.60.md](docs/v0.60.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.58.md](docs/v0.58.md),
+iteration plan. Previous boundaries are kept in [docs/v0.59.md](docs/v0.59.md),
+[docs/v0.58.md](docs/v0.58.md),
 [docs/v0.57.md](docs/v0.57.md), [docs/v0.56.md](docs/v0.56.md),
 [docs/v0.55.md](docs/v0.55.md),
 [docs/v0.54.md](docs/v0.54.md),
@@ -536,6 +537,19 @@ logical/vector/colon subscripts, multiple subscripts, deletion, and growth stay
 on the full VM path. The native helper calls use SLJIT's public mixed integer/
 floating-point call ABI and are exercised in Linux AArch64 QEMU CI.
 
+v0.59 makes ordinary, repeating, output, and name-value `arguments` groups
+explicit in syntax, HIR, and `FunctionSignature`, and executes complete
+repeating input groups in both runtimes. v0.60 completes the name-value input
+calling convention. Modern `Name=value` expressions and legacy
+`"Name", value` pairs share exact and unambiguous-prefix matching, defaults,
+validation, last-value-wins duplicate handling, and structure-backed field
+access. Name-value inputs can follow fixed or repeating positional inputs in
+local/path/package functions, constructors and methods, named bytecode entry
+functions, compiled modules, and adaptive module sessions. `nargin` counts
+only positional values, omitted fields without defaults remain absent, and
+compiled-module preflight validates actual argument values rather than only
+their count.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -577,6 +591,21 @@ cmake -S . -B build
 cmake --build build
 ctest --test-dir build
 ```
+
+For MSVC with Ninja, configure through the checked-in wrapper from a VS
+Developer Shell. It switches the configure process to UTF-8 so CMake records
+the localized `/showIncludes` prefix without corruption:
+
+```powershell
+.\cmake\configure-windows-msvc.cmd
+cmake --build --preset windows-msvc-release
+ctest --preset windows-msvc-release
+```
+
+When replacing an older Ninja tree that was configured under a different code
+page, use `--fresh` with CMake 3.24 or newer, or choose a new build directory.
+After a public runtime-header layout change, use `--clean-first` once before
+trusting test results.
 
 Native scalar-loop JIT support is enabled by default. The pinned SLJIT source
 is vendored under `third_party/sljit`, so a default configure does not require
@@ -840,6 +869,24 @@ outputs with:
 ```powershell
 build\mparser.exe --run-bytecode --entry-function=kernel `
   --argument=2 --argument=4 samples\function_entry_demo.m
+```
+
+Run modern and legacy name-value calls through both baseline runtimes with:
+
+```powershell
+build\mparser.exe --run samples\name_value_arguments_demo.m
+build\mparser.exe --run-bytecode samples\name_value_arguments_demo.m
+```
+
+Named entries accept `--argument=Name=value`, and module-runtime calls accept
+the same form after a colon:
+
+```powershell
+build\mparser.exe --run-bytecode --entry-function=configure `
+  --argument=2 --argument=Scale=4 --outputs=2 `
+  samples\name_value_arguments_demo.m
+build\mparser.exe --run-module-runtime --module-call=configure:2:Scale=4 `
+  samples\name_value_arguments_demo.m
 ```
 
 Request a prefix of declared outputs and inspect `nargin`/`nargout` with:

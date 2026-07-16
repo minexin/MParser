@@ -19,6 +19,8 @@ enum class RuntimeValueKind {
     Matrix,
     Cell,
     FunctionHandle,
+    Struct,
+    NameValueArgument,
     Object,
 };
 
@@ -60,6 +62,10 @@ public:
     InterpreterResult run(const SemanticResult& semantic);
 };
 
+RuntimeValue makeRuntimeStructValue(
+    std::map<std::string, RuntimeValue> fields = {});
+RuntimeValue makeRuntimeNameValueArgument(std::string name,
+                                          RuntimeValue value);
 std::string runtimeValueToString(const RuntimeValue& value);
 
 } // namespace mparser

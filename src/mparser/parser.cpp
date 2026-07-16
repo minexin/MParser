@@ -234,6 +234,11 @@ private:
         return !isAtEnd() && tokens_[cursor_].kind == kind;
     }
 
+    bool at(size_t offset, TokenKind kind) const {
+        return cursor_ + offset < tokens_.size() &&
+               tokens_[cursor_ + offset].kind == kind;
+    }
+
     bool atAny(std::initializer_list<TokenKind> kinds) const {
         if (isAtEnd()) {
             return false;
@@ -431,7 +436,7 @@ private:
                 continue;
             }
 
-            auto argument = parseExpression(0);
+            auto argument = parseCallArgument(true);
             if (argument) {
                 node->children.push_back(std::move(argument));
                 continue;
@@ -569,7 +574,8 @@ private:
                 continue;
             }
 
-            auto argument = parseExpression(0);
+            auto argument = parseCallArgument(
+                kind == SyntaxKind::CallOrIndexExpr);
             if (argument) {
                 node->children.push_back(std::move(argument));
                 continue;
@@ -587,6 +593,29 @@ private:
             node->span = mergeSpans(node->span, node->children.back()->span);
         }
 
+        return node;
+    }
+
+    std::unique_ptr<SyntaxNode> parseCallArgument(bool allowNameValue) {
+        if (!allowNameValue || !at(TokenKind::Identifier) ||
+            !at(1, TokenKind::Equal)) {
+            return parseExpression(0);
+        }
+
+        const Token name = advance();
+        const Token equal = advance();
+        auto value = parseExpression(0);
+        if (!value) {
+            value = makeError(equal.span,
+                              "expected value after name-value argument");
+        }
+
+        auto node = makeNodeFromSpan(
+            SyntaxKind::NameValueArgumentExpr,
+            mergeSpans(name.span, value->span));
+        node->label = name.text;
+        node->raw = name.text + equal.text;
+        node->children.push_back(std::move(value));
         return node;
     }
 

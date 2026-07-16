@@ -128,6 +128,10 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "cell";
     case RuntimeValueKind::FunctionHandle:
         return "function-handle";
+    case RuntimeValueKind::Struct:
+        return "struct";
+    case RuntimeValueKind::NameValueArgument:
+        return "name-value-argument";
     case RuntimeValueKind::Object:
         return "object";
     }

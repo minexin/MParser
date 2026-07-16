@@ -210,6 +210,60 @@ bool isNameValueArgument(std::string_view name) {
     return dot != std::string_view::npos && dot != 0 && dot + 1 < name.size();
 }
 
+std::string nameValueField(std::string_view name) {
+    const size_t dot = name.find('.');
+    return dot == std::string_view::npos ? std::string{}
+                                         : std::string(name.substr(dot + 1));
+}
+
+std::optional<std::string> dottedSyntaxReferenceName(
+    const SyntaxNode& node) {
+    if (node.kind == SyntaxKind::IdentifierExpr && !node.label.empty()) {
+        return node.label;
+    }
+    if (node.kind != SyntaxKind::MemberAccessExpr || node.children.empty() ||
+        !isIdentifierText(node.label)) {
+        return std::nullopt;
+    }
+    auto prefix = dottedSyntaxReferenceName(*node.children.front());
+    if (!prefix) {
+        return std::nullopt;
+    }
+    return *prefix + "." + node.label;
+}
+
+bool containsNameValueReference(
+    const SyntaxNode& node,
+    const std::unordered_set<std::string>& nameValueRoots,
+    std::string& reference) {
+    if (const auto dotted = dottedSyntaxReferenceName(node);
+        dotted && nameValueRoots.contains(argumentNameRoot(*dotted))) {
+        reference = *dotted;
+        return true;
+    }
+    for (const auto& child : node.children) {
+        if (containsNameValueReference(*child, nameValueRoots, reference)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool textReferencesNameValueRoot(
+    std::string_view text,
+    const std::unordered_set<std::string>& nameValueRoots,
+    std::string& reference) {
+    for (const auto& root : nameValueRoots) {
+        if (text == root ||
+            (text.size() > root.size() && text.starts_with(root) &&
+             text[root.size()] == '.')) {
+            reference = std::string(text);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool containsForbiddenArgumentFunction(const SyntaxNode& node,
                                        std::string& name) {
     static const std::unordered_set<std::string> forbidden = {
@@ -585,6 +639,8 @@ private:
             return lowerGeneric(syntax, HirKind::Cell);
         case SyntaxKind::MemberAccessExpr:
             return lowerMemberAccess(syntax);
+        case SyntaxKind::NameValueArgumentExpr:
+            return lowerGeneric(syntax, HirKind::NameValueArgument);
         case SyntaxKind::CallOrIndexExpr:
             return lowerCallOrIndex(syntax);
         case SyntaxKind::SuperclassCallExpr:
@@ -719,6 +775,8 @@ private:
         std::unordered_set<std::string> declaredOutputs;
         std::unordered_set<std::string> repeatingNames;
         std::unordered_set<std::string> nameValueRoots;
+        std::unordered_map<std::string, const SyntaxNode*> nameValueFields;
+        std::vector<const SyntaxNode*> nameValueDeclarations;
         std::unordered_map<std::string, const SyntaxNode*> positionalContracts;
         std::vector<std::string> repeatingOrder;
         const SyntaxNode* repeatingBlock = nullptr;
@@ -740,6 +798,47 @@ private:
             return std::find(signature.outputs.begin(), signature.outputs.end(),
                              name) != signature.outputs.end();
         };
+
+        for (const auto& child : function.children) {
+            if (child->kind != SyntaxKind::ArgumentsBlock ||
+                child->argumentBlock.kind != ArgumentBlockKind::Input) {
+                continue;
+            }
+            for (const auto& declaration : child->children) {
+                if (declaration->kind != SyntaxKind::ArgumentDecl ||
+                    !isNameValueArgument(declaration->label)) {
+                    continue;
+                }
+                nameValueRoots.insert(argumentNameRoot(declaration->label));
+                nameValueDeclarations.push_back(declaration.get());
+                const std::string field =
+                    nameValueField(declaration->label);
+                const auto [existing, inserted] =
+                    nameValueFields.emplace(field, declaration.get());
+                if (!inserted &&
+                    existing->second->label != declaration->label) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "name-value argument field must be globally unique: " +
+                            field});
+                }
+            }
+        }
+        for (const SyntaxNode* declaration : nameValueDeclarations) {
+            const std::string field = nameValueField(declaration->label);
+            const auto collision = std::find_if(
+                signature.parameters.begin(), signature.parameters.end(),
+                [&](const std::string& parameter) {
+                    return parameter == field &&
+                           !nameValueRoots.contains(parameter);
+                });
+            if (collision != signature.parameters.end()) {
+                result_.diagnostics.push_back(Diagnostic{
+                    declaration->span,
+                    "name-value argument conflicts with a positional or repeating parameter: " +
+                        field});
+            }
+        }
 
         for (const auto& child : function.children) {
             if (child->kind != SyntaxKind::ArgumentsBlock) {
@@ -820,6 +919,29 @@ private:
                             declaration->span,
                             "function is not allowed in an arguments block: " +
                                 forbidden});
+                    }
+                    std::string reference;
+                    if (containsNameValueReference(
+                            *declaration->children.front(), nameValueRoots,
+                            reference)) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "arguments block default cannot reference a name-value structure: " +
+                                reference});
+                    }
+                }
+                for (const auto& validator :
+                     declaration->property.validators) {
+                    for (const auto& argument : validator.arguments) {
+                        std::string reference;
+                        if (textReferencesNameValueRoot(
+                                argument, nameValueRoots, reference)) {
+                            result_.diagnostics.push_back(Diagnostic{
+                                validator.span,
+                                "arguments block validator cannot reference a name-value structure: " +
+                                    reference});
+                            break;
+                        }
                     }
                 }
 
@@ -2101,6 +2223,8 @@ const char* hirKindName(HirKind kind) {
         return "Cell";
     case HirKind::MemberAccess:
         return "MemberAccess";
+    case HirKind::NameValueArgument:
+        return "NameValueArgument";
     case HirKind::CallOrIndex:
         return "CallOrIndex";
     case HirKind::SuperclassCall:

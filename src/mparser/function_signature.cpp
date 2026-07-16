@@ -238,12 +238,20 @@ bool functionHasNameValueParameters(const FunctionSignature& signature) {
 
 FunctionArgumentCountStatus functionArgumentCountStatus(
     const FunctionSignature& signature, size_t argumentCount) {
+    if (functionHasNameValueParameters(signature)) {
+        return argumentCount <
+                       functionRequiredPositionalParameterCount(signature)
+                   ? FunctionArgumentCountStatus::Mismatch
+                   : FunctionArgumentCountStatus::Valid;
+    }
+    return functionPositionalArgumentCountStatus(signature, argumentCount);
+}
+
+FunctionArgumentCountStatus functionPositionalArgumentCountStatus(
+    const FunctionSignature& signature, size_t argumentCount) {
     if (argumentCount <
         functionRequiredPositionalParameterCount(signature)) {
         return FunctionArgumentCountStatus::Mismatch;
-    }
-    if (functionHasNameValueParameters(signature)) {
-        return FunctionArgumentCountStatus::Valid;
     }
 
     const size_t positionalCount =

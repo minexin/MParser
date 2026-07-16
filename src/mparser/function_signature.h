@@ -43,5 +43,7 @@ size_t functionRepeatingParameterCount(const FunctionSignature& signature);
 bool functionHasNameValueParameters(const FunctionSignature& signature);
 FunctionArgumentCountStatus functionArgumentCountStatus(
     const FunctionSignature& signature, size_t argumentCount);
+FunctionArgumentCountStatus functionPositionalArgumentCountStatus(
+    const FunctionSignature& signature, size_t argumentCount);
 
 } // namespace mparser

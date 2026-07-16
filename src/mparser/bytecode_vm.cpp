@@ -249,6 +249,10 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "cell";
     case RuntimeValueKind::FunctionHandle:
         return "function_handle";
+    case RuntimeValueKind::Struct:
+        return "struct";
+    case RuntimeValueKind::NameValueArgument:
+        return "name_value_argument";
     case RuntimeValueKind::Object:
         return "object";
     }
@@ -454,6 +458,26 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     if (isFunctionHandle(left) && isFunctionHandle(right)) {
         return left.opaqueId == right.opaqueId;
     }
+    if (left.kind == RuntimeValueKind::NameValueArgument &&
+        right.kind == RuntimeValueKind::NameValueArgument) {
+        return left.text == right.text && left.cells.size() == 1 &&
+               right.cells.size() == 1 &&
+               runtimeEqual(left.cells.front(), right.cells.front());
+    }
+    if (left.kind == RuntimeValueKind::Struct &&
+        right.kind == RuntimeValueKind::Struct) {
+        if (left.fields.size() != right.fields.size()) {
+            return false;
+        }
+        for (const auto& [name, value] : left.fields) {
+            const auto other = right.fields.find(name);
+            if (other == right.fields.end() ||
+                !runtimeEqual(value, other->second)) {
+                return false;
+            }
+        }
+        return true;
+    }
     if (isObject(left) && isObject(right)) {
         if (!left.enumerationMemberName.empty() ||
             !right.enumerationMemberName.empty()) {
@@ -556,6 +580,11 @@ struct ArgumentContract {
     size_t defaultEntry = 0;
     size_t defaultEnd = 0;
     bool hasDefaultRange = false;
+};
+
+struct ValidatedFunctionArguments {
+    std::vector<RuntimeValue> values;
+    size_t positionalArgumentCount = 0;
 };
 
 void collectArgumentContracts(
@@ -2901,22 +2930,11 @@ private:
         return value;
     }
 
-    std::optional<std::vector<RuntimeValue>> validateFunctionArguments(
+    std::optional<ValidatedFunctionArguments> validateFunctionArguments(
         const BytecodeInstruction& instruction, const std::string& name,
         const FunctionInfo& info,
         const std::vector<RuntimeValue>& arguments,
         size_t requestedOutputCount) {
-        currentFrame()["nargin"] =
-            numberValue(static_cast<double>(arguments.size()));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(requestedOutputCount));
-        const auto argumentCountStatus =
-            functionArgumentCountStatus(info.signature, arguments.size());
-        if (argumentCountStatus == FunctionArgumentCountStatus::Mismatch) {
-            addDiagnostic(instruction,
-                          "function argument count mismatch for: " + name);
-            return std::nullopt;
-        }
         if (std::any_of(
                 info.argumentContracts.begin(), info.argumentContracts.end(),
                 [](const ArgumentContract& contract) {
@@ -2929,30 +2947,35 @@ private:
                 "output arguments blocks are not executable yet for: " + name);
             return std::nullopt;
         }
-        if (functionHasNameValueParameters(info.signature)) {
-            addDiagnostic(instruction,
-                          "name-value arguments are not executable yet for: " +
-                              name);
+
+        std::vector<std::string> nameValueDeclarations;
+        for (const auto& contract : info.argumentContracts) {
+            if (contract.blockKind == ArgumentBlockKind::Input &&
+                contract.name.find('.') != std::string::npos) {
+                nameValueDeclarations.push_back(contract.name);
+            }
+        }
+        auto normalized = normalizeRuntimeInvocationArguments(
+            info.signature, nameValueDeclarations, arguments);
+        if (!normalized.succeeded) {
+            addDiagnostic(instruction, "function invocation failed for " + name +
+                                           ": " + normalized.error);
             return std::nullopt;
         }
+        currentFrame()["nargin"] = numberValue(static_cast<double>(
+            normalized.positionalArgumentCount));
+        currentFrame()["nargout"] =
+            numberValue(static_cast<double>(requestedOutputCount));
+        const auto& positionalArguments = normalized.positionalArguments;
 
         const size_t fixedParameterCount =
             functionPositionalParameterCount(info.signature);
         const size_t repeatingGroupWidth =
             functionRepeatingParameterCount(info.signature);
         const size_t repeatingValueCount =
-            arguments.size() > fixedParameterCount
-                ? arguments.size() - fixedParameterCount
+            positionalArguments.size() > fixedParameterCount
+                ? positionalArguments.size() - fixedParameterCount
                 : 0;
-        if (argumentCountStatus ==
-            FunctionArgumentCountStatus::IncompleteRepeatingGroup) {
-            addDiagnostic(
-                instruction,
-                "incomplete repeating argument group for " + name +
-                    ": expected a multiple of " +
-                    std::to_string(repeatingGroupWidth) + " values");
-            return std::nullopt;
-        }
 
         RuntimeArgumentValidationOptions validationOptions;
         validationOptions.objectIsA =
@@ -2988,15 +3011,15 @@ private:
         };
 
         std::vector<RuntimeValue> validated;
-        validated.reserve(std::max(arguments.size(),
+        validated.reserve(std::max(positionalArguments.size(),
                                    info.signature.parameters.size()));
         for (size_t index = 0; index < fixedParameterCount; ++index) {
             const std::string& parameterName = info.signature.parameters[index];
             const ArgumentContract* contract = argumentContract(
                 info, parameterName, ArgumentBlockKind::Input);
             RuntimeValue value;
-            if (index < arguments.size()) {
-                value = arguments[index];
+            if (index < positionalArguments.size()) {
+                value = positionalArguments[index];
             } else if (contract != nullptr &&
                        contract->spec.hasExplicitDefault) {
                 auto defaultValue =
@@ -3022,7 +3045,7 @@ private:
 
         if (repeatingGroupWidth != 0) {
             const size_t occurrenceCount =
-                arguments.size() < fixedParameterCount
+                positionalArguments.size() < fixedParameterCount
                     ? 0
                     : repeatingValueCount / repeatingGroupWidth;
             size_t groupIndex = 0;
@@ -3043,7 +3066,7 @@ private:
                     const size_t argumentIndex =
                         fixedParameterCount +
                         occurrence * repeatingGroupWidth + groupIndex;
-                    auto result = validateValue(arguments[argumentIndex],
+                    auto result = validateValue(positionalArguments[argumentIndex],
                                                 contract, occurrence);
                     if (!result) {
                         return std::nullopt;
@@ -3057,15 +3080,73 @@ private:
             }
         }
 
+        std::map<std::string, RuntimeValue> nameValueStructures;
+        for (size_t index = 0; index < info.signature.parameters.size();
+             ++index) {
+            if (functionParameterKind(info.signature, index) ==
+                FunctionParameterKind::NameValue) {
+                RuntimeValue structure = makeRuntimeStructValue();
+                nameValueStructures.emplace(info.signature.parameters[index],
+                                            structure);
+                currentFrame()[info.signature.parameters[index]] =
+                    std::move(structure);
+            }
+        }
+        for (const auto& contract : info.argumentContracts) {
+            const size_t dot = contract.name.find('.');
+            if (contract.blockKind != ArgumentBlockKind::Input ||
+                dot == std::string::npos) {
+                continue;
+            }
+            const std::string root = contract.name.substr(0, dot);
+            const std::string field = contract.name.substr(dot + 1);
+            auto structure = nameValueStructures.find(root);
+            if (structure == nameValueStructures.end()) {
+                continue;
+            }
+
+            std::optional<RuntimeValue> value;
+            if (const auto supplied =
+                    normalized.nameValueArguments.find(contract.name);
+                supplied != normalized.nameValueArguments.end()) {
+                value = supplied->second;
+            } else if (contract.spec.hasExplicitDefault) {
+                value = evaluateArgumentDefault(instruction, name, contract);
+                if (!value) {
+                    return std::nullopt;
+                }
+            }
+            if (!value) {
+                continue;
+            }
+            auto result = validateValue(std::move(*value), &contract);
+            if (!result) {
+                return std::nullopt;
+            }
+            structure->second.fields[field] = std::move(*result);
+            currentFrame()[root] = structure->second;
+        }
+        for (size_t index = 0; index < info.signature.parameters.size();
+             ++index) {
+            if (functionParameterKind(info.signature, index) !=
+                FunctionParameterKind::NameValue) {
+                continue;
+            }
+            const std::string& root = info.signature.parameters[index];
+            currentFrame()[root] = nameValueStructures[root];
+            validated.push_back(nameValueStructures[root]);
+        }
+
         if (info.signature.hasVarargin) {
             const ArgumentContract* contract = argumentContract(
                 info, "varargin", ArgumentBlockKind::RepeatingInput);
             const size_t begin =
                 repeatingGroupWidth == 0
-                    ? std::min(arguments.size(), fixedParameterCount)
-                    : arguments.size();
-            for (size_t index = begin; index < arguments.size(); ++index) {
-                auto result = validateValue(arguments[index], contract,
+                    ? std::min(positionalArguments.size(), fixedParameterCount)
+                    : positionalArguments.size();
+            for (size_t index = begin; index < positionalArguments.size();
+                 ++index) {
+                auto result = validateValue(positionalArguments[index], contract,
                                             index - begin);
                 if (!result) {
                     return std::nullopt;
@@ -3073,7 +3154,8 @@ private:
                 validated.push_back(std::move(*result));
             }
         }
-        return validated;
+        return ValidatedFunctionArguments{
+            std::move(validated), normalized.positionalArgumentCount};
     }
 
     bool prepareEntryFunction(const BytecodeInstruction& instruction) {
@@ -3093,14 +3175,15 @@ private:
             return false;
         }
 
-        const size_t providedArgumentCount = entryArguments_.size();
         auto validated = validateFunctionArguments(
             instruction, instruction.operand, function->second,
             entryArguments_, requestedOutputCount);
         if (!validated) {
             return false;
         }
-        entryArguments_ = std::move(*validated);
+        const size_t providedArgumentCount =
+            validated->positionalArgumentCount;
+        entryArguments_ = std::move(validated->values);
 
         initializeFunctionFrame(signature, entryArguments_, requestedOutputCount,
                                 providedArgumentCount);
@@ -3272,6 +3355,15 @@ private:
         case BytecodeOp::MemberAccess:
             memberAccess(instruction);
             break;
+        case BytecodeOp::MakeNameValueArgument: {
+            const auto value =
+                popRuntime(instruction, "name=value argument value");
+            if (value) {
+                pushRuntime(makeRuntimeNameValueArgument(
+                    instruction.operand, *value));
+            }
+            break;
+        }
         case BytecodeOp::CallOrIndex:
             callOrIndex(instruction);
             break;
@@ -4243,6 +4335,17 @@ private:
                                                method->declaringClass));
             return;
         }
+        if (target->value.kind == RuntimeValueKind::Struct) {
+            const auto field = target->value.fields.find(instruction.operand);
+            if (field == target->value.fields.end()) {
+                addDiagnostic(instruction,
+                              "structure field is not available: " +
+                                  instruction.operand);
+                return;
+            }
+            stack_.push_back(runtimeStackValue(field->second));
+            return;
+        }
         if (!isObject(target->value)) {
             addDiagnostic(instruction,
                           "member access requires a class object target");
@@ -4336,6 +4439,20 @@ private:
                 "class-qualified property assignment requires Constant, "
                 "which is read-only: " + target->className + "." +
                     instruction.operand);
+            return;
+        }
+        if (target->value.kind == RuntimeValueKind::Struct) {
+            if (instruction.receiverName.empty()) {
+                addDiagnostic(
+                    instruction,
+                    "structure member assignment currently requires a "
+                    "variable target");
+                return;
+            }
+            RuntimeValue updated = target->value;
+            updated.fields[instruction.operand] = *value;
+            currentFrame()[instruction.receiverName] = updated;
+            recordAssignment(instruction, "struct-member", updated);
             return;
         }
         if (!isObject(target->value)) {
@@ -6926,9 +7043,9 @@ private:
         tryContextStack_.clear();
 
         frames_.push_back({});
-        initializeFunctionFrame(info.signature, *validatedArguments,
+        initializeFunctionFrame(info.signature, validatedArguments->values,
                                 static_cast<size_t>(requestedCount),
-                                arguments.size());
+                                validatedArguments->positionalArgumentCount);
         if (constructorObject && !info.signature.outputs.empty()) {
             currentFrame()[info.signature.outputs.front()] = *constructorObject;
         }
@@ -7037,6 +7154,27 @@ private:
         if (name == "events") {
             return eventNamesBuiltin(instruction, arguments);
         }
+        if (name == "struct") {
+            if (!arguments.empty()) {
+                addDiagnostic(
+                    instruction,
+                    "bytecode struct currently supports only the empty form");
+                return missingValue();
+            }
+            return makeRuntimeStructValue();
+        }
+        if (name == "isfield") {
+            if (arguments.size() != 2 ||
+                arguments[0].kind != RuntimeValueKind::Struct ||
+                !isString(arguments[1])) {
+                addDiagnostic(
+                    instruction,
+                    "bytecode isfield expects a structure and field-name string");
+                return missingValue();
+            }
+            return logicalValue(
+                arguments[0].fields.contains(arguments[1].text));
+        }
         if (name == "isvalid") {
             if (arguments.size() != 1) {
                 addDiagnostic(instruction,
@@ -7075,6 +7213,9 @@ private:
             if (isCell(value)) {
                 return stringValue("cell");
             }
+            if (value.kind == RuntimeValueKind::Struct) {
+                return stringValue("struct");
+            }
             if (isFunctionHandle(value)) {
                 return stringValue("function_handle");
             }
@@ -7100,6 +7241,8 @@ private:
                 matches = target == "char" || target == "string";
             } else if (isCell(value)) {
                 matches = target == "cell";
+            } else if (value.kind == RuntimeValueKind::Struct) {
+                matches = target == "struct";
             } else if (isFunctionHandle(value)) {
                 matches = target == "function_handle";
             }
