@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <iterator>
 #include <string_view>
 
 namespace mparser {
@@ -48,6 +49,26 @@ bool isIdentifierText(const std::string& text) {
         const unsigned char value = static_cast<unsigned char>(c);
         return std::isalnum(value) != 0 || c == '_';
     });
+}
+
+std::string_view nameValueRoot(std::string_view name) {
+    const size_t dot = name.find('.');
+    return dot == std::string_view::npos ? std::string_view{}
+                                         : name.substr(0, dot);
+}
+
+void setParameterKind(FunctionSignature& signature, std::string_view name,
+                      FunctionParameterKind kind) {
+    const auto found =
+        std::find(signature.parameters.begin(), signature.parameters.end(), name);
+    if (found == signature.parameters.end()) {
+        return;
+    }
+    const size_t index =
+        static_cast<size_t>(std::distance(signature.parameters.begin(), found));
+    if (index < signature.parameterKinds.size()) {
+        signature.parameterKinds[index] = kind;
+    }
 }
 
 } // namespace
@@ -109,14 +130,138 @@ FunctionSignature parseFunctionSignature(std::string_view rawDeclaration,
             signature.hasVarargin = true;
         } else if (isIdentifierText(part) && part != "~") {
             signature.parameters.push_back(part);
+            signature.parameterKinds.push_back(
+                FunctionParameterKind::Positional);
         }
     }
+    signature.requiredPositionalParameterCount = signature.parameters.size();
 
     return signature;
 }
 
 FunctionSignature parseFunctionSignature(const HirNode& functionNode) {
-    return parseFunctionSignature(functionNode.raw, functionNode.label);
+    FunctionSignature signature =
+        parseFunctionSignature(functionNode.raw, functionNode.label);
+    for (const auto& block : functionNode.children) {
+        if (block->kind != HirKind::ArgumentBlock) {
+            continue;
+        }
+        if (block->argumentBlock.kind != ArgumentBlockKind::Input &&
+            block->argumentBlock.kind != ArgumentBlockKind::RepeatingInput) {
+            continue;
+        }
+        for (const auto& declaration : block->children) {
+            if (declaration->kind != HirKind::Argument) {
+                continue;
+            }
+            if (const std::string_view root =
+                    nameValueRoot(declaration->label);
+                !root.empty()) {
+                setParameterKind(signature, root,
+                                 FunctionParameterKind::NameValue);
+                continue;
+            }
+            if (block->argumentBlock.kind ==
+                ArgumentBlockKind::RepeatingInput) {
+                if (declaration->label == "varargin") {
+                    signature.vararginRepeating = true;
+                } else {
+                    setParameterKind(signature, declaration->label,
+                                     FunctionParameterKind::Repeating);
+                }
+            }
+        }
+    }
+
+    signature.requiredPositionalParameterCount = 0;
+    const size_t positionalCount = functionPositionalParameterCount(signature);
+    for (size_t index = 0; index < positionalCount; ++index) {
+        bool hasDefault = false;
+        for (const auto& block : functionNode.children) {
+            if (block->kind != HirKind::ArgumentBlock ||
+                block->argumentBlock.kind != ArgumentBlockKind::Input) {
+                continue;
+            }
+            const auto declaration = std::find_if(
+                block->children.begin(), block->children.end(),
+                [&](const auto& candidate) {
+                    return candidate->kind == HirKind::Argument &&
+                           candidate->label == signature.parameters[index];
+                });
+            if (declaration != block->children.end()) {
+                hasDefault = (*declaration)->property.hasExplicitDefault;
+                break;
+            }
+        }
+        if (!hasDefault) {
+            signature.requiredPositionalParameterCount = index + 1;
+        }
+    }
+    return signature;
+}
+
+FunctionParameterKind functionParameterKind(const FunctionSignature& signature,
+                                            size_t index) {
+    return index < signature.parameterKinds.size()
+               ? signature.parameterKinds[index]
+               : FunctionParameterKind::Positional;
+}
+
+size_t functionPositionalParameterCount(const FunctionSignature& signature) {
+    size_t count = 0;
+    while (count < signature.parameters.size() &&
+           functionParameterKind(signature, count) ==
+               FunctionParameterKind::Positional) {
+        ++count;
+    }
+    return count;
+}
+
+size_t functionRequiredPositionalParameterCount(
+    const FunctionSignature& signature) {
+    return std::min(signature.requiredPositionalParameterCount,
+                    functionPositionalParameterCount(signature));
+}
+
+size_t functionRepeatingParameterCount(const FunctionSignature& signature) {
+    return static_cast<size_t>(std::count(
+        signature.parameterKinds.begin(), signature.parameterKinds.end(),
+        FunctionParameterKind::Repeating));
+}
+
+bool functionHasNameValueParameters(const FunctionSignature& signature) {
+    return std::find(signature.parameterKinds.begin(),
+                     signature.parameterKinds.end(),
+                     FunctionParameterKind::NameValue) !=
+           signature.parameterKinds.end();
+}
+
+FunctionArgumentCountStatus functionArgumentCountStatus(
+    const FunctionSignature& signature, size_t argumentCount) {
+    if (argumentCount <
+        functionRequiredPositionalParameterCount(signature)) {
+        return FunctionArgumentCountStatus::Mismatch;
+    }
+    if (functionHasNameValueParameters(signature)) {
+        return FunctionArgumentCountStatus::Valid;
+    }
+
+    const size_t positionalCount =
+        functionPositionalParameterCount(signature);
+    const size_t repeatingWidth =
+        functionRepeatingParameterCount(signature);
+    if (repeatingWidth != 0) {
+        if (argumentCount < positionalCount) {
+            return FunctionArgumentCountStatus::Valid;
+        }
+        return (argumentCount - positionalCount) % repeatingWidth == 0
+                   ? FunctionArgumentCountStatus::Valid
+                   : FunctionArgumentCountStatus::IncompleteRepeatingGroup;
+    }
+    if (!signature.hasVarargin && argumentCount > positionalCount) {
+        return FunctionArgumentCountStatus::Mismatch;
+    }
+    return FunctionArgumentCountStatus::Valid;
 }
 
 } // namespace mparser

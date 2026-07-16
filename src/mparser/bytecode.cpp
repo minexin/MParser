@@ -89,6 +89,9 @@ private:
             break;
         case HirKind::Import:
             break;
+        case HirKind::ArgumentBlock:
+            lowerChildren(node);
+            break;
         case HirKind::Argument:
             if (node.property.hasExplicitDefault && !node.children.empty()) {
                 const size_t enter = emit(BytecodeOp::EnterArgumentDefault, node);

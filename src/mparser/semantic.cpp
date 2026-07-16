@@ -1,5 +1,7 @@
 #include "mparser/semantic.h"
 
+#include "mparser/function_signature.h"
+
 #include <algorithm>
 #include <cctype>
 #include <optional>
@@ -188,75 +190,46 @@ bool isKnownBuiltinName(const std::string& name) {
     return false;
 }
 
-struct FunctionSignature {
-    std::vector<std::string> outputs;
-    std::vector<std::string> parameters;
-    bool hasVarargout = false;
-    bool hasVarargin = false;
-};
+bool isInputArgumentBlock(ArgumentBlockKind kind) {
+    return kind == ArgumentBlockKind::Input ||
+           kind == ArgumentBlockKind::RepeatingInput;
+}
 
-FunctionSignature parseFunctionSignature(const SyntaxNode& functionNode) {
-    FunctionSignature signature;
-    std::string text = trim(functionNode.raw);
+bool isOutputArgumentBlock(ArgumentBlockKind kind) {
+    return kind == ArgumentBlockKind::Output ||
+           kind == ArgumentBlockKind::RepeatingOutput;
+}
 
-    const auto equal = text.find('=');
-    std::string declaration = text;
-    if (equal != std::string::npos) {
-        std::string outputs = trim(text.substr(0, equal));
-        declaration = trim(text.substr(equal + 1));
+std::string argumentNameRoot(std::string_view name) {
+    const size_t dot = name.find('.');
+    return std::string(name.substr(0, dot));
+}
 
-        if (outputs.size() >= 2 && outputs.front() == '[' &&
-            outputs.back() == ']') {
-            outputs = outputs.substr(1, outputs.size() - 2);
-        }
+bool isNameValueArgument(std::string_view name) {
+    const size_t dot = name.find('.');
+    return dot != std::string_view::npos && dot != 0 && dot + 1 < name.size();
+}
 
-        for (const auto& part : splitCommaList(outputs)) {
-            if (part == "varargout") {
-                signature.hasVarargout = true;
-            } else if (isIdentifierText(part)) {
-                signature.outputs.push_back(part);
-            }
-        }
+bool containsForbiddenArgumentFunction(const SyntaxNode& node,
+                                       std::string& name) {
+    static const std::unordered_set<std::string> forbidden = {
+        "assignin",  "builtin",   "clear",      "dbstack",
+        "eval",      "evalc",     "evalin",     "exist",
+        "feval",     "input",     "inputname",  "load",
+        "nargin",    "narginchk", "nargoutchk", "save",
+        "who",       "whos",
+    };
+    if (node.kind == SyntaxKind::IdentifierExpr &&
+        forbidden.contains(node.label)) {
+        name = node.label;
+        return true;
     }
-
-    std::string_view sourceName = functionNode.label;
-    if (const size_t local = sourceName.find_last_of('>');
-        local != std::string_view::npos) {
-        sourceName.remove_prefix(local + 1);
-    } else if (declaration.find(sourceName) == std::string::npos) {
-        if (const size_t qualified = sourceName.find_last_of('.');
-            qualified != std::string_view::npos) {
-            sourceName.remove_prefix(qualified + 1);
+    for (const auto& child : node.children) {
+        if (containsForbiddenArgumentFunction(*child, name)) {
+            return true;
         }
     }
-
-    const auto namePosition = declaration.find(sourceName);
-    if (namePosition == std::string::npos) {
-        return signature;
-    }
-
-    const auto open =
-        declaration.find('(', namePosition + sourceName.size());
-    if (open == std::string::npos) {
-        return signature;
-    }
-
-    const auto close = declaration.find_last_of(')');
-    if (close == std::string::npos || close <= open) {
-        return signature;
-    }
-
-    const std::string parameters =
-        declaration.substr(open + 1, close - open - 1);
-    for (const auto& part : splitCommaList(parameters)) {
-        if (part == "varargin") {
-            signature.hasVarargin = true;
-        } else if (isIdentifierText(part) && part != "~") {
-            signature.parameters.push_back(part);
-        }
-    }
-
-    return signature;
+    return false;
 }
 
 class AnalyzerContext {
@@ -544,6 +517,8 @@ private:
             return lowerClass(syntax);
         case SyntaxKind::FunctionDef:
             return lowerFunction(syntax);
+        case SyntaxKind::ArgumentsBlock:
+            return lowerGeneric(syntax, HirKind::ArgumentBlock);
         case SyntaxKind::ArgumentDecl:
             return lowerGeneric(syntax, HirKind::Argument);
         case SyntaxKind::ImportStatement:
@@ -575,7 +550,6 @@ private:
             return lowerAssignment(syntax);
         case SyntaxKind::ExpressionStatement:
         case SyntaxKind::Statement:
-        case SyntaxKind::ArgumentsBlock:
         case SyntaxKind::PropertiesBlock:
         case SyntaxKind::MethodsBlock:
         case SyntaxKind::EventsBlock:
@@ -665,6 +639,7 @@ private:
 
     std::unique_ptr<HirNode> lowerFunction(const SyntaxNode& syntax) {
         const bool method = currentScope().kind == ScopeKind::Class;
+        const bool nestedFunction = currentScope().kind == ScopeKind::Function;
         const std::string className = method && !classStack_.empty()
                                           ? classStack_.back()
                                           : std::string{};
@@ -691,7 +666,8 @@ private:
         pushScope(ScopeKind::Function, functionName);
         collectImportsForCurrentScope(syntax);
 
-        const FunctionSignature signature = parseFunctionSignature(syntax);
+        const FunctionSignature signature =
+            parseFunctionSignature(syntax.raw, syntax.label);
         for (const auto& output : signature.outputs) {
             const std::string typeName =
                 constructor ? className : std::string{};
@@ -715,67 +691,15 @@ private:
                           syntax.span);
         }
 
-        std::unordered_set<std::string> declaredArguments;
-        for (const auto& child : syntax.children) {
-            if (child->kind != SyntaxKind::ArgumentsBlock) {
-                continue;
-            }
-            if (!child->raw.empty()) {
-                result_.diagnostics.push_back(Diagnostic{
-                    child->span,
-                    "arguments block attributes are not executable yet: " +
-                        child->raw});
-            }
-            for (const auto& declaration : child->children) {
-                if (declaration->kind != SyntaxKind::ArgumentDecl) {
-                    continue;
-                }
-                if (std::find(signature.parameters.begin(),
-                              signature.parameters.end(),
-                              declaration->label) ==
-                    signature.parameters.end()) {
-                    result_.diagnostics.push_back(Diagnostic{
-                        declaration->span,
-                        "arguments block name is not a function parameter: " +
-                            declaration->label});
-                }
-                if (!declaredArguments.insert(declaration->label).second) {
-                    result_.diagnostics.push_back(Diagnostic{
-                        declaration->span,
-                        "duplicate arguments block declaration: " +
-                            declaration->label});
-                }
-            }
-        }
-
-        bool optionalParameterSeen = false;
-        for (const auto& parameter : signature.parameters) {
-            const SyntaxNode* declaration = nullptr;
-            for (const auto& block : syntax.children) {
-                if (block->kind != SyntaxKind::ArgumentsBlock) {
-                    continue;
-                }
-                for (const auto& candidate : block->children) {
-                    if (candidate->kind == SyntaxKind::ArgumentDecl &&
-                        candidate->label == parameter) {
-                        declaration = candidate.get();
-                        break;
-                    }
-                }
-                if (declaration != nullptr) {
-                    break;
-                }
-            }
-            const bool optional = declaration != nullptr &&
-                                  declaration->property.hasExplicitDefault;
-            if (optional) {
-                optionalParameterSeen = true;
-            } else if (optionalParameterSeen) {
-                result_.diagnostics.push_back(Diagnostic{
-                    declaration != nullptr ? declaration->span : syntax.span,
-                    "required argument follows an optional argument: " +
-                        parameter});
-            }
+        validateArgumentBlocks(syntax, signature);
+        if (nestedFunction &&
+            std::any_of(syntax.children.begin(), syntax.children.end(),
+                        [](const std::unique_ptr<SyntaxNode>& child) {
+                            return child->kind == SyntaxKind::ArgumentsBlock;
+                        })) {
+            result_.diagnostics.push_back(Diagnostic{
+                syntax.span,
+                "argument validation is not allowed in nested functions"});
         }
 
         functionStack_.push_back(FunctionContext{
@@ -787,6 +711,294 @@ private:
         functionStack_.pop_back();
         popScope();
         return node;
+    }
+
+    void validateArgumentBlocks(const SyntaxNode& function,
+                                const FunctionSignature& signature) {
+        std::unordered_set<std::string> declaredInputs;
+        std::unordered_set<std::string> declaredOutputs;
+        std::unordered_set<std::string> repeatingNames;
+        std::unordered_set<std::string> nameValueRoots;
+        std::unordered_map<std::string, const SyntaxNode*> positionalContracts;
+        std::vector<std::string> repeatingOrder;
+        const SyntaxNode* repeatingBlock = nullptr;
+        bool executableSeen = false;
+        bool inputBlockSeen = false;
+        bool outputBlockSeen = false;
+        bool repeatingInputSeen = false;
+        bool repeatingOutputSeen = false;
+        bool nameValueSeen = false;
+        bool vararginDeclared = false;
+        bool varargoutDeclared = false;
+
+        const auto isParameter = [&](std::string_view name) {
+            return std::find(signature.parameters.begin(),
+                             signature.parameters.end(), name) !=
+                   signature.parameters.end();
+        };
+        const auto isOutput = [&](std::string_view name) {
+            return std::find(signature.outputs.begin(), signature.outputs.end(),
+                             name) != signature.outputs.end();
+        };
+
+        for (const auto& child : function.children) {
+            if (child->kind != SyntaxKind::ArgumentsBlock) {
+                executableSeen = true;
+                continue;
+            }
+
+            const ArgumentBlockKind blockKind = child->argumentBlock.kind;
+            const bool inputBlock = isInputArgumentBlock(blockKind);
+            const bool outputBlock = isOutputArgumentBlock(blockKind);
+            inputBlockSeen = inputBlockSeen || inputBlock;
+            if (executableSeen) {
+                result_.diagnostics.push_back(Diagnostic{
+                    child->span,
+                    "arguments blocks must precede executable function code"});
+            }
+            if (child->children.empty()) {
+                result_.diagnostics.push_back(Diagnostic{
+                    child->span, "arguments block must declare an argument"});
+            }
+            if (inputBlock && outputBlockSeen) {
+                result_.diagnostics.push_back(Diagnostic{
+                    child->span,
+                    "input arguments block cannot follow an output block"});
+            }
+            if (outputBlock) {
+                outputBlockSeen = true;
+            }
+            if (blockKind == ArgumentBlockKind::RepeatingInput) {
+                if (repeatingInputSeen) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        child->span,
+                        "function can contain only one repeating input block"});
+                }
+                if (nameValueSeen) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        child->span,
+                        "repeating input block must precede name-value arguments"});
+                }
+                repeatingInputSeen = true;
+                repeatingBlock = child.get();
+            }
+            if (blockKind == ArgumentBlockKind::RepeatingOutput) {
+                if (repeatingOutputSeen) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        child->span,
+                        "function can contain only one repeating output block"});
+                }
+                repeatingOutputSeen = true;
+                if (child->children.size() != 1) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        child->span,
+                        "repeating output block must declare exactly one argument"});
+                }
+            }
+
+            bool nameValueSeenInBlock = false;
+            for (const auto& declaration : child->children) {
+                if (declaration->kind != SyntaxKind::ArgumentDecl) {
+                    continue;
+                }
+
+                const bool input = isInputArgumentBlock(blockKind);
+                auto& declared = input ? declaredInputs : declaredOutputs;
+                if (!declared.insert(declaration->label).second) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "duplicate arguments block declaration: " +
+                            declaration->label});
+                }
+
+                if (declaration->property.hasExplicitDefault &&
+                    !declaration->children.empty()) {
+                    std::string forbidden;
+                    if (containsForbiddenArgumentFunction(
+                            *declaration->children.front(), forbidden)) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "function is not allowed in an arguments block: " +
+                                forbidden});
+                    }
+                }
+
+                if (blockKind == ArgumentBlockKind::Input) {
+                    if (isNameValueArgument(declaration->label)) {
+                        const std::string root =
+                            argumentNameRoot(declaration->label);
+                        if (!isParameter(root)) {
+                            result_.diagnostics.push_back(Diagnostic{
+                                declaration->span,
+                                "name-value structure is not a function parameter: " +
+                                    root});
+                        }
+                        nameValueRoots.insert(root);
+                        nameValueSeen = true;
+                        nameValueSeenInBlock = true;
+                        continue;
+                    }
+                    if (nameValueSeenInBlock || nameValueSeen) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "positional argument cannot follow name-value arguments: " +
+                                declaration->label});
+                    }
+                    if (repeatingInputSeen) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "positional argument cannot follow repeating arguments: " +
+                                declaration->label});
+                    }
+                    if (declaration->label == "varargin") {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "varargin must be declared in a Repeating arguments block"});
+                    } else if (!isParameter(declaration->label)) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "arguments block name is not a function parameter: " +
+                                declaration->label});
+                    }
+                    positionalContracts[declaration->label] = declaration.get();
+                    continue;
+                }
+
+                if (blockKind == ArgumentBlockKind::RepeatingInput) {
+                    if (isNameValueArgument(declaration->label)) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "name-value argument cannot appear in a Repeating block: " +
+                                declaration->label});
+                    }
+                    if (declaration->property.hasExplicitDefault) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "repeating input argument cannot define a default: " +
+                                declaration->label});
+                    }
+                    if (declaration->label == "varargin") {
+                        vararginDeclared = true;
+                        if (!signature.hasVarargin) {
+                            result_.diagnostics.push_back(Diagnostic{
+                                declaration->span,
+                                "arguments block name is not a function parameter: varargin"});
+                        }
+                        if (child->children.size() != 1) {
+                            result_.diagnostics.push_back(Diagnostic{
+                                declaration->span,
+                                "varargin must be the only declaration in its Repeating block"});
+                        }
+                    } else {
+                        if (!isParameter(declaration->label)) {
+                            result_.diagnostics.push_back(Diagnostic{
+                                declaration->span,
+                                "arguments block name is not a function parameter: " +
+                                    declaration->label});
+                        }
+                        repeatingNames.insert(declaration->label);
+                        repeatingOrder.push_back(declaration->label);
+                    }
+                    continue;
+                }
+
+                if (isNameValueArgument(declaration->label)) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "output arguments cannot use name-value field syntax: " +
+                            declaration->label});
+                }
+                if (declaration->property.hasExplicitDefault) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "output argument cannot define a default: " +
+                            declaration->label});
+                }
+                if (declaration->label == "varargout") {
+                    varargoutDeclared = true;
+                    if (!signature.hasVarargout) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "arguments block name is not a function output: varargout"});
+                    }
+                    if (blockKind == ArgumentBlockKind::RepeatingOutput &&
+                        child->children.size() != 1) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "varargout must be the only declaration in its Repeating block"});
+                    }
+                    if (blockKind != ArgumentBlockKind::RepeatingOutput) {
+                        result_.diagnostics.push_back(Diagnostic{
+                            declaration->span,
+                            "varargout must be declared in a Repeating output arguments block"});
+                    }
+                } else if (!isOutput(declaration->label)) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration->span,
+                        "arguments block name is not a function output: " +
+                            declaration->label});
+                }
+            }
+        }
+
+        if (signature.hasVarargin && inputBlockSeen &&
+            !vararginDeclared) {
+            result_.diagnostics.push_back(Diagnostic{
+                repeatingBlock != nullptr ? repeatingBlock->span : function.span,
+                "varargin must be declared as the only argument in its Repeating block"});
+        }
+        if (signature.hasVarargout && outputBlockSeen &&
+            !varargoutDeclared) {
+            result_.diagnostics.push_back(Diagnostic{
+                function.span,
+                "varargout must be declared in a Repeating output arguments block"});
+        }
+
+        int parameterPhase = 0;
+        std::vector<std::string> signatureRepeatingOrder;
+        for (const auto& parameter : signature.parameters) {
+            int phase = 0;
+            if (repeatingNames.contains(parameter)) {
+                phase = 1;
+                signatureRepeatingOrder.push_back(parameter);
+            } else if (nameValueRoots.contains(parameter)) {
+                phase = 2;
+            }
+            if (phase < parameterPhase) {
+                result_.diagnostics.push_back(Diagnostic{
+                    function.span,
+                    "function parameters must be ordered as positional, repeating, then name-value: " +
+                        parameter});
+            }
+            parameterPhase = std::max(parameterPhase, phase);
+        }
+        if (repeatingOrder != signatureRepeatingOrder) {
+            result_.diagnostics.push_back(Diagnostic{
+                repeatingBlock != nullptr ? repeatingBlock->span : function.span,
+                "repeating arguments block order must match the function signature"});
+        }
+
+        bool optionalParameterSeen = false;
+        for (const auto& parameter : signature.parameters) {
+            if (repeatingNames.contains(parameter) ||
+                nameValueRoots.contains(parameter)) {
+                continue;
+            }
+            const auto declaration = positionalContracts.find(parameter);
+            const bool optional =
+                declaration != positionalContracts.end() &&
+                declaration->second->property.hasExplicitDefault;
+            if (optional) {
+                optionalParameterSeen = true;
+            } else if (optionalParameterSeen) {
+                result_.diagnostics.push_back(Diagnostic{
+                    declaration != positionalContracts.end()
+                        ? declaration->second->span
+                        : function.span,
+                    "required argument follows an optional argument: " +
+                        parameter});
+            }
+        }
     }
 
     std::unique_ptr<HirNode> lowerDeclaration(const SyntaxNode& syntax, HirKind kind,
@@ -1007,6 +1219,7 @@ private:
         node->raw = syntax.raw;
         node->span = syntax.span;
         node->attributes = syntax.attributes;
+        node->argumentBlock = syntax.argumentBlock;
         node->property = syntax.property;
         return node;
     }
@@ -1842,6 +2055,8 @@ const char* hirKindName(HirKind kind) {
         return "Class";
     case HirKind::Function:
         return "Function";
+    case HirKind::ArgumentBlock:
+        return "ArgumentBlock";
     case HirKind::Argument:
         return "Argument";
     case HirKind::Import:

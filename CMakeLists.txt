@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.58.0 LANGUAGES C CXX)
+project(MParser VERSION 0.59.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -652,6 +652,24 @@ add_executable(argument_validation_smoke_tests
 target_link_libraries(argument_validation_smoke_tests PRIVATE mparser_core)
 add_test(NAME argument_validation_smoke
     COMMAND argument_validation_smoke_tests)
+
+add_executable(repeating_argument_smoke_tests
+    tests/repeating_argument_smoke.cpp)
+target_link_libraries(repeating_argument_smoke_tests PRIVATE mparser_core)
+add_test(NAME repeating_argument_smoke
+    COMMAND repeating_argument_smoke_tests)
+
+add_test(NAME repeating_arguments_interpreter_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/repeating_arguments_demo.m)
+set_tests_properties(repeating_arguments_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2145")
+
+add_test(NAME repeating_arguments_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/repeating_arguments_demo.m)
+set_tests_properties(repeating_arguments_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2145")
 
 add_executable(runtime_argument_validation_smoke_tests
     tests/runtime_argument_validation_smoke.cpp)

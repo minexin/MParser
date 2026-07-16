@@ -14,6 +14,7 @@ enum class HirKind {
     Module,
     Class,
     Function,
+    ArgumentBlock,
     Argument,
     Import,
     Property,
@@ -92,6 +93,7 @@ struct HirNode {
     SourceSpan span;
     BindingRef binding;
     std::vector<AttributeSyntax> attributes;
+    ArgumentBlockSpec argumentBlock;
     std::vector<std::string> superclasses;
     PropertySpec property;
     std::vector<std::unique_ptr<HirNode>> children;

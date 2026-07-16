@@ -64,6 +64,21 @@ enum class SyntaxKind {
     Error,
 };
 
+enum class ArgumentBlockKind {
+    Input,
+    RepeatingInput,
+    Output,
+    RepeatingOutput,
+};
+
+struct ArgumentBlockSpec {
+    ArgumentBlockKind kind = ArgumentBlockKind::Input;
+    bool explicitInput = false;
+    bool explicitOutput = false;
+    bool repeating = false;
+    bool valid = true;
+};
+
 struct AttributeSyntax {
     std::string name;
     std::string value;
@@ -82,11 +97,13 @@ struct SyntaxNode {
     std::string raw;
     SourceSpan span;
     std::vector<AttributeSyntax> attributes;
+    ArgumentBlockSpec argumentBlock;
     PropertySpec property;
     std::vector<std::unique_ptr<SyntaxNode>> children;
 };
 
 const char* syntaxKindName(SyntaxKind kind);
+const char* argumentBlockKindName(ArgumentBlockKind kind);
 SyntaxKind syntaxKindForControlKeyword(TokenKind kind);
 
 } // namespace mparser

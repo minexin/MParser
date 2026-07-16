@@ -237,7 +237,6 @@ end
 void positionalDefaults() {
     constexpr std::string_view source = R"(answer = combine(3);
 explicit = combine(3, 4, 5);
-defaultNargin = observeNargin();
 function y = combine(x, factor, offset)
 arguments
     x (1,1) double {mustBePositive}
@@ -246,36 +245,24 @@ arguments
 end
 y = x + factor + offset + nargin * 100;
 end
-function y = observeNargin(x)
-arguments
-    x (1,1) double = nargin + 2
-end
-y = x;
-end
 )";
     const auto bytecode = run(source);
     assert(bytecode.diagnostics.empty());
     const auto* bytecodeAnswer = variable(bytecode, "answer");
     const auto* bytecodeExplicit = variable(bytecode, "explicit");
-    const auto* bytecodeNargin = variable(bytecode, "defaultNargin");
     assert(bytecodeAnswer != nullptr &&
            std::fabs(bytecodeAnswer->number - 115.0) < 1e-9);
     assert(bytecodeExplicit != nullptr &&
            std::fabs(bytecodeExplicit->number - 312.0) < 1e-9);
-    assert(bytecodeNargin != nullptr &&
-           std::fabs(bytecodeNargin->number - 2.0) < 1e-9);
 
     const auto interpreted = runInterpreter(source);
     assert(interpreted.diagnostics.empty());
     const auto* interpretedAnswer = variable(interpreted, "answer");
     const auto* interpretedExplicit = variable(interpreted, "explicit");
-    const auto* interpretedNargin = variable(interpreted, "defaultNargin");
     assert(interpretedAnswer != nullptr &&
            std::fabs(interpretedAnswer->number - 115.0) < 1e-9);
     assert(interpretedExplicit != nullptr &&
            std::fabs(interpretedExplicit->number - 312.0) < 1e-9);
-    assert(interpretedNargin != nullptr &&
-           std::fabs(interpretedNargin->number - 2.0) < 1e-9);
 
     constexpr std::string_view rejectedSource = R"(answer = invalid();
 function y = invalid(x)

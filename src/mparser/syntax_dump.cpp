@@ -73,7 +73,11 @@ void dumpNode(std::ostream& output, const SyntaxNode& node, int depth) {
         output << " " << node.label;
     }
     dumpAttributes(output, node.attributes);
-    if (node.kind == SyntaxKind::PropertyDecl) {
+    if (node.kind == SyntaxKind::ArgumentsBlock) {
+        output << " group=" << argumentBlockKindName(node.argumentBlock.kind);
+    }
+    if (node.kind == SyntaxKind::PropertyDecl ||
+        node.kind == SyntaxKind::ArgumentDecl) {
         dumpPropertySpec(output, node.property);
     }
     if (!node.raw.empty()) {

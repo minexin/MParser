@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.58.0. See [docs/v0.58.md](docs/v0.58.md) for the
+Current milestone: v0.59.0. See [docs/v0.59.md](docs/v0.59.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.56.md](docs/v0.56.md),
+iteration plan. Previous boundaries are kept in [docs/v0.58.md](docs/v0.58.md),
+[docs/v0.57.md](docs/v0.57.md), [docs/v0.56.md](docs/v0.56.md),
 [docs/v0.55.md](docs/v0.55.md),
 [docs/v0.54.md](docs/v0.54.md),
 [docs/v0.53.md](docs/v0.53.md),

@@ -921,7 +921,7 @@ PropertyValidatorSpec parsePropertyValidator(
 }
 
 PropertyDeclarationParseResult parsePropertyDeclarationTokens(
-    const std::vector<Token>& sourceTokens) {
+    const std::vector<Token>& sourceTokens, bool allowDottedName = false) {
     PropertyDeclarationParseResult result;
     const std::vector<Token> tokens = removeEllipses(sourceTokens);
     if (tokens.empty()) {
@@ -935,8 +935,14 @@ PropertyDeclarationParseResult parsePropertyDeclarationTokens(
         return result;
     }
 
-    result.label = tokens.front().text;
     size_t cursor = 1;
+    if (allowDottedName) {
+        auto [name, end] = parseDottedName(tokens, 0);
+        result.label = std::move(name);
+        cursor = end;
+    } else {
+        result.label = tokens.front().text;
+    }
 
     if (cursor < tokens.size() &&
         tokens[cursor].kind == TokenKind::LParen) {
@@ -1554,8 +1560,82 @@ std::unique_ptr<SyntaxNode> Parser::parseFunction() {
 std::unique_ptr<SyntaxNode> Parser::parseArgumentsBlock() {
     auto node = makeNode(SyntaxKind::ArgumentsBlock, current().span.begin);
     advance();
-    const auto header = collectUntilSeparator();
-    node->raw = joinTokens(header);
+    node->attributes = parseAttributeList();
+    if (!node->attributes.empty()) {
+        node->raw = "(";
+        for (size_t index = 0; index < node->attributes.size(); ++index) {
+            if (index != 0) {
+                node->raw += ", ";
+            }
+            node->raw += node->attributes[index].raw;
+        }
+        node->raw += ")";
+    }
+
+    bool sawInput = false;
+    bool sawOutput = false;
+    bool sawRepeating = false;
+    for (const auto& attribute : node->attributes) {
+        bool* seen = nullptr;
+        if (attribute.name == "Input") {
+            seen = &sawInput;
+        } else if (attribute.name == "Output") {
+            seen = &sawOutput;
+        } else if (attribute.name == "Repeating") {
+            seen = &sawRepeating;
+        } else {
+            diagnostics_.push_back(Diagnostic{
+                attribute.span,
+                "unsupported arguments block attribute: " + attribute.raw});
+            node->argumentBlock.valid = false;
+            continue;
+        }
+        if (attribute.negated || !attribute.value.empty()) {
+            diagnostics_.push_back(Diagnostic{
+                attribute.span,
+                "arguments block attributes do not accept values or negation: " +
+                    attribute.raw});
+            node->argumentBlock.valid = false;
+        }
+        if (*seen) {
+            diagnostics_.push_back(Diagnostic{
+                attribute.span,
+                "duplicate arguments block attribute: " + attribute.name});
+            node->argumentBlock.valid = false;
+        }
+        *seen = true;
+    }
+    if (sawInput && sawOutput) {
+        diagnostics_.push_back(Diagnostic{
+            node->span,
+            "arguments block cannot be both Input and Output"});
+        node->argumentBlock.valid = false;
+    }
+    node->argumentBlock.explicitInput = sawInput;
+    node->argumentBlock.explicitOutput = sawOutput;
+    node->argumentBlock.repeating = sawRepeating;
+    if (sawOutput) {
+        node->argumentBlock.kind =
+            sawRepeating ? ArgumentBlockKind::RepeatingOutput
+                         : ArgumentBlockKind::Output;
+    } else {
+        node->argumentBlock.kind =
+            sawRepeating ? ArgumentBlockKind::RepeatingInput
+                         : ArgumentBlockKind::Input;
+    }
+
+    const auto trailingHeader = collectUntilSeparator();
+    if (!trailingHeader.empty()) {
+        diagnostics_.push_back(Diagnostic{
+            spanFromTokens(trailingHeader),
+            "unexpected tokens in arguments block header: " +
+                joinTokens(trailingHeader)});
+        node->argumentBlock.valid = false;
+        if (!node->raw.empty()) {
+            node->raw += " ";
+        }
+        node->raw += joinTokens(trailingHeader);
+    }
     consumeSeparator();
 
     while (!isAtEnd() && !at(TokenKind::KeywordEnd)) {
@@ -1567,7 +1647,7 @@ std::unique_ptr<SyntaxNode> Parser::parseArgumentsBlock() {
             makeNode(SyntaxKind::ArgumentDecl, current().span.begin);
         const auto tokens = collectUntilSeparator();
         declaration->raw = joinTokens(tokens);
-        auto parsed = parsePropertyDeclarationTokens(tokens);
+        auto parsed = parsePropertyDeclarationTokens(tokens, true);
         declaration->label = std::move(parsed.label);
         declaration->property = std::move(parsed.spec);
         for (auto& diagnostic : parsed.diagnostics) {

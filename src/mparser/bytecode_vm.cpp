@@ -552,23 +552,26 @@ struct ArgumentContract {
     std::string name;
     PropertySpec spec;
     SourceSpan span;
+    ArgumentBlockKind blockKind = ArgumentBlockKind::Input;
     size_t defaultEntry = 0;
     size_t defaultEnd = 0;
     bool hasDefaultRange = false;
 };
 
 void collectArgumentContracts(
-    const HirNode& node, std::vector<ArgumentContract>& contracts) {
-    for (const auto& child : node.children) {
-        if (child->kind == HirKind::Function) {
+    const HirNode& function, std::vector<ArgumentContract>& contracts) {
+    for (const auto& block : function.children) {
+        if (block->kind != HirKind::ArgumentBlock) {
             continue;
         }
-        if (child->kind == HirKind::Argument) {
+        for (const auto& declaration : block->children) {
+            if (declaration->kind != HirKind::Argument) {
+                continue;
+            }
             contracts.push_back(ArgumentContract{
-                child->label, child->property, child->span, 0, 0, false});
-            continue;
+                declaration->label, declaration->property, declaration->span,
+                block->argumentBlock.kind, 0, 0, false});
         }
-        collectArgumentContracts(*child, contracts);
     }
 }
 
@@ -1327,7 +1330,8 @@ private:
             const auto contract = std::find_if(
                 info.argumentContracts.begin(), info.argumentContracts.end(),
                 [&](const ArgumentContract& candidate) {
-                    return candidate.name == instruction.operand;
+                    return candidate.blockKind == ArgumentBlockKind::Input &&
+                           candidate.name == instruction.operand;
                 });
             if (contract == info.argumentContracts.end()) {
                 addDiagnostic(instruction,
@@ -2840,33 +2844,16 @@ private:
         }
     }
 
-    const ArgumentContract* argumentContract(const FunctionInfo& info,
-                                             std::string_view name) const {
+    const ArgumentContract* argumentContract(
+        const FunctionInfo& info, std::string_view name,
+        ArgumentBlockKind blockKind) const {
         const auto found = std::find_if(
             info.argumentContracts.begin(), info.argumentContracts.end(),
             [&](const ArgumentContract& candidate) {
-                return candidate.name == name;
+                return candidate.blockKind == blockKind &&
+                       candidate.name == name;
             });
         return found == info.argumentContracts.end() ? nullptr : &*found;
-    }
-
-    size_t requiredFunctionArgumentCount(const FunctionInfo& info) const {
-        size_t required = 0;
-        for (size_t index = 0; index < info.signature.parameters.size(); ++index) {
-            const auto* contract =
-                argumentContract(info, info.signature.parameters[index]);
-            if (contract == nullptr || !contract->spec.hasExplicitDefault) {
-                required = index + 1;
-            }
-        }
-        return required;
-    }
-
-    bool acceptsFunctionArgumentCount(const FunctionInfo& info,
-                                      size_t count) const {
-        return count >= requiredFunctionArgumentCount(info) &&
-               (info.signature.hasVarargin ||
-                count <= info.signature.parameters.size());
     }
 
     std::optional<RuntimeValue> evaluateArgumentDefault(
@@ -2923,23 +2910,90 @@ private:
             numberValue(static_cast<double>(arguments.size()));
         currentFrame()["nargout"] =
             numberValue(static_cast<double>(requestedOutputCount));
-        for (const auto& contract : info.argumentContracts) {
-            if (std::find(info.signature.parameters.begin(),
-                          info.signature.parameters.end(), contract.name) ==
-                info.signature.parameters.end()) {
+        const auto argumentCountStatus =
+            functionArgumentCountStatus(info.signature, arguments.size());
+        if (argumentCountStatus == FunctionArgumentCountStatus::Mismatch) {
+            addDiagnostic(instruction,
+                          "function argument count mismatch for: " + name);
+            return std::nullopt;
+        }
+        if (std::any_of(
+                info.argumentContracts.begin(), info.argumentContracts.end(),
+                [](const ArgumentContract& contract) {
+                    return contract.blockKind == ArgumentBlockKind::Output ||
+                           contract.blockKind ==
+                               ArgumentBlockKind::RepeatingOutput;
+                })) {
+            addDiagnostic(
+                instruction,
+                "output arguments blocks are not executable yet for: " + name);
+            return std::nullopt;
+        }
+        if (functionHasNameValueParameters(info.signature)) {
+            addDiagnostic(instruction,
+                          "name-value arguments are not executable yet for: " +
+                              name);
+            return std::nullopt;
+        }
+
+        const size_t fixedParameterCount =
+            functionPositionalParameterCount(info.signature);
+        const size_t repeatingGroupWidth =
+            functionRepeatingParameterCount(info.signature);
+        const size_t repeatingValueCount =
+            arguments.size() > fixedParameterCount
+                ? arguments.size() - fixedParameterCount
+                : 0;
+        if (argumentCountStatus ==
+            FunctionArgumentCountStatus::IncompleteRepeatingGroup) {
+            addDiagnostic(
+                instruction,
+                "incomplete repeating argument group for " + name +
+                    ": expected a multiple of " +
+                    std::to_string(repeatingGroupWidth) + " values");
+            return std::nullopt;
+        }
+
+        RuntimeArgumentValidationOptions validationOptions;
+        validationOptions.objectIsA =
+            [this](const std::string& actual, const std::string& expected) {
+                return classDerivesFrom(actual, expected);
+            };
+        validationOptions.classAvailable = [this](const std::string& className) {
+            return classesByName_.contains(className);
+        };
+        auto validateValue = [&](RuntimeValue value,
+                                 const ArgumentContract* contract,
+                                 std::optional<size_t> occurrence =
+                                     std::nullopt)
+            -> std::optional<RuntimeValue> {
+            if (contract == nullptr) {
+                return value;
+            }
+            auto result = validateRuntimeArgument(
+                std::move(value), contract->spec, validationOptions);
+            if (!result.succeeded) {
+                std::string argumentName = contract->name;
+                if (occurrence) {
+                    argumentName += "{" + std::to_string(*occurrence + 1) +
+                                    "}";
+                }
                 addDiagnostic(instruction,
-                              "arguments block declares a non-parameter in " +
-                                  name + ": " + contract.name);
+                              "argument validation failed for " + name + "." +
+                                  argumentName + ": " +
+                                  std::move(result.error));
                 return std::nullopt;
             }
-        }
+            return std::move(result.value);
+        };
+
         std::vector<RuntimeValue> validated;
         validated.reserve(std::max(arguments.size(),
                                    info.signature.parameters.size()));
-        for (size_t index = 0; index < info.signature.parameters.size(); ++index) {
+        for (size_t index = 0; index < fixedParameterCount; ++index) {
             const std::string& parameterName = info.signature.parameters[index];
-            const ArgumentContract* contract =
-                argumentContract(info, parameterName);
+            const ArgumentContract* contract = argumentContract(
+                info, parameterName, ArgumentBlockKind::Input);
             RuntimeValue value;
             if (index < arguments.size()) {
                 value = arguments[index];
@@ -2958,37 +3012,67 @@ private:
                 return std::nullopt;
             }
 
-            if (contract != nullptr) {
-                RuntimeArgumentValidationOptions validationOptions;
-                validationOptions.objectIsA =
-                    [this](const std::string& actual,
-                           const std::string& expected) {
-                        return classDerivesFrom(actual, expected);
-                    };
-                validationOptions.classAvailable =
-                    [this](const std::string& className) {
-                        return classesByName_.contains(className);
-                    };
-                auto result = validateRuntimeArgument(
-                    std::move(value), contract->spec, validationOptions);
-                if (!result.succeeded) {
-                    addDiagnostic(
-                        instruction,
-                        "argument validation failed for " + name + "." +
-                            contract->name + ": " + std::move(result.error));
-                    return std::nullopt;
-                }
-                value = std::move(result.value);
+            auto result = validateValue(std::move(value), contract);
+            if (!result) {
+                return std::nullopt;
             }
-            currentFrame()[parameterName] = value;
-            validated.push_back(std::move(value));
+            currentFrame()[parameterName] = *result;
+            validated.push_back(std::move(*result));
         }
 
-        validated.insert(validated.end(),
-                         arguments.begin() +
-                             std::min(arguments.size(),
-                                      info.signature.parameters.size()),
-                         arguments.end());
+        if (repeatingGroupWidth != 0) {
+            const size_t occurrenceCount =
+                arguments.size() < fixedParameterCount
+                    ? 0
+                    : repeatingValueCount / repeatingGroupWidth;
+            size_t groupIndex = 0;
+            for (size_t index = fixedParameterCount;
+                 index < info.signature.parameters.size(); ++index) {
+                if (functionParameterKind(info.signature, index) !=
+                    FunctionParameterKind::Repeating) {
+                    continue;
+                }
+                const std::string& parameterName =
+                    info.signature.parameters[index];
+                const ArgumentContract* contract = argumentContract(
+                    info, parameterName, ArgumentBlockKind::RepeatingInput);
+                std::vector<RuntimeValue> values;
+                values.reserve(occurrenceCount);
+                for (size_t occurrence = 0; occurrence < occurrenceCount;
+                     ++occurrence) {
+                    const size_t argumentIndex =
+                        fixedParameterCount +
+                        occurrence * repeatingGroupWidth + groupIndex;
+                    auto result = validateValue(arguments[argumentIndex],
+                                                contract, occurrence);
+                    if (!result) {
+                        return std::nullopt;
+                    }
+                    values.push_back(std::move(*result));
+                }
+                RuntimeValue cell = cellValue(std::move(values));
+                currentFrame()[parameterName] = cell;
+                validated.push_back(std::move(cell));
+                ++groupIndex;
+            }
+        }
+
+        if (info.signature.hasVarargin) {
+            const ArgumentContract* contract = argumentContract(
+                info, "varargin", ArgumentBlockKind::RepeatingInput);
+            const size_t begin =
+                repeatingGroupWidth == 0
+                    ? std::min(arguments.size(), fixedParameterCount)
+                    : arguments.size();
+            for (size_t index = begin; index < arguments.size(); ++index) {
+                auto result = validateValue(arguments[index], contract,
+                                            index - begin);
+                if (!result) {
+                    return std::nullopt;
+                }
+                validated.push_back(std::move(*result));
+            }
+        }
         return validated;
     }
 
@@ -2999,13 +3083,6 @@ private:
         }
 
         const auto& signature = function->second.signature;
-        if (!acceptsFunctionArgumentCount(function->second,
-                                          entryArguments_.size())) {
-            addDiagnostic(instruction,
-                          "function argument count mismatch for: " +
-                              instruction.operand);
-            return false;
-        }
         const size_t requestedOutputCount =
             requestedEntryOutputCount_.value_or(signature.outputs.size());
         if (!signature.hasVarargout &&
@@ -6821,11 +6898,6 @@ private:
             return missingOutputs(requestedCount);
         }
 
-        if (!acceptsFunctionArgumentCount(info, arguments.size())) {
-            addDiagnostic(instruction,
-                          "function argument count mismatch for: " + name);
-            return missingOutputs(requestedCount);
-        }
         if (!info.signature.hasVarargout &&
             requestedCount > static_cast<int>(info.signature.outputs.size())) {
             addDiagnostic(instruction,

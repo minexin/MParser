@@ -431,9 +431,19 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
                            "entry function is not available: " +
                                std::string(entryFunction)}};
     }
-    if (argumentCount < function->signature.parameters.size() ||
-        (!function->signature.hasVarargin &&
-         function->signature.parameters.size() != argumentCount)) {
+    const auto argumentCountStatus =
+        functionArgumentCountStatus(function->signature, argumentCount);
+    if (argumentCountStatus ==
+        FunctionArgumentCountStatus::IncompleteRepeatingGroup) {
+        return {Diagnostic{
+            function->span,
+            "incomplete repeating argument group for " + function->name +
+                ": expected a multiple of " +
+                std::to_string(functionRepeatingParameterCount(
+                    function->signature)) +
+                " values"}};
+    }
+    if (argumentCountStatus == FunctionArgumentCountStatus::Mismatch) {
         return {Diagnostic{
             function->span,
             "function argument count mismatch for: " + function->name}};

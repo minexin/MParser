@@ -112,6 +112,20 @@ const char* syntaxKindName(SyntaxKind kind) {
     return "Unknown";
 }
 
+const char* argumentBlockKindName(ArgumentBlockKind kind) {
+    switch (kind) {
+    case ArgumentBlockKind::Input:
+        return "Input";
+    case ArgumentBlockKind::RepeatingInput:
+        return "RepeatingInput";
+    case ArgumentBlockKind::Output:
+        return "Output";
+    case ArgumentBlockKind::RepeatingOutput:
+        return "RepeatingOutput";
+    }
+    return "Input";
+}
+
 SyntaxKind syntaxKindForControlKeyword(TokenKind kind) {
     switch (kind) {
     case TokenKind::KeywordFor:

@@ -172,6 +172,31 @@ descriptors and literal arguments, block attributes, and whether an executable
 default expression exists. The default remains a normal expression child, so
 name binding and future type/JIT passes use the same HIR as script expressions.
 
+Function argument declarations reuse `PropertySpec`, but their enclosing group
+is explicit in both syntax and HIR. `ArgumentBlockKind` distinguishes ordinary
+input, repeating input, output, and repeating output blocks; a dedicated
+`ArgumentBlock` HIR node preserves that boundary. Dotted declarations such as
+`options.Scale` remain intact, and `FunctionSignature` classifies each named
+parameter as positional, repeating, or name-value. It also records the number
+of required positional parameters after trailing defaults are considered. A
+shared argument-count check combines that value with the fixed parameter count,
+repeating-group width, and `varargin` flag, so interpreters and reusable module
+entries do not reconstruct calling conventions from raw source.
+
+The interpreter and bytecode VM execute repeating input groups with the same
+layout. Fixed positional parameters bind first and may evaluate trailing
+defaults. Remaining inputs must contain zero or more complete repetitions of
+the declared group. Every repeating parameter receives a one-dimensional Cell,
+and each Cell element is converted and validated independently before the
+function body runs. A repeating `varargin` declaration validates each excess
+input while retaining the ordinary `varargin` Cell interface. `nargin` remains
+the caller-provided positional count. `CompiledModule` preflight and adaptive
+module sessions use the same arity contract, including optional fixed inputs,
+zero repetitions, and incomplete-group diagnostics. Name-value and output
+groups are retained for the next calling-convention stages and currently
+produce explicit runtime diagnostics rather than silently skipping their
+contracts.
+
 Dynamic MATLAB constructs intentionally remain delayed. `CallOrIndex`,
 `BraceIndex`, and `MemberAccess` HIR nodes preserve the surface operation and
 carry unresolved bindings until a later name-resolution pass has path, package,
