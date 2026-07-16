@@ -34,6 +34,10 @@ struct TypedRegionExecutionResult {
     TypedRegionBackend backend = TypedRegionBackend::Portable;
     bool nativeCompiled = false;
     bool nativeCacheHit = false;
+    bool nativeCacheStored = false;
+    bool nativeCacheBypassed = false;
+    size_t nativeCacheEvictionCount = 0;
+    size_t nativeCacheEvictedCodeBytes = 0;
     size_t nativeCodeSize = 0;
     std::string nativePlatform;
     std::string nativeFallbackReason;

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.52.0 LANGUAGES C CXX)
+project(MParser VERSION 0.53.0 LANGUAGES C CXX)
+
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -80,6 +82,7 @@ add_library(mparser_core
 )
 
 target_include_directories(mparser_core PUBLIC src)
+target_link_libraries(mparser_core PRIVATE Threads::Threads)
 
 if(MPARSER_ENABLE_NATIVE_JIT)
     target_link_libraries(mparser_core PRIVATE mparser_sljit)
@@ -160,6 +163,13 @@ target_link_libraries(typed_region_executor_smoke_tests PRIVATE mparser_core)
 add_test(NAME typed_region_executor_smoke
     COMMAND typed_region_executor_smoke_tests)
 
+add_executable(native_scalar_jit_cache_smoke_tests
+    tests/native_scalar_jit_cache_smoke.cpp)
+target_link_libraries(native_scalar_jit_cache_smoke_tests PRIVATE
+    mparser_core Threads::Threads)
+add_test(NAME native_scalar_jit_cache_smoke
+    COMMAND native_scalar_jit_cache_smoke_tests)
+
 add_test(NAME scalar_kernel_cli_smoke
     COMMAND $<TARGET_FILE:mparser>
         --run-typed-bytecode
@@ -226,6 +236,27 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     set_tests_properties(native_branched_kernel_cache_cli_smoke PROPERTIES
         PASS_REGULAR_EXPRESSION
             "backend=native.*nativeCacheHits=1")
+
+    add_test(NAME native_cache_lifecycle_cli_smoke
+        COMMAND $<TARGET_FILE:mparser>
+            --run-module-runtime
+            --adaptive-hot-loop=5
+            --typed-backend=native
+            --native-cache-entries=2
+            --native-cache-bytes=1048576
+            --native-cache-stats
+            --module-call=cache_add:2
+            --module-call=cache_add:2
+            --module-call=cache_add:2
+            --module-call=cache_multiply:2
+            --module-call=cache_multiply:2
+            --module-call=cache_multiply:2
+            --module-call=cache_absolute:2
+            --module-call=cache_absolute:2
+            --module-call=cache_absolute:2
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/native_cache_demo.m)
+    set_tests_properties(native_cache_lifecycle_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "lifecycle: evictions=1")
 else()
     add_test(NAME native_jit_disabled_cli_smoke
         COMMAND $<TARGET_FILE:mparser>

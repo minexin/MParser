@@ -3329,6 +3329,14 @@ private:
             result.nativeCompiled ? 1 : 0;
         execution.nativeCacheHitCount +=
             result.nativeCacheHit ? 1 : 0;
+        execution.nativeCacheInsertionCount +=
+            result.nativeCacheStored ? 1 : 0;
+        execution.nativeCacheBypassCount +=
+            result.nativeCacheBypassed ? 1 : 0;
+        execution.nativeCacheEvictionCount +=
+            result.nativeCacheEvictionCount;
+        execution.nativeCacheEvictedCodeBytes +=
+            result.nativeCacheEvictedCodeBytes;
         execution.nativeCodeSize = result.nativeCodeSize;
         execution.nativePlatform = std::move(result.nativePlatform);
         execution.nativeFallbackReason =

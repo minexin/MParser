@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <list>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -817,6 +818,190 @@ struct CompiledKernel {
     }
 };
 
+struct NativeCacheEvictionSummary {
+    size_t count = 0;
+    size_t codeBytes = 0;
+};
+
+struct NativeCacheStoreResult {
+    std::shared_ptr<CompiledKernel> kernel;
+    bool inserted = false;
+    bool bypassed = false;
+    bool duplicate = false;
+    NativeCacheEvictionSummary evictions;
+};
+
+class NativeKernelCache {
+public:
+    std::shared_ptr<CompiledKernel> find(const std::string& key) {
+        const std::lock_guard lock(mutex_);
+        ++statistics_.lookupCount;
+        const auto found = entries_.find(key);
+        if (found == entries_.end()) {
+            ++statistics_.missCount;
+            return {};
+        }
+
+        ++statistics_.hitCount;
+        touchLocked(found->second);
+        return found->second.kernel;
+    }
+
+    NativeCacheStoreResult store(
+        const std::string& key,
+        std::shared_ptr<CompiledKernel> candidate) {
+        NativeCacheStoreResult result;
+        std::vector<std::shared_ptr<CompiledKernel>> released;
+        {
+            const std::lock_guard lock(mutex_);
+            const auto existing = entries_.find(key);
+            if (existing != entries_.end()) {
+                touchLocked(existing->second);
+                ++statistics_.duplicateCompilationCount;
+                result.kernel = existing->second.kernel;
+                result.duplicate = true;
+                return result;
+            }
+
+            if (limits_.maxEntries == 0 ||
+                limits_.maxCodeBytes == 0 ||
+                candidate->codeSize > limits_.maxCodeBytes) {
+                ++statistics_.bypassCount;
+                result.kernel = std::move(candidate);
+                result.bypassed = true;
+                return result;
+            }
+
+            while (!entries_.empty() &&
+                   (entries_.size() >= limits_.maxEntries ||
+                    codeBytes_ >
+                        limits_.maxCodeBytes - candidate->codeSize)) {
+                evictLeastRecentLocked(released, result.evictions);
+            }
+
+            recency_.push_front(key);
+            const auto [inserted, wasInserted] = entries_.emplace(
+                key, Entry{candidate, candidate->codeSize,
+                           recency_.begin()});
+            if (!wasInserted) {
+                recency_.pop_front();
+                ++statistics_.duplicateCompilationCount;
+                result.kernel = inserted->second.kernel;
+                result.duplicate = true;
+                return result;
+            }
+            codeBytes_ += candidate->codeSize;
+            ++statistics_.insertionCount;
+            result.kernel = std::move(candidate);
+            result.inserted = true;
+        }
+        return result;
+    }
+
+    void recordCompilation(bool succeeded) {
+        const std::lock_guard lock(mutex_);
+        if (succeeded) {
+            ++statistics_.compilationCount;
+        } else {
+            ++statistics_.compilationFailureCount;
+        }
+    }
+
+    void configure(const NativeScalarJitCacheLimits& limits) {
+        std::vector<std::shared_ptr<CompiledKernel>> released;
+        NativeCacheEvictionSummary ignored;
+        {
+            const std::lock_guard lock(mutex_);
+            limits_ = limits;
+            while (!entries_.empty() &&
+                   (entries_.size() > limits_.maxEntries ||
+                    codeBytes_ > limits_.maxCodeBytes)) {
+                evictLeastRecentLocked(released, ignored);
+            }
+        }
+    }
+
+    void clear() {
+        std::vector<std::shared_ptr<CompiledKernel>> released;
+        {
+            const std::lock_guard lock(mutex_);
+            ++statistics_.clearCount;
+            statistics_.clearedEntryCount += entries_.size();
+            statistics_.clearedCodeBytes += codeBytes_;
+            released.reserve(entries_.size());
+            for (auto& [key, entry] : entries_) {
+                (void)key;
+                released.push_back(std::move(entry.kernel));
+            }
+            entries_.clear();
+            recency_.clear();
+            codeBytes_ = 0;
+        }
+    }
+
+    void resetStatistics() {
+        const std::lock_guard lock(mutex_);
+        statistics_ = {};
+    }
+
+    NativeScalarJitCacheStatistics statistics() const {
+        const std::lock_guard lock(mutex_);
+        auto result = statistics_;
+        result.limits = limits_;
+        result.entryCount = entries_.size();
+        result.codeBytes = codeBytes_;
+        return result;
+    }
+
+private:
+    struct Entry {
+        std::shared_ptr<CompiledKernel> kernel;
+        size_t codeSize = 0;
+        std::list<std::string>::iterator recency;
+    };
+
+    void touchLocked(Entry& entry) {
+        if (entry.recency == recency_.begin()) {
+            return;
+        }
+        recency_.splice(recency_.begin(), recency_, entry.recency);
+        entry.recency = recency_.begin();
+    }
+
+    void evictLeastRecentLocked(
+        std::vector<std::shared_ptr<CompiledKernel>>& released,
+        NativeCacheEvictionSummary& summary) {
+        const std::string key = recency_.back();
+        const auto found = entries_.find(key);
+        if (found == entries_.end()) {
+            recency_.pop_back();
+            return;
+        }
+
+        const size_t codeSize = found->second.codeSize;
+        released.push_back(std::move(found->second.kernel));
+        entries_.erase(found);
+        recency_.pop_back();
+        codeBytes_ -= codeSize;
+        ++summary.count;
+        summary.codeBytes += codeSize;
+        ++statistics_.evictionCount;
+        statistics_.evictedCodeBytes += codeSize;
+    }
+
+    mutable std::mutex mutex_;
+    NativeScalarJitCacheLimits limits_;
+    NativeScalarJitCacheStatistics statistics_;
+    std::list<std::string> recency_;
+    std::unordered_map<std::string, Entry> entries_;
+    size_t codeBytes_ = 0;
+};
+
+NativeKernelCache& nativeKernelCache() {
+    static NativeKernelCache cache;
+    return cache;
+}
+
 struct CompileResult {
     NativeScalarJitStatus status =
         NativeScalarJitStatus::CompilationFailed;
@@ -936,10 +1121,6 @@ ScalarKernelExecutionCounters deriveCounters(
     return counters;
 }
 
-std::mutex cacheMutex;
-std::unordered_map<std::string, std::shared_ptr<CompiledKernel>>
-    compiledKernels;
-
 } // namespace
 
 bool nativeScalarJitAvailable() {
@@ -951,23 +1132,35 @@ std::string_view nativeScalarJitPlatform() {
     return platform;
 }
 
+void configureNativeScalarJitCache(
+    const NativeScalarJitCacheLimits& limits) {
+    nativeKernelCache().configure(limits);
+}
+
+void clearNativeScalarJitCache() {
+    nativeKernelCache().clear();
+}
+
+void resetNativeScalarJitCacheStatistics() {
+    nativeKernelCache().resetStatistics();
+}
+
+NativeScalarJitCacheStatistics nativeScalarJitCacheStatistics() {
+    return nativeKernelCache().statistics();
+}
+
 NativeScalarJitResult executeNativeScalarKernel(
     ScalarKernel& kernel, const double* outerValues,
     size_t outerValueCount) {
     NativeScalarJitResult result;
     const auto key = kernelCacheKey(kernel);
-    std::shared_ptr<CompiledKernel> compiled;
-    {
-        const std::lock_guard lock(cacheMutex);
-        const auto cached = compiledKernels.find(key);
-        if (cached != compiledKernels.end()) {
-            compiled = cached->second;
-            result.cacheHit = true;
-        }
-    }
+    auto compiled = nativeKernelCache().find(key);
+    result.cacheHit = static_cast<bool>(compiled);
 
     if (!compiled) {
         auto compilation = compileKernel(kernel);
+        nativeKernelCache().recordCompilation(
+            compilation.status == NativeScalarJitStatus::Executed);
         if (compilation.status != NativeScalarJitStatus::Executed) {
             result.status = compilation.status;
             result.reason = std::move(compilation.reason);
@@ -975,11 +1168,13 @@ NativeScalarJitResult executeNativeScalarKernel(
         }
         compiled = std::move(compilation.kernel);
         result.compiled = true;
-        const std::lock_guard lock(cacheMutex);
-        const auto [iterator, inserted] =
-            compiledKernels.emplace(key, compiled);
-        if (!inserted) {
-            compiled = iterator->second;
+        auto stored = nativeKernelCache().store(key, compiled);
+        compiled = std::move(stored.kernel);
+        result.cacheStored = stored.inserted;
+        result.cacheBypassed = stored.bypassed;
+        result.cacheEvictionCount = stored.evictions.count;
+        result.cacheEvictedCodeBytes = stored.evictions.codeBytes;
+        if (stored.duplicate) {
             result.compiled = false;
             result.cacheHit = true;
         }
@@ -1017,13 +1212,26 @@ NativeScalarJitResult executeNativeScalarKernel(
     result.counters =
         deriveCounters(kernel, outerValueCount, loopIterations,
                        instructionCounts);
-    result.reason = result.cacheHit
-                        ? "cached SLJIT native scalar kernel executed"
-                        : "compiled SLJIT native scalar kernel executed";
+    if (result.cacheHit) {
+        result.reason = "cached SLJIT native scalar kernel executed";
+    } else if (result.cacheBypassed) {
+        result.reason =
+            "compiled uncached SLJIT native scalar kernel executed";
+    } else {
+        result.reason = "compiled SLJIT native scalar kernel executed";
+    }
     return result;
 }
 
 #else
+
+namespace {
+
+std::mutex disabledCacheMutex;
+NativeScalarJitCacheLimits disabledCacheLimits;
+NativeScalarJitCacheStatistics disabledCacheStatistics;
+
+} // namespace
 
 bool nativeScalarJitAvailable() {
     return false;
@@ -1031,6 +1239,29 @@ bool nativeScalarJitAvailable() {
 
 std::string_view nativeScalarJitPlatform() {
     return "unavailable";
+}
+
+void configureNativeScalarJitCache(
+    const NativeScalarJitCacheLimits& limits) {
+    const std::lock_guard lock(disabledCacheMutex);
+    disabledCacheLimits = limits;
+}
+
+void clearNativeScalarJitCache() {
+    const std::lock_guard lock(disabledCacheMutex);
+    ++disabledCacheStatistics.clearCount;
+}
+
+void resetNativeScalarJitCacheStatistics() {
+    const std::lock_guard lock(disabledCacheMutex);
+    disabledCacheStatistics = {};
+}
+
+NativeScalarJitCacheStatistics nativeScalarJitCacheStatistics() {
+    const std::lock_guard lock(disabledCacheMutex);
+    auto result = disabledCacheStatistics;
+    result.limits = disabledCacheLimits;
+    return result;
 }
 
 NativeScalarJitResult executeNativeScalarKernel(

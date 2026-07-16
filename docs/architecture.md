@@ -224,7 +224,7 @@ boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
 
-v0.52 has an executable bytecode VM for scalar doubles, logical values, strings,
+v0.53 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
@@ -607,8 +607,9 @@ eligible regions may enter a typed path. v0.50 provides a portable predecoded
 register kernel for complete structured scalar loop nests. v0.51 compiles the
 same kernel contract to native machine code through optional SLJIT. v0.52 adds
 closed forward branch operations and path-sensitive definite-input analysis to
-that shared kernel, while retaining the portable executor as a build-time and
-runtime fallback. The
+that shared kernel. v0.53 adds a bounded, thread-safe native-code LRU with
+explicit limits, lifecycle operations, and statistics, while retaining the
+portable executor as a build-time and runtime fallback. The
 structured kernel IR remains backend-neutral so a future LLVM ORC backend can
 target richer regions without changing profiling, guards, or deoptimization:
 
@@ -624,10 +625,21 @@ cross-span targets before code installation. Per-instruction counters are
 enabled for branch kernels so source and kernel work reflect the arms actually
 executed rather than a static loop multiplier.
 
+The native cache defaults to 256 entries and 16 MiB of generated code. Lookup
+and LRU mutation are serialized by a standard C++ mutex, while expensive SLJIT
+compilation occurs outside that critical section. Concurrent misses for the
+same structural key may compile redundantly, but installation converges on the
+first resident kernel and records the duplicate work. Cache entries hold shared
+ownership of generated code, so eviction, dynamic shrinking, or explicit clear
+cannot invalidate an execution already in flight. Displaced ownership is
+released after unlocking, avoiding executable-memory destruction under the
+cache mutex. A zero entry or byte limit means compile-and-execute without
+retention; it does not disable the native backend.
+
 ```text
 bytecode -> cumulative profiling -> tier promotion -> typed IR
          -> guard check -> structured scalar kernel
-                        -> SLJIT native code + process cache
+                        -> SLJIT native code + bounded process LRU
                         -> portable register-kernel fallback
 ```
 
@@ -731,7 +743,9 @@ capability reporting, structural process-wide code caching, backend selection,
 and transaction-safe portable or bytecode fallback. v0.52 adds structured
 `if`/`elseif`/`else` regions, control-flow-aware definite assignment, portable
 kernel jumps, native SLJIT labels, exact branch-path counters, and branch-cache
-regressions. The next steps include
+regressions. v0.53 adds entry and code-byte limits, LRU eviction, safe dynamic
+shrink and clear operations, cache activity/lifecycle metrics, CLI controls,
+and concurrent cache regression coverage. The next steps include
 richer typed values and regions, optional LLVM ORC lowering behind the same
 backend contract, persistent cross-process code caches, moving-window array operations,
 object/listener arrays,

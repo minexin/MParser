@@ -6,6 +6,7 @@
 #include "mparser/compiled_module.h"
 #include "mparser/interpreter.h"
 #include "mparser/lexer.h"
+#include "mparser/native_scalar_jit.h"
 #include "mparser/optimization_plan.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_benchmark.h"
@@ -33,7 +34,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.51.0"
+#define MPARSER_VERSION "0.53.0"
 #endif
 
 namespace {
@@ -60,6 +61,8 @@ void printUsage() {
                  "--benchmark-runtime] "
                  "[--benchmark-warmup=N] [--benchmark-iterations=N] "
                  "[--typed-backend=auto|portable|native] "
+                 "[--native-cache-entries=N] [--native-cache-bytes=N] "
+                 "[--native-cache-stats] "
                  "[--adaptive-runs=N] [--adaptive-hot-loop=N] "
                  "[--adaptive-fallback-limit=N] "
                  "[--adaptive-persist-workspace] "
@@ -707,11 +710,22 @@ void printTypedRegionExecutions(
                   << ", backend=" << execution.backend;
         if (execution.nativeCompilationCount != 0 ||
             execution.nativeCacheHitCount != 0 ||
+            execution.nativeCacheInsertionCount != 0 ||
+            execution.nativeCacheBypassCount != 0 ||
+            execution.nativeCacheEvictionCount != 0 ||
             execution.nativeCodeSize != 0) {
             std::cout << ", nativeCompilations="
                       << execution.nativeCompilationCount
                       << ", nativeCacheHits="
                       << execution.nativeCacheHitCount
+                      << ", nativeCacheInsertions="
+                      << execution.nativeCacheInsertionCount
+                      << ", nativeCacheBypasses="
+                      << execution.nativeCacheBypassCount
+                      << ", nativeCacheEvictions="
+                      << execution.nativeCacheEvictionCount
+                      << ", nativeCacheEvictedBytes="
+                      << execution.nativeCacheEvictedCodeBytes
                       << ", nativeCodeBytes="
                       << execution.nativeCodeSize
                       << ", nativePlatform="
@@ -741,6 +755,10 @@ void printAdaptiveRun(
     size_t typedFallbacks = 0;
     size_t nativeCompilations = 0;
     size_t nativeCacheHits = 0;
+    size_t nativeCacheInsertions = 0;
+    size_t nativeCacheBypasses = 0;
+    size_t nativeCacheEvictions = 0;
+    size_t nativeCacheEvictedBytes = 0;
     size_t nativeCodeBytes = 0;
     std::string typedBackend;
     std::string nativePlatform;
@@ -750,6 +768,11 @@ void printAdaptiveRun(
         typedFallbacks += region.fallbackCount;
         nativeCompilations += region.nativeCompilationCount;
         nativeCacheHits += region.nativeCacheHitCount;
+        nativeCacheInsertions += region.nativeCacheInsertionCount;
+        nativeCacheBypasses += region.nativeCacheBypassCount;
+        nativeCacheEvictions += region.nativeCacheEvictionCount;
+        nativeCacheEvictedBytes +=
+            region.nativeCacheEvictedCodeBytes;
         nativeCodeBytes += region.nativeCodeSize;
         if (region.attemptCount != 0 && !region.backend.empty()) {
             if (typedBackend.empty()) {
@@ -788,9 +811,19 @@ void printAdaptiveRun(
             std::cout << ", backend=" << typedBackend;
         }
         if (nativeCompilations != 0 || nativeCacheHits != 0 ||
+            nativeCacheInsertions != 0 || nativeCacheBypasses != 0 ||
+            nativeCacheEvictions != 0 ||
             nativeCodeBytes != 0) {
             std::cout << ", nativeCompilations=" << nativeCompilations
                       << ", nativeCacheHits=" << nativeCacheHits
+                      << ", nativeCacheInsertions="
+                      << nativeCacheInsertions
+                      << ", nativeCacheBypasses="
+                      << nativeCacheBypasses
+                      << ", nativeCacheEvictions="
+                      << nativeCacheEvictions
+                      << ", nativeCacheEvictedBytes="
+                      << nativeCacheEvictedBytes
                       << ", nativeCodeBytes=" << nativeCodeBytes;
             if (!nativePlatform.empty()) {
                 std::cout << ", nativePlatform=" << nativePlatform;
@@ -918,9 +951,54 @@ void printAdaptiveModuleState(
               << ", events=" << state.eventCount << "\n";
 }
 
+void printNativeScalarJitCacheStatistics() {
+    const auto statistics =
+        mparser::nativeScalarJitCacheStatistics();
+    std::cout << "Native JIT cache:\n"
+              << "  backend: available="
+              << (mparser::nativeScalarJitAvailable() ? "yes" : "no")
+              << ", platform="
+              << mparser::nativeScalarJitPlatform() << "\n"
+              << "  limits: entries=" << statistics.limits.maxEntries
+              << ", codeBytes=" << statistics.limits.maxCodeBytes
+              << "\n"
+              << "  resident: entries=" << statistics.entryCount
+              << ", codeBytes=" << statistics.codeBytes << "\n"
+              << "  activity: lookups=" << statistics.lookupCount
+              << ", hits=" << statistics.hitCount
+              << ", misses=" << statistics.missCount
+              << ", compilations=" << statistics.compilationCount
+              << ", compilationFailures="
+              << statistics.compilationFailureCount
+              << ", insertions=" << statistics.insertionCount
+              << ", duplicateCompilations="
+              << statistics.duplicateCompilationCount
+              << ", bypasses=" << statistics.bypassCount << "\n"
+              << "  lifecycle: evictions="
+              << statistics.evictionCount
+              << ", evictedCodeBytes="
+              << statistics.evictedCodeBytes
+              << ", clears=" << statistics.clearCount
+              << ", clearedEntries="
+              << statistics.clearedEntryCount
+              << ", clearedCodeBytes="
+              << statistics.clearedCodeBytes << "\n";
+}
+
+struct NativeCacheStatisticsReporter {
+    bool enabled = false;
+
+    ~NativeCacheStatisticsReporter() {
+        if (enabled) {
+            printNativeScalarJitCacheStatistics();
+        }
+    }
+};
+
 } // namespace
 
 int main(int argc, char** argv) {
+    NativeCacheStatisticsReporter nativeCacheReporter;
     try {
         bool printTokens = false;
         bool printHir = false;
@@ -943,6 +1021,7 @@ int main(int argc, char** argv) {
         size_t adaptiveFallbackLimit = 3;
         mparser::TypedRegionBackend typedRegionBackend =
             mparser::TypedRegionBackend::Auto;
+        mparser::NativeScalarJitCacheLimits nativeCacheLimits;
         bool adaptivePersistWorkspace = false;
         std::vector<mparser::RuntimeVariable> adaptiveInitialWorkspace;
         std::string entryFunction;
@@ -994,6 +1073,14 @@ int main(int argc, char** argv) {
             } else if (arg.starts_with("--typed-backend=")) {
                 typedRegionBackend =
                     parseTypedRegionBackendOption(arg);
+            } else if (arg.starts_with("--native-cache-entries=")) {
+                nativeCacheLimits.maxEntries = parseCountOption(
+                    arg, "--native-cache-entries=", true);
+            } else if (arg.starts_with("--native-cache-bytes=")) {
+                nativeCacheLimits.maxCodeBytes = parseCountOption(
+                    arg, "--native-cache-bytes=", true);
+            } else if (arg == "--native-cache-stats") {
+                nativeCacheReporter.enabled = true;
             } else if (arg.starts_with("--adaptive-runs=")) {
                 adaptiveRuns = parseCountOption(
                     arg, "--adaptive-runs=", false);
@@ -1044,7 +1131,19 @@ int main(int argc, char** argv) {
             }
         }
 
+        mparser::configureNativeScalarJitCache(nativeCacheLimits);
+
         if (path.empty()) {
+            const bool hasAction =
+                printTokens || printHir || printBytecode ||
+                printModuleInfo || runProgram || runBytecode ||
+                profileBytecode || planBytecode || typedIrBytecode ||
+                checkTypedIrBytecode || runTypedBytecode ||
+                runAdaptiveBytecode || runModuleRuntime ||
+                benchmarkRuntime;
+            if (nativeCacheReporter.enabled && !hasAction) {
+                return 0;
+            }
             printUsage();
             return 2;
         }

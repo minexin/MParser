@@ -130,6 +130,10 @@ struct BytecodeTypedRegionExecutionProfile {
     std::string backend;
     size_t nativeCompilationCount = 0;
     size_t nativeCacheHitCount = 0;
+    size_t nativeCacheInsertionCount = 0;
+    size_t nativeCacheBypassCount = 0;
+    size_t nativeCacheEvictionCount = 0;
+    size_t nativeCacheEvictedCodeBytes = 0;
     size_t nativeCodeSize = 0;
     std::string nativePlatform;
     std::string nativeFallbackReason;

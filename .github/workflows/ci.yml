@@ -66,7 +66,7 @@ jobs:
       - name: Run native branch JIT smoke under QEMU
         run: >-
           ctest --test-dir build-arm64-jit --output-on-failure
-          -R "^typed_region_executor_smoke$"
+          -R "^(native_scalar_jit_cache_smoke|typed_region_executor_smoke)$"
       - name: Configure portable fallback build
         run: >-
           cmake -S . -B build-arm64-portable -G Ninja
@@ -79,7 +79,7 @@ jobs:
       - name: Run portable runtime smokes under QEMU
         run: >-
           ctest --test-dir build-arm64-portable --output-on-failure
-          -R "^(bytecode_region_smoke|typed_region_executor_smoke)$"
+          -R "^(bytecode_region_smoke|native_scalar_jit_cache_smoke|typed_region_executor_smoke)$"
       - name: Run portable branch sample under QEMU
         shell: bash
         run: |

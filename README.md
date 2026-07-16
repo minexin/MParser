@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.52.0. See [docs/v0.52.md](docs/v0.52.md) for the
+Current milestone: v0.53.0. See [docs/v0.53.md](docs/v0.53.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.51.md](docs/v0.51.md),
+iteration plan. Previous boundaries are kept in [docs/v0.52.md](docs/v0.52.md),
+[docs/v0.51.md](docs/v0.51.md),
 [docs/v0.50.md](docs/v0.50.md),
 [docs/v0.49.md](docs/v0.49.md),
 [docs/v0.48.md](docs/v0.48.md),
@@ -95,7 +96,7 @@ bindings for later name and type resolution.
 The next layer is an initial bytecode path. It linearizes HIR into stack-style
 instructions for module/class/function boundaries, assignments, control
 headers, literals, names, member access, neutral call/index operations, and
-expression operators. v0.52 executes the core numeric/string subset,
+expression operators. v0.53 executes the core numeric/string subset,
 `if`/`for`/`while` control flow, same-file local function calls, multi-output
 call assignment, MATLAB-style N-dimensional numeric indexing/mutation with
 `end`, `:`, vector subscripts, folded trailing dimensions, shape-checked
@@ -508,6 +509,16 @@ so backend comparisons remain meaningful when different arms execute. The
 sample `samples/branched_typed_loop_demo.m` produces `summary = 23520` through
 both backends and exercises native code caching.
 
+v0.53 turns that process-wide native code cache into a bounded, thread-safe
+LRU. The default limits are 256 generated kernels and 16 MiB of SLJIT code;
+either limit may be changed before execution, and zero disables retention
+without disabling native compilation. Oversized kernels execute uncached,
+runtime limit reductions evict immediately, and explicit clear/reset/statistics
+APIs make cache lifecycle observable. Compilations remain outside the cache
+mutex, concurrent same-key compilations converge on one resident entry, and an
+active execution keeps its generated code alive even if another thread clears
+or evicts it.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -587,6 +598,22 @@ build\mparser.exe --run-typed-bytecode --typed-backend=portable `
   samples\branched_typed_loop_demo.m
 build\mparser.exe --run-typed-bytecode --typed-backend=native `
   samples\branched_typed_loop_demo.m
+```
+
+Inspect or tune the native cache with `--native-cache-entries=N`,
+`--native-cache-bytes=N`, and `--native-cache-stats`. This module-runtime
+sample promotes three distinct loop kernels into a two-entry cache and
+therefore reports one LRU eviction:
+
+```powershell
+build\mparser.exe --run-module-runtime --adaptive-hot-loop=5 `
+  --typed-backend=native --native-cache-entries=2 `
+  --native-cache-bytes=1048576 --native-cache-stats `
+  --module-call=cache_add:2 --module-call=cache_add:2 `
+  --module-call=cache_add:2 --module-call=cache_multiply:2 `
+  --module-call=cache_multiply:2 --module-call=cache_multiply:2 `
+  --module-call=cache_absolute:2 --module-call=cache_absolute:2 `
+  --module-call=cache_absolute:2 samples\native_cache_demo.m
 ```
 
 ## Try the parser

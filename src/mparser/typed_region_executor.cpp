@@ -1062,6 +1062,12 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
             result.backend = TypedRegionBackend::Native;
             result.nativeCompiled = native.compiled;
             result.nativeCacheHit = native.cacheHit;
+            result.nativeCacheStored = native.cacheStored;
+            result.nativeCacheBypassed = native.cacheBypassed;
+            result.nativeCacheEvictionCount =
+                native.cacheEvictionCount;
+            result.nativeCacheEvictedCodeBytes =
+                native.cacheEvictedCodeBytes;
             result.nativeCodeSize = native.codeSize;
             result.nativePlatform = nativeScalarJitPlatform();
             result.reason = std::move(native.reason);
