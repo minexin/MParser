@@ -79,7 +79,7 @@ jobs:
       - name: Run portable runtime smokes under QEMU
         run: >-
           ctest --test-dir build-arm64-portable --output-on-failure
-          -R "^(bytecode_region_smoke|native_scalar_jit_cache_smoke|typed_region_executor_smoke|linear_array_kernel_cli_smoke|class_metadata_smoke|class_metadata_bytecode_cli_smoke|function_metadata_smoke|function_metadata_bytecode_cli_smoke)$"
+          -R "^(bytecode_region_smoke|native_scalar_jit_cache_smoke|typed_region_executor_smoke|linear_array_kernel_cli_smoke|class_metadata_smoke|class_metadata_bytecode_cli_smoke|dynamic_property_smoke|dynamic_property_bytecode_cli_smoke|function_metadata_smoke|function_metadata_bytecode_cli_smoke)$"
       - name: Run portable branch sample under QEMU
         shell: bash
         run: |

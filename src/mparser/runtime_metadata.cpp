@@ -14,6 +14,8 @@ constexpr std::string_view kMetadataClassClass =
     "matlab.metadata.Class";
 constexpr std::string_view kMetadataPropertyClass =
     "matlab.metadata.Property";
+constexpr std::string_view kMetadataDynamicPropertyClass =
+    "matlab.metadata.DynamicProperty";
 constexpr std::string_view kMetadataMethodClass =
     "matlab.metadata.Method";
 constexpr std::string_view kMetadataEventClass =
@@ -53,6 +55,8 @@ std::string_view runtimeMetadataClassName(RuntimeMetadataKind kind) {
         return kMetadataClassClass;
     case RuntimeMetadataKind::Property:
         return kMetadataPropertyClass;
+    case RuntimeMetadataKind::DynamicProperty:
+        return kMetadataDynamicPropertyClass;
     case RuntimeMetadataKind::Method:
         return kMetadataMethodClass;
     case RuntimeMetadataKind::Event:
@@ -95,6 +99,9 @@ std::string canonicalRuntimeMetadataClassName(std::string_view name) {
     if (name == "meta.property") {
         return std::string(kMetadataPropertyClass);
     }
+    if (name == "meta.DynamicProperty") {
+        return std::string(kMetadataDynamicPropertyClass);
+    }
     if (name == "meta.method") {
         return std::string(kMetadataMethodClass);
     }
@@ -136,6 +143,9 @@ runtimeMetadataKind(const RuntimeValue& value) {
     }
     if (canonical == kMetadataPropertyClass) {
         return RuntimeMetadataKind::Property;
+    }
+    if (canonical == kMetadataDynamicPropertyClass) {
+        return RuntimeMetadataKind::DynamicProperty;
     }
     if (canonical == kMetadataMethodClass) {
         return RuntimeMetadataKind::Method;
@@ -236,6 +246,10 @@ bool runtimeMetadataIsa(const RuntimeValue& value,
     if (target == kMetadataArrayDimensionClass &&
         (actual == kMetadataFixedDimensionClass ||
          actual == kMetadataUnrestrictedDimensionClass)) {
+        return true;
+    }
+    if (target == kMetadataPropertyClass &&
+        actual == kMetadataDynamicPropertyClass) {
         return true;
     }
     if (target == "handle" || target == kMetadataMetaDataClass) {

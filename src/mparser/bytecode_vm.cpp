@@ -37,12 +37,18 @@ constexpr size_t kHotLoopThreshold = 10;
 constexpr std::string_view kScriptProfileName = "<script>";
 constexpr std::string_view kEventDataClassName = "event.EventData";
 constexpr std::string_view kEventListenerClassName = "event.listener";
+constexpr std::string_view kDynamicPropsClassName = "dynamicprops";
 constexpr std::string_view kListenerValidityField = "__mparser_valid";
 constexpr std::string_view kCoupledListenersField =
     "__mparser_coupled_listeners";
+constexpr std::string_view kDynamicPropertyDescriptorPrefix =
+    "__mparser_dynamic_property_descriptor::";
+constexpr std::string_view kDynamicPropertyValuePrefix =
+    "__mparser_dynamic_property_value::";
 
 bool isBuiltinHandleSuperclass(std::string_view name) {
-    return name == "handle" || name == kEventDataClassName;
+    return name == "handle" || name == kEventDataClassName ||
+           name == kDynamicPropsClassName;
 }
 
 bool isBuiltinReflectableClass(std::string_view name) {
@@ -52,6 +58,7 @@ bool isBuiltinReflectableClass(std::string_view name) {
            canonical == "char" || canonical == "cell" ||
            canonical == "struct" || canonical == "function_handle" ||
            canonical == "numeric" || canonical == "handle" ||
+           canonical == kDynamicPropsClassName ||
            canonical == kEventDataClassName ||
            canonical == kEventListenerClassName ||
            canonical == runtimeMetadataClassName(
@@ -60,6 +67,8 @@ bool isBuiltinReflectableClass(std::string_view name) {
                             RuntimeMetadataKind::Class) ||
            canonical == runtimeMetadataClassName(
                             RuntimeMetadataKind::Property) ||
+           canonical == runtimeMetadataClassName(
+                            RuntimeMetadataKind::DynamicProperty) ||
            canonical == runtimeMetadataClassName(
                             RuntimeMetadataKind::Method) ||
            canonical == runtimeMetadataClassName(
@@ -122,6 +131,24 @@ std::string lowerAscii(std::string_view text) {
             std::tolower(static_cast<unsigned char>(character))));
     }
     return result;
+}
+
+bool isRuntimeIdentifier(std::string_view name) {
+    if (name.empty()) {
+        return false;
+    }
+    const auto identifierStart = [](char character) {
+        const unsigned char value =
+            static_cast<unsigned char>(character);
+        return std::isalpha(value) != 0 || character == '_';
+    };
+    const auto identifierPart = [](char character) {
+        const unsigned char value =
+            static_cast<unsigned char>(character);
+        return std::isalnum(value) != 0 || character == '_';
+    };
+    return identifierStart(name.front()) &&
+           std::all_of(name.begin() + 1, name.end(), identifierPart);
 }
 
 RuntimeValue missingValue() {
@@ -926,6 +953,14 @@ struct EventListenerRecord {
     bool callbackActive = false;
 };
 
+struct DynamicPropertyRecord {
+    size_t id = 0;
+    std::weak_ptr<std::map<std::string, RuntimeValue>> ownerFields;
+    std::weak_ptr<std::map<std::string, RuntimeValue>> descriptorFields;
+    std::string ownerClass;
+    std::string name;
+};
+
 struct ActiveTypedLoopRegion {
     size_t regionId = 0;
     std::string kind;
@@ -939,10 +974,13 @@ StackValue runtimeStackValue(RuntimeValue value) {
     return result;
 }
 
-StackValue builtinStackValue(std::string name) {
+StackValue builtinStackValue(
+    std::string name,
+    std::optional<RuntimeValue> receiver = std::nullopt) {
     StackValue result;
     result.isBuiltinReference = true;
     result.builtinName = std::move(name);
+    result.receiver = std::move(receiver);
     return result;
 }
 
@@ -1055,8 +1093,12 @@ public:
         activeClassFunctions_.clear();
         functionHandles_.clear();
         eventListeners_.clear();
+        dynamicProperties_.clear();
+        activeDynamicPropertyGetters_.clear();
+        activeDynamicPropertySetters_.clear();
         nextFunctionHandleId_ = 1;
         nextEventListenerId_ = 1;
+        nextDynamicPropertyId_ = 1;
         resetProfiling(program.instructions.size());
         initializeWorkspace(options.initialWorkspace);
         if (semantic.root) {
@@ -1069,6 +1111,7 @@ public:
         resolveClassHierarchies();
         finalizeEnumerationSemantics();
         validateResolvedClassMembers();
+        registerWorkspaceDynamicProperties();
         collectTypedRegions(typedIr);
 
         const bool scriptMode = requestedEntryFunction_.empty() &&
@@ -2931,6 +2974,10 @@ private:
         if (className == possibleSuperclass) {
             return true;
         }
+        if (className == kDynamicPropsClassName &&
+            possibleSuperclass == "handle") {
+            return true;
+        }
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end() ||
             !visiting.insert(className).second) {
@@ -2976,7 +3023,8 @@ private:
 
         if (expected == "handle" &&
             (actual == kEventDataClassName ||
-             actual == kEventListenerClassName)) {
+             actual == kEventListenerClassName ||
+             actual == kDynamicPropsClassName)) {
             return true;
         }
         if (expected == "numeric" && actual == "double") {
@@ -5016,6 +5064,501 @@ private:
         }
     }
 
+    std::string dynamicPropertyDescriptorKey(
+        std::string_view name) const {
+        return std::string(kDynamicPropertyDescriptorPrefix) +
+               std::string(name);
+    }
+
+    std::string dynamicPropertyValueKey(size_t id) const {
+        return std::string(kDynamicPropertyValuePrefix) +
+               std::to_string(id);
+    }
+
+    bool isDynamicPropertyDescriptor(
+        const RuntimeValue& value) const {
+        return runtimeMetadataKind(value) ==
+                   RuntimeMetadataKind::DynamicProperty &&
+               value.opaqueId != 0 && value.sharedFields;
+    }
+
+    bool dynamicPropertyIsValid(const RuntimeValue& descriptor) const {
+        if (!isDynamicPropertyDescriptor(descriptor)) {
+            return false;
+        }
+        const auto valid = descriptor.sharedFields->find(
+            std::string(kListenerValidityField));
+        if (valid == descriptor.sharedFields->end() ||
+            !truthy(valid->second)) {
+            return false;
+        }
+        const auto record = dynamicProperties_.find(descriptor.opaqueId);
+        if (record == dynamicProperties_.end() ||
+            record->second.ownerFields.expired()) {
+            return false;
+        }
+        const auto descriptorFields =
+            record->second.descriptorFields.lock();
+        return descriptorFields &&
+               descriptorFields.get() == descriptor.sharedFields.get();
+    }
+
+    std::string dynamicPropertyName(
+        const RuntimeValue& descriptor) const {
+        if (!descriptor.sharedFields) {
+            return {};
+        }
+        const auto name = descriptor.sharedFields->find("Name");
+        return name != descriptor.sharedFields->end() &&
+                       isString(name->second)
+                   ? name->second.text
+                   : std::string{};
+    }
+
+    void registerDynamicProperty(
+        const RuntimeValue& owner,
+        const RuntimeValue& descriptor) {
+        if (!owner.sharedFields ||
+            !isDynamicPropertyDescriptor(descriptor)) {
+            return;
+        }
+        const std::string name = dynamicPropertyName(descriptor);
+        if (name.empty()) {
+            return;
+        }
+        dynamicProperties_[descriptor.opaqueId] = DynamicPropertyRecord{
+            descriptor.opaqueId, owner.sharedFields,
+            descriptor.sharedFields, owner.className, name};
+        nextDynamicPropertyId_ =
+            std::max(nextDynamicPropertyId_, descriptor.opaqueId + 1);
+    }
+
+    void registerOwnerDynamicProperties(const RuntimeValue& owner) {
+        if (!owner.sharedFields) {
+            return;
+        }
+        for (const auto& [key, value] : *owner.sharedFields) {
+            if (key.rfind(kDynamicPropertyDescriptorPrefix, 0) != 0) {
+                continue;
+            }
+            registerDynamicProperty(owner, value);
+        }
+    }
+
+    void registerWorkspaceDynamicProperties() {
+        for (const auto& [name, value] : currentFrame()) {
+            (void)name;
+            if (isObject(value) && value.handleObject &&
+                value.sharedFields &&
+                !isRuntimeMetadataObject(value)) {
+                registerOwnerDynamicProperties(value);
+            }
+        }
+    }
+
+    std::optional<RuntimeValue> dynamicPropertyDescriptor(
+        const RuntimeValue& owner, std::string_view name) {
+        if (!owner.sharedFields) {
+            return std::nullopt;
+        }
+        const auto found = owner.sharedFields->find(
+            dynamicPropertyDescriptorKey(name));
+        if (found == owner.sharedFields->end() ||
+            !isDynamicPropertyDescriptor(found->second)) {
+            return std::nullopt;
+        }
+        registerDynamicProperty(owner, found->second);
+        if (!dynamicPropertyIsValid(found->second)) {
+            return std::nullopt;
+        }
+        return found->second;
+    }
+
+    RuntimeValue makeDynamicPropertyDescriptor(
+        size_t id, const std::string& name) const {
+        RuntimeValue descriptor = makeRuntimeMetadataObject(
+            RuntimeMetadataKind::DynamicProperty,
+            "dynamic-property/" + std::to_string(id));
+        descriptor.opaqueId = id;
+        descriptor.sharedFields =
+            std::make_shared<std::map<std::string, RuntimeValue>>();
+        auto& fields = *descriptor.sharedFields;
+        fields[std::string(kListenerValidityField)] = logicalValue(true);
+        fields["Name"] = stringValue(name);
+        fields["Description"] = stringValue("");
+        fields["DetailedDescription"] = stringValue("");
+        fields["GetAccess"] = stringValue("public");
+        fields["SetAccess"] = stringValue("public");
+        fields["Dependent"] = logicalValue(false);
+        fields["Constant"] = logicalValue(false);
+        fields["Abstract"] = logicalValue(false);
+        fields["Transient"] = logicalValue(false);
+        fields["Hidden"] = logicalValue(false);
+        fields["GetObservable"] = logicalValue(false);
+        fields["SetObservable"] = logicalValue(false);
+        fields["AbortSet"] = logicalValue(false);
+        fields["NonCopyable"] = logicalValue(false);
+        fields["WeakHandle"] = logicalValue(false);
+        fields["PartialMatchPriority"] = numberValue(1.0);
+        fields["HasDefault"] = logicalValue(false);
+        fields["DefaultValue"] = vectorValue({});
+        fields["GetMethod"] = vectorValue({});
+        fields["SetMethod"] = vectorValue({});
+        return descriptor;
+    }
+
+    std::optional<MemberAccessPolicy> dynamicPropertyAccessPolicy(
+        const RuntimeValue& value) const {
+        if (isString(value)) {
+            const std::string access = lowerAscii(value.text);
+            if (access == "public") {
+                return MemberAccessPolicy{MemberAccessLevel::Public, {}};
+            }
+            if (access == "protected") {
+                return MemberAccessPolicy{MemberAccessLevel::Protected, {}};
+            }
+            if (access == "private") {
+                return MemberAccessPolicy{MemberAccessLevel::Private, {},
+                                          false, true};
+            }
+            return std::nullopt;
+        }
+        if (runtimeMetadataKind(value) != RuntimeMetadataKind::Class) {
+            return std::nullopt;
+        }
+        std::vector<std::string> classes;
+        if (isRuntimeMetadataScalar(value)) {
+            classes.push_back(
+                canonicalRuntimeMetadataClassName(value.text));
+        } else {
+            for (const auto& element : value.cells) {
+                if (runtimeMetadataKind(element) !=
+                        RuntimeMetadataKind::Class ||
+                    !isRuntimeMetadataScalar(element)) {
+                    return std::nullopt;
+                }
+                classes.push_back(
+                    canonicalRuntimeMetadataClassName(element.text));
+            }
+        }
+        return classes.empty()
+                   ? MemberAccessPolicy{MemberAccessLevel::Private, {},
+                                        true, true}
+                   : MemberAccessPolicy{MemberAccessLevel::ClassList,
+                                        std::move(classes), true};
+    }
+
+    MemberAccessPolicy dynamicPropertyAccessPolicy(
+        const RuntimeValue& descriptor, std::string_view field) const {
+        if (!descriptor.sharedFields) {
+            return {};
+        }
+        const auto value = descriptor.sharedFields->find(
+            std::string(field));
+        if (value == descriptor.sharedFields->end()) {
+            return {};
+        }
+        return dynamicPropertyAccessPolicy(value->second)
+            .value_or(MemberAccessPolicy{});
+    }
+
+    bool dynamicPropertyLogicalField(
+        const RuntimeValue& descriptor, std::string_view field) const {
+        if (!descriptor.sharedFields) {
+            return false;
+        }
+        const auto value = descriptor.sharedFields->find(
+            std::string(field));
+        return value != descriptor.sharedFields->end() &&
+               truthy(value->second);
+    }
+
+    RuntimeValue addDynamicPropertyBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 2 || !isObject(arguments[0]) ||
+            !arguments[0].handleObject || !arguments[0].sharedFields ||
+            !isString(arguments[1])) {
+            addDiagnostic(
+                instruction,
+                "addprop expects a dynamicprops handle object and "
+                "property-name string");
+            return missingValue();
+        }
+        const RuntimeValue& owner = arguments[0];
+        const std::string& name = arguments[1].text;
+        if (!classDerivesFrom(owner.className,
+                              std::string(kDynamicPropsClassName))) {
+            addDiagnostic(instruction,
+                          "addprop object must derive from dynamicprops: " +
+                              owner.className);
+            return missingValue();
+        }
+        if (!isRuntimeIdentifier(name)) {
+            addDiagnostic(instruction,
+                          "dynamic property name is not a valid identifier: " +
+                              name);
+            return missingValue();
+        }
+        registerOwnerDynamicProperties(owner);
+        const auto klass = classesByName_.find(owner.className);
+        if ((klass != classesByName_.end() &&
+             klass->second.properties.contains(name)) ||
+            dynamicPropertyDescriptor(owner, name)) {
+            addDiagnostic(instruction,
+                          "property already exists: " + owner.className +
+                              "." + name);
+            return missingValue();
+        }
+
+        const size_t id = nextDynamicPropertyId_++;
+        RuntimeValue descriptor =
+            makeDynamicPropertyDescriptor(id, name);
+        (*owner.sharedFields)[dynamicPropertyDescriptorKey(name)] =
+            descriptor;
+        (*owner.sharedFields)[dynamicPropertyValueKey(id)] =
+            vectorValue({});
+        registerDynamicProperty(owner, descriptor);
+        return descriptor;
+    }
+
+    RuntimeValue findPropertyBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 2 || !isObject(arguments[0]) ||
+            !arguments[0].handleObject || !isString(arguments[1])) {
+            addDiagnostic(instruction,
+                          "findprop expects a handle object and "
+                          "property-name string");
+            return missingValue();
+        }
+        const RuntimeValue& owner = arguments[0];
+        const std::string& name = arguments[1].text;
+        if (const auto descriptor =
+                dynamicPropertyDescriptor(owner, name)) {
+            return *descriptor;
+        }
+        const auto klass = classesByName_.find(owner.className);
+        if (klass != classesByName_.end()) {
+            if (const auto property =
+                    selectProperty(klass->second, name)) {
+                return makeRuntimeMetadataObject(
+                    RuntimeMetadataKind::Property,
+                    propertyMetadataIdentity(klass->second, *property));
+            }
+        }
+        return emptyMetadataArray(RuntimeMetadataKind::Property);
+    }
+
+    RuntimeValue dynamicPropertyMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& descriptor, std::string_view memberName) {
+        if (!dynamicPropertyIsValid(descriptor)) {
+            addDiagnostic(instruction,
+                          "dynamic property descriptor is not valid");
+            return missingValue();
+        }
+        if (memberName == "DefiningClass") {
+            return emptyMetadataArray(RuntimeMetadataKind::Class);
+        }
+        if (descriptor.sharedFields) {
+            const auto value = descriptor.sharedFields->find(
+                std::string(memberName));
+            if (value != descriptor.sharedFields->end()) {
+                return value->second;
+            }
+        }
+        addDiagnostic(instruction,
+                      "dynamic property metadata field is not available: " +
+                          dynamicPropertyName(descriptor) + "." +
+                          std::string(memberName));
+        return missingValue();
+    }
+
+    void storeDynamicPropertyMetadata(
+        const BytecodeInstruction& instruction,
+        RuntimeValue& descriptor, const RuntimeValue& value) {
+        if (!dynamicPropertyIsValid(descriptor)) {
+            addDiagnostic(instruction,
+                          "dynamic property descriptor is not valid");
+            return;
+        }
+        const std::string& member = instruction.operand;
+        static const std::set<std::string> logicalMembers = {
+            "AbortSet", "GetObservable", "Hidden", "NonCopyable",
+            "SetObservable", "Transient", "WeakHandle"};
+        if (logicalMembers.contains(member)) {
+            if (!isNumber(value)) {
+                addDiagnostic(instruction,
+                              "dynamic property logical metadata requires "
+                              "a scalar numeric value: " + member);
+                return;
+            }
+            (*descriptor.sharedFields)[member] =
+                logicalValue(truthy(value));
+            return;
+        }
+        if (member == "GetAccess" || member == "SetAccess") {
+            if (!dynamicPropertyAccessPolicy(value)) {
+                addDiagnostic(instruction,
+                              "unsupported dynamic property access value: " +
+                                  member);
+                return;
+            }
+            (*descriptor.sharedFields)[member] = value;
+            return;
+        }
+        if (member == "GetMethod" || member == "SetMethod") {
+            const bool empty = value.kind == RuntimeValueKind::Missing ||
+                               elementCount(value) == 0;
+            if (!empty && !isFunctionHandle(value)) {
+                addDiagnostic(instruction,
+                              "dynamic property " + member +
+                                  " requires a function handle or empty "
+                                  "value");
+                return;
+            }
+            (*descriptor.sharedFields)[member] =
+                empty ? vectorValue({}) : value;
+            return;
+        }
+        if (member == "PartialMatchPriority") {
+            if (!isNumber(value) || !std::isfinite(value.number) ||
+                value.number <= 0.0) {
+                addDiagnostic(
+                    instruction,
+                    "dynamic property PartialMatchPriority requires a "
+                    "positive scalar");
+                return;
+            }
+            (*descriptor.sharedFields)[member] = value;
+            return;
+        }
+        addDiagnostic(instruction,
+                      "dynamic property metadata is read-only: " +
+                          descriptor.className + "." + member);
+    }
+
+    std::optional<RuntimeValue> readDynamicProperty(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& owner,
+        const RuntimeValue& descriptor) {
+        if (!dynamicPropertyIsValid(descriptor)) {
+            addDiagnostic(instruction,
+                          "dynamic property descriptor is not valid");
+            return std::nullopt;
+        }
+        if (!hasMemberAccess(
+                dynamicPropertyAccessPolicy(descriptor, "GetAccess"),
+                owner.className)) {
+            addDiagnostic(instruction,
+                          "dynamic property get access is denied: " +
+                              owner.className + "." +
+                              dynamicPropertyName(descriptor));
+            return std::nullopt;
+        }
+        const size_t id = descriptor.opaqueId;
+        const auto stored = owner.sharedFields->find(
+            dynamicPropertyValueKey(id));
+        if (stored == owner.sharedFields->end()) {
+            addDiagnostic(instruction,
+                          "dynamic property storage is not available: " +
+                              dynamicPropertyName(descriptor));
+            return std::nullopt;
+        }
+        const auto getter = descriptor.sharedFields->find("GetMethod");
+        if (activeDynamicPropertyGetters_.contains(id) ||
+            getter == descriptor.sharedFields->end() ||
+            !isFunctionHandle(getter->second)) {
+            return stored->second;
+        }
+
+        activeDynamicPropertyGetters_.insert(id);
+        const size_t diagnosticCount = diagnostics_.size();
+        auto outputs = callFunctionHandle(instruction, getter->second,
+                                          {owner}, 1);
+        activeDynamicPropertyGetters_.erase(id);
+        if (diagnostics_.size() != diagnosticCount || outputs.empty()) {
+            return std::nullopt;
+        }
+        return outputs.front();
+    }
+
+    bool writeDynamicProperty(
+        const BytecodeInstruction& instruction,
+        RuntimeValue& owner, const RuntimeValue& descriptor,
+        const RuntimeValue& value) {
+        if (!dynamicPropertyIsValid(descriptor)) {
+            addDiagnostic(instruction,
+                          "dynamic property descriptor is not valid");
+            return false;
+        }
+        if (!hasMemberAccess(
+                dynamicPropertyAccessPolicy(descriptor, "SetAccess"),
+                owner.className)) {
+            addDiagnostic(instruction,
+                          "dynamic property set access is denied: " +
+                              owner.className + "." +
+                              dynamicPropertyName(descriptor));
+            return false;
+        }
+        const size_t id = descriptor.opaqueId;
+        const std::string storageKey = dynamicPropertyValueKey(id);
+        if (activeDynamicPropertySetters_.contains(id)) {
+            (*owner.sharedFields)[storageKey] = value;
+            return true;
+        }
+        if (dynamicPropertyLogicalField(descriptor, "AbortSet")) {
+            const auto current =
+                readDynamicProperty(instruction, owner, descriptor);
+            if (!current) {
+                return false;
+            }
+            if (runtimeEqual(*current, value)) {
+                return true;
+            }
+        }
+        const auto setter = descriptor.sharedFields->find("SetMethod");
+        if (setter != descriptor.sharedFields->end() &&
+            isFunctionHandle(setter->second)) {
+            activeDynamicPropertySetters_.insert(id);
+            const size_t diagnosticCount = diagnostics_.size();
+            (void)callFunctionHandle(instruction, setter->second,
+                                     {owner, value}, 0);
+            activeDynamicPropertySetters_.erase(id);
+            return diagnostics_.size() == diagnosticCount;
+        }
+        (*owner.sharedFields)[storageKey] = value;
+        return true;
+    }
+
+    void deleteDynamicProperty(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& descriptor) {
+        if (!isDynamicPropertyDescriptor(descriptor)) {
+            addDiagnostic(instruction,
+                          "delete expects a handle object or dynamic "
+                          "property descriptor");
+            return;
+        }
+        if (!dynamicPropertyIsValid(descriptor)) {
+            return;
+        }
+        const auto record = dynamicProperties_.find(descriptor.opaqueId);
+        if (record == dynamicProperties_.end()) {
+            addDiagnostic(instruction,
+                          "dynamic property owner is not available");
+            return;
+        }
+        if (const auto owner = record->second.ownerFields.lock()) {
+            owner->erase(dynamicPropertyDescriptorKey(
+                record->second.name));
+            owner->erase(dynamicPropertyValueKey(descriptor.opaqueId));
+        }
+        (*descriptor.sharedFields)[std::string(kListenerValidityField)] =
+            logicalValue(false);
+    }
+
     RuntimeValue stringColumnCell(
         const std::vector<std::string>& values) const {
         std::vector<RuntimeValue> cells;
@@ -5161,7 +5704,9 @@ private:
                 "SuperclassList"};
         }
         if (canonical ==
-            runtimeMetadataClassName(RuntimeMetadataKind::Property)) {
+                runtimeMetadataClassName(RuntimeMetadataKind::Property) ||
+            canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::DynamicProperty)) {
             return {
                 "Name", "Description", "DetailedDescription", "GetAccess",
                 "SetAccess", "Dependent", "Constant", "Abstract",
@@ -5258,12 +5803,20 @@ private:
             runtimeMetadataClassName(RuntimeMetadataKind::Class)) {
             return {"fromName", "eq", "ne", "lt", "le", "gt", "ge"};
         }
+        if (canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::DynamicProperty)) {
+            return {"delete", "eq", "isvalid", "ne"};
+        }
         if (canonical.rfind("matlab.metadata.", 0) == 0) {
             return {"eq", "ne"};
         }
         if (canonical == "handle") {
             return {"addlistener", "delete", "findobj", "findprop",
                     "isvalid", "listener", "notify"};
+        }
+        if (canonical == kDynamicPropsClassName) {
+            return {"addlistener", "addprop", "delete", "findobj",
+                    "findprop", "isvalid", "listener", "notify"};
         }
         if (canonical == kEventListenerClassName) {
             return {"delete", "isvalid"};
@@ -5325,7 +5878,8 @@ private:
             return logicalValue(
                 klass ? klass->abstractClass
                       : metadataClass || className == "handle" ||
-                            className == "numeric");
+                            className == "numeric" ||
+                            className == kDynamicPropsClassName);
         }
         if (memberName == "Enumeration") {
             return logicalValue(klass && klass->enumerationClass);
@@ -5336,6 +5890,7 @@ private:
         if (memberName == "HandleCompatible") {
             const bool builtInHandleCompatible =
                 className == "handle" ||
+                className == kDynamicPropsClassName ||
                 className == kEventDataClassName ||
                 className == kEventListenerClassName ||
                 className.rfind("matlab.metadata.", 0) == 0;
@@ -5391,6 +5946,12 @@ private:
             if (klass) {
                 return metadataClassArray(klass->superclasses);
             }
+            if (className == runtimeMetadataClassName(
+                                 RuntimeMetadataKind::DynamicProperty)) {
+                return metadataClassArray(
+                    {std::string(runtimeMetadataClassName(
+                        RuntimeMetadataKind::Property))});
+            }
             if (className.rfind("matlab.metadata.", 0) == 0 &&
                 className !=
                     runtimeMetadataClassName(
@@ -5399,7 +5960,8 @@ private:
                     {std::string(runtimeMetadataClassName(
                         RuntimeMetadataKind::MetaData))});
             }
-            if (className == kEventDataClassName ||
+            if (className == kDynamicPropsClassName ||
+                className == kEventDataClassName ||
                 className == kEventListenerClassName) {
                 return metadataClassArray({"handle"});
             }
@@ -6141,6 +6703,8 @@ private:
             return metadataClassMember(instruction, target, memberName);
         case RuntimeMetadataKind::Property:
             return metadataPropertyMember(instruction, target, memberName);
+        case RuntimeMetadataKind::DynamicProperty:
+            return dynamicPropertyMember(instruction, target, memberName);
         case RuntimeMetadataKind::Method:
             return metadataMethodMember(instruction, target, memberName);
         case RuntimeMetadataKind::Event:
@@ -6262,6 +6826,14 @@ private:
             return;
         }
         if (isRuntimeMetadataObject(target->value)) {
+            if (runtimeMetadataKind(target->value) ==
+                    RuntimeMetadataKind::DynamicProperty &&
+                (instruction.operand == "delete" ||
+                 instruction.operand == "isvalid")) {
+                stack_.push_back(builtinStackValue(
+                    instruction.operand, target->value));
+                return;
+            }
             stack_.push_back(runtimeStackValue(metadataMemberValue(
                 instruction, target->value, instruction.operand)));
             return;
@@ -6295,6 +6867,14 @@ private:
                                           target->value.className);
             return;
         }
+        if (const auto descriptor = dynamicPropertyDescriptor(
+                target->value, instruction.operand)) {
+            if (const auto value = readDynamicProperty(
+                    instruction, target->value, *descriptor)) {
+                stack_.push_back(runtimeStackValue(*value));
+            }
+            return;
+        }
         if (const auto property =
                 selectProperty(klass->second, instruction.operand)) {
             if (!hasMemberAccess(property->getAccess,
@@ -6322,6 +6902,19 @@ private:
                                                instruction.operand,
                                                method->declaringClass,
                                                target->value));
+            return;
+        }
+        const bool dynamicPropsMethod =
+            instruction.operand == "addprop" &&
+            classDerivesFrom(target->value.className,
+                             std::string(kDynamicPropsClassName));
+        const bool handleMethod =
+            target->value.handleObject &&
+            (instruction.operand == "findprop" ||
+             instruction.operand == "isvalid");
+        if (dynamicPropsMethod || handleMethod) {
+            stack_.push_back(builtinStackValue(
+                instruction.operand, target->value));
             return;
         }
         addDiagnostic(instruction, "class member is not available: " +
@@ -6378,6 +6971,14 @@ private:
 
         RuntimeValue updated = target->value;
         if (isRuntimeMetadataObject(updated)) {
+            if (runtimeMetadataKind(updated) ==
+                RuntimeMetadataKind::DynamicProperty) {
+                storeDynamicPropertyMetadata(instruction, updated, *value);
+                if (!instruction.receiverName.empty()) {
+                    currentFrame()[instruction.receiverName] = updated;
+                }
+                return;
+            }
             addDiagnostic(instruction,
                           "metadata properties are read-only: " +
                               updated.className + "." +
@@ -6424,6 +7025,18 @@ private:
             addDiagnostic(instruction,
                           "class is not available for member assignment: " +
                               updated.className);
+            return;
+        }
+        if (const auto descriptor = dynamicPropertyDescriptor(
+                updated, instruction.operand)) {
+            if (!writeDynamicProperty(instruction, updated, *descriptor,
+                                      *value)) {
+                return;
+            }
+            if (!instruction.receiverName.empty()) {
+                currentFrame()[instruction.receiverName] = updated;
+            }
+            recordAssignment(instruction, "dynamic-member", updated);
             return;
         }
         const auto property =
@@ -7064,13 +7677,20 @@ private:
             callee->isBuiltinReference) {
             const std::string name = symbolName(instruction.binding)
                                          .value_or(callee->builtinName);
+            std::vector<RuntimeValue> callArguments = *arguments;
+            if (callee->receiver) {
+                callArguments.insert(callArguments.begin(),
+                                     *callee->receiver);
+            }
             BytecodeCallSiteProfile* profile = nullptr;
             if (profilingEnabled_) {
                 profile = &recordCallSite(instruction, "builtin", name);
-                observeValues(profile->argumentObservations, *arguments);
+                observeValues(profile->argumentObservations,
+                              callArguments);
             }
-            auto outputs = callBuiltinOutputs(instruction, name, *arguments,
-                                              instruction.resultCount);
+            auto outputs = callBuiltinOutputs(
+                instruction, name, callArguments,
+                instruction.resultCount);
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
             }
@@ -7946,6 +8566,36 @@ private:
             }
             names.push_back(property->name);
         }
+        if (isObject(arguments.front()) &&
+            arguments.front().sharedFields) {
+            registerOwnerDynamicProperties(arguments.front());
+            for (const auto& [id, record] : dynamicProperties_) {
+                (void)id;
+                const auto owner = record.ownerFields.lock();
+                const auto descriptorFields =
+                    record.descriptorFields.lock();
+                if (!owner || !descriptorFields ||
+                    owner.get() !=
+                        arguments.front().sharedFields.get()) {
+                    continue;
+                }
+                RuntimeValue descriptor = makeRuntimeMetadataObject(
+                    RuntimeMetadataKind::DynamicProperty,
+                    "dynamic-property/" + std::to_string(record.id));
+                descriptor.opaqueId = record.id;
+                descriptor.sharedFields = descriptorFields;
+                const MemberAccessPolicy getAccess =
+                    dynamicPropertyAccessPolicy(descriptor, "GetAccess");
+                if (!dynamicPropertyIsValid(descriptor) ||
+                    dynamicPropertyLogicalField(descriptor, "Hidden") ||
+                    getAccess.level != MemberAccessLevel::Public ||
+                    getAccess.selectiveClassList ||
+                    !seen.insert(record.name).second) {
+                    continue;
+                }
+                names.push_back(record.name);
+            }
+        }
         return stringColumnCell(names);
     }
 
@@ -7993,6 +8643,16 @@ private:
             }
             names.push_back(methodName);
         }
+        if (classDerivesFrom(className,
+                             std::string(kDynamicPropsClassName))) {
+            for (const std::string& method :
+                 {"addprop", "findprop", "isvalid"}) {
+                if (std::find(names.begin(), names.end(), method) ==
+                    names.end()) {
+                    names.push_back(method);
+                }
+            }
+        }
         return stringColumnCell(names);
     }
 
@@ -8007,6 +8667,10 @@ private:
         }
         const std::string className =
             canonicalRuntimeMetadataClassName(arguments[0].className);
+        if (dynamicPropertyDescriptor(arguments[0],
+                                      arguments[1].text)) {
+            return logicalValue(true);
+        }
         const auto klass = classesByName_.find(className);
         if (klass != classesByName_.end()) {
             return logicalValue(
@@ -8031,6 +8695,20 @@ private:
         }
         const std::string className =
             canonicalRuntimeMetadataClassName(arguments[0].className);
+        if (runtimeMetadataKind(arguments[0]) ==
+                RuntimeMetadataKind::DynamicProperty &&
+            (arguments[1].text == "delete" ||
+             arguments[1].text == "isvalid")) {
+            return logicalValue(true);
+        }
+        if ((arguments[1].text == "addprop" &&
+             classDerivesFrom(className,
+                              std::string(kDynamicPropsClassName))) ||
+            ((arguments[1].text == "findprop" ||
+              arguments[1].text == "isvalid") &&
+             arguments[0].handleObject)) {
+            return logicalValue(true);
+        }
         const auto klass = classesByName_.find(className);
         if (klass != classesByName_.end()) {
             const auto method =
@@ -8052,6 +8730,10 @@ private:
     }
 
     RuntimeValue eventListenerIsValid(const RuntimeValue& value) const {
+        if (runtimeMetadataKind(value) ==
+            RuntimeMetadataKind::DynamicProperty) {
+            return logicalValue(dynamicPropertyIsValid(value));
+        }
         if (!isObject(value) ||
             value.className != kEventListenerClassName ||
             !value.sharedFields) {
@@ -8191,6 +8873,21 @@ private:
             return {};
         }
 
+        if (name == "addprop" || name == "findprop") {
+            if (requestedCount > 1) {
+                addDiagnostic(instruction,
+                              name + " supports at most one output");
+                return missingOutputs(requestedCount);
+            }
+            RuntimeValue result =
+                name == "addprop"
+                    ? addDynamicPropertyBuiltin(instruction, arguments)
+                    : findPropertyBuiltin(instruction, arguments);
+            return requestedCount == 0
+                       ? std::vector<RuntimeValue>{}
+                       : std::vector<RuntimeValue>{std::move(result)};
+        }
+
         if (name == "addlistener" || name == "listener") {
             if (requestedCount > 1) {
                 addDiagnostic(instruction,
@@ -8218,7 +8915,12 @@ private:
                               "delete does not produce outputs");
                 return missingOutputs(requestedCount);
             }
-            deleteEventListener(instruction, arguments);
+            if (arguments.size() == 1 &&
+                isDynamicPropertyDescriptor(arguments.front())) {
+                deleteDynamicProperty(instruction, arguments.front());
+            } else {
+                deleteEventListener(instruction, arguments);
+            }
             return {};
         }
 
@@ -10624,8 +11326,12 @@ private:
     std::vector<ActiveClassFunction> activeClassFunctions_;
     std::map<size_t, FunctionHandleInfo> functionHandles_;
     std::map<size_t, EventListenerRecord> eventListeners_;
+    std::map<size_t, DynamicPropertyRecord> dynamicProperties_;
+    std::set<size_t> activeDynamicPropertyGetters_;
+    std::set<size_t> activeDynamicPropertySetters_;
     size_t nextFunctionHandleId_ = 1;
     size_t nextEventListenerId_ = 1;
+    size_t nextDynamicPropertyId_ = 1;
     std::map<std::string, const HirNode*> functionNodes_;
     std::map<std::string, const HirNode*> classFunctionNodes_;
     std::map<std::string, FunctionInfo> functionsByName_;

@@ -13,6 +13,7 @@ enum class RuntimeMetadataKind {
     MetaData,
     Class,
     Property,
+    DynamicProperty,
     Method,
     Event,
     EnumerationMember,

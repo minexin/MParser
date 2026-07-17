@@ -867,6 +867,19 @@ normalizer and argument validator when selecting by runtime values, so
 reflection and execution agree on positional, repeating, and name-value
 calling conventions without executing the selected body.
 
+v0.65 layers per-instance dynamic properties onto the existing handle-object
+storage model. A `dynamicprops` superclass marks the class as handle-based,
+while each owner stores reserved descriptor and value entries in its shared
+field map. `matlab.metadata.DynamicProperty` descriptors carry a stable
+run-local ID and shared mutable attribute state without retaining their owner,
+so owner-to-descriptor cycles are avoided. A VM registry keeps only weak owner
+and descriptor references, is reconstructed from initial workspace objects,
+and drives deletion. Member reads and writes first resolve a valid dynamic
+descriptor, enforce its access policy, and then use stored data or invoke its
+`GetMethod`/`SetMethod` function handle. Static property and method dispatch is
+unchanged. The metadata hierarchy treats DynamicProperty as a Property and
+accepts the legacy `meta.DynamicProperty` spelling through canonicalization.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
 backend contract, persistent cross-process code caches, moving-window array

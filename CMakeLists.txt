@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.64.0 LANGUAGES C CXX)
+project(MParser VERSION 0.65.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -791,6 +791,18 @@ add_test(NAME class_metadata_bytecode_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_metadata_demo.m)
 set_tests_properties(class_metadata_bytecode_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 10")
+
+add_executable(dynamic_property_smoke_tests
+    tests/dynamic_property_smoke.cpp)
+target_link_libraries(dynamic_property_smoke_tests PRIVATE mparser_core)
+add_test(NAME dynamic_property_smoke
+    COMMAND dynamic_property_smoke_tests)
+
+add_test(NAME dynamic_property_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_properties_demo.m)
+set_tests_properties(dynamic_property_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 68")
 
 add_executable(function_metadata_smoke_tests
     tests/function_metadata_smoke.cpp)

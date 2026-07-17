@@ -159,7 +159,8 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
 
 bool isKnownBuiltinName(const std::string& name) {
     static constexpr const char* kBuiltinNames[] = {
-        "abs",      "acos",     "addlistener", "all",      "any",
+        "abs",      "acos",     "addlistener", "addprop",  "all",
+        "any",
         "asin",     "assert",   "atan",        "cat",      "cell",
         "char",     "class",    "clc",         "clear",    "cos",
         "cummax",   "cummin",   "cumprod",     "cumsum",
@@ -167,7 +168,7 @@ bool isKnownBuiltinName(const std::string& name) {
         "diff",     "double",   "empty",       "enumeration", "eps",
         "error",
         "events",   "exp",      "eye",         "false",    "find",
-        "fprintf",
+        "findprop",  "fprintf",
         "horzcat",  "inf",      "ipermute",    "isa",      "isenum",
         "isempty",  "isfield",  "islogical",   "ismethod", "isprop",
         "isvalid",  "length",   "linspace",    "listener", "log",

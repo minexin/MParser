@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.64.0. See [docs/v0.64.md](docs/v0.64.md) for the
+Current milestone: v0.65.0. See [docs/v0.65.md](docs/v0.65.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.63.md](docs/v0.63.md),
+iteration plan. Previous boundaries are kept in [docs/v0.64.md](docs/v0.64.md),
+[docs/v0.63.md](docs/v0.63.md),
 [docs/v0.62.md](docs/v0.62.md),
 [docs/v0.61.md](docs/v0.61.md),
 [docs/v0.60.md](docs/v0.60.md),
@@ -605,6 +606,19 @@ validators, referenced arguments, defaults, and class-derived name-value
 sources. Namespace `FunctionList` now returns executable function metadata,
 and source-unit names survive semantic analysis as platform-neutral
 `FullPath` values.
+
+v0.65 adds MATLAB per-instance dynamic properties to the bytecode class
+runtime. Classes can derive from `dynamicprops`, create properties with direct
+or method-form `addprop`, and discover declared or dynamic descriptors through
+`findprop`. Dynamic values follow handle aliases while remaining isolated
+between instances. Writable `matlab.metadata.DynamicProperty` attributes
+control access, visibility, persistence hints, equality short-circuiting, and
+function-handle `GetMethod`/`SetMethod` callbacks. `properties`, `isprop`,
+`methods`, `ismethod`, `metaclass`, `class`, and `isa` understand the new
+runtime type and its legacy `meta.DynamicProperty` alias. Deleting a descriptor
+removes the property from its owner and invalidates all descriptor aliases;
+plain dynamic values and descriptors can also be rebound from an initial VM
+workspace without losing their IDs or instance storage.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
