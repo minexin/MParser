@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.65.0. See [docs/v0.65.md](docs/v0.65.md) for the
+Current milestone: v0.66.0. See [docs/v0.66.md](docs/v0.66.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.64.md](docs/v0.64.md),
+iteration plan. Previous boundaries are kept in [docs/v0.65.md](docs/v0.65.md),
+[docs/v0.64.md](docs/v0.64.md),
 [docs/v0.63.md](docs/v0.63.md),
 [docs/v0.62.md](docs/v0.62.md),
 [docs/v0.61.md](docs/v0.61.md),
@@ -620,6 +621,17 @@ removes the property from its owner and invalidates all descriptor aliases;
 plain dynamic values and descriptors can also be rebound from an initial VM
 workspace without losing their IDs or instance storage.
 
+v0.66 makes `GetObservable` and `SetObservable` executable through MATLAB-style
+property listeners. Declared and dynamic properties emit `PreGet`, `PostGet`,
+`PreSet`, and `PostSet` around their accessors. The runtime supports
+`addlistener`, uncoupled `listener`, and `event.proplistener`, including their
+method forms, source-coupled retention, deletion, enabled and recursive state,
+and `AbortSet` suppression. Callbacks receive the matching
+`matlab.metadata.Property` or `DynamicProperty` descriptor and an
+`event.PropertyEvent` carrying `AffectedObject`, `Source`, and `EventName`.
+Inherited property descriptors and handle aliases retain source identity, and
+deleting a dynamic property invalidates listeners bound to that descriptor.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -1119,6 +1131,16 @@ The demo reports `summary = 17`. It exercises typed function and method
 signatures, name-value defaults, validators, dimensions, dotted static lookup,
 ordinary-function selection, and instance-method selection from argument
 types.
+
+Run observable declared and dynamic property events with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\property_events_demo.m
+```
+
+The demo reports `summary = 738`. It verifies the exact get/set event order,
+method-form listener creation, metadata and event-data identity, dynamic
+property delivery and invalidation, and the `event.proplistener` constructor.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:

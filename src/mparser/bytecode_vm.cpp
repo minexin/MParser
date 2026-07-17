@@ -36,7 +36,10 @@ namespace {
 constexpr size_t kHotLoopThreshold = 10;
 constexpr std::string_view kScriptProfileName = "<script>";
 constexpr std::string_view kEventDataClassName = "event.EventData";
+constexpr std::string_view kPropertyEventClassName = "event.PropertyEvent";
 constexpr std::string_view kEventListenerClassName = "event.listener";
+constexpr std::string_view kPropertyListenerClassName =
+    "event.proplistener";
 constexpr std::string_view kDynamicPropsClassName = "dynamicprops";
 constexpr std::string_view kListenerValidityField = "__mparser_valid";
 constexpr std::string_view kCoupledListenersField =
@@ -60,7 +63,9 @@ bool isBuiltinReflectableClass(std::string_view name) {
            canonical == "numeric" || canonical == "handle" ||
            canonical == kDynamicPropsClassName ||
            canonical == kEventDataClassName ||
+           canonical == kPropertyEventClassName ||
            canonical == kEventListenerClassName ||
+           canonical == kPropertyListenerClassName ||
            canonical == runtimeMetadataClassName(
                             RuntimeMetadataKind::MetaData) ||
            canonical == runtimeMetadataClassName(
@@ -949,8 +954,20 @@ struct EventListenerRecord {
     std::weak_ptr<std::map<std::string, RuntimeValue>> listenerFields;
     std::string sourceClass;
     std::string eventName;
+    std::string propertyStorageKey;
+    size_t dynamicPropertyId = 0;
+    bool propertyListener = false;
     bool coupled = false;
     bool callbackActive = false;
+};
+
+struct PropertyListenerTarget {
+    RuntimeValue descriptor;
+    std::string name;
+    std::string storageKey;
+    size_t dynamicPropertyId = 0;
+    bool getObservable = false;
+    bool setObservable = false;
 };
 
 struct DynamicPropertyRecord {
@@ -2974,8 +2991,20 @@ private:
         if (className == possibleSuperclass) {
             return true;
         }
-        if (className == kDynamicPropsClassName &&
-            possibleSuperclass == "handle") {
+        if (possibleSuperclass == "handle" &&
+            (className == kDynamicPropsClassName ||
+             className == kEventDataClassName ||
+             className == kPropertyEventClassName ||
+             className == kEventListenerClassName ||
+             className == kPropertyListenerClassName)) {
+            return true;
+        }
+        if (className == kPropertyEventClassName &&
+            possibleSuperclass == kEventDataClassName) {
+            return true;
+        }
+        if (className == kPropertyListenerClassName &&
+            possibleSuperclass == kEventListenerClassName) {
             return true;
         }
         const auto klass = classesByName_.find(className);
@@ -3021,12 +3050,6 @@ private:
             return true;
         }
 
-        if (expected == "handle" &&
-            (actual == kEventDataClassName ||
-             actual == kEventListenerClassName ||
-             actual == kDynamicPropsClassName)) {
-            return true;
-        }
         if (expected == "numeric" && actual == "double") {
             return true;
         }
@@ -5518,6 +5541,13 @@ private:
                 return true;
             }
         }
+        const bool observable =
+            dynamicPropertyLogicalField(descriptor, "SetObservable");
+        if (observable &&
+            !dispatchPropertyEvent(instruction, owner, descriptor, {}, id,
+                                   "PreSet")) {
+            return false;
+        }
         const auto setter = descriptor.sharedFields->find("SetMethod");
         if (setter != descriptor.sharedFields->end() &&
             isFunctionHandle(setter->second)) {
@@ -5526,9 +5556,16 @@ private:
             (void)callFunctionHandle(instruction, setter->second,
                                      {owner, value}, 0);
             activeDynamicPropertySetters_.erase(id);
-            return diagnostics_.size() == diagnosticCount;
+            if (diagnostics_.size() != diagnosticCount) {
+                return false;
+            }
+        } else {
+            (*owner.sharedFields)[storageKey] = value;
         }
-        (*owner.sharedFields)[storageKey] = value;
+        if (observable) {
+            (void)dispatchPropertyEvent(instruction, owner, descriptor, {},
+                                        id, "PostSet");
+        }
         return true;
     }
 
@@ -5550,10 +5587,25 @@ private:
                           "dynamic property owner is not available");
             return;
         }
-        if (const auto owner = record->second.ownerFields.lock()) {
+        const auto owner = record->second.ownerFields.lock();
+        if (owner) {
             owner->erase(dynamicPropertyDescriptorKey(
                 record->second.name));
             owner->erase(dynamicPropertyValueKey(descriptor.opaqueId));
+        }
+        for (auto& [id, listener] : eventListeners_) {
+            (void)id;
+            const auto listenerSource = listener.sourceFields.lock();
+            if (!listener.propertyListener ||
+                listener.dynamicPropertyId != descriptor.opaqueId ||
+                !owner || !listenerSource ||
+                listenerSource.get() != owner.get()) {
+                continue;
+            }
+            if (const auto fields = listener.listenerFields.lock()) {
+                (*fields)[std::string(kListenerValidityField)] =
+                    logicalValue(false);
+            }
         }
         (*descriptor.sharedFields)[std::string(kListenerValidityField)] =
             logicalValue(false);
@@ -5788,9 +5840,16 @@ private:
         if (canonical == kEventDataClassName) {
             return {"Source", "EventName"};
         }
+        if (canonical == kPropertyEventClassName) {
+            return {"AffectedObject", "Source", "EventName"};
+        }
         if (canonical == kEventListenerClassName) {
             return {"Source", "EventName", "Callback", "Enabled",
                     "Recursive"};
+        }
+        if (canonical == kPropertyListenerClassName) {
+            return {"Source", "EventName", "Callback", "Enabled",
+                    "Recursive", "Object"};
         }
         return {};
     }
@@ -5818,7 +5877,8 @@ private:
             return {"addlistener", "addprop", "delete", "findobj",
                     "findprop", "isvalid", "listener", "notify"};
         }
-        if (canonical == kEventListenerClassName) {
+        if (canonical == kEventListenerClassName ||
+            canonical == kPropertyListenerClassName) {
             return {"delete", "isvalid"};
         }
         return {};
@@ -5869,8 +5929,10 @@ private:
             const bool metadataNamespace =
                 className ==
                 runtimeMetadataClassName(RuntimeMetadataKind::Namespace);
-            return logicalValue(klass ? klass->sealedClass
-                                      : metadataNamespace);
+            return logicalValue(
+                klass ? klass->sealedClass
+                      : metadataNamespace ||
+                            className == kPropertyEventClassName);
         }
         if (memberName == "Abstract") {
             const bool metadataClass =
@@ -5885,14 +5947,19 @@ private:
             return logicalValue(klass && klass->enumerationClass);
         }
         if (memberName == "ConstructOnLoad") {
-            return logicalValue(klass && klass->constructOnLoad);
+            return logicalValue(
+                klass ? klass->constructOnLoad
+                      : className == kPropertyEventClassName ||
+                            className == kPropertyListenerClassName);
         }
         if (memberName == "HandleCompatible") {
             const bool builtInHandleCompatible =
                 className == "handle" ||
                 className == kDynamicPropsClassName ||
                 className == kEventDataClassName ||
+                className == kPropertyEventClassName ||
                 className == kEventListenerClassName ||
+                className == kPropertyListenerClassName ||
                 className.rfind("matlab.metadata.", 0) == 0;
             return logicalValue(
                 klass ? klass->handleClass ||
@@ -5904,8 +5971,9 @@ private:
                 klass ? klass->sealedClass ||
                             klass->restrictsSubclassing
                       : className ==
-                            runtimeMetadataClassName(
-                                RuntimeMetadataKind::Namespace));
+                                runtimeMetadataClassName(
+                                    RuntimeMetadataKind::Namespace) ||
+                            className == kPropertyEventClassName);
         }
         if (memberName == "InferiorClasses") {
             return metadataClassArray({});
@@ -5959,6 +6027,14 @@ private:
                 return metadataClassArray(
                     {std::string(runtimeMetadataClassName(
                         RuntimeMetadataKind::MetaData))});
+            }
+            if (className == kPropertyEventClassName) {
+                return metadataClassArray(
+                    {std::string(kEventDataClassName)});
+            }
+            if (className == kPropertyListenerClassName) {
+                return metadataClassArray(
+                    {std::string(kEventListenerClassName)});
             }
             if (className == kDynamicPropsClassName ||
                 className == kEventDataClassName ||
@@ -6838,15 +6914,26 @@ private:
                 instruction, target->value, instruction.operand)));
             return;
         }
+        const bool builtInListener =
+            target->value.className == kEventListenerClassName ||
+            target->value.className == kPropertyListenerClassName;
+        if (builtInListener &&
+            (instruction.operand == "delete" ||
+             instruction.operand == "isvalid")) {
+            stack_.push_back(builtinStackValue(
+                instruction.operand, target->value));
+            return;
+        }
         const bool builtInEventData =
-            target->value.className == kEventDataClassName;
+            target->value.className == kEventDataClassName ||
+            target->value.className == kPropertyEventClassName;
         const bool inheritedEventDataProperty =
             (instruction.operand == "Source" ||
              instruction.operand == "EventName") &&
             classDerivesFrom(target->value.className,
                              std::string(kEventDataClassName));
         if (builtInEventData || inheritedEventDataProperty ||
-            target->value.className == kEventListenerClassName) {
+            builtInListener) {
             const auto& fields = objectFields(target->value);
             const auto field = fields.find(instruction.operand);
             if (field == fields.end() ||
@@ -6869,8 +6956,23 @@ private:
         }
         if (const auto descriptor = dynamicPropertyDescriptor(
                 target->value, instruction.operand)) {
+            const bool observable =
+                dynamicPropertyLogicalField(*descriptor,
+                                            "GetObservable");
+            if (observable &&
+                !dispatchPropertyEvent(
+                    instruction, target->value, *descriptor, {},
+                    descriptor->opaqueId, "PreGet")) {
+                return;
+            }
             if (const auto value = readDynamicProperty(
                     instruction, target->value, *descriptor)) {
+                if (observable &&
+                    !dispatchPropertyEvent(
+                        instruction, target->value, *descriptor, {},
+                        descriptor->opaqueId, "PostGet")) {
+                    return;
+                }
                 stack_.push_back(runtimeStackValue(*value));
             }
             return;
@@ -6884,8 +6986,23 @@ private:
                                   propertyDisplayName(*property));
                 return;
             }
+            const RuntimeValue descriptor =
+                propertyDescriptorForSource(target->value, *property);
+            if (property->getObservable && target->value.handleObject &&
+                !dispatchPropertyEvent(
+                    instruction, target->value, descriptor,
+                    property->storageKey, 0, "PreGet")) {
+                return;
+            }
             if (const auto value = invokePropertyGetter(
                     instruction, target->value, *property)) {
+                if (property->getObservable &&
+                    target->value.handleObject &&
+                    !dispatchPropertyEvent(
+                        instruction, target->value, descriptor,
+                        property->storageKey, 0, "PostGet")) {
+                    return;
+                }
                 stack_.push_back(runtimeStackValue(*value));
             }
             return;
@@ -6910,9 +7027,14 @@ private:
                              std::string(kDynamicPropsClassName));
         const bool handleMethod =
             target->value.handleObject &&
-            (instruction.operand == "findprop" ||
+            (instruction.operand == "addlistener" ||
+             instruction.operand == "findprop" ||
              instruction.operand == "isvalid");
-        if (dynamicPropsMethod || handleMethod) {
+        const bool eventMethod =
+            target->value.handleObject &&
+            (instruction.operand == "listener" ||
+             instruction.operand == "notify");
+        if (dynamicPropsMethod || handleMethod || eventMethod) {
             stack_.push_back(builtinStackValue(
                 instruction.operand, target->value));
             return;
@@ -6985,7 +7107,16 @@ private:
                               instruction.operand);
             return;
         }
-        if (updated.className == kEventListenerClassName) {
+        if (updated.className == kEventDataClassName ||
+            updated.className == kPropertyEventClassName) {
+            addDiagnostic(instruction,
+                          "built-in event data property is read-only: " +
+                              updated.className + "." +
+                              instruction.operand);
+            return;
+        }
+        if (updated.className == kEventListenerClassName ||
+            updated.className == kPropertyListenerClassName) {
             if (!updated.sharedFields) {
                 addDiagnostic(instruction,
                               "event listener has no runtime state");
@@ -7104,6 +7235,15 @@ private:
             }
         }
 
+        const RuntimeValue propertyDescriptor =
+            propertyDescriptorForSource(updated, info);
+        if (info.setObservable && updated.handleObject &&
+            !dispatchPropertyEvent(
+                instruction, updated, propertyDescriptor,
+                info.storageKey, 0, "PreSet")) {
+            return;
+        }
+
         if (!info.setterName.empty()) {
             const auto owner = classesByName_.find(info.declaringClass);
             if (owner == classesByName_.end() ||
@@ -7148,6 +7288,11 @@ private:
         }
         currentFrame()[instruction.receiverName] = updated;
         recordAssignment(instruction, "member", updated);
+        if (info.setObservable && updated.handleObject) {
+            (void)dispatchPropertyEvent(
+                instruction, updated, propertyDescriptor,
+                info.storageKey, 0, "PostSet");
+        }
     }
 
     void storeIndex(const BytecodeInstruction& instruction) {
@@ -8032,6 +8177,153 @@ private:
                                                    : &event->second;
     }
 
+    bool isPropertyEventName(std::string_view name) const {
+        return name == "PreGet" || name == "PostGet" ||
+               name == "PreSet" || name == "PostSet";
+    }
+
+    bool isPropertyGetEvent(std::string_view name) const {
+        return name == "PreGet" || name == "PostGet";
+    }
+
+    RuntimeValue propertyDescriptorForSource(
+        const RuntimeValue& source, const PropertyInfo& property) const {
+        const auto view = classesByName_.find(source.className);
+        if (view == classesByName_.end()) {
+            return emptyMetadataArray(RuntimeMetadataKind::Property);
+        }
+        return makeRuntimeMetadataObject(
+            RuntimeMetadataKind::Property,
+            propertyMetadataIdentity(view->second, property));
+    }
+
+    std::optional<PropertyListenerTarget> propertyListenerTarget(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& source, const RuntimeValue& selector,
+        bool requireMetadataSelector) {
+        const auto klass = classesByName_.find(source.className);
+        if (klass == classesByName_.end()) {
+            addDiagnostic(instruction,
+                          "property listener class is not available: " +
+                              source.className);
+            return std::nullopt;
+        }
+
+        if (isString(selector)) {
+            if (requireMetadataSelector) {
+                addDiagnostic(
+                    instruction,
+                    "event.proplistener requires a scalar property "
+                    "metadata descriptor");
+                return std::nullopt;
+            }
+            if (const auto descriptor = dynamicPropertyDescriptor(
+                    source, selector.text)) {
+                return PropertyListenerTarget{
+                    *descriptor, dynamicPropertyName(*descriptor), {},
+                    descriptor->opaqueId,
+                    dynamicPropertyLogicalField(*descriptor,
+                                                "GetObservable"),
+                    dynamicPropertyLogicalField(*descriptor,
+                                                "SetObservable")};
+            }
+            const auto property =
+                selectProperty(klass->second, selector.text);
+            if (!property) {
+                addDiagnostic(instruction,
+                              "property is not available for listener: " +
+                                  source.className + "." + selector.text);
+                return std::nullopt;
+            }
+            return PropertyListenerTarget{
+                propertyDescriptorForSource(source, *property),
+                property->name, property->storageKey, 0,
+                property->getObservable,
+                property->setObservable};
+        }
+
+        const auto kind = runtimeMetadataKind(selector);
+        if (kind == RuntimeMetadataKind::DynamicProperty) {
+            registerOwnerDynamicProperties(source);
+            if (!dynamicPropertyIsValid(selector)) {
+                addDiagnostic(instruction,
+                              "dynamic property descriptor is not valid");
+                return std::nullopt;
+            }
+            const auto record = dynamicProperties_.find(selector.opaqueId);
+            const auto owner =
+                record == dynamicProperties_.end()
+                    ? nullptr
+                    : record->second.ownerFields.lock();
+            const auto descriptorFields =
+                record == dynamicProperties_.end()
+                    ? nullptr
+                    : record->second.descriptorFields.lock();
+            if (!owner || owner.get() != source.sharedFields.get() ||
+                !descriptorFields || !selector.sharedFields ||
+                descriptorFields.get() != selector.sharedFields.get()) {
+                addDiagnostic(
+                    instruction,
+                    "dynamic property descriptor does not belong to the "
+                    "listener source");
+                return std::nullopt;
+            }
+            return PropertyListenerTarget{
+                selector, dynamicPropertyName(selector), {},
+                selector.opaqueId,
+                dynamicPropertyLogicalField(selector, "GetObservable"),
+                dynamicPropertyLogicalField(selector, "SetObservable")};
+        }
+
+        if (kind == RuntimeMetadataKind::Property &&
+            isRuntimeMetadataScalar(selector)) {
+            const PropertyInfoPtr property =
+                propertyForMetadata(selector.text);
+            const bool belongsToSource =
+                property && std::any_of(
+                                klass->second.propertyOrder.begin(),
+                                klass->second.propertyOrder.end(),
+                                [&property](const PropertyInfoPtr& candidate) {
+                                    return candidate &&
+                                           candidate->storageKey ==
+                                               property->storageKey;
+                                });
+            if (!belongsToSource) {
+                addDiagnostic(
+                    instruction,
+                    "property metadata descriptor does not belong to the "
+                    "listener source");
+                return std::nullopt;
+            }
+            return PropertyListenerTarget{
+                propertyDescriptorForSource(source, *property),
+                property->name, property->storageKey, 0,
+                property->getObservable, property->setObservable};
+        }
+
+        addDiagnostic(
+            instruction,
+            "property listener selector must be a property-name string or "
+            "scalar property metadata descriptor");
+        return std::nullopt;
+    }
+
+    void retainCoupledListener(const RuntimeValue& source,
+                               const RuntimeValue& listener) {
+        auto& sourceFields = *source.sharedFields;
+        auto coupledListeners =
+            sourceFields.find(std::string(kCoupledListenersField));
+        if (coupledListeners == sourceFields.end() ||
+            !isCell(coupledListeners->second)) {
+            sourceFields[std::string(kCoupledListenersField)] =
+                cellValue({listener});
+            return;
+        }
+        coupledListeners->second.cells.push_back(listener);
+        setRuntimeDimensions(coupledListeners->second,
+                             {1, coupledListeners->second.cells.size()});
+    }
+
     RuntimeValue createEventListener(
         const BytecodeInstruction& instruction,
         const std::vector<RuntimeValue>& arguments, bool coupled) {
@@ -8076,26 +8368,177 @@ private:
             std::string(kEventListenerClassName), std::move(fields), true);
         listener.opaqueId = id;
 
-        eventListeners_[id] = EventListenerRecord{
-            id, source.sharedFields, listener.sharedFields, source.className,
-            eventName, coupled, false};
+        EventListenerRecord record;
+        record.id = id;
+        record.sourceFields = source.sharedFields;
+        record.listenerFields = listener.sharedFields;
+        record.sourceClass = source.className;
+        record.eventName = eventName;
+        record.coupled = coupled;
+        eventListeners_[id] = std::move(record);
 
         if (coupled) {
-            auto& sourceFields = *source.sharedFields;
-            auto coupledListeners =
-                sourceFields.find(std::string(kCoupledListenersField));
-            if (coupledListeners == sourceFields.end() ||
-                !isCell(coupledListeners->second)) {
-                sourceFields[std::string(kCoupledListenersField)] =
-                    cellValue({listener});
-            } else {
-                coupledListeners->second.cells.push_back(listener);
-                setRuntimeDimensions(
-                    coupledListeners->second,
-                    {1, coupledListeners->second.cells.size()});
-            }
+            retainCoupledListener(source, listener);
         }
         return listener;
+    }
+
+    RuntimeValue createPropertyListener(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments, bool coupled,
+        bool requireMetadataSelector = false) {
+        if (arguments.size() != 4 || !isObject(arguments[0]) ||
+            !arguments[0].handleObject || !arguments[0].sharedFields ||
+            !isString(arguments[2]) ||
+            !isFunctionHandle(arguments[3])) {
+            addDiagnostic(
+                instruction,
+                std::string(requireMetadataSelector
+                                ? "event.proplistener"
+                                : coupled ? "addlistener" : "listener") +
+                    " expects a handle object, property selector, property "
+                    "event name, and function handle");
+            return missingValue();
+        }
+
+        const RuntimeValue& source = arguments[0];
+        const std::string& eventName = arguments[2].text;
+        if (!isPropertyEventName(eventName)) {
+            addDiagnostic(instruction,
+                          "unknown property event name: " + eventName);
+            return missingValue();
+        }
+        const auto target = propertyListenerTarget(
+            instruction, source, arguments[1], requireMetadataSelector);
+        if (!target) {
+            return missingValue();
+        }
+        const bool observable = isPropertyGetEvent(eventName)
+                                    ? target->getObservable
+                                    : target->setObservable;
+        if (!observable) {
+            addDiagnostic(
+                instruction,
+                std::string(isPropertyGetEvent(eventName)
+                                ? "GetObservable"
+                                : "SetObservable") +
+                    " is false for property: " +
+                    target->name);
+            return missingValue();
+        }
+
+        const size_t id = nextEventListenerId_++;
+        std::map<std::string, RuntimeValue> fields;
+        fields["Source"] = target->descriptor;
+        fields["Object"] = cellValue({source});
+        fields["EventName"] = stringValue(eventName);
+        fields["Callback"] = arguments[3];
+        fields["Enabled"] = logicalValue(true);
+        fields["Recursive"] = logicalValue(false);
+        fields[std::string(kListenerValidityField)] = logicalValue(true);
+        RuntimeValue listener = objectValue(
+            std::string(kPropertyListenerClassName), std::move(fields), true);
+        listener.opaqueId = id;
+
+        EventListenerRecord record;
+        record.id = id;
+        record.sourceFields = source.sharedFields;
+        record.listenerFields = listener.sharedFields;
+        record.sourceClass = source.className;
+        record.eventName = eventName;
+        record.propertyStorageKey = target->storageKey;
+        record.dynamicPropertyId = target->dynamicPropertyId;
+        record.propertyListener = true;
+        record.coupled = coupled;
+        eventListeners_[id] = std::move(record);
+
+        if (coupled) {
+            retainCoupledListener(source, listener);
+        }
+        return listener;
+    }
+
+    bool invokeEventListenerCallback(
+        const BytecodeInstruction& instruction, size_t id,
+        const std::vector<RuntimeValue>& callbackArguments) {
+        auto record = eventListeners_.find(id);
+        if (record == eventListeners_.end()) {
+            return true;
+        }
+        const auto listenerFields =
+            record->second.listenerFields.lock();
+        if (!listenerFields) {
+            return true;
+        }
+        const auto valid = listenerFields->find(
+            std::string(kListenerValidityField));
+        const auto enabled = listenerFields->find("Enabled");
+        const auto recursive = listenerFields->find("Recursive");
+        const auto callback = listenerFields->find("Callback");
+        if (valid == listenerFields->end() || !truthy(valid->second) ||
+            enabled == listenerFields->end() ||
+            !truthy(enabled->second) || callback == listenerFields->end() ||
+            !isFunctionHandle(callback->second)) {
+            return true;
+        }
+        const bool recursionEnabled =
+            recursive != listenerFields->end() &&
+            truthy(recursive->second);
+        if (record->second.callbackActive && !recursionEnabled) {
+            return true;
+        }
+
+        record->second.callbackActive = true;
+        const size_t diagnosticCount = diagnostics_.size();
+        (void)callFunctionHandle(instruction, callback->second,
+                                 callbackArguments, 0);
+        record->second.callbackActive = false;
+        return diagnostics_.size() == diagnosticCount;
+    }
+
+    bool dispatchPropertyEvent(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& source, const RuntimeValue& descriptor,
+        std::string_view storageKey, size_t dynamicPropertyId,
+        std::string_view eventName) {
+        if (!source.sharedFields) {
+            return true;
+        }
+
+        std::vector<size_t> listeners;
+        for (const auto& [id, record] : eventListeners_) {
+            const auto listenerSource = record.sourceFields.lock();
+            if (!record.propertyListener || !listenerSource ||
+                listenerSource.get() != source.sharedFields.get() ||
+                record.eventName != eventName) {
+                continue;
+            }
+            const bool propertyMatches =
+                dynamicPropertyId != 0
+                    ? record.dynamicPropertyId == dynamicPropertyId
+                    : record.dynamicPropertyId == 0 &&
+                          record.propertyStorageKey == storageKey;
+            if (propertyMatches) {
+                listeners.push_back(id);
+            }
+        }
+        if (listeners.empty()) {
+            return true;
+        }
+
+        RuntimeValue eventData = objectValue(
+            std::string(kPropertyEventClassName),
+            {{"AffectedObject", source},
+             {"EventName", stringValue(std::string(eventName))},
+             {"Source", descriptor}},
+            true);
+        for (const size_t id : listeners) {
+            if (!invokeEventListenerCallback(
+                    instruction, id, {descriptor, eventData})) {
+                return false;
+            }
+        }
+        return true;
     }
 
     RuntimeValue eventNamesBuiltin(
@@ -8735,7 +9178,8 @@ private:
             return logicalValue(dynamicPropertyIsValid(value));
         }
         if (!isObject(value) ||
-            value.className != kEventListenerClassName ||
+            (value.className != kEventListenerClassName &&
+             value.className != kPropertyListenerClassName) ||
             !value.sharedFields) {
             return logicalValue(isObject(value) && value.handleObject);
         }
@@ -8748,7 +9192,8 @@ private:
     void deleteEventListener(const BytecodeInstruction& instruction,
                              const std::vector<RuntimeValue>& arguments) {
         if (arguments.size() != 1 || !isObject(arguments[0]) ||
-            arguments[0].className != kEventListenerClassName ||
+            (arguments[0].className != kEventListenerClassName &&
+             arguments[0].className != kPropertyListenerClassName) ||
             !arguments[0].sharedFields) {
             addDiagnostic(instruction,
                           "delete currently expects an event listener");
@@ -8818,7 +9263,7 @@ private:
         std::vector<size_t> listeners;
         for (const auto& [id, record] : eventListeners_) {
             const auto listenerSource = record.sourceFields.lock();
-            if (listenerSource &&
+            if (!record.propertyListener && listenerSource &&
                 listenerSource.get() == source.sharedFields.get() &&
                 record.eventName == eventName) {
                 listeners.push_back(id);
@@ -8826,39 +9271,8 @@ private:
         }
 
         for (const size_t id : listeners) {
-            auto record = eventListeners_.find(id);
-            if (record == eventListeners_.end()) {
-                continue;
-            }
-            const auto listenerFields =
-                record->second.listenerFields.lock();
-            if (!listenerFields) {
-                continue;
-            }
-            const auto valid = listenerFields->find(
-                std::string(kListenerValidityField));
-            const auto enabled = listenerFields->find("Enabled");
-            const auto recursive = listenerFields->find("Recursive");
-            const auto callback = listenerFields->find("Callback");
-            if (valid == listenerFields->end() ||
-                !truthy(valid->second) || enabled == listenerFields->end() ||
-                !truthy(enabled->second) || callback == listenerFields->end() ||
-                !isFunctionHandle(callback->second)) {
-                continue;
-            }
-            const bool recursionEnabled =
-                recursive != listenerFields->end() &&
-                truthy(recursive->second);
-            if (record->second.callbackActive && !recursionEnabled) {
-                continue;
-            }
-
-            record->second.callbackActive = true;
-            const size_t diagnosticCount = diagnostics_.size();
-            (void)callFunctionHandle(instruction, callback->second,
-                                     {source, eventData}, 0);
-            record->second.callbackActive = false;
-            if (diagnostics_.size() != diagnosticCount) {
+            if (!invokeEventListenerCallback(
+                    instruction, id, {source, eventData})) {
                 return;
             }
         }
@@ -8888,14 +9302,24 @@ private:
                        : std::vector<RuntimeValue>{std::move(result)};
         }
 
-        if (name == "addlistener" || name == "listener") {
+        if (name == "addlistener" || name == "listener" ||
+            name == "event.proplistener") {
             if (requestedCount > 1) {
                 addDiagnostic(instruction,
                               name + " supports at most one output");
                 return missingOutputs(requestedCount);
             }
-            RuntimeValue listener = createEventListener(
-                instruction, arguments, name == "addlistener");
+            RuntimeValue listener;
+            if (name == "event.proplistener") {
+                listener = createPropertyListener(
+                    instruction, arguments, false, true);
+            } else if (arguments.size() == 4) {
+                listener = createPropertyListener(
+                    instruction, arguments, name == "addlistener");
+            } else {
+                listener = createEventListener(
+                    instruction, arguments, name == "addlistener");
+            }
             return requestedCount == 0
                        ? std::vector<RuntimeValue>{}
                        : std::vector<RuntimeValue>{std::move(listener)};

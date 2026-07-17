@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.65.0 LANGUAGES C CXX)
+project(MParser VERSION 0.66.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -630,6 +630,18 @@ add_executable(event_listener_smoke_tests
 target_link_libraries(event_listener_smoke_tests PRIVATE mparser_core)
 add_test(NAME event_listener_smoke
     COMMAND event_listener_smoke_tests)
+
+add_executable(property_listener_smoke_tests
+    tests/property_listener_smoke.cpp)
+target_link_libraries(property_listener_smoke_tests PRIVATE mparser_core)
+add_test(NAME property_listener_smoke
+    COMMAND property_listener_smoke_tests)
+
+add_test(NAME property_listener_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/property_events_demo.m)
+set_tests_properties(property_listener_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 738")
 
 add_executable(handle_semantics_smoke_tests tests/handle_semantics_smoke.cpp)
 target_link_libraries(handle_semantics_smoke_tests PRIVATE mparser_core)

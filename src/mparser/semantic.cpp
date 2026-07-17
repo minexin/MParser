@@ -181,7 +181,7 @@ bool isKnownBuiltinName(const std::string& name) {
         "strcmp",   "string",   "struct",      "sum",      "table",
         "tan",      "tic",      "toc",         "true",     "vertcat",
         "zeros",    "matlab.metadata.Class.fromName",
-        "meta.class.fromName",
+        "meta.class.fromName", "event.proplistener",
     };
 
     for (const char* builtin : kBuiltinNames) {

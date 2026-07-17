@@ -880,11 +880,24 @@ descriptor, enforce its access policy, and then use stored data or invoke its
 unchanged. The metadata hierarchy treats DynamicProperty as a Property and
 accepts the legacy `meta.DynamicProperty` spelling through canonicalization.
 
+v0.66 connects observable declared and dynamic properties to the existing
+event-listener runtime. Property listeners normalize a source property name or
+metadata descriptor into a stable static storage key or dynamic descriptor ID.
+Declared access dispatches `PreGet` before the getter and `PostGet` after it;
+write dispatches `PreSet` after validation and `AbortSet` comparison but before
+the setter, then `PostSet` after the mutation commits. Dynamic access follows
+the same ordering around its optional `GetMethod` and `SetMethod`. The shared
+listener callback path supplies the property descriptor and a read-only
+`event.PropertyEvent`, while existing enabled, recursive, retained, delete, and
+validity behavior remains common with ordinary `event.listener` values.
+Property listener records contain no native pointers and are invalidated when
+their dynamic descriptor is deleted.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
 backend contract, persistent cross-process code caches, moving-window array
 operations, object/listener arrays, a built-in function signature catalog,
-reference-interpreter class execution, property event listeners,
+reference-interpreter class execution,
 comma-separated-list Cell semantics, and eventual on-stack replacement while
 preserving the same commit/fallback contract.
 
