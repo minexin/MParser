@@ -292,7 +292,11 @@ class AnalyzerContext {
 public:
     SemanticResult analyze(const SyntaxNode& root,
                            const std::vector<SourceUnit>& sources) {
+        result_.sources.reserve(sources.size());
         for (size_t sourceId = 0; sourceId < sources.size(); ++sourceId) {
+            result_.sources.push_back(
+                SemanticSourceInfo{sources[sourceId].name,
+                                   sources[sourceId].namespaceName});
             if (!sources[sourceId].classPrivateFunctionOwner.empty()) {
                 lexicalClassBySource_[sourceId] =
                     sources[sourceId].classPrivateFunctionOwner;

@@ -22,6 +22,26 @@ constexpr std::string_view kMetadataEnumerationMemberClass =
     "matlab.metadata.EnumerationMember";
 constexpr std::string_view kMetadataNamespaceClass =
     "matlab.metadata.Namespace";
+constexpr std::string_view kMetadataFunctionClass =
+    "matlab.metadata.Function";
+constexpr std::string_view kMetadataCallSignatureClass =
+    "matlab.metadata.CallSignature";
+constexpr std::string_view kMetadataArgumentClass =
+    "matlab.metadata.Argument";
+constexpr std::string_view kMetadataArgumentIdentifierClass =
+    "matlab.metadata.ArgumentIdentifier";
+constexpr std::string_view kMetadataArgumentValidationClass =
+    "matlab.metadata.ArgumentValidation";
+constexpr std::string_view kMetadataArgumentValidatorClass =
+    "matlab.metadata.ArgumentValidator";
+constexpr std::string_view kMetadataDefaultArgumentValueClass =
+    "matlab.metadata.DefaultArgumentValue";
+constexpr std::string_view kMetadataArrayDimensionClass =
+    "matlab.metadata.ArrayDimension";
+constexpr std::string_view kMetadataFixedDimensionClass =
+    "matlab.metadata.FixedDimension";
+constexpr std::string_view kMetadataUnrestrictedDimensionClass =
+    "matlab.metadata.UnrestrictedDimension";
 
 } // namespace
 
@@ -41,6 +61,26 @@ std::string_view runtimeMetadataClassName(RuntimeMetadataKind kind) {
         return kMetadataEnumerationMemberClass;
     case RuntimeMetadataKind::Namespace:
         return kMetadataNamespaceClass;
+    case RuntimeMetadataKind::Function:
+        return kMetadataFunctionClass;
+    case RuntimeMetadataKind::CallSignature:
+        return kMetadataCallSignatureClass;
+    case RuntimeMetadataKind::Argument:
+        return kMetadataArgumentClass;
+    case RuntimeMetadataKind::ArgumentIdentifier:
+        return kMetadataArgumentIdentifierClass;
+    case RuntimeMetadataKind::ArgumentValidation:
+        return kMetadataArgumentValidationClass;
+    case RuntimeMetadataKind::ArgumentValidator:
+        return kMetadataArgumentValidatorClass;
+    case RuntimeMetadataKind::DefaultArgumentValue:
+        return kMetadataDefaultArgumentValueClass;
+    case RuntimeMetadataKind::ArrayDimension:
+        return kMetadataArrayDimensionClass;
+    case RuntimeMetadataKind::FixedDimension:
+        return kMetadataFixedDimensionClass;
+    case RuntimeMetadataKind::UnrestrictedDimension:
+        return kMetadataUnrestrictedDimensionClass;
     }
     return kMetadataMetaDataClass;
 }
@@ -67,6 +107,15 @@ std::string canonicalRuntimeMetadataClassName(std::string_view name) {
     }
     if (name == "meta.package") {
         return std::string(kMetadataNamespaceClass);
+    }
+    if (name == "meta.ArrayDimension") {
+        return std::string(kMetadataArrayDimensionClass);
+    }
+    if (name == "meta.FixedDimension") {
+        return std::string(kMetadataFixedDimensionClass);
+    }
+    if (name == "meta.UnrestrictedDimension") {
+        return std::string(kMetadataUnrestrictedDimensionClass);
     }
     return std::string(name);
 }
@@ -99,6 +148,36 @@ runtimeMetadataKind(const RuntimeValue& value) {
     }
     if (canonical == kMetadataNamespaceClass) {
         return RuntimeMetadataKind::Namespace;
+    }
+    if (canonical == kMetadataFunctionClass) {
+        return RuntimeMetadataKind::Function;
+    }
+    if (canonical == kMetadataCallSignatureClass) {
+        return RuntimeMetadataKind::CallSignature;
+    }
+    if (canonical == kMetadataArgumentClass) {
+        return RuntimeMetadataKind::Argument;
+    }
+    if (canonical == kMetadataArgumentIdentifierClass) {
+        return RuntimeMetadataKind::ArgumentIdentifier;
+    }
+    if (canonical == kMetadataArgumentValidationClass) {
+        return RuntimeMetadataKind::ArgumentValidation;
+    }
+    if (canonical == kMetadataArgumentValidatorClass) {
+        return RuntimeMetadataKind::ArgumentValidator;
+    }
+    if (canonical == kMetadataDefaultArgumentValueClass) {
+        return RuntimeMetadataKind::DefaultArgumentValue;
+    }
+    if (canonical == kMetadataArrayDimensionClass) {
+        return RuntimeMetadataKind::ArrayDimension;
+    }
+    if (canonical == kMetadataFixedDimensionClass) {
+        return RuntimeMetadataKind::FixedDimension;
+    }
+    if (canonical == kMetadataUnrestrictedDimensionClass) {
+        return RuntimeMetadataKind::UnrestrictedDimension;
     }
     return std::nullopt;
 }
@@ -152,6 +231,11 @@ bool runtimeMetadataIsa(const RuntimeValue& value,
     const std::string target =
         canonicalRuntimeMetadataClassName(className);
     if (actual == target) {
+        return true;
+    }
+    if (target == kMetadataArrayDimensionClass &&
+        (actual == kMetadataFixedDimensionClass ||
+         actual == kMetadataUnrestrictedDimensionClass)) {
         return true;
     }
     if (target == "handle" || target == kMetadataMetaDataClass) {

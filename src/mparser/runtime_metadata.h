@@ -17,6 +17,16 @@ enum class RuntimeMetadataKind {
     Event,
     EnumerationMember,
     Namespace,
+    Function,
+    CallSignature,
+    Argument,
+    ArgumentIdentifier,
+    ArgumentValidation,
+    ArgumentValidator,
+    DefaultArgumentValue,
+    ArrayDimension,
+    FixedDimension,
+    UnrestrictedDimension,
 };
 
 std::string_view runtimeMetadataClassName(RuntimeMetadataKind kind);

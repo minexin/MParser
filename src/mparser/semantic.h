@@ -119,10 +119,16 @@ struct SemanticScope {
     std::vector<int> symbols;
 };
 
+struct SemanticSourceInfo {
+    std::string name;
+    std::string namespaceName;
+};
+
 struct SemanticResult {
     std::unique_ptr<HirNode> root;
     std::vector<SemanticScope> scopes;
     std::vector<SemanticSymbol> symbols;
+    std::vector<SemanticSourceInfo> sources;
     std::vector<Diagnostic> diagnostics;
 };
 

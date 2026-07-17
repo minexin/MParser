@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.63.0. See [docs/v0.63.md](docs/v0.63.md) for the
+Current milestone: v0.64.0. See [docs/v0.64.md](docs/v0.64.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.62.md](docs/v0.62.md),
+iteration plan. Previous boundaries are kept in [docs/v0.63.md](docs/v0.63.md),
+[docs/v0.62.md](docs/v0.62.md),
 [docs/v0.61.md](docs/v0.61.md),
 [docs/v0.60.md](docs/v0.60.md),
 [docs/v0.59.md](docs/v0.59.md),
@@ -593,6 +594,18 @@ apply MATLAB visibility rules to loaded classes, and method-form
 `matlab.metadata.*` names and the renamed `meta.*` aliases share one canonical
 runtime identity.
 
+v0.64 extends that reflection boundary from classes to callable signatures.
+`metafunction` resolves loaded functions, namespace functions, same-file local
+functions, explicit constructors, slash-form methods, dotted static methods,
+and instance methods selected with `Arguments=` or `ArgumentTypes=`. Function
+and method descriptors expose typed `matlab.metadata.CallSignature` values.
+Their input and output arrays retain argument identifiers, group names,
+required/repeating/name-value classification, validation classes, dimensions,
+validators, referenced arguments, defaults, and class-derived name-value
+sources. Namespace `FunctionList` now returns executable function metadata,
+and source-unit names survive semantic analysis as platform-neutral
+`FullPath` values.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -1081,6 +1094,17 @@ build\mparser.exe --run-bytecode samples\class_metadata_demo.m
 The demo reports `summary = 10` and displays metadata values with their
 canonical class and identity, such as
 `<matlab.metadata.Class MetadataChild>`.
+
+Run function, constructor, method, and call-signature reflection with:
+
+```powershell
+build\mparser.exe --run-bytecode samples\function_metadata_demo.m
+```
+
+The demo reports `summary = 17`. It exercises typed function and method
+signatures, name-value defaults, validators, dimensions, dotted static lookup,
+ordinary-function selection, and instance-method selection from argument
+types.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:

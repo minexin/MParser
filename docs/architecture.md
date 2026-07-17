@@ -854,11 +854,23 @@ semantic validation, both baseline runtimes, compiled modules, constructors,
 and reusable runtime tiers. v0.63 executes class metadata lookup, read-only
 descriptor access, inherited member lists, visibility queries, metadata
 indexing, class-relation operators, current and legacy metadata names, and
-method introspection in the bytecode VM. The next steps
-include richer typed values and regions, direct inlined bounds checks and
-SIMD/vector kernels, optional LLVM ORC lowering behind the same backend
-contract, persistent cross-process code caches, moving-window array
-operations, object/listener arrays, full function and call-signature metadata,
+method introspection in the bytecode VM. v0.64 makes loaded callable
+signatures executable metadata. Semantic results
+retain source-unit names and namespaces, while the bytecode VM assigns each
+ordinary, namespace, local, constructor, and method function a stable textual
+identity. `matlab.metadata.Function`, `CallSignature`, `Argument`,
+`ArgumentIdentifier`, `ArgumentValidation`, `ArgumentValidator`,
+`DefaultArgumentValue`, and array-dimension descriptors resolve their fields
+on demand from that identity. No descriptor stores a pointer into the VM's
+function or class maps. `metafunction` applies the existing invocation
+normalizer and argument validator when selecting by runtime values, so
+reflection and execution agree on positional, repeating, and name-value
+calling conventions without executing the selected body.
+
+The next steps include richer typed values and regions, direct inlined bounds
+checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
+backend contract, persistent cross-process code caches, moving-window array
+operations, object/listener arrays, a built-in function signature catalog,
 reference-interpreter class execution, property event listeners,
 comma-separated-list Cell semantics, and eventual on-stack replacement while
 preserving the same commit/fallback contract.

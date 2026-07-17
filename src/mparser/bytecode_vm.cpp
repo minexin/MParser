@@ -65,9 +65,29 @@ bool isBuiltinReflectableClass(std::string_view name) {
            canonical == runtimeMetadataClassName(
                             RuntimeMetadataKind::Event) ||
            canonical == runtimeMetadataClassName(
-                            RuntimeMetadataKind::EnumerationMember) ||
+                             RuntimeMetadataKind::EnumerationMember) ||
            canonical == runtimeMetadataClassName(
-                            RuntimeMetadataKind::Namespace);
+                             RuntimeMetadataKind::Namespace) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::Function) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::CallSignature) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::Argument) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::ArgumentIdentifier) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::ArgumentValidation) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::ArgumentValidator) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::DefaultArgumentValue) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::ArrayDimension) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::FixedDimension) ||
+           canonical == runtimeMetadataClassName(
+                             RuntimeMetadataKind::UnrestrictedDimension);
 }
 
 std::pair<std::string, std::string>
@@ -639,6 +659,9 @@ struct ArgumentContract {
     PropertySpec spec;
     SourceSpan span;
     ArgumentBlockKind blockKind = ArgumentBlockKind::Input;
+    std::string sourceClass;
+    std::string defaultExpression;
+    std::vector<std::string> defaultReferencedArguments;
     size_t defaultEntry = 0;
     size_t defaultEnd = 0;
     bool hasDefaultRange = false;
@@ -649,19 +672,65 @@ struct ValidatedFunctionArguments {
     size_t positionalArgumentCount = 0;
 };
 
+void collectNameReferences(const HirNode& node,
+                           std::vector<std::string>& names) {
+    if (node.kind == HirKind::NameRef && !node.label.empty() &&
+        std::find(names.begin(), names.end(), node.label) == names.end()) {
+        names.push_back(node.label);
+    }
+    for (const auto& child : node.children) {
+        collectNameReferences(*child, names);
+    }
+}
+
 void collectArgumentContracts(
     const HirNode& function, const ArgumentContractCatalog& catalog,
     std::vector<ArgumentContract>& contracts) {
     const auto resolution = resolveArgumentContracts(function, catalog);
     for (const auto& contract : resolution.contracts) {
-        contracts.push_back(ArgumentContract{
-            contract.name, contract.property, contract.span,
-            contract.blockKind, 0, 0, false});
+        ArgumentContract result;
+        result.name = contract.name;
+        result.spec = contract.property;
+        result.span = contract.span;
+        result.blockKind = contract.blockKind;
+        if (contract.declaration) {
+            result.sourceClass =
+                contract.declaration->nameValueSourceClass;
+            if (result.spec.hasExplicitDefault &&
+                !contract.declaration->children.empty()) {
+                const HirNode& expression =
+                    *contract.declaration->children.front();
+                result.defaultExpression = expression.raw;
+                collectNameReferences(
+                    expression, result.defaultReferencedArguments);
+            }
+        }
+        contracts.push_back(std::move(result));
     }
+}
+
+bool hasArgumentBlock(const HirNode& function, bool input) {
+    return std::any_of(
+        function.children.begin(), function.children.end(),
+        [input](const auto& child) {
+            if (child->kind != HirKind::ArgumentBlock) {
+                return false;
+            }
+            const auto kind = child->argumentBlock.kind;
+            return input
+                       ? kind == ArgumentBlockKind::Input ||
+                             kind == ArgumentBlockKind::RepeatingInput
+                       : kind == ArgumentBlockKind::Output ||
+                             kind == ArgumentBlockKind::RepeatingOutput;
+        });
 }
 
 struct FunctionInfo {
     std::string name;
+    std::string metadataIdentifier;
+    std::string displayName;
+    std::string namespaceName;
+    std::string fullPath;
     std::string declaringClass;
     FunctionSignature signature;
     std::vector<AttributeSyntax> attributes;
@@ -674,10 +743,34 @@ struct FunctionInfo {
     bool hasBody = true;
     bool propertyAccessor = false;
     std::string accessorProperty;
+    bool hasInputArgumentBlock = false;
+    bool hasOutputArgumentBlock = false;
     size_t entry = 0;
     size_t end = 0;
     SourceSpan span;
     std::vector<ArgumentContract> argumentContracts;
+};
+
+struct ReflectedArgument {
+    std::string name;
+    std::string identifierName;
+    std::string groupName;
+    const ArgumentContract* contract = nullptr;
+    bool required = false;
+    bool repeating = false;
+    bool nameValue = false;
+};
+
+enum class MetafunctionSelectorKind {
+    None,
+    Arguments,
+    ArgumentTypes,
+};
+
+struct MetafunctionSelector {
+    MetafunctionSelectorKind kind = MetafunctionSelectorKind::None;
+    std::vector<RuntimeValue> arguments;
+    std::vector<std::string> argumentTypes;
 };
 
 using MethodCandidates = std::vector<FunctionInfo>;
@@ -1269,6 +1362,82 @@ private:
         observeValue(profile.valueObservation, value);
     }
 
+    const SemanticSourceInfo*
+    sourceInfo(const SourceSpan& span) const {
+        if (!semantic_ || span.begin.sourceId == kInvalidSourceId ||
+            span.begin.sourceId >= semantic_->sources.size()) {
+            return nullptr;
+        }
+        return &semantic_->sources[span.begin.sourceId];
+    }
+
+    std::string publicFunctionIdentifier(std::string_view name) const {
+        if (name.starts_with("$path") || name.starts_with("$private")) {
+            const size_t separator = name.find('>');
+            if (separator != std::string_view::npos &&
+                separator + 1 < name.size()) {
+                return std::string(name.substr(separator + 1));
+            }
+        }
+        return std::string(name);
+    }
+
+    std::string functionDisplayName(std::string_view identifier) const {
+        const size_t local = identifier.find_last_of('>');
+        const size_t qualified = identifier.find_last_of('.');
+        const size_t separator =
+            local != std::string_view::npos ? local : qualified;
+        return std::string(separator == std::string_view::npos
+                               ? identifier
+                               : identifier.substr(separator + 1));
+    }
+
+    std::string functionNamespaceName(
+        std::string_view identifier) const {
+        const size_t local = identifier.find('>');
+        const std::string_view owner =
+            local == std::string_view::npos ? identifier
+                                            : identifier.substr(0, local);
+        const size_t dot = owner.find_last_of('.');
+        return dot == std::string_view::npos
+                   ? std::string{}
+                   : std::string(owner.substr(0, dot));
+    }
+
+    void populateFunctionMetadata(FunctionInfo& info,
+                                  const HirNode* hir) const {
+        info.metadataIdentifier = publicFunctionIdentifier(info.name);
+        info.displayName = functionDisplayName(info.metadataIdentifier);
+        if (const auto* source = sourceInfo(info.span)) {
+            info.namespaceName = source->namespaceName;
+            info.fullPath = source->name;
+        }
+        if (info.namespaceName.empty()) {
+            info.namespaceName =
+                functionNamespaceName(info.metadataIdentifier);
+        }
+        if (hir) {
+            info.hasInputArgumentBlock = hasArgumentBlock(*hir, true);
+            info.hasOutputArgumentBlock = hasArgumentBlock(*hir, false);
+        }
+    }
+
+    void registerFunctionMetadata(const FunctionInfo& info) {
+        if (info.metadataIdentifier.empty() ||
+            ambiguousFunctionMetadataIdentifiers_.contains(
+                info.metadataIdentifier)) {
+            return;
+        }
+        const auto [existing, inserted] =
+            functionsByMetadataIdentifier_.try_emplace(
+                info.metadataIdentifier, info.name);
+        if (!inserted && existing->second != info.name) {
+            functionsByMetadataIdentifier_.erase(existing);
+            ambiguousFunctionMetadataIdentifiers_.insert(
+                info.metadataIdentifier);
+        }
+    }
+
     void collectFunctionNodes(const HirNode* node, std::string className = {},
                               bool staticMethodBlock = false) {
         if (!node) {
@@ -1374,6 +1543,7 @@ private:
             info.staticMethod = staticMethodBlock;
             info.hasBody = false;
             info.span = node->span;
+            populateFunctionMetadata(info, node);
 
             auto& klass = classesByName_[className];
             if (info.name.empty()) {
@@ -1592,8 +1762,13 @@ private:
                         info.argumentContracts);
                     collectArgumentDefaultRanges(program, info.entry, info.end,
                                                  info);
+                    populateFunctionMetadata(info, hir->second);
+                } else {
+                    populateFunctionMetadata(info, nullptr);
                 }
-                functionsByName_[info.name] = std::move(info);
+                const std::string functionName = info.name;
+                functionsByName_[functionName] = std::move(info);
+                registerFunctionMetadata(functionsByName_.at(functionName));
             } else {
                 const std::string key = classStack.back() + "." + info.name;
                 info.declaringClass = classStack.back();
@@ -1609,6 +1784,9 @@ private:
                     collectExplicitSuperclassConstructors(
                         *hir->second,
                         info.explicitSuperclassConstructors);
+                    populateFunctionMetadata(info, hir->second);
+                } else {
+                    populateFunctionMetadata(info, nullptr);
                 }
                 const auto& declaredStatic =
                     classesByName_[classStack.back()].declaredStaticMethods;
@@ -2823,6 +3001,275 @@ private:
         return makeRuntimeMetadataArray(
             RuntimeMetadataKind::Class, std::move(values),
             {classNames.size(), 1});
+    }
+
+    RuntimeValue emptyMetadataArray(RuntimeMetadataKind kind) const {
+        return makeRuntimeMetadataArray(kind, {}, {0, 0});
+    }
+
+    const FunctionInfo*
+    functionForMetadata(std::string_view identity) const {
+        const auto function =
+            functionsByName_.find(std::string(identity));
+        return function == functionsByName_.end() ? nullptr
+                                                  : &function->second;
+    }
+
+    const FunctionInfo*
+    functionForPublicMetadataIdentifier(
+        std::string_view identifier) const {
+        if (ambiguousFunctionMetadataIdentifiers_.contains(
+                std::string(identifier))) {
+            return nullptr;
+        }
+        const auto identity = functionsByMetadataIdentifier_.find(
+            std::string(identifier));
+        return identity == functionsByMetadataIdentifier_.end()
+                   ? nullptr
+                   : functionForMetadata(identity->second);
+    }
+
+    std::string functionCallSignatureIdentity(
+        const FunctionInfo& function) const {
+        return "function/" + function.name;
+    }
+
+    std::string methodCallSignatureIdentity(
+        std::string_view methodIdentity) const {
+        return "method/" + std::string(methodIdentity);
+    }
+
+    const FunctionInfo* callableForCallSignature(
+        std::string_view identity) const {
+        constexpr std::string_view functionPrefix = "function/";
+        constexpr std::string_view methodPrefix = "method/";
+        if (identity.starts_with(functionPrefix)) {
+            return functionForMetadata(
+                identity.substr(functionPrefix.size()));
+        }
+        if (identity.starts_with(methodPrefix)) {
+            return methodForMetadata(
+                identity.substr(methodPrefix.size()));
+        }
+        return nullptr;
+    }
+
+    const ArgumentContract*
+    reflectedArgumentContract(const FunctionInfo& info,
+                              const std::string& name,
+                              ArgumentBlockKind primary,
+                              ArgumentBlockKind alternate) const {
+        if (const auto* contract =
+                argumentContract(info, name, primary)) {
+            return contract;
+        }
+        return argumentContract(info, name, alternate);
+    }
+
+    std::vector<ReflectedArgument> reflectedInputArguments(
+        const FunctionInfo& info) const {
+        std::vector<ReflectedArgument> arguments;
+        const size_t required =
+            functionRequiredPositionalParameterCount(info.signature);
+        for (size_t index = 0; index < info.signature.parameters.size();
+             ++index) {
+            const auto kind =
+                functionParameterKind(info.signature, index);
+            if (kind == FunctionParameterKind::NameValue) {
+                continue;
+            }
+            const std::string& name = info.signature.parameters[index];
+            const bool repeating =
+                kind == FunctionParameterKind::Repeating;
+            arguments.push_back(ReflectedArgument{
+                name,
+                name,
+                {},
+                reflectedArgumentContract(
+                    info, name,
+                    repeating ? ArgumentBlockKind::RepeatingInput
+                              : ArgumentBlockKind::Input,
+                    repeating ? ArgumentBlockKind::Input
+                              : ArgumentBlockKind::RepeatingInput),
+                !repeating && index < required,
+                repeating,
+                false});
+        }
+        if (info.signature.hasVarargin) {
+            arguments.push_back(ReflectedArgument{
+                "varargin",
+                "varargin",
+                {},
+                reflectedArgumentContract(
+                    info, "varargin", ArgumentBlockKind::RepeatingInput,
+                    ArgumentBlockKind::Input),
+                false,
+                true,
+                false});
+        }
+        for (const auto& contract : info.argumentContracts) {
+            if (contract.blockKind != ArgumentBlockKind::Input) {
+                continue;
+            }
+            const size_t dot = contract.name.find('.');
+            if (dot == std::string::npos || dot == 0 ||
+                dot + 1 >= contract.name.size()) {
+                continue;
+            }
+            const std::string group = contract.name.substr(0, dot);
+            const auto parameter = std::find(
+                info.signature.parameters.begin(),
+                info.signature.parameters.end(), group);
+            if (parameter == info.signature.parameters.end()) {
+                continue;
+            }
+            const size_t parameterIndex = static_cast<size_t>(
+                std::distance(info.signature.parameters.begin(), parameter));
+            if (functionParameterKind(info.signature, parameterIndex) !=
+                FunctionParameterKind::NameValue) {
+                continue;
+            }
+            arguments.push_back(ReflectedArgument{
+                contract.name,
+                contract.name.substr(dot + 1),
+                group,
+                &contract,
+                false,
+                false,
+                true});
+        }
+        return arguments;
+    }
+
+    std::vector<ReflectedArgument> reflectedOutputArguments(
+        const FunctionInfo& info) const {
+        std::vector<ReflectedArgument> arguments;
+        const std::string_view repeatingName =
+            functionRepeatingOutputName(info.signature);
+        for (const auto& name : info.signature.outputs) {
+            const bool repeating = name == repeatingName;
+            arguments.push_back(ReflectedArgument{
+                name,
+                name,
+                {},
+                reflectedArgumentContract(
+                    info, name,
+                    repeating ? ArgumentBlockKind::RepeatingOutput
+                              : ArgumentBlockKind::Output,
+                    repeating ? ArgumentBlockKind::Output
+                              : ArgumentBlockKind::RepeatingOutput),
+                !repeating,
+                repeating,
+                false});
+        }
+        if (info.signature.hasVarargout &&
+            std::find(info.signature.outputs.begin(),
+                      info.signature.outputs.end(), "varargout") ==
+                info.signature.outputs.end()) {
+            arguments.push_back(ReflectedArgument{
+                "varargout",
+                "varargout",
+                {},
+                reflectedArgumentContract(
+                    info, "varargout", ArgumentBlockKind::RepeatingOutput,
+                    ArgumentBlockKind::Output),
+                false,
+                true,
+                false});
+        }
+        return arguments;
+    }
+
+    std::optional<ReflectedArgument> reflectedArgumentForMetadata(
+        std::string_view identity,
+        std::string* signatureIdentity = nullptr) const {
+        const auto parse = [&](std::string_view marker, bool input)
+            -> std::optional<ReflectedArgument> {
+            const size_t separator = identity.rfind(marker);
+            if (separator == std::string_view::npos ||
+                separator + marker.size() >= identity.size()) {
+                return std::nullopt;
+            }
+            const std::string indexText(
+                identity.substr(separator + marker.size()));
+            char* end = nullptr;
+            const unsigned long long parsed =
+                std::strtoull(indexText.c_str(), &end, 10);
+            if (!end || *end != '\0') {
+                return std::nullopt;
+            }
+            const std::string signature(identity.substr(0, separator));
+            const FunctionInfo* callable =
+                callableForCallSignature(signature);
+            if (!callable) {
+                return std::nullopt;
+            }
+            const auto arguments =
+                input ? reflectedInputArguments(*callable)
+                      : reflectedOutputArguments(*callable);
+            if (parsed >= arguments.size()) {
+                return std::nullopt;
+            }
+            if (signatureIdentity) {
+                *signatureIdentity = signature;
+            }
+            return arguments[static_cast<size_t>(parsed)];
+        };
+        if (const auto input = parse("/input/", true)) {
+            return input;
+        }
+        return parse("/output/", false);
+    }
+
+    RuntimeValue argumentIdentifierValue(
+        std::string_view name, std::string_view groupName = {}) const {
+        return makeRuntimeMetadataObject(
+            RuntimeMetadataKind::ArgumentIdentifier,
+            std::string(groupName) + "/" + std::string(name));
+    }
+
+    RuntimeValue referencedArgumentIdentifiers(
+        const FunctionInfo& info,
+        const std::vector<std::string>& references) const {
+        const auto inputs = reflectedInputArguments(info);
+        const auto outputs = reflectedOutputArguments(info);
+        std::vector<RuntimeValue> values;
+        std::set<std::string> seen;
+        const auto append = [&](const ReflectedArgument& argument,
+                                std::vector<RuntimeValue>& destination) {
+            const std::string identity =
+                argument.groupName + "/" + argument.identifierName;
+            if (seen.insert(identity).second) {
+                destination.push_back(argumentIdentifierValue(
+                    argument.identifierName, argument.groupName));
+            }
+        };
+        for (const auto& rawReference : references) {
+            const std::string reference = trimAscii(rawReference);
+            const auto input = std::find_if(
+                inputs.begin(), inputs.end(),
+                [&](const ReflectedArgument& argument) {
+                    return argument.name == reference ||
+                           argument.identifierName == reference;
+                });
+            if (input != inputs.end()) {
+                append(*input, values);
+                continue;
+            }
+            const auto output = std::find_if(
+                outputs.begin(), outputs.end(),
+                [&](const ReflectedArgument& argument) {
+                    return argument.name == reference ||
+                           argument.identifierName == reference;
+                });
+            if (output != outputs.end()) {
+                append(*output, values);
+            }
+        }
+        const size_t valueCount = values.size();
+        return makeRuntimeMetadataArray(
+            RuntimeMetadataKind::ArgumentIdentifier,
+            std::move(values), {1, valueCount});
     }
 
     std::string propertyMetadataIdentity(
@@ -4728,7 +5175,8 @@ private:
             return {
                 "Name", "Description", "DetailedDescription", "Access",
                 "Static", "Abstract", "Sealed", "Hidden", "InputNames",
-                "OutputNames", "Signature", "DefiningClass"};
+                "OutputNames", "Signature", "FullPath",
+                "DefiningClass"};
         }
         if (canonical ==
             runtimeMetadataClassName(RuntimeMetadataKind::Event)) {
@@ -4746,6 +5194,51 @@ private:
             return {
                 "Name", "Description", "DetailedDescription", "ClassList",
                 "FunctionList", "InnerNamespaces", "OuterNamespace"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(RuntimeMetadataKind::Function)) {
+            return {
+                "Name", "Description", "DetailedDescription", "FullPath",
+                "NamespaceName", "Signature"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(
+                RuntimeMetadataKind::CallSignature)) {
+            return {
+                "Inputs", "Outputs", "HasInputValidation",
+                "HasOutputValidation"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(RuntimeMetadataKind::Argument)) {
+            return {
+                "Identifier", "Description", "DetailedDescription",
+                "Required", "Repeating", "NameValue", "Validation",
+                "DefaultValue", "SourceClass"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(
+                RuntimeMetadataKind::ArgumentIdentifier)) {
+            return {"Name", "GroupName"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(
+                RuntimeMetadataKind::ArgumentValidation)) {
+            return {"Class", "Size", "Functions"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(
+                RuntimeMetadataKind::ArgumentValidator)) {
+            return {"Name", "Function", "ReferencedArguments"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(
+                RuntimeMetadataKind::DefaultArgumentValue)) {
+            return {"Expression", "ReferencedArguments"};
+        }
+        if (canonical ==
+            runtimeMetadataClassName(
+                RuntimeMetadataKind::FixedDimension)) {
+            return {"Length"};
         }
         if (canonical == kEventDataClassName) {
             return {"Source", "EventName"};
@@ -4898,24 +5391,10 @@ private:
             if (klass) {
                 return metadataClassArray(klass->superclasses);
             }
-            if (className ==
+            if (className.rfind("matlab.metadata.", 0) == 0 &&
+                className !=
                     runtimeMetadataClassName(
-                        RuntimeMetadataKind::Property) ||
-                className ==
-                    runtimeMetadataClassName(
-                        RuntimeMetadataKind::Method) ||
-                className ==
-                    runtimeMetadataClassName(
-                        RuntimeMetadataKind::Event) ||
-                className ==
-                    runtimeMetadataClassName(
-                        RuntimeMetadataKind::EnumerationMember) ||
-                className ==
-                    runtimeMetadataClassName(
-                        RuntimeMetadataKind::Class) ||
-                className ==
-                    runtimeMetadataClassName(
-                        RuntimeMetadataKind::Namespace)) {
+                        RuntimeMetadataKind::MetaData)) {
                 return metadataClassArray(
                     {std::string(runtimeMetadataClassName(
                         RuntimeMetadataKind::MetaData))});
@@ -5031,7 +5510,9 @@ private:
             return missingValue();
         }
         if (memberName == "Name") {
-            return stringValue(method->name);
+            return stringValue(method->displayName.empty()
+                                   ? method->name
+                                   : method->displayName);
         }
         if (memberName == "Description" ||
             memberName == "DetailedDescription") {
@@ -5067,31 +5548,12 @@ private:
             return stringColumnCell(names);
         }
         if (memberName == "Signature") {
-            bool inputValidation = false;
-            bool outputValidation = false;
-            for (const auto& contract : method->argumentContracts) {
-                inputValidation =
-                    inputValidation ||
-                    contract.blockKind == ArgumentBlockKind::Input ||
-                    contract.blockKind ==
-                        ArgumentBlockKind::RepeatingInput;
-                outputValidation =
-                    outputValidation ||
-                    contract.blockKind == ArgumentBlockKind::Output ||
-                    contract.blockKind ==
-                        ArgumentBlockKind::RepeatingOutput;
-            }
-            return makeRuntimeStructValue({
-                {"Inputs",
-                 metadataMethodMember(instruction, target,
-                                      "InputNames")},
-                {"Outputs",
-                 metadataMethodMember(instruction, target,
-                                      "OutputNames")},
-                {"HasInputValidation",
-                 logicalValue(inputValidation)},
-                {"HasOutputValidation",
-                 logicalValue(outputValidation)}});
+            return makeRuntimeMetadataObject(
+                RuntimeMetadataKind::CallSignature,
+                methodCallSignatureIdentity(target.text));
+        }
+        if (memberName == "FullPath") {
+            return stringValue(method->fullPath);
         }
         if (memberName == "DefiningClass") {
             return metadataClassValue(method->declaringClass);
@@ -5101,6 +5563,388 @@ private:
                       "metadata method field is not available: " +
                           method->declaringClass + "." + method->name +
                           "." + std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataFunctionMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const FunctionInfo* function =
+            functionForMetadata(target.text);
+        if (!function) {
+            addDiagnostic(instruction,
+                          "metadata function descriptor is not available");
+            return missingValue();
+        }
+        if (memberName == "Name") {
+            return stringValue(function->displayName);
+        }
+        if (memberName == "Description" ||
+            memberName == "DetailedDescription") {
+            return stringValue("");
+        }
+        if (memberName == "FullPath") {
+            return stringValue(function->fullPath);
+        }
+        if (memberName == "NamespaceName") {
+            return stringValue(function->namespaceName);
+        }
+        if (memberName == "Signature") {
+            return makeRuntimeMetadataObject(
+                RuntimeMetadataKind::CallSignature,
+                functionCallSignatureIdentity(*function));
+        }
+        addDiagnostic(instruction,
+                      "metadata function field is not available: " +
+                          function->metadataIdentifier + "." +
+                          std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataCallSignatureMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const FunctionInfo* callable =
+            callableForCallSignature(target.text);
+        if (!callable) {
+            addDiagnostic(
+                instruction,
+                "metadata call signature descriptor is not available");
+            return missingValue();
+        }
+        const auto argumentArray =
+            [&](bool input) {
+                const auto arguments =
+                    input ? reflectedInputArguments(*callable)
+                          : reflectedOutputArguments(*callable);
+                std::vector<RuntimeValue> values;
+                values.reserve(arguments.size());
+                for (size_t index = 0; index < arguments.size(); ++index) {
+                    values.push_back(makeRuntimeMetadataObject(
+                        RuntimeMetadataKind::Argument,
+                        target.text +
+                            (input ? "/input/" : "/output/") +
+                            std::to_string(index)));
+                }
+                const size_t valueCount = values.size();
+                return makeRuntimeMetadataArray(
+                    RuntimeMetadataKind::Argument, std::move(values),
+                    {1, valueCount});
+            };
+        if (memberName == "Inputs") {
+            return argumentArray(true);
+        }
+        if (memberName == "Outputs") {
+            return argumentArray(false);
+        }
+        if (memberName == "HasInputValidation") {
+            return logicalValue(callable->hasInputArgumentBlock);
+        }
+        if (memberName == "HasOutputValidation") {
+            return logicalValue(callable->hasOutputArgumentBlock);
+        }
+        addDiagnostic(
+            instruction,
+            "metadata call signature field is not available: " +
+                std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataArgumentMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        std::string signatureIdentity;
+        const auto argument = reflectedArgumentForMetadata(
+            target.text, &signatureIdentity);
+        if (!argument) {
+            addDiagnostic(instruction,
+                          "metadata argument descriptor is not available");
+            return missingValue();
+        }
+        if (memberName == "Identifier") {
+            return argumentIdentifierValue(
+                argument->identifierName, argument->groupName);
+        }
+        if (memberName == "Description" ||
+            memberName == "DetailedDescription") {
+            return stringValue("");
+        }
+        if (memberName == "Required") {
+            return logicalValue(argument->required);
+        }
+        if (memberName == "Repeating") {
+            return logicalValue(argument->repeating);
+        }
+        if (memberName == "NameValue") {
+            return logicalValue(argument->nameValue);
+        }
+        if (memberName == "Validation") {
+            const bool validated =
+                argument->contract &&
+                (!argument->contract->spec.className.empty() ||
+                 !argument->contract->spec.dimensions.empty() ||
+                 !argument->contract->spec.validators.empty());
+            return validated
+                       ? makeRuntimeMetadataObject(
+                             RuntimeMetadataKind::ArgumentValidation,
+                             target.text)
+                       : emptyMetadataArray(
+                             RuntimeMetadataKind::ArgumentValidation);
+        }
+        if (memberName == "DefaultValue") {
+            return argument->contract &&
+                           argument->contract->spec.hasExplicitDefault
+                       ? makeRuntimeMetadataObject(
+                             RuntimeMetadataKind::DefaultArgumentValue,
+                             target.text)
+                       : emptyMetadataArray(
+                             RuntimeMetadataKind::DefaultArgumentValue);
+        }
+        if (memberName == "SourceClass") {
+            if (!argument->contract ||
+                argument->contract->sourceClass.empty()) {
+                return emptyMetadataArray(RuntimeMetadataKind::Class);
+            }
+            return metadataClassValue(argument->contract->sourceClass);
+        }
+        addDiagnostic(instruction,
+                      "metadata argument field is not available: " +
+                          argument->name + "." +
+                          std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataArgumentIdentifierMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const auto [groupName, name] =
+            splitMetadataIdentity(target.text);
+        if (name.empty()) {
+            addDiagnostic(
+                instruction,
+                "metadata argument identifier is not available");
+            return missingValue();
+        }
+        if (memberName == "Name") {
+            return stringValue(name);
+        }
+        if (memberName == "GroupName") {
+            return stringValue(groupName);
+        }
+        addDiagnostic(
+            instruction,
+            "metadata argument identifier field is not available: " +
+                std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataArgumentValidationMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const auto argument =
+            reflectedArgumentForMetadata(target.text);
+        if (!argument || !argument->contract) {
+            addDiagnostic(
+                instruction,
+                "metadata argument validation descriptor is not available");
+            return missingValue();
+        }
+        const PropertySpec& spec = argument->contract->spec;
+        if (memberName == "Class") {
+            return spec.className.empty()
+                       ? emptyMetadataArray(RuntimeMetadataKind::Class)
+                       : metadataClassValue(spec.className);
+        }
+        if (memberName == "Size") {
+            std::vector<RuntimeValue> values;
+            values.reserve(spec.dimensions.size());
+            bool allFixed = !spec.dimensions.empty();
+            bool allUnrestricted = !spec.dimensions.empty();
+            for (size_t index = 0; index < spec.dimensions.size(); ++index) {
+                const bool unrestricted =
+                    spec.dimensions[index].text == ":";
+                allFixed = allFixed && !unrestricted;
+                allUnrestricted = allUnrestricted && unrestricted;
+                values.push_back(makeRuntimeMetadataObject(
+                    unrestricted
+                        ? RuntimeMetadataKind::UnrestrictedDimension
+                        : RuntimeMetadataKind::FixedDimension,
+                    target.text + "/dimension/" +
+                        std::to_string(index)));
+            }
+            const RuntimeMetadataKind kind =
+                allFixed
+                    ? RuntimeMetadataKind::FixedDimension
+                    : allUnrestricted
+                    ? RuntimeMetadataKind::UnrestrictedDimension
+                    : RuntimeMetadataKind::ArrayDimension;
+            const size_t valueCount = values.size();
+            return makeRuntimeMetadataArray(
+                kind, std::move(values), {1, valueCount});
+        }
+        if (memberName == "Functions") {
+            std::vector<RuntimeValue> values;
+            values.reserve(spec.validators.size());
+            for (size_t index = 0; index < spec.validators.size(); ++index) {
+                values.push_back(makeRuntimeMetadataObject(
+                    RuntimeMetadataKind::ArgumentValidator,
+                    target.text + "/validator/" +
+                        std::to_string(index)));
+            }
+            const size_t valueCount = values.size();
+            return makeRuntimeMetadataArray(
+                RuntimeMetadataKind::ArgumentValidator,
+                std::move(values), {1, valueCount});
+        }
+        addDiagnostic(
+            instruction,
+            "metadata argument validation field is not available: " +
+                std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataArgumentValidatorMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        constexpr std::string_view marker = "/validator/";
+        const size_t separator = target.text.rfind(marker);
+        if (separator == std::string::npos) {
+            addDiagnostic(
+                instruction,
+                "metadata argument validator descriptor is not available");
+            return missingValue();
+        }
+        const std::string indexText =
+            target.text.substr(separator + marker.size());
+        char* end = nullptr;
+        const unsigned long long parsed =
+            std::strtoull(indexText.c_str(), &end, 10);
+        const std::string argumentIdentity =
+            target.text.substr(0, separator);
+        std::string signatureIdentity;
+        const auto argument = reflectedArgumentForMetadata(
+            argumentIdentity, &signatureIdentity);
+        if (!end || *end != '\0' || !argument || !argument->contract ||
+            parsed >= argument->contract->spec.validators.size()) {
+            addDiagnostic(
+                instruction,
+                "metadata argument validator descriptor is not available");
+            return missingValue();
+        }
+        const auto& validator =
+            argument->contract->spec.validators[
+                static_cast<size_t>(parsed)];
+        if (memberName == "Name") {
+            return stringValue(validator.name);
+        }
+        if (memberName == "Function") {
+            return missingValue();
+        }
+        if (memberName == "ReferencedArguments") {
+            const FunctionInfo* callable =
+                callableForCallSignature(signatureIdentity);
+            return callable
+                       ? referencedArgumentIdentifiers(
+                             *callable, validator.arguments)
+                       : makeRuntimeMetadataArray(
+                             RuntimeMetadataKind::ArgumentIdentifier,
+                             {}, {1, 0});
+        }
+        addDiagnostic(
+            instruction,
+            "metadata argument validator field is not available: " +
+                std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataDefaultArgumentValueMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        std::string signatureIdentity;
+        const auto argument = reflectedArgumentForMetadata(
+            target.text, &signatureIdentity);
+        if (!argument || !argument->contract ||
+            !argument->contract->spec.hasExplicitDefault) {
+            addDiagnostic(
+                instruction,
+                "metadata default argument value is not available");
+            return missingValue();
+        }
+        if (memberName == "Expression") {
+            return stringValue(
+                argument->contract->defaultExpression);
+        }
+        if (memberName == "ReferencedArguments") {
+            const FunctionInfo* callable =
+                callableForCallSignature(signatureIdentity);
+            return callable
+                       ? referencedArgumentIdentifiers(
+                             *callable,
+                             argument->contract
+                                 ->defaultReferencedArguments)
+                       : makeRuntimeMetadataArray(
+                             RuntimeMetadataKind::ArgumentIdentifier,
+                             {}, {1, 0});
+        }
+        addDiagnostic(
+            instruction,
+            "metadata default argument value field is not available: " +
+                std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataFixedDimensionMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        constexpr std::string_view marker = "/dimension/";
+        const size_t separator = target.text.rfind(marker);
+        if (separator == std::string::npos) {
+            addDiagnostic(
+                instruction,
+                "metadata fixed dimension descriptor is not available");
+            return missingValue();
+        }
+        const std::string indexText =
+            target.text.substr(separator + marker.size());
+        char* end = nullptr;
+        const unsigned long long parsed =
+            std::strtoull(indexText.c_str(), &end, 10);
+        const auto argument = reflectedArgumentForMetadata(
+            target.text.substr(0, separator));
+        if (!end || *end != '\0' || !argument || !argument->contract ||
+            parsed >= argument->contract->spec.dimensions.size() ||
+            argument->contract->spec
+                    .dimensions[static_cast<size_t>(parsed)]
+                    .text == ":") {
+            addDiagnostic(
+                instruction,
+                "metadata fixed dimension descriptor is not available");
+            return missingValue();
+        }
+        if (memberName == "Length") {
+            const std::string& text =
+                argument->contract->spec
+                    .dimensions[static_cast<size_t>(parsed)]
+                    .text;
+            char* lengthEnd = nullptr;
+            const unsigned long long length =
+                std::strtoull(text.c_str(), &lengthEnd, 10);
+            if (lengthEnd && *lengthEnd == '\0') {
+                return numberValue(static_cast<double>(length));
+            }
+        }
+        addDiagnostic(
+            instruction,
+            "metadata fixed dimension field is not available: " +
+                std::string(memberName));
         return missingValue();
     }
 
@@ -5197,8 +6041,32 @@ private:
             return metadataClassArray(classes);
         }
         if (memberName == "FunctionList") {
+            std::vector<const FunctionInfo*> functions;
+            for (const auto& [name, function] : functionsByName_) {
+                (void)name;
+                if (function.namespaceName == namespaceName &&
+                    function.metadataIdentifier.find('>') ==
+                        std::string::npos) {
+                    functions.push_back(&function);
+                }
+            }
+            std::sort(
+                functions.begin(), functions.end(),
+                [](const FunctionInfo* left,
+                   const FunctionInfo* right) {
+                    return left->metadataIdentifier <
+                           right->metadataIdentifier;
+                });
+            std::vector<RuntimeValue> values;
+            values.reserve(functions.size());
+            for (const FunctionInfo* function : functions) {
+                values.push_back(makeRuntimeMetadataObject(
+                    RuntimeMetadataKind::Function, function->name));
+            }
+            const size_t valueCount = values.size();
             return makeRuntimeMetadataArray(
-                RuntimeMetadataKind::Method, {}, {0, 1});
+                RuntimeMetadataKind::Function, std::move(values),
+                {valueCount, 1});
         }
         if (memberName == "InnerNamespaces") {
             std::set<std::string> namespaces;
@@ -5213,6 +6081,20 @@ private:
                 if (nextDot != std::string::npos) {
                     namespaces.insert(
                         className.substr(0, nextDot));
+                }
+            }
+            for (const auto& [name, function] : functionsByName_) {
+                (void)name;
+                if (function.namespaceName.rfind(prefix, 0) != 0) {
+                    continue;
+                }
+                const size_t nextDot =
+                    function.namespaceName.find('.', prefix.size());
+                if (nextDot != std::string::npos) {
+                    namespaces.insert(
+                        function.namespaceName.substr(0, nextDot));
+                } else {
+                    namespaces.insert(function.namespaceName);
                 }
             }
             std::vector<RuntimeValue> values;
@@ -5268,6 +6150,30 @@ private:
                                              memberName);
         case RuntimeMetadataKind::Namespace:
             return metadataNamespaceMember(instruction, target, memberName);
+        case RuntimeMetadataKind::Function:
+            return metadataFunctionMember(instruction, target, memberName);
+        case RuntimeMetadataKind::CallSignature:
+            return metadataCallSignatureMember(
+                instruction, target, memberName);
+        case RuntimeMetadataKind::Argument:
+            return metadataArgumentMember(instruction, target, memberName);
+        case RuntimeMetadataKind::ArgumentIdentifier:
+            return metadataArgumentIdentifierMember(
+                instruction, target, memberName);
+        case RuntimeMetadataKind::ArgumentValidation:
+            return metadataArgumentValidationMember(
+                instruction, target, memberName);
+        case RuntimeMetadataKind::ArgumentValidator:
+            return metadataArgumentValidatorMember(
+                instruction, target, memberName);
+        case RuntimeMetadataKind::DefaultArgumentValue:
+            return metadataDefaultArgumentValueMember(
+                instruction, target, memberName);
+        case RuntimeMetadataKind::FixedDimension:
+            return metadataFixedDimensionMember(
+                instruction, target, memberName);
+        case RuntimeMetadataKind::ArrayDimension:
+        case RuntimeMetadataKind::UnrestrictedDimension:
         case RuntimeMetadataKind::MetaData:
             break;
         }
@@ -6642,40 +7548,366 @@ private:
         return metadataClassValue(className);
     }
 
+    std::optional<MetafunctionSelector> parseMetafunctionSelector(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        MetafunctionSelector selector;
+        if (arguments.size() == 1) {
+            return selector;
+        }
+        if (arguments.size() != 2 ||
+            arguments[1].kind != RuntimeValueKind::NameValueArgument ||
+            arguments[1].cells.size() != 1) {
+            addDiagnostic(
+                instruction,
+                "metafunction accepts one identifier plus either "
+                "Arguments= or ArgumentTypes=");
+            return std::nullopt;
+        }
+        const std::string option = lowerAscii(arguments[1].text);
+        const RuntimeValue& value = arguments[1].cells.front();
+        if (option == "arguments") {
+            if (value.kind != RuntimeValueKind::Cell) {
+                addDiagnostic(
+                    instruction,
+                    "metafunction Arguments must be a Cell array");
+                return std::nullopt;
+            }
+            selector.kind = MetafunctionSelectorKind::Arguments;
+            selector.arguments = value.cells;
+            return selector;
+        }
+        if (option == "argumenttypes") {
+            selector.kind = MetafunctionSelectorKind::ArgumentTypes;
+            if (isString(value)) {
+                selector.argumentTypes.push_back(
+                    canonicalRuntimeMetadataClassName(value.text));
+                return selector;
+            }
+            if (value.kind != RuntimeValueKind::Cell) {
+                addDiagnostic(
+                    instruction,
+                    "metafunction ArgumentTypes must be a class-name "
+                    "string or Cell array of class-name strings");
+                return std::nullopt;
+            }
+            for (const auto& type : value.cells) {
+                if (!isString(type)) {
+                    addDiagnostic(
+                        instruction,
+                        "metafunction ArgumentTypes Cell elements must be "
+                        "class-name strings");
+                    return std::nullopt;
+                }
+                selector.argumentTypes.push_back(
+                    canonicalRuntimeMetadataClassName(type.text));
+            }
+            return selector;
+        }
+        addDiagnostic(instruction,
+                      "unknown metafunction selector: " +
+                          arguments[1].text);
+        return std::nullopt;
+    }
+
+    std::vector<std::string> nameValueArgumentDeclarations(
+        const FunctionInfo& info) const {
+        std::vector<std::string> names;
+        for (const auto& contract : info.argumentContracts) {
+            if (contract.blockKind == ArgumentBlockKind::Input &&
+                contract.name.find('.') != std::string::npos) {
+                names.push_back(contract.name);
+            }
+        }
+        return names;
+    }
+
+    bool metadataArgumentTypeMatches(
+        std::string_view actual,
+        std::string_view expected) const {
+        if (expected.empty()) {
+            return true;
+        }
+        const std::string canonicalActual =
+            canonicalRuntimeMetadataClassName(actual);
+        const std::string canonicalExpected =
+            canonicalRuntimeMetadataClassName(expected);
+        return canonicalActual == canonicalExpected ||
+               reflectableClassDerivesFrom(canonicalActual,
+                                           canonicalExpected);
+    }
+
+    const ArgumentContract* positionalArgumentContract(
+        const FunctionInfo& info, size_t argumentIndex) const {
+        const size_t fixed =
+            functionPositionalParameterCount(info.signature);
+        const size_t repeating =
+            functionRepeatingParameterCount(info.signature);
+        if (argumentIndex < fixed) {
+            return reflectedArgumentContract(
+                info, info.signature.parameters[argumentIndex],
+                ArgumentBlockKind::Input,
+                ArgumentBlockKind::RepeatingInput);
+        }
+        if (repeating != 0) {
+            const size_t parameterIndex =
+                fixed + (argumentIndex - fixed) % repeating;
+            if (parameterIndex < info.signature.parameters.size()) {
+                return reflectedArgumentContract(
+                    info, info.signature.parameters[parameterIndex],
+                    ArgumentBlockKind::RepeatingInput,
+                    ArgumentBlockKind::Input);
+            }
+        }
+        if (info.signature.hasVarargin) {
+            return reflectedArgumentContract(
+                info, "varargin", ArgumentBlockKind::RepeatingInput,
+                ArgumentBlockKind::Input);
+        }
+        return nullptr;
+    }
+
+    bool metafunctionSelectorMatches(
+        const FunctionInfo& info,
+        const MetafunctionSelector& selector,
+        std::string_view receiverClass = {},
+        bool requireReceiver = false) const {
+        if (selector.kind == MetafunctionSelectorKind::None) {
+            return true;
+        }
+
+        if (selector.kind ==
+            MetafunctionSelectorKind::ArgumentTypes) {
+            if (functionPositionalArgumentCountStatus(
+                    info.signature,
+                    selector.argumentTypes.size()) !=
+                FunctionArgumentCountStatus::Valid) {
+                return false;
+            }
+            if (requireReceiver &&
+                (selector.argumentTypes.empty() ||
+                 !metadataArgumentTypeMatches(
+                     selector.argumentTypes.front(),
+                     receiverClass))) {
+                return false;
+            }
+            for (size_t index = 0;
+                 index < selector.argumentTypes.size(); ++index) {
+                const ArgumentContract* contract =
+                    positionalArgumentContract(info, index);
+                if (contract &&
+                    !contract->spec.className.empty() &&
+                    !metadataArgumentTypeMatches(
+                        selector.argumentTypes[index],
+                        contract->spec.className)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        auto normalized = normalizeRuntimeInvocationArguments(
+            info.signature, nameValueArgumentDeclarations(info),
+            selector.arguments);
+        if (!normalized.succeeded) {
+            return false;
+        }
+        if (requireReceiver &&
+            (normalized.positionalArguments.empty() ||
+             !metadataArgumentTypeMatches(
+                 runtimeValueClassName(
+                     normalized.positionalArguments.front()),
+                 receiverClass))) {
+            return false;
+        }
+
+        RuntimeArgumentValidationOptions validationOptions;
+        validationOptions.objectIsA =
+            [this](const std::string& actual,
+                   const std::string& expected) {
+                return classDerivesFrom(actual, expected);
+            };
+        validationOptions.classAvailable =
+            [this](const std::string& className) {
+                return reflectableClassExists(className);
+            };
+        for (size_t index = 0;
+             index < normalized.positionalArguments.size(); ++index) {
+            const ArgumentContract* contract =
+                positionalArgumentContract(info, index);
+            if (!contract) {
+                continue;
+            }
+            const auto validation = validateRuntimeArgument(
+                normalized.positionalArguments[index],
+                contract->spec, validationOptions);
+            if (!validation.succeeded) {
+                return false;
+            }
+        }
+        for (const auto& [name, value] :
+             normalized.nameValueArguments) {
+            const ArgumentContract* contract = argumentContract(
+                info, name, ArgumentBlockKind::Input);
+            if (!contract) {
+                return false;
+            }
+            const auto validation = validateRuntimeArgument(
+                value, contract->spec, validationOptions);
+            if (!validation.succeeded) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    RuntimeValue methodMetadataValue(
+        const ClassInfo& viewClass,
+        const FunctionInfo& method) const {
+        return makeRuntimeMetadataObject(
+            RuntimeMetadataKind::Method,
+            methodMetadataIdentity(viewClass, method));
+    }
+
     RuntimeValue metafunctionBuiltin(
         const BytecodeInstruction& instruction,
         const std::vector<RuntimeValue>& arguments) {
-        if (arguments.size() != 1 || !isString(arguments.front())) {
+        if (arguments.empty() || !isString(arguments.front())) {
             addDiagnostic(
                 instruction,
-                "metafunction currently expects one method identifier string");
+                "metafunction expects a function or method identifier string");
+            return missingValue();
+        }
+        const auto selector =
+            parseMetafunctionSelector(instruction, arguments);
+        if (!selector) {
             return missingValue();
         }
         const std::string& identifier = arguments.front().text;
-        const size_t separator = identifier.find_last_of('/');
-        if (separator == std::string::npos || separator == 0 ||
-            separator + 1 >= identifier.size()) {
+
+        if (ambiguousFunctionMetadataIdentifiers_.contains(identifier)) {
             addDiagnostic(
                 instruction,
-                "metafunction currently supports ClassName/MethodName");
+                "function metadata identifier is ambiguous: " +
+                    identifier);
             return missingValue();
         }
-        const std::string className = identifier.substr(0, separator);
-        const std::string methodName = identifier.substr(separator + 1);
-        const auto klass = classesByName_.find(className);
-        const FunctionInfo* method =
-            klass == classesByName_.end()
-                ? nullptr
-                : selectMethod(klass->second, methodName, false);
-        if (!method) {
+
+        if (const FunctionInfo* function =
+                functionForPublicMetadataIdentifier(identifier)) {
+            if (!metafunctionSelectorMatches(*function, *selector)) {
+                addDiagnostic(
+                    instruction,
+                    "function signature metadata does not match selector: " +
+                        identifier);
+                return missingValue();
+            }
+            return makeRuntimeMetadataObject(
+                RuntimeMetadataKind::Function, function->name);
+        }
+
+        const size_t slash = identifier.find_last_of('/');
+        if (slash != std::string::npos && slash != 0 &&
+            slash + 1 < identifier.size()) {
+            const std::string className =
+                identifier.substr(0, slash);
+            const std::string methodName =
+                identifier.substr(slash + 1);
+            const auto klass = classesByName_.find(className);
+            const FunctionInfo* method =
+                klass == classesByName_.end()
+                    ? nullptr
+                    : selectMethod(klass->second, methodName, false);
+            const bool constructor =
+                method && method->name == className;
+            if (!method ||
+                !metafunctionSelectorMatches(
+                    *method, *selector, className,
+                    !method->staticMethod && !constructor)) {
+                addDiagnostic(instruction,
+                              "method metadata is not available: " +
+                                  identifier);
+                return missingValue();
+            }
+            return methodMetadataValue(klass->second, *method);
+        }
+
+        if (const auto klass = classesByName_.find(identifier);
+            klass != classesByName_.end()) {
+            const auto constructor =
+                klass->second.declaredMethods.find(identifier);
+            if (constructor !=
+                    klass->second.declaredMethods.end() &&
+                metafunctionSelectorMatches(
+                    constructor->second, *selector)) {
+                return methodMetadataValue(
+                    klass->second, constructor->second);
+            }
             addDiagnostic(instruction,
-                          "method metadata is not available: " +
+                          "constructor metadata is not available: " +
                               identifier);
             return missingValue();
         }
-        return makeRuntimeMetadataObject(
-            RuntimeMetadataKind::Method,
-            methodMetadataIdentity(klass->second, *method));
+
+        const ClassInfo* dottedClass = nullptr;
+        const FunctionInfo* dottedMethod = nullptr;
+        for (const auto& [className, klass] : classesByName_) {
+            const std::string prefix = className + ".";
+            if (identifier.rfind(prefix, 0) != 0) {
+                continue;
+            }
+            const std::string methodName =
+                identifier.substr(prefix.size());
+            if (methodName.empty() ||
+                methodName.find('.') != std::string::npos) {
+                continue;
+            }
+            const FunctionInfo* method =
+                selectMethod(klass, methodName, false);
+            if (!method || !method->staticMethod ||
+                !metafunctionSelectorMatches(
+                    *method, *selector, className, false)) {
+                continue;
+            }
+            if (!dottedClass ||
+                className.size() > dottedClass->name.size()) {
+                dottedClass = &klass;
+                dottedMethod = method;
+            }
+        }
+        if (dottedClass && dottedMethod) {
+            return methodMetadataValue(*dottedClass, *dottedMethod);
+        }
+
+        std::string receiverClass;
+        if (selector->kind ==
+                MetafunctionSelectorKind::Arguments &&
+            !selector->arguments.empty()) {
+            receiverClass =
+                runtimeValueClassName(selector->arguments.front());
+        } else if (
+            selector->kind ==
+                MetafunctionSelectorKind::ArgumentTypes &&
+            !selector->argumentTypes.empty()) {
+            receiverClass = selector->argumentTypes.front();
+        }
+        if (!receiverClass.empty()) {
+            const auto klass = classesByName_.find(receiverClass);
+            const FunctionInfo* method =
+                klass == classesByName_.end()
+                    ? nullptr
+                    : selectMethod(klass->second, identifier, false);
+            if (method && !method->staticMethod &&
+                metafunctionSelectorMatches(
+                    *method, *selector, receiverClass, true)) {
+                return methodMetadataValue(klass->second, *method);
+            }
+        }
+
+        addDiagnostic(instruction,
+                      "function or method metadata is not available: " +
+                          identifier);
+        return missingValue();
     }
 
     RuntimeValue propertyNamesBuiltin(
@@ -9397,6 +10629,8 @@ private:
     std::map<std::string, const HirNode*> functionNodes_;
     std::map<std::string, const HirNode*> classFunctionNodes_;
     std::map<std::string, FunctionInfo> functionsByName_;
+    std::map<std::string, std::string> functionsByMetadataIdentifier_;
+    std::set<std::string> ambiguousFunctionMetadataIdentifiers_;
     std::map<std::string, ClassInfo> classesByName_;
     std::set<std::string> classHierarchyDiagnosticKeys_;
     std::vector<Diagnostic> diagnostics_;
