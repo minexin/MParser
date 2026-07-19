@@ -282,6 +282,9 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         break;
     case BytecodeOp::StoreMember:
     case BytecodeOp::StoreBraceIndex:
+    case BytecodeOp::StorePathMember:
+    case BytecodeOp::StorePathIndex:
+    case BytecodeOp::StorePathBrace:
         contract.hasMutation = true;
         contract.hasUnsupportedMutation = true;
         if (!instruction.operand.empty()) {
@@ -323,6 +326,13 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         }
         break;
     case BytecodeOp::BeginIndexArgument:
+        break;
+    case BytecodeOp::BeginLvalue:
+    case BytecodeOp::BeginLvalueIndexContext:
+    case BytecodeOp::LvalueDescendMember:
+    case BytecodeOp::LvalueDescendIndex:
+    case BytecodeOp::LvalueDescendBrace:
+        contract.hasUnsupportedOperations = true;
         break;
     case BytecodeOp::MemberAccess:
     case BytecodeOp::MakeNameValueArgument:

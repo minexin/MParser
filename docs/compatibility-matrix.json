@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.71.0",
+  "version": "0.72.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -87,9 +87,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "partial", "production": "partial", "typed": "fallback", "native": "fallback"},
-      "evidence": ["cell_varargs_smoke", "nd_array_smoke"],
-      "sources": ["src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/cell_varargs_smoke.cpp"],
-      "limits": "Cell parenthesis indexing, vector brace selection, and comma-separated-list expansion remain open."
+      "evidence": ["cell_varargs_smoke", "nd_array_smoke", "lvalue_runtime_smoke", "lvalue_runtime_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_cell.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/lvalue_runtime_smoke.cpp"],
+      "limits": "v0.72 adds shared parenthesis indexing, assignment, common growth, linear vector deletion, brace content selection, and nested copy-back. Direct multi-output brace lowering and complete comma-separated-list contexts remain open."
     },
     {
       "id": "STRUCT-001",
@@ -100,7 +100,7 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
       "evidence": ["struct_runtime_smoke", "struct_runtime_production_cli_smoke"],
       "sources": ["src/mparser/runtime_struct.cpp", "tests/struct_runtime_smoke.cpp"],
-      "limits": "Scalar structures use the same canonical element/schema representation as structure arrays; general nested value copy-back remains a v0.72 boundary."
+      "limits": "Scalar structures use the same canonical element/schema representation as structure arrays; v0.72 routes nested structure mutation through the shared lvalue transaction."
     },
     {
       "id": "STRUCT-002",
@@ -111,7 +111,18 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
       "evidence": ["struct_runtime_smoke", "struct_array_interpreter_cli_smoke", "struct_array_bytecode_cli_smoke", "struct_array_production_cli_smoke"],
       "sources": ["src/mparser/runtime_struct.cpp", "src/mparser/runtime_value_ops.cpp", "tests/struct_runtime_smoke.cpp", "samples/struct_array_demo.m"],
-      "limits": "v0.71 covers Cell-driven construction, empty typed structures, linear and multidimensional reads, whole-element replacement/scalar expansion/common growth, linear vector deletion, and field-list expansion. Nested S(index).field writes and Cell brace lists remain separate gaps."
+      "limits": "v0.71 established array storage and field lists; v0.72 adds nested S(index).field copy-back, indexed intermediate growth, and schema extension. Bulk field assignment through nonscalar intermediates and general N-dimensional deletion remain open."
+    },
+    {
+      "id": "LVAL-001",
+      "area": "assignment",
+      "feature": "Transactional root-and-path lvalues across member, parenthesis, and brace segments",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["lvalue_runtime_smoke", "lvalue_runtime_interpreter_cli_smoke", "lvalue_runtime_bytecode_cli_smoke", "lvalue_runtime_production_cli_smoke", "lvalue_object_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_lvalue.cpp", "src/mparser/runtime_cell.cpp", "src/mparser/bytecode.cpp", "src/mparser/bytecode_vm.cpp", "tests/lvalue_runtime_smoke.cpp", "samples/lvalue_copyback_demo.m"],
+      "limits": "Intermediate selections must resolve to one value; HIR does not execute classdef objects; object setters and handle aliases retain their documented side effects; typed/native tiers fall back to the VM."
     },
     {
       "id": "EXC-001",
@@ -166,7 +177,7 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
       "evidence": ["property_validation_smoke", "property_listener_smoke", "class_property_identity_smoke"],
       "sources": ["src/mparser/property_spec.h", "src/mparser/bytecode_vm.cpp", "tests/property_validation_smoke.cpp"],
-      "limits": "Nested value-object copy-back and every MATLAB validation conversion class are not complete."
+      "limits": "v0.72 supports nested scalar value/handle property copy-back in the VM; object arrays and every MATLAB validation conversion class are not complete."
     },
     {
       "id": "CLASS-004",
@@ -328,11 +339,11 @@
       "id": "G-LVALUE-001",
       "area": "assignment",
       "priority": "must-have",
-      "state": "open",
+      "state": "closed",
       "target": "v0.72",
       "framework_impact": "contract-extension",
       "requirement": "Introduce a general root-and-path lvalue contract for nested structure, Cell, array, and value-object copy-back.",
-      "exit_evidence": "HIR and VM parity tests for mixed nested member, parenthesis, and brace writes without duplicated update logic."
+      "exit_evidence": "lvalue_runtime_smoke plus HIR, bytecode, production, and object CLI samples cover mixed paths, rollback, growth, schema extension, and value/handle copy-back."
     },
     {
       "id": "G-EXC-001",

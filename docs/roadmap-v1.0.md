@@ -208,10 +208,21 @@ function families, not an unbounded builtin count.
 - Preserve VM correctness through typed/native fallback and record deeper
   nested lvalue mutation as a separate framework boundary.
 
-### v0.72-v0.79: Remaining Runtime Foundations
+### v0.72: Root-And-Path Lvalue Transactions
 
-- Complete a general root-and-path lvalue/copy-back contract for arrays, Cells,
-  structures, and value objects before expanding mutation syntax piecemeal.
+- Complete one shared root-and-path transaction for mixed member,
+  parenthesis, and brace mutation across numeric arrays, Cells, structures,
+  and scalar value/handle objects.
+- Evaluate dynamic names and subscripts once, copy updated values back through
+  every parent, commit only the root, and preserve VM try/catch recovery.
+- Keep direct numeric indexed stores available to typed/native recognition;
+  all dynamic path opcodes conservatively fall back to the bytecode VM.
+- Validate rollback, deletion, growth, structure schema extension, and
+  value/handle copy semantics through HIR, bytecode, production, and AArch64
+  focused tests.
+
+### v0.73-v0.79: Remaining Runtime Foundations
+
 - Close the audited Must-have exception, dynamic call/handle, text,
   object-array/reflection, workspace, and runtime-value boundaries with linked
   compatibility evidence.

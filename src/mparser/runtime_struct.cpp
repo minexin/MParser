@@ -619,6 +619,59 @@ RuntimeStructOperationResult runtimeIndexStruct(
         std::move(resultDimensions)));
 }
 
+RuntimeStructOperationResult runtimeEnsureStructIndexedCapacity(
+    const RuntimeValue& structure,
+    const std::vector<RuntimeValue>& subscripts) {
+    if (structure.kind != RuntimeValueKind::Struct) {
+        return failure(
+            "structure indexed growth requires a structure target");
+    }
+
+    RuntimeValue result = structure;
+    std::vector<std::vector<size_t>> selections;
+    auto resolved = resolveSelections(result, subscripts, true, selections);
+    if (!resolved.succeeded) {
+        return resolved;
+    }
+    if (selections.size() == 1) {
+        return ensureLinearCapacity(result, selections.front());
+    }
+    return ensureSubscriptCapacity(result, selections);
+}
+
+RuntimeStructOperationResult runtimeAlignStructSchemaForCopyback(
+    const RuntimeValue& structure,
+    const RuntimeValue& nestedValue) {
+    if (structure.kind != RuntimeValueKind::Struct ||
+        nestedValue.kind != RuntimeValueKind::Struct) {
+        return failure(
+            "nested structure copyback requires structure values");
+    }
+
+    const auto parentOrder = runtimeStructFieldOrder(structure);
+    const auto nestedOrder = runtimeStructFieldOrder(nestedValue);
+    if (nestedOrder.size() < parentOrder.size() ||
+        !std::equal(parentOrder.begin(), parentOrder.end(),
+                    nestedOrder.begin())) {
+        return failure(
+            "subscripted assignment between dissimilar structures");
+    }
+
+    RuntimeValue result = structure;
+    for (size_t index = parentOrder.size(); index < nestedOrder.size();
+         ++index) {
+        const std::string& name = nestedOrder[index];
+        result.fieldOrder.push_back(name);
+        for (auto& element : result.structElements) {
+            element.emplace(name, emptyDoubleValue());
+        }
+        if (result.structElements.empty() && !result.fields.empty()) {
+            result.fields.emplace(name, emptyDoubleValue());
+        }
+    }
+    return success(std::move(result));
+}
+
 RuntimeStructOperationResult runtimeAssignStructIndexed(
     const RuntimeValue& structure,
     const std::vector<RuntimeValue>& subscripts,

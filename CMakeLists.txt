@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.71.0 LANGUAGES C CXX)
+project(MParser VERSION 0.72.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -65,8 +65,10 @@ add_library(mparser_core
     src/mparser/runtime_argument_validation.cpp
     src/mparser/runtime_assignment.cpp
     src/mparser/runtime_benchmark.cpp
+    src/mparser/runtime_cell.cpp
     src/mparser/runtime_exception.cpp
     src/mparser/runtime_index.cpp
+    src/mparser/runtime_lvalue.cpp
     src/mparser/runtime_math.cpp
     src/mparser/runtime_metadata.cpp
     src/mparser/runtime_numeric.cpp
@@ -165,6 +167,36 @@ add_test(NAME struct_array_production_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/struct_array_demo.m)
 set_tests_properties(struct_array_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 1760")
+
+add_executable(lvalue_runtime_smoke_tests
+    tests/lvalue_runtime_smoke.cpp)
+target_link_libraries(lvalue_runtime_smoke_tests PRIVATE mparser_core)
+add_test(NAME lvalue_runtime_smoke
+    COMMAND lvalue_runtime_smoke_tests)
+
+add_test(NAME lvalue_runtime_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/lvalue_copyback_demo.m)
+set_tests_properties(lvalue_runtime_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 572")
+
+add_test(NAME lvalue_runtime_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/lvalue_copyback_demo.m)
+set_tests_properties(lvalue_runtime_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 572")
+
+add_test(NAME lvalue_runtime_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/lvalue_copyback_demo.m)
+set_tests_properties(lvalue_runtime_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 572")
+
+add_test(NAME lvalue_object_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/lvalue_object_demo.m)
+set_tests_properties(lvalue_object_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 839")
 
 add_executable(exception_runtime_smoke_tests
     tests/exception_runtime_smoke.cpp)

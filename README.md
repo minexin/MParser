@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.71.0. See [docs/v0.71.md](docs/v0.71.md) for the
+Current milestone: v0.72.0. See [docs/v0.72.md](docs/v0.72.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.70.md](docs/v0.70.md),
+iteration plan. Previous boundaries are kept in [docs/v0.71.md](docs/v0.71.md),
+[docs/v0.70.md](docs/v0.70.md),
 [docs/v0.69.md](docs/v0.69.md),
 [docs/v0.68.md](docs/v0.68.md),
 [docs/v0.67.md](docs/v0.67.md),
@@ -699,6 +700,15 @@ comma-separated list that expands in function calls, output lists, numeric and
 Cell literals, while ordinary single-value assignment reports an arity error.
 Typed and native tiers safely fall back to the VM for these operations.
 
+v0.72 introduces a shared root-and-path lvalue transaction across the HIR
+interpreter and bytecode VM. Mixed member, `()`, and `{}` paths evaluate each
+dynamic field or subscript once, mutate a detached leaf, and copy the result
+back through every parent before committing the root variable. The contract
+covers numeric arrays, structure arrays, Cells, dynamic fields, indexed
+growth, deletion, schema extension, and VM value/handle object properties.
+Failed paths leave value roots unchanged; typed and native regions reject the
+new path opcodes and execute them in the bytecode VM.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -726,9 +736,10 @@ logical/double conversion and class queries, array constructors `zeros`,
 two-dimensional `eye`, `linspace` vector generation, numeric/Cell `reshape`,
 `permute`, `ipermute`, `squeeze`, `repmat`, `cat`, `horzcat`, and `vertcat`,
 transpose, basic numeric matrix multiplication, and
-N-dimensional Cells with scalar brace indexing/mutation, and ordered scalar or
-array structures with static/dynamic member access, parenthesis indexing,
-whole-element assignment, field queries, and comma-separated field results. It is
+N-dimensional Cells with parenthesis indexing/mutation and brace
+indexing/mutation, and ordered scalar or array structures with static/dynamic
+member access, parenthesis indexing, whole-element assignment, field queries,
+comma-separated field results, and transactional nested path copy-back. It is
 intentionally not a full MATLAB runtime yet: classes,
 function handles, other builtin multi-output conventions beyond the
 implemented `size`/`min`/`max`/`find` subset, complex numbers, sparse arrays,

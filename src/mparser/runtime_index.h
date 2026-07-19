@@ -15,9 +15,19 @@ struct RuntimeIndexSelectionResult {
     std::string error;
 };
 
+struct RuntimeIndexOperationResult {
+    bool succeeded = false;
+    RuntimeValue value;
+    std::string error;
+};
+
 RuntimeIndexSelectionResult runtimeResolveIndexSelection(
     const RuntimeValue& subscript, size_t extent,
     bool allowNumericGrowth);
+
+RuntimeIndexOperationResult runtimeIndexNumeric(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts);
 
 std::vector<size_t> runtimeLinearIndexResultDimensions(
     const RuntimeValue& target, const RuntimeValue& subscript,

@@ -1,5 +1,6 @@
 #include "mparser/bytecode.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cctype>
 #include <optional>
@@ -648,6 +649,158 @@ private:
         }
     }
 
+    void lowerLvalueIndexArguments(const HirNode& node) {
+        emit(BytecodeOp::BeginLvalueIndexContext, node,
+             argumentCount(node));
+        for (size_t index = 1; index < node.children.size(); ++index) {
+            emit(BytecodeOp::BeginIndexArgument, *node.children[index],
+                 static_cast<int>(index - 1));
+            lowerNode(*node.children[index]);
+        }
+    }
+
+    bool collectNestedLvaluePath(
+        const HirNode& node, const HirNode*& root,
+        std::vector<const HirNode*>& segments) const {
+        const HirNode* current = &node;
+        while ((current->kind == HirKind::MemberAccess ||
+                current->kind == HirKind::CallOrIndex ||
+                current->kind == HirKind::BraceIndex) &&
+               !current->children.empty()) {
+            segments.push_back(current);
+            current = current->children.front().get();
+        }
+        std::reverse(segments.begin(), segments.end());
+        root = current;
+        return root->kind == HirKind::NameRef && segments.size() > 1;
+    }
+
+    void attachColonSubscripts(size_t instructionIndex,
+                               const HirNode& node) {
+        auto& instruction = program_.instructions[instructionIndex];
+        instruction.colonSubscripts.reserve(
+            static_cast<size_t>(argumentCount(node)));
+        for (size_t index = 1; index < node.children.size(); ++index) {
+            const HirNode& subscript = *node.children[index];
+            instruction.colonSubscripts.push_back(
+                subscript.kind == HirKind::Literal &&
+                subscript.label == ":");
+        }
+    }
+
+    static std::string lvalueSeedKind(
+        const std::vector<const HirNode*>& segments,
+        size_t nextIndex) {
+        const HirNode& nextSegment = *segments[nextIndex];
+        if (nextSegment.kind == HirKind::BraceIndex) {
+            return "cell";
+        }
+        if (nextSegment.kind == HirKind::CallOrIndex) {
+            if (nextIndex + 1 < segments.size()) {
+                const HirNode& selected = *segments[nextIndex + 1];
+                if (selected.kind == HirKind::MemberAccess) {
+                    return "struct";
+                }
+                if (selected.kind == HirKind::BraceIndex) {
+                    return "cell";
+                }
+            }
+            return "numeric";
+        }
+        return "struct";
+    }
+
+    void lowerLvalueDescent(
+        const std::vector<const HirNode*>& segments, size_t index) {
+        const HirNode& segment = *segments[index];
+        const std::string seedKind =
+            lvalueSeedKind(segments, index + 1);
+        switch (segment.kind) {
+        case HirKind::MemberAccess:
+            if (segment.label == ".()" && segment.children.size() == 2) {
+                lowerNode(*segment.children[1]);
+            }
+            {
+                const size_t instruction = emit(
+                    BytecodeOp::LvalueDescendMember, segment,
+                    segment.label == ".()" ? 1 : 0);
+                program_.instructions[instruction].receiverName = seedKind;
+            }
+            break;
+        case HirKind::CallOrIndex:
+            lowerLvalueIndexArguments(segment);
+            {
+                const size_t instruction = emit(
+                    BytecodeOp::LvalueDescendIndex, segment,
+                    argumentCount(segment));
+                attachColonSubscripts(instruction, segment);
+                program_.instructions[instruction].receiverName = seedKind;
+            }
+            break;
+        case HirKind::BraceIndex:
+            lowerLvalueIndexArguments(segment);
+            {
+                const size_t instruction = emit(
+                    BytecodeOp::LvalueDescendBrace, segment,
+                    argumentCount(segment));
+                program_.instructions[instruction].receiverName = seedKind;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    void lowerLvalueStore(const HirNode& segment, bool nullAssignment,
+                          bool nondeterministicAssignment) {
+        size_t store = 0;
+        switch (segment.kind) {
+        case HirKind::MemberAccess:
+            if (segment.label == ".()" && segment.children.size() == 2) {
+                lowerNode(*segment.children[1]);
+            }
+            store = emit(BytecodeOp::StorePathMember, segment,
+                         segment.label == ".()" ? 1 : 0);
+            break;
+        case HirKind::CallOrIndex:
+            lowerLvalueIndexArguments(segment);
+            store = emit(BytecodeOp::StorePathIndex, segment,
+                         argumentCount(segment));
+            attachColonSubscripts(store, segment);
+            break;
+        case HirKind::BraceIndex:
+            lowerLvalueIndexArguments(segment);
+            store = emit(BytecodeOp::StorePathBrace, segment,
+                         argumentCount(segment));
+            break;
+        default:
+            return;
+        }
+        auto& instruction = program_.instructions[store];
+        instruction.nullAssignment = nullAssignment;
+        instruction.nondeterministicAssignment =
+            nondeterministicAssignment;
+    }
+
+    bool lowerNestedLvalueTarget(const HirNode& node,
+                                 bool nullAssignment,
+                                 bool nondeterministicAssignment) {
+        const HirNode* root = nullptr;
+        std::vector<const HirNode*> segments;
+        if (!collectNestedLvaluePath(node, root, segments)) {
+            return false;
+        }
+
+        emit(BytecodeOp::BeginLvalue, *root,
+             static_cast<int>(segments.size()));
+        for (size_t index = 0; index + 1 < segments.size(); ++index) {
+            lowerLvalueDescent(segments, index);
+        }
+        lowerLvalueStore(*segments.back(), nullAssignment,
+                         nondeterministicAssignment);
+        return true;
+    }
+
     void lowerAssignment(const HirNode& node) {
         if (node.children.size() < 2) {
             lowerChildren(node);
@@ -675,6 +828,10 @@ private:
     void lowerAssignmentTarget(const HirNode& node,
                                bool nullAssignment = false,
                                bool nondeterministicAssignment = false) {
+        if (lowerNestedLvalueTarget(node, nullAssignment,
+                                    nondeterministicAssignment)) {
+            return;
+        }
         switch (node.kind) {
         case HirKind::NameRef:
             {
@@ -866,6 +1023,16 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "BeginIndexContext";
     case BytecodeOp::BeginIndexArgument:
         return "BeginIndexArgument";
+    case BytecodeOp::BeginLvalue:
+        return "BeginLvalue";
+    case BytecodeOp::BeginLvalueIndexContext:
+        return "BeginLvalueIndexContext";
+    case BytecodeOp::LvalueDescendMember:
+        return "LvalueDescendMember";
+    case BytecodeOp::LvalueDescendIndex:
+        return "LvalueDescendIndex";
+    case BytecodeOp::LvalueDescendBrace:
+        return "LvalueDescendBrace";
     case BytecodeOp::LoadName:
         return "LoadName";
     case BytecodeOp::LoadLiteral:
@@ -878,6 +1045,12 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "StoreIndex";
     case BytecodeOp::StoreBraceIndex:
         return "StoreBraceIndex";
+    case BytecodeOp::StorePathMember:
+        return "StorePathMember";
+    case BytecodeOp::StorePathIndex:
+        return "StorePathIndex";
+    case BytecodeOp::StorePathBrace:
+        return "StorePathBrace";
     case BytecodeOp::UnaryOp:
         return "UnaryOp";
     case BytecodeOp::BinaryOp:

@@ -949,8 +949,8 @@ same ordinary `MemberAccess`/`StoreMember` path, and therefore supports dynamic
 declared or runtime-added object properties as well as structure fields.
 Direct variable member stores resolve the receiver from the current frame; an
 absent variable becomes an empty scalar structure, matching `s.field = value`
-creation. Nested value-structure stores still require a future general lvalue
-path rather than silently dropping the copied parent update.
+creation. v0.72 extends this rule to nested paths through a transactional
+root-and-path layer instead of silently dropping copied parent updates.
 
 v0.70 makes exception recovery a shared runtime contract instead of exposing
 an engine-specific message string. `Diagnostic` carries an optional stable
@@ -996,12 +996,49 @@ function arguments, matrix/Cell literals, index arguments, and output lists,
 while scalar-only contexts diagnose zero or multiple results. HIR and bytecode
 use the same structure and list helpers, including exact requested-output
 handling for `[a,b] = S.field`; typed and native execution conservatively fall
-back to the bytecode VM for these values. General root-and-path copy-back, such
-as `S(index).field = value`, and Cell brace comma-separated lists remain the
-next distinct language/runtime boundaries.
+back to the bytecode VM for these values. Cell brace comma-separated lists in
+all direct output contexts remain a distinct language/runtime boundary.
 
-The next steps include general root-and-path lvalue copy-back, richer typed
-values and regions, direct inlined bounds checks and SIMD/vector kernels,
+v0.72 adds `runtime_lvalue` as the shared mutation coordinator. A transaction
+owns a detached root value, the current child, and one frame for every
+successfully traversed parent. Each frame records the parent value and an
+already-evaluated member, parenthesis, or brace segment. The leaf operation is
+applied once, then frames are replayed in reverse order. The caller publishes
+the new root only after that replay succeeds. Failed numeric/member/type
+checks, nonscalar intermediate results, and failed growth therefore leave
+value roots unchanged.
+
+`runtime_index`, `runtime_cell`, and `runtime_struct` own container behavior;
+the transaction does not reproduce shape or offset calculations. Numeric
+reads now share one indexing helper between HIR and VM. Cell `()` preserves a
+Cell result and selection shape, while `{}` returns contents or an internal
+comma-separated list. Cell writes support contents replacement, Cell subset
+replacement, common growth, and linear vector deletion. Structure
+intermediate indexing can grow a detached array, and reverse copy-back may
+append a newly introduced field to the common schema with empty-double values
+for untouched elements.
+
+The HIR interpreter collects a neutral root plus path from existing HIR nodes.
+The bytecode lowerer keeps direct `StoreIndex` instructions unchanged for JIT
+recognition and uses `BeginLvalue`, descent instructions, and one final
+`StorePath*` only for paths containing multiple segments. Separate index
+contexts make `end` observe the current transaction child. Dynamic field names
+and every subscript are evaluated exactly once before their segment executes.
+Try recovery records both index-context and lvalue-stack depth, so a caught
+diagnostic discards an unfinished transaction.
+
+Class execution remains a VM feature. The lvalue layer receives object member
+read/write hooks backed by the existing property access, validation, accessor,
+event, and handle-lifecycle machinery. Reverse replay gives value objects
+copy-back behavior and preserves handle-object shared identity. Property
+setters and handle writes retain their ordinary observable side effects; the
+transaction does not attempt to undo user code. Typed and native region
+analysis classifies all path setup, descent, and store instructions as
+unsupported dynamic operations and resumes in the VM without changing script
+semantics.
+
+The next steps include richer typed values and regions, direct inlined bounds
+checks and SIMD/vector kernels,
 optional LLVM ORC lowering behind the same backend contract, persistent
 cross-process code caches, moving-window array operations, automatic handle
 destruction and cycle-aware ownership, object/listener arrays, a built-in

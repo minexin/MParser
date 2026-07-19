@@ -4,8 +4,10 @@
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_assignment.h"
+#include "mparser/runtime_cell.h"
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
+#include "mparser/runtime_lvalue.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
@@ -698,6 +700,15 @@ struct IndexContext {
     size_t position = 0;
 };
 
+struct ActiveLvalue {
+    std::string rootName;
+    RuntimeLvalueTransaction transaction;
+    bool failed = false;
+
+    ActiveLvalue(std::string name, RuntimeValue root)
+        : rootName(std::move(name)), transaction(std::move(root)) {}
+};
+
 struct SwitchContext {
     RuntimeValue selector;
     bool matched = false;
@@ -710,6 +721,7 @@ struct TryContext {
     size_t stackDepth = 0;
     size_t forLoopDepth = 0;
     size_t indexContextDepth = 0;
+    size_t lvalueDepth = 0;
     size_t switchContextDepth = 0;
 };
 
@@ -1097,6 +1109,7 @@ bool isTopLevelRuntimeOp(BytecodeOp op) {
     case BytecodeOp::StoreName:
     case BytecodeOp::StoreMember:
     case BytecodeOp::StoreIndex:
+    case BytecodeOp::StoreBraceIndex:
     case BytecodeOp::UnaryOp:
     case BytecodeOp::BinaryOp:
     case BytecodeOp::PostfixOp:
@@ -1126,6 +1139,14 @@ bool isTopLevelRuntimeOp(BytecodeOp op) {
     case BytecodeOp::Pop:
     case BytecodeOp::BeginIndexContext:
     case BytecodeOp::BeginIndexArgument:
+    case BytecodeOp::BeginLvalue:
+    case BytecodeOp::BeginLvalueIndexContext:
+    case BytecodeOp::LvalueDescendMember:
+    case BytecodeOp::LvalueDescendIndex:
+    case BytecodeOp::LvalueDescendBrace:
+    case BytecodeOp::StorePathMember:
+    case BytecodeOp::StorePathIndex:
+    case BytecodeOp::StorePathBrace:
         return true;
     default:
         return false;
@@ -4241,6 +4262,15 @@ private:
         case BytecodeOp::StoreBraceIndex:
             storeBraceIndex(instruction);
             break;
+        case BytecodeOp::StorePathMember:
+            storePathMember(instruction);
+            break;
+        case BytecodeOp::StorePathIndex:
+            storePathIndex(instruction);
+            break;
+        case BytecodeOp::StorePathBrace:
+            storePathBrace(instruction);
+            break;
         case BytecodeOp::UnaryOp:
             applyUnary(instruction);
             break;
@@ -4313,6 +4343,21 @@ private:
             break;
         case BytecodeOp::BeginIndexArgument:
             beginIndexArgument(instruction);
+            break;
+        case BytecodeOp::BeginLvalue:
+            beginLvalue(instruction);
+            break;
+        case BytecodeOp::BeginLvalueIndexContext:
+            beginLvalueIndexContext(instruction);
+            break;
+        case BytecodeOp::LvalueDescendMember:
+            descendLvalueMember(instruction);
+            break;
+        case BytecodeOp::LvalueDescendIndex:
+            descendLvalueIndex(instruction);
+            break;
+        case BytecodeOp::LvalueDescendBrace:
+            descendLvalueBrace(instruction);
             break;
         case BytecodeOp::SwitchBegin:
             switchBegin(instruction);
@@ -4769,6 +4814,7 @@ private:
             stack_.size(),
             forLoopStack_.size(),
             indexContextStack_.size(),
+            lvalueStack_.size(),
             switchContextStack_.size()});
         return std::nullopt;
     }
@@ -4800,6 +4846,7 @@ private:
         stack_.resize(context.stackDepth);
         forLoopStack_.resize(context.forLoopDepth);
         indexContextStack_.resize(context.indexContextDepth);
+        lvalueStack_.resize(context.lvalueDepth);
         switchContextStack_.resize(context.switchContextDepth);
 
         if (!context.catchVariable.empty()) {
@@ -4901,6 +4948,240 @@ private:
         if (!indexContextStack_.empty()) {
             indexContextStack_.pop_back();
         }
+    }
+
+    ActiveLvalue* activeLvalue(
+        const BytecodeInstruction& instruction) {
+        if (lvalueStack_.empty()) {
+            addDiagnostic(instruction,
+                          "bytecode lvalue operation has no active path");
+            return nullptr;
+        }
+        return lvalueStack_.back().get();
+    }
+
+    void beginLvalue(const BytecodeInstruction& instruction) {
+        const auto variable = currentFrame().find(instruction.operand);
+        RuntimeValue root = variable == currentFrame().end()
+                                ? missingValue()
+                                : variable->second;
+        lvalueStack_.push_back(std::make_unique<ActiveLvalue>(
+            instruction.operand, std::move(root)));
+    }
+
+    void beginLvalueIndexContext(
+        const BytecodeInstruction& instruction) {
+        ActiveLvalue* active = activeLvalue(instruction);
+        if (!active) {
+            return;
+        }
+        if (instruction.operandCount < 0) {
+            addDiagnostic(instruction,
+                          "bytecode lvalue index context has negative arity");
+            active->failed = true;
+            return;
+        }
+        indexContextStack_.push_back(IndexContext{
+            active->failed ? missingValue()
+                           : active->transaction.current(),
+            static_cast<size_t>(instruction.operandCount), 0});
+    }
+
+    std::optional<std::string> lvalueMemberName(
+        const BytecodeInstruction& instruction) {
+        if (instruction.operand != ".()") {
+            return instruction.operand;
+        }
+        const auto dynamicValue =
+            popRuntime(instruction, "dynamic lvalue member name");
+        if (!dynamicValue) {
+            return std::nullopt;
+        }
+        const auto dynamicName = runtimeStructFieldName(*dynamicValue);
+        if (!dynamicName.succeeded) {
+            addDiagnostic(instruction, dynamicName.error);
+            return std::nullopt;
+        }
+        return dynamicName.name;
+    }
+
+    std::optional<std::vector<RuntimeValue>> lvalueSubscripts(
+        const BytecodeInstruction& instruction) {
+        auto values = popRuntimeValues(
+            instruction, instruction.operandCount,
+            "lvalue path subscripts");
+        finishIndexContext();
+        if (!values) {
+            return std::nullopt;
+        }
+        return runtimeExpandedValues(*values);
+    }
+
+    RuntimeValue lvalueMissingSeed(
+        const BytecodeInstruction& instruction) const {
+        if (instruction.receiverName == "cell") {
+            return cellValueForDimensions({0, 0}, {});
+        }
+        if (instruction.receiverName == "numeric") {
+            return matrixValue(0, 0, {});
+        }
+        return makeRuntimeStructValue();
+    }
+
+    RuntimeLvalueOperationResult readObjectMemberForLvalue(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target, std::string_view name) {
+        const size_t stackDepth = stack_.size();
+        const size_t diagnosticCount = diagnostics_.size();
+        BytecodeInstruction resolved = instruction;
+        resolved.operand = std::string(name);
+        resolved.receiverName.clear();
+        resolved.resultCount = 1;
+        stack_.push_back(runtimeStackValue(target));
+        memberAccessResolved(resolved);
+        if (diagnostics_.size() != diagnosticCount ||
+            stack_.size() != stackDepth + 1) {
+            stack_.resize(stackDepth);
+            return RuntimeLvalueOperationResult{};
+        }
+        const auto value =
+            popRuntime(resolved, "nested object member access");
+        stack_.resize(stackDepth);
+        if (!value) {
+            return RuntimeLvalueOperationResult{};
+        }
+        return RuntimeLvalueOperationResult{true, *value, {}};
+    }
+
+    RuntimeLvalueOperationResult writeObjectMemberForLvalue(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target, std::string_view name,
+        const RuntimeValue& value) {
+        static const std::string temporaryName =
+            "\x1f" "mparser_lvalue_target";
+        const auto previous = currentFrame().find(temporaryName);
+        const std::optional<RuntimeValue> previousValue =
+            previous == currentFrame().end()
+                ? std::nullopt
+                : std::optional<RuntimeValue>{previous->second};
+        const size_t stackDepth = stack_.size();
+        const size_t diagnosticCount = diagnostics_.size();
+        currentFrame()[temporaryName] = target;
+        pushRuntime(value);
+
+        BytecodeInstruction resolved = instruction;
+        resolved.operand = std::string(name);
+        resolved.receiverName = temporaryName;
+        storeMemberResolved(resolved);
+
+        std::optional<RuntimeValue> updated;
+        if (diagnostics_.size() == diagnosticCount) {
+            const auto stored = currentFrame().find(temporaryName);
+            if (stored != currentFrame().end()) {
+                updated = stored->second;
+            }
+        }
+        stack_.resize(stackDepth);
+        if (previousValue) {
+            currentFrame()[temporaryName] = *previousValue;
+        } else {
+            currentFrame().erase(temporaryName);
+        }
+        if (!updated) {
+            return RuntimeLvalueOperationResult{};
+        }
+        return RuntimeLvalueOperationResult{true, *updated, {}};
+    }
+
+    RuntimeLvalueHooks lvalueHooks(
+        const BytecodeInstruction& instruction) {
+        RuntimeLvalueHooks hooks;
+        hooks.readObjectMember =
+            [this, &instruction](const RuntimeValue& target,
+                                 std::string_view name) {
+                return readObjectMemberForLvalue(instruction, target, name);
+            };
+        hooks.writeObjectMember =
+            [this, &instruction](const RuntimeValue& target,
+                                 std::string_view name,
+                                 const RuntimeValue& value) {
+                return writeObjectMemberForLvalue(
+                    instruction, target, name, value);
+            };
+        return hooks;
+    }
+
+    void failActiveLvalue(const BytecodeInstruction& instruction,
+                          ActiveLvalue& active,
+                          std::string error) {
+        active.failed = true;
+        if (!error.empty()) {
+            addDiagnostic(instruction, std::move(error));
+        }
+    }
+
+    void descendLvalueMember(
+        const BytecodeInstruction& instruction) {
+        ActiveLvalue* active = activeLvalue(instruction);
+        const auto name = lvalueMemberName(instruction);
+        if (!active || !name) {
+            if (active) {
+                active->failed = true;
+            }
+            return;
+        }
+        if (active->failed) {
+            return;
+        }
+        RuntimeLvalueSegment segment;
+        segment.kind = RuntimeLvalueSegmentKind::Member;
+        segment.memberName = *name;
+        auto result = active->transaction.descend(
+            std::move(segment), lvalueHooks(instruction),
+            lvalueMissingSeed(instruction));
+        if (!result.succeeded) {
+            failActiveLvalue(instruction, *active,
+                             std::move(result.error));
+        }
+    }
+
+    void descendLvalueIndexed(
+        const BytecodeInstruction& instruction,
+        RuntimeLvalueSegmentKind kind) {
+        ActiveLvalue* active = activeLvalue(instruction);
+        const auto subscripts = lvalueSubscripts(instruction);
+        if (!active || !subscripts) {
+            if (active) {
+                active->failed = true;
+            }
+            return;
+        }
+        if (active->failed) {
+            return;
+        }
+        RuntimeLvalueSegment segment;
+        segment.kind = kind;
+        segment.subscripts = *subscripts;
+        segment.colonSubscripts = instruction.colonSubscripts;
+        auto result = active->transaction.descend(
+            std::move(segment), lvalueHooks(instruction),
+            lvalueMissingSeed(instruction));
+        if (!result.succeeded) {
+            failActiveLvalue(instruction, *active,
+                             std::move(result.error));
+        }
+    }
+
+    void descendLvalueIndex(
+        const BytecodeInstruction& instruction) {
+        descendLvalueIndexed(instruction,
+                            RuntimeLvalueSegmentKind::Parenthesis);
+    }
+
+    void descendLvalueBrace(
+        const BytecodeInstruction& instruction) {
+        descendLvalueIndexed(instruction,
+                            RuntimeLvalueSegmentKind::Brace);
     }
 
     void loadName(const BytecodeInstruction& instruction) {
@@ -7581,6 +7862,77 @@ private:
         }
     }
 
+    void finishPathStore(const BytecodeInstruction& instruction,
+                         RuntimeLvalueSegment segment,
+                         const std::optional<RuntimeValue>& value) {
+        if (lvalueStack_.empty()) {
+            addDiagnostic(instruction,
+                          "bytecode path store has no active lvalue");
+            return;
+        }
+        auto active = std::move(lvalueStack_.back());
+        lvalueStack_.pop_back();
+        if (!value || active->failed) {
+            return;
+        }
+
+        auto result = active->transaction.assign(
+            std::move(segment), *value, instruction.nullAssignment,
+            lvalueHooks(instruction));
+        if (!result.succeeded) {
+            if (!result.error.empty()) {
+                addDiagnostic(instruction, std::move(result.error));
+            }
+            return;
+        }
+        currentFrame()[active->rootName] = active->transaction.root();
+        BytecodeInstruction profileInstruction = instruction;
+        profileInstruction.operand = active->rootName;
+        recordAssignment(profileInstruction, "path",
+                         active->transaction.root());
+    }
+
+    void storePathMember(const BytecodeInstruction& instruction) {
+        const auto name = lvalueMemberName(instruction);
+        const auto value =
+            popRuntime(instruction, "path member assignment value");
+        if (!name) {
+            if (!lvalueStack_.empty()) {
+                lvalueStack_.pop_back();
+            }
+            return;
+        }
+        RuntimeLvalueSegment segment;
+        segment.kind = RuntimeLvalueSegmentKind::Member;
+        segment.memberName = *name;
+        finishPathStore(instruction, std::move(segment), value);
+    }
+
+    void storePathIndexed(const BytecodeInstruction& instruction,
+                          RuntimeLvalueSegmentKind kind) {
+        const auto subscripts = lvalueSubscripts(instruction);
+        const auto value =
+            popRuntime(instruction, "path indexed assignment value");
+        RuntimeLvalueSegment segment;
+        segment.kind = kind;
+        if (subscripts) {
+            segment.subscripts = *subscripts;
+        }
+        segment.colonSubscripts = instruction.colonSubscripts;
+        finishPathStore(instruction, std::move(segment),
+                        subscripts ? value : std::nullopt);
+    }
+
+    void storePathIndex(const BytecodeInstruction& instruction) {
+        storePathIndexed(instruction,
+                         RuntimeLvalueSegmentKind::Parenthesis);
+    }
+
+    void storePathBrace(const BytecodeInstruction& instruction) {
+        storePathIndexed(instruction,
+                         RuntimeLvalueSegmentKind::Brace);
+    }
+
     void storeIndex(const BytecodeInstruction& instruction) {
         const auto rawArguments = popRuntimeValues(
             instruction, instruction.operandCount,
@@ -7625,11 +7977,27 @@ private:
             currentFrame()[instruction.operand] = std::move(result.value);
             return;
         }
+        if (target->kind == RuntimeValueKind::Cell) {
+            auto result = instruction.nullAssignment
+                              ? runtimeDeleteCellIndexed(
+                                    *target, arguments,
+                                    instruction.colonSubscripts)
+                              : runtimeAssignCellIndexed(
+                                    *target, arguments, single.value);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return;
+            }
+            recordAssignment(instruction, "index", result.value);
+            currentFrame()[instruction.operand] = std::move(result.value);
+            return;
+        }
         if (!isNumeric(*target) || !isNumeric(single.value)) {
             addDiagnostic(
                 instruction,
-                "bytecode indexed assignment requires compatible numeric or "
-                "structure values");
+                "bytecode indexed assignment requires compatible numeric, "
+                "Cell, or structure values");
             return;
         }
 
@@ -7933,69 +8301,13 @@ private:
         if (!arguments || !target) {
             return;
         }
-        if (!isCell(*target)) {
-            addDiagnostic(instruction, "brace indexing requires a cell target");
+        auto result = runtimeIndexCellContents(
+            *target, runtimeExpandedValues(*arguments));
+        if (!result.succeeded) {
+            addDiagnostic(instruction, std::move(result.error));
             return;
         }
-        const auto storageOffset =
-            checkedCellStorageOffset(instruction, *target, *arguments);
-        if (!storageOffset) {
-            return;
-        }
-        pushRuntime(target->cells[*storageOffset]);
-    }
-
-    std::optional<size_t> checkedCellStorageOffset(
-        const BytecodeInstruction& instruction, const RuntimeValue& target,
-        const std::vector<RuntimeValue>& arguments) {
-        if (arguments.empty()) {
-            addDiagnostic(instruction, "brace indexing requires subscripts");
-            return std::nullopt;
-        }
-        for (const auto& argument : arguments) {
-            if (!isNumber(argument)) {
-                addDiagnostic(instruction,
-                              "brace indexing requires scalar numeric subscripts");
-                return std::nullopt;
-            }
-        }
-
-        if (arguments.size() == 1) {
-            const auto index = checkedIndex(instruction,
-                                            arguments.front().number,
-                                            target.cells.size());
-            if (!index) {
-                return std::nullopt;
-            }
-            const auto storageOffset =
-                runtimeColumnMajorLinearToStorageOffset(target, *index);
-            if (!storageOffset) {
-                addDiagnostic(instruction,
-                              "brace indexing could not map the linear subscript");
-            }
-            return storageOffset;
-        }
-
-        const auto effectiveDimensions =
-            runtimeEffectiveSubscriptDimensions(target, arguments.size());
-        std::vector<size_t> coordinates;
-        coordinates.reserve(arguments.size());
-        for (size_t index = 0; index < arguments.size(); ++index) {
-            const auto coordinate = checkedIndex(
-                instruction, arguments[index].number,
-                effectiveDimensions[index]);
-            if (!coordinate) {
-                return std::nullopt;
-            }
-            coordinates.push_back(*coordinate);
-        }
-        const auto storageOffset = runtimeSubscriptsToStorageOffset(
-            target, coordinates, effectiveDimensions);
-        if (!storageOffset) {
-            addDiagnostic(instruction,
-                          "brace indexing could not map the subscripts");
-        }
-        return storageOffset;
+        pushRuntime(std::move(result.value));
     }
 
     void storeBraceIndex(const BytecodeInstruction& instruction) {
@@ -8019,47 +8331,14 @@ private:
                           "cell assignment requires a variable target");
             return;
         }
-        if (!isCell(*target)) {
-            addDiagnostic(instruction, "cell assignment requires a cell target");
+        auto result = runtimeAssignCellContents(
+            *target, runtimeExpandedValues(*arguments), single.value);
+        if (!result.succeeded) {
+            addDiagnostic(instruction, std::move(result.error));
             return;
         }
-        RuntimeValue updated = *target;
-        std::optional<size_t> storageOffset;
-        if (arguments->size() == 1 && isNumber(arguments->front())) {
-            const double rawIndex = arguments->front().number;
-            const auto oneBasedIndex =
-                checkedRuntimeNonnegativeInteger(rawIndex);
-            if (!oneBasedIndex || *oneBasedIndex == 0) {
-                addDiagnostic(instruction,
-                              "cell subscript must be a positive integer");
-                return;
-            }
-            const size_t index = *oneBasedIndex - 1;
-            if (index >= updated.cells.size()) {
-                if (runtimeDimensionCount(updated) > 2 ||
-                    rowCount(updated) != 1) {
-                    addDiagnostic(
-                        instruction,
-                        "cell linear growth currently requires a row cell array");
-                    return;
-                }
-                updated.cells.resize(index + 1, missingValue());
-                setRuntimeDimensions(updated, {1, updated.cells.size()});
-                storageOffset = index;
-            } else {
-                storageOffset = runtimeColumnMajorLinearToStorageOffset(
-                    updated, index);
-            }
-        } else {
-            storageOffset =
-                checkedCellStorageOffset(instruction, updated, *arguments);
-        }
-        if (!storageOffset) {
-            return;
-        }
-        updated.cells[*storageOffset] = single.value;
-        currentFrame()[instruction.operand] = updated;
-        recordAssignment(instruction, "cell", updated);
+        currentFrame()[instruction.operand] = result.value;
+        recordAssignment(instruction, "cell", result.value);
     }
 
     void callOrIndex(const BytecodeInstruction& instruction) {
@@ -8162,11 +8441,12 @@ private:
 
         if (!isNumeric(callee->value) &&
             callee->value.kind != RuntimeValueKind::Struct &&
+            callee->value.kind != RuntimeValueKind::Cell &&
             !isRuntimeMetadataObject(callee->value)) {
             finishIndexContext();
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric, structure, "
-                          "or metadata target");
+                          "bytecode indexing requires a numeric, Cell, "
+                          "structure, or metadata target");
             return;
         }
         BytecodeCallSiteProfile* profile = nullptr;
@@ -11904,96 +12184,26 @@ private:
             }
             return std::move(result.value);
         }
+        if (target.kind == RuntimeValueKind::Cell) {
+            auto result = runtimeIndexCell(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
         if (!isNumeric(target)) {
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric or structure "
-                          "target");
+                          "bytecode indexing requires a numeric, cell, or "
+                          "structure target");
             return missingValue();
         }
-        for (const auto& argument : arguments) {
-            if (!isNumeric(argument)) {
-                addDiagnostic(instruction,
-                              "bytecode indexing requires numeric or logical "
-                              "subscripts");
-                return missingValue();
-            }
-        }
-
-        if (arguments.size() > 1) {
-            const auto effectiveDimensions =
-                runtimeEffectiveSubscriptDimensions(target, arguments.size());
-            std::vector<std::vector<size_t>> selections;
-            std::vector<size_t> selectionDimensions;
-            selections.reserve(arguments.size());
-            selectionDimensions.reserve(arguments.size());
-            for (size_t index = 0; index < arguments.size(); ++index) {
-                auto selection = checkedIndices(instruction, arguments[index],
-                                                effectiveDimensions[index]);
-                if (!selection) {
-                    return missingValue();
-                }
-                selectionDimensions.push_back(selection->size());
-                selections.push_back(std::move(*selection));
-            }
-
-            const auto count =
-                checkedRuntimeDimensionProduct(selectionDimensions);
-            if (!count) {
-                addDiagnostic(instruction,
-                              "bytecode indexed result dimensions are too large");
-                return missingValue();
-            }
-            std::vector<double> values;
-            values.reserve(*count);
-            for (size_t outputOffset = 0; outputOffset < *count;
-                 ++outputOffset) {
-                const auto outputCoordinates = runtimeRowMajorCoordinates(
-                    outputOffset, selectionDimensions);
-                std::vector<size_t> sourceCoordinates(arguments.size(), 0);
-                for (size_t index = 0; index < arguments.size(); ++index) {
-                    sourceCoordinates[index] =
-                        selections[index][outputCoordinates[index]];
-                }
-                const auto storageOffset = runtimeSubscriptsToStorageOffset(
-                    target, sourceCoordinates, effectiveDimensions);
-                if (!storageOffset) {
-                    addDiagnostic(instruction,
-                                  "bytecode indexing could not map subscripts");
-                    return missingValue();
-                }
-                values.push_back(isNumber(target)
-                                     ? target.number
-                                     : target.elements[*storageOffset]);
-            }
-            if (values.size() == 1) {
-                return numberValue(values.front(), target.numericClass);
-            }
-            return arrayValueForDimensions(selectionDimensions,
-                                           std::move(values),
-                                           target.numericClass);
-        }
-
-        const RuntimeValue& subscript = arguments.front();
-        auto selection = runtimeResolveIndexSelection(
-            subscript, elementCount(target), false);
-        if (!selection.succeeded) {
-            addDiagnostic(instruction,
-                          "bytecode " + std::move(selection.error));
+        auto result = runtimeIndexNumeric(target, arguments);
+        if (!result.succeeded) {
+            addDiagnostic(instruction, "bytecode " + result.error);
             return missingValue();
         }
-
-        std::vector<double> values;
-        values.reserve(selection.indices.size());
-        for (const size_t index : selection.indices) {
-            values.push_back(linearElement(target, index));
-        }
-        if (values.size() == 1) {
-            return numberValue(values.front(), target.numericClass);
-        }
-        const auto dimensions = runtimeLinearIndexResultDimensions(
-            target, subscript, values.size(), selection.logicalMask);
-        return arrayValueForDimensions(dimensions, std::move(values),
-                                       target.numericClass);
+        return std::move(result.value);
     }
 
     RuntimeValue indexMetadataValue(
@@ -12462,6 +12672,7 @@ private:
     std::vector<StackValue> stack_;
     std::vector<ForLoopState> forLoopStack_;
     std::vector<IndexContext> indexContextStack_;
+    std::vector<std::unique_ptr<ActiveLvalue>> lvalueStack_;
     std::vector<SwitchContext> switchContextStack_;
     std::vector<TryContext> tryContextStack_;
     std::vector<std::map<std::string, RuntimeValue>> frames_;

@@ -111,7 +111,7 @@ if(gap_count LESS 10)
         "compatibility matrix must retain at least 10 explicit gap contracts")
 endif()
 math(EXPR gap_last "${gap_count} - 1")
-set(allowed_gap_states open in-progress deferred)
+set(allowed_gap_states open in-progress deferred closed)
 set(allowed_framework_impacts
     additive contract-extension representation-change none)
 

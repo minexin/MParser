@@ -4,8 +4,10 @@
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_assignment.h"
+#include "mparser/runtime_cell.h"
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
+#include "mparser/runtime_lvalue.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
@@ -1024,8 +1026,132 @@ private:
         }
     }
 
+    bool collectLvaluePath(
+        const HirNode& target, const HirNode*& root,
+        std::vector<const HirNode*>& segments) const {
+        const HirNode* current = &target;
+        while ((current->kind == HirKind::MemberAccess ||
+                current->kind == HirKind::CallOrIndex ||
+                current->kind == HirKind::BraceIndex) &&
+               !current->children.empty()) {
+            segments.push_back(current);
+            current = current->children.front().get();
+        }
+        std::reverse(segments.begin(), segments.end());
+        root = current;
+        return root->kind == HirKind::NameRef && segments.size() > 1;
+    }
+
+    std::optional<RuntimeLvalueSegment> evaluateLvalueSegment(
+        const HirNode& node, const RuntimeValue& parent) {
+        RuntimeLvalueSegment segment;
+        if (node.kind == HirKind::MemberAccess) {
+            segment.kind = RuntimeLvalueSegmentKind::Member;
+            segment.memberName = node.label;
+            if (node.label != ".()") {
+                return segment;
+            }
+            if (node.children.size() != 2) {
+                addDiagnostic(
+                    node,
+                    "dynamic member assignment requires one field name "
+                    "expression");
+                return std::nullopt;
+            }
+            const auto dynamicName = runtimeStructFieldName(
+                evaluate(*node.children[1]));
+            if (!dynamicName.succeeded) {
+                addDiagnostic(node, dynamicName.error);
+                return std::nullopt;
+            }
+            segment.memberName = dynamicName.name;
+            return segment;
+        }
+
+        segment.kind = node.kind == HirKind::BraceIndex
+                           ? RuntimeLvalueSegmentKind::Brace
+                           : RuntimeLvalueSegmentKind::Parenthesis;
+        segment.subscripts = evaluateIndexArguments(node, parent);
+        segment.colonSubscripts.reserve(
+            node.children.empty() ? 0 : node.children.size() - 1);
+        for (size_t index = 1; index < node.children.size(); ++index) {
+            const HirNode& subscript = *node.children[index];
+            segment.colonSubscripts.push_back(
+                subscript.kind == HirKind::Literal &&
+                subscript.label == ":");
+        }
+        return segment;
+    }
+
+    RuntimeValue missingPathSeed(
+        const std::vector<const HirNode*>& segments,
+        size_t nextIndex) const {
+        const HirNode& nextSegment = *segments[nextIndex];
+        if (nextSegment.kind == HirKind::BraceIndex) {
+            return cellValueForDimensions({0, 0}, {});
+        }
+        if (nextSegment.kind == HirKind::CallOrIndex) {
+            if (nextIndex + 1 < segments.size()) {
+                const HirNode& selected = *segments[nextIndex + 1];
+                if (selected.kind == HirKind::MemberAccess) {
+                    return makeRuntimeStructValue();
+                }
+                if (selected.kind == HirKind::BraceIndex) {
+                    return cellValueForDimensions({0, 0}, {});
+                }
+            }
+            return matrixValue(0, 0, {});
+        }
+        return makeRuntimeStructValue();
+    }
+
+    bool assignNestedTarget(const HirNode& target,
+                            const RuntimeValue& value,
+                            bool nullAssignment) {
+        const HirNode* root = nullptr;
+        std::vector<const HirNode*> segments;
+        if (!collectLvaluePath(target, root, segments)) {
+            return false;
+        }
+
+        const auto variable = currentFrame().find(root->label);
+        RuntimeLvalueTransaction transaction(
+            variable == currentFrame().end() ? missingValue()
+                                             : variable->second);
+        for (size_t index = 0; index + 1 < segments.size(); ++index) {
+            const auto segment = evaluateLvalueSegment(
+                *segments[index], transaction.current());
+            if (!segment) {
+                return true;
+            }
+            auto descended = transaction.descend(
+                *segment, {}, missingPathSeed(segments, index + 1));
+            if (!descended.succeeded) {
+                addDiagnostic(target, std::move(descended.error));
+                return true;
+            }
+        }
+
+        const auto finalSegment = evaluateLvalueSegment(
+            *segments.back(), transaction.current());
+        if (!finalSegment) {
+            return true;
+        }
+        auto assigned = transaction.assign(
+            *finalSegment, value, nullAssignment);
+        if (!assigned.succeeded) {
+            addDiagnostic(target, std::move(assigned.error));
+            return true;
+        }
+        currentFrame()[root->label] = transaction.root();
+        return true;
+    }
+
     void assignTarget(const HirNode& target, const RuntimeValue& value,
                       bool nullAssignment = false) {
+        if (assignNestedTarget(target, value, nullAssignment)) {
+            return;
+        }
         switch (target.kind) {
         case HirKind::NameRef:
             currentFrame()[target.label] = value;
@@ -1148,23 +1274,38 @@ private:
             return;
         }
 
+        std::vector<bool> colonSubscripts;
+        colonSubscripts.reserve(target.children.size() - 1);
+        for (size_t index = 1; index < target.children.size(); ++index) {
+            const HirNode& subscript = *target.children[index];
+            colonSubscripts.push_back(
+                subscript.kind == HirKind::Literal &&
+                subscript.label == ":");
+        }
+        if (isCell(targetValue)) {
+            auto result = nullAssignment
+                              ? runtimeDeleteCellIndexed(
+                                    targetValue, arguments,
+                                    colonSubscripts)
+                              : runtimeAssignCellIndexed(
+                                    targetValue, arguments, value);
+            if (!result.succeeded) {
+                addDiagnostic(target, std::move(result.error));
+                return;
+            }
+            targetValue = std::move(result.value);
+            return;
+        }
+
         if (!isNumeric(targetValue) || !isNumeric(value)) {
             addDiagnostic(target,
-                          "indexed assignment requires compatible numeric or "
-                          "structure values");
+                          "indexed assignment requires compatible numeric, "
+                          "Cell, or structure values");
             return;
         }
 
         RuntimeNumericAssignmentResult result;
         if (nullAssignment) {
-            std::vector<bool> colonSubscripts;
-            colonSubscripts.reserve(target.children.size() - 1);
-            for (size_t index = 1; index < target.children.size(); ++index) {
-                const HirNode& subscript = *target.children[index];
-                colonSubscripts.push_back(
-                    subscript.kind == HirKind::Literal &&
-                    subscript.label == ":");
-            }
             result = runtimeDeleteNumericIndexed(
                 targetValue, arguments, colonSubscripts);
         } else {
@@ -1199,38 +1340,12 @@ private:
 
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(target, cell);
-        std::optional<size_t> storageOffset;
-        if (arguments.size() == 1 && isNumber(arguments.front())) {
-            const double rawIndex = arguments.front().number;
-            const auto oneBasedIndex =
-                checkedRuntimeNonnegativeInteger(rawIndex);
-            if (!oneBasedIndex || *oneBasedIndex == 0) {
-                addDiagnostic(target,
-                              "cell index must be a positive integer");
-                return;
-            }
-            const size_t index = *oneBasedIndex - 1;
-            if (index >= cell.cells.size()) {
-                if (runtimeDimensionCount(cell) > 2 || rowCount(cell) != 1) {
-                    addDiagnostic(
-                        target,
-                        "cell linear growth currently requires a row cell array");
-                    return;
-                }
-                cell.cells.resize(index + 1, missingValue());
-                setRuntimeDimensions(cell, {1, cell.cells.size()});
-                storageOffset = index;
-            } else {
-                storageOffset = runtimeColumnMajorLinearToStorageOffset(
-                    cell, index);
-            }
-        } else {
-            storageOffset = checkedCellStorageOffset(target, cell, arguments);
-        }
-        if (!storageOffset) {
+        auto result = runtimeAssignCellContents(cell, arguments, value);
+        if (!result.succeeded) {
+            addDiagnostic(target, std::move(result.error));
             return;
         }
-        cell.cells[*storageOffset] = value;
+        cell = std::move(result.value);
     }
 
     void executeControl(const HirNode& node) {
@@ -2434,68 +2549,14 @@ private:
         }
 
         const RuntimeValue target = evaluate(*node.children.front());
-        if (!isCell(target)) {
-            addDiagnostic(node, "brace indexing requires a cell target");
-            return missingValue();
-        }
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(node, target);
-        const auto storageOffset =
-            checkedCellStorageOffset(node, target, arguments);
-        if (!storageOffset) {
+        auto result = runtimeIndexCellContents(target, arguments);
+        if (!result.succeeded) {
+            addDiagnostic(node, std::move(result.error));
             return missingValue();
         }
-        return target.cells[*storageOffset];
-    }
-
-    std::optional<size_t> checkedCellStorageOffset(
-        const HirNode& node, const RuntimeValue& target,
-        const std::vector<RuntimeValue>& arguments) {
-        if (arguments.empty()) {
-            addDiagnostic(node, "brace indexing requires subscripts");
-            return std::nullopt;
-        }
-        for (const auto& argument : arguments) {
-            if (!isNumber(argument)) {
-                addDiagnostic(node,
-                              "brace indexing requires scalar numeric subscripts");
-                return std::nullopt;
-            }
-        }
-
-        if (arguments.size() == 1) {
-            const auto index = checkedIndex(node, arguments.front().number,
-                                            target.cells.size());
-            if (!index) {
-                return std::nullopt;
-            }
-            const auto storageOffset =
-                runtimeColumnMajorLinearToStorageOffset(target, *index);
-            if (!storageOffset) {
-                addDiagnostic(node,
-                              "brace indexing could not map the linear subscript");
-            }
-            return storageOffset;
-        }
-
-        const auto effectiveDimensions =
-            runtimeEffectiveSubscriptDimensions(target, arguments.size());
-        std::vector<size_t> coordinates;
-        coordinates.reserve(arguments.size());
-        for (size_t index = 0; index < arguments.size(); ++index) {
-            const auto coordinate = checkedIndex(
-                node, arguments[index].number, effectiveDimensions[index]);
-            if (!coordinate) {
-                return std::nullopt;
-            }
-            coordinates.push_back(*coordinate);
-        }
-        const auto storageOffset = runtimeSubscriptsToStorageOffset(
-            target, coordinates, effectiveDimensions);
-        if (!storageOffset) {
-            addDiagnostic(node, "brace indexing could not map the subscripts");
-        }
-        return storageOffset;
+        return std::move(result.value);
     }
 
     RuntimeValue evaluateIndex(const HirNode& node, const RuntimeValue& target,
@@ -2513,121 +2574,20 @@ private:
             }
             return std::move(result.value);
         }
-        if (!isNumeric(target)) {
-            addDiagnostic(
-                node,
-                "indexing requires a numeric or structure target");
-            return missingValue();
-        }
-
-        if (arguments.size() > 1) {
-            const auto effectiveDimensions =
-                runtimeEffectiveSubscriptDimensions(target, arguments.size());
-            std::vector<std::vector<size_t>> selections;
-            std::vector<size_t> selectionDimensions;
-            selections.reserve(arguments.size());
-            selectionDimensions.reserve(arguments.size());
-            for (size_t index = 0; index < arguments.size(); ++index) {
-                auto selection = checkedIndices(node, arguments[index],
-                                                effectiveDimensions[index]);
-                if (!selection) {
-                    return missingValue();
-                }
-                selectionDimensions.push_back(selection->size());
-                selections.push_back(std::move(*selection));
-            }
-
-            const auto count =
-                checkedRuntimeDimensionProduct(selectionDimensions);
-            if (!count) {
-                addDiagnostic(node, "indexed result dimensions are too large");
+        if (isCell(target)) {
+            auto result = runtimeIndexCell(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
                 return missingValue();
             }
-            std::vector<double> values;
-            values.reserve(*count);
-            for (size_t outputOffset = 0; outputOffset < *count;
-                 ++outputOffset) {
-                const auto outputCoordinates = runtimeRowMajorCoordinates(
-                    outputOffset, selectionDimensions);
-                std::vector<size_t> sourceCoordinates(arguments.size(), 0);
-                for (size_t index = 0; index < arguments.size(); ++index) {
-                    sourceCoordinates[index] =
-                        selections[index][outputCoordinates[index]];
-                }
-                const auto storageOffset = runtimeSubscriptsToStorageOffset(
-                    target, sourceCoordinates, effectiveDimensions);
-                if (!storageOffset) {
-                    addDiagnostic(node, "indexing could not map subscripts");
-                    return missingValue();
-                }
-                values.push_back(isNumber(target)
-                                     ? target.number
-                                     : target.elements[*storageOffset]);
-            }
-
-            if (values.size() == 1) {
-                return numberValue(values.front(), target.numericClass);
-            }
-            return arrayValueForDimensions(selectionDimensions,
-                                           std::move(values),
-                                           target.numericClass);
+            return std::move(result.value);
         }
-
-        const RuntimeValue& subscript = arguments.front();
-        auto selection = runtimeResolveIndexSelection(
-            subscript, elementCount(target), false);
-        if (!selection.succeeded) {
-            addDiagnostic(node, std::move(selection.error));
+        auto result = runtimeIndexNumeric(target, arguments);
+        if (!result.succeeded) {
+            addDiagnostic(node, std::move(result.error));
             return missingValue();
         }
-
-        std::vector<double> values;
-        values.reserve(selection.indices.size());
-        for (const size_t index : selection.indices) {
-            values.push_back(isNumber(target) ? target.number
-                                              : linearElement(target, index));
-        }
-        if (values.size() == 1) {
-            return numberValue(values.front(), target.numericClass);
-        }
-        const auto dimensions = runtimeLinearIndexResultDimensions(
-            target, subscript, values.size(), selection.logicalMask);
-        return arrayValueForDimensions(dimensions, std::move(values),
-                                       target.numericClass);
-    }
-
-    std::optional<std::vector<size_t>>
-    checkedIndices(const HirNode& node, const RuntimeValue& subscript,
-                   size_t length) {
-        auto selection =
-            runtimeResolveIndexSelection(subscript, length, false);
-        if (!selection.succeeded) {
-            addDiagnostic(node, std::move(selection.error));
-            return std::nullopt;
-        }
-        return std::move(selection.indices);
-    }
-
-    std::optional<size_t> checkedIndex(const HirNode& node, double rawIndex,
-                                       size_t length) {
-        if (!isWholeNumber(rawIndex)) {
-            addDiagnostic(node, "index must be a positive integer");
-            return std::nullopt;
-        }
-        if (rawIndex < 1.0 || rawIndex > static_cast<double>(length)) {
-            addDiagnostic(node, "index is out of bounds");
-            return std::nullopt;
-        }
-        return static_cast<size_t>(rawIndex) - 1;
-    }
-
-    double linearElement(const RuntimeValue& value, size_t zeroBasedIndex) const {
-        if (isNumber(value)) {
-            return value.number;
-        }
-        const auto storageOffset =
-            runtimeColumnMajorLinearToStorageOffset(value, zeroBasedIndex);
-        return value.elements[*storageOffset];
+        return std::move(result.value);
     }
 
     FunctionCallResult

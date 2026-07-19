@@ -61,6 +61,14 @@ RuntimeStructOperationResult runtimeIndexStruct(
     const RuntimeValue& structure,
     const std::vector<RuntimeValue>& subscripts);
 
+RuntimeStructOperationResult runtimeEnsureStructIndexedCapacity(
+    const RuntimeValue& structure,
+    const std::vector<RuntimeValue>& subscripts);
+
+RuntimeStructOperationResult runtimeAlignStructSchemaForCopyback(
+    const RuntimeValue& structure,
+    const RuntimeValue& nestedValue);
+
 RuntimeStructOperationResult runtimeAssignStructIndexed(
     const RuntimeValue& structure,
     const std::vector<RuntimeValue>& subscripts,
