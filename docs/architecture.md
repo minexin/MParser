@@ -893,6 +893,24 @@ validity behavior remains common with ordinary `event.listener` values.
 Property listener records contain no native pointers and are invalidated when
 their dynamic descriptor is deleted.
 
+v0.67 places a stable production facade in front of these runtime tiers.
+`mparser --run file.m` compiles the source graph and performs one bytecode-VM
+execution with the full currently implemented language semantics. Before that
+execution, the static optimization planner discovers eligible structured loop
+regions and lowers them to typed IR; the VM then applies the same guards,
+transactional commit, and fallback rules used by the diagnostic JIT paths.
+This avoids a profiling execution and therefore preserves one-shot script side
+effects.
+
+The production `--jit=auto|off|portable|native` option is a policy selector,
+not a separate language runtime. `auto` prefers the native SLJIT backend when
+available, `portable` fixes typed regions to the C++ kernel, and `off` bypasses
+typed regions. Guard or backend failure resumes safely in a lower tier. The
+reference HIR interpreter is exposed as `--run-hir`; `--run-bytecode`,
+`--run-jit`, `--run-typed-bytecode`, and `--run-adaptive-bytecode` remain
+explicit diagnostic interfaces. This separation lets editors and embedders
+depend on `--run` while optimization strategy evolves behind it.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
 backend contract, persistent cross-process code caches, moving-window array
@@ -902,5 +920,5 @@ comma-separated-list Cell semantics, and eventual on-stack replacement while
 preserving the same commit/fallback contract.
 
 When dynamic features invalidate assumptions, execution should deopt back to
-the interpreter. This is the path that keeps full MATLAB semantics compatible
-with aggressive optimization.
+the baseline bytecode VM. This is the path that keeps full MATLAB semantics
+compatible with aggressive optimization.

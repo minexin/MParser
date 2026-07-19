@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.66.0. See [docs/v0.66.md](docs/v0.66.md) for the
+Current milestone: v0.67.0. See [docs/v0.67.md](docs/v0.67.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.65.md](docs/v0.65.md),
+iteration plan. Previous boundaries are kept in [docs/v0.66.md](docs/v0.66.md),
+[docs/v0.65.md](docs/v0.65.md),
 [docs/v0.64.md](docs/v0.64.md),
 [docs/v0.63.md](docs/v0.63.md),
 [docs/v0.62.md](docs/v0.62.md),
@@ -632,6 +633,14 @@ and `AbortSet` suppression. Callbacks receive the matching
 Inherited property descriptors and handle aliases retain source identity, and
 deleting a dynamic property invalidates listeners bound to that descriptor.
 
+v0.67 establishes `--run` as the stable production execution interface. It
+executes the full bytecode VM semantics once, installs statically eligible
+typed loop regions, prefers the native SLJIT backend when available, and keeps
+guarded portable or bytecode fallback inside the runtime. `--jit` selects
+`auto`, `off`, `portable`, or `native` policy without changing script
+semantics. Diagnostic execution modes remain available, while the deliberately
+smaller reference interpreter now has the explicit `--run-hir` name.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -757,6 +766,67 @@ build\mparser.exe --run-module-runtime --adaptive-hot-loop=5 `
   --module-call=cache_absolute:2 samples\native_cache_demo.m
 ```
 
+## Run scripts
+
+`--run` is the stable one-shot interface for applications, terminals, and
+editor Run buttons. It compiles the source graph, executes the full bytecode
+semantics once, and automatically uses eligible typed/JIT loop regions:
+
+```powershell
+build\mparser.exe --run samples\production_run_demo.m
+```
+
+On Linux, use the same options with the platform executable:
+
+```bash
+./build/mparser --run samples/production_run_demo.m
+```
+
+The default `--jit=auto` policy prefers native SLJIT code when that backend is
+available. Runtime guards preserve transactional fallback to the portable
+typed kernel or bytecode VM. The policy can be selected explicitly without
+changing script semantics:
+
+```powershell
+build\mparser.exe --run --jit=off samples\production_run_demo.m
+build\mparser.exe --run --jit=portable samples\production_run_demo.m
+build\mparser.exe --run --jit=native samples\production_run_demo.m
+```
+
+The public and diagnostic execution modes have separate contracts:
+
+| Mode | Purpose |
+| --- | --- |
+| `--run` | Production one-shot execution with automatic typed/JIT regions |
+| `--run-bytecode` | Baseline bytecode VM execution with JIT disabled |
+| `--run-hir` | Deliberately smaller reference HIR interpreter |
+| `--run-jit` | Static-JIT diagnostics and region reporting |
+| `--run-typed-bytecode` | Profile, rerun, and compare two executions |
+| `--run-adaptive-bytecode` | Repeated adaptive-session diagnostics |
+
+Unlike `--run-typed-bytecode`, production `--run` does not execute a profiling
+baseline first, so script side effects occur once. Use `--help` for the full
+CLI and place `--` before a source path that begins with a hyphen.
+
+With the VS Code CMake Tools extension, a cross-platform task can resolve the
+selected `mparser` launch target and run the active MATLAB file:
+
+```json
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MParser: Run current file",
+      "type": "process",
+      "command": "${command:cmake.launchTargetPath}",
+      "args": ["--run", "${file}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}
+```
+
 ## Try the parser
 
 Check the current CLI version:
@@ -822,7 +892,7 @@ N-dimensional implicit expansion through either baseline runtime with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\array_assignment_demo.m
-build\mparser.exe --run samples\array_assignment_demo.m
+build\mparser.exe --run-hir samples\array_assignment_demo.m
 ```
 
 Run first-class logical arrays, mask selection, mask assignment, conversion,
@@ -830,7 +900,7 @@ and transformed logical shapes through both baseline runtimes with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\logical_index_demo.m
-build\mparser.exe --run samples\logical_index_demo.m
+build\mparser.exe --run-hir samples\logical_index_demo.m
 ```
 
 Run direct empty deletion for vectors, rows, columns, logical selections, and
@@ -838,7 +908,7 @@ N-dimensional slices through both baseline runtimes with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\array_deletion_demo.m
-build\mparser.exe --run samples\array_deletion_demo.m
+build\mparser.exe --run-hir samples\array_deletion_demo.m
 ```
 
 Run dimension-aware reductions, extrema indices, NaN policies, and `find`
@@ -846,7 +916,7 @@ through both baseline runtimes with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\reduction_find_demo.m
-build\mparser.exe --run samples\reduction_find_demo.m
+build\mparser.exe --run-hir samples\reduction_find_demo.m
 ```
 
 Run N-dimensional cumulative operations, reverse traversal, NaN policies, and
@@ -854,7 +924,7 @@ first- or higher-order differences through both baseline runtimes with:
 
 ```powershell
 build\mparser.exe --run-bytecode samples\scan_diff_demo.m
-build\mparser.exe --run samples\scan_diff_demo.m
+build\mparser.exe --run-hir samples\scan_diff_demo.m
 ```
 
 The bytecode VM profiling and type/shape observation subset can be tried with:
@@ -956,14 +1026,14 @@ build\mparser.exe --run-bytecode --entry-function=kernel `
 Run modern and legacy name-value calls through both baseline runtimes with:
 
 ```powershell
-build\mparser.exe --run samples\name_value_arguments_demo.m
+build\mparser.exe --run-hir samples\name_value_arguments_demo.m
 build\mparser.exe --run-bytecode samples\name_value_arguments_demo.m
 ```
 
 Run inherited class-property name-value contracts with:
 
 ```powershell
-build\mparser.exe --run samples\class_property_arguments_demo.m
+build\mparser.exe --run-hir samples\class_property_arguments_demo.m
 build\mparser.exe --run-bytecode samples\class_property_arguments_demo.m
 ```
 
@@ -982,7 +1052,7 @@ Run fixed output conversion and named repeating output expansion through both
 baseline runtimes with:
 
 ```powershell
-build\mparser.exe --run samples\output_arguments_demo.m
+build\mparser.exe --run-hir samples\output_arguments_demo.m
 build\mparser.exe --run-bytecode samples\output_arguments_demo.m
 build\mparser.exe --run-bytecode --entry-function=repeatedOutputs `
   --argument=4 --outputs=2 samples\output_arguments_demo.m
@@ -1178,7 +1248,7 @@ build\mparser.exe --run-bytecode `
 Run the pure function subset through the reference HIR interpreter with:
 
 ```powershell
-build\mparser.exe --run `
+build\mparser.exe --run-hir `
   --class-path=samples\namespace_functions `
   samples\namespace_functions\app\run_function_demo.m
 ```
@@ -1198,7 +1268,7 @@ build\mparser.exe --run-bytecode `
 ```
 
 The same pure-function graph executes through the reference HIR interpreter by
-replacing `--run-bytecode` with `--run`. Use `--module-info` to inspect the
+replacing `--run-bytecode` with `--run-hir`. Use `--module-info` to inspect the
 caller-specific binding edges and internal function identities.
 
 Compile once, inspect the reusable module catalog, and validate an entry with:
@@ -1247,104 +1317,104 @@ build\mparser.exe --run-bytecode samples\switch_demo.m
 build\mparser.exe --run-bytecode samples\try_catch_demo.m
 ```
 
-Use `--run` to execute the current interpreter subset:
+Use `--run-hir` to execute the current reference-interpreter subset:
 
 ```powershell
-build\mparser.exe --run samples\run_demo.m
+build\mparser.exe --run-hir samples\run_demo.m
 ```
 
 The vector subset can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\vector_demo.m
+build\mparser.exe --run-hir samples\vector_demo.m
 ```
 
 The matrix subset can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\matrix_demo.m
+build\mparser.exe --run-hir samples\matrix_demo.m
 ```
 
 Local function calls can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\local_function_demo.m
+build\mparser.exe --run-hir samples\local_function_demo.m
 ```
 
 Multiple-output local functions can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\multi_output_demo.m
+build\mparser.exe --run-hir samples\multi_output_demo.m
 ```
 
 Array constructors can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\constructor_demo.m
+build\mparser.exe --run-hir samples\constructor_demo.m
 ```
 
 `linspace` vector generation can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\linspace_demo.m
+build\mparser.exe --run-hir samples\linspace_demo.m
 ```
 
 Indexed assignment can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\indexed_assignment_demo.m
+build\mparser.exe --run-hir samples\indexed_assignment_demo.m
 ```
 
 `end` in indexing expressions can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\end_indexing_demo.m
+build\mparser.exe --run-hir samples\end_indexing_demo.m
 ```
 
 Colon and vector indexing can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\colon_indexing_demo.m
+build\mparser.exe --run-hir samples\colon_indexing_demo.m
 ```
 
 `while` loops can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\while_demo.m
+build\mparser.exe --run-hir samples\while_demo.m
 ```
 
 `switch` blocks can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\switch_demo.m
+build\mparser.exe --run-hir samples\switch_demo.m
 ```
 
 String comparisons can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\string_compare_demo.m
+build\mparser.exe --run-hir samples\string_compare_demo.m
 ```
 
 Short-circuit logical conditions can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\short_circuit_demo.m
+build\mparser.exe --run-hir samples\short_circuit_demo.m
 ```
 
 Loop control can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\loop_control_demo.m
+build\mparser.exe --run-hir samples\loop_control_demo.m
 ```
 
 Function returns can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\return_demo.m
+build\mparser.exe --run-hir samples\return_demo.m
 ```
 
 `try`/`catch` diagnostic recovery can be tried with:
 
 ```powershell
-build\mparser.exe --run samples\try_catch_demo.m
+build\mparser.exe --run-hir samples\try_catch_demo.m
 ```

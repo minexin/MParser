@@ -46,7 +46,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.66.0"
+#define MPARSER_VERSION "0.67.0"
 #endif
 
 namespace {
@@ -71,16 +71,17 @@ std::string readFile(const std::string& path) {
     return buffer.str();
 }
 
-void printUsage() {
-    std::cerr << "usage: mparser [--version] "
-                 "[--tokens | --hir | --bytecode | --run | --run-bytecode | "
-                 "--module-info | "
+void printUsage(std::ostream& output = std::cerr) {
+    output << "usage: mparser [--help] [--version] "
+                 "[--tokens | --hir | --bytecode | --module-info | "
+                 "--run | --run-hir | --run-bytecode | "
                  "--profile-bytecode | --plan-bytecode | "
                  "--typed-ir-bytecode | --check-typed-ir-bytecode | "
                  "--run-jit | --run-typed-bytecode | "
                  "--run-adaptive-bytecode | "
                  "--run-module-runtime | "
                  "--benchmark-runtime] "
+                 "[--jit=auto|off|portable|native] "
                  "[--benchmark-warmup=N] [--benchmark-iterations=N] "
                  "[--typed-backend=auto|portable|native] "
                  "[--native-cache-entries=N] [--native-cache-bytes=N] "
@@ -94,6 +95,75 @@ void printUsage() {
                  "[--module-call=name[:value...]] "
                  "[--path=DIR] [--class-path=DIR] "
                  "<file.m>\n";
+}
+
+void printHelp() {
+    printUsage(std::cout);
+    std::cout
+        << "\nExecution modes:\n"
+        << "  --run                  Run once with full bytecode semantics and "
+           "automatic JIT.\n"
+        << "  --run-hir              Run the reference HIR interpreter subset.\n"
+        << "  --run-bytecode         Run the bytecode VM with JIT disabled.\n"
+        << "  --run-jit              Run the static JIT diagnostic path and print "
+           "region data.\n"
+        << "  --run-typed-bytecode   Profile, rerun with typed regions, and compare "
+           "results.\n"
+        << "  --run-adaptive-bytecode  Repeated adaptive VM session.\n"
+        << "  --run-module-runtime   Invoke entries in a persistent compiled "
+           "module.\n"
+        << "  --benchmark-runtime    Compare interpreter, VM, and typed runtimes.\n"
+        << "\nProduction run options:\n"
+        << "  --jit=auto             Prefer native JIT with guarded fallback "
+           "(default).\n"
+        << "  --jit=off              Disable typed/JIT execution.\n"
+        << "  --jit=portable         Use the portable typed kernel.\n"
+        << "  --jit=native           Request the SLJIT native backend.\n"
+        << "\nInspection modes:\n"
+        << "  --tokens               Print lossless lexer tokens.\n"
+        << "  --hir                  Print semantic HIR.\n"
+        << "  --bytecode             Print lowered bytecode.\n"
+        << "  --module-info          Print the compiled source graph and validate "
+           "an entry.\n"
+        << "  --profile-bytecode     Run the VM and print its profile.\n"
+        << "  --plan-bytecode        Print the profile-guided optimization plan.\n"
+        << "  --typed-ir-bytecode    Print profile-guided typed IR.\n"
+        << "  --check-typed-ir-bytecode  Evaluate typed guards against runtime "
+           "values.\n"
+        << "\nUse --entry-function, --argument, and --outputs for function entry "
+           "calls.\n"
+        << "Use repeatable --path or --class-path options to load external "
+           "sources.\n"
+        << "Use -- before a source path that starts with '-'.\n";
+}
+
+struct ProductionJitOption {
+    bool enabled = true;
+    mparser::TypedRegionBackend backend =
+        mparser::TypedRegionBackend::Auto;
+};
+
+ProductionJitOption parseProductionJitOption(
+    const std::string& argument) {
+    constexpr std::string_view prefix = "--jit=";
+    const std::string value = argument.substr(prefix.size());
+    if (value == "auto") {
+        return {};
+    }
+    if (value == "off") {
+        return ProductionJitOption{false,
+                                   mparser::TypedRegionBackend::Auto};
+    }
+    if (value == "portable") {
+        return ProductionJitOption{true,
+                                   mparser::TypedRegionBackend::Portable};
+    }
+    if (value == "native") {
+        return ProductionJitOption{true,
+                                   mparser::TypedRegionBackend::Native};
+    }
+    throw std::invalid_argument(
+        "JIT mode must be auto, off, portable, or native");
 }
 
 void printDiagnostics(
@@ -1067,7 +1137,8 @@ int main(int argc, char** argv) {
         bool printHir = false;
         bool printBytecode = false;
         bool printModuleInfo = false;
-        bool runProgram = false;
+        bool runProduction = false;
+        bool runHir = false;
         bool runBytecode = false;
         bool profileBytecode = false;
         bool planBytecode = false;
@@ -1085,6 +1156,9 @@ int main(int argc, char** argv) {
         size_t adaptiveFallbackLimit = 3;
         mparser::TypedRegionBackend typedRegionBackend =
             mparser::TypedRegionBackend::Auto;
+        ProductionJitOption productionJit;
+        bool productionJitSpecified = false;
+        bool typedBackendSpecified = false;
         mparser::NativeScalarJitCacheLimits nativeCacheLimits;
         bool adaptivePersistWorkspace = false;
         std::vector<mparser::RuntimeVariable> adaptiveInitialWorkspace;
@@ -1094,10 +1168,24 @@ int main(int argc, char** argv) {
         std::vector<ModuleCall> moduleCalls;
         std::vector<std::filesystem::path> searchPaths;
         std::string path;
+        bool optionsEnded = false;
 
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
-            if (arg == "--version") {
+            if (optionsEnded) {
+                if (path.empty()) {
+                    path = arg;
+                    continue;
+                }
+                throw std::invalid_argument(
+                    "multiple input files are not supported: " + arg);
+            }
+            if (arg == "--") {
+                optionsEnded = true;
+            } else if (arg == "--help" || arg == "-h") {
+                printHelp();
+                return 0;
+            } else if (arg == "--version") {
                 std::cout << "MParser " << MPARSER_VERSION << "\n";
                 return 0;
             } else if (arg == "--tokens") {
@@ -1109,7 +1197,10 @@ int main(int argc, char** argv) {
             } else if (arg == "--module-info") {
                 printModuleInfo = true;
             } else if (arg == "--run") {
-                runProgram = true;
+                runProduction = true;
+            } else if (arg == "--run-hir" ||
+                       arg == "--run-interpreter") {
+                runHir = true;
             } else if (arg == "--run-bytecode") {
                 runBytecode = true;
             } else if (arg == "--profile-bytecode") {
@@ -1139,6 +1230,10 @@ int main(int argc, char** argv) {
             } else if (arg.starts_with("--typed-backend=")) {
                 typedRegionBackend =
                     parseTypedRegionBackendOption(arg);
+                typedBackendSpecified = true;
+            } else if (arg.starts_with("--jit=")) {
+                productionJit = parseProductionJitOption(arg);
+                productionJitSpecified = true;
             } else if (arg.starts_with("--native-cache-entries=")) {
                 nativeCacheLimits.maxEntries = parseCountOption(
                     arg, "--native-cache-entries=", true);
@@ -1189,12 +1284,47 @@ int main(int argc, char** argv) {
                         "search path cannot be empty");
                 }
                 searchPaths.emplace_back(searchPath);
+            } else if (!arg.empty() && arg.front() == '-') {
+                throw std::invalid_argument("unknown option: " + arg);
             } else if (path.empty()) {
                 path = arg;
             } else {
-                printUsage();
-                return 2;
+                throw std::invalid_argument(
+                    "multiple input files are not supported: " + arg);
             }
+        }
+
+        const size_t actionCount =
+            static_cast<size_t>(printTokens) +
+            static_cast<size_t>(printHir) +
+            static_cast<size_t>(printBytecode) +
+            static_cast<size_t>(printModuleInfo) +
+            static_cast<size_t>(runProduction) +
+            static_cast<size_t>(runHir) +
+            static_cast<size_t>(runBytecode) +
+            static_cast<size_t>(profileBytecode) +
+            static_cast<size_t>(planBytecode) +
+            static_cast<size_t>(typedIrBytecode) +
+            static_cast<size_t>(checkTypedIrBytecode) +
+            static_cast<size_t>(runJit) +
+            static_cast<size_t>(runTypedBytecode) +
+            static_cast<size_t>(runAdaptiveBytecode) +
+            static_cast<size_t>(runModuleRuntime) +
+            static_cast<size_t>(benchmarkRuntime);
+        if (actionCount > 1) {
+            throw std::invalid_argument(
+                "choose only one execution or inspection mode");
+        }
+        if (productionJitSpecified && !runProduction) {
+            throw std::invalid_argument(
+                "--jit is only valid with the production --run mode");
+        }
+        if (productionJitSpecified && typedBackendSpecified) {
+            throw std::invalid_argument(
+                "--jit and --typed-backend cannot be combined");
+        }
+        if (productionJitSpecified) {
+            typedRegionBackend = productionJit.backend;
         }
 
         mparser::configureNativeScalarJitCache(nativeCacheLimits);
@@ -1202,9 +1332,9 @@ int main(int argc, char** argv) {
         if (path.empty()) {
             const bool hasAction =
                 printTokens || printHir || printBytecode ||
-                printModuleInfo || runProgram || runBytecode ||
+                printModuleInfo || runProduction || runHir || runBytecode ||
                 profileBytecode || planBytecode || typedIrBytecode ||
-                checkTypedIrBytecode || runTypedBytecode ||
+                checkTypedIrBytecode || runJit || runTypedBytecode ||
                 runAdaptiveBytecode || runModuleRuntime ||
                 benchmarkRuntime;
             if (nativeCacheReporter.enabled && !hasAction) {
@@ -1314,7 +1444,8 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        if (printHir || printBytecode || runProgram || runBytecode ||
+        if (printHir || printBytecode || runProduction || runHir ||
+            runBytecode ||
             profileBytecode || planBytecode || typedIrBytecode ||
             checkTypedIrBytecode || runJit || runTypedBytecode ||
             runAdaptiveBytecode || benchmarkRuntime) {
@@ -1331,7 +1462,8 @@ int main(int argc, char** argv) {
                 mparser::dumpSemanticTree(std::cout, semantic);
             } else if (printBytecode) {
                 mparser::dumpBytecode(std::cout, bytecode, semantic);
-            } else if (runBytecode || profileBytecode || planBytecode ||
+            } else if (runProduction || runBytecode || profileBytecode ||
+                       planBytecode ||
                        typedIrBytecode || checkTypedIrBytecode ||
                        runJit || runTypedBytecode || runAdaptiveBytecode ||
                        benchmarkRuntime) {
@@ -1434,7 +1566,8 @@ int main(int argc, char** argv) {
                         mparser::BytecodeVmProfilingMode::Disabled;
                 }
                 mparser::BytecodeVmResult runtime;
-                if (runJit) {
+                if (runJit ||
+                    (runProduction && productionJit.enabled)) {
                     mparser::BytecodeOptimizationPlanner planner;
                     mparser::BytecodeTypedIrBuilder builder;
                     const auto typedModule = builder.build(
@@ -1512,7 +1645,7 @@ int main(int argc, char** argv) {
                         return 1;
                     }
                 }
-            } else {
+            } else if (runHir) {
                 mparser::Interpreter interpreter;
                 const auto runtime = interpreter.run(semantic);
                 std::cout << "Variables:\n";

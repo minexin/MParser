@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.66.0 LANGUAGES C CXX)
+project(MParser VERSION 0.67.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -193,6 +193,37 @@ set_tests_properties(guarded_jit_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "predecoded nested scalar kernel executed.*baseline validation: skipped")
 
+add_test(NAME cli_help_smoke
+    COMMAND mparser --help)
+set_tests_properties(cli_help_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "--run                  Run once with full bytecode semantics")
+
+add_test(NAME production_run_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m)
+set_tests_properties(production_run_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 705")
+
+add_test(NAME production_run_portable_jit_cli_smoke
+    COMMAND mparser --run --jit=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m)
+set_tests_properties(production_run_portable_jit_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 705")
+
+add_test(NAME production_run_jit_off_cli_smoke
+    COMMAND mparser --run --jit=off --native-cache-stats
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m)
+set_tests_properties(production_run_jit_off_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 705.*compilations=0")
+
+add_test(NAME production_run_cli_contract_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_EXECUTABLE=$<TARGET_FILE:mparser>
+        "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
+        -DENTRY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_production_cli_contract.cmake)
+
 add_test(NAME nested_scalar_kernel_cli_smoke
     COMMAND mparser
         --run-typed-bytecode
@@ -231,6 +262,13 @@ set_tests_properties(linear_array_kernel_cli_smoke PROPERTIES
         "predecoded linear-array scalar kernel executed")
 
 if(MPARSER_ENABLE_NATIVE_JIT)
+    add_test(NAME production_run_native_jit_cli_smoke
+        COMMAND mparser --run --jit=native --native-cache-stats
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m)
+    set_tests_properties(production_run_native_jit_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "summary = 705.*compilations=[1-9]")
+
     add_test(NAME native_scalar_kernel_cli_smoke
         COMMAND mparser
             --run-typed-bytecode
@@ -433,7 +471,7 @@ set_tests_properties(nd_array_bytecode_cli_smoke PROPERTIES
 
 add_test(NAME nd_array_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/nd_arrays_demo.m)
 set_tests_properties(nd_array_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 171")
@@ -447,7 +485,7 @@ set_tests_properties(array_assignment_bytecode_cli_smoke PROPERTIES
 
 add_test(NAME array_assignment_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_assignment_demo.m)
 set_tests_properties(array_assignment_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 860")
@@ -461,7 +499,7 @@ set_tests_properties(array_transform_bytecode_cli_smoke PROPERTIES
 
 add_test(NAME array_transform_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_transform_demo.m)
 set_tests_properties(array_transform_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 2126")
@@ -475,7 +513,7 @@ set_tests_properties(logical_index_bytecode_cli_smoke PROPERTIES
 
 add_test(NAME logical_index_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/logical_index_demo.m)
 set_tests_properties(logical_index_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 996")
@@ -489,7 +527,7 @@ set_tests_properties(array_deletion_bytecode_cli_smoke PROPERTIES
 
 add_test(NAME array_deletion_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/array_deletion_demo.m)
 set_tests_properties(array_deletion_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 252")
@@ -503,7 +541,7 @@ set_tests_properties(reduction_find_bytecode_cli_smoke PROPERTIES
 
 add_test(NAME reduction_find_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/reduction_find_demo.m)
 set_tests_properties(reduction_find_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 1450")
@@ -517,7 +555,7 @@ set_tests_properties(scan_diff_bytecode_cli_smoke PROPERTIES
 
 add_test(NAME scan_diff_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/scan_diff_demo.m)
 set_tests_properties(scan_diff_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 2359")
@@ -532,7 +570,7 @@ set_tests_properties(namespace_function_cli_smoke PROPERTIES
 
 add_test(NAME namespace_function_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/namespace_functions
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/namespace_functions/app/run_function_demo.m)
 set_tests_properties(namespace_function_interpreter_cli_smoke PROPERTIES
@@ -550,7 +588,7 @@ set_tests_properties(function_path_cli_smoke PROPERTIES
 
 add_test(NAME function_path_interpreter_cli_smoke
     COMMAND mparser
-        --run
+        --run-hir
         --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/first_library
         --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/second_library
         --path=${CMAKE_CURRENT_SOURCE_DIR}/samples/function_paths/global_library
@@ -696,7 +734,7 @@ add_test(NAME output_argument_smoke
     COMMAND output_argument_smoke_tests)
 
 add_test(NAME output_arguments_interpreter_cli_smoke
-    COMMAND mparser --run
+    COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/output_arguments_demo.m)
 set_tests_properties(output_arguments_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 34")
@@ -715,7 +753,7 @@ set_tests_properties(output_arguments_entry_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "values1 = 4")
 
 add_test(NAME name_value_arguments_interpreter_cli_smoke
-    COMMAND mparser --run
+    COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/name_value_arguments_demo.m)
 set_tests_properties(name_value_arguments_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 65")
@@ -734,7 +772,7 @@ set_tests_properties(name_value_arguments_entry_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "y = 9")
 
 add_test(NAME class_property_arguments_interpreter_cli_smoke
-    COMMAND mparser --run
+    COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_property_arguments_demo.m)
 set_tests_properties(class_property_arguments_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "answer = 34")
@@ -746,7 +784,7 @@ set_tests_properties(class_property_arguments_bytecode_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "answer = 34")
 
 add_test(NAME repeating_arguments_interpreter_cli_smoke
-    COMMAND mparser --run
+    COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/repeating_arguments_demo.m)
 set_tests_properties(repeating_arguments_interpreter_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 2145")
