@@ -17,6 +17,7 @@
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_value_ops.h"
+#include "mparser/runtime_warning.h"
 
 #include <algorithm>
 #include <chrono>
@@ -24,6 +25,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iomanip>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <optional>
@@ -388,7 +390,11 @@ public:
         for (const auto& [name, value] : variables) {
             result.variables.push_back(RuntimeVariable{name, value});
         }
-        result.diagnostics = std::move(diagnostics_);
+        result.diagnostics = std::move(warnings_);
+        result.diagnostics.insert(
+            result.diagnostics.end(),
+            std::make_move_iterator(diagnostics_.begin()),
+            std::make_move_iterator(diagnostics_.end()));
         return result;
     }
 
@@ -468,18 +474,87 @@ private:
         std::vector<std::string>& names_;
     };
 
-    std::vector<RuntimeExceptionFrame>
-    exceptionFrames(const SourceSpan& span) const {
+    class ExceptionCallSiteGuard {
+    public:
+        ExceptionCallSiteGuard(
+            std::vector<RuntimeExceptionFrame>& frames,
+            std::optional<RuntimeExceptionFrame> frame)
+            : frames_(frames), active_(frame.has_value()) {
+            if (frame) {
+                frames_.push_back(std::move(*frame));
+            }
+        }
+
+        ~ExceptionCallSiteGuard() {
+            if (active_) {
+                frames_.pop_back();
+            }
+        }
+
+    private:
+        std::vector<RuntimeExceptionFrame>& frames_;
+        bool active_ = false;
+    };
+
+    std::string publicFunctionName(std::string_view name) const {
+        if (name.starts_with("$path") || name.starts_with("$private")) {
+            const size_t separator = name.find('>');
+            if (separator != std::string_view::npos &&
+                separator + 1 < name.size()) {
+                return std::string(name.substr(separator + 1));
+            }
+        }
+        return std::string(name);
+    }
+
+    RuntimeExceptionFrame exceptionFrame(
+        const SourceSpan& span, std::string name) const {
         RuntimeExceptionFrame frame;
         frame.line = span.begin.line;
-        frame.name = activeFunctionNames_.empty()
-                         ? std::string("<script>")
-                         : activeFunctionNames_.back();
+        frame.name = std::move(name);
         if (semantic_ && span.begin.sourceId != kInvalidSourceId &&
             span.begin.sourceId < semantic_->sources.size()) {
             frame.file = semantic_->sources[span.begin.sourceId].name;
         }
-        return {std::move(frame)};
+        return frame;
+    }
+
+    std::vector<RuntimeExceptionFrame>
+    exceptionFrames(const SourceSpan& span) const {
+        std::vector<RuntimeExceptionFrame> frames;
+        frames.push_back(exceptionFrame(
+            span, activeFunctionNames_.empty()
+                      ? std::string("<script>")
+                      : activeFunctionNames_.back()));
+        for (auto caller = exceptionCallerFrames_.rbegin();
+             caller != exceptionCallerFrames_.rend(); ++caller) {
+            frames.push_back(*caller);
+        }
+        return frames;
+    }
+
+    SourceSpan exceptionDiagnosticSpan(
+        const RuntimeValue& exception, SourceSpan fallback) const {
+        const auto frames = runtimeExceptionFrames(exception);
+        if (frames.empty()) {
+            return fallback;
+        }
+        const auto& top = frames.front();
+        fallback.begin.line = top.line;
+        fallback.end.line = top.line;
+        fallback.begin.column = 1;
+        fallback.end.column = 1;
+        if (semantic_) {
+            for (size_t sourceId = 0;
+                 sourceId < semantic_->sources.size(); ++sourceId) {
+                if (semantic_->sources[sourceId].name == top.file) {
+                    fallback.begin.sourceId = sourceId;
+                    fallback.end.sourceId = sourceId;
+                    break;
+                }
+            }
+        }
+        return fallback;
     }
 
     void addDiagnostic(const HirNode& node, std::string message,
@@ -487,24 +562,37 @@ private:
                            std::string(kRuntimeErrorIdentifier)) {
         Diagnostic diagnostic{node.span, std::move(message),
                               std::move(identifier)};
+        diagnostic.stack = exceptionFrames(node.span);
         pendingException_ = runtimeExceptionFromDiagnostic(
-            diagnostic, exceptionFrames(node.span));
+            diagnostic, diagnostic.stack);
         diagnostics_.push_back(std::move(diagnostic));
+    }
+
+    void addWarning(const HirNode& node,
+                    RuntimeWarningRecord warning) {
+        Diagnostic diagnostic{
+            node.span, std::move(warning.message),
+            std::move(warning.identifier), DiagnosticSeverity::Warning};
+        diagnostic.stack = exceptionFrames(node.span);
+        warnings_.push_back(std::move(diagnostic));
     }
 
     void raiseException(const HirNode& node,
                         const RuntimeValue& exception,
-                        bool preserveExistingStack) {
+                        RuntimeExceptionStackPolicy policy) {
         auto prepared = runtimePrepareExceptionForThrow(
-            exception, exceptionFrames(node.span), preserveExistingStack);
+            exception, exceptionFrames(node.span), policy);
         if (!prepared.succeeded) {
             addDiagnostic(node, std::move(prepared.error),
                           "MParser:InvalidException");
             return;
         }
         pendingException_ = std::move(prepared.value);
-        diagnostics_.push_back(
-            runtimeDiagnosticFromException(*pendingException_, node.span));
+        auto diagnostic =
+            runtimeDiagnosticFromException(*pendingException_, node.span);
+        diagnostic.span =
+            exceptionDiagnosticSpan(*pendingException_, diagnostic.span);
+        diagnostics_.push_back(std::move(diagnostic));
     }
 
     bool diagnosticTrapTriggered() const {
@@ -577,7 +665,22 @@ private:
                                     const std::vector<RuntimeValue>& arguments,
                                     bool captureResultFrame,
                                     std::optional<size_t> requestedOutputCount =
+                                        std::nullopt,
+                                    std::optional<SourceSpan> callSite =
                                         std::nullopt) {
+        std::optional<RuntimeExceptionFrame> callerFrame;
+        if (callSite) {
+            callerFrame = exceptionFrame(
+                *callSite,
+                activeFunctionNames_.empty()
+                    ? std::string("<script>")
+                    : activeFunctionNames_.back());
+        }
+        ExceptionCallSiteGuard callSiteGuard(exceptionCallerFrames_,
+                                             std::move(callerFrame));
+        FunctionNameGuard functionName(
+            activeFunctionNames_, publicFunctionName(node.label));
+
         const FunctionSignature signature = parseFunctionSignature(node);
         const size_t outputCount =
             requestedOutputCount.value_or(signature.outputs.size());
@@ -829,10 +932,7 @@ private:
         currentFrame()["nargout"] =
             numberValue(static_cast<double>(outputCount));
 
-        {
-            FunctionNameGuard functionName(activeFunctionNames_, node.label);
-            executeChildren(node);
-        }
+        executeChildren(node);
 
         auto completedFrame = std::move(currentFrame());
         frames_.pop_back();
@@ -867,6 +967,11 @@ private:
             break;
         case HirKind::Statement:
             if (executeControlStatement(node)) {
+                break;
+            }
+            if (node.children.size() == 1 &&
+                node.children.front()->kind == HirKind::CallOrIndex) {
+                (void)evaluateValues(*node.children.front(), 0);
                 break;
             }
             executeChildren(node);
@@ -983,8 +1088,45 @@ private:
         assignTarget(target, single.value, nullAssignment);
     }
 
+    bool isRuntimeExceptionMethod(std::string_view name) const {
+        return name == "addCause" || name == "getReport" ||
+               name == "throw" || name == "rethrow" ||
+               name == "throwAsCaller" || name == "addCorrection";
+    }
+
+    std::optional<FunctionCallResult> callRuntimeExceptionMethod(
+        const HirNode& node, size_t requestedOutputCount) {
+        if (node.kind != HirKind::CallOrIndex || node.children.empty()) {
+            return std::nullopt;
+        }
+        const HirNode& callee = *node.children.front();
+        if (callee.kind != HirKind::MemberAccess ||
+            !isRuntimeExceptionMethod(callee.label) ||
+            callee.children.empty()) {
+            return std::nullopt;
+        }
+
+        RuntimeValue receiver = evaluate(*callee.children.front());
+        if (!isRuntimeException(receiver)) {
+            addDiagnostic(node, "MException method requires an MException "
+                                "receiver: " + callee.label,
+                          "MParser:InvalidException");
+            return FunctionCallResult{
+                std::vector<RuntimeValue>(requestedOutputCount,
+                                          missingValue())};
+        }
+        std::vector<RuntimeValue> arguments = evaluateArguments(node);
+        arguments.insert(arguments.begin(), std::move(receiver));
+        return callBuiltin(node, callee.label, arguments,
+                           requestedOutputCount);
+    }
+
     std::vector<RuntimeValue> evaluateValues(const HirNode& node,
                                              size_t requestedOutputCount) {
+        if (const auto method =
+                callRuntimeExceptionMethod(node, requestedOutputCount)) {
+            return method->outputs;
+        }
         if (node.kind == HirKind::CallOrIndex &&
             (node.binding.kind == BindingKind::Function ||
              node.binding.kind == BindingKind::Builtin)) {
@@ -2512,6 +2654,10 @@ private:
             return missingValue();
         }
 
+        if (const auto method = callRuntimeExceptionMethod(node, 1)) {
+            return firstOutput(*method);
+        }
+
         const HirNode& callee = *node.children.front();
         if (node.binding.kind == BindingKind::Builtin) {
             const std::vector<RuntimeValue> arguments = evaluateArguments(node);
@@ -2539,7 +2685,7 @@ private:
         }
 
         return callFunction(*function->second, arguments, false,
-                            requestedOutputCount);
+                            requestedOutputCount, node.span);
     }
 
     RuntimeValue evaluateBraceIndex(const HirNode& node) {
@@ -2595,13 +2741,69 @@ private:
                 const std::vector<RuntimeValue>& arguments,
                 size_t requestedOutputCount) {
         if (name == "MException") {
+            if (requestedOutputCount > 1) {
+                addDiagnostic(node,
+                              "MException supports at most one output",
+                              "MParser:InvalidException");
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(requestedOutputCount,
+                                              missingValue())};
+            }
             auto result = runtimeConstructMException(arguments);
             if (!result.succeeded) {
                 addDiagnostic(node, std::move(result.error),
                               "MParser:InvalidException");
                 return FunctionCallResult{{missingValue()}};
             }
-            return FunctionCallResult{{std::move(result.value)}};
+            return requestedOutputCount == 0
+                       ? FunctionCallResult{}
+                       : FunctionCallResult{{std::move(result.value)}};
+        }
+        if (name == "addCause") {
+            if (requestedOutputCount > 1) {
+                addDiagnostic(node, "addCause supports at most one output",
+                              "MParser:InvalidException");
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(requestedOutputCount,
+                                              missingValue())};
+            }
+            auto result = runtimeAddExceptionCause(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error),
+                              "MParser:InvalidException");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return requestedOutputCount == 0
+                       ? FunctionCallResult{}
+                       : FunctionCallResult{{std::move(result.value)}};
+        }
+        if (name == "getReport") {
+            if (requestedOutputCount > 1) {
+                addDiagnostic(node, "getReport supports at most one output",
+                              "MParser:InvalidException");
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(requestedOutputCount,
+                                              missingValue())};
+            }
+            auto result = runtimeGetExceptionReport(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error),
+                              "MParser:InvalidException");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return requestedOutputCount == 0
+                       ? FunctionCallResult{}
+                       : FunctionCallResult{{std::move(result.value)}};
+        }
+        if (name == "addCorrection") {
+            addDiagnostic(
+                node,
+                "MException correction objects are outside the supported "
+                "exception subset",
+                "MParser:UnsupportedExceptionCorrection");
+            return FunctionCallResult{
+                std::vector<RuntimeValue>(requestedOutputCount,
+                                          missingValue())};
         }
         if (name == "error") {
             auto result = runtimeCreateErrorException(arguments);
@@ -2610,17 +2812,94 @@ private:
                               "MParser:InvalidException");
                 return FunctionCallResult{{missingValue()}};
             }
-            raiseException(node, result.value, false);
+            const RuntimeValue* identifier =
+                runtimeExceptionProperty(result.value, "identifier");
+            const RuntimeValue* message =
+                runtimeExceptionProperty(result.value, "message");
+            if (identifier && message && identifier->text.empty() &&
+                message->text.empty()) {
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(requestedOutputCount,
+                                              missingValue())};
+            }
+            raiseException(
+                node, result.value,
+                runtimeExceptionFrameCount(result.value) == 0
+                    ? RuntimeExceptionStackPolicy::Replace
+                    : RuntimeExceptionStackPolicy::Preserve);
             return FunctionCallResult{{missingValue()}};
         }
-        if (name == "throw" || name == "rethrow") {
+        if (name == "throw" || name == "rethrow" ||
+            name == "throwAsCaller") {
             if (arguments.size() != 1) {
                 addDiagnostic(node, name + " expects one MException object",
                               "MParser:InvalidException");
                 return FunctionCallResult{{missingValue()}};
             }
-            raiseException(node, arguments.front(), name == "rethrow");
+            const auto policy =
+                name == "rethrow"
+                    ? RuntimeExceptionStackPolicy::Preserve
+                    : name == "throwAsCaller"
+                          ? RuntimeExceptionStackPolicy::AsCaller
+                          : RuntimeExceptionStackPolicy::Replace;
+            raiseException(node, arguments.front(), policy);
             return FunctionCallResult{{missingValue()}};
+        }
+        if (name == "assert") {
+            if (requestedOutputCount != 0) {
+                addDiagnostic(node, "assert does not produce outputs",
+                              "MParser:InvalidAssertion");
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(requestedOutputCount,
+                                              missingValue())};
+            }
+            if (arguments.empty() || !isNumeric(arguments.front())) {
+                addDiagnostic(node,
+                              "assert condition must be numeric or logical",
+                              "MParser:InvalidAssertion");
+                return FunctionCallResult{{missingValue()}};
+            }
+            if (truthy(arguments.front())) {
+                return {};
+            }
+
+            std::vector<RuntimeValue> errorArguments;
+            if (arguments.size() == 1) {
+                errorArguments = {
+                    stringValue("MParser:AssertionFailed"),
+                    stringValue("Assertion failed.")};
+            } else {
+                errorArguments.assign(arguments.begin() + 1,
+                                      arguments.end());
+            }
+            auto result = runtimeCreateErrorException(errorArguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error),
+                              "MParser:InvalidAssertion");
+                return FunctionCallResult{{missingValue()}};
+            }
+            raiseException(node, result.value,
+                           RuntimeExceptionStackPolicy::Replace);
+            return FunctionCallResult{{missingValue()}};
+        }
+        if (name == "warning" || name == "lastwarn") {
+            auto result =
+                name == "warning"
+                    ? runtimeWarning(arguments, requestedOutputCount,
+                                     warningState_)
+                    : runtimeLastWarning(arguments, requestedOutputCount,
+                                         warningState_);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error),
+                              "MParser:InvalidWarning");
+                return FunctionCallResult{
+                    std::vector<RuntimeValue>(requestedOutputCount,
+                                              missingValue())};
+            }
+            if (result.emitted) {
+                addWarning(node, std::move(*result.emitted));
+            }
+            return FunctionCallResult{std::move(result.outputs)};
         }
         if (name == "clear" || name == "clc" || name == "tic" ||
             name == "toc") {
@@ -3131,11 +3410,14 @@ private:
     const SemanticResult* semantic_ = nullptr;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
     std::vector<std::string> activeFunctionNames_;
+    std::vector<RuntimeExceptionFrame> exceptionCallerFrames_;
     std::map<std::string, const HirNode*> functionsByName_;
     ArgumentContractCatalog argumentCatalog_;
     std::map<std::string, RuntimeValue> resultFrame_;
     std::vector<Diagnostic> diagnostics_;
+    std::vector<Diagnostic> warnings_;
     std::optional<RuntimeValue> pendingException_;
+    RuntimeWarningState warningState_;
     std::optional<size_t> diagnosticTrapBase_;
     std::optional<std::chrono::steady_clock::time_point> ticStart_;
     size_t loopDepth_ = 0;

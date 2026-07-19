@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.72.0 LANGUAGES C CXX)
+project(MParser VERSION 0.73.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -67,6 +67,7 @@ add_library(mparser_core
     src/mparser/runtime_benchmark.cpp
     src/mparser/runtime_cell.cpp
     src/mparser/runtime_exception.cpp
+    src/mparser/runtime_warning.cpp
     src/mparser/runtime_index.cpp
     src/mparser/runtime_lvalue.cpp
     src/mparser/runtime_math.cpp
@@ -204,6 +205,12 @@ target_link_libraries(exception_runtime_smoke_tests PRIVATE mparser_core)
 add_test(NAME exception_runtime_smoke
     COMMAND exception_runtime_smoke_tests)
 
+add_executable(exception_source_graph_smoke_tests
+    tests/exception_source_graph_smoke.cpp)
+target_link_libraries(exception_source_graph_smoke_tests PRIVATE mparser_core)
+add_test(NAME exception_source_graph_smoke
+    COMMAND exception_source_graph_smoke_tests)
+
 add_test(NAME exception_runtime_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/exception_runtime_demo.m)
@@ -221,6 +228,24 @@ add_test(NAME exception_runtime_production_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/exception_runtime_demo.m)
 set_tests_properties(exception_runtime_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 111111111")
+
+add_test(NAME exception_diagnostics_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/exception_diagnostics_demo.m)
+set_tests_properties(exception_diagnostics_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 111111")
+
+add_test(NAME exception_diagnostics_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/exception_diagnostics_demo.m)
+set_tests_properties(exception_diagnostics_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 111111")
+
+add_test(NAME exception_diagnostics_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/exception_diagnostics_demo.m)
+set_tests_properties(exception_diagnostics_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 111111")
 
 add_test(NAME compatibility_matrix_smoke
     COMMAND ${CMAKE_COMMAND}

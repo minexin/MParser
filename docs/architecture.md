@@ -959,22 +959,49 @@ message formatting, `MException` construction, throw/rethrow preparation, and
 conversion between runtime exceptions and source diagnostics. Both the HIR
 interpreter and bytecode VM retain a pending exception while unwinding to the
 nearest `catch`; the catch variable is a read-only scalar `MException` object
-with `identifier`, `message`, `stack`, and `cause` properties. `throw`
-replaces the stack with the current throw site, while `rethrow` preserves a
-previously captured stack. Typed and native regions continue to reject
-exception control flow and fall back to the bytecode VM.
+with `identifier`, `message`, `stack`, `cause`, and `Correction` properties.
+Typed and native regions continue to reject exception control flow and fall
+back to the bytecode VM.
 
-The public v0.70 stack property exposes the current scalar throw-site structure
-with `file`, `name`, and `line`; the runtime retains frame storage separately
-so a later milestone can expose a full N-by-1 structure array without changing
-the exception object contract. `cause` is currently an empty 0-by-1 Cell, and
-cause chaining remains a declared v0.73 gap. The machine-readable
-`compatibility-matrix.json` records this partial boundary and every other
-audited feature by parser, semantic, HIR, bytecode, production, typed, and
-native tier. Its CTest validator checks source paths, registered evidence,
-allowed states, unique IDs, and gap classification. Release builds also
-undefine `NDEBUG` for smoke executables so assertion-based evidence remains
-active under optimization.
+v0.73 completes the engine-facing diagnostic contract. `Diagnostic` now has
+an explicit Error/Warning severity, a complete vector of source frames, and
+recursive causes. Each runtime records the current error site followed by
+call-site frames from the innermost caller to the entry script or function.
+The same frame collector covers local, path, private, package, class-method,
+handle, and source-graph calls. The public `MException.stack` is an N-by-1
+structure array whose elements expose `file`, `name`, and `line`; embedding
+results retain the same data even when the exception is uncaught across files.
+This public structure array is the canonical frame store; the exception value
+does not maintain a second hidden stack representation.
+
+Stack mutation is an enum contract rather than a boolean convention: `throw`
+replaces the stack at the current site, `rethrow` preserves a previously
+captured stack, and `throwAsCaller` replaces it after removing the current
+frame. `addCause` returns a copied value with an appended `MException` in its
+column Cell, and diagnostic conversion recursively preserves those causes.
+`getReport` provides stable MParser `basic` and `extended` text and accepts the
+MATLAB hyperlinks option for compatibility without emitting terminal links.
+`Correction` is a readable Missing placeholder; `addCorrection` fails with
+`MParser:UnsupportedExceptionCorrection`, making the unsupported object model
+explicit.
+
+`runtime_warning` owns per-invocation warning settings, identifier overrides,
+`backtrace`/`verbose` flags, save/restore structures, and `lastwarn` state.
+Warnings use a separate internal queue so they cannot trigger `catch`, abort a
+VM instruction stream, block adaptive workspace publication, or turn a CLI
+run into failure. Public results merge them as severity-tagged diagnostics,
+and consumers use `hasErrorDiagnostics` when deciding success. Suppressed
+warnings still update `lastwarn`. `assert` uses the shared truth and exception
+formatting rules and raises a catchable default or caller-specified exception.
+The HIR statement path now requests zero outputs for standalone calls, matching
+bytecode lowering and preserving no-output function/builtin semantics.
+
+The machine-readable `compatibility-matrix.json` records this boundary and
+every other audited feature by parser, semantic, HIR, bytecode, production,
+typed, and native tier. Its CTest validator checks source paths, registered
+evidence, allowed states, unique IDs, and gap classification. Release builds
+also undefine `NDEBUG` for smoke executables so assertion-based evidence
+remains active under optimization.
 
 v0.71 replaces the structure side of `RuntimeValue::fields` with one canonical
 array representation: `structElements` stores one ordered field map per

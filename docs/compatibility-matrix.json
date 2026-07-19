@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.72.0",
+  "version": "0.73.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -127,13 +127,13 @@
     {
       "id": "EXC-001",
       "area": "exceptions",
-      "feature": "MException catch objects, identifiers, formatted error, throw, rethrow, and throw-site source frame",
+      "feature": "MException stack/cause/report contracts, throw policies, warning/lastwarn, assert, and embedding-visible diagnostics",
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["exception_runtime_smoke", "exception_runtime_production_cli_smoke", "interpreter_smoke", "bytecode_vm_smoke"],
-      "sources": ["src/mparser/runtime_exception.cpp", "tests/exception_runtime_smoke.cpp"],
-      "limits": "v0.70 publicly exposes the first throw-site stack frame; full N-by-1 stack arrays, cause chains, corrections, warning, assert, and getReport remain open."
+      "evidence": ["exception_runtime_smoke", "exception_source_graph_smoke", "exception_runtime_production_cli_smoke", "exception_diagnostics_production_cli_smoke", "interpreter_smoke", "bytecode_vm_smoke"],
+      "sources": ["src/mparser/runtime_exception.cpp", "src/mparser/runtime_warning.cpp", "tests/exception_runtime_smoke.cpp", "tests/exception_source_graph_smoke.cpp", "samples/exception_diagnostics_demo.m"],
+      "limits": "v0.73 exposes complete N-by-1 file/name/line stacks across the source graph, recursive causes, basic/extended reports, throwAsCaller, severity-tagged warnings, lastwarn, and assert. Correction is an explicit Missing placeholder and addCorrection reports MParser:UnsupportedExceptionCorrection; warning state resets for each runtime invocation, report text is MParser-defined, and typed/native tiers fall back to the VM."
     },
     {
       "id": "HANDLE-001",
@@ -349,11 +349,11 @@
       "id": "G-EXC-001",
       "area": "exceptions",
       "priority": "must-have",
-      "state": "in-progress",
+      "state": "closed",
       "target": "v0.73",
       "framework_impact": "contract-extension",
       "requirement": "Complete N-by-1 MException stack arrays, nested call frames, cause chains, correction boundary, warning, assert, and stable diagnostic identifiers.",
-      "exit_evidence": "Nested cross-file throw/rethrow differential tests and embedding-visible identifier/message/stack assertions."
+      "exit_evidence": "exception_runtime_smoke differentially covers full stacks, causes, reports, throw/rethrow/throwAsCaller, warning/lastwarn, assert, and the correction boundary; exception_source_graph_smoke verifies CompiledModule and HIR cross-file stack metadata; the production diagnostics sample proves warning-only success."
     },
     {
       "id": "G-CALL-001",

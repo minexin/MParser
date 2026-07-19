@@ -4,7 +4,9 @@
 #include "mparser/runtime_struct.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
+#include <limits>
 #include <locale>
 #include <optional>
 #include <sstream>
@@ -55,12 +57,12 @@ RuntimeValue emptyStackValue() {
         {"file", "name", "line"}, {}, {0, 1});
 }
 
-RuntimeValue stackFrameValue(const RuntimeExceptionFrame& frame) {
-    RuntimeValue result = makeRuntimeStructValue();
-    runtimeSetStructField(result, "file", stringValue(frame.file));
-    runtimeSetStructField(result, "name", stringValue(frame.name));
-    runtimeSetStructField(result, "line",
-                          numberValue(static_cast<double>(frame.line)));
+RuntimeStructElement stackFrameElement(
+    const RuntimeExceptionFrame& frame) {
+    RuntimeStructElement result;
+    result.emplace("file", stringValue(frame.file));
+    result.emplace("name", stringValue(frame.name));
+    result.emplace("line", numberValue(static_cast<double>(frame.line)));
     return result;
 }
 
@@ -69,11 +71,13 @@ RuntimeValue exceptionValue(std::string identifier, std::string message) {
     result.kind = RuntimeValueKind::Object;
     result.className = std::string(kRuntimeExceptionClassName);
     setRuntimeDimensions(result, {1, 1});
-    result.fieldOrder = {"identifier", "message", "stack", "cause"};
+    result.fieldOrder = {"identifier", "message", "stack", "cause",
+                         "Correction"};
     result.fields.emplace("identifier", stringValue(std::move(identifier)));
     result.fields.emplace("message", stringValue(std::move(message)));
     result.fields.emplace("stack", emptyStackValue());
     result.fields.emplace("cause", emptyCellValue());
+    result.fields.emplace("Correction", RuntimeValue{});
     return result;
 }
 
@@ -271,19 +275,52 @@ std::string exceptionTextProperty(const RuntimeValue& exception,
     return field->second.text;
 }
 
-void attachFrames(RuntimeValue& exception,
-                  const std::vector<RuntimeExceptionFrame>& frames) {
-    exception.cells.clear();
-    exception.cells.reserve(frames.size());
-    for (const auto& frame : frames) {
-        exception.cells.push_back(stackFrameValue(frame));
+std::optional<std::vector<RuntimeExceptionFrame>> stackFramesFromValue(
+    const RuntimeValue& stack, std::string& error) {
+    if (stack.kind != RuntimeValueKind::Struct) {
+        error = "exception stack must be a structure array";
+        return std::nullopt;
+    }
+    const auto dimensions = runtimeDimensions(stack);
+    if (dimensions.size() != 2 || dimensions[1] != 1) {
+        error = "exception stack must be an N-by-1 structure array";
+        return std::nullopt;
     }
 
-    RuntimeValue publicStack = emptyStackValue();
-    if (!exception.cells.empty()) {
-        publicStack = exception.cells.front();
+    std::vector<RuntimeExceptionFrame> frames;
+    frames.reserve(runtimeStructElementCount(stack));
+    for (size_t index = 0; index < runtimeStructElementCount(stack); ++index) {
+        const RuntimeValue* file = runtimeStructField(stack, "file", index);
+        const RuntimeValue* name = runtimeStructField(stack, "name", index);
+        const RuntimeValue* line = runtimeStructField(stack, "line", index);
+        if (!file || !name || !line ||
+            file->kind != RuntimeValueKind::String ||
+            name->kind != RuntimeValueKind::String ||
+            line->kind != RuntimeValueKind::Number ||
+            !std::isfinite(line->number) || line->number < 1.0 ||
+            std::floor(line->number) != line->number ||
+            line->number > static_cast<double>(
+                               std::numeric_limits<int>::max())) {
+            error = "exception stack entries require text file/name fields "
+                    "and a positive integer line field";
+            return std::nullopt;
+        }
+        frames.push_back(RuntimeExceptionFrame{
+            file->text, name->text, static_cast<int>(line->number)});
     }
-    exception.fields["stack"] = std::move(publicStack);
+    return frames;
+}
+
+void attachFrames(RuntimeValue& exception,
+                  const std::vector<RuntimeExceptionFrame>& frames) {
+    std::vector<RuntimeStructElement> publicFrames;
+    publicFrames.reserve(frames.size());
+    for (const auto& frame : frames) {
+        publicFrames.push_back(stackFrameElement(frame));
+    }
+    exception.fields["stack"] = makeRuntimeStructArrayValue(
+        {"file", "name", "line"}, std::move(publicFrames),
+        {frames.size(), 1});
 }
 
 } // namespace
@@ -350,8 +387,16 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
             runtimeStructField(arguments.front(), "message");
         const RuntimeValue* identifier =
             runtimeStructField(arguments.front(), "identifier");
+        const RuntimeValue* stack =
+            runtimeStructField(arguments.front(), "stack");
+        const RuntimeValue* correction =
+            runtimeStructField(arguments.front(), "correction");
         if (!message || message->kind != RuntimeValueKind::String) {
             return failure("error structure requires a text message field");
+        }
+        if (correction && correction->kind != RuntimeValueKind::Missing) {
+            return failure("error correction objects are outside the "
+                           "supported exception subset");
         }
         std::string id;
         if (identifier) {
@@ -363,7 +408,17 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
             }
             id = identifier->text;
         }
-        return constructException(std::move(id), *message, {});
+        auto result = constructException(std::move(id), *message, {});
+        if (!result.succeeded || !stack) {
+            return result;
+        }
+        std::string stackError;
+        const auto frames = stackFramesFromValue(*stack, stackError);
+        if (!frames) {
+            return failure(std::move(stackError));
+        }
+        attachFrames(result.value, *frames);
+        return result;
     }
     if (arguments.front().kind != RuntimeValueKind::String) {
         return failure("error message must be a character vector or string "
@@ -387,19 +442,172 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
 RuntimeExceptionOperationResult runtimePrepareExceptionForThrow(
     const RuntimeValue& exception,
     const std::vector<RuntimeExceptionFrame>& frames,
-    bool preserveExistingStack) {
+    RuntimeExceptionStackPolicy policy) {
     if (!isRuntimeException(exception)) {
-        return failure("throw and rethrow require a scalar MException object");
+        return failure("throw, rethrow, and throwAsCaller require a scalar "
+                       "MException object");
     }
-    if (preserveExistingStack && exception.cells.empty()) {
+    if (policy == RuntimeExceptionStackPolicy::Preserve &&
+        runtimeExceptionFrameCount(exception) == 0) {
         return failure("rethrow requires a previously thrown MException");
     }
 
     RuntimeValue result = exception;
-    if (!preserveExistingStack) {
-        attachFrames(result, frames);
+    if (policy != RuntimeExceptionStackPolicy::Preserve) {
+        const size_t first =
+            policy == RuntimeExceptionStackPolicy::AsCaller &&
+                    !frames.empty()
+                ? 1
+                : 0;
+        attachFrames(result, std::vector<RuntimeExceptionFrame>(
+                                 frames.begin() +
+                                     static_cast<std::ptrdiff_t>(first),
+                                 frames.end()));
     }
     return success(std::move(result));
+}
+
+namespace {
+
+std::vector<RuntimeValue> exceptionCauseValues(
+    const RuntimeValue& exception) {
+    const auto found = exception.fields.find("cause");
+    if (found == exception.fields.end() ||
+        found->second.kind != RuntimeValueKind::Cell) {
+        return {};
+    }
+    return found->second.cells;
+}
+
+DiagnosticCause diagnosticCauseFromException(
+    const RuntimeValue& exception, size_t depth) {
+    DiagnosticCause result;
+    result.identifier = exceptionTextProperty(exception, "identifier");
+    result.message = exceptionTextProperty(exception, "message");
+    result.stack = runtimeExceptionFrames(exception);
+    if (depth >= 32) {
+        return result;
+    }
+    for (const auto& cause : exceptionCauseValues(exception)) {
+        if (isRuntimeException(cause)) {
+            result.causes.push_back(
+                diagnosticCauseFromException(cause, depth + 1));
+        }
+    }
+    return result;
+}
+
+RuntimeValue exceptionFromDiagnosticCause(
+    const DiagnosticCause& cause, size_t depth) {
+    RuntimeValue result = exceptionValue(cause.identifier, cause.message);
+    attachFrames(result, cause.stack);
+    if (depth >= 32) {
+        return result;
+    }
+    RuntimeValue& causes = result.fields["cause"];
+    for (const auto& nested : cause.causes) {
+        causes.cells.push_back(
+            exceptionFromDiagnosticCause(nested, depth + 1));
+    }
+    setRuntimeDimensions(causes, {causes.cells.size(), 1});
+    return result;
+}
+
+void appendExceptionReport(std::ostringstream& output,
+                           const RuntimeValue& exception,
+                           std::string_view indentation,
+                           size_t depth) {
+    const std::string identifier =
+        exceptionTextProperty(exception, "identifier");
+    if (!identifier.empty()) {
+        output << indentation << identifier << ": ";
+    } else {
+        output << indentation;
+    }
+    output << exceptionTextProperty(exception, "message");
+
+    for (const auto& frame : runtimeExceptionFrames(exception)) {
+        output << '\n' << indentation << "  at " << frame.name;
+        if (!frame.file.empty()) {
+            output << " (" << frame.file << ':' << frame.line << ')';
+        } else {
+            output << " (line " << frame.line << ')';
+        }
+    }
+
+    if (depth >= 32) {
+        output << '\n' << indentation << "Caused by: <depth limit>";
+        return;
+    }
+    for (const auto& cause : exceptionCauseValues(exception)) {
+        if (!isRuntimeException(cause)) {
+            continue;
+        }
+        output << '\n' << indentation << "Caused by:" << '\n';
+        appendExceptionReport(output, cause,
+                              std::string(indentation) + "  ", depth + 1);
+    }
+}
+
+} // namespace
+
+RuntimeExceptionOperationResult runtimeAddExceptionCause(
+    const std::vector<RuntimeValue>& arguments) {
+    if (arguments.size() != 2 ||
+        !isRuntimeException(arguments[0]) ||
+        !isRuntimeException(arguments[1])) {
+        return failure("addCause expects a base MException and one cause "
+                       "MException");
+    }
+    RuntimeValue result = arguments[0];
+    RuntimeValue& causes = result.fields["cause"];
+    if (causes.kind != RuntimeValueKind::Cell) {
+        causes = emptyCellValue();
+    }
+    causes.cells.push_back(arguments[1]);
+    setRuntimeDimensions(causes, {causes.cells.size(), 1});
+    return success(std::move(result));
+}
+
+RuntimeExceptionOperationResult runtimeGetExceptionReport(
+    const std::vector<RuntimeValue>& arguments) {
+    if (arguments.empty() || arguments.size() > 4 ||
+        !isRuntimeException(arguments.front())) {
+        return failure("getReport expects an MException and optional report "
+                       "format arguments");
+    }
+
+    std::string type = "extended";
+    if (arguments.size() >= 2) {
+        if (arguments[1].kind != RuntimeValueKind::String ||
+            (arguments[1].text != "basic" &&
+             arguments[1].text != "extended")) {
+            return failure("getReport type must be basic or extended");
+        }
+        type = arguments[1].text;
+    }
+    if (arguments.size() == 3) {
+        return failure("getReport hyperlinks requires a name and value");
+    }
+    if (arguments.size() == 4) {
+        if (arguments[2].kind != RuntimeValueKind::String ||
+            arguments[2].text != "hyperlinks" ||
+            arguments[3].kind != RuntimeValueKind::String ||
+            (arguments[3].text != "default" &&
+             arguments[3].text != "on" &&
+             arguments[3].text != "off")) {
+            return failure("getReport hyperlinks must be default, on, or "
+                           "off");
+        }
+    }
+
+    if (type == "basic") {
+        return success(stringValue(
+            exceptionTextProperty(arguments.front(), "message")));
+    }
+    std::ostringstream report;
+    appendExceptionReport(report, arguments.front(), {}, 0);
+    return success(stringValue(report.str()));
 }
 
 RuntimeValue runtimeExceptionFromDiagnostic(
@@ -410,16 +618,28 @@ RuntimeValue runtimeExceptionFromDiagnostic(
             ? std::string(kRuntimeErrorIdentifier)
             : diagnostic.identifier,
         diagnostic.message);
-    attachFrames(result, frames);
+    attachFrames(result, frames.empty() ? diagnostic.stack : frames);
+    RuntimeValue& causes = result.fields["cause"];
+    for (const auto& cause : diagnostic.causes) {
+        causes.cells.push_back(exceptionFromDiagnosticCause(cause, 0));
+    }
+    setRuntimeDimensions(causes, {causes.cells.size(), 1});
     return result;
 }
 
 Diagnostic runtimeDiagnosticFromException(
     const RuntimeValue& exception, SourceSpan fallbackSpan) {
-    return Diagnostic{
+    Diagnostic result{
         fallbackSpan,
         exceptionTextProperty(exception, "message"),
         exceptionTextProperty(exception, "identifier")};
+    result.stack = runtimeExceptionFrames(exception);
+    for (const auto& cause : exceptionCauseValues(exception)) {
+        if (isRuntimeException(cause)) {
+            result.causes.push_back(diagnosticCauseFromException(cause, 0));
+        }
+    }
+    return result;
 }
 
 const RuntimeValue* runtimeExceptionProperty(
@@ -431,8 +651,26 @@ const RuntimeValue* runtimeExceptionProperty(
     return field == exception.fields.end() ? nullptr : &field->second;
 }
 
+std::vector<RuntimeExceptionFrame> runtimeExceptionFrames(
+    const RuntimeValue& exception) {
+    if (!isRuntimeException(exception)) {
+        return {};
+    }
+    const auto stack = exception.fields.find("stack");
+    if (stack == exception.fields.end()) {
+        return {};
+    }
+    std::string error;
+    const auto frames = stackFramesFromValue(stack->second, error);
+    return frames.value_or(std::vector<RuntimeExceptionFrame>{});
+}
+
 size_t runtimeExceptionFrameCount(const RuntimeValue& exception) {
-    return isRuntimeException(exception) ? exception.cells.size() : 0;
+    return runtimeExceptionFrames(exception).size();
+}
+
+size_t runtimeExceptionCauseCount(const RuntimeValue& exception) {
+    return exceptionCauseValues(exception).size();
 }
 
 } // namespace mparser

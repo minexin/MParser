@@ -12,10 +12,12 @@ inline constexpr std::string_view kRuntimeExceptionClassName = "MException";
 inline constexpr std::string_view kRuntimeErrorIdentifier =
     "MParser:RuntimeError";
 
-struct RuntimeExceptionFrame {
-    std::string file;
-    std::string name;
-    int line = 1;
+using RuntimeExceptionFrame = DiagnosticFrame;
+
+enum class RuntimeExceptionStackPolicy {
+    Replace,
+    Preserve,
+    AsCaller,
 };
 
 struct RuntimeExceptionOperationResult {
@@ -36,7 +38,13 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
 RuntimeExceptionOperationResult runtimePrepareExceptionForThrow(
     const RuntimeValue& exception,
     const std::vector<RuntimeExceptionFrame>& frames,
-    bool preserveExistingStack);
+    RuntimeExceptionStackPolicy policy);
+
+RuntimeExceptionOperationResult runtimeAddExceptionCause(
+    const std::vector<RuntimeValue>& arguments);
+
+RuntimeExceptionOperationResult runtimeGetExceptionReport(
+    const std::vector<RuntimeValue>& arguments);
 
 RuntimeValue runtimeExceptionFromDiagnostic(
     const Diagnostic& diagnostic,
@@ -48,6 +56,10 @@ Diagnostic runtimeDiagnosticFromException(
 const RuntimeValue* runtimeExceptionProperty(
     const RuntimeValue& exception, std::string_view name);
 
+std::vector<RuntimeExceptionFrame> runtimeExceptionFrames(
+    const RuntimeValue& exception);
+
 size_t runtimeExceptionFrameCount(const RuntimeValue& exception);
+size_t runtimeExceptionCauseCount(const RuntimeValue& exception);
 
 } // namespace mparser

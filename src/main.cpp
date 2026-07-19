@@ -166,6 +166,29 @@ ProductionJitOption parseProductionJitOption(
         "JIT mode must be auto, off, portable, or native");
 }
 
+void printDiagnosticCause(const mparser::DiagnosticCause& cause,
+                          size_t depth) {
+    const std::string indent((depth + 1) * 2, ' ');
+    std::cerr << indent << "Caused by";
+    if (!cause.identifier.empty()) {
+        std::cerr << " [" << cause.identifier << "]";
+    }
+    std::cerr << ": " << cause.message << "\n";
+    for (const auto& frame : cause.stack) {
+        std::cerr << indent << "  at "
+                  << (frame.name.empty() ? "<script>" : frame.name);
+        if (!frame.file.empty()) {
+            std::cerr << " (" << frame.file << ":" << frame.line << ")";
+        } else {
+            std::cerr << " (line " << frame.line << ")";
+        }
+        std::cerr << "\n";
+    }
+    for (const auto& nested : cause.causes) {
+        printDiagnosticCause(nested, depth + 1);
+    }
+}
+
 void printDiagnostics(
     std::string_view header,
     const std::vector<mparser::Diagnostic>& diagnostics,
@@ -190,7 +213,28 @@ void printDiagnostics(
         }
         std::cerr << diagnostic.span.begin.line << ":"
                   << diagnostic.span.begin.column << ": "
-                  << diagnostic.message << "\n";
+                  << (diagnostic.severity ==
+                              mparser::DiagnosticSeverity::Warning
+                          ? "warning"
+                          : "error");
+        if (!diagnostic.identifier.empty()) {
+            std::cerr << " [" << diagnostic.identifier << "]";
+        }
+        std::cerr << ": " << diagnostic.message << "\n";
+        for (const auto& frame : diagnostic.stack) {
+            std::cerr << "  at "
+                      << (frame.name.empty() ? "<script>" : frame.name);
+            if (!frame.file.empty()) {
+                std::cerr << " (" << frame.file << ":" << frame.line
+                          << ")";
+            } else {
+                std::cerr << " (line " << frame.line << ")";
+            }
+            std::cerr << "\n";
+        }
+        for (const auto& cause : diagnostic.causes) {
+            printDiagnosticCause(cause, 0);
+        }
     }
 }
 
@@ -1419,6 +1463,9 @@ int main(int argc, char** argv) {
                         "Module runtime diagnostics",
                         result.adaptive.runtime.diagnostics, &module,
                         path);
+                }
+                if (mparser::hasErrorDiagnostics(
+                        result.adaptive.runtime.diagnostics)) {
                     return 1;
                 }
                 printFunctionOutputs(result.adaptive.runtime);
@@ -1496,6 +1543,9 @@ int main(int argc, char** argv) {
                                 "Adaptive bytecode VM diagnostics",
                                 adaptive.runtime.diagnostics, &module,
                                 path);
+                        }
+                        if (mparser::hasErrorDiagnostics(
+                                adaptive.runtime.diagnostics)) {
                             return 1;
                         }
                         lastRuntime = std::move(adaptive.runtime);
@@ -1580,7 +1630,8 @@ int main(int argc, char** argv) {
                 std::vector<mparser::RuntimeVariable> baselineVariables;
                 std::vector<std::string> nondeterministicTargets;
                 bool typedOutputsMatch = true;
-                if (runTypedBytecode && runtime.diagnostics.empty()) {
+                if (runTypedBytecode &&
+                    !mparser::hasErrorDiagnostics(runtime.diagnostics)) {
                     baselineVariables = runtime.variables;
                     nondeterministicTargets =
                         nondeterministicAssignmentTargets(bytecode);
@@ -1609,6 +1660,8 @@ int main(int argc, char** argv) {
                 if (!runtime.diagnostics.empty()) {
                     printDiagnostics("Bytecode VM diagnostics",
                                      runtime.diagnostics, &module, path);
+                }
+                if (mparser::hasErrorDiagnostics(runtime.diagnostics)) {
                     return 1;
                 }
                 if (profileBytecode) {
@@ -1657,6 +1710,8 @@ int main(int argc, char** argv) {
                 if (!runtime.diagnostics.empty()) {
                     printDiagnostics("Runtime diagnostics",
                                      runtime.diagnostics, &module, path);
+                }
+                if (mparser::hasErrorDiagnostics(runtime.diagnostics)) {
                     return 1;
                 }
             }

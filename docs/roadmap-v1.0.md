@@ -221,11 +221,24 @@ function families, not an unbounded builtin count.
   value/handle copy semantics through HIR, bytecode, production, and AArch64
   focused tests.
 
-### v0.73-v0.79: Remaining Runtime Foundations
+### v0.73: Exception And Diagnostic Contracts
 
-- Close the audited Must-have exception, dynamic call/handle, text,
-  object-array/reflection, workspace, and runtime-value boundaries with linked
-  compatibility evidence.
+- Expose complete N-by-1 `MException.stack` arrays and embedding-visible
+  source-graph frames shared by the HIR interpreter and bytecode VM.
+- Stabilize cause chaining, basic/extended reports, throw/rethrow/
+  throwAsCaller policies, warning severity/state/lastwarn, catchable assert,
+  and the explicit unsupported correction boundary.
+- Keep warnings nonfatal across CLI, adaptive execution, benchmarking, and
+  workspace publication, while legal exception-heavy code remains a VM
+  fallback outside typed/native regions.
+- Close `G-EXC-001` with differential runtime, cross-file CompiledModule, CLI
+  sample, compatibility-matrix, and AArch64 focused evidence.
+
+### v0.74-v0.79: Remaining Runtime Foundations
+
+- Close the audited Must-have dynamic call/handle, text,
+  object-array/reflection, workspace, and remaining runtime-value boundaries
+  with linked compatibility evidence.
 - Freeze the engine-facing value, shape, indexing, call-frame, output-count,
   diagnostic, and fallback contracts needed by the v0.80 extension layer.
 

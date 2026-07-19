@@ -159,7 +159,8 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
 
 bool isKnownBuiltinName(const std::string& name) {
     static constexpr const char* kBuiltinNames[] = {
-        "MException", "abs",      "acos",     "addlistener", "addprop",  "all",
+        "MException", "abs",      "acos",     "addCause", "addCorrection",
+        "addlistener", "addprop",  "all",
         "any",
         "asin",     "assert",   "atan",        "cat",      "cell",
         "char",     "class",    "clc",         "clear",    "cos",
@@ -169,11 +170,11 @@ bool isKnownBuiltinName(const std::string& name) {
         "error",
         "events",   "exp",      "eye",         "false",    "fieldnames",
         "find",
-        "findprop",  "fprintf",
+        "findprop",  "fprintf", "getReport",
         "horzcat",  "inf",      "ipermute",    "isa",      "isenum",
         "isempty",  "isfield",  "islogical",   "ismethod", "isprop",
         "isstruct",
-        "isvalid",  "length",   "linspace",    "listener", "log",
+        "isvalid",  "lastwarn", "length",   "linspace",    "listener", "log",
         "logical",  "max",      "mean",        "metaclass",
         "metafunction", "methods", "min",      "nan",      "nargin",
         "nargout",  "ndims",    "notify",      "numel",    "ones",
@@ -181,8 +182,8 @@ bool isKnownBuiltinName(const std::string& name) {
         "rand",     "randn",    "repmat",      "reshape",  "rmfield",
         "single",   "sin",      "size",        "sqrt",     "squeeze",
         "strcmp",   "string",   "struct",      "sum",      "table",
-        "tan",      "throw",    "tic",         "toc",      "true",
-        "rethrow",  "vertcat",
+        "tan",      "throw",    "throwAsCaller", "tic", "toc", "true",
+        "rethrow",  "vertcat", "warning",
         "zeros",    "matlab.metadata.Class.fromName",
         "meta.class.fromName", "event.proplistener",
     };

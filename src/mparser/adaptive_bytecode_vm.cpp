@@ -136,7 +136,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
         result.runtime =
             vm.run(*program_, *semantic_, typedModule_, vmOptions);
         if (options_.preserveWorkspace &&
-            result.runtime.diagnostics.empty()) {
+            !hasErrorDiagnostics(result.runtime.diagnostics)) {
             workspace_ = result.runtime.variables;
         }
         result.installedRegionCount = typedModule_.regions.size();
@@ -155,7 +155,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
     vmOptions.requestedOutputCount = options_.requestedOutputCount;
     vmOptions.typedRegionBackend = options_.typedRegionBackend;
     result.runtime = vm.run(*program_, *semantic_, vmOptions);
-    if (!result.runtime.diagnostics.empty()) {
+    if (hasErrorDiagnostics(result.runtime.diagnostics)) {
         populateSessionState(result);
         return result;
     }

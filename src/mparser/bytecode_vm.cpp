@@ -17,6 +17,7 @@
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_value_ops.h"
+#include "mparser/runtime_warning.h"
 #include "mparser/typed_ir.h"
 #include "mparser/typed_region_executor.h"
 
@@ -26,6 +27,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
@@ -43,6 +45,12 @@ constexpr std::string_view kScriptProfileName = "<script>";
 constexpr std::string_view kEventDataClassName = "event.EventData";
 constexpr std::string_view kPropertyEventClassName = "event.PropertyEvent";
 constexpr std::string_view kEventListenerClassName = "event.listener";
+
+bool isRuntimeExceptionMethodName(std::string_view name) {
+    return name == "addCause" || name == "getReport" ||
+           name == "throw" || name == "rethrow" ||
+           name == "throwAsCaller" || name == "addCorrection";
+}
 constexpr std::string_view kPropertyListenerClassName =
     "event.proplistener";
 constexpr std::string_view kDynamicPropsClassName = "dynamicprops";
@@ -1173,7 +1181,12 @@ public:
         entryOutputs_.clear();
         entryOutputNames_.clear();
         diagnostics_ = program.diagnostics;
+        warnings_.clear();
         pendingException_.reset();
+        warningState_ = RuntimeWarningState{};
+        exceptionCallerFrames_.clear();
+        activeExceptionFunctionNames_.clear();
+        scriptModeActive_ = false;
         frames_.clear();
         frames_.push_back({});
         activeClassFunctions_.clear();
@@ -1223,7 +1236,11 @@ public:
         result.outputNames = entryOutputNames_;
         result.outputs = entryOutputs_;
         result.requestedOutputCount = executedRequestedOutputCount_;
-        result.diagnostics = std::move(diagnostics_);
+        result.diagnostics = std::move(warnings_);
+        result.diagnostics.insert(
+            result.diagnostics.end(),
+            std::make_move_iterator(diagnostics_.begin()),
+            std::make_move_iterator(diagnostics_.end()));
         result.executedInstructionCount = executedInstructionCount_;
         if (profilingEnabled_) {
             result.profile = buildProfile();
@@ -1497,17 +1514,95 @@ private:
         return &semantic_->sources[span.begin.sourceId];
     }
 
-    std::vector<RuntimeExceptionFrame>
-    exceptionFrames(const SourceSpan& span) const {
+    class ExceptionFunctionGuard {
+    public:
+        ExceptionFunctionGuard(BytecodeVmContext& context,
+                               std::string name,
+                               const SourceSpan& callSite)
+            : context_(context), callerPushed_(
+                                     context_.enterExceptionFunction(
+                                         std::move(name), callSite)) {}
+
+        ~ExceptionFunctionGuard() {
+            context_.leaveExceptionFunction(callerPushed_);
+        }
+
+    private:
+        BytecodeVmContext& context_;
+        bool callerPushed_ = false;
+    };
+
+    RuntimeExceptionFrame exceptionFrame(
+        const SourceSpan& span, std::string name) const {
         RuntimeExceptionFrame frame;
         frame.line = span.begin.line;
-        frame.name = functionProfileStack_.empty()
-                         ? std::string("<script>")
-                         : functionProfileStack_.back();
+        frame.name = std::move(name);
         if (const auto* source = sourceInfo(span)) {
             frame.file = source->name;
         }
-        return {std::move(frame)};
+        return frame;
+    }
+
+    bool enterExceptionFunction(std::string name,
+                                const SourceSpan& callSite) {
+        const bool hasCaller = scriptModeActive_ ||
+                               !activeExceptionFunctionNames_.empty();
+        if (hasCaller) {
+            exceptionCallerFrames_.push_back(exceptionFrame(
+                callSite,
+                activeExceptionFunctionNames_.empty()
+                    ? std::string("<script>")
+                    : activeExceptionFunctionNames_.back()));
+        }
+        activeExceptionFunctionNames_.push_back(std::move(name));
+        return hasCaller;
+    }
+
+    void leaveExceptionFunction(bool callerPushed) {
+        if (!activeExceptionFunctionNames_.empty()) {
+            activeExceptionFunctionNames_.pop_back();
+        }
+        if (callerPushed && !exceptionCallerFrames_.empty()) {
+            exceptionCallerFrames_.pop_back();
+        }
+    }
+
+    std::vector<RuntimeExceptionFrame>
+    exceptionFrames(const SourceSpan& span) const {
+        std::vector<RuntimeExceptionFrame> frames;
+        frames.push_back(exceptionFrame(
+            span, activeExceptionFunctionNames_.empty()
+                      ? std::string("<script>")
+                      : activeExceptionFunctionNames_.back()));
+        for (auto caller = exceptionCallerFrames_.rbegin();
+             caller != exceptionCallerFrames_.rend(); ++caller) {
+            frames.push_back(*caller);
+        }
+        return frames;
+    }
+
+    SourceSpan exceptionDiagnosticSpan(
+        const RuntimeValue& exception, SourceSpan fallback) const {
+        const auto frames = runtimeExceptionFrames(exception);
+        if (frames.empty()) {
+            return fallback;
+        }
+        const auto& top = frames.front();
+        fallback.begin.line = top.line;
+        fallback.end.line = top.line;
+        fallback.begin.column = 1;
+        fallback.end.column = 1;
+        if (semantic_) {
+            for (size_t sourceId = 0;
+                 sourceId < semantic_->sources.size(); ++sourceId) {
+                if (semantic_->sources[sourceId].name == top.file) {
+                    fallback.begin.sourceId = sourceId;
+                    fallback.end.sourceId = sourceId;
+                    break;
+                }
+            }
+        }
+        return fallback;
     }
 
     std::string publicFunctionIdentifier(std::string_view name) const {
@@ -3690,9 +3785,11 @@ private:
     }
 
     void execute(bool scriptMode) {
+        scriptModeActive_ = scriptMode;
         bool activeFunction = scriptMode;
         bool ranFirstFunction = false;
         bool enteredProfile = false;
+        bool enteredExceptionFunction = false;
         size_t skipDepth = 0;
 
         if (scriptMode) {
@@ -3740,7 +3837,10 @@ private:
                     break;
                 }
                 enterFunctionProfile(instruction.operand, instruction.span);
+                activeExceptionFunctionNames_.push_back(
+                    publicFunctionIdentifier(instruction.operand));
                 enteredProfile = true;
+                enteredExceptionFunction = true;
                 activeFunction = true;
                 ranFirstFunction = true;
                 ++pc;
@@ -3750,7 +3850,11 @@ private:
             if (instruction.op == BytecodeOp::LeaveFunction) {
                 if (activeFunction && !scriptMode) {
                     leaveFunctionProfile();
+                    if (enteredExceptionFunction) {
+                        activeExceptionFunctionNames_.pop_back();
+                    }
                     enteredProfile = false;
+                    enteredExceptionFunction = false;
                     activeFunction = false;
                     break;
                 }
@@ -3789,6 +3893,11 @@ private:
         if (enteredProfile) {
             leaveFunctionProfile();
         }
+        if (enteredExceptionFunction &&
+            !activeExceptionFunctionNames_.empty()) {
+            activeExceptionFunctionNames_.pop_back();
+        }
+        scriptModeActive_ = false;
         if (!scriptMode && !requestedEntryFunction_.empty() &&
             !ranFirstFunction && diagnostics_.empty()) {
             diagnostics_.push_back(Diagnostic{
@@ -7391,6 +7500,11 @@ private:
             return;
         }
         if (isRuntimeException(target->value)) {
+            if (isRuntimeExceptionMethodName(instruction.operand)) {
+                stack_.push_back(builtinStackValue(
+                    instruction.operand, target->value));
+                return;
+            }
             const RuntimeValue* property = runtimeExceptionProperty(
                 target->value, instruction.operand);
             if (!property) {
@@ -8487,6 +8601,11 @@ private:
                               info.display);
             return missingOutputs(requestedCount);
         }
+
+        ExceptionFunctionGuard exceptionTrace(
+            *this, info.display.empty() ? std::string("<anonymous>")
+                                        : info.display,
+            instruction.span);
 
         const bool savedReturnRequested = returnRequested_;
         const size_t savedPc = currentPc_;
@@ -10135,6 +10254,69 @@ private:
             return {};
         }
 
+        if (name == "MException" && requestedCount > 1) {
+            addDiagnostic(instruction,
+                          "MException supports at most one output",
+                          "MParser:InvalidException");
+            return missingOutputs(requestedCount);
+        }
+
+        if (name == "warning" || name == "lastwarn") {
+            auto result =
+                name == "warning"
+                    ? runtimeWarning(arguments,
+                                     static_cast<size_t>(requestedCount),
+                                     warningState_)
+                    : runtimeLastWarning(
+                          arguments, static_cast<size_t>(requestedCount),
+                          warningState_);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, std::move(result.error),
+                              "MParser:InvalidWarning");
+                return missingOutputs(requestedCount);
+            }
+            if (result.emitted) {
+                addWarning(instruction, std::move(*result.emitted));
+            }
+            return std::move(result.outputs);
+        }
+
+        if (name == "addCause" || name == "getReport") {
+            if (requestedCount > 1) {
+                addDiagnostic(instruction,
+                              name + " supports at most one output",
+                              "MParser:InvalidException");
+                return missingOutputs(requestedCount);
+            }
+            auto result = name == "addCause"
+                              ? runtimeAddExceptionCause(arguments)
+                              : runtimeGetExceptionReport(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, std::move(result.error),
+                              "MParser:InvalidException");
+                return missingOutputs(requestedCount);
+            }
+            return requestedCount == 0
+                       ? std::vector<RuntimeValue>{}
+                       : std::vector<RuntimeValue>{
+                             std::move(result.value)};
+        }
+
+        if (name == "addCorrection") {
+            addDiagnostic(
+                instruction,
+                "MException correction objects are outside the supported "
+                "exception subset",
+                "MParser:UnsupportedExceptionCorrection");
+            return missingOutputs(requestedCount);
+        }
+
+        if (name == "assert" && requestedCount != 0) {
+            addDiagnostic(instruction, "assert does not produce outputs",
+                          "MParser:InvalidAssertion");
+            return missingOutputs(requestedCount);
+        }
+
         if (name == "addprop" || name == "findprop") {
             if (requestedCount > 1) {
                 addDiagnostic(instruction,
@@ -11543,6 +11725,13 @@ private:
             return missingOutputs(requestedCount);
         }
 
+        const std::string traceName =
+            info.metadataIdentifier.empty()
+                ? publicFunctionIdentifier(name)
+                : info.metadataIdentifier;
+        ExceptionFunctionGuard exceptionTrace(*this, traceName,
+                                              instruction.span);
+
         frames_.push_back({});
         auto validatedArguments =
             validateFunctionArguments(instruction, name, info, arguments,
@@ -11643,10 +11832,23 @@ private:
                               "MParser:InvalidException");
                 return missingValue();
             }
-            raiseException(instruction, result.value, false);
+            const RuntimeValue* identifier =
+                runtimeExceptionProperty(result.value, "identifier");
+            const RuntimeValue* message =
+                runtimeExceptionProperty(result.value, "message");
+            if (identifier && message && identifier->text.empty() &&
+                message->text.empty()) {
+                return missingValue();
+            }
+            raiseException(
+                instruction, result.value,
+                runtimeExceptionFrameCount(result.value) == 0
+                    ? RuntimeExceptionStackPolicy::Replace
+                    : RuntimeExceptionStackPolicy::Preserve);
             return missingValue();
         }
-        if (name == "throw" || name == "rethrow") {
+        if (name == "throw" || name == "rethrow" ||
+            name == "throwAsCaller") {
             if (arguments.size() != 1) {
                 addDiagnostic(instruction,
                               "bytecode " + name +
@@ -11654,8 +11856,43 @@ private:
                               "MParser:InvalidException");
                 return missingValue();
             }
-            raiseException(instruction, arguments.front(),
-                           name == "rethrow");
+            const auto policy =
+                name == "rethrow"
+                    ? RuntimeExceptionStackPolicy::Preserve
+                    : name == "throwAsCaller"
+                          ? RuntimeExceptionStackPolicy::AsCaller
+                          : RuntimeExceptionStackPolicy::Replace;
+            raiseException(instruction, arguments.front(), policy);
+            return missingValue();
+        }
+        if (name == "assert") {
+            if (arguments.empty() || !isNumeric(arguments.front())) {
+                addDiagnostic(instruction,
+                              "assert condition must be numeric or logical",
+                              "MParser:InvalidAssertion");
+                return missingValue();
+            }
+            if (truthy(arguments.front())) {
+                return missingValue();
+            }
+
+            std::vector<RuntimeValue> errorArguments;
+            if (arguments.size() == 1) {
+                errorArguments = {
+                    stringValue("MParser:AssertionFailed"),
+                    stringValue("Assertion failed.")};
+            } else {
+                errorArguments.assign(arguments.begin() + 1,
+                                      arguments.end());
+            }
+            auto result = runtimeCreateErrorException(errorArguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, std::move(result.error),
+                              "MParser:InvalidAssertion");
+                return missingValue();
+            }
+            raiseException(instruction, result.value,
+                           RuntimeExceptionStackPolicy::Replace);
             return missingValue();
         }
         if (name == "clear" || name == "clc" || name == "tic" ||
@@ -12626,25 +12863,37 @@ private:
                            std::string(kRuntimeErrorIdentifier)) {
         Diagnostic diagnostic{instruction.span, std::move(message),
                               std::move(identifier)};
+        diagnostic.stack = exceptionFrames(instruction.span);
         pendingException_ = runtimeExceptionFromDiagnostic(
-            diagnostic, exceptionFrames(instruction.span));
+            diagnostic, diagnostic.stack);
         diagnostics_.push_back(std::move(diagnostic));
+    }
+
+    void addWarning(const BytecodeInstruction& instruction,
+                    RuntimeWarningRecord warning) {
+        Diagnostic diagnostic{
+            instruction.span, std::move(warning.message),
+            std::move(warning.identifier), DiagnosticSeverity::Warning};
+        diagnostic.stack = exceptionFrames(instruction.span);
+        warnings_.push_back(std::move(diagnostic));
     }
 
     void raiseException(const BytecodeInstruction& instruction,
                         const RuntimeValue& exception,
-                        bool preserveExistingStack) {
+                        RuntimeExceptionStackPolicy policy) {
         auto prepared = runtimePrepareExceptionForThrow(
-            exception, exceptionFrames(instruction.span),
-            preserveExistingStack);
+            exception, exceptionFrames(instruction.span), policy);
         if (!prepared.succeeded) {
             addDiagnostic(instruction, std::move(prepared.error),
                           "MParser:InvalidException");
             return;
         }
         pendingException_ = std::move(prepared.value);
-        diagnostics_.push_back(runtimeDiagnosticFromException(
-            *pendingException_, instruction.span));
+        auto diagnostic = runtimeDiagnosticFromException(
+            *pendingException_, instruction.span);
+        diagnostic.span =
+            exceptionDiagnosticSpan(*pendingException_, diagnostic.span);
+        diagnostics_.push_back(std::move(diagnostic));
     }
 
     std::map<std::string, RuntimeValue>& currentFrame() {
@@ -12694,7 +12943,9 @@ private:
     std::map<std::string, ClassInfo> classesByName_;
     std::set<std::string> classHierarchyDiagnosticKeys_;
     std::vector<Diagnostic> diagnostics_;
+    std::vector<Diagnostic> warnings_;
     std::optional<RuntimeValue> pendingException_;
+    RuntimeWarningState warningState_;
     std::optional<std::chrono::steady_clock::time_point> ticStart_;
     std::vector<size_t> instructionExecutionCounts_;
     std::map<std::string, BytecodeFunctionProfile> functionProfiles_;
@@ -12709,10 +12960,13 @@ private:
     std::map<size_t, BytecodeTypedRegionExecutionProfile>
         typedRegionExecutions_;
     std::vector<std::string> functionProfileStack_;
+    std::vector<std::string> activeExceptionFunctionNames_;
+    std::vector<RuntimeExceptionFrame> exceptionCallerFrames_;
     size_t executedInstructionCount_ = 0;
     size_t currentPc_ = 0;
     bool returnRequested_ = false;
     bool profilingEnabled_ = true;
+    bool scriptModeActive_ = false;
     TypedRegionBackend typedRegionBackend_ = TypedRegionBackend::Auto;
     std::string requestedEntryFunction_;
     std::vector<RuntimeValue> entryArguments_;

@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.72.0. See [docs/v0.72.md](docs/v0.72.md) for the
+Current milestone: v0.73.0. See [docs/v0.73.md](docs/v0.73.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.71.md](docs/v0.71.md),
+iteration plan. Previous boundaries are kept in [docs/v0.72.md](docs/v0.72.md),
+[docs/v0.71.md](docs/v0.71.md),
 [docs/v0.70.md](docs/v0.70.md),
 [docs/v0.69.md](docs/v0.69.md),
 [docs/v0.68.md](docs/v0.68.md),
@@ -1316,6 +1317,20 @@ build\mparser.exe --run samples\exception_runtime_demo.m
 
 The demo reports `summary = 111111111` and is also checked through the HIR and
 baseline-bytecode interfaces.
+
+Run full source-linked stack propagation, cause chaining, reports,
+`warning`/`lastwarn`, and catchable `assert` through the production interface:
+
+```powershell
+build\mparser.exe --run samples\exception_diagnostics_demo.m
+```
+
+The demo emits `MParserDemo:Notice` as a nonfatal warning, exits successfully,
+and reports `summary = 111111`. Diagnostics now include severity, identifier,
+an N-by-1 `file`/`name`/`line` stack, and recursive causes through the public
+runtime result. `throw`, `rethrow`, and `throwAsCaller` respectively replace,
+preserve, and caller-trim the stack. Correction objects remain an explicit
+unsupported boundary rather than a partially emulated contract.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:

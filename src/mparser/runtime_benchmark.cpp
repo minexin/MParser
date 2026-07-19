@@ -247,11 +247,11 @@ RuntimeBenchmarkStatistics statistics(
 }
 
 bool hasDiagnostics(const InterpreterResult& result) {
-    return !result.diagnostics.empty();
+    return hasErrorDiagnostics(result.diagnostics);
 }
 
 bool hasDiagnostics(const BytecodeVmResult& result) {
-    return !result.diagnostics.empty();
+    return hasErrorDiagnostics(result.diagnostics);
 }
 
 } // namespace
