@@ -2,6 +2,7 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_exception.h"
 #include "mparser/semantic.h"
 
 #include <cassert>
@@ -797,7 +798,7 @@ try
         y = 999;
     end
 catch err
-    message = err;
+    message = err.message;
     y = y + 10;
 end
 
@@ -813,6 +814,10 @@ end
     assert(result.diagnostics.empty());
     assertNumber(result, "k", 1.0);
     assertNumber(result, "y", 13.0);
+
+    const auto* exception = findVariable(result, "err");
+    assert(exception != nullptr);
+    assert(mparser::isRuntimeException(*exception));
 
     const auto* message = findVariable(result, "message");
     assert(message != nullptr);

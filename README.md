@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.69.0. See [docs/v0.69.md](docs/v0.69.md) for the
+Current milestone: v0.70.0. See [docs/v0.70.md](docs/v0.70.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.68.md](docs/v0.68.md),
+iteration plan. Previous boundaries are kept in [docs/v0.69.md](docs/v0.69.md),
+[docs/v0.68.md](docs/v0.68.md),
 [docs/v0.67.md](docs/v0.67.md),
 [docs/v0.66.md](docs/v0.66.md),
 [docs/v0.65.md](docs/v0.65.md),
@@ -71,7 +72,9 @@ The release definition and staged path to v1.0 are maintained in
 documented, embeddable MATLAB-like subset runtime. It does not claim complete
 MATLAB compatibility, but it does require the language and engine foundations
 needed to extend ordinary functions after v1.0 without repeatedly redesigning
-the frontend or VM.
+the frontend or VM. The current source-linked support claims and prioritized
+gaps are recorded in the machine-validated
+[compatibility matrix](docs/compatibility-matrix.json).
 
 MParser is the first iteration of a MATLAB-compatible language frontend. The
 current focus is syntax coverage and stable compiler boundaries:
@@ -131,7 +134,9 @@ dimension-aware `sum`, `prod`, `mean`, `min`, `max`, `any`, and `all`, plus
 one-to-three-output `find`,
 shape-preserving `cumsum`, `cumprod`, `cummin`, and `cummax`, and numeric
 first- or higher-order `diff`,
-`switch/case/otherwise`, and `try/catch` diagnostic recovery. It also records
+`switch/case/otherwise`, and `try/catch` recovery with `MException` catch
+values, identifiers, messages, throw-site stacks, and `error`/`throw`/
+`rethrow`. It also records
 bytecode VM execution profiles for functions, loops, instructions,
 call/index sites, and assignment sites, including runtime value kind, numeric
 class, and shape observations. Profile collection is now an explicit VM
@@ -671,6 +676,16 @@ bytecode VM. Field definition order is retained independently from map lookup,
 and dynamic member names also work for bytecode class objects. Structure arrays
 remain an explicit unsupported boundary rather than being approximated as a
 scalar value.
+
+v0.70 turns the v1.0 language and engine audit into an executable release
+contract. A machine-readable compatibility matrix links supported and partial
+claims to registered CTest evidence and source files, while an automated
+validator rejects stale tests, missing sources, malformed tier states, and
+unclassified gaps. The runtime now exposes `MException` values through both
+baseline engines: `catch` binds an object with `identifier`, `message`,
+`stack`, and `cause`; `error`, `throw`, and `rethrow` share construction,
+formatting, validation, and diagnostic conversion rules. Optimized Release
+tests explicitly keep assertion-based smoke contracts enabled.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
@@ -1267,6 +1282,16 @@ build\mparser.exe --run samples\struct_runtime_demo.m
 
 The demo reports `summary = 2193`. The same file is also a checked HIR and
 baseline-bytecode sample.
+
+Run identifier-preserving exception creation, catch inspection, explicit
+throw, and stack-preserving rethrow through the production interface with:
+
+```powershell
+build\mparser.exe --run samples\exception_runtime_demo.m
+```
+
+The demo reports `summary = 111111111` and is also checked through the HIR and
+baseline-bytecode interfaces.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:

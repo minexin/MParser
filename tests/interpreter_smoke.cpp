@@ -1,6 +1,7 @@
 #include "mparser/interpreter.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_exception.h"
 #include "mparser/semantic.h"
 
 #include <cassert>
@@ -51,6 +52,19 @@ void assertString(const mparser::InterpreterResult& result,
     assert(value != nullptr);
     assert(value->kind == mparser::RuntimeValueKind::String);
     assert(value->text == expected);
+}
+
+void assertException(const mparser::InterpreterResult& result,
+                     std::string_view name,
+                     std::string_view expectedMessage) {
+    const auto* value = findVariable(result, name);
+    assert(value != nullptr);
+    assert(mparser::isRuntimeException(*value));
+    const auto* message =
+        mparser::runtimeExceptionProperty(*value, "message");
+    assert(message != nullptr);
+    assert(message->kind == mparser::RuntimeValueKind::String);
+    assert(message->text == expectedMessage);
 }
 
 void assertVector(const mparser::InterpreterResult& result,
@@ -604,7 +618,7 @@ try
         y = 999;
     end
 catch err
-    message = err;
+    message = err.message;
     y = y + 10;
 end
 
@@ -619,7 +633,7 @@ end
     const auto result = run(source);
     assert(result.diagnostics.empty());
     assertNumber(result, "k", 1.0);
-    assertString(result, "err", "unknown runtime variable: missingName");
+    assertException(result, "err", "unknown runtime variable: missingName");
     assertString(result, "message", "unknown runtime variable: missingName");
     assert(findVariable(result, "err2") == nullptr);
     assertNumber(result, "y", 13.0);
@@ -684,8 +698,8 @@ end
 
     const auto result = run(source);
     assert(result.diagnostics.empty());
-    assertString(result, "err", "unknown runtime variable: missingName");
-    assertString(result, "err2", "unknown runtime variable: missingName");
+    assertException(result, "err", "unknown runtime variable: missingName");
+    assertException(result, "err2", "unknown runtime variable: missingName");
     assertNumber(result, "y", 1111.0);
 }
 

@@ -159,7 +159,7 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
 
 bool isKnownBuiltinName(const std::string& name) {
     static constexpr const char* kBuiltinNames[] = {
-        "abs",      "acos",     "addlistener", "addprop",  "all",
+        "MException", "abs",      "acos",     "addlistener", "addprop",  "all",
         "any",
         "asin",     "assert",   "atan",        "cat",      "cell",
         "char",     "class",    "clc",         "clear",    "cos",
@@ -181,7 +181,8 @@ bool isKnownBuiltinName(const std::string& name) {
         "rand",     "randn",    "repmat",      "reshape",  "rmfield",
         "single",   "sin",      "size",        "sqrt",     "squeeze",
         "strcmp",   "string",   "struct",      "sum",      "table",
-        "tan",      "tic",      "toc",         "true",     "vertcat",
+        "tan",      "throw",    "tic",         "toc",      "true",
+        "rethrow",  "vertcat",
         "zeros",    "matlab.metadata.Class.fromName",
         "meta.class.fromName", "event.proplistener",
     };

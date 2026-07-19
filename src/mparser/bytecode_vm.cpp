@@ -4,6 +4,7 @@
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_assignment.h"
+#include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_metadata.h"
@@ -1123,6 +1124,7 @@ public:
         entryOutputs_.clear();
         entryOutputNames_.clear();
         diagnostics_ = program.diagnostics;
+        pendingException_.reset();
         frames_.clear();
         frames_.push_back({});
         activeClassFunctions_.clear();
@@ -1290,22 +1292,18 @@ private:
     }
 
     void enterFunctionProfile(std::string name, SourceSpan span) {
-        if (!profilingEnabled_) {
-            return;
+        if (profilingEnabled_) {
+            auto& profile = functionProfiles_[name];
+            if (profile.name.empty()) {
+                profile.name = name;
+                profile.span = span;
+            }
+            ++profile.callCount;
         }
-        auto& profile = functionProfiles_[name];
-        if (profile.name.empty()) {
-            profile.name = name;
-            profile.span = span;
-        }
-        ++profile.callCount;
         functionProfileStack_.push_back(std::move(name));
     }
 
     void leaveFunctionProfile() {
-        if (!profilingEnabled_) {
-            return;
-        }
         if (!functionProfileStack_.empty()) {
             functionProfileStack_.pop_back();
         }
@@ -1448,6 +1446,19 @@ private:
             return nullptr;
         }
         return &semantic_->sources[span.begin.sourceId];
+    }
+
+    std::vector<RuntimeExceptionFrame>
+    exceptionFrames(const SourceSpan& span) const {
+        RuntimeExceptionFrame frame;
+        frame.line = span.begin.line;
+        frame.name = functionProfileStack_.empty()
+                         ? std::string("<script>")
+                         : functionProfileStack_.back();
+        if (const auto* source = sourceInfo(span)) {
+            frame.file = source->name;
+        }
+        return {std::move(frame)};
     }
 
     std::string publicFunctionIdentifier(std::string_view name) const {
@@ -4746,7 +4757,11 @@ private:
         TryContext context = std::move(tryContextStack_.back());
         tryContextStack_.pop_back();
 
-        const std::string message = diagnostics_.back().message;
+        const Diagnostic diagnostic = diagnostics_.back();
+        RuntimeValue exception = pendingException_.value_or(
+            runtimeExceptionFromDiagnostic(
+                diagnostic, exceptionFrames(diagnostic.span)));
+        pendingException_.reset();
         diagnostics_.resize(context.diagnosticBase);
         stack_.resize(context.stackDepth);
         forLoopStack_.resize(context.forLoopDepth);
@@ -4754,7 +4769,7 @@ private:
         switchContextStack_.resize(context.switchContextDepth);
 
         if (!context.catchVariable.empty()) {
-            currentFrame()[context.catchVariable] = stringValue(message);
+            currentFrame()[context.catchVariable] = std::move(exception);
         }
         return context.catchTarget;
     }
@@ -7032,6 +7047,18 @@ private:
             stack_.push_back(runtimeStackValue(field->second));
             return;
         }
+        if (isRuntimeException(target->value)) {
+            const RuntimeValue* property = runtimeExceptionProperty(
+                target->value, instruction.operand);
+            if (!property) {
+                addDiagnostic(instruction,
+                              "MException property is not available: " +
+                                  instruction.operand);
+                return;
+            }
+            stack_.push_back(runtimeStackValue(*property));
+            return;
+        }
         if (!isObject(target->value)) {
             addDiagnostic(instruction,
                           "member access requires a class object target");
@@ -7257,6 +7284,12 @@ private:
             runtimeSetStructField(updated, instruction.operand, *value);
             currentFrame()[instruction.receiverName] = updated;
             recordAssignment(instruction, "struct-member", updated);
+            return;
+        }
+        if (isRuntimeException(target->value)) {
+            addDiagnostic(instruction,
+                          "MException properties are read-only: " +
+                              instruction.operand);
             return;
         }
         if (!isObject(target->value)) {
@@ -11213,6 +11246,37 @@ private:
     RuntimeValue callBuiltin(const BytecodeInstruction& instruction,
                              const std::string& name,
                              const std::vector<RuntimeValue>& arguments) {
+        if (name == "MException") {
+            auto result = runtimeConstructMException(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, std::move(result.error),
+                              "MParser:InvalidException");
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (name == "error") {
+            auto result = runtimeCreateErrorException(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, std::move(result.error),
+                              "MParser:InvalidException");
+                return missingValue();
+            }
+            raiseException(instruction, result.value, false);
+            return missingValue();
+        }
+        if (name == "throw" || name == "rethrow") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode " + name +
+                                  " expects one MException object",
+                              "MParser:InvalidException");
+                return missingValue();
+            }
+            raiseException(instruction, arguments.front(),
+                           name == "rethrow");
+            return missingValue();
+        }
         if (name == "clear" || name == "clc" || name == "tic" ||
             name == "toc") {
             if (!arguments.empty()) {
@@ -12237,9 +12301,30 @@ private:
     }
 
     void addDiagnostic(const BytecodeInstruction& instruction,
-                       std::string message) {
-        diagnostics_.push_back(Diagnostic{instruction.span,
-                                          std::move(message)});
+                       std::string message,
+                       std::string identifier =
+                           std::string(kRuntimeErrorIdentifier)) {
+        Diagnostic diagnostic{instruction.span, std::move(message),
+                              std::move(identifier)};
+        pendingException_ = runtimeExceptionFromDiagnostic(
+            diagnostic, exceptionFrames(instruction.span));
+        diagnostics_.push_back(std::move(diagnostic));
+    }
+
+    void raiseException(const BytecodeInstruction& instruction,
+                        const RuntimeValue& exception,
+                        bool preserveExistingStack) {
+        auto prepared = runtimePrepareExceptionForThrow(
+            exception, exceptionFrames(instruction.span),
+            preserveExistingStack);
+        if (!prepared.succeeded) {
+            addDiagnostic(instruction, std::move(prepared.error),
+                          "MParser:InvalidException");
+            return;
+        }
+        pendingException_ = std::move(prepared.value);
+        diagnostics_.push_back(runtimeDiagnosticFromException(
+            *pendingException_, instruction.span));
     }
 
     std::map<std::string, RuntimeValue>& currentFrame() {
@@ -12288,6 +12373,7 @@ private:
     std::map<std::string, ClassInfo> classesByName_;
     std::set<std::string> classHierarchyDiagnosticKeys_;
     std::vector<Diagnostic> diagnostics_;
+    std::optional<RuntimeValue> pendingException_;
     std::optional<std::chrono::steady_clock::time_point> ticStart_;
     std::vector<size_t> instructionExecutionCounts_;
     std::map<std::string, BytecodeFunctionProfile> functionProfiles_;

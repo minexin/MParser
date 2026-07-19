@@ -1,0 +1,488 @@
+{
+  "schema_version": 1,
+  "version": "0.70.0",
+  "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
+  "features": [
+    {
+      "id": "LEX-001",
+      "area": "syntax",
+      "feature": "Lossless tokens, trivia, identifiers, numbers, text literals, keywords, and operators",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
+      "evidence": ["parser_smoke", "cli_help_smoke"],
+      "sources": ["src/mparser/lexer.cpp", "src/mparser/token.cpp", "tests/parser_smoke.cpp"],
+      "limits": "Text runtime values still combine character vectors and string scalars; command-form syntax is outside the target subset."
+    },
+    {
+      "id": "SYN-001",
+      "area": "syntax",
+      "feature": "Expression precedence with delayed call/index and member resolution",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
+      "evidence": ["parser_smoke", "semantic_smoke", "bytecode_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "src/mparser/bytecode.cpp"],
+      "limits": "Dynamic text-created function calls and every MATLAB call/index shadowing edge case remain open."
+    },
+    {
+      "id": "SYN-002",
+      "area": "control-flow",
+      "feature": "for, parfor-as-serial, while, if, switch, try/catch, break, continue, return",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
+      "evidence": ["interpreter_smoke", "bytecode_vm_smoke", "exception_runtime_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp"],
+      "limits": "parfor executes serially; typed regions accept only structured eligible control flow; no finally construct exists in MATLAB or MParser."
+    },
+    {
+      "id": "FUN-001",
+      "area": "functions",
+      "feature": "Local functions, positional/repeating/name-value arguments, nargin/nargout, and multiple outputs",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["function_call_contract_smoke", "output_argument_smoke", "name_value_argument_smoke", "repeating_argument_smoke"],
+      "sources": ["src/mparser/function_signature.cpp", "src/mparser/argument_contract.cpp", "src/mparser/runtime_argument_validation.cpp"],
+      "limits": "General dynamic dispatch and a frozen external call ABI are separate v1.0 gates."
+    },
+    {
+      "id": "SRC-001",
+      "area": "source-graph",
+      "feature": "Cross-file source loading, paths, packages, private functions, and class folders",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["source_loader_smoke", "namespace_function_smoke", "function_path_smoke", "class_folder_smoke", "class_private_function_smoke"],
+      "sources": ["src/mparser/source_loader.cpp", "tests/source_loader_smoke.cpp"],
+      "limits": "MATLAB path precedence and shadowing are implemented for the declared subset, not every toolbox or built-in precedence case."
+    },
+    {
+      "id": "ARR-001",
+      "area": "arrays",
+      "feature": "Dense double/logical scalar, vector, matrix, and N-dimensional shape/index semantics",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
+      "evidence": ["nd_array_smoke", "array_transform_smoke", "array_assignment_bytecode_cli_smoke"],
+      "sources": ["src/mparser/runtime_shape.cpp", "src/mparser/runtime_index.cpp", "src/mparser/runtime_assignment.cpp"],
+      "limits": "Complex, sparse, integer-width, categorical, table, object-array, and GPU storage classes are not represented."
+    },
+    {
+      "id": "ARR-002",
+      "area": "arrays",
+      "feature": "Logical indexing, colon/end indexing, indexed growth, and deletion",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
+      "evidence": ["logical_index_smoke", "array_deletion_smoke", "linear_array_kernel_cli_smoke"],
+      "sources": ["src/mparser/runtime_index.cpp", "src/mparser/runtime_assignment.cpp", "tests/logical_index_smoke.cpp"],
+      "limits": "Typed/native coverage is narrower than VM correctness and falls back under guards."
+    },
+    {
+      "id": "CELL-001",
+      "area": "arrays",
+      "feature": "N-dimensional Cell construction, scalar brace reads/writes, varargin, and varargout-like values",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "partial", "production": "partial", "typed": "fallback", "native": "fallback"},
+      "evidence": ["cell_varargs_smoke", "nd_array_smoke"],
+      "sources": ["src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/cell_varargs_smoke.cpp"],
+      "limits": "Cell parenthesis indexing, vector brace selection, and comma-separated-list expansion remain open."
+    },
+    {
+      "id": "STRUCT-001",
+      "area": "structures",
+      "feature": "Ordered scalar structures, static/dynamic fields, fieldnames, isfield, rmfield, and isstruct",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["struct_runtime_smoke", "struct_runtime_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_struct.cpp", "tests/struct_runtime_smoke.cpp"],
+      "limits": "The supported contract is explicitly 1-by-1 and excludes nested value copy-back and comma-separated lists."
+    },
+    {
+      "id": "STRUCT-002",
+      "area": "structures",
+      "feature": "Structure arrays and comma-separated field lists",
+      "status": "unsupported",
+      "priority": "must-have",
+      "tiers": {"parser": "partial", "semantic": "partial", "hir": "unsupported", "bytecode": "unsupported", "production": "unsupported", "typed": "unsupported", "native": "unsupported"},
+      "evidence": ["struct_runtime_smoke"],
+      "sources": ["src/mparser/runtime_struct.cpp", "docs/v0.69.md"],
+      "limits": "Nonscalar Cell-driven construction is diagnosed instead of producing a misleading scalar structure."
+    },
+    {
+      "id": "EXC-001",
+      "area": "exceptions",
+      "feature": "MException catch objects, identifiers, formatted error, throw, rethrow, and throw-site source frame",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["exception_runtime_smoke", "exception_runtime_production_cli_smoke", "interpreter_smoke", "bytecode_vm_smoke"],
+      "sources": ["src/mparser/runtime_exception.cpp", "tests/exception_runtime_smoke.cpp"],
+      "limits": "v0.70 publicly exposes the first throw-site stack frame; full N-by-1 stack arrays, cause chains, corrections, warning, assert, and getReport remain open."
+    },
+    {
+      "id": "HANDLE-001",
+      "area": "functions",
+      "feature": "Named, anonymous, method, and built-in function handles with dynamic invocation",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["event_listener_smoke", "handle_semantics_smoke"],
+      "sources": ["src/mparser/bytecode_vm.cpp", "tests/event_listener_smoke.cpp"],
+      "limits": "Text-created handles, feval/str2func/func2str coverage, persisted handle ABI, and full closure semantics remain open."
+    },
+    {
+      "id": "CLASS-001",
+      "area": "classdef",
+      "feature": "classdef declarations, attributes, properties, methods, events, enumeration, arguments, and inheritance syntax",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["parser_smoke", "semantic_smoke", "class_contract_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "tests/class_contract_smoke.cpp"],
+      "limits": "The matrix declares supported attributes explicitly; undocumented attributes and every MATLAB metaclass edge are not implied."
+    },
+    {
+      "id": "CLASS-002",
+      "area": "classdef",
+      "feature": "Value/handle construction, inheritance, superclass calls, access policy, and method dispatch",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["class_runtime_smoke", "class_inheritance_smoke", "superclass_construction_smoke", "class_access_policy_smoke"],
+      "sources": ["src/mparser/bytecode_vm.cpp", "tests/class_runtime_smoke.cpp"],
+      "limits": "Object arrays, heterogeneous arrays, mixins beyond the declared subset, and all MATLAB constructor-order edge cases remain open."
+    },
+    {
+      "id": "CLASS-003",
+      "area": "classdef",
+      "feature": "Validated, dependent, constant, abstract, observable, and accessor-backed properties",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["property_validation_smoke", "property_listener_smoke", "class_property_identity_smoke"],
+      "sources": ["src/mparser/property_spec.h", "src/mparser/bytecode_vm.cpp", "tests/property_validation_smoke.cpp"],
+      "limits": "Nested value-object copy-back and every MATLAB validation conversion class are not complete."
+    },
+    {
+      "id": "CLASS-004",
+      "area": "classdef",
+      "feature": "Events, listeners, dynamic properties, explicit handle deletion, and validity",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["event_listener_smoke", "property_listener_smoke", "dynamic_property_smoke", "handle_lifecycle_smoke"],
+      "sources": ["src/mparser/bytecode_vm.cpp", "tests/handle_lifecycle_smoke.cpp"],
+      "limits": "Automatic reachability destruction, cyclic collection, listener arrays, and every event-data subclass behavior remain open."
+    },
+    {
+      "id": "CLASS-005",
+      "area": "classdef",
+      "feature": "Class, property, method, event, function, and dynamic-property metadata queries",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["class_metadata_smoke", "function_metadata_smoke", "dynamic_property_smoke"],
+      "sources": ["src/mparser/runtime_metadata.cpp", "tests/class_metadata_smoke.cpp"],
+      "limits": "Reflection is a declared subset and does not yet expose the complete MATLAB meta.* graph."
+    },
+    {
+      "id": "BUILTIN-001",
+      "area": "builtins",
+      "feature": "Representative scalar math, reductions, scans, find, constructors, and array transforms",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "partial", "bytecode": "partial", "production": "partial", "typed": "partial", "native": "partial"},
+      "evidence": ["reduction_find_smoke", "scan_diff_smoke", "array_transform_smoke", "typed_region_executor_smoke"],
+      "sources": ["src/mparser/runtime_math.cpp", "src/mparser/runtime_reduction.cpp", "src/mparser/runtime_scan.cpp", "src/mparser/runtime_array_ops.cpp"],
+      "limits": "This validates representative families, not an unbounded MATLAB function count."
+    },
+    {
+      "id": "BUILTIN-002",
+      "area": "builtins",
+      "feature": "Unified BuiltinRegistry, descriptors, call/result contract, and extension author rules",
+      "status": "planned",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "planned", "hir": "planned", "bytecode": "planned", "production": "planned", "typed": "planned", "native": "planned"},
+      "evidence": [],
+      "sources": ["docs/roadmap-v1.0.md", "src/mparser/semantic.cpp"],
+      "limits": "Current built-in dispatch remains distributed and is scheduled for the v0.80 gate."
+    },
+    {
+      "id": "VM-001",
+      "area": "engine",
+      "feature": "Bytecode VM as the production semantic fallback for all legal target-subset code",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["bytecode_vm_smoke", "production_run_cli_smoke", "production_run_jit_off_cli_smoke"],
+      "sources": ["src/mparser/bytecode.cpp", "src/mparser/bytecode_vm.cpp"],
+      "limits": "Features marked unsupported elsewhere in this matrix are not legal target-subset code."
+    },
+    {
+      "id": "JIT-001",
+      "area": "jit",
+      "feature": "Guarded portable typed regions with transactional fallback",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "not-applicable"},
+      "evidence": ["typed_region_executor_smoke", "production_run_portable_jit_cli_smoke", "bytecode_region_smoke"],
+      "sources": ["src/mparser/typed_ir.cpp", "src/mparser/typed_region_executor.cpp", "src/mparser/bytecode_region.cpp"],
+      "limits": "Coverage is intentionally narrower than VM semantics; guard failure must fall back without partial mutation."
+    },
+    {
+      "id": "JIT-002",
+      "area": "jit",
+      "feature": "Bundled SLJIT native scalar/branched/linear-array kernels on x64 and AArch64",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["native_scalar_jit_cache_smoke", "native_linear_array_kernel_cli_smoke", "production_run_native_jit_cli_smoke"],
+      "sources": ["src/mparser/native_scalar_jit.cpp", "third_party/sljit/sljit_src/sljitLir.c"],
+      "limits": "Native coverage is incremental and never blocks correct VM execution; SIMD and general matrices remain future work."
+    },
+    {
+      "id": "JIT-003",
+      "area": "jit",
+      "feature": "Adaptive tiering, guarded invalidation, process-local native cache, and persistent module sessions",
+      "status": "partial",
+      "priority": "should-have",
+      "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["adaptive_bytecode_vm_smoke", "adaptive_module_runtime_smoke", "native_scalar_jit_cache_smoke"],
+      "sources": ["src/mparser/adaptive_bytecode_vm.cpp", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/native_scalar_jit.cpp"],
+      "limits": "The cache is process-local; a versioned atomic disk cache is only a Should-have if its invalidation contract is complete."
+    },
+    {
+      "id": "EMBED-001",
+      "area": "embedding",
+      "feature": "Compile-once CompiledModule and repeated entry invocation from C++",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
+      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke"],
+      "sources": ["src/mparser/compiled_module.cpp", "src/mparser/adaptive_module_runtime.cpp"],
+      "limits": "The API is pre-freeze and does not yet provide the narrow C ABI, resource contract, or versioned machine protocol required by v1.0."
+    },
+    {
+      "id": "EMBED-002",
+      "area": "embedding",
+      "feature": "Frozen public C++ API, narrow C ABI, and versioned machine-readable result protocol",
+      "status": "planned",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "planned", "production": "planned", "typed": "planned", "native": "planned"},
+      "evidence": [],
+      "sources": ["docs/roadmap-v1.0.md", "src/mparser/compiled_module.h"],
+      "limits": "Scheduled for the v0.90 gate after RuntimeValue and builtin-call contracts stabilize."
+    },
+    {
+      "id": "PLATFORM-001",
+      "area": "platform",
+      "feature": "Windows x64, Linux x64, and Linux AArch64 configure/build/test paths",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["parser_smoke", "production_run_cli_smoke", "native_scalar_jit_cache_smoke"],
+      "sources": [".github/workflows/ci.yml", "CMakeLists.txt"],
+      "limits": "macOS x64/ARM64 is a v1.0 Must-have but is not yet present in continuous integration."
+    },
+    {
+      "id": "TEST-001",
+      "area": "engineering",
+      "feature": "Optimized smoke executables retain executable assertions on MSVC, GCC, and Clang",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
+      "evidence": ["optimization_plan_smoke", "compiled_module_smoke", "superclass_construction_smoke"],
+      "sources": ["CMakeLists.txt", "tests/optimization_plan_smoke.cpp"],
+      "limits": "This protects current assert-based tests; new high-risk tests should prefer explicit failure helpers."
+    },
+    {
+      "id": "MATRIX-001",
+      "area": "engineering",
+      "feature": "Machine-validated compatibility claims with executable evidence and explicit gap ownership",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
+      "evidence": ["compatibility_matrix_smoke"],
+      "sources": ["docs/compatibility-matrix.json", "tests/validate_compatibility_matrix.cmake"],
+      "limits": "The matrix is the first audited baseline and must be expanded whenever a milestone changes support claims."
+    },
+    {
+      "id": "OUT-001",
+      "area": "post-v1.0",
+      "feature": "Complete MATLAB compatibility, Live Scripts, P-code, MEX, Simulink, graphics, and toolboxes",
+      "status": "unsupported",
+      "priority": "post-v1.0",
+      "tiers": {"parser": "unsupported", "semantic": "unsupported", "hir": "unsupported", "bytecode": "unsupported", "production": "unsupported", "typed": "unsupported", "native": "unsupported"},
+      "evidence": [],
+      "sources": ["docs/roadmap-v1.0.md", "README.md"],
+      "limits": "These capabilities are deliberately outside the v1.0 release claim rather than silently treated as incomplete support."
+    }
+  ],
+  "gaps": [
+    {
+      "id": "G-STRUCT-001",
+      "area": "structures",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.71",
+      "framework_impact": "representation-change",
+      "requirement": "Add structure arrays, empty typed structures, scalar/nonscalar constructor expansion, indexing, and comma-separated-list behavior.",
+      "exit_evidence": "Cross-tier constructor/index/assignment tests plus MATLAB differential fixtures for shape and field order."
+    },
+    {
+      "id": "G-LVALUE-001",
+      "area": "assignment",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.72",
+      "framework_impact": "contract-extension",
+      "requirement": "Introduce a general root-and-path lvalue contract for nested structure, Cell, array, and value-object copy-back.",
+      "exit_evidence": "HIR and VM parity tests for mixed nested member, parenthesis, and brace writes without duplicated update logic."
+    },
+    {
+      "id": "G-EXC-001",
+      "area": "exceptions",
+      "priority": "must-have",
+      "state": "in-progress",
+      "target": "v0.73",
+      "framework_impact": "contract-extension",
+      "requirement": "Complete N-by-1 MException stack arrays, nested call frames, cause chains, correction boundary, warning, assert, and stable diagnostic identifiers.",
+      "exit_evidence": "Nested cross-file throw/rethrow differential tests and embedding-visible identifier/message/stack assertions."
+    },
+    {
+      "id": "G-CALL-001",
+      "area": "dispatch",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.74",
+      "framework_impact": "contract-extension",
+      "requirement": "Close dynamic call/index resolution, feval, str2func, func2str, handle persistence, and shadowing rules.",
+      "exit_evidence": "Path/package/private/builtin/variable shadowing matrix with source-linked VM and handle tests."
+    },
+    {
+      "id": "G-TEXT-001",
+      "area": "types",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.75",
+      "framework_impact": "representation-change",
+      "requirement": "Separate character arrays from string scalars/arrays and define concatenation, indexing, conversion, and formatting semantics.",
+      "exit_evidence": "RuntimeValue shape/type tests and MATLAB differential fixtures for text operations."
+    },
+    {
+      "id": "G-CLASS-001",
+      "area": "classdef",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.76",
+      "framework_impact": "representation-change",
+      "requirement": "Define object arrays, heterogeneous arrays, value copy-back, constructor array behavior, and object lifetime boundaries.",
+      "exit_evidence": "Value/handle/object-array tests covering copy, mutation, deletion, listeners, and metadata."
+    },
+    {
+      "id": "G-REFLECT-001",
+      "area": "classdef",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.77",
+      "framework_impact": "additive",
+      "requirement": "Freeze the supported meta.* graph, reflection access rules, dynamic dispatch hooks, and explicit unsupported metadata members.",
+      "exit_evidence": "Metadata compatibility table with inherited/private/static and dynamic-property query tests."
+    },
+    {
+      "id": "G-RUNTIME-001",
+      "area": "engine",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.79",
+      "framework_impact": "representation-change",
+      "requirement": "Freeze RuntimeValue ownership, shape, indexing, object, exception, call-frame, and output-arity contracts before registry migration.",
+      "exit_evidence": "Architecture review plus compile-once/invoke-many stress and no known feature requiring main IR or VM replacement."
+    },
+    {
+      "id": "G-BUILTIN-001",
+      "area": "builtins",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.80",
+      "framework_impact": "contract-extension",
+      "requirement": "Land BuiltinRegistry, descriptors, shared call/result/error contract, extension levels, and representative family migration.",
+      "exit_evidence": "Registry conformance template and HIR/VM/typed/native consistency tests for math, reduction, scan, array, multi-output, and context functions."
+    },
+    {
+      "id": "G-EMBED-001",
+      "area": "embedding",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.90",
+      "framework_impact": "contract-extension",
+      "requirement": "Freeze compile/load/invoke-many C++ API, narrow C ABI, value ownership, diagnostics, lifecycle, and versioned machine protocol.",
+      "exit_evidence": "Installed C and C++ consumers on every supported platform plus protocol golden tests."
+    },
+    {
+      "id": "G-RESOURCE-001",
+      "area": "runtime-safety",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.90",
+      "framework_impact": "contract-extension",
+      "requirement": "Add cancellation and limits for instructions, time, call depth, array bytes, diagnostics, and host exception containment.",
+      "exit_evidence": "Stress tests proving deterministic termination and cleanup at every configured resource boundary."
+    },
+    {
+      "id": "G-PLATFORM-001",
+      "area": "platform",
+      "priority": "must-have",
+      "state": "open",
+      "target": "v0.90",
+      "framework_impact": "none",
+      "requirement": "Add macOS x64/ARM64 build, test, install, and consumer evidence to the release platform matrix.",
+      "exit_evidence": "Green macOS jobs and install-package consumer smoke artifacts."
+    },
+    {
+      "id": "G-JIT-001",
+      "area": "jit",
+      "priority": "should-have",
+      "state": "open",
+      "target": "v1.0",
+      "framework_impact": "additive",
+      "requirement": "Broaden typed straight-line, matrix, builtin, and function-specialization coverage while preserving guarded fallback.",
+      "exit_evidence": "Correctness parity and hardware-labelled cold/warm performance baselines for every added region family."
+    },
+    {
+      "id": "G-CACHE-001",
+      "area": "jit",
+      "priority": "should-have",
+      "state": "deferred",
+      "target": "v1.0",
+      "framework_impact": "additive",
+      "requirement": "Only add a disk cache if atomic storage, bounds, corruption recovery, and source/architecture/ABI/version invalidation are complete.",
+      "exit_evidence": "Cross-process cache hit/invalidation/corruption tests or an explicit v1.0 process-local-cache decision."
+    },
+    {
+      "id": "G-LONGTAIL-001",
+      "area": "builtins",
+      "priority": "post-v1.0",
+      "state": "deferred",
+      "target": "v1.x",
+      "framework_impact": "none",
+      "requirement": "Grow long-tail MATLAB function and toolbox coverage through the frozen extension contract.",
+      "exit_evidence": "Per-family conformance suites without Parser/HIR/Bytecode/VM redesign."
+    },
+    {
+      "id": "G-MATLAB-001",
+      "area": "ecosystem",
+      "priority": "post-v1.0",
+      "state": "deferred",
+      "target": "v1.x",
+      "framework_impact": "none",
+      "requirement": "Evaluate Live Scripts, MEX, graphics, domain objects, and toolbox compatibility as separate products or later milestones.",
+      "exit_evidence": "Separate scoped roadmap decisions; these items do not block MParser v1.0."
+    }
+  ]
+}

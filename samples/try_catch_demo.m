@@ -7,7 +7,7 @@ try
         y = 999;
     end
 catch err
-    message = err;
+    message = err.message;
     y = y + 10;
 end
 

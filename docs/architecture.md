@@ -953,6 +953,30 @@ absent variable becomes an empty scalar structure, matching `s.field = value`
 creation. Nested value-structure stores still require a future general lvalue
 path rather than silently dropping the copied parent update.
 
+v0.70 makes exception recovery a shared runtime contract instead of exposing
+an engine-specific message string. `Diagnostic` carries an optional stable
+identifier, and `runtime_exception` owns identifier validation, limited
+message formatting, `MException` construction, throw/rethrow preparation, and
+conversion between runtime exceptions and source diagnostics. Both the HIR
+interpreter and bytecode VM retain a pending exception while unwinding to the
+nearest `catch`; the catch variable is a read-only scalar `MException` object
+with `identifier`, `message`, `stack`, and `cause` properties. `throw`
+replaces the stack with the current throw site, while `rethrow` preserves a
+previously captured stack. Typed and native regions continue to reject
+exception control flow and fall back to the bytecode VM.
+
+The public v0.70 stack property exposes the current scalar throw-site structure
+with `file`, `name`, and `line`; the runtime retains frame storage separately
+so a later milestone can expose a full N-by-1 structure array without changing
+the exception object contract. `cause` is currently an empty 0-by-1 Cell, and
+cause chaining remains a declared v0.73 gap. The machine-readable
+`compatibility-matrix.json` records this partial boundary and every other
+audited feature by parser, semantic, HIR, bytecode, production, typed, and
+native tier. Its CTest validator checks source paths, registered evidence,
+allowed states, unique IDs, and gap classification. Release builds also
+undefine `NDEBUG` for smoke executables so assertion-based evidence remains
+active under optimization.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
 backend contract, persistent cross-process code caches, moving-window array

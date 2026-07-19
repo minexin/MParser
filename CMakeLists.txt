@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.69.0 LANGUAGES C CXX)
+project(MParser VERSION 0.70.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -65,6 +65,7 @@ add_library(mparser_core
     src/mparser/runtime_argument_validation.cpp
     src/mparser/runtime_assignment.cpp
     src/mparser/runtime_benchmark.cpp
+    src/mparser/runtime_exception.cpp
     src/mparser/runtime_index.cpp
     src/mparser/runtime_math.cpp
     src/mparser/runtime_metadata.cpp
@@ -145,6 +146,38 @@ add_test(NAME struct_runtime_production_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/struct_runtime_demo.m)
 set_tests_properties(struct_runtime_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 2193")
+
+add_executable(exception_runtime_smoke_tests
+    tests/exception_runtime_smoke.cpp)
+target_link_libraries(exception_runtime_smoke_tests PRIVATE mparser_core)
+add_test(NAME exception_runtime_smoke
+    COMMAND exception_runtime_smoke_tests)
+
+add_test(NAME exception_runtime_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/exception_runtime_demo.m)
+set_tests_properties(exception_runtime_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 111111111")
+
+add_test(NAME exception_runtime_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/exception_runtime_demo.m)
+set_tests_properties(exception_runtime_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 111111111")
+
+add_test(NAME exception_runtime_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/exception_runtime_demo.m)
+set_tests_properties(exception_runtime_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 111111111")
+
+add_test(NAME compatibility_matrix_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMATRIX=${CMAKE_CURRENT_SOURCE_DIR}/docs/compatibility-matrix.json
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DTEST_REGISTRY=${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_compatibility_matrix.cmake)
 
 add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
 target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)
@@ -917,3 +950,16 @@ set_tests_properties(function_metadata_bytecode_cli_smoke PROPERTIES
 add_executable(interpreter_smoke_tests tests/interpreter_smoke.cpp)
 target_link_libraries(interpreter_smoke_tests PRIVATE mparser_core)
 add_test(NAME interpreter_smoke COMMAND interpreter_smoke_tests)
+
+# The smoke executables use standard assert as a lightweight test primitive.
+# Keep those contracts active in optimized CI and release-validation builds.
+get_property(mparser_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(mparser_target IN LISTS mparser_directory_targets)
+    if(mparser_target MATCHES "_tests$")
+        if(MSVC)
+            target_compile_options(${mparser_target} PRIVATE /UNDEBUG)
+        else()
+            target_compile_options(${mparser_target} PRIVATE -UNDEBUG)
+        endif()
+    endif()
+endforeach()

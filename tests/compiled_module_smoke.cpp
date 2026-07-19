@@ -88,7 +88,8 @@ void runRepeatedInvocationSmoke() {
     const auto wrongArity = module.invoke(secondOptions);
     assert(wrongArity.diagnostics.size() == 1);
     assert(wrongArity.diagnostics[0].message ==
-           "function argument count mismatch for: kernel");
+           "function invocation failed for kernel: function argument count "
+           "mismatch");
 }
 
 void runAdaptiveFactorySmoke() {

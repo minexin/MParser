@@ -514,7 +514,8 @@ item = Child();
 
     const auto result = run(compiled);
     assert(hasRuntimeDiagnostic(
-        result, "function argument count mismatch for: RequiredBase"));
+        result, "function invocation failed for RequiredBase: function "
+                "argument count mismatch"));
 }
 
 } // namespace

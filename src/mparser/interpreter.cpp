@@ -4,6 +4,7 @@
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_assignment.h"
+#include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_metadata.h"
@@ -343,6 +344,8 @@ struct FunctionCallResult {
 class InterpreterContext {
 public:
     InterpreterResult run(const SemanticResult& semantic) {
+        semantic_ = &semantic;
+        pendingException_.reset();
         frames_.push_back({});
         if (semantic.root) {
             argumentCatalog_ =
@@ -421,8 +424,59 @@ private:
         std::optional<size_t> savedTrapBase_;
     };
 
-    void addDiagnostic(const HirNode& node, std::string message) {
-        diagnostics_.push_back(Diagnostic{node.span, std::move(message)});
+    class FunctionNameGuard {
+    public:
+        FunctionNameGuard(std::vector<std::string>& names,
+                          std::string name)
+            : names_(names) {
+            names_.push_back(std::move(name));
+        }
+
+        ~FunctionNameGuard() {
+            names_.pop_back();
+        }
+
+    private:
+        std::vector<std::string>& names_;
+    };
+
+    std::vector<RuntimeExceptionFrame>
+    exceptionFrames(const SourceSpan& span) const {
+        RuntimeExceptionFrame frame;
+        frame.line = span.begin.line;
+        frame.name = activeFunctionNames_.empty()
+                         ? std::string("<script>")
+                         : activeFunctionNames_.back();
+        if (semantic_ && span.begin.sourceId != kInvalidSourceId &&
+            span.begin.sourceId < semantic_->sources.size()) {
+            frame.file = semantic_->sources[span.begin.sourceId].name;
+        }
+        return {std::move(frame)};
+    }
+
+    void addDiagnostic(const HirNode& node, std::string message,
+                       std::string identifier =
+                           std::string(kRuntimeErrorIdentifier)) {
+        Diagnostic diagnostic{node.span, std::move(message),
+                              std::move(identifier)};
+        pendingException_ = runtimeExceptionFromDiagnostic(
+            diagnostic, exceptionFrames(node.span));
+        diagnostics_.push_back(std::move(diagnostic));
+    }
+
+    void raiseException(const HirNode& node,
+                        const RuntimeValue& exception,
+                        bool preserveExistingStack) {
+        auto prepared = runtimePrepareExceptionForThrow(
+            exception, exceptionFrames(node.span), preserveExistingStack);
+        if (!prepared.succeeded) {
+            addDiagnostic(node, std::move(prepared.error),
+                          "MParser:InvalidException");
+            return;
+        }
+        pendingException_ = std::move(prepared.value);
+        diagnostics_.push_back(
+            runtimeDiagnosticFromException(*pendingException_, node.span));
     }
 
     bool diagnosticTrapTriggered() const {
@@ -747,7 +801,10 @@ private:
         currentFrame()["nargout"] =
             numberValue(static_cast<double>(outputCount));
 
-        executeChildren(node);
+        {
+            FunctionNameGuard functionName(activeFunctionNames_, node.label);
+            executeChildren(node);
+        }
 
         auto completedFrame = std::move(currentFrame());
         frames_.pop_back();
@@ -1361,12 +1418,16 @@ private:
             return;
         }
 
-        const std::string message = diagnostics_.back().message;
+        const Diagnostic diagnostic = diagnostics_.back();
+        RuntimeValue exception = pendingException_.value_or(
+            runtimeExceptionFromDiagnostic(
+                diagnostic, exceptionFrames(diagnostic.span)));
+        pendingException_.reset();
         diagnostics_.resize(diagnosticBase);
 
         const HirNode& arm = *node.children[*catchArm];
         if (const auto name = catchVariableName(arm)) {
-            currentFrame()[*name] = stringValue(message);
+            currentFrame()[*name] = std::move(exception);
         }
         executeRange(node, *catchArm + 1, nextControlArm(node, *catchArm + 1));
     }
@@ -1508,10 +1569,10 @@ private:
             return missingValue();
         }
         const RuntimeValue target = evaluate(*node.children.front());
-        if (!isStruct(target)) {
+        if (!isStruct(target) && !isRuntimeException(target)) {
             addDiagnostic(node,
-                          "member access requires a structure in the reference "
-                          "interpreter");
+                          "member access requires a structure or MException "
+                          "in the reference interpreter");
             return missingValue();
         }
         std::string fieldName = node.label;
@@ -1529,6 +1590,16 @@ private:
                 return missingValue();
             }
             fieldName = dynamicName.name;
+        }
+        if (isRuntimeException(target)) {
+            const RuntimeValue* property =
+                runtimeExceptionProperty(target, fieldName);
+            if (!property) {
+                addDiagnostic(node, "MException property is not available: " +
+                                        fieldName);
+                return missingValue();
+            }
+            return *property;
         }
         const auto field = target.fields.find(fieldName);
         if (field == target.fields.end()) {
@@ -2502,6 +2573,34 @@ private:
     callBuiltin(const HirNode& node, const std::string& name,
                 const std::vector<RuntimeValue>& arguments,
                 size_t requestedOutputCount) {
+        if (name == "MException") {
+            auto result = runtimeConstructMException(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error),
+                              "MParser:InvalidException");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{std::move(result.value)}};
+        }
+        if (name == "error") {
+            auto result = runtimeCreateErrorException(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error),
+                              "MParser:InvalidException");
+                return FunctionCallResult{{missingValue()}};
+            }
+            raiseException(node, result.value, false);
+            return FunctionCallResult{{missingValue()}};
+        }
+        if (name == "throw" || name == "rethrow") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node, name + " expects one MException object",
+                              "MParser:InvalidException");
+                return FunctionCallResult{{missingValue()}};
+            }
+            raiseException(node, arguments.front(), name == "rethrow");
+            return FunctionCallResult{{missingValue()}};
+        }
         if (name == "clear" || name == "clc" || name == "tic" ||
             name == "toc") {
             if (!arguments.empty()) {
@@ -2680,6 +2779,10 @@ private:
             if (isStruct(value)) {
                 return FunctionCallResult{{stringValue("struct")}};
             }
+            if (isRuntimeException(value)) {
+                return FunctionCallResult{{stringValue(
+                    std::string(kRuntimeExceptionClassName))}};
+            }
             return FunctionCallResult{{stringValue("missing")}};
         }
         if (name == "isa") {
@@ -2701,6 +2804,8 @@ private:
                 matches = target == "cell";
             } else if (isStruct(value)) {
                 matches = target == "struct";
+            } else if (isRuntimeException(value)) {
+                matches = target == kRuntimeExceptionClassName;
             }
             return FunctionCallResult{{logicalValue(matches)}};
         }
@@ -3002,11 +3107,14 @@ private:
         return FunctionCallResult{{vectorValue(std::move(values))}};
     }
 
+    const SemanticResult* semantic_ = nullptr;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
+    std::vector<std::string> activeFunctionNames_;
     std::map<std::string, const HirNode*> functionsByName_;
     ArgumentContractCatalog argumentCatalog_;
     std::map<std::string, RuntimeValue> resultFrame_;
     std::vector<Diagnostic> diagnostics_;
+    std::optional<RuntimeValue> pendingException_;
     std::optional<size_t> diagnosticTrapBase_;
     std::optional<std::chrono::steady_clock::time_point> ticStart_;
     size_t loopDepth_ = 0;

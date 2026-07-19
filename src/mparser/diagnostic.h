@@ -9,6 +9,7 @@ namespace mparser {
 struct Diagnostic {
     SourceSpan span;
     std::string message;
+    std::string identifier;
 };
 
 } // namespace mparser

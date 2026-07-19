@@ -127,6 +127,10 @@ end
 for j = 1:12
     y = kernel(j);
 end
+
+function value = kernel(input)
+value = input + 1;
+end
 )");
     mparser::Parser parser(lexer.lex());
     auto parseResult = parser.parse();
