@@ -220,6 +220,7 @@ private:
         const size_t make = emit(BytecodeOp::MakeFunctionHandle, node);
         auto& instruction = program_.instructions[make];
         instruction.receiverName = node.lexicalClassName;
+        instruction.calleeName = node.raw;
 
         if (node.label != "@()") {
             return;

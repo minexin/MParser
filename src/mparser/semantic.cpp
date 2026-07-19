@@ -157,7 +157,7 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
     return BindingKind::Unresolved;
 }
 
-bool isKnownBuiltinName(const std::string& name) {
+bool knownBuiltinName(std::string_view name) {
     static constexpr const char* kBuiltinNames[] = {
         "MException", "abs",      "acos",     "addCause", "addCorrection",
         "addlistener", "addprop",  "all",
@@ -170,7 +170,8 @@ bool isKnownBuiltinName(const std::string& name) {
         "error",
         "events",   "exp",      "eye",         "false",    "fieldnames",
         "find",
-        "findprop",  "fprintf", "getReport",
+        "feval",    "findprop",  "fprintf", "func2str", "functions",
+        "getReport",
         "horzcat",  "inf",      "ipermute",    "isa",      "isenum",
         "isempty",  "isfield",  "islogical",   "ismethod", "isprop",
         "isstruct",
@@ -181,6 +182,7 @@ bool isKnownBuiltinName(const std::string& name) {
         "permute",  "pi",       "plot",        "prod",     "properties",
         "rand",     "randn",    "repmat",      "reshape",  "rmfield",
         "single",   "sin",      "size",        "sqrt",     "squeeze",
+        "str2func",
         "strcmp",   "string",   "struct",      "sum",      "table",
         "tan",      "throw",    "throwAsCaller", "tic", "toc", "true",
         "rethrow",  "vertcat", "warning",
@@ -1714,7 +1716,7 @@ private:
     }
 
     BindingRef resolveBuiltin(const std::string& name) {
-        if (!isKnownBuiltinName(name)) {
+        if (!knownBuiltinName(name)) {
             return BindingRef{};
         }
 
@@ -2273,6 +2275,10 @@ private:
 };
 
 } // namespace
+
+bool isKnownBuiltinName(std::string_view name) {
+    return knownBuiltinName(name);
+}
 
 SemanticResult SemanticAnalyzer::analyze(
     const SyntaxNode& root, const std::vector<SourceUnit>& sources) {

@@ -116,6 +116,9 @@ AdaptiveBytecodeVmSession::AdaptiveBytecodeVmSession(
         std::max<size_t>(1, options_.hotLoopThreshold);
     options_.fallbackInvalidationThreshold =
         std::max<size_t>(1, options_.fallbackInvalidationThreshold);
+    if (!options_.callableContext) {
+        options_.callableContext = makeRuntimeCallableContext();
+    }
     reset();
 }
 
@@ -128,6 +131,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
         result.tier = AdaptiveBytecodeTier::Typed;
         BytecodeVmOptions vmOptions;
         vmOptions.profiling = BytecodeVmProfilingMode::Disabled;
+        vmOptions.callableContext = options_.callableContext;
         vmOptions.initialWorkspace = workspace_;
         vmOptions.entryFunction = options_.entryFunction;
         vmOptions.arguments = arguments_;
@@ -149,6 +153,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
 
     result.tier = AdaptiveBytecodeTier::Profiling;
     BytecodeVmOptions vmOptions;
+    vmOptions.callableContext = options_.callableContext;
     vmOptions.initialWorkspace = workspace_;
     vmOptions.entryFunction = options_.entryFunction;
     vmOptions.arguments = arguments_;

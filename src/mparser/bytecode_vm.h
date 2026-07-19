@@ -107,6 +107,7 @@ enum class BytecodeVmProfilingMode {
 
 struct BytecodeVmOptions {
     BytecodeVmProfilingMode profiling = BytecodeVmProfilingMode::Full;
+    std::shared_ptr<RuntimeCallableContext> callableContext;
     std::vector<RuntimeVariable> initialWorkspace;
     std::string entryFunction;
     std::vector<RuntimeValue> arguments;

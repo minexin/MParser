@@ -229,6 +229,18 @@ end
     assert(containsKind(*function.children[2], mparser::SyntaxKind::MetaClassExpr));
 }
 
+void parseKeywordMemberSmoke() {
+    auto result = parse("value = details.function;\n");
+    assert(result.diagnostics.empty());
+    assert(result.root->children.size() == 1);
+    const auto& assignment = *result.root->children.front();
+    assert(assignment.kind == mparser::SyntaxKind::AssignmentStatement);
+    assert(assignment.children.size() == 2);
+    const auto& member = *assignment.children[1];
+    assert(member.kind == mparser::SyntaxKind::MemberAccessExpr);
+    assert(member.label == "function");
+}
+
 void parseSwitchSmoke() {
     const std::string source = R"(function y = f(mode)
 switch mode
@@ -310,6 +322,7 @@ int main() {
     parseModernClassdefSmoke();
     parseControlFlowSmoke();
     parseExpressionSmoke();
+    parseKeywordMemberSmoke();
     parseSwitchSmoke();
     parseTryCatchSmoke();
     parseMatrixRowsSmoke();

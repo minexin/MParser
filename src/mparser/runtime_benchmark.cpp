@@ -62,7 +62,9 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
         }
         return true;
     case RuntimeValueKind::FunctionHandle:
-        return left.opaqueId == right.opaqueId && left.text == right.text;
+        return left.functionHandle && right.functionHandle &&
+               left.functionHandle->identity ==
+                   right.functionHandle->identity;
     case RuntimeValueKind::NameValueArgument:
         return left.text == right.text && left.cells.size() == 1 &&
                right.cells.size() == 1 &&

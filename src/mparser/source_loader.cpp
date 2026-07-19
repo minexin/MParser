@@ -275,6 +275,13 @@ void collectRawDependencies(const SyntaxNode& node,
                     className && !splitClassName(*className).empty()) {
                     recordRawDependency(dependencies, *className, false);
                 }
+            } else if ((*name == "feval" || *name == "str2func") &&
+                       node.children.size() >= 2) {
+                if (const auto functionName =
+                        staticStringLiteral(*node.children[1]);
+                    functionName && !splitClassName(*functionName).empty()) {
+                    recordRawDependency(dependencies, *functionName, true);
+                }
             }
         }
     } else if (node.kind == SyntaxKind::MemberAccessExpr) {

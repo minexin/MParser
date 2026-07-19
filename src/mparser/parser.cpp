@@ -47,6 +47,15 @@ bool atTopLevel(int parenDepth, int bracketDepth, int braceDepth) {
     return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
 }
 
+bool isMemberNameToken(TokenKind kind) {
+    if (kind == TokenKind::Identifier) {
+        return true;
+    }
+    const int value = static_cast<int>(kind);
+    return value >= static_cast<int>(TokenKind::KeywordArguments) &&
+           value <= static_cast<int>(TokenKind::KeywordWhile);
+}
+
 std::string joinTokenTexts(const std::vector<Token>& tokens) {
     std::string text;
     for (const auto& token : tokens) {
@@ -629,7 +638,7 @@ private:
         node->raw = dot.text;
         node->children.push_back(std::move(object));
 
-        if (at(TokenKind::Identifier)) {
+        if (isMemberNameToken(current().kind)) {
             const Token member = advance();
             node->label = member.text;
             node->span = mergeSpans(node->span, member.span);
@@ -660,12 +669,21 @@ private:
         if (at(TokenKind::LParen)) {
             auto parameters = parseParameterList();
             node->label = "@()";
+            node->raw = atToken.text + "(" + parameters->raw + ")";
             node->span = mergeSpans(node->span, parameters->span);
             node->children.push_back(std::move(parameters));
 
             if (!isAtEnd()) {
+                const size_t bodyBegin = cursor_;
                 auto body = parseExpression(0);
                 if (body) {
+                    const std::vector<Token> bodyTokens(
+                        tokens_.begin() +
+                            static_cast<std::ptrdiff_t>(bodyBegin),
+                        tokens_.begin() +
+                            static_cast<std::ptrdiff_t>(cursor_));
+                    node->raw += trimAsciiWhitespace(
+                        joinTokenTexts(bodyTokens));
                     node->span = mergeSpans(node->span, body->span);
                     node->children.push_back(std::move(body));
                 }

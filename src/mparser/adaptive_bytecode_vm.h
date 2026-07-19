@@ -46,6 +46,7 @@ struct AdaptiveBytecodeVmOptions {
     size_t hotLoopThreshold = 10;
     size_t fallbackInvalidationThreshold = 3;
     bool preserveWorkspace = false;
+    std::shared_ptr<RuntimeCallableContext> callableContext;
     std::vector<RuntimeVariable> initialWorkspace;
     std::string entryFunction;
     std::vector<RuntimeValue> arguments;

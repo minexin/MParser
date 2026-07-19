@@ -253,6 +253,9 @@ named = @doubleValue;
 named_value = named(7);
 static_handle = @HandleTools.triple;
 static_value = static_handle(5);
+static_text_handle = str2func('HandleTools.triple');
+static_text_value = static_text_handle(6);
+static_text_name = func2str(static_text_handle);
 
 function result = doubleValue(value)
     result = value * 2;
@@ -265,8 +268,10 @@ end
     checkNumber(result, "builtin_value", 0.0);
     checkNumber(result, "named_value", 14.0);
     checkNumber(result, "static_value", 15.0);
+    checkNumber(result, "static_text_value", 18.0);
     checkNumber(result, "handle_isa", 1.0);
     checkString(result, "handle_class", "function_handle");
+    checkString(result, "static_text_name", "HandleTools.triple");
     const auto* anonymous = findVariable(result, "anonymous");
     check(anonymous &&
               anonymous->kind == mparser::RuntimeValueKind::FunctionHandle,

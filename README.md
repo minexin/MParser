@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.73.0. See [docs/v0.73.md](docs/v0.73.md) for the
+Current milestone: v0.74.0. See [docs/v0.74.md](docs/v0.74.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.72.md](docs/v0.72.md),
+iteration plan. Previous boundaries are kept in [docs/v0.73.md](docs/v0.73.md),
+[docs/v0.72.md](docs/v0.72.md),
 [docs/v0.71.md](docs/v0.71.md),
 [docs/v0.70.md](docs/v0.70.md),
 [docs/v0.69.md](docs/v0.69.md),
@@ -710,11 +711,32 @@ growth, deletion, schema extension, and VM value/handle object properties.
 Failed paths leave value roots unchanged; typed and native regions reject the
 new path opcodes and execute them in the bytecode VM.
 
+v0.73 establishes a shared exception and diagnostic contract. Both baseline
+engines expose full source-graph stack arrays, recursive causes, explicit
+`throw`/`rethrow`/`throwAsCaller` policies, basic/extended reports,
+severity-tagged warnings, `lastwarn`, and catchable `assert`. Warnings remain
+observable without terminating execution, while correction objects stay an
+explicit unsupported boundary.
+
+v0.74 replaces VM-local function-handle identifiers with first-class callable
+descriptors and a stable per-`CompiledModule` context. Anonymous closure
+snapshots, named and builtin handles, dynamic call-versus-index dispatch,
+multi-output `feval`, `str2func`, `func2str`, and `functions` now agree across
+the HIR interpreter and bytecode VM. Literal text targets participate in path
+and package dependency loading, private functions retain lexical-only access,
+and ordinary path functions consistently shadow builtins. Source-backed
+handles can be passed back to repeated invocations of their owning module;
+builtin handles may cross modules. Serialization, computed-string lazy source
+loading, anonymous text parsing, and HIR method handles remain explicit later
+boundaries.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
 assignments, local, namespace, ordinary path, and private function calls with
 isolated stack frames,
+named, anonymous, and builtin function handles with closure snapshots,
+dynamic handle invocation, `feval`, `str2func`, `func2str`, and `functions`,
 first-output
 single-value calls, multiple-output destructuring such as `[a, b] = f(x)`,
 ignored outputs with `~`, `for` ranges, `while` loops, `break`/`continue`,
@@ -742,7 +764,7 @@ indexing/mutation, and ordered scalar or array structures with static/dynamic
 member access, parenthesis indexing, whole-element assignment, field queries,
 comma-separated field results, and transactional nested path copy-back. It is
 intentionally not a full MATLAB runtime yet: classes,
-function handles, other builtin multi-output conventions beyond the
+method handles, other builtin multi-output conventions beyond the
 implemented `size`/`min`/`max`/`find` subset, complex numbers, sparse arrays,
 class reflection, and object dispatch
 still report runtime diagnostics instead of guessing.
@@ -1331,6 +1353,19 @@ an N-by-1 `file`/`name`/`line` stack, and recursive causes through the public
 runtime result. `throw`, `rethrow`, and `throwAsCaller` respectively replace,
 preserve, and caller-trim the stack. Correction objects remain an explicit
 unsupported boundary rather than a partially emulated contract.
+
+Run closures, dynamic call/index dispatch, text-created handles, multi-output
+`feval`, builtin shadowing, and handle metadata through the production
+interface with:
+
+```powershell
+build\mparser.exe --run samples\dynamic_call_demo.m
+```
+
+The demo reports `summary = 106` and is checked through `--run-hir`,
+`--run-bytecode`, and `--run`. `str2func` and text `feval` can address loaded
+public functions; a computed function name does not implicitly load a new
+source file.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:

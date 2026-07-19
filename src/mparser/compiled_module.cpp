@@ -308,6 +308,7 @@ CompiledModule CompiledModule::compile(std::string source) {
 
 CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
     CompiledModule module;
+    module.callableContext_ = makeRuntimeCallableContext();
     module.sources_ = std::move(sources);
     if (module.sources_.empty()) {
         module.diagnostics_.push_back(Diagnostic{
@@ -524,7 +525,9 @@ BytecodeVmResult CompiledModule::invoke(
     }
 
     BytecodeVm vm;
-    return vm.run(bytecode_, semantic_, options);
+    BytecodeVmOptions runtimeOptions = options;
+    runtimeOptions.callableContext = callableContext_;
+    return vm.run(bytecode_, semantic_, runtimeOptions);
 }
 
 AdaptiveBytecodeVmSession CompiledModule::createAdaptiveSession(
@@ -535,7 +538,9 @@ AdaptiveBytecodeVmSession CompiledModule::createAdaptiveSession(
     if (!validation.empty()) {
         throw std::invalid_argument(firstDiagnosticMessage(validation));
     }
-    return AdaptiveBytecodeVmSession(bytecode_, semantic_, options);
+    AdaptiveBytecodeVmOptions runtimeOptions = options;
+    runtimeOptions.callableContext = callableContext_;
+    return AdaptiveBytecodeVmSession(bytecode_, semantic_, runtimeOptions);
 }
 
 } // namespace mparser

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.73.0",
+  "version": "0.74.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -141,10 +141,10 @@
       "feature": "Named, anonymous, method, and built-in function handles with dynamic invocation",
       "status": "partial",
       "priority": "must-have",
-      "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["event_listener_smoke", "handle_semantics_smoke"],
-      "sources": ["src/mparser/bytecode_vm.cpp", "tests/event_listener_smoke.cpp"],
-      "limits": "Text-created handles, feval/str2func/func2str coverage, persisted handle ABI, and full closure semantics remain open."
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["function_handle_runtime_smoke", "function_path_smoke", "dynamic_call_production_cli_smoke", "event_listener_smoke", "handle_semantics_smoke"],
+      "sources": ["src/mparser/interpreter.h", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "src/mparser/source_loader.cpp", "tests/function_handle_runtime_smoke.cpp", "samples/dynamic_call_demo.m"],
+      "limits": "v0.74 supports named, anonymous, and builtin handles in both baseline engines; method handles remain bytecode-only. feval, str2func, func2str, functions metadata, closure snapshots, same-CompiledModule persistence, and deterministic variable/path/package/private/builtin shadowing are covered. Anonymous text parsing, computed-string lazy source loading, serialization, and a cross-process handle ABI remain unsupported."
     },
     {
       "id": "CLASS-001",
@@ -359,11 +359,11 @@
       "id": "G-CALL-001",
       "area": "dispatch",
       "priority": "must-have",
-      "state": "open",
+      "state": "closed",
       "target": "v0.74",
       "framework_impact": "contract-extension",
       "requirement": "Close dynamic call/index resolution, feval, str2func, func2str, handle persistence, and shadowing rules.",
-      "exit_evidence": "Path/package/private/builtin/variable shadowing matrix with source-linked VM and handle tests."
+      "exit_evidence": "function_handle_runtime_smoke differentially covers HIR and VM closure snapshots, feval/str2func/func2str/functions, multi-output dynamic calls, call/index ambiguity, builtin shadowing, and same-module persistence; function_path_smoke covers literal source-graph dependencies plus path/package/private precedence; all three CLI modes run dynamic_call_demo.m."
     },
     {
       "id": "G-TEXT-001",

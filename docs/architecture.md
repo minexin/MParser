@@ -378,13 +378,37 @@ classes are implicitly sealed, and member collisions are rejected during
 semantic predeclaration. Until object arrays exist, `enumeration` exposes its
 ordered visible values and names as Cells.
 
-Function handles are first-class runtime values backed by VM-owned callable
-descriptors. Anonymous handles retain an explicit parameter vector, a half-open
-bytecode body range, the lexical class identity, and a value snapshot of the
-defining frame. Named handles resolve once at creation to a builtin, ordinary
-function, package function, static method, or bound object method. The public
-runtime value carries only an opaque VM-local identity, so closures and private
-method metadata do not leak through the embedding boundary.
+Function handles are first-class runtime values backed by shared
+`RuntimeFunctionHandle` descriptors rather than a VM-local identifier table.
+Each descriptor has an immutable identity, callable kind, backend kind,
+display name, source data, and an optional `RuntimeCallableContext`. Anonymous
+handles retain an explicit parameter vector, the HIR or half-open bytecode body
+range, lexical class identity, and a value snapshot of the defining frame.
+Named handles resolve once at creation to a builtin, ordinary function,
+package function, static method, or bound object method. Builtin descriptors
+are backend-independent; source-backed descriptors remain tied to the engine
+and compiled source graph that owns their executable body.
+
+`CompiledModule` and adaptive sessions retain one callable context across
+invocations. A module-bound handle can therefore be returned, stored by the
+embedding caller, and passed back to later invocations of that same module.
+Passing it to another compiled module fails deterministically instead of using
+foreign instruction or HIR addresses. Context-free builtin handles may cross
+that boundary. This is an in-process lifetime contract, not a serialized or
+cross-process handle ABI.
+
+Both baseline engines share the MATLAB-like dynamic-call contract. A neutral
+`CallOrIndexExpr` evaluates an unresolved target once, invokes it when it is a
+function handle, and otherwise applies indexing. `feval` preserves the
+caller's requested output count; `str2func`, `func2str`, and `functions` use the
+same descriptor helpers, including anonymous closure workspace metadata.
+Literal `feval('name', ...)` and `str2func('name')` targets participate in
+source-graph discovery. Resolution prefers a loaded public path/package
+function, then a public static method, then a builtin. Private path targets
+cannot be obtained by text, while lexical `@name` creation retains private
+visibility. A computed string can address an already compiled target but does
+not lazily load a new source file. Anonymous function text parsing and HIR
+method-handle execution remain explicit unsupported boundaries.
 
 Event declarations use their own HIR and binding kind but emit no top-level
 runtime instruction. Instead, class loading builds inherited event tables with

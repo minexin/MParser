@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.73.0 LANGUAGES C CXX)
+project(MParser VERSION 0.74.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -505,6 +505,30 @@ add_executable(compiled_module_smoke_tests
     tests/compiled_module_smoke.cpp)
 target_link_libraries(compiled_module_smoke_tests PRIVATE mparser_core)
 add_test(NAME compiled_module_smoke COMMAND compiled_module_smoke_tests)
+
+add_executable(function_handle_runtime_smoke_tests
+    tests/function_handle_runtime_smoke.cpp)
+target_link_libraries(function_handle_runtime_smoke_tests PRIVATE mparser_core)
+add_test(NAME function_handle_runtime_smoke
+    COMMAND function_handle_runtime_smoke_tests)
+
+add_test(NAME dynamic_call_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_call_demo.m)
+set_tests_properties(dynamic_call_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 106")
+
+add_test(NAME dynamic_call_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_call_demo.m)
+set_tests_properties(dynamic_call_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 106")
+
+add_test(NAME dynamic_call_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_call_demo.m)
+set_tests_properties(dynamic_call_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 106")
 
 add_executable(source_loader_smoke_tests tests/source_loader_smoke.cpp)
 target_link_libraries(source_loader_smoke_tests PRIVATE mparser_core)

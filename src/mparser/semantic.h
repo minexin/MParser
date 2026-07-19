@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mparser {
@@ -143,5 +144,6 @@ const char* hirKindName(HirKind kind);
 const char* bindingKindName(BindingKind kind);
 const char* symbolKindName(SymbolKind kind);
 const char* scopeKindName(ScopeKind kind);
+bool isKnownBuiltinName(std::string_view name);
 
 } // namespace mparser

@@ -75,6 +75,16 @@ void assertBothRuntimes(const mparser::CompiledModule& module,
     assertNumber(interpreted, name, expected);
 }
 
+bool hasDiagnostic(const std::vector<mparser::Diagnostic>& diagnostics,
+                   std::string_view text) {
+    for (const auto& diagnostic : diagnostics) {
+        if (diagnostic.message.find(text) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void runCurrentFolderPrecedenceSmoke() {
     auto temporary = makeTemporaryDirectory();
     const auto entry = temporary.path / "app" / "main.m";
@@ -228,6 +238,76 @@ void runWildcardImportPrecedenceSmoke() {
     assertBothRuntimes(module, "selected", 9);
 }
 
+void runLiteralDynamicDependencySmoke() {
+    auto temporary = makeTemporaryDirectory();
+    const auto entry = temporary.path / "app" / "main.m";
+    const auto library = temporary.path / "library";
+    writeFile(entry,
+              "shadowed_builtin = feval('sin', 2);\n"
+              "package_handle = str2func('tools.shift');\n"
+              "package_value = package_handle(3);\n");
+    writeFile(library / "sin.m",
+              "function value = sin(input)\n"
+              "    value = input + 100;\n"
+              "end\n");
+    writeFile(library / "+tools" / "shift.m",
+              "function value = shift(input)\n"
+              "    value = input + 20;\n"
+              "end\n");
+
+    mparser::SourceLoaderOptions options;
+    options.searchPaths.push_back(library);
+    const auto loaded = mparser::SourceLoader{}.load(entry, options);
+    assert(loaded.sources.size() == 3);
+    const auto module = mparser::CompiledModule::compile(loaded.sources);
+    assert(module.valid());
+    assertBothRuntimes(module, "shadowed_builtin", 102);
+    assertBothRuntimes(module, "package_value", 23);
+}
+
+void runPrivateTextBoundarySmoke() {
+    auto temporary = makeTemporaryDirectory();
+    const auto library = temporary.path / "library";
+    writeFile(library / "private" / "secret.m",
+              "function value = secret(input)\n"
+              "    value = input + 10;\n"
+              "end\n");
+    writeFile(library / "owner_authorized.m",
+              "function value = owner_authorized(input)\n"
+              "    handle = @secret;\n"
+              "    value = handle(input);\n"
+              "end\n");
+    writeFile(library / "owner_denied.m",
+              "function value = owner_denied(input)\n"
+              "    handle = str2func('secret');\n"
+              "    value = handle(input);\n"
+              "end\n");
+
+    mparser::SourceLoaderOptions options;
+    options.searchPaths.push_back(library);
+
+    const auto allowedEntry = temporary.path / "allowed" / "main.m";
+    writeFile(allowedEntry, "value = owner_authorized(1);\n");
+    auto loaded = mparser::SourceLoader{}.load(allowedEntry, options);
+    auto module = mparser::CompiledModule::compile(loaded.sources);
+    assert(module.valid());
+    assertBothRuntimes(module, "value", 11);
+
+    const auto deniedEntry = temporary.path / "denied" / "main.m";
+    writeFile(deniedEntry, "value = owner_denied(1);\n");
+    loaded = mparser::SourceLoader{}.load(deniedEntry, options);
+    module = mparser::CompiledModule::compile(loaded.sources);
+    assert(module.valid());
+
+    const auto bytecode = module.invoke();
+    assert(hasDiagnostic(bytecode.diagnostics,
+                         "cannot resolve a private or local function"));
+    mparser::Interpreter interpreter;
+    const auto interpreted = interpreter.run(module.semantic());
+    assert(hasDiagnostic(interpreted.diagnostics,
+                         "function name string is not available"));
+}
+
 void runEntryFunctionCatalogCompatibilitySmoke() {
     auto temporary = makeTemporaryDirectory();
     const auto entry = temporary.path / "entry_functions.m";
@@ -253,6 +333,8 @@ int main() {
     runSearchPathPrecedenceSmoke();
     runPrivateIsolationSmoke();
     runWildcardImportPrecedenceSmoke();
+    runLiteralDynamicDependencySmoke();
+    runPrivateTextBoundarySmoke();
     runEntryFunctionCatalogCompatibilitySmoke();
     std::cout << "function path smoke tests passed\n";
     return 0;

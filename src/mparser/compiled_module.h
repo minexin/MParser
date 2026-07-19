@@ -55,6 +55,7 @@ private:
     BytecodeProgram bytecode_;
     std::vector<CompiledFunctionInfo> functions_;
     std::vector<Diagnostic> diagnostics_;
+    std::shared_ptr<RuntimeCallableContext> callableContext_;
 };
 
 } // namespace mparser

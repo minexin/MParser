@@ -260,15 +260,6 @@ RuntimeValue cellValueForDimensions(std::vector<size_t> dimensions,
     return result;
 }
 
-RuntimeValue functionHandleValue(size_t id, std::string display) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::FunctionHandle;
-    result.opaqueId = id;
-    result.text = std::move(display);
-    setRuntimeDimensions(result, {1, 1});
-    return result;
-}
-
 bool isNumber(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Number;
 }
@@ -290,7 +281,8 @@ bool isCell(const RuntimeValue& value) {
 }
 
 bool isFunctionHandle(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::FunctionHandle;
+    return value.kind == RuntimeValueKind::FunctionHandle &&
+           value.functionHandle != nullptr;
 }
 
 bool isObject(const RuntimeValue& value) {
@@ -576,7 +568,8 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return true;
     }
     if (isFunctionHandle(left) && isFunctionHandle(right)) {
-        return left.opaqueId == right.opaqueId;
+        return left.functionHandle->identity ==
+               right.functionHandle->identity;
     }
     if (left.kind == RuntimeValueKind::NameValueArgument &&
         right.kind == RuntimeValueKind::NameValueArgument) {
@@ -990,31 +983,6 @@ struct ActiveClassFunction {
     ConstructionContext* construction = nullptr;
 };
 
-enum class FunctionHandleTargetKind {
-    Anonymous,
-    Function,
-    Builtin,
-    Method,
-};
-
-struct FunctionHandleInfo {
-    size_t id = 0;
-    FunctionHandleTargetKind kind = FunctionHandleTargetKind::Function;
-    std::string display;
-    std::string targetName;
-    std::string className;
-    std::string methodName;
-    std::string declaringClass;
-    std::string lexicalClassName;
-    std::optional<FunctionInfo> callable;
-    std::optional<RuntimeValue> receiver;
-    std::vector<std::string> parameters;
-    std::map<std::string, RuntimeValue> capturedVariables;
-    size_t entry = 0;
-    size_t end = 0;
-    SourceSpan span;
-};
-
 struct EventListenerRecord {
     size_t id = 0;
     std::weak_ptr<std::map<std::string, RuntimeValue>> sourceFields;
@@ -1169,6 +1137,9 @@ public:
                          const BytecodeVmOptions& options) {
         program_ = &program;
         semantic_ = &semantic;
+        callableContext_ = options.callableContext
+                               ? options.callableContext
+                               : makeRuntimeCallableContext();
         profilingEnabled_ =
             options.profiling == BytecodeVmProfilingMode::Full;
         typedRegionBackend_ = options.typedRegionBackend;
@@ -1190,13 +1161,11 @@ public:
         frames_.clear();
         frames_.push_back({});
         activeClassFunctions_.clear();
-        functionHandles_.clear();
         eventListeners_.clear();
         dynamicProperties_.clear();
         activeDynamicPropertyGetters_.clear();
         activeDynamicPropertySetters_.clear();
         destroyingHandleFields_.clear();
-        nextFunctionHandleId_ = 1;
         nextEventListenerId_ = 1;
         nextDynamicPropertyId_ = 1;
         resetProfiling(program.instructions.size());
@@ -4517,12 +4486,29 @@ private:
     }
 
     bool configureNamedFunctionHandle(
-        const BytecodeInstruction& instruction, FunctionHandleInfo& info) {
+        const BytecodeInstruction& instruction,
+        RuntimeFunctionHandle& info) {
         const std::string& target = instruction.operand;
         if (instruction.binding.kind == BindingKind::Builtin) {
-            info.kind = FunctionHandleTargetKind::Builtin;
+            info.kind = RuntimeFunctionHandleKind::Builtin;
+            info.backend = RuntimeFunctionHandleBackend::Independent;
             info.targetName = symbolName(instruction.binding).value_or(target);
             return true;
+        }
+
+        std::string functionName = target;
+        if (instruction.binding.kind == BindingKind::Function) {
+            functionName = symbolName(instruction.binding).value_or(target);
+            const auto function = functionsByName_.find(functionName);
+            if (function != functionsByName_.end()) {
+                info.kind = RuntimeFunctionHandleKind::Function;
+                info.backend = RuntimeFunctionHandleBackend::Bytecode;
+                info.context = callableContext_;
+                info.targetName = function->first;
+                info.span = function->second.span;
+                info.sourceFile = function->second.fullPath;
+                return true;
+            }
         }
 
         const size_t firstDot = target.find('.');
@@ -4552,12 +4538,15 @@ private:
                                       method->name);
                     return false;
                 }
-                info.kind = FunctionHandleTargetKind::Method;
+                info.kind = RuntimeFunctionHandleKind::Method;
+                info.backend = RuntimeFunctionHandleBackend::Bytecode;
+                info.context = callableContext_;
                 info.className = receiver->second.className;
                 info.methodName = methodName;
                 info.declaringClass = method->declaringClass;
-                info.callable = *method;
                 info.receiver = receiver->second;
+                info.span = method->span;
+                info.sourceFile = method->fullPath;
                 return true;
             }
 
@@ -4578,27 +4567,36 @@ private:
                                       method->name);
                     return false;
                 }
-                info.kind = FunctionHandleTargetKind::Method;
+                info.kind = RuntimeFunctionHandleKind::Method;
+                info.backend = RuntimeFunctionHandleBackend::Bytecode;
+                info.context = callableContext_;
                 info.className = className;
                 info.methodName = staticMethodName;
                 info.declaringClass = method->declaringClass;
-                info.callable = *method;
+                info.span = method->span;
+                info.sourceFile = method->fullPath;
                 return true;
             }
         }
 
-        std::string functionName = target;
-        if (instruction.binding.kind == BindingKind::Function) {
-            functionName = symbolName(instruction.binding).value_or(target);
-        }
         auto function = functionsByName_.find(functionName);
         if (function == functionsByName_.end() && functionName != target) {
             function = functionsByName_.find(target);
         }
         if (function != functionsByName_.end()) {
-            info.kind = FunctionHandleTargetKind::Function;
+            info.kind = RuntimeFunctionHandleKind::Function;
+            info.backend = RuntimeFunctionHandleBackend::Bytecode;
+            info.context = callableContext_;
             info.targetName = function->first;
-            info.callable = function->second;
+            info.span = function->second.span;
+            info.sourceFile = function->second.fullPath;
+            return true;
+        }
+
+        if (isKnownBuiltinName(target)) {
+            info.kind = RuntimeFunctionHandleKind::Builtin;
+            info.backend = RuntimeFunctionHandleBackend::Independent;
+            info.targetName = target;
             return true;
         }
 
@@ -4607,10 +4605,106 @@ private:
         return false;
     }
 
+    bool configureTextFunctionHandle(
+        const BytecodeInstruction& instruction, std::string_view target,
+        RuntimeFunctionHandle& info) {
+        if (target.empty()) {
+            addDiagnostic(instruction,
+                          "function name string cannot be empty");
+            return false;
+        }
+        if (target.front() == '@') {
+            addDiagnostic(
+                instruction,
+                "str2func does not parse anonymous function text; create "
+                "anonymous handles with @(...) syntax");
+            return false;
+        }
+
+        const std::string name(target);
+        if (ambiguousFunctionMetadataIdentifiers_.contains(name)) {
+            addDiagnostic(instruction,
+                          "function name string is ambiguous: " + name);
+            return false;
+        }
+        if (const FunctionInfo* function =
+                functionForPublicMetadataIdentifier(name)) {
+            const bool privateFunction =
+                function->name.starts_with("$private");
+            const bool localFunction =
+                function->metadataIdentifier.find('>') != std::string::npos;
+            if (privateFunction || localFunction) {
+                addDiagnostic(
+                    instruction,
+                    "function name string cannot resolve a private or local "
+                    "function: " +
+                        name);
+                return false;
+            }
+            info.kind = RuntimeFunctionHandleKind::Function;
+            info.backend = RuntimeFunctionHandleBackend::Bytecode;
+            info.context = callableContext_;
+            info.targetName = function->name;
+            info.span = function->span;
+            info.sourceFile = function->fullPath;
+            return true;
+        }
+
+        const size_t dot = name.find_last_of('.');
+        if (dot != std::string::npos && dot != 0 && dot + 1 < name.size()) {
+            const std::string className = name.substr(0, dot);
+            const std::string methodName = name.substr(dot + 1);
+            const auto klass = classesByName_.find(className);
+            const FunctionInfo* method =
+                klass == classesByName_.end()
+                    ? nullptr
+                    : selectMethod(klass->second, methodName, false);
+            if (method && method->staticMethod) {
+                if (method->access.level != MemberAccessLevel::Public) {
+                    addDiagnostic(instruction,
+                                  "function name string cannot resolve a "
+                                  "non-public method: " +
+                                      name);
+                    return false;
+                }
+                info.kind = RuntimeFunctionHandleKind::Method;
+                info.backend = RuntimeFunctionHandleBackend::Bytecode;
+                info.context = callableContext_;
+                info.className = className;
+                info.methodName = methodName;
+                info.declaringClass = method->declaringClass;
+                info.span = method->span;
+                info.sourceFile = method->fullPath;
+                return true;
+            }
+        }
+
+        if (isKnownBuiltinName(name)) {
+            info.kind = RuntimeFunctionHandleKind::Builtin;
+            info.backend = RuntimeFunctionHandleBackend::Independent;
+            info.targetName = name;
+            return true;
+        }
+
+        addDiagnostic(instruction,
+                      "function name string is not available: " + name);
+        return false;
+    }
+
+    std::optional<RuntimeValue> functionHandleFromText(
+        const BytecodeInstruction& instruction, std::string_view target) {
+        RuntimeFunctionHandle info;
+        info.display = "@" + std::string(target);
+        info.span = instruction.span;
+        if (!configureTextFunctionHandle(instruction, target, info)) {
+            return std::nullopt;
+        }
+        return makeRuntimeFunctionHandleValue(std::move(info));
+    }
+
     std::optional<size_t> makeFunctionHandle(
         const BytecodeInstruction& instruction) {
-        FunctionHandleInfo info;
-        info.id = nextFunctionHandleId_++;
+        RuntimeFunctionHandle info;
         info.span = instruction.span;
         info.lexicalClassName = instruction.receiverName;
 
@@ -4620,36 +4714,43 @@ private:
             if (!continuation) {
                 return std::nullopt;
             }
-            info.kind = FunctionHandleTargetKind::Anonymous;
+            info.kind = RuntimeFunctionHandleKind::Anonymous;
+            info.backend = RuntimeFunctionHandleBackend::Bytecode;
+            info.context = callableContext_;
             info.parameters = instruction.parameters;
             info.capturedVariables = currentFrame();
             info.entry = currentPc_ + 1;
             info.end = *continuation;
-            std::string display = "@(";
-            for (size_t index = 0; index < info.parameters.size(); ++index) {
-                if (index > 0) {
-                    display += ",";
+            info.display = instruction.calleeName;
+            if (info.display.empty()) {
+                info.display = "@(";
+                for (size_t index = 0; index < info.parameters.size();
+                     ++index) {
+                    if (index > 0) {
+                        info.display += ",";
+                    }
+                    info.display += info.parameters[index];
                 }
-                display += info.parameters[index];
+                info.display += ")";
             }
-            display += ")";
-            info.display = std::move(display);
+            if (const auto* source = sourceInfo(info.span)) {
+                info.sourceFile = source->name;
+            }
             if (info.entry >= info.end) {
                 addDiagnostic(instruction,
                               "anonymous function handle requires a body");
                 return continuation;
             }
         } else {
-            info.display = "@" + instruction.operand;
+            info.display = instruction.calleeName.empty()
+                               ? "@" + instruction.operand
+                               : instruction.calleeName;
             if (!configureNamedFunctionHandle(instruction, info)) {
                 return std::nullopt;
             }
         }
 
-        const size_t id = info.id;
-        const std::string display = info.display;
-        functionHandles_[id] = std::move(info);
-        pushRuntime(functionHandleValue(id, display));
+        pushRuntime(makeRuntimeFunctionHandleValue(std::move(info)));
         return continuation;
     }
 
@@ -8587,7 +8688,7 @@ private:
 
     std::vector<RuntimeValue> callAnonymousFunctionHandle(
         const BytecodeInstruction& instruction,
-        const FunctionHandleInfo& info,
+        const RuntimeFunctionHandle& info,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
         if (arguments.size() != info.parameters.size()) {
             addDiagnostic(instruction,
@@ -8668,40 +8769,69 @@ private:
     std::vector<RuntimeValue> callFunctionHandle(
         const BytecodeInstruction& instruction, const RuntimeValue& handle,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
-        const auto found = functionHandles_.find(handle.opaqueId);
-        if (found == functionHandles_.end()) {
+        if (!isFunctionHandle(handle)) {
             addDiagnostic(instruction,
-                          "function handle does not belong to this VM run");
+                          "function handle descriptor is unavailable");
             return missingOutputs(requestedCount);
         }
 
-        const FunctionHandleInfo& info = found->second;
+        const RuntimeFunctionHandle& info = *handle.functionHandle;
+        if (info.kind != RuntimeFunctionHandleKind::Builtin &&
+            (info.backend != RuntimeFunctionHandleBackend::Bytecode ||
+             !info.context || info.context != callableContext_)) {
+            addDiagnostic(
+                instruction,
+                "function handle belongs to a different compiled module");
+            return missingOutputs(requestedCount);
+        }
+
         auto savedActiveClassFunctions = std::move(activeClassFunctions_);
         activeClassFunctions_.clear();
         std::vector<RuntimeValue> outputs;
-        if (info.kind == FunctionHandleTargetKind::Anonymous) {
+        if (info.kind == RuntimeFunctionHandleKind::Anonymous) {
             outputs = callAnonymousFunctionHandle(
                 instruction, info, arguments, requestedCount);
-        } else if (info.kind == FunctionHandleTargetKind::Builtin) {
+        } else if (info.kind == RuntimeFunctionHandleKind::Builtin) {
             outputs = callBuiltinOutputs(instruction, info.targetName,
                                          arguments, requestedCount);
-        } else if (info.callable) {
+        } else {
+            const FunctionInfo* callable = nullptr;
+            if (info.kind == RuntimeFunctionHandleKind::Function) {
+                const auto function = functionsByName_.find(info.targetName);
+                if (function != functionsByName_.end()) {
+                    callable = &function->second;
+                }
+            } else if (info.kind == RuntimeFunctionHandleKind::Method) {
+                const auto declaring =
+                    classesByName_.find(info.declaringClass);
+                if (declaring != classesByName_.end()) {
+                    const auto method = declaring->second.declaredMethods.find(
+                        info.methodName);
+                    if (method != declaring->second.declaredMethods.end()) {
+                        callable = &method->second;
+                    }
+                }
+            }
+            if (!callable) {
+                addDiagnostic(instruction,
+                              "function handle target is unavailable: " +
+                                  info.display);
+                activeClassFunctions_ =
+                    std::move(savedActiveClassFunctions);
+                return missingOutputs(requestedCount);
+            }
+
             std::vector<RuntimeValue> callArguments = arguments;
             if (info.receiver) {
                 callArguments.insert(callArguments.begin(), *info.receiver);
             }
             const std::string name =
-                info.kind == FunctionHandleTargetKind::Method
+                info.kind == RuntimeFunctionHandleKind::Method
                     ? info.declaringClass + "." + info.methodName
                     : info.targetName;
             outputs = callFunctionInfo(
-                instruction, name, *info.callable, callArguments,
+                instruction, name, *callable, callArguments,
                 requestedCount, std::nullopt, nullptr, false);
-        } else {
-            addDiagnostic(instruction,
-                          "function handle target is unavailable: " +
-                              info.display);
-            outputs = missingOutputs(requestedCount);
         }
         activeClassFunctions_ = std::move(savedActiveClassFunctions);
         return outputs;
@@ -10252,6 +10382,81 @@ private:
             addDiagnostic(instruction,
                           "bytecode call result count cannot be negative");
             return {};
+        }
+
+        if (name == "feval") {
+            if (arguments.empty()) {
+                addDiagnostic(
+                    instruction,
+                    "feval expects a function handle or function name string");
+                return missingOutputs(requestedCount);
+            }
+
+            RuntimeValue handle;
+            if (isFunctionHandle(arguments.front())) {
+                handle = arguments.front();
+            } else if (isString(arguments.front())) {
+                const auto resolved = functionHandleFromText(
+                    instruction, arguments.front().text);
+                if (!resolved) {
+                    return missingOutputs(requestedCount);
+                }
+                handle = *resolved;
+            } else {
+                addDiagnostic(
+                    instruction,
+                    "feval expects a function handle or function name string");
+                return missingOutputs(requestedCount);
+            }
+
+            return callFunctionHandle(
+                instruction, handle,
+                std::vector<RuntimeValue>(arguments.begin() + 1,
+                                          arguments.end()),
+                requestedCount);
+        }
+
+        if (name == "str2func" || name == "func2str" ||
+            name == "functions") {
+            if (requestedCount > 1) {
+                addDiagnostic(instruction,
+                              name + " supports at most one output");
+                return missingOutputs(requestedCount);
+            }
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              name + " expects exactly one argument");
+                return missingOutputs(requestedCount);
+            }
+
+            RuntimeValue result;
+            if (name == "str2func") {
+                if (!isString(arguments.front())) {
+                    addDiagnostic(instruction,
+                                  "str2func expects a function name string");
+                    return missingOutputs(requestedCount);
+                }
+                const auto resolved = functionHandleFromText(
+                    instruction, arguments.front().text);
+                if (!resolved) {
+                    return missingOutputs(requestedCount);
+                }
+                result = *resolved;
+            } else {
+                if (!isFunctionHandle(arguments.front())) {
+                    addDiagnostic(instruction,
+                                  name + " expects a function handle");
+                    return missingOutputs(requestedCount);
+                }
+                result = name == "func2str"
+                             ? stringValue(runtimeFunctionHandleText(
+                                   arguments.front()))
+                             : runtimeFunctionHandleMetadata(
+                                   arguments.front());
+            }
+            return requestedCount == 0
+                       ? std::vector<RuntimeValue>{}
+                       : std::vector<RuntimeValue>{std::move(result)};
         }
 
         if (name == "MException" && requestedCount > 1) {
@@ -12926,13 +13131,12 @@ private:
     std::vector<TryContext> tryContextStack_;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
     std::vector<ActiveClassFunction> activeClassFunctions_;
-    std::map<size_t, FunctionHandleInfo> functionHandles_;
+    std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::map<size_t, EventListenerRecord> eventListeners_;
     std::map<size_t, DynamicPropertyRecord> dynamicProperties_;
     std::set<size_t> activeDynamicPropertyGetters_;
     std::set<size_t> activeDynamicPropertySetters_;
     std::set<const void*> destroyingHandleFields_;
-    size_t nextFunctionHandleId_ = 1;
     size_t nextEventListenerId_ = 1;
     size_t nextDynamicPropertyId_ = 1;
     std::map<std::string, const HirNode*> functionNodes_;

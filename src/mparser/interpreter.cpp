@@ -20,6 +20,7 @@
 #include "mparser/runtime_warning.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -35,6 +36,9 @@
 
 namespace mparser {
 namespace {
+
+std::atomic_size_t nextCallableContextIdentity{1};
+std::atomic_size_t nextFunctionHandleIdentity{1};
 
 RuntimeValue missingValue() {
     return RuntimeValue{};
@@ -128,6 +132,11 @@ bool isStruct(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Struct;
 }
 
+bool isFunctionHandle(const RuntimeValue& value) {
+    return value.kind == RuntimeValueKind::FunctionHandle &&
+           value.functionHandle != nullptr;
+}
+
 const std::map<std::string, RuntimeValue>& objectFields(
     const RuntimeValue& value) {
     if (value.handleObject && value.sharedFields) {
@@ -142,6 +151,34 @@ bool isNumeric(const RuntimeValue& value) {
 
 bool isArray(const RuntimeValue& value) {
     return isVector(value) || isMatrix(value);
+}
+
+std::string trimAscii(std::string_view text) {
+    const size_t begin = text.find_first_not_of(" \t\r\n\v\f");
+    if (begin == std::string_view::npos) {
+        return {};
+    }
+    const size_t end = text.find_last_not_of(" \t\r\n\v\f") + 1;
+    return std::string(text.substr(begin, end - begin));
+}
+
+std::vector<std::string> anonymousParameterNames(std::string_view text) {
+    std::vector<std::string> names;
+    size_t begin = 0;
+    while (begin <= text.size()) {
+        const size_t comma = text.find(',', begin);
+        const size_t end = comma == std::string_view::npos ? text.size()
+                                                           : comma;
+        std::string name = trimAscii(text.substr(begin, end - begin));
+        if (!name.empty()) {
+            names.push_back(std::move(name));
+        }
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        begin = comma + 1;
+    }
+    return names;
 }
 
 std::string decodeStringLiteral(std::string_view text) {
@@ -192,6 +229,10 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
             }
         }
         return true;
+    }
+    if (isFunctionHandle(left) && isFunctionHandle(right)) {
+        return left.functionHandle->identity ==
+               right.functionHandle->identity;
     }
     if (isStruct(left) && isStruct(right)) {
         if (runtimeDimensions(left) != runtimeDimensions(right) ||
@@ -375,6 +416,7 @@ class InterpreterContext {
 public:
     InterpreterResult run(const SemanticResult& semantic) {
         semantic_ = &semantic;
+        callableContext_ = makeRuntimeCallableContext();
         pendingException_.reset();
         frames_.push_back({});
         if (semantic.root) {
@@ -505,6 +547,14 @@ private:
             }
         }
         return std::string(name);
+    }
+
+    std::string sourceFileName(const SourceSpan& span) const {
+        if (!semantic_ || span.begin.sourceId == kInvalidSourceId ||
+            span.begin.sourceId >= semantic_->sources.size()) {
+            return {};
+        }
+        return semantic_->sources[span.begin.sourceId].name;
     }
 
     RuntimeExceptionFrame exceptionFrame(
@@ -1123,28 +1173,12 @@ private:
 
     std::vector<RuntimeValue> evaluateValues(const HirNode& node,
                                              size_t requestedOutputCount) {
+        if (node.kind == HirKind::CallOrIndex) {
+            return evaluateCallOrIndexValues(node, requestedOutputCount);
+        }
         if (const auto method =
                 callRuntimeExceptionMethod(node, requestedOutputCount)) {
             return method->outputs;
-        }
-        if (node.kind == HirKind::CallOrIndex &&
-            (node.binding.kind == BindingKind::Function ||
-             node.binding.kind == BindingKind::Builtin)) {
-            if (node.children.empty()) {
-                return {missingValue()};
-            }
-
-            const HirNode& callee = *node.children.front();
-            const std::vector<RuntimeValue> arguments =
-                evaluateArguments(node);
-            if (node.binding.kind == BindingKind::Function) {
-                return callLocalFunction(node, callee.label, arguments,
-                                         requestedOutputCount)
-                    .outputs;
-            }
-            return callBuiltin(node, callee.label, arguments,
-                               requestedOutputCount)
-                .outputs;
         }
 
         std::vector<RuntimeValue> result;
@@ -1808,6 +1842,8 @@ private:
             return evaluateCallOrIndex(node);
         case HirKind::BraceIndex:
             return evaluateBraceIndex(node);
+        case HirKind::FunctionHandle:
+            return evaluateFunctionHandle(node);
         case HirKind::Assignment:
             executeAssignment(node);
             return missingValue();
@@ -1828,7 +1864,6 @@ private:
         case HirKind::OutputList:
         case HirKind::ParameterList:
         case HirKind::SuperclassCall:
-        case HirKind::FunctionHandle:
         case HirKind::MetaClass:
         case HirKind::Unknown:
             addDiagnostic(node, "expression is not executable yet: " +
@@ -2649,29 +2684,270 @@ private:
         return result.outputs.front();
     }
 
-    RuntimeValue evaluateCallOrIndex(const HirNode& node) {
-        if (node.children.empty()) {
-            return missingValue();
+    std::optional<RuntimeValue> functionHandleFromText(
+        const HirNode& node, std::string_view target) {
+        if (target.empty()) {
+            addDiagnostic(node, "function name string cannot be empty");
+            return std::nullopt;
+        }
+        if (target.front() == '@') {
+            addDiagnostic(
+                node,
+                "str2func does not parse anonymous function text; create "
+                "anonymous handles with @(...) syntax");
+            return std::nullopt;
         }
 
-        if (const auto method = callRuntimeExceptionMethod(node, 1)) {
-            return firstOutput(*method);
+        const HirNode* candidate = nullptr;
+        for (const auto& [name, function] : functionsByName_) {
+            const bool privateFunction = name.starts_with("$private");
+            const bool localFunction =
+                name.find('>') != std::string::npos &&
+                !name.starts_with("$path");
+            if (privateFunction || localFunction ||
+                (name != target && publicFunctionName(name) != target)) {
+                continue;
+            }
+            if (candidate && candidate != function) {
+                addDiagnostic(node, "function name string is ambiguous: " +
+                                        std::string(target));
+                return std::nullopt;
+            }
+            candidate = function;
+        }
+
+        RuntimeFunctionHandle info;
+        info.display = "@" + std::string(target);
+        info.span = node.span;
+        if (candidate) {
+            info.kind = RuntimeFunctionHandleKind::Function;
+            info.backend = RuntimeFunctionHandleBackend::Hir;
+            info.context = callableContext_;
+            info.targetName = candidate->label;
+            info.span = candidate->span;
+            info.sourceFile = sourceFileName(candidate->span);
+            return makeRuntimeFunctionHandleValue(std::move(info));
+        }
+        if (isKnownBuiltinName(target)) {
+            info.kind = RuntimeFunctionHandleKind::Builtin;
+            info.backend = RuntimeFunctionHandleBackend::Independent;
+            info.targetName = std::string(target);
+            return makeRuntimeFunctionHandleValue(std::move(info));
+        }
+
+        addDiagnostic(node, "function name string is not available: " +
+                                std::string(target));
+        return std::nullopt;
+    }
+
+    RuntimeValue evaluateFunctionHandle(const HirNode& node) {
+        RuntimeFunctionHandle info;
+        info.display = node.raw.empty()
+                           ? (node.label == "@()" ? std::string("@()")
+                                                  : "@" + node.label)
+                           : node.raw;
+        info.span = node.span;
+        info.lexicalClassName = node.lexicalClassName;
+        info.sourceFile = sourceFileName(node.span);
+
+        if (node.label == "@()") {
+            if (node.children.size() < 2 ||
+                node.children.front()->kind != HirKind::ParameterList) {
+                addDiagnostic(node,
+                              "anonymous function handle requires parameters "
+                              "and a body");
+                return missingValue();
+            }
+            info.kind = RuntimeFunctionHandleKind::Anonymous;
+            info.backend = RuntimeFunctionHandleBackend::Hir;
+            info.context = callableContext_;
+            info.parameters =
+                anonymousParameterNames(node.children.front()->raw);
+            info.capturedVariables = currentFrame();
+            info.hirBody = node.children[1].get();
+            return makeRuntimeFunctionHandleValue(std::move(info));
+        }
+
+        if (node.binding.kind == BindingKind::Method) {
+            addDiagnostic(
+                node,
+                "HIR interpreter does not execute method function handles; "
+                "use the bytecode runtime for: " +
+                    info.display);
+            return missingValue();
+        }
+        if (node.binding.kind == BindingKind::Function) {
+            const auto function = functionsByName_.find(node.label);
+            if (function == functionsByName_.end()) {
+                addDiagnostic(node,
+                              "function handle target is not available: " +
+                                  info.display);
+                return missingValue();
+            }
+            info.kind = RuntimeFunctionHandleKind::Function;
+            info.backend = RuntimeFunctionHandleBackend::Hir;
+            info.context = callableContext_;
+            info.targetName = function->first;
+            info.span = function->second->span;
+            info.sourceFile = sourceFileName(function->second->span);
+            return makeRuntimeFunctionHandleValue(std::move(info));
+        }
+        if (node.binding.kind == BindingKind::Builtin ||
+            isKnownBuiltinName(node.label)) {
+            info.kind = RuntimeFunctionHandleKind::Builtin;
+            info.backend = RuntimeFunctionHandleBackend::Independent;
+            info.targetName = node.label;
+            return makeRuntimeFunctionHandleValue(std::move(info));
+        }
+
+        addDiagnostic(node, "function handle target is not available: " +
+                                info.display);
+        return missingValue();
+    }
+
+    FunctionCallResult callFunctionHandle(
+        const HirNode& node, const RuntimeValue& handle,
+        const std::vector<RuntimeValue>& arguments,
+        size_t requestedOutputCount) {
+        const auto missingOutputs = [&] {
+            return FunctionCallResult{std::vector<RuntimeValue>(
+                requestedOutputCount, missingValue())};
+        };
+        if (!isFunctionHandle(handle)) {
+            addDiagnostic(node,
+                          "function handle descriptor is unavailable");
+            return missingOutputs();
+        }
+
+        const RuntimeFunctionHandle& info = *handle.functionHandle;
+        if (info.kind != RuntimeFunctionHandleKind::Builtin &&
+            (info.backend != RuntimeFunctionHandleBackend::Hir ||
+             !info.context || info.context != callableContext_)) {
+            addDiagnostic(node,
+                          "function handle belongs to a different runtime "
+                          "module");
+            return missingOutputs();
+        }
+        if (info.kind == RuntimeFunctionHandleKind::Builtin) {
+            return callBuiltin(node, info.targetName, arguments,
+                               requestedOutputCount);
+        }
+        if (info.kind == RuntimeFunctionHandleKind::Method) {
+            addDiagnostic(
+                node,
+                "HIR interpreter does not execute method function handles; "
+                "use the bytecode runtime for: " +
+                    info.display);
+            return missingOutputs();
+        }
+        if (info.kind == RuntimeFunctionHandleKind::Function) {
+            const auto function = functionsByName_.find(info.targetName);
+            if (function == functionsByName_.end()) {
+                addDiagnostic(node,
+                              "function handle target is unavailable: " +
+                                  info.display);
+                return missingOutputs();
+            }
+            return callFunction(*function->second, arguments, false,
+                                requestedOutputCount, node.span);
+        }
+
+        if (arguments.size() != info.parameters.size()) {
+            addDiagnostic(node,
+                          "anonymous function argument count mismatch: " +
+                              info.display);
+            return missingOutputs();
+        }
+        if (requestedOutputCount > 1) {
+            addDiagnostic(node,
+                          "anonymous function supports at most one output: " +
+                              info.display);
+            return missingOutputs();
+        }
+        if (!info.hirBody) {
+            addDiagnostic(node,
+                          "anonymous function body is unavailable: " +
+                              info.display);
+            return missingOutputs();
+        }
+
+        frames_.push_back(info.capturedVariables);
+        for (size_t index = 0; index < info.parameters.size(); ++index) {
+            if (info.parameters[index] != "~") {
+                currentFrame()[info.parameters[index]] = arguments[index];
+            }
+        }
+        currentFrame()["nargin"] =
+            numberValue(static_cast<double>(arguments.size()));
+        currentFrame()["nargout"] =
+            numberValue(static_cast<double>(requestedOutputCount));
+
+        RuntimeValue output = missingValue();
+        const size_t diagnosticCount = diagnostics_.size();
+        {
+            FunctionNameGuard functionName(
+                activeFunctionNames_,
+                info.display.empty() ? std::string("<anonymous>")
+                                     : info.display);
+            output = evaluate(*info.hirBody);
+        }
+        frames_.pop_back();
+        if (diagnostics_.size() != diagnosticCount) {
+            return missingOutputs();
+        }
+        return requestedOutputCount == 0
+                   ? FunctionCallResult{}
+                   : FunctionCallResult{{std::move(output)}};
+    }
+
+    std::vector<RuntimeValue> evaluateCallOrIndexValues(
+        const HirNode& node, size_t requestedOutputCount) {
+        if (node.children.empty()) {
+            return std::vector<RuntimeValue>(requestedOutputCount,
+                                             missingValue());
+        }
+        if (const auto method =
+                callRuntimeExceptionMethod(node, requestedOutputCount)) {
+            return method->outputs;
         }
 
         const HirNode& callee = *node.children.front();
         if (node.binding.kind == BindingKind::Builtin) {
-            const std::vector<RuntimeValue> arguments = evaluateArguments(node);
-            return firstOutput(callBuiltin(node, callee.label, arguments, 1));
+            return callBuiltin(node, callee.label, evaluateArguments(node),
+                               requestedOutputCount)
+                .outputs;
         }
-
         if (node.binding.kind == BindingKind::Function) {
-            const std::vector<RuntimeValue> arguments = evaluateArguments(node);
-            return firstOutput(callLocalFunction(node, callee.label,
-                                                 arguments, 1));
+            return callLocalFunction(node, callee.label,
+                                     evaluateArguments(node),
+                                     requestedOutputCount)
+                .outputs;
         }
 
         const RuntimeValue target = evaluate(callee);
-        return evaluateIndex(node, target, evaluateIndexArguments(node, target));
+        if (isFunctionHandle(target)) {
+            return callFunctionHandle(node, target, evaluateArguments(node),
+                                      requestedOutputCount)
+                .outputs;
+        }
+
+        RuntimeValue indexed =
+            evaluateIndex(node, target,
+                          evaluateIndexArguments(node, target));
+        if (requestedOutputCount > 1) {
+            addDiagnostic(node,
+                          "parenthesis indexing supports at most one output");
+            return std::vector<RuntimeValue>(requestedOutputCount,
+                                             missingValue());
+        }
+        return requestedOutputCount == 0
+                   ? std::vector<RuntimeValue>{}
+                   : std::vector<RuntimeValue>{std::move(indexed)};
+    }
+
+    RuntimeValue evaluateCallOrIndex(const HirNode& node) {
+        const auto outputs = evaluateCallOrIndexValues(node, 1);
+        return outputs.empty() ? missingValue() : outputs.front();
     }
 
     FunctionCallResult
@@ -2740,6 +3016,84 @@ private:
     callBuiltin(const HirNode& node, const std::string& name,
                 const std::vector<RuntimeValue>& arguments,
                 size_t requestedOutputCount) {
+        const auto missingOutputs = [&] {
+            return FunctionCallResult{std::vector<RuntimeValue>(
+                requestedOutputCount, missingValue())};
+        };
+
+        if (name == "feval") {
+            if (arguments.empty()) {
+                addDiagnostic(
+                    node,
+                    "feval expects a function handle or function name string");
+                return missingOutputs();
+            }
+
+            RuntimeValue handle;
+            if (isFunctionHandle(arguments.front())) {
+                handle = arguments.front();
+            } else if (isString(arguments.front())) {
+                const auto resolved = functionHandleFromText(
+                    node, arguments.front().text);
+                if (!resolved) {
+                    return missingOutputs();
+                }
+                handle = *resolved;
+            } else {
+                addDiagnostic(
+                    node,
+                    "feval expects a function handle or function name string");
+                return missingOutputs();
+            }
+
+            return callFunctionHandle(
+                node, handle,
+                std::vector<RuntimeValue>(arguments.begin() + 1,
+                                          arguments.end()),
+                requestedOutputCount);
+        }
+
+        if (name == "str2func" || name == "func2str" ||
+            name == "functions") {
+            if (requestedOutputCount > 1) {
+                addDiagnostic(node, name + " supports at most one output");
+                return missingOutputs();
+            }
+            if (arguments.size() != 1) {
+                addDiagnostic(node, name + " expects exactly one argument");
+                return missingOutputs();
+            }
+
+            RuntimeValue result;
+            if (name == "str2func") {
+                if (!isString(arguments.front())) {
+                    addDiagnostic(node,
+                                  "str2func expects a function name string");
+                    return missingOutputs();
+                }
+                const auto resolved = functionHandleFromText(
+                    node, arguments.front().text);
+                if (!resolved) {
+                    return missingOutputs();
+                }
+                result = *resolved;
+            } else {
+                if (!isFunctionHandle(arguments.front())) {
+                    addDiagnostic(node,
+                                  name + " expects a function handle");
+                    return missingOutputs();
+                }
+                result = name == "func2str"
+                             ? stringValue(runtimeFunctionHandleText(
+                                   arguments.front()))
+                             : runtimeFunctionHandleMetadata(
+                                   arguments.front());
+            }
+            return requestedOutputCount == 0
+                       ? FunctionCallResult{}
+                       : FunctionCallResult{{std::move(result)}};
+        }
+
         if (name == "MException") {
             if (requestedOutputCount > 1) {
                 addDiagnostic(node,
@@ -3408,6 +3762,7 @@ private:
     }
 
     const SemanticResult* semantic_ = nullptr;
+    std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
     std::vector<std::string> activeFunctionNames_;
     std::vector<RuntimeExceptionFrame> exceptionCallerFrames_;
@@ -3453,6 +3808,79 @@ RuntimeValue makeRuntimeNameValueArgument(std::string name,
     result.text = std::move(name);
     result.cells.push_back(std::move(value));
     setRuntimeDimensions(result, {1, 1});
+    return result;
+}
+
+std::shared_ptr<RuntimeCallableContext> makeRuntimeCallableContext() {
+    auto context = std::make_shared<RuntimeCallableContext>();
+    context->identity = nextCallableContextIdentity.fetch_add(
+        1, std::memory_order_relaxed);
+    return context;
+}
+
+RuntimeValue makeRuntimeFunctionHandleValue(
+    RuntimeFunctionHandle handle) {
+    handle.identity = nextFunctionHandleIdentity.fetch_add(
+        1, std::memory_order_relaxed);
+    auto descriptor =
+        std::make_shared<RuntimeFunctionHandle>(std::move(handle));
+
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::FunctionHandle;
+    result.functionHandle = std::move(descriptor);
+    result.opaqueId = result.functionHandle->identity;
+    result.text = result.functionHandle->display;
+    setRuntimeDimensions(result, {1, 1});
+    return result;
+}
+
+std::string runtimeFunctionHandleText(const RuntimeValue& value) {
+    if (value.kind != RuntimeValueKind::FunctionHandle ||
+        !value.functionHandle) {
+        return {};
+    }
+
+    const RuntimeFunctionHandle& handle = *value.functionHandle;
+    if (handle.kind == RuntimeFunctionHandleKind::Anonymous) {
+        return handle.display;
+    }
+    if (!handle.display.empty()) {
+        return handle.display.front() == '@'
+                   ? handle.display.substr(1)
+                   : handle.display;
+    }
+    if (handle.kind == RuntimeFunctionHandleKind::Method) {
+        return handle.className.empty()
+                   ? handle.methodName
+                   : handle.className + "." + handle.methodName;
+    }
+    return handle.targetName;
+}
+
+RuntimeValue runtimeFunctionHandleMetadata(const RuntimeValue& value) {
+    if (value.kind != RuntimeValueKind::FunctionHandle ||
+        !value.functionHandle) {
+        return makeRuntimeStructValue();
+    }
+
+    const RuntimeFunctionHandle& handle = *value.functionHandle;
+    std::map<std::string, RuntimeValue> fields{
+        {"file", stringValue(handle.sourceFile)},
+        {"function", stringValue(runtimeFunctionHandleText(value))},
+        {"type", stringValue(
+                     handle.kind == RuntimeFunctionHandleKind::Anonymous
+                         ? "anonymous"
+                         : "simple")},
+    };
+    if (handle.kind == RuntimeFunctionHandleKind::Anonymous) {
+        fields["workspace"] = cellValue(
+            {makeRuntimeStructValue(handle.capturedVariables)});
+    }
+    RuntimeValue result = makeRuntimeStructValue(std::move(fields));
+    result.fieldOrder = {"function", "type", "file"};
+    if (handle.kind == RuntimeFunctionHandleKind::Anonymous) {
+        result.fieldOrder.push_back("workspace");
+    }
     return result;
 }
 

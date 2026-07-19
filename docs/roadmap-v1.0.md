@@ -234,11 +234,25 @@ function families, not an unbounded builtin count.
 - Close `G-EXC-001` with differential runtime, cross-file CompiledModule, CLI
   sample, compatibility-matrix, and AArch64 focused evidence.
 
-### v0.74-v0.79: Remaining Runtime Foundations
+### v0.74: Dynamic Call And Function Handle Contracts
 
-- Close the audited Must-have dynamic call/handle, text,
-  object-array/reflection, workspace, and remaining runtime-value boundaries
-  with linked compatibility evidence.
+- Replace VM-local handle identifiers with shared callable descriptors and a
+  stable per-module runtime context, allowing source-backed handles to survive
+  repeated invocations of their owning `CompiledModule`.
+- Align HIR and bytecode behavior for anonymous/named/builtin handles,
+  call-versus-index dispatch, `feval`, `str2func`, `func2str`, `functions`,
+  output arity, closure snapshots, and diagnostics.
+- Define literal text dependency discovery and deterministic
+  variable/path/package/private/builtin shadowing without granting text calls
+  private lexical access or loading computed targets implicitly.
+- Close `G-CALL-001` with differential engine tests, CompiledModule lifetime
+  tests, source-graph precedence tests, and one sample checked through every
+  public execution mode.
+
+### v0.75-v0.79: Remaining Runtime Foundations
+
+- Close the audited Must-have text, object-array/reflection, workspace, and
+  remaining runtime-value boundaries with linked compatibility evidence.
 - Freeze the engine-facing value, shape, indexing, call-frame, output-count,
   diagnostic, and fallback contracts needed by the v0.80 extension layer.
 
