@@ -23,7 +23,7 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
       "evidence": ["parser_smoke", "semantic_smoke", "bytecode_smoke"],
       "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "src/mparser/bytecode.cpp"],
-      "limits": "Dynamic text-created function calls and every MATLAB call/index shadowing edge case remain open."
+      "limits": "Method/object dispatch, anonymous-function text parsing, computed-string lazy source loading, and the remaining MATLAB call/index shadowing edge cases remain open."
     },
     {
       "id": "SYN-002",

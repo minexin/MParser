@@ -270,10 +270,11 @@ N-dimensional `zeros`, `ones`, and `cell` constructors, two-dimensional `eye`,
 transpose, and basic numeric matrix multiplication.
 
 Unsupported dynamic features produce runtime diagnostics. That includes class
-instances, function handles, other
-builtin multi-output conventions beyond the implemented
+instances and method handles, anonymous-function text parsing, lazy source
+discovery for computed function-name strings, other builtin multi-output
+conventions beyond the implemented
 `size`/`min`/`max`/`find` subset, complex
-numbers, sparse arrays, object dispatch, and general dynamic call resolution.
+numbers, sparse arrays, and object dispatch.
 This keeps the first interpreter useful for loop and expression validation
 without hiding missing MATLAB semantics behind incorrect fallbacks.
 
@@ -678,8 +679,9 @@ The VM intentionally still rejects non-`handle` built-in superclass
 construction, full MATLAB property conversion, custom validators, validator
 set-membership/range functions, non-scalar string arrays,
 `HandleCompatible` enforcement, cross-file function discovery from command-form
-calls, dynamic or text-created function handles, `.mlx`, `.p`, and MEX
-precedence, class-folder Live Code/P-code/MEX methods, automatic handle
+calls, anonymous-function text parsing, lazy source discovery from computed
+function-name strings, `.mlx`, `.p`, and MEX precedence, class-folder Live
+Code/P-code/MEX methods, automatic handle
 destruction at scope/workspace teardown, cyclic object collection,
 listener/source arrays, numeric/logical/character built-in enumeration bases,
 enumeration object arrays, class methods as `CompiledModule` entry targets,
