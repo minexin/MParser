@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.67.0 LANGUAGES C CXX)
+project(MParser VERSION 0.67.1 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -224,6 +224,12 @@ add_test(NAME production_run_cli_contract_smoke
         -DENTRY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_production_cli_contract.cmake)
 
+add_test(NAME native_jit_benchmark_portable_cli_smoke
+    COMMAND mparser --run --jit=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/native_jit_benchmark.m)
+set_tests_properties(native_jit_benchmark_portable_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "finalValue = 834\\.32145639679")
+
 add_test(NAME nested_scalar_kernel_cli_smoke
     COMMAND mparser
         --run-typed-bytecode
@@ -268,6 +274,13 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     set_tests_properties(production_run_native_jit_cli_smoke PROPERTIES
         PASS_REGULAR_EXPRESSION
             "summary = 705.*compilations=[1-9]")
+
+    add_test(NAME native_jit_benchmark_native_cli_smoke
+        COMMAND mparser --run --jit=native --native-cache-stats
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/native_jit_benchmark.m)
+    set_tests_properties(native_jit_benchmark_native_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "finalValue = 834\\.32145639679.*compilations=[1-9]")
 
     add_test(NAME native_scalar_kernel_cli_smoke
         COMMAND mparser

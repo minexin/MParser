@@ -1,6 +1,6 @@
 # MParser
 
-Current milestone: v0.67.0. See [docs/v0.67.md](docs/v0.67.md) for the
+Current milestone: v0.67.1. See [docs/v0.67.md](docs/v0.67.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan. Previous boundaries are kept in [docs/v0.66.md](docs/v0.66.md),
 [docs/v0.65.md](docs/v0.65.md),
@@ -504,9 +504,9 @@ unchanged bytecode boundary. The backend is optional at build time so targets
 that cannot provide executable memory can retain the portable runtime.
 
 In one eight-invocation Release session on the same Intel Core i5-1135G7,
-`samples/native_jit_benchmark.m` produced a `0.0330` second median across six
-native cache hits versus a `0.1108` second median across seven portable typed
-runs, a same-process `3.36x` improvement. Both paths produced
+`samples/adaptive_native_jit_benchmark.m` produced a `0.0330` second median
+across six native cache hits versus a `0.1108` second median across seven
+portable typed runs, a same-process `3.36x` improvement. Both paths produced
 `finalValue = 834.32145639679`. The separate user-reported MATLAB result of
 about `0.02` seconds came from an Intel Core i7-12700 and remains a target
 scale, not a direct cross-machine ratio.
@@ -640,6 +640,10 @@ guarded portable or bytecode fallback inside the runtime. `--jit` selects
 `auto`, `off`, `portable`, or `native` policy without changing script
 semantics. Diagnostic execution modes remain available, while the deliberately
 smaller reference interpreter now has the explicit `--run-hir` name.
+
+v0.67.1 makes the native JIT benchmark directly executable through the
+production interface. The separate adaptive benchmark retains the original
+eight-run persistent-workspace cache experiment.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
@@ -985,10 +989,13 @@ build-release\mparser.exe --run-typed-bytecode --typed-backend=portable `
   samples\timing_loop_demo.m
 build-release\mparser.exe --run-typed-bytecode samples\timing_flat_loop_demo.m
 
+build-release\mparser.exe --run --jit=native `
+  samples\native_jit_benchmark.m
+
 build-release\mparser.exe --run-adaptive-bytecode `
   --typed-backend=native --adaptive-runs=8 --adaptive-hot-loop=1 `
   --adaptive-persist-workspace --adaptive-workspace=runCount=0 `
-  samples\native_jit_benchmark.m
+  samples\adaptive_native_jit_benchmark.m
 ```
 
 Observe cross-invocation warmup and automatic typed-tier promotion with:

@@ -1,3 +1,8 @@
+if runCount == 0
+    timings = zeros(1, 8);
+end
+
+runCount = runCount + 1;
 tic;
 for j = 1:1000
     for i = 1:1000
@@ -6,5 +11,5 @@ for j = 1:1000
         n = k * m;
     end
 end
-elapsed = toc
+timings(runCount) = toc;
 finalValue = n
