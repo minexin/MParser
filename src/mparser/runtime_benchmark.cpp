@@ -1,6 +1,7 @@
 #include "mparser/runtime_benchmark.h"
 #include "mparser/optimization_plan.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_struct.h"
 #include "mparser/typed_ir.h"
 
 #include <algorithm>
@@ -49,6 +50,7 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
     case RuntimeValueKind::Matrix:
         return left.elements == right.elements;
     case RuntimeValueKind::Cell:
+    case RuntimeValueKind::CommaSeparatedList:
         if (left.cells.size() != right.cells.size()) {
             return false;
         }
@@ -67,15 +69,27 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
                runtimeValuesEqualImpl(left.cells.front(), right.cells.front(),
                                       comparedHandles);
     case RuntimeValueKind::Struct:
-        if (left.fields.size() != right.fields.size()) {
+        if (runtimeStructFieldOrder(left) !=
+                runtimeStructFieldOrder(right) ||
+            runtimeStructElementCount(left) !=
+                runtimeStructElementCount(right)) {
             return false;
         }
-        for (const auto& [name, value] : left.fields) {
-            const auto other = right.fields.find(name);
-            if (other == right.fields.end() ||
-                !runtimeValuesEqualImpl(value, other->second,
-                                        comparedHandles)) {
+        for (size_t offset = 0;
+             offset < runtimeStructElementCount(left); ++offset) {
+            const auto* leftElement = runtimeStructElement(left, offset);
+            const auto* rightElement = runtimeStructElement(right, offset);
+            if (!leftElement || !rightElement ||
+                leftElement->size() != rightElement->size()) {
                 return false;
+            }
+            for (const auto& [name, value] : *leftElement) {
+                const auto other = rightElement->find(name);
+                if (other == rightElement->end() ||
+                    !runtimeValuesEqualImpl(value, other->second,
+                                            comparedHandles)) {
+                    return false;
+                }
             }
         }
         return true;

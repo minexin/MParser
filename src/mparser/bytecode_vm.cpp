@@ -14,6 +14,7 @@
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_value_ops.h"
 #include "mparser/typed_ir.h"
 #include "mparser/typed_region_executor.h"
 
@@ -358,6 +359,8 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "function_handle";
     case RuntimeValueKind::Struct:
         return "struct";
+    case RuntimeValueKind::CommaSeparatedList:
+        return "comma_separated_list";
     case RuntimeValueKind::NameValueArgument:
         return "name_value_argument";
     case RuntimeValueKind::Object:
@@ -573,13 +576,38 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     }
     if (left.kind == RuntimeValueKind::Struct &&
         right.kind == RuntimeValueKind::Struct) {
-        if (left.fields.size() != right.fields.size()) {
+        if (runtimeDimensions(left) != runtimeDimensions(right) ||
+            runtimeStructFieldOrder(left) !=
+                runtimeStructFieldOrder(right) ||
+            runtimeStructElementCount(left) !=
+                runtimeStructElementCount(right)) {
             return false;
         }
-        for (const auto& [name, value] : left.fields) {
-            const auto other = right.fields.find(name);
-            if (other == right.fields.end() ||
-                !runtimeEqual(value, other->second)) {
+        for (size_t offset = 0;
+             offset < runtimeStructElementCount(left); ++offset) {
+            const auto* leftElement = runtimeStructElement(left, offset);
+            const auto* rightElement = runtimeStructElement(right, offset);
+            if (!leftElement || !rightElement ||
+                leftElement->size() != rightElement->size()) {
+                return false;
+            }
+            for (const auto& [name, value] : *leftElement) {
+                const auto other = rightElement->find(name);
+                if (other == rightElement->end() ||
+                    !runtimeEqual(value, other->second)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    if (isRuntimeCommaSeparatedList(left) &&
+        isRuntimeCommaSeparatedList(right)) {
+        if (left.cells.size() != right.cells.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < left.cells.size(); ++index) {
+            if (!runtimeEqual(left.cells[index], right.cells[index])) {
                 return false;
             }
         }
@@ -4238,8 +4266,14 @@ private:
             const auto value =
                 popRuntime(instruction, "name=value argument value");
             if (value) {
+                const auto single = runtimeRequireSingleValue(
+                    *value, "name=value argument");
+                if (!single.succeeded) {
+                    addDiagnostic(instruction, single.error);
+                    break;
+                }
                 pushRuntime(makeRuntimeNameValueArgument(
-                    instruction.operand, *value));
+                    instruction.operand, single.value));
             }
             break;
         }
@@ -4808,10 +4842,11 @@ private:
             return;
         }
         if (!isNumeric(target.value) && !isCell(target.value) &&
+            target.value.kind != RuntimeValueKind::Struct &&
             !isRuntimeMetadataObject(target.value)) {
             addDiagnostic(instruction,
-                          "bytecode index context requires a numeric, cell, or "
-                          "metadata target");
+                          "bytecode index context requires a numeric, cell, "
+                          "structure, or metadata target");
             return;
         }
 
@@ -5041,8 +5076,14 @@ private:
         if (!value) {
             return;
         }
-        currentFrame()[instruction.operand] = *value;
-        recordAssignment(instruction, "name", *value);
+        const auto single = runtimeRequireSingleValue(
+            *value, "assignment right-hand side");
+        if (!single.succeeded) {
+            addDiagnostic(instruction, single.error);
+            return;
+        }
+        currentFrame()[instruction.operand] = single.value;
+        recordAssignment(instruction, "name", single.value);
     }
 
     PropertyInfoPtr selectProperty(const ClassInfo& klass,
@@ -7037,14 +7078,35 @@ private:
             return;
         }
         if (target->value.kind == RuntimeValueKind::Struct) {
-            const auto field = target->value.fields.find(instruction.operand);
-            if (field == target->value.fields.end()) {
-                addDiagnostic(instruction,
-                              "structure field is not available: " +
-                                  instruction.operand);
+            auto field = runtimeStructFieldValues(
+                target->value, instruction.operand);
+            if (!field.succeeded) {
+                addDiagnostic(instruction, field.error);
                 return;
             }
-            stack_.push_back(runtimeStackValue(field->second));
+            if (instruction.resultCount == 0) {
+                return;
+            }
+            if (instruction.resultCount == 1) {
+                pushRuntime(std::move(field.value));
+                return;
+            }
+            std::vector<RuntimeValue> values;
+            appendRuntimeExpandedValues(values, field.value);
+            if (values.size() !=
+                static_cast<size_t>(instruction.resultCount)) {
+                addDiagnostic(
+                    instruction,
+                    "structure field produced " +
+                        std::to_string(values.size()) +
+                        " comma-separated values for " +
+                        std::to_string(instruction.resultCount) +
+                        " outputs");
+                return;
+            }
+            for (auto& value : values) {
+                pushRuntime(std::move(value));
+            }
             return;
         }
         if (isRuntimeException(target->value)) {
@@ -7248,10 +7310,17 @@ private:
             target = popStackValue(instruction,
                                    "member assignment target");
         }
-        const auto value = popRuntime(instruction, "member assignment value");
+        auto value = popRuntime(instruction, "member assignment value");
         if (!target || !value) {
             return;
         }
+        const auto single = runtimeRequireSingleValue(
+            *value, "member assignment right-hand side");
+        if (!single.succeeded) {
+            addDiagnostic(instruction, single.error);
+            return;
+        }
+        value = single.value;
         if (target->isClassReference) {
             const auto klass = classesByName_.find(target->className);
             if (klass != classesByName_.end()) {
@@ -7281,7 +7350,13 @@ private:
                 return;
             }
             RuntimeValue updated = target->value;
-            runtimeSetStructField(updated, instruction.operand, *value);
+            if (!runtimeSetStructField(updated, instruction.operand,
+                                       *value)) {
+                addDiagnostic(
+                    instruction,
+                    "direct field assignment requires a scalar structure");
+                return;
+            }
             currentFrame()[instruction.receiverName] = updated;
             recordAssignment(instruction, "struct-member", updated);
             return;
@@ -7507,39 +7582,54 @@ private:
     }
 
     void storeIndex(const BytecodeInstruction& instruction) {
-        const auto arguments = popRuntimeValues(instruction,
-                                                instruction.operandCount,
-                                                "indexed assignment "
-                                                "arguments");
+        const auto rawArguments = popRuntimeValues(
+            instruction, instruction.operandCount,
+            "indexed assignment arguments");
         const auto target = popRuntime(instruction,
                                        "indexed assignment target");
         const auto value = popRuntime(instruction,
                                       "indexed assignment value");
         finishIndexContext();
-        if (!arguments || !target || !value) {
+        if (!rawArguments || !target || !value) {
             return;
         }
+        const auto single = runtimeRequireSingleValue(
+            *value, "indexed assignment right-hand side");
+        if (!single.succeeded) {
+            addDiagnostic(instruction, single.error);
+            return;
+        }
+        const auto arguments = runtimeExpandedValues(*rawArguments);
         if (instruction.operand.empty()) {
             addDiagnostic(instruction,
                           "bytecode indexed assignment requires a variable "
                           "target");
             return;
         }
-        if (!isNumeric(*value)) {
-            addDiagnostic(instruction,
-                          "bytecode indexed assignment requires a numeric "
-                          "value");
-            return;
-        }
-        if (!isNumeric(*target)) {
-            addDiagnostic(instruction,
-                          "bytecode indexed assignment requires a numeric "
-                          "target");
-            return;
-        }
-        if (arguments->empty()) {
+        if (arguments.empty()) {
             addDiagnostic(instruction,
                           "bytecode indexed assignment requires subscripts");
+            return;
+        }
+
+        if (target->kind == RuntimeValueKind::Struct) {
+            auto result = instruction.nullAssignment
+                              ? runtimeDeleteStructIndexed(*target, arguments)
+                              : runtimeAssignStructIndexed(
+                                    *target, arguments, single.value);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, "bytecode " + result.error);
+                return;
+            }
+            recordAssignment(instruction, "index", result.value);
+            currentFrame()[instruction.operand] = std::move(result.value);
+            return;
+        }
+        if (!isNumeric(*target) || !isNumeric(single.value)) {
+            addDiagnostic(
+                instruction,
+                "bytecode indexed assignment requires compatible numeric or "
+                "structure values");
             return;
         }
 
@@ -7547,8 +7637,9 @@ private:
         const auto result =
             instruction.nullAssignment
                 ? runtimeDeleteNumericIndexed(
-                      updated, *arguments, instruction.colonSubscripts)
-                : runtimeAssignNumericIndexed(updated, *arguments, *value);
+                      updated, arguments, instruction.colonSubscripts)
+                : runtimeAssignNumericIndexed(updated, arguments,
+                                              single.value);
         if (!result.succeeded) {
             addDiagnostic(instruction, "bytecode " + result.error);
             return;
@@ -7725,16 +7816,16 @@ private:
     }
 
     void makeMatrixRow(const BytecodeInstruction& instruction) {
-        const auto values = popRuntimeValues(instruction,
-                                             instruction.operandCount,
-                                             "matrix row");
-        if (!values) {
+        const auto rawValues = popRuntimeValues(
+            instruction, instruction.operandCount, "matrix row");
+        if (!rawValues) {
             return;
         }
+        const auto values = runtimeExpandedValues(*rawValues);
 
         std::vector<double> elements;
         std::optional<RuntimeNumericClass> numericClass;
-        for (const auto& value : *values) {
+        for (const auto& value : values) {
             if (!isNumeric(value)) {
                 addDiagnostic(instruction,
                               "bytecode matrix rows require numeric values");
@@ -7764,24 +7855,25 @@ private:
     }
 
     void makeMatrix(const BytecodeInstruction& instruction) {
-        const auto rows = popRuntimeValues(instruction, instruction.operandCount,
-                                           "matrix");
-        if (!rows) {
+        const auto rawRows = popRuntimeValues(
+            instruction, instruction.operandCount, "matrix");
+        if (!rawRows) {
             return;
         }
-        if (rows->empty()) {
+        const auto rows = runtimeExpandedValues(*rawRows);
+        if (rows.empty()) {
             pushRuntime(matrixValue(0, 0, {}));
             return;
         }
 
-        if (rows->size() == 1) {
-            if (isVector(rows->front())) {
-                pushRuntime(rows->front());
+        if (rows.size() == 1) {
+            if (isVector(rows.front())) {
+                pushRuntime(rows.front());
                 return;
             }
-            if (isNumber(rows->front())) {
-                pushRuntime(vectorValue({rows->front().number},
-                                        rows->front().numericClass));
+            if (isNumber(rows.front())) {
+                pushRuntime(vectorValue({rows.front().number},
+                                        rows.front().numericClass));
                 return;
             }
         }
@@ -7789,7 +7881,7 @@ private:
         size_t columns = 0;
         std::vector<double> elements;
         std::optional<RuntimeNumericClass> numericClass;
-        for (const auto& row : *rows) {
+        for (const auto& row : rows) {
             if (!isVector(row)) {
                 addDiagnostic(instruction,
                               "bytecode matrix rows must be row vectors");
@@ -7819,17 +7911,17 @@ private:
         }
 
         pushRuntime(matrixValue(
-            rows->size(), columns, std::move(elements),
+            rows.size(), columns, std::move(elements),
             numericClass.value_or(RuntimeNumericClass::Double)));
     }
 
     void makeCell(const BytecodeInstruction& instruction) {
-        const auto values = popRuntimeValues(instruction, instruction.operandCount,
-                                             "cell literal");
-        if (!values) {
+        const auto rawValues = popRuntimeValues(
+            instruction, instruction.operandCount, "cell literal");
+        if (!rawValues) {
             return;
         }
-        pushRuntime(cellValue(*values));
+        pushRuntime(cellValue(runtimeExpandedValues(*rawValues)));
     }
 
     void braceIndex(const BytecodeInstruction& instruction) {
@@ -7916,6 +8008,12 @@ private:
         if (!arguments || !target || !value) {
             return;
         }
+        const auto single = runtimeRequireSingleValue(
+            *value, "cell assignment right-hand side");
+        if (!single.succeeded) {
+            addDiagnostic(instruction, single.error);
+            return;
+        }
         if (instruction.operand.empty()) {
             addDiagnostic(instruction,
                           "cell assignment requires a variable target");
@@ -7959,23 +8057,24 @@ private:
         if (!storageOffset) {
             return;
         }
-        updated.cells[*storageOffset] = *value;
+        updated.cells[*storageOffset] = single.value;
         currentFrame()[instruction.operand] = updated;
         recordAssignment(instruction, "cell", updated);
     }
 
     void callOrIndex(const BytecodeInstruction& instruction) {
-        const auto arguments = popRuntimeValues(instruction,
-                                                instruction.operandCount,
-                                                "call/index arguments");
+        const auto rawArguments = popRuntimeValues(
+            instruction, instruction.operandCount,
+            "call/index arguments");
         const auto callee = popStackValue(instruction, "call/index callee");
-        if (!arguments || !callee) {
+        if (!rawArguments || !callee) {
             return;
         }
+        const auto arguments = runtimeExpandedValues(*rawArguments);
 
         if (callee->isClassReference) {
             auto outputs = callClassConstructor(instruction, callee->className,
-                                                *arguments,
+                                                arguments,
                                                 instruction.resultCount);
             finishIndexContext();
             pushOutputValues(instruction, outputs);
@@ -7987,7 +8086,7 @@ private:
                                            callee->methodName,
                                            callee->methodDeclaringClass,
                                            callee->receiver,
-                                           *arguments, instruction.resultCount);
+                                           arguments, instruction.resultCount);
             finishIndexContext();
             pushOutputValues(instruction, outputs);
             return;
@@ -7998,10 +8097,10 @@ private:
             if (profilingEnabled_) {
                 profile = &recordCallSite(instruction, "function-handle",
                                           callee->value.text);
-                observeValues(profile->argumentObservations, *arguments);
+                observeValues(profile->argumentObservations, arguments);
             }
             auto outputs = callFunctionHandle(
-                instruction, callee->value, *arguments,
+                instruction, callee->value, arguments,
                 instruction.resultCount);
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
@@ -8018,9 +8117,9 @@ private:
             BytecodeCallSiteProfile* profile = nullptr;
             if (profilingEnabled_) {
                 profile = &recordCallSite(instruction, "function", name);
-                observeValues(profile->argumentObservations, *arguments);
+                observeValues(profile->argumentObservations, arguments);
             }
-            auto outputs = callLocalFunction(instruction, name, *arguments,
+            auto outputs = callLocalFunction(instruction, name, arguments,
                                              instruction.resultCount);
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
@@ -8033,7 +8132,7 @@ private:
             callee->isBuiltinReference) {
             const std::string name = symbolName(instruction.binding)
                                          .value_or(callee->builtinName);
-            std::vector<RuntimeValue> callArguments = *arguments;
+            std::vector<RuntimeValue> callArguments = arguments;
             if (callee->receiver) {
                 callArguments.insert(callArguments.begin(),
                                      *callee->receiver);
@@ -8062,11 +8161,12 @@ private:
         }
 
         if (!isNumeric(callee->value) &&
+            callee->value.kind != RuntimeValueKind::Struct &&
             !isRuntimeMetadataObject(callee->value)) {
             finishIndexContext();
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric or metadata "
-                          "target");
+                          "bytecode indexing requires a numeric, structure, "
+                          "or metadata target");
             return;
         }
         BytecodeCallSiteProfile* profile = nullptr;
@@ -8075,10 +8175,10 @@ private:
                                       instruction.operand);
             profile->hasReceiverObservation = true;
             observeValue(profile->receiverObservation, callee->value);
-            observeValues(profile->argumentObservations, *arguments);
+            observeValues(profile->argumentObservations, arguments);
         }
         RuntimeValue result = indexValue(instruction, callee->value,
-                                         *arguments);
+                                         arguments);
         if (instruction.resultCount == 0) {
             finishIndexContext();
             return;
@@ -8209,12 +8309,13 @@ private:
     }
 
     void callSuperclass(const BytecodeInstruction& instruction) {
-        const auto arguments = popRuntimeValues(
+        const auto rawArguments = popRuntimeValues(
             instruction, instruction.operandCount,
             "superclass call arguments");
-        if (!arguments) {
+        if (!rawArguments) {
             return;
         }
+        const auto arguments = runtimeExpandedValues(*rawArguments);
 
         const bool activeConstructor =
             !activeClassFunctions_.empty() &&
@@ -8223,10 +8324,10 @@ private:
                 instruction.receiverName;
         if (instruction.binding.kind == BindingKind::Class ||
             activeConstructor) {
-            callSuperclassConstructor(instruction, *arguments);
+            callSuperclassConstructor(instruction, arguments);
             return;
         }
-        callQualifiedSuperclassMethod(instruction, *arguments);
+        callQualifiedSuperclassMethod(instruction, arguments);
     }
 
     void callSuperclassConstructor(
@@ -11795,9 +11896,18 @@ private:
         if (isRuntimeMetadataObject(target)) {
             return indexMetadataValue(instruction, target, arguments);
         }
+        if (target.kind == RuntimeValueKind::Struct) {
+            auto result = runtimeIndexStruct(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
         if (!isNumeric(target)) {
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric target");
+                          "bytecode indexing requires a numeric or structure "
+                          "target");
             return missingValue();
         }
         for (const auto& argument : arguments) {

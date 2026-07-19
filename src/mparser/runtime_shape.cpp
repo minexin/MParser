@@ -39,6 +39,7 @@ std::vector<size_t> runtimeDimensions(const RuntimeValue& value) {
     case RuntimeValueKind::Vector:
     case RuntimeValueKind::Matrix:
     case RuntimeValueKind::Cell:
+    case RuntimeValueKind::CommaSeparatedList:
         return {value.rows, value.columns};
     }
     return {value.rows, value.columns};

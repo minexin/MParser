@@ -149,8 +149,7 @@ private:
             emit(BytecodeOp::MakeCell, node, childCount(node));
             break;
         case HirKind::MemberAccess:
-            lowerChildren(node);
-            emit(BytecodeOp::MemberAccess, node, childCount(node));
+            lowerMemberAccess(node, 1);
             break;
         case HirKind::NameValueArgument:
             lowerChildren(node);
@@ -588,7 +587,17 @@ private:
             lowerSuperclassCall(node, resultCount);
             return;
         }
+        if (node.kind == HirKind::MemberAccess) {
+            lowerMemberAccess(node, resultCount);
+            return;
+        }
         lowerNode(node);
+    }
+
+    void lowerMemberAccess(const HirNode& node, int resultCount) {
+        lowerChildren(node);
+        emit(BytecodeOp::MemberAccess, node, childCount(node), -1,
+             resultCount);
     }
 
     void lowerCallOrIndex(const HirNode& node, int resultCount) {

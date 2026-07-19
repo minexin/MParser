@@ -199,6 +199,25 @@ function families, not an unbounded builtin count.
   IR, bytecode, call-frame, indexing, object, diagnostic, or source-graph model.
 - Classify every unresolved item as v0.80/v0.90/v1.0, Should-have, or Post-v1.0.
 
+### v0.71: Structure Array And List Foundation
+
+- Replace scalar-only structure storage with one schema-preserving array
+  representation shared by both baseline engines.
+- Implement representative construction, indexing, whole-element mutation,
+  growth, deletion, and comma-separated field-result contexts.
+- Preserve VM correctness through typed/native fallback and record deeper
+  nested lvalue mutation as a separate framework boundary.
+
+### v0.72-v0.79: Remaining Runtime Foundations
+
+- Complete a general root-and-path lvalue/copy-back contract for arrays, Cells,
+  structures, and value objects before expanding mutation syntax piecemeal.
+- Close the audited Must-have exception, dynamic call/handle, text,
+  object-array/reflection, workspace, and runtime-value boundaries with linked
+  compatibility evidence.
+- Freeze the engine-facing value, shape, indexing, call-frame, output-count,
+  diagnostic, and fallback contracts needed by the v0.80 extension layer.
+
 ### v0.80: Function Extension Infrastructure
 
 - Land the unified builtin registry, descriptor, call/result, and error model.

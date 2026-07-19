@@ -659,14 +659,15 @@ precedence, class-folder Live Code/P-code/MEX methods, automatic handle
 destruction at scope/workspace teardown, cyclic object collection,
 listener/source arrays, numeric/logical/character built-in enumeration bases,
 enumeration object arrays, class methods as `CompiledModule` entry targets,
-structure arrays, sparse arrays, and complex values until the IR grows richer
-mutation, layout, and dynamic dispatch conventions. Scalar structures retain
-ordered heterogeneous fields and support static/dynamic direct member access;
-indexed structures, comma-separated field lists, and nested value updates stay
-outside the current lvalue contract. Cell execution
-supports N-dimensional scalar brace reads/writes, but Cell parenthesis
-indexing, vector-valued brace selections, and comma-separated-list expansion
-are future work.
+sparse arrays, and complex values until the IR grows richer mutation, layout,
+and dynamic dispatch conventions. Structures support ordered heterogeneous
+fields, N-dimensional element arrays, static/dynamic direct member access,
+indexed reads, whole-element assignment, common growth, vector deletion, and
+comma-separated field results. General nested value updates such as
+`S(index).field = value` remain outside the current lvalue contract. Cell
+execution supports N-dimensional scalar brace reads/writes, but Cell
+parenthesis indexing, vector-valued brace selections, and comma-separated-list
+expansion are future work.
 
 This shape is intentionally close to an interpreter dispatch loop, but still
 abstract enough for MATLAB's delayed decisions. `CallOrIndex` remains a neutral
@@ -934,15 +935,13 @@ invalid. `events`, `methods`, `ismethod`, `metaclass`, and `?handle` expose the
 inherited event and handle methods. Automatic reachability- or scope-driven
 destruction remains separate future work.
 
-v0.69 gives scalar structures an explicit runtime representation shared by the
-HIR interpreter and bytecode VM. `RuntimeValue::fields` remains the lookup
-table, while `fieldOrder` preserves MATLAB field definition order across
-construction, assignment, copying, `fieldnames`, `rmfield`, name-value roots,
-and display. The shared `runtime_struct` layer validates dynamic names and
-constructor pairs, unwraps scalar Cell constructor values, rejects nonscalar
-Cell values that would require a structure array, preserves query shapes, and
-performs copy-returning removal. Both execution engines call this layer rather
-than maintaining separate builtin behavior.
+v0.69 introduced scalar structures through an explicit runtime representation
+shared by the HIR interpreter and bytecode VM. Its original structure payload
+used `RuntimeValue::fields`, while `fieldOrder` preserved MATLAB field
+definition order across construction, assignment, copying, `fieldnames`,
+`rmfield`, name-value roots, and display. Keeping the behavior behind the
+shared `runtime_struct` layer made the v0.71 array migration local to runtime
+value consumers instead of requiring a new parser, HIR, or bytecode model.
 
 Parser and HIR already preserved `s.(expression)` as a two-child member node.
 Bytecode now consumes the dynamic name before the receiver, resolves it to the
@@ -977,12 +976,36 @@ allowed states, unique IDs, and gap classification. Release builds also
 undefine `NDEBUG` for smoke executables so assertion-based evidence remains
 active under optimization.
 
-The next steps include richer typed values and regions, direct inlined bounds
-checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
-backend contract, persistent cross-process code caches, moving-window array
-operations, automatic handle destruction and cycle-aware ownership,
-object/listener arrays, a built-in function signature catalog,
-reference-interpreter class execution,
+v0.71 replaces the structure side of `RuntimeValue::fields` with one canonical
+array representation: `structElements` stores one ordered field map per
+element, `fieldOrder` is the schema and display order even for an empty typed
+structure, and ordinary runtime dimensions describe the N-dimensional shape.
+Object and exception property maps continue to use `fields`; scalar structures
+are simply 1-by-1 structure arrays. Runtime storage follows the existing
+row-major container convention, while every MATLAB-visible linear traversal is
+converted through the shared column-major index helpers. Structure construction
+accepts same-shaped nonscalar Cell field values and broadcasts scalar values.
+Indexed reads preserve selection shape; whole-element stores require matching
+schemas, support scalar expansion and common growth, and linear vector
+deletion preserves MATLAB-visible order.
+
+Nonscalar structure field access produces an internal
+`RuntimeValueKind::CommaSeparatedList`. This is a transient evaluation result,
+not a storable MATLAB value. The shared `runtime_value_ops` layer expands it in
+function arguments, matrix/Cell literals, index arguments, and output lists,
+while scalar-only contexts diagnose zero or multiple results. HIR and bytecode
+use the same structure and list helpers, including exact requested-output
+handling for `[a,b] = S.field`; typed and native execution conservatively fall
+back to the bytecode VM for these values. General root-and-path copy-back, such
+as `S(index).field = value`, and Cell brace comma-separated lists remain the
+next distinct language/runtime boundaries.
+
+The next steps include general root-and-path lvalue copy-back, richer typed
+values and regions, direct inlined bounds checks and SIMD/vector kernels,
+optional LLVM ORC lowering behind the same backend contract, persistent
+cross-process code caches, moving-window array operations, automatic handle
+destruction and cycle-aware ownership, object/listener arrays, a built-in
+function signature catalog, reference-interpreter class execution,
 comma-separated-list Cell semantics, and eventual on-stack replacement while
 preserving the same commit/fallback contract.
 

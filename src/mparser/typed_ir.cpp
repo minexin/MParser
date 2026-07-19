@@ -130,6 +130,8 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "function-handle";
     case RuntimeValueKind::Struct:
         return "struct";
+    case RuntimeValueKind::CommaSeparatedList:
+        return "comma-separated-list";
     case RuntimeValueKind::NameValueArgument:
         return "name-value-argument";
     case RuntimeValueKind::Object:

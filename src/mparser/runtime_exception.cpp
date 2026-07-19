@@ -51,9 +51,8 @@ RuntimeValue emptyCellValue() {
 }
 
 RuntimeValue emptyStackValue() {
-    RuntimeValue result = makeRuntimeStructValue();
-    setRuntimeDimensions(result, {0, 1});
-    return result;
+    return makeRuntimeStructArrayValue(
+        {"file", "name", "line"}, {}, {0, 1});
 }
 
 RuntimeValue stackFrameValue(const RuntimeExceptionFrame& frame) {
@@ -344,23 +343,27 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
     }
     if (arguments.size() == 1 &&
         arguments.front().kind == RuntimeValueKind::Struct) {
-        const auto message = arguments.front().fields.find("message");
-        const auto identifier = arguments.front().fields.find("identifier");
-        if (message == arguments.front().fields.end() ||
-            message->second.kind != RuntimeValueKind::String) {
+        if (!isRuntimeScalarStruct(arguments.front())) {
+            return failure("error structure must be scalar");
+        }
+        const RuntimeValue* message =
+            runtimeStructField(arguments.front(), "message");
+        const RuntimeValue* identifier =
+            runtimeStructField(arguments.front(), "identifier");
+        if (!message || message->kind != RuntimeValueKind::String) {
             return failure("error structure requires a text message field");
         }
         std::string id;
-        if (identifier != arguments.front().fields.end()) {
-            if (identifier->second.kind != RuntimeValueKind::String ||
-                (!identifier->second.text.empty() &&
-                 !isRuntimeExceptionIdentifier(identifier->second.text))) {
+        if (identifier) {
+            if (identifier->kind != RuntimeValueKind::String ||
+                (!identifier->text.empty() &&
+                 !isRuntimeExceptionIdentifier(identifier->text))) {
                 return failure("error structure contains an invalid "
                                "identifier field");
             }
-            id = identifier->second.text;
+            id = identifier->text;
         }
-        return constructException(std::move(id), message->second, {});
+        return constructException(std::move(id), *message, {});
     }
     if (arguments.front().kind != RuntimeValueKind::String) {
         return failure("error message must be a character vector or string "

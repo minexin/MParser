@@ -275,6 +275,8 @@ std::string runtimeValueClassName(const RuntimeValue& value) {
         return "function_handle";
     case RuntimeValueKind::Struct:
         return "struct";
+    case RuntimeValueKind::CommaSeparatedList:
+        return "comma_separated_list";
     case RuntimeValueKind::NameValueArgument:
         return "name_value_argument";
     case RuntimeValueKind::Object:

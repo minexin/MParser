@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.70.0",
+  "version": "0.71.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -100,18 +100,18 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
       "evidence": ["struct_runtime_smoke", "struct_runtime_production_cli_smoke"],
       "sources": ["src/mparser/runtime_struct.cpp", "tests/struct_runtime_smoke.cpp"],
-      "limits": "The supported contract is explicitly 1-by-1 and excludes nested value copy-back and comma-separated lists."
+      "limits": "Scalar structures use the same canonical element/schema representation as structure arrays; general nested value copy-back remains a v0.72 boundary."
     },
     {
       "id": "STRUCT-002",
       "area": "structures",
       "feature": "Structure arrays and comma-separated field lists",
-      "status": "unsupported",
+      "status": "supported",
       "priority": "must-have",
-      "tiers": {"parser": "partial", "semantic": "partial", "hir": "unsupported", "bytecode": "unsupported", "production": "unsupported", "typed": "unsupported", "native": "unsupported"},
-      "evidence": ["struct_runtime_smoke"],
-      "sources": ["src/mparser/runtime_struct.cpp", "docs/v0.69.md"],
-      "limits": "Nonscalar Cell-driven construction is diagnosed instead of producing a misleading scalar structure."
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["struct_runtime_smoke", "struct_array_interpreter_cli_smoke", "struct_array_bytecode_cli_smoke", "struct_array_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_struct.cpp", "src/mparser/runtime_value_ops.cpp", "tests/struct_runtime_smoke.cpp", "samples/struct_array_demo.m"],
+      "limits": "v0.71 covers Cell-driven construction, empty typed structures, linear and multidimensional reads, whole-element replacement/scalar expansion/common growth, linear vector deletion, and field-list expansion. Nested S(index).field writes and Cell brace lists remain separate gaps."
     },
     {
       "id": "EXC-001",
@@ -324,16 +324,6 @@
     }
   ],
   "gaps": [
-    {
-      "id": "G-STRUCT-001",
-      "area": "structures",
-      "priority": "must-have",
-      "state": "open",
-      "target": "v0.71",
-      "framework_impact": "representation-change",
-      "requirement": "Add structure arrays, empty typed structures, scalar/nonscalar constructor expansion, indexing, and comma-separated-list behavior.",
-      "exit_evidence": "Cross-tier constructor/index/assignment tests plus MATLAB differential fixtures for shape and field order."
-    },
     {
       "id": "G-LVALUE-001",
       "area": "assignment",

@@ -14,6 +14,7 @@
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_value_ops.h"
 
 #include <algorithm>
 #include <chrono>
@@ -189,13 +190,38 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return true;
     }
     if (isStruct(left) && isStruct(right)) {
-        if (left.fields.size() != right.fields.size()) {
+        if (runtimeDimensions(left) != runtimeDimensions(right) ||
+            runtimeStructFieldOrder(left) !=
+                runtimeStructFieldOrder(right) ||
+            runtimeStructElementCount(left) !=
+                runtimeStructElementCount(right)) {
             return false;
         }
-        for (const auto& [name, value] : left.fields) {
-            const auto other = right.fields.find(name);
-            if (other == right.fields.end() ||
-                !runtimeEqual(value, other->second)) {
+        for (size_t offset = 0;
+             offset < runtimeStructElementCount(left); ++offset) {
+            const auto* leftElement = runtimeStructElement(left, offset);
+            const auto* rightElement = runtimeStructElement(right, offset);
+            if (!leftElement || !rightElement ||
+                leftElement->size() != rightElement->size()) {
+                return false;
+            }
+            for (const auto& [name, value] : *leftElement) {
+                const auto other = rightElement->find(name);
+                if (other == rightElement->end() ||
+                    !runtimeEqual(value, other->second)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    if (isRuntimeCommaSeparatedList(left) &&
+        isRuntimeCommaSeparatedList(right)) {
+        if (left.cells.size() != right.cells.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < left.cells.size(); ++index) {
+            if (!runtimeEqual(left.cells[index], right.cells[index])) {
                 return false;
             }
         }
@@ -946,7 +972,13 @@ private:
         const bool nullAssignment =
             target.kind == HirKind::CallOrIndex &&
             value.kind == HirKind::Matrix && value.children.empty();
-        assignTarget(target, evaluate(value), nullAssignment);
+        const auto single = runtimeRequireSingleValue(
+            evaluate(value), "assignment right-hand side");
+        if (!single.succeeded) {
+            addDiagnostic(value, single.error);
+            return;
+        }
+        assignTarget(target, single.value, nullAssignment);
     }
 
     std::vector<RuntimeValue> evaluateValues(const HirNode& node,
@@ -971,14 +1003,18 @@ private:
                 .outputs;
         }
 
-        return {evaluate(node)};
+        std::vector<RuntimeValue> result;
+        appendRuntimeExpandedValues(result, evaluate(node));
+        return result;
     }
 
     void assignTargetList(const HirNode& target,
                           const std::vector<RuntimeValue>& values) {
-        if (values.size() < target.children.size()) {
+        if (values.size() != target.children.size()) {
             addDiagnostic(target,
-                          "not enough values to assign output list");
+                          values.size() < target.children.size()
+                              ? "not enough values to assign output list"
+                              : "too many values to assign output list");
         }
 
         for (size_t index = 0; index < target.children.size(); ++index) {
@@ -1059,7 +1095,12 @@ private:
                               name);
             return;
         }
-        runtimeSetStructField(variable->second, std::move(fieldName), value);
+        if (!runtimeSetStructField(variable->second, std::move(fieldName),
+                                   value)) {
+            addDiagnostic(
+                target,
+                "direct field assignment requires a scalar structure");
+        }
     }
 
     void assignIndexedTarget(const HirNode& target, const RuntimeValue& value,
@@ -1068,12 +1109,6 @@ private:
             addDiagnostic(target, "indexed assignment is missing a target");
             return;
         }
-        if (!isNumeric(value)) {
-            addDiagnostic(target,
-                          "indexed assignment requires a numeric value");
-            return;
-        }
-
         const HirNode& callee = *target.children.front();
         if (callee.kind != HirKind::NameRef) {
             addDiagnostic(target,
@@ -1090,12 +1125,6 @@ private:
             return;
         }
         RuntimeValue& targetValue = variable->second;
-        if (!isNumeric(targetValue)) {
-            addDiagnostic(target,
-                          "indexed assignment requires a numeric target");
-            return;
-        }
-
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(target, targetValue);
         if (arguments.empty()) {
@@ -1103,12 +1132,27 @@ private:
                           "indexed assignment requires subscripts");
             return;
         }
-        for (const auto& argument : arguments) {
-            if (!isNumeric(argument)) {
-                addDiagnostic(target,
-                              "indexed assignment requires numeric subscripts");
+        if (isStruct(targetValue)) {
+            RuntimeStructOperationResult result;
+            if (nullAssignment) {
+                result = runtimeDeleteStructIndexed(targetValue, arguments);
+            } else {
+                result = runtimeAssignStructIndexed(targetValue, arguments,
+                                                    value);
+            }
+            if (!result.succeeded) {
+                addDiagnostic(target, result.error);
                 return;
             }
+            targetValue = std::move(result.value);
+            return;
+        }
+
+        if (!isNumeric(targetValue) || !isNumeric(value)) {
+            addDiagnostic(target,
+                          "indexed assignment requires compatible numeric or "
+                          "structure values");
+            return;
         }
 
         RuntimeNumericAssignmentResult result;
@@ -1549,7 +1593,7 @@ private:
         std::vector<RuntimeValue> values;
         values.reserve(node.children.size());
         for (const auto& child : node.children) {
-            values.push_back(evaluate(*child));
+            appendRuntimeExpandedValues(values, evaluate(*child));
         }
         return cellValue(std::move(values));
     }
@@ -1559,8 +1603,13 @@ private:
             addDiagnostic(node, "name=value argument requires one value");
             return missingValue();
         }
-        return makeRuntimeNameValueArgument(node.label,
-                                            evaluate(*node.children.front()));
+        const auto value = runtimeRequireSingleValue(
+            evaluate(*node.children.front()), "name=value argument");
+        if (!value.succeeded) {
+            addDiagnostic(node, value.error);
+            return missingValue();
+        }
+        return makeRuntimeNameValueArgument(node.label, value.value);
     }
 
     RuntimeValue evaluateMemberAccess(const HirNode& node) {
@@ -1601,13 +1650,12 @@ private:
             }
             return *property;
         }
-        const auto field = target.fields.find(fieldName);
-        if (field == target.fields.end()) {
-            addDiagnostic(node, "structure field is not available: " +
-                                    fieldName);
+        auto field = runtimeStructFieldValues(target, fieldName);
+        if (!field.succeeded) {
+            addDiagnostic(node, field.error);
             return missingValue();
         }
-        return field->second;
+        return std::move(field.value);
     }
 
     RuntimeValue evaluatePostfix(const HirNode& node) {
@@ -1813,27 +1861,36 @@ private:
         const HirNode& node, std::vector<double>& elements,
         std::optional<RuntimeNumericClass>& numericClass) {
         const RuntimeValue value = evaluate(node);
-        if (!isNumeric(value)) {
-            addDiagnostic(node,
-                          "matrix literal currently supports numeric values");
-            return false;
-        }
-
-        if (!numericClass) {
-            numericClass = value.numericClass;
-        }
-        const size_t count = isNumber(value) ? 1 : value.elements.size();
-        for (size_t index = 0; index < count; ++index) {
-            const double element =
-                isNumber(value) ? value.number : value.elements[index];
-            const auto converted =
-                runtimeCoerceNumericElement(element, *numericClass);
-            if (!converted) {
-                addDiagnostic(node,
-                              "matrix literal cannot convert NaN to logical");
+        std::vector<RuntimeValue> expanded;
+        appendRuntimeExpandedValues(expanded, value);
+        for (const RuntimeValue& elementValue : expanded) {
+            if (!isNumeric(elementValue)) {
+                addDiagnostic(
+                    node,
+                    "matrix literal currently supports numeric values");
                 return false;
             }
-            elements.push_back(*converted);
+
+            if (!numericClass) {
+                numericClass = elementValue.numericClass;
+            }
+            const size_t count = isNumber(elementValue)
+                                     ? 1
+                                     : elementValue.elements.size();
+            for (size_t index = 0; index < count; ++index) {
+                const double element = isNumber(elementValue)
+                                           ? elementValue.number
+                                           : elementValue.elements[index];
+                const auto converted = runtimeCoerceNumericElement(
+                    element, *numericClass);
+                if (!converted) {
+                    addDiagnostic(
+                        node,
+                        "matrix literal cannot convert NaN to logical");
+                    return false;
+                }
+                elements.push_back(*converted);
+            }
         }
         return true;
     }
@@ -2100,7 +2157,8 @@ private:
     std::vector<RuntimeValue> evaluateArguments(const HirNode& node) {
         std::vector<RuntimeValue> arguments;
         for (size_t index = 1; index < node.children.size(); ++index) {
-            arguments.push_back(evaluate(*node.children[index]));
+            appendRuntimeExpandedValues(
+                arguments, evaluate(*node.children[index]));
         }
         return arguments;
     }
@@ -2110,8 +2168,10 @@ private:
         std::vector<RuntimeValue> arguments;
         const size_t total = node.children.size() - 1;
         for (size_t index = 1; index < node.children.size(); ++index) {
-            arguments.push_back(evaluateWithIndexContext(
-                *node.children[index], target, index - 1, total));
+            appendRuntimeExpandedValues(
+                arguments,
+                evaluateWithIndexContext(*node.children[index], target,
+                                         index - 1, total));
         }
         return arguments;
     }
@@ -2445,18 +2505,19 @@ private:
             return missingValue();
         }
 
-        if (!isNumeric(target)) {
-            addDiagnostic(node, "indexing requires a numeric target");
-            return missingValue();
-        }
-
-        for (const auto& argument : arguments) {
-            if (!isNumeric(argument)) {
-                addDiagnostic(
-                    node,
-                    "indexing requires numeric or logical subscripts");
+        if (isStruct(target)) {
+            auto result = runtimeIndexStruct(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, result.error);
                 return missingValue();
             }
+            return std::move(result.value);
+        }
+        if (!isNumeric(target)) {
+            addDiagnostic(
+                node,
+                "indexing requires a numeric or structure target");
+            return missingValue();
         }
 
         if (arguments.size() > 1) {
@@ -3133,12 +3194,12 @@ RuntimeValue makeRuntimeStructValue(
     std::map<std::string, RuntimeValue> fields) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Struct;
-    result.fields = std::move(fields);
-    result.fieldOrder.reserve(result.fields.size());
-    for (const auto& [name, value] : result.fields) {
+    result.fieldOrder.reserve(fields.size());
+    for (const auto& [name, value] : fields) {
         (void)value;
         result.fieldOrder.push_back(name);
     }
+    result.structElements.push_back(std::move(fields));
     setRuntimeDimensions(result, {1, 1});
     return result;
 }
@@ -3243,18 +3304,44 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         }
         output << "}";
         return output.str();
+    case RuntimeValueKind::CommaSeparatedList:
+        output << "<comma-separated-list:" << value.cells.size() << ">";
+        return output.str();
     case RuntimeValueKind::FunctionHandle:
         return value.text.empty() ? "<function_handle>" : value.text;
     case RuntimeValueKind::Struct: {
+        const size_t elementCount = runtimeStructElementCount(value);
+        if (elementCount != 1) {
+            const auto dimensions = runtimeDimensions(value);
+            output << "struct(";
+            for (size_t index = 0; index < dimensions.size(); ++index) {
+                if (index != 0) {
+                    output << "x";
+                }
+                output << dimensions[index];
+            }
+            output << "; fields=";
+            const auto fieldNames = runtimeStructFieldOrder(value);
+            for (size_t index = 0; index < fieldNames.size(); ++index) {
+                if (index != 0) {
+                    output << ",";
+                }
+                output << fieldNames[index];
+            }
+            output << ")";
+            return output.str();
+        }
         output << "struct(";
         const auto fieldNames = runtimeStructFieldOrder(value);
         for (size_t index = 0; index < fieldNames.size(); ++index) {
             if (index != 0) {
                 output << ", ";
             }
-            const auto field = value.fields.find(fieldNames[index]);
-            output << field->first << "="
-                   << runtimeValueToString(field->second);
+            const RuntimeValue* field =
+                runtimeStructField(value, fieldNames[index]);
+            output << fieldNames[index] << "="
+                   << (field ? runtimeValueToString(*field)
+                             : std::string("<missing>"));
         }
         output << ")";
         return output.str();

@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.70.0. See [docs/v0.70.md](docs/v0.70.md) for the
+Current milestone: v0.71.0. See [docs/v0.71.md](docs/v0.71.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.69.md](docs/v0.69.md),
+iteration plan. Previous boundaries are kept in [docs/v0.70.md](docs/v0.70.md),
+[docs/v0.69.md](docs/v0.69.md),
 [docs/v0.68.md](docs/v0.68.md),
 [docs/v0.67.md](docs/v0.67.md),
 [docs/v0.66.md](docs/v0.66.md),
@@ -687,6 +688,17 @@ baseline engines: `catch` binds an object with `identifier`, `message`,
 formatting, validation, and diagnostic conversion rules. Optimized Release
 tests explicitly keep assertion-based smoke contracts enabled.
 
+v0.71 replaces scalar-only structure storage with a canonical structure-array
+representation shared by both baseline engines. Nonscalar Cell values in
+`struct(field, value, ...)` determine the result shape, scalar values broadcast,
+and empty Cell values create empty typed structures. Parenthesis indexing uses
+the common MATLAB-visible column-major index contract; whole-element indexed
+assignment supports replacement, scalar expansion, common growth, and linear
+vector deletion. Nonscalar field access now produces an internal
+comma-separated list that expands in function calls, output lists, numeric and
+Cell literals, while ordinary single-value assignment reports an arity error.
+Typed and native tiers safely fall back to the VM for these operations.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -714,8 +726,9 @@ logical/double conversion and class queries, array constructors `zeros`,
 two-dimensional `eye`, `linspace` vector generation, numeric/Cell `reshape`,
 `permute`, `ipermute`, `squeeze`, `repmat`, `cat`, `horzcat`, and `vertcat`,
 transpose, basic numeric matrix multiplication, and
-N-dimensional Cells with scalar brace indexing/mutation, and ordered scalar
-structures with static/dynamic member access and field queries. It is
+N-dimensional Cells with scalar brace indexing/mutation, and ordered scalar or
+array structures with static/dynamic member access, parenthesis indexing,
+whole-element assignment, field queries, and comma-separated field results. It is
 intentionally not a full MATLAB runtime yet: classes,
 function handles, other builtin multi-output conventions beyond the
 implemented `size`/`min`/`max`/`find` subset, complex numbers, sparse arrays,

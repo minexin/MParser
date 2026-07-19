@@ -78,6 +78,14 @@ const mparser::RuntimeValue& requiredProperty(
     return *value;
 }
 
+const mparser::RuntimeValue& requiredStructField(
+    const mparser::RuntimeValue& structure, std::string_view name) {
+    const auto* value = mparser::runtimeStructField(structure, name);
+    require(value != nullptr,
+            "missing structure field: " + std::string(name));
+    return *value;
+}
+
 mparser::RuntimeValue stringValue(std::string text) {
     mparser::RuntimeValue result;
     result.kind = mparser::RuntimeValueKind::String;
@@ -122,11 +130,13 @@ void verifyCaughtExceptions(const Result& result) {
             "caught exception message mismatch");
     require(stack.kind == mparser::RuntimeValueKind::Struct,
             "caught exception stack is not a structure");
-    require(stack.fields.at("file").text == "exception_runtime_smoke.m",
+    require(requiredStructField(stack, "file").text ==
+                "exception_runtime_smoke.m",
             "caught exception source file mismatch");
-    require(stack.fields.at("name").text == "exception_runtime_demo",
+    require(requiredStructField(stack, "name").text ==
+                "exception_runtime_demo",
             "caught exception function name mismatch");
-    require(stack.fields.at("line").number == 3.0,
+    require(requiredStructField(stack, "line").number == 3.0,
             "caught exception source line mismatch");
     require(cause.kind == mparser::RuntimeValueKind::Cell &&
                 mparser::runtimeDimensions(cause) ==
@@ -139,8 +149,12 @@ void verifyCaughtExceptions(const Result& result) {
                 mparser::isRuntimeException(*thrown) &&
                 mparser::isRuntimeException(*reraised),
             "throw/rethrow did not bind MException objects");
-    require(requiredProperty(*thrown, "stack").fields.at("line").number ==
-                requiredProperty(*reraised, "stack").fields.at("line").number,
+    require(requiredStructField(requiredProperty(*thrown, "stack"),
+                                "line")
+                .number ==
+                requiredStructField(requiredProperty(*reraised, "stack"),
+                                    "line")
+                    .number,
             "rethrow did not preserve the original throw site");
 }
 
