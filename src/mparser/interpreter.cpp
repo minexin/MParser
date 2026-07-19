@@ -12,6 +12,7 @@
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_struct.h"
 
 #include <algorithm>
 #include <chrono>
@@ -733,7 +734,8 @@ private:
                 frames_.pop_back();
                 return missingOutputs();
             }
-            structure->second.fields[field] = std::move(*validated);
+            runtimeSetStructField(structure->second, field,
+                                  std::move(*validated));
         }
         for (auto& [name, structure] : nameValueStructures) {
             currentFrame()[name] = std::move(structure);
@@ -971,14 +973,36 @@ private:
             return;
         }
         const std::string& name = target.children.front()->label;
-        const auto variable = currentFrame().find(name);
-        if (variable == currentFrame().end() || !isStruct(variable->second)) {
+        std::string fieldName = target.label;
+        if (target.label == ".()") {
+            if (target.children.size() != 2) {
+                addDiagnostic(target,
+                              "dynamic member assignment requires one field "
+                              "name expression");
+                return;
+            }
+            const auto dynamicName = runtimeStructFieldName(
+                evaluate(*target.children[1]));
+            if (!dynamicName.succeeded) {
+                addDiagnostic(target, dynamicName.error);
+                return;
+            }
+            fieldName = dynamicName.name;
+        }
+
+        auto variable = currentFrame().find(name);
+        if (variable == currentFrame().end()) {
+            variable = currentFrame()
+                           .emplace(name, makeRuntimeStructValue())
+                           .first;
+        }
+        if (!isStruct(variable->second)) {
             addDiagnostic(target,
                           "member assignment requires a structure target: " +
                               name);
             return;
         }
-        variable->second.fields[target.label] = value;
+        runtimeSetStructField(variable->second, std::move(fieldName), value);
     }
 
     void assignIndexedTarget(const HirNode& target, const RuntimeValue& value,
@@ -1490,10 +1514,26 @@ private:
                           "interpreter");
             return missingValue();
         }
-        const auto field = target.fields.find(node.label);
+        std::string fieldName = node.label;
+        if (node.label == ".()") {
+            if (node.children.size() != 2) {
+                addDiagnostic(node,
+                              "dynamic member access requires one field name "
+                              "expression");
+                return missingValue();
+            }
+            const auto dynamicName = runtimeStructFieldName(
+                evaluate(*node.children[1]));
+            if (!dynamicName.succeeded) {
+                addDiagnostic(node, dynamicName.error);
+                return missingValue();
+            }
+            fieldName = dynamicName.name;
+        }
+        const auto field = target.fields.find(fieldName);
         if (field == target.fields.end()) {
             addDiagnostic(node, "structure field is not available: " +
-                                    node.label);
+                                    fieldName);
             return missingValue();
         }
         return field->second;
@@ -2545,22 +2585,57 @@ private:
             return callStrcmpBuiltin(node, arguments);
         }
         if (name == "struct") {
-            if (!arguments.empty()) {
-                addDiagnostic(node,
-                              "struct currently supports only the empty form");
+            auto result = runtimeConstructScalarStruct(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
                 return FunctionCallResult{{missingValue()}};
             }
-            return FunctionCallResult{{makeRuntimeStructValue()}};
+            return FunctionCallResult{{std::move(result.value)}};
         }
         if (name == "isfield") {
-            if (arguments.size() != 2 || !isStruct(arguments[0]) ||
-                !isString(arguments[1])) {
-                addDiagnostic(node,
-                              "isfield expects a structure and field-name string");
+            if (arguments.size() != 2) {
+                addDiagnostic(node, "isfield expects two arguments");
+                return FunctionCallResult{{missingValue()}};
+            }
+            auto result = runtimeStructIsField(arguments[0], arguments[1]);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{std::move(result.value)}};
+        }
+        if (name == "fieldnames") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node, "fieldnames expects one argument");
+                return FunctionCallResult{{missingValue()}};
+            }
+            auto result = runtimeStructFieldNames(arguments.front());
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{std::move(result.value)}};
+        }
+        if (name == "rmfield") {
+            if (arguments.size() != 2) {
+                addDiagnostic(node, "rmfield expects two arguments");
+                return FunctionCallResult{{missingValue()}};
+            }
+            auto result = runtimeRemoveStructFields(arguments[0],
+                                                    arguments[1]);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{std::move(result.value)}};
+        }
+        if (name == "isstruct") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node, "isstruct expects one argument");
                 return FunctionCallResult{{missingValue()}};
             }
             return FunctionCallResult{{logicalValue(
-                arguments[0].fields.contains(arguments[1].text))}};
+                isStruct(arguments.front()))}};
         }
         if (name == "logical" || name == "double") {
             if (arguments.size() != 1 || !isNumeric(arguments.front())) {
@@ -2951,6 +3026,11 @@ RuntimeValue makeRuntimeStructValue(
     RuntimeValue result;
     result.kind = RuntimeValueKind::Struct;
     result.fields = std::move(fields);
+    result.fieldOrder.reserve(result.fields.size());
+    for (const auto& [name, value] : result.fields) {
+        (void)value;
+        result.fieldOrder.push_back(name);
+    }
     setRuntimeDimensions(result, {1, 1});
     return result;
 }
@@ -3057,18 +3137,20 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         return output.str();
     case RuntimeValueKind::FunctionHandle:
         return value.text.empty() ? "<function_handle>" : value.text;
-    case RuntimeValueKind::Struct:
+    case RuntimeValueKind::Struct: {
         output << "struct(";
-        for (auto field = value.fields.begin(); field != value.fields.end();
-             ++field) {
-            if (field != value.fields.begin()) {
+        const auto fieldNames = runtimeStructFieldOrder(value);
+        for (size_t index = 0; index < fieldNames.size(); ++index) {
+            if (index != 0) {
                 output << ", ";
             }
+            const auto field = value.fields.find(fieldNames[index]);
             output << field->first << "="
                    << runtimeValueToString(field->second);
         }
         output << ")";
         return output.str();
+    }
     case RuntimeValueKind::NameValueArgument:
         return value.text + "=" +
                (value.cells.empty() ? std::string("<missing>")

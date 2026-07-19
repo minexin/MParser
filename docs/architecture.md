@@ -659,8 +659,11 @@ precedence, class-folder Live Code/P-code/MEX methods, automatic handle
 destruction at scope/workspace teardown, cyclic object collection,
 listener/source arrays, numeric/logical/character built-in enumeration bases,
 enumeration object arrays, class methods as `CompiledModule` entry targets,
-structs, sparse arrays, and complex values until the IR grows richer mutation,
-layout, and dynamic dispatch conventions. Cell execution
+structure arrays, sparse arrays, and complex values until the IR grows richer
+mutation, layout, and dynamic dispatch conventions. Scalar structures retain
+ordered heterogeneous fields and support static/dynamic direct member access;
+indexed structures, comma-separated field lists, and nested value updates stay
+outside the current lvalue contract. Cell execution
 supports N-dimensional scalar brace reads/writes, but Cell parenthesis
 indexing, vector-valued brace selections, and comma-separated-list expansion
 are future work.
@@ -930,6 +933,25 @@ listener remains valid after its source is destroyed, while its source is
 invalid. `events`, `methods`, `ismethod`, `metaclass`, and `?handle` expose the
 inherited event and handle methods. Automatic reachability- or scope-driven
 destruction remains separate future work.
+
+v0.69 gives scalar structures an explicit runtime representation shared by the
+HIR interpreter and bytecode VM. `RuntimeValue::fields` remains the lookup
+table, while `fieldOrder` preserves MATLAB field definition order across
+construction, assignment, copying, `fieldnames`, `rmfield`, name-value roots,
+and display. The shared `runtime_struct` layer validates dynamic names and
+constructor pairs, unwraps scalar Cell constructor values, rejects nonscalar
+Cell values that would require a structure array, preserves query shapes, and
+performs copy-returning removal. Both execution engines call this layer rather
+than maintaining separate builtin behavior.
+
+Parser and HIR already preserved `s.(expression)` as a two-child member node.
+Bytecode now consumes the dynamic name before the receiver, resolves it to the
+same ordinary `MemberAccess`/`StoreMember` path, and therefore supports dynamic
+declared or runtime-added object properties as well as structure fields.
+Direct variable member stores resolve the receiver from the current frame; an
+absent variable becomes an empty scalar structure, matching `s.field = value`
+creation. Nested value-structure stores still require a future general lvalue
+path rather than silently dropping the copied parent update.
 
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same

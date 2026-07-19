@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.68.0 LANGUAGES C CXX)
+project(MParser VERSION 0.69.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -73,6 +73,7 @@ add_library(mparser_core
     src/mparser/runtime_reduction.cpp
     src/mparser/runtime_scan.cpp
     src/mparser/runtime_shape.cpp
+    src/mparser/runtime_struct.cpp
     src/mparser/semantic.cpp
     src/mparser/semantic_dump.cpp
     src/mparser/source.cpp
@@ -122,6 +123,28 @@ add_test(NAME bytecode_smoke COMMAND bytecode_smoke_tests)
 add_executable(bytecode_vm_smoke_tests tests/bytecode_vm_smoke.cpp)
 target_link_libraries(bytecode_vm_smoke_tests PRIVATE mparser_core)
 add_test(NAME bytecode_vm_smoke COMMAND bytecode_vm_smoke_tests)
+
+add_executable(struct_runtime_smoke_tests tests/struct_runtime_smoke.cpp)
+target_link_libraries(struct_runtime_smoke_tests PRIVATE mparser_core)
+add_test(NAME struct_runtime_smoke COMMAND struct_runtime_smoke_tests)
+
+add_test(NAME struct_runtime_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/struct_runtime_demo.m)
+set_tests_properties(struct_runtime_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2193")
+
+add_test(NAME struct_runtime_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/struct_runtime_demo.m)
+set_tests_properties(struct_runtime_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2193")
+
+add_test(NAME struct_runtime_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/struct_runtime_demo.m)
+set_tests_properties(struct_runtime_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2193")
 
 add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
 target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)

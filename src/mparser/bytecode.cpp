@@ -689,19 +689,30 @@ private:
             lowerNode(node);
             break;
         case HirKind::MemberAccess:
-            if (!node.children.empty()) {
+        {
+            const bool directVariableReceiver =
+                !node.children.empty() &&
+                node.children.front()->kind == HirKind::NameRef &&
+                (node.children.front()->binding.kind ==
+                     BindingKind::LocalVariable ||
+                 node.children.front()->binding.kind ==
+                     BindingKind::FunctionParameter ||
+                 node.children.front()->binding.kind ==
+                     BindingKind::FunctionOutput);
+            if (!node.children.empty() && !directVariableReceiver) {
                 lowerNode(*node.children.front());
             }
-            {
-                const size_t store =
-                    emit(BytecodeOp::StoreMember, node, childCount(node));
-                if (!node.children.empty() &&
-                    node.children.front()->kind == HirKind::NameRef) {
-                    program_.instructions[store].receiverName =
-                        node.children.front()->label;
-                }
+            if (node.label == ".()" && node.children.size() == 2) {
+                lowerNode(*node.children[1]);
+            }
+            const size_t store =
+                emit(BytecodeOp::StoreMember, node, childCount(node));
+            if (directVariableReceiver) {
+                program_.instructions[store].receiverName =
+                    node.children.front()->label;
             }
             break;
+        }
         case HirKind::CallOrIndex:
             if (node.children.empty()) {
                 const size_t store =

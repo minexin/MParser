@@ -12,6 +12,7 @@
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_struct.h"
 #include "mparser/typed_ir.h"
 #include "mparser/typed_region_executor.h"
 
@@ -4007,7 +4008,8 @@ private:
             if (!result) {
                 return std::nullopt;
             }
-            structure->second.fields[field] = std::move(*result);
+            runtimeSetStructField(structure->second, field,
+                                  std::move(*result));
             currentFrame()[root] = structure->second;
         }
         for (size_t index = 0; index < info.signature.parameters.size();
@@ -6936,6 +6938,28 @@ private:
     }
 
     void memberAccess(const BytecodeInstruction& instruction) {
+        if (instruction.operand != ".()") {
+            memberAccessResolved(instruction);
+            return;
+        }
+
+        const auto dynamicValue =
+            popRuntime(instruction, "dynamic member name");
+        if (!dynamicValue) {
+            return;
+        }
+        const auto dynamicName = runtimeStructFieldName(*dynamicValue);
+        if (!dynamicName.succeeded) {
+            addDiagnostic(instruction, dynamicName.error);
+            return;
+        }
+
+        BytecodeInstruction resolved = instruction;
+        resolved.operand = dynamicName.name;
+        memberAccessResolved(resolved);
+    }
+
+    void memberAccessResolved(const BytecodeInstruction& instruction) {
         const auto target = popStackValue(instruction, "member access target");
         if (!target) {
             return;
@@ -7164,8 +7188,39 @@ private:
     }
 
     void storeMember(const BytecodeInstruction& instruction) {
-        const auto target =
-            popStackValue(instruction, "member assignment target");
+        if (instruction.operand != ".()") {
+            storeMemberResolved(instruction);
+            return;
+        }
+
+        const auto dynamicValue =
+            popRuntime(instruction, "dynamic member assignment name");
+        if (!dynamicValue) {
+            return;
+        }
+        const auto dynamicName = runtimeStructFieldName(*dynamicValue);
+        if (!dynamicName.succeeded) {
+            addDiagnostic(instruction, dynamicName.error);
+            return;
+        }
+
+        BytecodeInstruction resolved = instruction;
+        resolved.operand = dynamicName.name;
+        storeMemberResolved(resolved);
+    }
+
+    void storeMemberResolved(const BytecodeInstruction& instruction) {
+        std::optional<StackValue> target;
+        if (!instruction.receiverName.empty()) {
+            const auto variable =
+                currentFrame().find(instruction.receiverName);
+            target = variable == currentFrame().end()
+                         ? runtimeStackValue(makeRuntimeStructValue())
+                         : runtimeStackValue(variable->second);
+        } else {
+            target = popStackValue(instruction,
+                                   "member assignment target");
+        }
         const auto value = popRuntime(instruction, "member assignment value");
         if (!target || !value) {
             return;
@@ -7199,7 +7254,7 @@ private:
                 return;
             }
             RuntimeValue updated = target->value;
-            updated.fields[instruction.operand] = *value;
+            runtimeSetStructField(updated, instruction.operand, *value);
             currentFrame()[instruction.receiverName] = updated;
             recordAssignment(instruction, "struct-member", updated);
             return;
@@ -11228,25 +11283,65 @@ private:
             return eventNamesBuiltin(instruction, arguments);
         }
         if (name == "struct") {
-            if (!arguments.empty()) {
-                addDiagnostic(
-                    instruction,
-                    "bytecode struct currently supports only the empty form");
+            auto result = runtimeConstructScalarStruct(arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + std::move(result.error));
                 return missingValue();
             }
-            return makeRuntimeStructValue();
+            return std::move(result.value);
         }
         if (name == "isfield") {
-            if (arguments.size() != 2 ||
-                arguments[0].kind != RuntimeValueKind::Struct ||
-                !isString(arguments[1])) {
-                addDiagnostic(
-                    instruction,
-                    "bytecode isfield expects a structure and field-name string");
+            if (arguments.size() != 2) {
+                addDiagnostic(instruction,
+                              "bytecode isfield expects two arguments");
                 return missingValue();
             }
-            return logicalValue(
-                arguments[0].fields.contains(arguments[1].text));
+            auto result = runtimeStructIsField(arguments[0], arguments[1]);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (name == "fieldnames") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode fieldnames expects one argument");
+                return missingValue();
+            }
+            auto result = runtimeStructFieldNames(arguments.front());
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (name == "rmfield") {
+            if (arguments.size() != 2) {
+                addDiagnostic(instruction,
+                              "bytecode rmfield expects two arguments");
+                return missingValue();
+            }
+            auto result = runtimeRemoveStructFields(arguments[0],
+                                                    arguments[1]);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (name == "isstruct") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode isstruct expects one argument");
+                return missingValue();
+            }
+            return logicalValue(arguments.front().kind ==
+                                RuntimeValueKind::Struct);
         }
         if (name == "isprop") {
             return isPropertyBuiltin(instruction, arguments);

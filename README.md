@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.68.0. See [docs/v0.68.md](docs/v0.68.md) for the
+Current milestone: v0.69.0. See [docs/v0.69.md](docs/v0.69.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.67.md](docs/v0.67.md),
+iteration plan. Previous boundaries are kept in [docs/v0.68.md](docs/v0.68.md),
+[docs/v0.67.md](docs/v0.67.md),
 [docs/v0.66.md](docs/v0.66.md),
 [docs/v0.65.md](docs/v0.65.md),
 [docs/v0.64.md](docs/v0.64.md),
@@ -662,6 +663,15 @@ listeners and dynamic-property descriptors. Repeated deletion is idempotent;
 `isvalid`, `events`, `methods`, and class metadata expose the corresponding
 state and inherited members.
 
+v0.69 establishes ordered scalar structures as a shared runtime contract.
+`struct(field, value, ...)`, static and dynamic `s.field`/`s.(name)` reads and
+writes, implicit creation by member assignment, `fieldnames`, collection-form
+`isfield`, `rmfield`, and `isstruct` now agree between the HIR interpreter and
+bytecode VM. Field definition order is retained independently from map lookup,
+and dynamic member names also work for bytecode class objects. Structure arrays
+remain an explicit unsupported boundary rather than being approximated as a
+scalar value.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -689,7 +699,8 @@ logical/double conversion and class queries, array constructors `zeros`,
 two-dimensional `eye`, `linspace` vector generation, numeric/Cell `reshape`,
 `permute`, `ipermute`, `squeeze`, `repmat`, `cat`, `horzcat`, and `vertcat`,
 transpose, basic numeric matrix multiplication, and
-N-dimensional Cells with scalar brace indexing/mutation. It is
+N-dimensional Cells with scalar brace indexing/mutation, and ordered scalar
+structures with static/dynamic member access and field queries. It is
 intentionally not a full MATLAB runtime yet: classes,
 function handles, other builtin multi-output conventions beyond the
 implemented `size`/`min`/`max`/`find` subset, complex numbers, sparse arrays,
@@ -1246,6 +1257,16 @@ The demo reports `summary = 161`. It verifies invalidation before
 `ObjectBeingDestroyed`, derived-to-base destructor order, alias identity,
 idempotent free- and method-form deletion, listener lifetime, dynamic-property
 cleanup, and inherited handle event metadata.
+
+Run ordered scalar structure construction, dynamic fields, field queries, and
+copy-preserving field removal through the production interface with:
+
+```powershell
+build\mparser.exe --run samples\struct_runtime_demo.m
+```
+
+The demo reports `summary = 2193`. The same file is also a checked HIR and
+baseline-bytecode sample.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:
