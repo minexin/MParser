@@ -655,12 +655,12 @@ construction, full MATLAB property conversion, custom validators, validator
 set-membership/range functions, non-scalar string arrays,
 `HandleCompatible` enforcement, cross-file function discovery from command-form
 calls, dynamic or text-created function handles, `.mlx`, `.p`, and MEX
-precedence, class-folder Live Code/P-code/MEX methods, general handle deletion,
-`ObjectBeingDestroyed`, cyclic object collection, property change listeners,
+precedence, class-folder Live Code/P-code/MEX methods, automatic handle
+destruction at scope/workspace teardown, cyclic object collection,
 listener/source arrays, numeric/logical/character built-in enumeration bases,
 enumeration object arrays, class methods as `CompiledModule` entry targets,
-structs, sparse arrays, and complex values until the IR grows
-richer mutation, layout, and dynamic dispatch conventions. Cell execution
+structs, sparse arrays, and complex values until the IR grows richer mutation,
+layout, and dynamic dispatch conventions. Cell execution
 supports N-dimensional scalar brace reads/writes, but Cell parenthesis
 indexing, vector-valued brace selections, and comma-separated-list expansion
 are future work.
@@ -911,13 +911,40 @@ reference HIR interpreter is exposed as `--run-hir`; `--run-bytecode`,
 explicit diagnostic interfaces. This separation lets editors and embedders
 depend on `--run` while optimization strategy evolves behind it.
 
+v0.68 adds explicit lifecycle state to scalar handle-object storage. A valid
+destructor is a non-static, non-abstract, non-sealed `delete` method with one
+ordinary object parameter, no outputs, no variadic parameters, and no
+arguments blocks. Destructors are retained per declaring class instead of
+participating in ordinary override inheritance. Explicit free- or method-form
+deletion marks the shared object state invalid, notifies the inherited
+`handle.ObjectBeingDestroyed` event, invokes the most-derived destructor and
+then each superclass destructor in declaration order, and finally removes
+dynamic properties and invalidates source-coupled listeners. Diamond paths are
+deduplicated by declaring class. A diagnostic in one callback or destructor is
+deferred until later lifecycle stages and cleanup have run.
+
+All aliases observe the same validity bit. Lifecycle callbacks may still read
+the object while `isvalid` reports false, but ordinary access after destruction
+is rejected. Repeated deletion is a no-op. An explicitly retained uncoupled
+listener remains valid after its source is destroyed, while its source is
+invalid. `events`, `methods`, `ismethod`, `metaclass`, and `?handle` expose the
+inherited event and handle methods. Automatic reachability- or scope-driven
+destruction remains separate future work.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels, optional LLVM ORC lowering behind the same
 backend contract, persistent cross-process code caches, moving-window array
-operations, object/listener arrays, a built-in function signature catalog,
+operations, automatic handle destruction and cycle-aware ownership,
+object/listener arrays, a built-in function signature catalog,
 reference-interpreter class execution,
 comma-separated-list Cell semantics, and eventual on-stack replacement while
 preserving the same commit/fallback contract.
+
+The release gates, compatibility-matrix requirement, builtin-extension
+architecture, embedding boundary, platform matrix, and explicit v1.0
+non-goals are defined in [roadmap-v1.0.md](roadmap-v1.0.md). That roadmap is
+the authority for milestone selection; this document remains the detailed
+description of the architecture already implemented.
 
 When dynamic features invalidate assumptions, execution should deopt back to
 the baseline bytecode VM. This is the path that keeps full MATLAB semantics

@@ -300,6 +300,7 @@ third = pulse.fire(4);
 callback_after_enabled = pulse.CallbackCount;
 event_names = events(pulse);
 first_event = event_names{1};
+declared_event = event_names{2};
 event_count = numel(event_names);
 
 replacementPulse = Pulse();
@@ -372,8 +373,9 @@ custom_data_isa = isa(data, 'event.EventData');
     checkNumber(result, "callback_while_disabled", 1.0);
     checkNumber(result, "third", 9.0);
     checkNumber(result, "callback_after_enabled", 2.0);
-    checkString(result, "first_event", "Tick");
-    checkNumber(result, "event_count", 1.0);
+    checkString(result, "first_event", "ObjectBeingDestroyed");
+    checkString(result, "declared_event", "Tick");
+    checkNumber(result, "event_count", 2.0);
     checkNumber(result, "replacement_callback_count", 2.0);
     checkNumber(result, "valid_after", 0.0);
     checkNumber(result, "callback_after_delete", 2.0);
@@ -414,11 +416,13 @@ listenerHandle = addlistener(source, 'Ping', callback);
 source.fire();
 names = events(source);
 name = names{1};
+declared_name = names{2};
 )" );
     check(inherited.diagnostics.empty(),
           "inherited-event diagnostics:\n" +
               diagnosticsText(inherited.diagnostics));
-    checkString(inherited, "name", "Ping");
+    checkString(inherited, "name", "ObjectBeingDestroyed");
+    checkString(inherited, "declared_name", "Ping");
 
     const auto valueClass = run(R"(classdef InvalidValueEvent
     events

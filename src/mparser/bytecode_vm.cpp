@@ -41,9 +41,13 @@ constexpr std::string_view kEventListenerClassName = "event.listener";
 constexpr std::string_view kPropertyListenerClassName =
     "event.proplistener";
 constexpr std::string_view kDynamicPropsClassName = "dynamicprops";
+constexpr std::string_view kHandleValidityField =
+    "__mparser_handle_valid";
 constexpr std::string_view kListenerValidityField = "__mparser_valid";
 constexpr std::string_view kCoupledListenersField =
     "__mparser_coupled_listeners";
+constexpr std::string_view kObjectBeingDestroyedEventName =
+    "ObjectBeingDestroyed";
 constexpr std::string_view kDynamicPropertyDescriptorPrefix =
     "__mparser_dynamic_property_descriptor::";
 constexpr std::string_view kDynamicPropertyValuePrefix =
@@ -52,6 +56,18 @@ constexpr std::string_view kDynamicPropertyValuePrefix =
 bool isBuiltinHandleSuperclass(std::string_view name) {
     return name == "handle" || name == kEventDataClassName ||
            name == kDynamicPropsClassName;
+}
+
+bool isBuiltinHandleRuntimeClass(std::string_view name) {
+    const std::string canonical =
+        canonicalRuntimeMetadataClassName(name);
+    return canonical == "handle" ||
+           canonical == kDynamicPropsClassName ||
+           canonical == kEventDataClassName ||
+           canonical == kPropertyEventClassName ||
+           canonical == kEventListenerClassName ||
+           canonical == kPropertyListenerClassName ||
+           canonical.rfind("matlab.metadata.", 0) == 0;
 }
 
 bool isBuiltinReflectableClass(std::string_view name) {
@@ -777,6 +793,7 @@ struct FunctionInfo {
     std::string accessorProperty;
     bool hasInputArgumentBlock = false;
     bool hasOutputArgumentBlock = false;
+    bool classDestructor = false;
     size_t entry = 0;
     size_t end = 0;
     SourceSpan span;
@@ -1113,6 +1130,7 @@ public:
         dynamicProperties_.clear();
         activeDynamicPropertyGetters_.clear();
         activeDynamicPropertySetters_.clear();
+        destroyingHandleFields_.clear();
         nextFunctionHandleId_ = 1;
         nextEventListenerId_ = 1;
         nextDynamicPropertyId_ = 1;
@@ -2148,6 +2166,17 @@ private:
                 "class constructor cannot be Abstract: " + owner});
         }
 
+        method.classDestructor =
+            method.name == "delete" && method.hasBody &&
+            !method.staticMethod && !method.abstractMethod &&
+            !method.sealedMethod &&
+            method.signature.parameters.size() == 1 &&
+            !method.signature.hasVarargin &&
+            method.signature.outputs.empty() &&
+            !method.signature.hasVarargout &&
+            !method.hasInputArgumentBlock &&
+            !method.hasOutputArgumentBlock;
+
         const bool getter = method.name.rfind("get.", 0) == 0;
         const bool setter = method.name.rfind("set.", 0) == 0;
         if (!getter && !setter) {
@@ -2667,6 +2696,9 @@ private:
                 if (method.name == method.declaringClass) {
                     continue;
                 }
+                if (method.classDestructor) {
+                    continue;
+                }
 
                 const bool candidateStatic =
                     base.staticMethods.contains(methodName) &&
@@ -2802,6 +2834,14 @@ private:
             propertyOrder.push_back(property);
         }
 
+        if (handleClass &&
+            !events.contains(
+                std::string(kObjectBeingDestroyedEventName))) {
+            const auto& event = handleDestructionEvent();
+            events[event.name] = event;
+            eventOrder.push_back(event.name);
+        }
+
         for (const auto& eventName : info.declaredEventOrder) {
             const auto& event = info.declaredEvents.at(eventName);
             if (events.contains(eventName)) {
@@ -2818,6 +2858,13 @@ private:
 
         for (const auto& [methodName, method] : info.declaredMethods) {
             if (method.propertyAccessor) {
+                continue;
+            }
+
+            if (method.classDestructor) {
+                methods[methodName] = method;
+                staticMethods[methodName] = false;
+                abstractMethods.erase(methodName);
                 continue;
             }
 
@@ -3407,6 +3454,18 @@ private:
                    : &method->second;
     }
 
+    const EventInfo& handleDestructionEvent() const {
+        static const EventInfo event = [] {
+            EventInfo value;
+            value.name = std::string(kObjectBeingDestroyedEventName);
+            value.declaringClass = "handle";
+            value.notifyAccess = MemberAccessPolicy{
+                MemberAccessLevel::Private, {}, false, true};
+            return value;
+        }();
+        return event;
+    }
+
     const EventInfo* eventForMetadata(
         std::string_view identity) const {
         const auto [viewClassName, memberIdentity] =
@@ -3414,6 +3473,10 @@ private:
         (void)viewClassName;
         const auto [declaringClass, eventName] =
             splitMetadataIdentity(memberIdentity);
+        if (declaringClass == "handle" &&
+            eventName == kObjectBeingDestroyedEventName) {
+            return &handleDestructionEvent();
+        }
         const auto owner = classesByName_.find(declaringClass);
         if (owner == classesByName_.end() || eventName.empty()) {
             return nullptr;
@@ -4866,9 +4929,13 @@ private:
             return;
         }
 
+        if (classesByName_.contains(instruction.operand)) {
+            stack_.push_back(classStackValue(instruction.operand));
+            return;
+        }
+
         if (instruction.binding.kind == BindingKind::Method && semantic_ &&
-            instruction.binding.symbolId >= 0 &&
-            instruction.operand.find('.') != std::string::npos) {
+            instruction.binding.symbolId >= 0) {
             const size_t symbolIndex =
                 static_cast<size_t>(instruction.binding.symbolId);
             if (symbolIndex >= semantic_->symbols.size()) {
@@ -4909,11 +4976,6 @@ private:
             }
             stack_.push_back(methodStackValue(
                 className, symbol.name, method->declaringClass));
-            return;
-        }
-
-        if (classesByName_.contains(instruction.operand)) {
-            stack_.push_back(classStackValue(instruction.operand));
             return;
         }
 
@@ -5096,6 +5158,39 @@ private:
     std::string dynamicPropertyValueKey(size_t id) const {
         return std::string(kDynamicPropertyValuePrefix) +
                std::to_string(id);
+    }
+
+    bool handleObjectIsValid(const RuntimeValue& value) const {
+        if (!isObject(value) || !value.handleObject ||
+            !value.sharedFields) {
+            return false;
+        }
+        const auto valid = value.sharedFields->find(
+            std::string(kHandleValidityField));
+        return valid == value.sharedFields->end() ||
+               truthy(valid->second);
+    }
+
+    bool handleObjectIsDestroying(const RuntimeValue& value) const {
+        return value.sharedFields &&
+               destroyingHandleFields_.contains(
+                   value.sharedFields.get());
+    }
+
+    bool handleObjectIsUsable(const RuntimeValue& value) const {
+        return handleObjectIsValid(value) ||
+               handleObjectIsDestroying(value);
+    }
+
+    bool requireUsableHandleObject(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& value) {
+        if (handleObjectIsUsable(value)) {
+            return true;
+        }
+        addDiagnostic(instruction,
+                      "invalid or deleted object: " + value.className);
+        return false;
     }
 
     bool isDynamicPropertyDescriptor(
@@ -5309,6 +5404,9 @@ private:
             return missingValue();
         }
         const RuntimeValue& owner = arguments[0];
+        if (!requireUsableHandleObject(instruction, owner)) {
+            return missingValue();
+        }
         const std::string& name = arguments[1].text;
         if (!classDerivesFrom(owner.className,
                               std::string(kDynamicPropsClassName))) {
@@ -5356,6 +5454,9 @@ private:
             return missingValue();
         }
         const RuntimeValue& owner = arguments[0];
+        if (!requireUsableHandleObject(instruction, owner)) {
+            return missingValue();
+        }
         const std::string& name = arguments[1].text;
         if (const auto descriptor =
                 dynamicPropertyDescriptor(owner, name)) {
@@ -5998,10 +6099,21 @@ private:
                              RuntimeMetadataKind::Method, {}, {0, 1});
         }
         if (memberName == "EventList") {
-            return klass
-                       ? eventMetadataList(*klass)
-                       : makeRuntimeMetadataArray(
-                             RuntimeMetadataKind::Event, {}, {0, 1});
+            if (klass) {
+                return eventMetadataList(*klass);
+            }
+            if (isBuiltinHandleRuntimeClass(className)) {
+                return makeRuntimeMetadataArray(
+                    RuntimeMetadataKind::Event,
+                    {makeRuntimeMetadataObject(
+                        RuntimeMetadataKind::Event,
+                        className + "/handle/" +
+                            std::string(
+                                kObjectBeingDestroyedEventName))},
+                    {1, 1});
+            }
+            return makeRuntimeMetadataArray(
+                RuntimeMetadataKind::Event, {}, {0, 1});
         }
         if (memberName == "EnumerationMemberList") {
             return klass
@@ -6954,6 +7066,12 @@ private:
                                           target->value.className);
             return;
         }
+        if (target->value.handleObject &&
+            instruction.operand != "delete" &&
+            instruction.operand != "isvalid" &&
+            !requireUsableHandleObject(instruction, target->value)) {
+            return;
+        }
         if (const auto descriptor = dynamicPropertyDescriptor(
                 target->value, instruction.operand)) {
             const bool observable =
@@ -7028,6 +7146,7 @@ private:
         const bool handleMethod =
             target->value.handleObject &&
             (instruction.operand == "addlistener" ||
+             instruction.operand == "delete" ||
              instruction.operand == "findprop" ||
              instruction.operand == "isvalid");
         const bool eventMethod =
@@ -7156,6 +7275,10 @@ private:
             addDiagnostic(instruction,
                           "class is not available for member assignment: " +
                               updated.className);
+            return;
+        }
+        if (updated.handleObject &&
+            !requireUsableHandleObject(instruction, updated)) {
             return;
         }
         if (const auto descriptor = dynamicPropertyDescriptor(
@@ -8168,6 +8291,10 @@ private:
         if (!isObject(source)) {
             return nullptr;
         }
+        if (source.handleObject &&
+            eventName == kObjectBeingDestroyedEventName) {
+            return &handleDestructionEvent();
+        }
         const auto klass = classesByName_.find(source.className);
         if (klass == classesByName_.end()) {
             return nullptr;
@@ -8340,6 +8467,9 @@ private:
         }
 
         const RuntimeValue& source = arguments[0];
+        if (!requireUsableHandleObject(instruction, source)) {
+            return missingValue();
+        }
         const std::string& eventName = arguments[1].text;
         const EventInfo* event = selectEvent(source, eventName);
         if (!event) {
@@ -8402,6 +8532,9 @@ private:
         }
 
         const RuntimeValue& source = arguments[0];
+        if (!requireUsableHandleObject(instruction, source)) {
+            return missingValue();
+        }
         const std::string& eventName = arguments[2].text;
         if (!isPropertyEventName(eventName)) {
             addDiagnostic(instruction,
@@ -8556,7 +8689,11 @@ private:
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end()) {
             if (isBuiltinReflectableClass(className)) {
-                return stringColumnCell({});
+                return stringColumnCell(
+                    isBuiltinHandleRuntimeClass(className)
+                        ? std::vector<std::string>{std::string(
+                              kObjectBeingDestroyedEventName)}
+                        : std::vector<std::string>{});
             }
             addDiagnostic(instruction,
                           "event class is not available: " + className);
@@ -9086,15 +9223,32 @@ private:
             }
             names.push_back(methodName);
         }
+        const auto appendBuiltin = [&](std::string_view method) {
+            if (std::find(names.begin(), names.end(), method) ==
+                names.end()) {
+                names.emplace_back(method);
+            }
+        };
+        if (klass->second.handleClass) {
+            for (const std::string_view method :
+                 {"addlistener", "findobj", "findprop", "isvalid",
+                  "listener", "notify"}) {
+                appendBuiltin(method);
+            }
+            const auto ownDestructor =
+                klass->second.declaredMethods.find("delete");
+            if (ownDestructor == klass->second.declaredMethods.end() ||
+                (ownDestructor->second.classDestructor &&
+                 !ownDestructor->second.hidden &&
+                 ownDestructor->second.access.level ==
+                     MemberAccessLevel::Public &&
+                 !ownDestructor->second.access.selectiveClassList)) {
+                appendBuiltin("delete");
+            }
+        }
         if (classDerivesFrom(className,
                              std::string(kDynamicPropsClassName))) {
-            for (const std::string& method :
-                 {"addprop", "findprop", "isvalid"}) {
-                if (std::find(names.begin(), names.end(), method) ==
-                    names.end()) {
-                    names.push_back(method);
-                }
-            }
+            appendBuiltin("addprop");
         }
         return stringColumnCell(names);
     }
@@ -9147,9 +9301,31 @@ private:
         if ((arguments[1].text == "addprop" &&
              classDerivesFrom(className,
                               std::string(kDynamicPropsClassName))) ||
-            ((arguments[1].text == "findprop" ||
-              arguments[1].text == "isvalid") &&
+            ((arguments[1].text == "addlistener" ||
+              arguments[1].text == "delete" ||
+              arguments[1].text == "findobj" ||
+              arguments[1].text == "findprop" ||
+              arguments[1].text == "isvalid" ||
+              arguments[1].text == "listener" ||
+              arguments[1].text == "notify") &&
              arguments[0].handleObject)) {
+            if (arguments[1].text == "delete") {
+                const auto klass = classesByName_.find(className);
+                if (klass != classesByName_.end()) {
+                    const auto declaredDelete =
+                        klass->second.declaredMethods.find("delete");
+                    if (declaredDelete !=
+                        klass->second.declaredMethods.end()) {
+                        const FunctionInfo& method =
+                            declaredDelete->second;
+                        return logicalValue(
+                            !method.hidden &&
+                            method.access.level ==
+                                MemberAccessLevel::Public &&
+                            !method.access.selectiveClassList);
+                    }
+                }
+            }
             return logicalValue(true);
         }
         const auto klass = classesByName_.find(className);
@@ -9181,12 +9357,212 @@ private:
             (value.className != kEventListenerClassName &&
              value.className != kPropertyListenerClassName) ||
             !value.sharedFields) {
-            return logicalValue(isObject(value) && value.handleObject);
+            return logicalValue(handleObjectIsValid(value));
         }
         const auto valid = value.sharedFields->find(
             std::string(kListenerValidityField));
         return logicalValue(valid != value.sharedFields->end() &&
                             truthy(valid->second));
+    }
+
+    void collectClassDestructors(
+        const std::string& className, std::set<std::string>& visited,
+        std::vector<const FunctionInfo*>& destructors) const {
+        if (!visited.insert(className).second) {
+            return;
+        }
+        const auto klass = classesByName_.find(className);
+        if (klass == classesByName_.end()) {
+            return;
+        }
+        const auto destructor =
+            klass->second.declaredMethods.find("delete");
+        if (klass->second.handleClass &&
+            destructor != klass->second.declaredMethods.end() &&
+            destructor->second.classDestructor) {
+            destructors.push_back(&destructor->second);
+        }
+        for (const auto& superclass : klass->second.superclasses) {
+            if (!isBuiltinHandleSuperclass(superclass)) {
+                collectClassDestructors(superclass, visited,
+                                        destructors);
+            }
+        }
+    }
+
+    std::vector<size_t> destructionEventListeners(
+        const RuntimeValue& source) const {
+        std::vector<size_t> listeners;
+        if (!source.sharedFields) {
+            return listeners;
+        }
+        for (const auto& [id, record] : eventListeners_) {
+            const auto listenerSource = record.sourceFields.lock();
+            if (!record.propertyListener && listenerSource &&
+                listenerSource.get() == source.sharedFields.get() &&
+                record.eventName == kObjectBeingDestroyedEventName) {
+                listeners.push_back(id);
+            }
+        }
+        return listeners;
+    }
+
+    void cleanupDestroyedHandleState(const RuntimeValue& source) {
+        if (!source.sharedFields) {
+            return;
+        }
+        registerOwnerDynamicProperties(source);
+        std::set<size_t> dynamicPropertyIds;
+        for (auto property = dynamicProperties_.begin();
+             property != dynamicProperties_.end();) {
+            const auto owner = property->second.ownerFields.lock();
+            if (!owner || owner.get() != source.sharedFields.get()) {
+                ++property;
+                continue;
+            }
+            dynamicPropertyIds.insert(property->first);
+            if (const auto descriptor =
+                    property->second.descriptorFields.lock()) {
+                (*descriptor)[std::string(kListenerValidityField)] =
+                    logicalValue(false);
+            }
+            source.sharedFields->erase(dynamicPropertyDescriptorKey(
+                property->second.name));
+            source.sharedFields->erase(
+                dynamicPropertyValueKey(property->first));
+            property = dynamicProperties_.erase(property);
+        }
+
+        for (auto& [id, listener] : eventListeners_) {
+            (void)id;
+            const auto listenerSource = listener.sourceFields.lock();
+            if (!listenerSource ||
+                listenerSource.get() != source.sharedFields.get()) {
+                continue;
+            }
+            const bool invalidatedDynamicProperty =
+                listener.propertyListener &&
+                dynamicPropertyIds.contains(
+                    listener.dynamicPropertyId);
+            if (!listener.coupled && !invalidatedDynamicProperty) {
+                continue;
+            }
+            if (const auto fields = listener.listenerFields.lock()) {
+                (*fields)[std::string(kListenerValidityField)] =
+                    logicalValue(false);
+            }
+        }
+        source.sharedFields->erase(
+            std::string(kCoupledListenersField));
+    }
+
+    void destroyHandleObject(const BytecodeInstruction& instruction,
+                             const RuntimeValue& source) {
+        if (!isObject(source) || !source.handleObject ||
+            !source.sharedFields) {
+            addDiagnostic(instruction,
+                          "delete expects a scalar handle object");
+            return;
+        }
+        if (!handleObjectIsValid(source)) {
+            return;
+        }
+
+        (*source.sharedFields)[std::string(kHandleValidityField)] =
+            logicalValue(false);
+        destroyingHandleFields_.insert(source.sharedFields.get());
+
+        std::vector<Diagnostic> lifecycleDiagnostics;
+        const auto runLifecycleStage = [&](const auto& action) {
+            const size_t diagnosticBase = diagnostics_.size();
+            action();
+            lifecycleDiagnostics.insert(
+                lifecycleDiagnostics.end(),
+                diagnostics_.begin() +
+                    static_cast<std::ptrdiff_t>(diagnosticBase),
+                diagnostics_.end());
+            diagnostics_.resize(diagnosticBase);
+        };
+
+        RuntimeValue eventData = objectValue(
+            std::string(kEventDataClassName),
+            {{"EventName", stringValue(std::string(
+                               kObjectBeingDestroyedEventName))},
+             {"Source", source}},
+            true);
+        for (const size_t id : destructionEventListeners(source)) {
+            runLifecycleStage([&] {
+                (void)invokeEventListenerCallback(
+                    instruction, id, {source, eventData});
+            });
+        }
+
+        std::set<std::string> visited;
+        std::vector<const FunctionInfo*> destructors;
+        collectClassDestructors(source.className, visited,
+                                destructors);
+        for (const FunctionInfo* destructor : destructors) {
+            runLifecycleStage([&] {
+                (void)callFunctionInfo(
+                    instruction,
+                    destructor->declaringClass + ".delete",
+                    *destructor, {source}, 0, std::nullopt, nullptr,
+                    false);
+            });
+        }
+
+        cleanupDestroyedHandleState(source);
+        destroyingHandleFields_.erase(source.sharedFields.get());
+        diagnostics_.insert(diagnostics_.end(),
+                            lifecycleDiagnostics.begin(),
+                            lifecycleDiagnostics.end());
+    }
+
+    void deleteRuntimeObject(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1 || !isObject(arguments[0])) {
+            addDiagnostic(instruction,
+                          "delete expects one handle object");
+            return;
+        }
+        const RuntimeValue& source = arguments.front();
+        const auto klass = classesByName_.find(source.className);
+        const FunctionInfo* method =
+            klass == classesByName_.end()
+                ? nullptr
+                : selectMethod(klass->second, "delete");
+        const bool classDestructor =
+            method && method->classDestructor &&
+            klass != classesByName_.end() &&
+            klass->second.handleClass;
+        if (method && !classDestructor) {
+            if (!hasMemberAccess(method->access,
+                                 method->declaringClass)) {
+                addDiagnostic(instruction,
+                              "method access is denied: " +
+                                  method->declaringClass + ".delete");
+                return;
+            }
+            (void)callFunctionInfo(
+                instruction, method->declaringClass + ".delete",
+                *method, {source}, 0, std::nullopt, nullptr, false);
+            return;
+        }
+        if (!source.handleObject || !source.sharedFields) {
+            addDiagnostic(instruction,
+                          "delete expects a scalar handle object");
+            return;
+        }
+        if (classDestructor &&
+            !hasMemberAccess(method->access,
+                             method->declaringClass)) {
+            addDiagnostic(instruction,
+                          "method access is denied: " +
+                              method->declaringClass + ".delete");
+            return;
+        }
+        destroyHandleObject(instruction, source);
     }
 
     void deleteEventListener(const BytecodeInstruction& instruction,
@@ -9216,6 +9592,9 @@ private:
         }
 
         const RuntimeValue& source = arguments[0];
+        if (!requireUsableHandleObject(instruction, source)) {
+            return;
+        }
         const std::string& eventName = arguments[1].text;
         const EventInfo* event = selectEvent(source, eventName);
         if (!event) {
@@ -9342,8 +9721,16 @@ private:
             if (arguments.size() == 1 &&
                 isDynamicPropertyDescriptor(arguments.front())) {
                 deleteDynamicProperty(instruction, arguments.front());
-            } else {
+            } else if (
+                arguments.size() == 1 &&
+                isObject(arguments.front()) &&
+                (arguments.front().className ==
+                     kEventListenerClassName ||
+                 arguments.front().className ==
+                     kPropertyListenerClassName)) {
                 deleteEventListener(instruction, arguments);
+            } else {
+                deleteRuntimeObject(instruction, arguments);
             }
             return {};
         }
@@ -10431,6 +10818,11 @@ private:
         ConstructionContext construction;
         construction.object = objectValue(
             className, *properties, klass->second.handleClass);
+        if (construction.object.handleObject &&
+            construction.object.sharedFields) {
+            (*construction.object.sharedFields)[
+                std::string(kHandleValidityField)] = logicalValue(true);
+        }
         return constructClass(instruction, className, arguments, construction,
                               requestedCount, false, requestingClass);
     }
@@ -10605,6 +10997,20 @@ private:
                                           className + "." + methodName);
             return missingOutputs(requestedCount);
         }
+        const RuntimeValue* invocationReceiver = nullptr;
+        if (!method->staticMethod) {
+            if (receiver) {
+                invocationReceiver = &*receiver;
+            } else if (!arguments.empty()) {
+                invocationReceiver = &arguments.front();
+            }
+        }
+        if (invocationReceiver && invocationReceiver->handleObject &&
+            methodName != "delete" &&
+            !requireUsableHandleObject(instruction,
+                                       *invocationReceiver)) {
+            return missingOutputs(requestedCount);
+        }
         std::vector<RuntimeValue> callArguments = arguments;
         if (receiver) {
             callArguments.insert(callArguments.begin(), *receiver);
@@ -10616,6 +11022,28 @@ private:
             addDiagnostic(instruction, "method access is denied: " +
                                           declaringClass + "." + methodName);
             return missingOutputs(requestedCount);
+        }
+        if (method->classDestructor && klass->second.handleClass) {
+            std::optional<RuntimeValue> destructionTarget;
+            if (receiver && arguments.empty()) {
+                destructionTarget = *receiver;
+            } else if (!receiver && arguments.size() == 1) {
+                destructionTarget = arguments.front();
+            } else {
+                addDiagnostic(
+                    instruction,
+                    "class destructor accepts only its object: " +
+                        declaringClass + ".delete");
+                return missingOutputs(requestedCount);
+            }
+            if (requestedCount != 0) {
+                addDiagnostic(instruction,
+                              "class destructor does not produce outputs: " +
+                                  declaringClass + ".delete");
+                return missingOutputs(requestedCount);
+            }
+            destroyHandleObject(instruction, *destructionTarget);
+            return {};
         }
         return callFunctionInfo(instruction,
                                 declaringClass + "." + methodName, *method,
@@ -11753,6 +12181,7 @@ private:
     std::map<size_t, DynamicPropertyRecord> dynamicProperties_;
     std::set<size_t> activeDynamicPropertyGetters_;
     std::set<size_t> activeDynamicPropertySetters_;
+    std::set<const void*> destroyingHandleFields_;
     size_t nextFunctionHandleId_ = 1;
     size_t nextEventListenerId_ = 1;
     size_t nextDynamicPropertyId_ = 1;

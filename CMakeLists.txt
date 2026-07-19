@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.67.1 LANGUAGES C CXX)
+project(MParser VERSION 0.68.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -457,7 +457,7 @@ add_test(NAME event_listener_cli_smoke
         --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/lib
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/app/run_demo.m)
 set_tests_properties(event_listener_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 39")
+    PASS_REGULAR_EXPRESSION "summary = 40")
 
 add_test(NAME event_listener_module_cli_smoke
     COMMAND mparser
@@ -694,6 +694,18 @@ add_test(NAME property_listener_bytecode_cli_smoke
 set_tests_properties(property_listener_bytecode_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 738")
 
+add_executable(handle_lifecycle_smoke_tests
+    tests/handle_lifecycle_smoke.cpp)
+target_link_libraries(handle_lifecycle_smoke_tests PRIVATE mparser_core)
+add_test(NAME handle_lifecycle_smoke
+    COMMAND handle_lifecycle_smoke_tests)
+
+add_test(NAME handle_lifecycle_bytecode_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/handle_lifecycle_demo.m)
+set_tests_properties(handle_lifecycle_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 161")
+
 add_executable(handle_semantics_smoke_tests tests/handle_semantics_smoke.cpp)
 target_link_libraries(handle_semantics_smoke_tests PRIVATE mparser_core)
 add_test(NAME handle_semantics_smoke COMMAND handle_semantics_smoke_tests)
@@ -853,7 +865,7 @@ add_test(NAME class_metadata_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_metadata_demo.m)
 set_tests_properties(class_metadata_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 10")
+    PASS_REGULAR_EXPRESSION "summary = 18")
 
 add_executable(dynamic_property_smoke_tests
     tests/dynamic_property_smoke.cpp)

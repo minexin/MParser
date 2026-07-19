@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.67.1. See [docs/v0.67.md](docs/v0.67.md) for the
+Current milestone: v0.68.0. See [docs/v0.68.md](docs/v0.68.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.66.md](docs/v0.66.md),
+iteration plan. Previous boundaries are kept in [docs/v0.67.md](docs/v0.67.md),
+[docs/v0.66.md](docs/v0.66.md),
 [docs/v0.65.md](docs/v0.65.md),
 [docs/v0.64.md](docs/v0.64.md),
 [docs/v0.63.md](docs/v0.63.md),
@@ -63,6 +64,13 @@ iteration plan. Previous boundaries are kept in [docs/v0.66.md](docs/v0.66.md),
 [docs/v0.6.md](docs/v0.6.md), [docs/v0.5.md](docs/v0.5.md),
 [docs/v0.4.md](docs/v0.4.md), [docs/v0.3.md](docs/v0.3.md),
 [docs/v0.2.md](docs/v0.2.md), and [docs/v0.1.md](docs/v0.1.md).
+
+The release definition and staged path to v1.0 are maintained in
+[docs/roadmap-v1.0.md](docs/roadmap-v1.0.md). v1.0 targets a stable,
+documented, embeddable MATLAB-like subset runtime. It does not claim complete
+MATLAB compatibility, but it does require the language and engine foundations
+needed to extend ordinary functions after v1.0 without repeatedly redesigning
+the frontend or VM.
 
 MParser is the first iteration of a MATLAB-compatible language frontend. The
 current focus is syntax coverage and stable compiler boundaries:
@@ -645,6 +653,15 @@ v0.67.1 makes the native JIT benchmark directly executable through the
 production interface. The separate adaptive benchmark retains the original
 eight-run persistent-workspace cache experiment.
 
+v0.68 implements explicit MATLAB handle-object destruction as a complete
+runtime lifecycle. Every handle class inherits `ObjectBeingDestroyed`,
+`delete(obj)` and `obj.delete()` invalidate all aliases before callbacks,
+invoke destruction listeners, execute every valid class destructor from the
+most-derived class through its superclasses, and then invalidate coupled
+listeners and dynamic-property descriptors. Repeated deletion is idempotent;
+`isvalid`, `events`, `methods`, and class metadata expose the corresponding
+state and inherited members.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 string literals,
@@ -1194,7 +1211,7 @@ metadata comparison, and method introspection with:
 build\mparser.exe --run-bytecode samples\class_metadata_demo.m
 ```
 
-The demo reports `summary = 10` and displays metadata values with their
+The demo reports `summary = 18` and displays metadata values with their
 canonical class and identity, such as
 `<matlab.metadata.Class MetadataChild>`.
 
@@ -1218,6 +1235,17 @@ build\mparser.exe --run-bytecode samples\property_events_demo.m
 The demo reports `summary = 738`. It verifies the exact get/set event order,
 method-form listener creation, metadata and event-data identity, dynamic
 property delivery and invalidation, and the `event.proplistener` constructor.
+
+Run the complete explicit handle-destruction lifecycle with:
+
+```powershell
+build\mparser.exe --run samples\handle_lifecycle_demo.m
+```
+
+The demo reports `summary = 161`. It verifies invalidation before
+`ObjectBeingDestroyed`, derived-to-base destructor order, alias identity,
+idempotent free- and method-form deletion, listener lifetime, dynamic-property
+cleanup, and inherited handle event metadata.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:
