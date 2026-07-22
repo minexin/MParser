@@ -11,6 +11,7 @@
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_object.h"
 #include "mparser/runtime_range.h"
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
@@ -55,6 +56,8 @@ bool isRuntimeExceptionMethodName(std::string_view name) {
 constexpr std::string_view kPropertyListenerClassName =
     "event.proplistener";
 constexpr std::string_view kDynamicPropsClassName = "dynamicprops";
+constexpr std::string_view kHeterogeneousClassName =
+    "matlab.mixin.Heterogeneous";
 constexpr std::string_view kHandleValidityField =
     "__mparser_handle_valid";
 constexpr std::string_view kListenerValidityField = "__mparser_valid";
@@ -70,6 +73,11 @@ constexpr std::string_view kDynamicPropertyValuePrefix =
 bool isBuiltinHandleSuperclass(std::string_view name) {
     return name == "handle" || name == kEventDataClassName ||
            name == kDynamicPropsClassName;
+}
+
+bool isBuiltinNonExecutableSuperclass(std::string_view name) {
+    return isBuiltinHandleSuperclass(name) ||
+           name == kHeterogeneousClassName;
 }
 
 bool isBuiltinHandleRuntimeClass(std::string_view name) {
@@ -289,27 +297,14 @@ bool isObject(const RuntimeValue& value) {
 RuntimeValue objectValue(std::string className,
                          std::map<std::string, RuntimeValue> fields,
                          bool handleObject) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Object;
-    result.className = std::move(className);
-    result.handleObject = handleObject;
-    if (handleObject) {
-        result.sharedFields =
-            std::make_shared<std::map<std::string, RuntimeValue>>(
-                std::move(fields));
-    } else {
-        result.fields = std::move(fields);
-    }
-    setRuntimeDimensions(result, {1, 1});
-    return result;
+    return makeRuntimeObjectScalar(
+        std::move(className), std::move(fields), handleObject);
 }
 
 const std::map<std::string, RuntimeValue>& objectFields(
     const RuntimeValue& value) {
-    if (value.handleObject && value.sharedFields) {
-        return *value.sharedFields;
-    }
-    return value.fields;
+    const auto* fields = runtimeObjectFields(value);
+    return fields ? *fields : value.fields;
 }
 
 bool isArray(const RuntimeValue& value) {
@@ -641,6 +636,17 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return true;
     }
     if (isObject(left) && isObject(right)) {
+        if (isRuntimeClassObject(left) &&
+            isRuntimeClassObject(right) &&
+            (!isRuntimeScalarObject(left) ||
+             !isRuntimeScalarObject(right))) {
+            return runtimeObjectArraysEqual(
+                left, right,
+                [](const RuntimeValue& leftElement,
+                   const RuntimeValue& rightElement) {
+                    return runtimeEqual(leftElement, rightElement);
+                });
+        }
         if (!left.enumerationMemberName.empty() ||
             !right.enumerationMemberName.empty()) {
             return left.className == right.className &&
@@ -933,6 +939,8 @@ struct ClassInfo {
     std::vector<std::string> superclasses;
     bool directHandleClass = false;
     bool handleClass = false;
+    bool directHeterogeneousClass = false;
+    std::string heterogeneousRoot;
     bool explicitlyAbstract = false;
     bool abstractClass = false;
     bool sealedClass = false;
@@ -1658,6 +1666,9 @@ private:
                 [](const std::string& superclass) {
                     return isBuiltinHandleSuperclass(superclass);
                 });
+            info.directHeterogeneousClass = std::find(
+                node->superclasses.begin(), node->superclasses.end(),
+                kHeterogeneousClassName) != node->superclasses.end();
         }
         if (node->kind == HirKind::Property && !className.empty()) {
             auto& klass = classesByName_[className];
@@ -2715,6 +2726,8 @@ private:
         auto& info = klass->second;
         bool valid = info.hierarchyValid;
         bool handleClass = info.directHandleClass;
+        std::string heterogeneousRoot =
+            info.directHeterogeneousClass ? className : std::string{};
         PropertyTable properties;
         std::vector<PropertyInfoPtr> propertyOrder;
         std::map<std::string, FunctionInfo> methods;
@@ -2728,6 +2741,9 @@ private:
         for (const auto& superclassName : info.superclasses) {
             if (isBuiltinHandleSuperclass(superclassName)) {
                 handleClass = true;
+                continue;
+            }
+            if (superclassName == kHeterogeneousClassName) {
                 continue;
             }
 
@@ -2746,6 +2762,20 @@ private:
             }
             const auto& base = superclass->second;
             handleClass = handleClass || base.handleClass;
+            if (!base.heterogeneousRoot.empty()) {
+                if (heterogeneousRoot.empty()) {
+                    heterogeneousRoot = base.heterogeneousRoot;
+                } else if (heterogeneousRoot !=
+                           base.heterogeneousRoot) {
+                    valid = false;
+                    reportClassHierarchyDiagnostic(
+                        info,
+                        "heterogeneous-root:" + className + ":" +
+                            superclassName,
+                        "class cannot combine distinct heterogeneous "
+                        "hierarchies: " + className);
+                }
+            }
             const bool effectivelySealed =
                 base.sealedClass ||
                 (base.restrictsSubclassing &&
@@ -3123,6 +3153,7 @@ private:
         }
 
         info.handleClass = handleClass;
+        info.heterogeneousRoot = std::move(heterogeneousRoot);
         info.abstractClass = info.explicitlyAbstract ||
                              !abstractMethods.empty() ||
                              !abstractProperties.empty();
@@ -3192,6 +3223,134 @@ private:
         }
         visiting.erase(className);
         return false;
+    }
+
+    RuntimeObjectClassResolutionResult resolveObjectArrayClass(
+        const std::vector<std::string>& classNames,
+        std::string_view preferredClassName) const {
+        const auto failure = [](std::string error) {
+            return RuntimeObjectClassResolutionResult{
+                false, {}, std::move(error)};
+        };
+        if (classNames.empty()) {
+            return preferredClassName.empty()
+                       ? failure(
+                             "empty object array requires a class identity")
+                       : RuntimeObjectClassResolutionResult{
+                             true, std::string(preferredClassName), {}};
+        }
+
+        const bool allSame = std::all_of(
+            classNames.begin(), classNames.end(),
+            [&](const std::string& name) {
+                return name == classNames.front();
+            });
+        if (preferredClassName.empty() && allSame) {
+            return RuntimeObjectClassResolutionResult{
+                true, classNames.front(), {}};
+        }
+        if (!preferredClassName.empty() && allSame &&
+            classNames.front() == preferredClassName) {
+            return RuntimeObjectClassResolutionResult{
+                true, classNames.front(), {}};
+        }
+
+        std::string heterogeneousRoot;
+        if (!preferredClassName.empty()) {
+            const auto preferred =
+                classesByName_.find(std::string(preferredClassName));
+            if (preferred == classesByName_.end() ||
+                preferred->second.heterogeneousRoot.empty()) {
+                return failure(
+                    "object assignment requires class " +
+                    std::string(preferredClassName));
+            }
+            heterogeneousRoot = preferred->second.heterogeneousRoot;
+        }
+        for (const auto& className : classNames) {
+            const auto klass = classesByName_.find(className);
+            if (klass == classesByName_.end() ||
+                klass->second.heterogeneousRoot.empty()) {
+                return failure(
+                    "ordinary object arrays cannot mix class " +
+                    className);
+            }
+            if (heterogeneousRoot.empty()) {
+                heterogeneousRoot = klass->second.heterogeneousRoot;
+            } else if (heterogeneousRoot !=
+                       klass->second.heterogeneousRoot) {
+                return failure(
+                    "object array classes belong to distinct heterogeneous "
+                    "hierarchies");
+            }
+        }
+
+        std::vector<std::string> commonClasses;
+        for (const auto& [candidateName, candidate] : classesByName_) {
+            if (candidate.heterogeneousRoot != heterogeneousRoot) {
+                continue;
+            }
+            if (std::all_of(
+                    classNames.begin(), classNames.end(),
+                    [&](const std::string& className) {
+                        return classDerivesFrom(className, candidateName);
+                    })) {
+                commonClasses.push_back(candidateName);
+            }
+        }
+
+        std::vector<std::string> mostSpecific;
+        for (const auto& candidate : commonClasses) {
+            const bool shadowed = std::any_of(
+                commonClasses.begin(), commonClasses.end(),
+                [&](const std::string& other) {
+                    return other != candidate &&
+                           classDerivesFrom(other, candidate);
+                });
+            if (!shadowed) {
+                mostSpecific.push_back(candidate);
+            }
+        }
+        if (mostSpecific.size() != 1) {
+            return failure(
+                mostSpecific.empty()
+                    ? "object array classes have no common heterogeneous superclass"
+                    : "object array classes have an ambiguous common superclass");
+        }
+        return RuntimeObjectClassResolutionResult{
+            true, std::move(mostSpecific.front()), {}};
+    }
+
+    RuntimeObjectOperationResult constructDefaultObjectForArray(
+        const BytecodeInstruction& instruction,
+        std::string_view className) {
+        const size_t diagnosticCount = diagnostics_.size();
+        auto outputs = callClassConstructor(
+            instruction, std::string(className), {}, 1);
+        if (diagnostics_.size() != diagnosticCount ||
+            outputs.size() != 1 ||
+            !isRuntimeScalarObject(outputs.front())) {
+            return RuntimeObjectOperationResult{};
+        }
+        return RuntimeObjectOperationResult{
+            true, std::move(outputs.front()), {}};
+    }
+
+    RuntimeObjectArrayPolicy objectArrayPolicy(
+        const BytecodeInstruction& instruction) {
+        RuntimeObjectArrayPolicy policy;
+        policy.resolveCommonClass =
+            [this](const std::vector<std::string>& classNames,
+                   std::string_view preferredClassName) {
+                return resolveObjectArrayClass(
+                    classNames, preferredClassName);
+            };
+        policy.constructDefault =
+            [this, &instruction](std::string_view className) {
+                return constructDefaultObjectForArray(
+                    instruction, className);
+            };
+        return policy;
     }
 
     bool reflectableClassExists(std::string_view className) const {
@@ -5100,10 +5259,11 @@ private:
         if (!isNumeric(target.value) && !isCell(target.value) &&
             !isRuntimeTextValue(target.value) &&
             target.value.kind != RuntimeValueKind::Struct &&
+            !isRuntimeClassObject(target.value) &&
             !isRuntimeMetadataObject(target.value)) {
             addDiagnostic(instruction,
                           "bytecode index context requires a numeric, text, "
-                          "cell, structure, or metadata target");
+                          "cell, structure, object, or metadata target");
             return;
         }
 
@@ -5318,6 +5478,7 @@ private:
                 return writeObjectMemberForLvalue(
                     instruction, target, name, value);
             };
+        hooks.objectArrays = objectArrayPolicy(instruction);
         return hooks;
     }
 
@@ -5744,6 +5905,26 @@ private:
         addDiagnostic(instruction,
                       "invalid or deleted object: " + value.className);
         return false;
+    }
+
+    bool requireUsableHandleValue(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& value) {
+        if (!isRuntimeClassObject(value) ||
+            isRuntimeScalarObject(value)) {
+            return requireUsableHandleObject(instruction, value);
+        }
+        for (size_t logicalIndex = 0;
+             logicalIndex < runtimeObjectElementCount(value);
+             ++logicalIndex) {
+            const auto* element =
+                runtimeObjectLogicalElement(value, logicalIndex);
+            if (!element ||
+                !requireUsableHandleObject(instruction, *element)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool isDynamicPropertyDescriptor(
@@ -7510,6 +7691,150 @@ private:
         memberAccessResolved(resolved);
     }
 
+    std::optional<StackValue> resolveScalarObjectMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target) {
+        const size_t stackDepth = stack_.size();
+        const size_t diagnosticCount = diagnostics_.size();
+        BytecodeInstruction scalarInstruction = instruction;
+        scalarInstruction.resultCount = 1;
+        stack_.push_back(runtimeStackValue(target));
+        memberAccessResolved(scalarInstruction);
+        if (diagnostics_.size() != diagnosticCount ||
+            stack_.size() != stackDepth + 1) {
+            stack_.resize(stackDepth);
+            return std::nullopt;
+        }
+        StackValue result = std::move(stack_.back());
+        stack_.resize(stackDepth);
+        return result;
+    }
+
+    void memberAccessObjectArray(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target) {
+        const size_t count = runtimeObjectElementCount(target);
+        if (count == 0) {
+            const auto klass = classesByName_.find(target.className);
+            if (klass != classesByName_.end()) {
+                if (const auto property = selectProperty(
+                        klass->second, instruction.operand)) {
+                    if (!hasMemberAccess(property->getAccess,
+                                         property->declaringClass)) {
+                        addDiagnostic(
+                            instruction,
+                            "property get access is denied: " +
+                                propertyDisplayName(*property));
+                        return;
+                    }
+                    if (instruction.resultCount != 0) {
+                        pushRuntime(makeRuntimeCommaSeparatedList({}));
+                    }
+                    return;
+                }
+                if (const auto* method = selectMethod(
+                        klass->second, instruction.operand)) {
+                    if (!hasMemberAccess(method->access,
+                                         method->declaringClass)) {
+                        addDiagnostic(
+                            instruction,
+                            "method access is denied: " +
+                                method->declaringClass + "." +
+                                method->name);
+                        return;
+                    }
+                    stack_.push_back(methodStackValue(
+                        target.className, instruction.operand,
+                        method->declaringClass, target));
+                    return;
+                }
+            }
+            const bool handleMethod =
+                target.handleObject &&
+                (instruction.operand == "addlistener" ||
+                 instruction.operand == "delete" ||
+                 instruction.operand == "findprop" ||
+                 instruction.operand == "isvalid" ||
+                 instruction.operand == "listener" ||
+                 instruction.operand == "notify");
+            if (handleMethod) {
+                stack_.push_back(builtinStackValue(
+                    instruction.operand, target));
+                return;
+            }
+            addDiagnostic(instruction,
+                          "class member is not available: " +
+                              target.className + "." +
+                              instruction.operand);
+            return;
+        }
+
+        std::vector<RuntimeValue> values;
+        values.reserve(count);
+        for (size_t logicalIndex = 0; logicalIndex < count;
+             ++logicalIndex) {
+            const auto* element =
+                runtimeObjectLogicalElement(target, logicalIndex);
+            if (!element) {
+                addDiagnostic(
+                    instruction,
+                    "object array member access could not map an element");
+                return;
+            }
+            auto resolved = resolveScalarObjectMember(
+                instruction, *element);
+            if (!resolved) {
+                return;
+            }
+            if (logicalIndex == 0 && resolved->isMethodReference) {
+                resolved->receiver = target;
+                stack_.push_back(std::move(*resolved));
+                return;
+            }
+            if (logicalIndex == 0 && resolved->isBuiltinReference) {
+                stack_.push_back(builtinStackValue(
+                    resolved->builtinName, target));
+                return;
+            }
+            if (resolved->isMethodReference ||
+                resolved->isBuiltinReference ||
+                resolved->isFunctionReference ||
+                resolved->isClassReference) {
+                addDiagnostic(
+                    instruction,
+                    "object array member kind differs between elements");
+                return;
+            }
+            values.push_back(std::move(resolved->value));
+        }
+
+        if (instruction.resultCount == 0) {
+            return;
+        }
+        RuntimeValue list =
+            makeRuntimeCommaSeparatedList(std::move(values));
+        if (instruction.resultCount == 1) {
+            pushRuntime(std::move(list));
+            return;
+        }
+        std::vector<RuntimeValue> expanded;
+        appendRuntimeExpandedValues(expanded, list);
+        if (expanded.size() !=
+            static_cast<size_t>(instruction.resultCount)) {
+            addDiagnostic(
+                instruction,
+                "object property produced " +
+                    std::to_string(expanded.size()) +
+                    " comma-separated values for " +
+                    std::to_string(instruction.resultCount) +
+                    " outputs");
+            return;
+        }
+        for (auto& value : expanded) {
+            pushRuntime(std::move(value));
+        }
+    }
+
     void memberAccessResolved(const BytecodeInstruction& instruction) {
         const auto target = popStackValue(instruction, "member access target");
         if (!target) {
@@ -7637,6 +7962,11 @@ private:
             }
             stack_.push_back(runtimeStackValue(metadataMemberValue(
                 instruction, target->value, instruction.operand)));
+            return;
+        }
+        if (isRuntimeClassObject(target->value) &&
+            !isRuntimeScalarObject(target->value)) {
+            memberAccessObjectArray(instruction, target->value);
             return;
         }
         const bool builtInListener =
@@ -7887,6 +8217,14 @@ private:
                           "metadata properties are read-only: " +
                               updated.className + "." +
                               instruction.operand);
+            return;
+        }
+        if (isRuntimeClassObject(updated) &&
+            !isRuntimeScalarObject(updated)) {
+            addDiagnostic(
+                instruction,
+                "property assignment requires a scalar object target; "
+                "index object array elements explicitly");
             return;
         }
         if (updated.className == kEventDataClassName ||
@@ -8230,11 +8568,31 @@ private:
             currentFrame()[instruction.operand] = std::move(updated);
             return;
         }
+        if (isRuntimeClassObject(*target)) {
+            auto result = instruction.nullAssignment
+                              ? runtimeDeleteObjectIndexed(
+                                    *target, arguments,
+                                    instruction.colonSubscripts,
+                                    objectArrayPolicy(instruction))
+                              : runtimeAssignObjectIndexed(
+                                    *target, arguments, single.value,
+                                    objectArrayPolicy(instruction));
+            if (!result.succeeded) {
+                if (!result.error.empty()) {
+                    addDiagnostic(instruction,
+                                  "bytecode " + result.error);
+                }
+                return;
+            }
+            recordAssignment(instruction, "index", result.value);
+            currentFrame()[instruction.operand] = std::move(result.value);
+            return;
+        }
         if (!isNumeric(*target) || !isNumeric(single.value)) {
             addDiagnostic(
                 instruction,
                 "bytecode indexed assignment requires compatible numeric, "
-                "Cell, or structure values");
+                "Cell, structure, text, or object values");
             return;
         }
 
@@ -8362,6 +8720,22 @@ private:
             if (isObject(*left) && isObject(*right) &&
                 (instruction.operand == "==" ||
                  instruction.operand == "~=")) {
+                if (isRuntimeClassObject(*left) &&
+                    isRuntimeClassObject(*right)) {
+                    auto compared = runtimeCompareObjectArrays(
+                        *left, *right, instruction.operand == "~=",
+                        [](const RuntimeValue& leftElement,
+                           const RuntimeValue& rightElement) {
+                            return runtimeEqual(leftElement, rightElement);
+                        });
+                    if (!compared.succeeded) {
+                        addDiagnostic(instruction,
+                                      "bytecode " + compared.error);
+                        return;
+                    }
+                    pushRuntime(std::move(compared.value));
+                    return;
+                }
                 const bool equal = runtimeEqual(*left, *right);
                 pushRuntime(
                     logicalValue((instruction.operand == "==") == equal));
@@ -8427,14 +8801,16 @@ private:
             return;
         }
 
-        if (isRuntimeTextValue(*value)) {
+        if (isRuntimeTextValue(*value) || isCell(*value) ||
+            isRuntimeClassObject(*value)) {
             if (runtimeDimensionCount(*value) > 2) {
                 addDiagnostic(instruction,
-                              "bytecode transpose requires a two-dimensional text array");
+                              "bytecode transpose requires a two-dimensional array");
                 return;
             }
             auto result = runtimeArrayOperationBuiltin(
-                "permute", {*value, vectorValue({2.0, 1.0})});
+                "permute", {*value, vectorValue({2.0, 1.0})},
+                objectArrayPolicy(instruction));
             if (!result.succeeded) {
                 addDiagnostic(instruction,
                               "bytecode " + result.error);
@@ -8444,7 +8820,9 @@ private:
             return;
         }
 
-        addDiagnostic(instruction, "bytecode transpose requires numeric input");
+        addDiagnostic(
+            instruction,
+            "bytecode transpose requires numeric, text, cell, or object input");
     }
 
     void makeMatrixRow(const BytecodeInstruction& instruction) {
@@ -8454,7 +8832,8 @@ private:
             return;
         }
         const auto values = runtimeExpandedValues(*rawValues);
-        auto result = runtimeArrayOperationBuiltin("horzcat", values);
+        auto result = runtimeArrayOperationBuiltin(
+            "horzcat", values, objectArrayPolicy(instruction));
         if (!result.succeeded) {
             addDiagnostic(instruction, "bytecode " + result.error);
             return;
@@ -8474,7 +8853,8 @@ private:
             return;
         }
 
-        auto result = runtimeArrayOperationBuiltin("vertcat", rows);
+        auto result = runtimeArrayOperationBuiltin(
+            "vertcat", rows, objectArrayPolicy(instruction));
         if (!result.succeeded) {
             addDiagnostic(instruction, "bytecode " + result.error);
             return;
@@ -8664,11 +9044,12 @@ private:
             !isRuntimeTextValue(callee->value) &&
             callee->value.kind != RuntimeValueKind::Struct &&
             callee->value.kind != RuntimeValueKind::Cell &&
+            !isRuntimeClassObject(callee->value) &&
             !isRuntimeMetadataObject(callee->value)) {
             finishIndexContext();
             addDiagnostic(instruction,
                           "bytecode indexing requires a numeric, text, cell, "
-                          "structure, or metadata target");
+                          "structure, object, or metadata target");
             return;
         }
         BytecodeCallSiteProfile* profile = nullptr;
@@ -8884,7 +9265,7 @@ private:
                       klass->second.superclasses.end(),
                       instruction.operand) ==
                 klass->second.superclasses.end() ||
-            isBuiltinHandleSuperclass(instruction.operand)) {
+            isBuiltinNonExecutableSuperclass(instruction.operand)) {
             addDiagnostic(
                 instruction,
                 "superclass constructor is not a direct executable "
@@ -10088,6 +10469,26 @@ private:
     }
 
     RuntimeValue eventListenerIsValid(const RuntimeValue& value) const {
+        if (isRuntimeClassObject(value) &&
+            !isRuntimeScalarObject(value)) {
+            std::vector<double> valid;
+            valid.reserve(runtimeObjectElementCount(value));
+            for (size_t logicalIndex = 0;
+                 logicalIndex < runtimeObjectElementCount(value);
+                 ++logicalIndex) {
+                const auto* element =
+                    runtimeObjectLogicalElement(value, logicalIndex);
+                if (!element) {
+                    return logicalValue(false);
+                }
+                const RuntimeValue scalar = eventListenerIsValid(*element);
+                valid.push_back(scalar.number);
+            }
+            const auto result = runtimeNumericValueFromLogicalOrder(
+                runtimeDimensions(value), std::move(valid),
+                RuntimeNumericClass::Logical);
+            return result.value_or(logicalValue(false));
+        }
         if (runtimeMetadataKind(value) ==
             RuntimeMetadataKind::DynamicProperty) {
             return logicalValue(dynamicPropertyIsValid(value));
@@ -10122,7 +10523,7 @@ private:
             destructors.push_back(&destructor->second);
         }
         for (const auto& superclass : klass->second.superclasses) {
-            if (!isBuiltinHandleSuperclass(superclass)) {
+            if (!isBuiltinNonExecutableSuperclass(superclass)) {
                 collectClassDestructors(superclass, visited,
                                         destructors);
             }
@@ -10286,6 +10687,41 @@ private:
             (void)callFunctionInfo(
                 instruction, method->declaringClass + ".delete",
                 *method, {source}, 0, std::nullopt, nullptr, false);
+            return;
+        }
+        if (isRuntimeClassObject(source) &&
+            !isRuntimeScalarObject(source)) {
+            if (!source.handleObject) {
+                addDiagnostic(instruction,
+                              "delete expects handle objects");
+                return;
+            }
+            if (classDestructor &&
+                !hasMemberAccess(method->access,
+                                 method->declaringClass)) {
+                addDiagnostic(instruction,
+                              "method access is denied: " +
+                                  method->declaringClass + ".delete");
+                return;
+            }
+            for (size_t logicalIndex = 0;
+                 logicalIndex < runtimeObjectElementCount(source);
+                 ++logicalIndex) {
+                const auto* element =
+                    runtimeObjectLogicalElement(source, logicalIndex);
+                if (!element) {
+                    addDiagnostic(
+                        instruction,
+                        "delete could not map an object array element");
+                    return;
+                }
+                if (element->className == kEventListenerClassName ||
+                    element->className == kPropertyListenerClassName) {
+                    deleteEventListener(instruction, {*element});
+                } else {
+                    destroyHandleObject(instruction, *element);
+                }
+            }
             return;
         }
         if (!source.handleObject || !source.sharedFields) {
@@ -10604,6 +11040,7 @@ private:
             } else if (
                 arguments.size() == 1 &&
                 isObject(arguments.front()) &&
+                isRuntimeScalarObject(arguments.front()) &&
                 (arguments.front().className ==
                      kEventListenerClassName ||
                  arguments.front().className ==
@@ -11750,7 +12187,7 @@ private:
         if (constructor == klass->second.declaredMethods.end()) {
             bool passedArguments = false;
             for (const auto& superclassName : klass->second.superclasses) {
-                if (isBuiltinHandleSuperclass(superclassName)) {
+                if (isBuiltinNonExecutableSuperclass(superclassName)) {
                     continue;
                 }
                 const std::vector<RuntimeValue> superclassArguments =
@@ -11791,7 +12228,7 @@ private:
             constructor->second.explicitSuperclassConstructors.end());
         const size_t diagnosticCount = diagnostics_.size();
         for (const auto& superclassName : klass->second.superclasses) {
-            if (isBuiltinHandleSuperclass(superclassName) ||
+            if (isBuiltinNonExecutableSuperclass(superclassName) ||
                 explicitSuperclasses.contains(superclassName)) {
                 continue;
             }
@@ -11822,7 +12259,7 @@ private:
         }
 
         for (const auto& superclassName : klass->second.superclasses) {
-            if (isBuiltinHandleSuperclass(superclassName)) {
+            if (isBuiltinNonExecutableSuperclass(superclassName)) {
                 continue;
             }
             if (!construction.initializedClasses.contains(superclassName)) {
@@ -11886,8 +12323,8 @@ private:
         }
         if (invocationReceiver && invocationReceiver->handleObject &&
             methodName != "delete" &&
-            !requireUsableHandleObject(instruction,
-                                       *invocationReceiver)) {
+            !requireUsableHandleValue(instruction,
+                                      *invocationReceiver)) {
             return missingOutputs(requestedCount);
         }
         std::vector<RuntimeValue> callArguments = arguments;
@@ -11921,7 +12358,12 @@ private:
                                   declaringClass + ".delete");
                 return missingOutputs(requestedCount);
             }
-            destroyHandleObject(instruction, *destructionTarget);
+            if (isRuntimeClassObject(*destructionTarget) &&
+                !isRuntimeScalarObject(*destructionTarget)) {
+                deleteRuntimeObject(instruction, {*destructionTarget});
+            } else {
+                destroyHandleObject(instruction, *destructionTarget);
+            }
             return {};
         }
         return callFunctionInfo(instruction,
@@ -12156,7 +12598,8 @@ private:
             return numberValue(elapsed.count());
         }
         if (isRuntimeArrayOperationBuiltin(name)) {
-            auto result = runtimeArrayOperationBuiltin(name, arguments);
+            auto result = runtimeArrayOperationBuiltin(
+                name, arguments, objectArrayPolicy(instruction));
             if (!result.succeeded) {
                 addDiagnostic(instruction, "bytecode " + result.error);
                 return missingValue();
@@ -12305,6 +12748,19 @@ private:
                 return missingValue();
             }
             return characterValue(runtimeValueClassName(arguments.front()));
+        }
+        if (name == "isequal") {
+            if (arguments.size() < 2) {
+                addDiagnostic(instruction,
+                              "bytecode isequal expects at least two arguments");
+                return missingValue();
+            }
+            const bool equal = std::all_of(
+                arguments.begin() + 1, arguments.end(),
+                [&](const RuntimeValue& value) {
+                    return runtimeEqual(arguments.front(), value);
+                });
+            return logicalValue(equal);
         }
         if (name == "isa") {
             if (arguments.size() != 2 || !isString(arguments[1])) {
@@ -12745,10 +13201,19 @@ private:
             }
             return std::move(result.value);
         }
+        if (isRuntimeClassObject(target)) {
+            auto result = runtimeIndexObject(
+                target, arguments, objectArrayPolicy(instruction));
+            if (!result.succeeded) {
+                addDiagnostic(instruction, "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
         if (!isNumeric(target)) {
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric, cell, or "
-                          "structure target");
+                          "bytecode indexing requires a numeric, cell, "
+                          "structure, text, or object target");
             return missingValue();
         }
         auto result = runtimeIndexNumeric(target, arguments);

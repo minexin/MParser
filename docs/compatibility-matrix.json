@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.75.0",
+  "version": "0.76.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -67,7 +67,7 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
       "evidence": ["nd_array_smoke", "array_transform_smoke", "array_assignment_bytecode_cli_smoke"],
       "sources": ["src/mparser/runtime_shape.cpp", "src/mparser/runtime_index.cpp", "src/mparser/runtime_assignment.cpp"],
-      "limits": "Complex, sparse, integer-width, categorical, table, object-array, and GPU storage classes are not represented."
+      "limits": "Complex, sparse, integer-width, categorical, table, and GPU numeric storage classes are not represented. Object arrays use the separate CLASS-006 contract."
     },
     {
       "id": "ARR-002",
@@ -175,9 +175,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["class_runtime_smoke", "class_inheritance_smoke", "superclass_construction_smoke", "class_access_policy_smoke"],
-      "sources": ["src/mparser/bytecode_vm.cpp", "tests/class_runtime_smoke.cpp"],
-      "limits": "Object arrays, heterogeneous arrays, mixins beyond the declared subset, and all MATLAB constructor-order edge cases remain open."
+      "evidence": ["class_runtime_smoke", "class_inheritance_smoke", "superclass_construction_smoke", "class_access_policy_smoke", "object_array_vm_smoke"],
+      "sources": ["src/mparser/bytecode_vm.cpp", "src/mparser/runtime_object.cpp", "tests/class_runtime_smoke.cpp", "tests/object_array_vm_smoke.cpp"],
+      "limits": "v0.76 adds value, handle, and matlab.mixin.Heterogeneous arrays. Mixins beyond the declared subset, getDefaultScalarElement/convertObject hooks, ordinary class-dominance conversion, and every MATLAB constructor-order edge remain open."
     },
     {
       "id": "CLASS-003",
@@ -188,7 +188,7 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
       "evidence": ["property_validation_smoke", "property_listener_smoke", "class_property_identity_smoke"],
       "sources": ["src/mparser/property_spec.h", "src/mparser/bytecode_vm.cpp", "tests/property_validation_smoke.cpp"],
-      "limits": "v0.72 supports nested scalar value/handle property copy-back in the VM; object arrays and every MATLAB validation conversion class are not complete."
+      "limits": "v0.76 adds logical-order property comma-separated lists, whole-array method receivers, and indexed scalar value/handle copy-back. MATLAB-style direct nonscalar property assignment is rejected; general comma-separated assignment distribution and every MATLAB validation conversion class are not complete."
     },
     {
       "id": "CLASS-004",
@@ -197,9 +197,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["event_listener_smoke", "property_listener_smoke", "dynamic_property_smoke", "handle_lifecycle_smoke"],
+      "evidence": ["event_listener_smoke", "property_listener_smoke", "dynamic_property_smoke", "handle_lifecycle_smoke", "object_array_vm_smoke"],
       "sources": ["src/mparser/bytecode_vm.cpp", "tests/handle_lifecycle_smoke.cpp"],
-      "limits": "Automatic reachability destruction, cyclic collection, listener arrays, and every event-data subclass behavior remain open."
+      "limits": "v0.76 applies explicit delete and isvalid elementwise to handle arrays and skips repeated aliases. Automatic reachability destruction, cyclic collection, nonscalar event registration/notification, and every event-data subclass behavior remain open."
     },
     {
       "id": "CLASS-005",
@@ -211,6 +211,17 @@
       "evidence": ["class_metadata_smoke", "function_metadata_smoke", "dynamic_property_smoke"],
       "sources": ["src/mparser/runtime_metadata.cpp", "tests/class_metadata_smoke.cpp"],
       "limits": "Reflection is a declared subset and does not yet expose the complete MATLAB meta.* graph."
+    },
+    {
+      "id": "CLASS-006",
+      "area": "classdef",
+      "feature": "Value, handle, and matlab.mixin.Heterogeneous object arrays with shared shape, indexing, mutation, transform, dispatch, and lifetime rules",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["object_array_runtime_smoke", "object_array_vm_smoke", "object_array_bytecode_cli_smoke", "object_array_production_cli_smoke", "handle_lifecycle_smoke"],
+      "sources": ["src/mparser/runtime_value.h", "src/mparser/runtime_object.cpp", "src/mparser/runtime_lvalue.cpp", "src/mparser/runtime_array_ops.cpp", "src/mparser/bytecode_vm.cpp", "tests/object_array_runtime_smoke.cpp", "tests/object_array_vm_smoke.cpp", "samples/object_array_demo.m"],
+      "limits": "v0.76 covers scalar-fast and nonscalar storage, empty/logical/vector/N-dimensional indexing, transactional assignment and default-filled growth, deletion, concatenation/transforms, value copy-back, handle aliases and explicit lifecycle, property lists, whole-array methods, most-specific heterogeneous classes, display, equality, and guarded VM fallback. Default constructors currently run once per missing element; getDefaultScalarElement, convertObject, ordinary class conversion/dominance, custom indexing/concatenation overrides, automatic destruction, and a stable external object ABI remain open."
     },
     {
       "id": "BUILTIN-001",
@@ -390,11 +401,11 @@
       "id": "G-CLASS-001",
       "area": "classdef",
       "priority": "must-have",
-      "state": "open",
+      "state": "closed",
       "target": "v0.76",
       "framework_impact": "representation-change",
       "requirement": "Define object arrays, heterogeneous arrays, value copy-back, constructor array behavior, and object lifetime boundaries.",
-      "exit_evidence": "Value/handle/object-array tests covering copy, mutation, deletion, listeners, and metadata."
+      "exit_evidence": "object_array_runtime_smoke and object_array_vm_smoke cover physical/logical layout, empty/logical/N-dimensional indexing, repeated assignment, transactional growth and rollback, deletion, transforms, value copy-back, handle aliasing/validity/destruction, property lists, whole-array methods, heterogeneous class resolution/narrowing, and negative class/property cases; bytecode and production CLI gates run object_array_demo.m with summary 14."
     },
     {
       "id": "G-REFLECT-001",

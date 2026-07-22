@@ -1,6 +1,7 @@
 #include "mparser/runtime_array_ops.h"
 
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_object.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 
@@ -32,7 +33,7 @@ bool isCell(const RuntimeValue& value) {
 
 bool isSupportedArray(const RuntimeValue& value) {
     return isNumeric(value) || isCell(value) ||
-           isRuntimeTextValue(value);
+           isRuntimeTextValue(value) || isRuntimeClassObject(value);
 }
 
 RuntimeArrayOperationResult failure(std::string message) {
@@ -141,12 +142,14 @@ std::optional<size_t> repetitionFactor(double raw) {
 }
 
 RuntimeArrayOperationResult reshapeBuiltin(
-    const std::vector<RuntimeValue>& arguments) {
+    const std::vector<RuntimeValue>& arguments,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (arguments.size() < 2) {
         return failure("reshape expects an array and at least two dimensions");
     }
     if (!isSupportedArray(arguments.front())) {
-        return failure("reshape supports numeric, text, and cell arrays");
+        return failure(
+            "reshape supports numeric, text, cell, and object arrays");
     }
 
     std::vector<std::optional<size_t>> requested;
@@ -230,7 +233,8 @@ RuntimeArrayOperationResult reshapeBuiltin(
         }
     }
 
-    return runtimeReshapeValue(arguments.front(), std::move(dimensions));
+    return runtimeReshapeValue(
+        arguments.front(), std::move(dimensions), objectPolicy);
 }
 
 std::optional<std::vector<size_t>> permutationOrder(
@@ -268,9 +272,11 @@ std::optional<std::vector<size_t>> permutationOrder(
 }
 
 RuntimeArrayOperationResult permuteValue(
-    const RuntimeValue& value, const std::vector<size_t>& order) {
+    const RuntimeValue& value, const std::vector<size_t>& order,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (!isSupportedArray(value)) {
-        return failure("permute supports numeric, text, and cell arrays");
+        return failure(
+            "permute supports numeric, text, cell, and object arrays");
     }
 
     auto sourceDimensions = runtimeDimensions(value);
@@ -352,6 +358,33 @@ RuntimeArrayOperationResult permuteValue(
             outputDimensions, std::move(elements)));
     }
 
+    if (isRuntimeClassObject(value)) {
+        std::vector<RuntimeValue> elements(*count);
+        for (size_t sourceOffset = 0; sourceOffset < *count;
+             ++sourceOffset) {
+            const auto sourceCoordinates = runtimeRowMajorCoordinates(
+                sourceOffset, sourceDimensions);
+            std::vector<size_t> outputCoordinates(order.size(), 0);
+            for (size_t index = 0; index < order.size(); ++index) {
+                outputCoordinates[index] =
+                    sourceCoordinates[order[index] - 1];
+            }
+            const auto outputOffset = runtimeRowMajorStorageOffset(
+                outputCoordinates, outputDimensions);
+            const auto* element = runtimeObjectElement(value, sourceOffset);
+            if (!outputOffset || !element) {
+                return failure("permute could not map an object element");
+            }
+            elements[*outputOffset] = *element;
+        }
+        auto result = runtimeMakeObjectArrayFromStorageOrder(
+            std::move(elements), outputDimensions, value.className,
+            value.handleObject, objectPolicy, value.className);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+
     std::vector<RuntimeValue> cells(*count);
     for (size_t sourceOffset = 0; sourceOffset < *count; ++sourceOffset) {
         const auto sourceCoordinates = runtimeRowMajorCoordinates(
@@ -371,7 +404,8 @@ RuntimeArrayOperationResult permuteValue(
 }
 
 RuntimeArrayOperationResult permutationBuiltin(
-    std::string_view name, const std::vector<RuntimeValue>& arguments) {
+    std::string_view name, const std::vector<RuntimeValue>& arguments,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (arguments.size() != 2 || !isSupportedArray(arguments.front())) {
         return failure(std::string(name) +
                        " expects an array and a dimension order");
@@ -388,13 +422,15 @@ RuntimeArrayOperationResult permutationBuiltin(
         }
         order = std::move(inverse);
     }
-    return permuteValue(arguments.front(), *order);
+    return permuteValue(arguments.front(), *order, objectPolicy);
 }
 
 RuntimeArrayOperationResult squeezeBuiltin(
-    const std::vector<RuntimeValue>& arguments) {
+    const std::vector<RuntimeValue>& arguments,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (arguments.size() != 1 || !isSupportedArray(arguments.front())) {
-        return failure("squeeze expects one numeric, text, or cell array");
+        return failure(
+            "squeeze expects one numeric, text, cell, or object array");
     }
     const auto dimensions = runtimeDimensions(arguments.front());
     if (dimensions.size() <= 2) {
@@ -412,7 +448,8 @@ RuntimeArrayOperationResult squeezeBuiltin(
     } else if (squeezed.size() == 1) {
         squeezed.push_back(1);
     }
-    return runtimeReshapeValue(arguments.front(), std::move(squeezed));
+    return runtimeReshapeValue(
+        arguments.front(), std::move(squeezed), objectPolicy);
 }
 
 std::optional<std::vector<size_t>> repetitionFactors(
@@ -465,9 +502,11 @@ std::optional<std::vector<size_t>> repetitionFactors(
 }
 
 RuntimeArrayOperationResult repmatBuiltin(
-    const std::vector<RuntimeValue>& arguments) {
+    const std::vector<RuntimeValue>& arguments,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (arguments.empty() || !isSupportedArray(arguments.front())) {
-        return failure("repmat supports numeric, text, and cell arrays");
+        return failure(
+            "repmat supports numeric, text, cell, and object arrays");
     }
     std::string error;
     const auto parsedFactors = repetitionFactors(arguments, error);
@@ -571,6 +610,38 @@ RuntimeArrayOperationResult repmatBuiltin(
             outputDimensions, std::move(elements)));
     }
 
+    if (isRuntimeClassObject(arguments.front())) {
+        std::vector<RuntimeValue> elements(*outputCount);
+        for (size_t outputOffset = 0; outputOffset < *outputCount;
+             ++outputOffset) {
+            const auto outputCoordinates = runtimeRowMajorCoordinates(
+                outputOffset, outputDimensions);
+            std::vector<size_t> sourceCoordinates(dimensionCount, 0);
+            for (size_t index = 0; index < dimensionCount; ++index) {
+                sourceCoordinates[index] =
+                    outputCoordinates[index] % sourceDimensions[index];
+            }
+            const auto sourceOffset = runtimeRowMajorStorageOffset(
+                sourceCoordinates, sourceDimensions);
+            const auto* element = sourceOffset
+                                      ? runtimeObjectElement(
+                                            arguments.front(), *sourceOffset)
+                                      : nullptr;
+            if (!sourceOffset || !element) {
+                return failure("repmat could not map an object element");
+            }
+            elements[outputOffset] = *element;
+        }
+        auto result = runtimeMakeObjectArrayFromStorageOrder(
+            std::move(elements), outputDimensions,
+            arguments.front().className,
+            arguments.front().handleObject, objectPolicy,
+            arguments.front().className);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+
     std::vector<RuntimeValue> cells(*outputCount);
     for (size_t outputOffset = 0; outputOffset < *outputCount;
          ++outputOffset) {
@@ -592,7 +663,8 @@ RuntimeArrayOperationResult repmatBuiltin(
 }
 
 RuntimeArrayOperationResult concatenate(
-    size_t dimension, const std::vector<RuntimeValue>& values) {
+    size_t dimension, const std::vector<RuntimeValue>& values,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (values.empty()) {
         return failure("concatenation requires at least one array");
     }
@@ -609,7 +681,7 @@ RuntimeArrayOperationResult concatenate(
             return success(values.front());
         }
         if (nonempty.size() != values.size()) {
-            return concatenate(dimension, nonempty);
+            return concatenate(dimension, nonempty, objectPolicy);
         }
     }
     const bool text = isRuntimeTextValue(values.front());
@@ -621,6 +693,20 @@ RuntimeArrayOperationResult concatenate(
                 "concatenation inputs must have compatible types");
         }
         auto result = runtimeConcatenateText(dimension, values);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    const bool objects = isRuntimeClassObject(values.front());
+    if (objects || std::any_of(values.begin(), values.end(),
+                               isRuntimeClassObject)) {
+        if (!std::all_of(values.begin(), values.end(),
+                         isRuntimeClassObject)) {
+            return failure(
+                "concatenation inputs must have compatible types");
+        }
+        auto result = runtimeConcatenateObject(
+            dimension, values, objectPolicy);
         return result.succeeded
                    ? success(std::move(result.value))
                    : failure(std::move(result.error));
@@ -737,7 +823,8 @@ RuntimeArrayOperationResult concatenate(
 }
 
 RuntimeArrayOperationResult concatenateBuiltin(
-    std::string_view name, const std::vector<RuntimeValue>& arguments) {
+    std::string_view name, const std::vector<RuntimeValue>& arguments,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (name == "cat") {
         if (arguments.size() < 2 || !isNumber(arguments.front())) {
             return failure("cat expects a positive dimension and arrays");
@@ -749,9 +836,11 @@ RuntimeArrayOperationResult concatenateBuiltin(
         return concatenate(
             *dimension,
             std::vector<RuntimeValue>(arguments.begin() + 1,
-                                      arguments.end()));
+                                      arguments.end()),
+            objectPolicy);
     }
-    return concatenate(name == "vertcat" ? 1 : 2, arguments);
+    return concatenate(
+        name == "vertcat" ? 1 : 2, arguments, objectPolicy);
 }
 
 } // namespace
@@ -764,29 +853,32 @@ bool isRuntimeArrayOperationBuiltin(std::string_view name) {
 }
 
 RuntimeArrayOperationResult runtimeArrayOperationBuiltin(
-    std::string_view name, const std::vector<RuntimeValue>& arguments) {
+    std::string_view name, const std::vector<RuntimeValue>& arguments,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (name == "reshape") {
-        return reshapeBuiltin(arguments);
+        return reshapeBuiltin(arguments, objectPolicy);
     }
     if (name == "permute" || name == "ipermute") {
-        return permutationBuiltin(name, arguments);
+        return permutationBuiltin(name, arguments, objectPolicy);
     }
     if (name == "squeeze") {
-        return squeezeBuiltin(arguments);
+        return squeezeBuiltin(arguments, objectPolicy);
     }
     if (name == "repmat") {
-        return repmatBuiltin(arguments);
+        return repmatBuiltin(arguments, objectPolicy);
     }
     if (name == "cat" || name == "horzcat" || name == "vertcat") {
-        return concatenateBuiltin(name, arguments);
+        return concatenateBuiltin(name, arguments, objectPolicy);
     }
     return failure("unknown array operation builtin");
 }
 
 RuntimeArrayOperationResult runtimeReshapeValue(
-    const RuntimeValue& value, std::vector<size_t> dimensions) {
+    const RuntimeValue& value, std::vector<size_t> dimensions,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
     if (!isSupportedArray(value)) {
-        return failure("reshape supports numeric, text, and cell arrays");
+        return failure(
+            "reshape supports numeric, text, cell, and object arrays");
     }
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
     const auto count = checkedRuntimeDimensionProduct(dimensions);
@@ -868,6 +960,27 @@ RuntimeArrayOperationResult runtimeReshapeValue(
         }
         return success(makeRuntimeStringArray(
             dimensions, std::move(elements)));
+    }
+
+    if (isRuntimeClassObject(value)) {
+        std::vector<RuntimeValue> elements;
+        elements.reserve(*count);
+        for (size_t logicalIndex = 0; logicalIndex < *count;
+             ++logicalIndex) {
+            const auto* element =
+                runtimeObjectLogicalElement(value, logicalIndex);
+            if (!element) {
+                return failure(
+                    "reshape could not preserve logical object order");
+            }
+            elements.push_back(*element);
+        }
+        auto result = runtimeMakeObjectArrayFromLogicalOrder(
+            std::move(elements), dimensions, value.className,
+            value.handleObject, objectPolicy, value.className);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
     }
 
     std::vector<RuntimeValue> cells(*count);

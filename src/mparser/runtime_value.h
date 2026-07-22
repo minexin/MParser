@@ -71,6 +71,7 @@ struct RuntimeValue {
   std::string enumerationMemberName;
   std::map<std::string, RuntimeValue> fields;
   std::vector<std::map<std::string, RuntimeValue>> structElements;
+  std::vector<RuntimeValue> objectElements;
   std::vector<std::string> fieldOrder;
   std::shared_ptr<std::map<std::string, RuntimeValue>> sharedFields;
   std::shared_ptr<RuntimeFunctionHandle> functionHandle;

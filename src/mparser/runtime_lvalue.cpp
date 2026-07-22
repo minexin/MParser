@@ -4,6 +4,7 @@
 #include "mparser/runtime_cell.h"
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
+#include "mparser/runtime_object.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
 #include "mparser/runtime_value_ops.h"
@@ -82,6 +83,13 @@ RuntimeLvalueOperationResult readSegment(
         }
         if (isRuntimeTextValue(parent)) {
             auto result = runtimeIndexText(parent, segment.subscripts);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
+        if (isRuntimeClassObject(parent)) {
+            auto result = runtimeIndexObject(
+                parent, segment.subscripts, hooks.objectArrays);
             return result.succeeded
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
@@ -176,6 +184,19 @@ RuntimeLvalueOperationResult writeSegment(
                        ? success(std::move(parent))
                        : failure(std::move(result.error));
         }
+        if (isRuntimeClassObject(parent)) {
+            auto result = nullAssignment
+                              ? runtimeDeleteObjectIndexed(
+                                    parent, segment.subscripts,
+                                    segment.colonSubscripts,
+                                    hooks.objectArrays)
+                              : runtimeAssignObjectIndexed(
+                                    parent, segment.subscripts, value,
+                                    hooks.objectArrays);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
         if (nullAssignment) {
             auto result = runtimeDeleteNumericIndexed(
                 parent, segment.subscripts, segment.colonSubscripts);
@@ -238,6 +259,15 @@ RuntimeLvalueOperationResult RuntimeLvalueTransaction::descend(
         segment.kind == RuntimeLvalueSegmentKind::Parenthesis) {
         auto capacity = runtimeEnsureStructIndexedCapacity(
             parent, segment.subscripts);
+        if (!capacity.succeeded) {
+            return failure(std::move(capacity.error));
+        }
+        parent = std::move(capacity.value);
+    }
+    if (isRuntimeClassObject(parent) &&
+        segment.kind == RuntimeLvalueSegmentKind::Parenthesis) {
+        auto capacity = runtimeEnsureObjectIndexedCapacity(
+            parent, segment.subscripts, hooks.objectArrays);
         if (!capacity.succeeded) {
             return failure(std::move(capacity.error));
         }

@@ -262,10 +262,23 @@ function families, not an unbounded builtin count.
 - Close `G-TEXT-001` with differential runtime tests, all public CLI modes,
   a runnable sample, portable-only validation, and focused AArch64 evidence.
 
-### v0.76-v0.79: Remaining Runtime Foundations
+### v0.76: Object Array Runtime Contracts
 
-- Close the audited Must-have text, object-array/reflection, workspace, and
-  remaining runtime-value boundaries with linked compatibility evidence.
+- Add one shared object-array storage and operation boundary for value and
+  handle classes, with column-major indexing over portable row-major payloads.
+- Execute indexed selection, assignment, default-filled growth, deletion,
+  concatenation, array transforms, value copy-back, handle identity, explicit
+  lifecycle operations, and object-aware display.
+- Support `matlab.mixin.Heterogeneous` class roots and most-specific common
+  superclass resolution without silently mixing ordinary unrelated classes.
+- Close `G-CLASS-001` with direct runtime tests, end-to-end bytecode tests, a
+  production sample, typed/native fallback evidence, portable-only validation,
+  and focused AArch64 execution.
+
+### v0.77-v0.79: Remaining Runtime Foundations
+
+- Close the audited Must-have reflection, workspace, and remaining
+  runtime-value boundaries with linked compatibility evidence.
 - Freeze the engine-facing value, shape, indexing, call-frame, output-count,
   diagnostic, and fallback contracts needed by the v0.80 extension layer.
 

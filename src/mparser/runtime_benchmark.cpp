@@ -1,5 +1,6 @@
 #include "mparser/runtime_benchmark.h"
 #include "mparser/optimization_plan.h"
+#include "mparser/runtime_object.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/typed_ir.h"
@@ -98,6 +99,31 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
         }
         return true;
     case RuntimeValueKind::Object: {
+        if (isRuntimeClassObject(left) &&
+            isRuntimeClassObject(right) &&
+            (!isRuntimeScalarObject(left) ||
+             !isRuntimeScalarObject(right))) {
+            if (left.className != right.className ||
+                left.handleObject != right.handleObject ||
+                runtimeObjectElementCount(left) !=
+                    runtimeObjectElementCount(right)) {
+                return false;
+            }
+            for (size_t logicalIndex = 0;
+                 logicalIndex < runtimeObjectElementCount(left);
+                 ++logicalIndex) {
+                const auto* leftElement =
+                    runtimeObjectLogicalElement(left, logicalIndex);
+                const auto* rightElement =
+                    runtimeObjectLogicalElement(right, logicalIndex);
+                if (!leftElement || !rightElement ||
+                    !runtimeValuesEqualImpl(
+                        *leftElement, *rightElement, comparedHandles)) {
+                    return false;
+                }
+            }
+            return true;
+        }
         const auto& leftFields = objectFields(left);
         const auto& rightFields = objectFields(right);
         if (left.className != right.className ||

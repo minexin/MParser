@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mparser/runtime_value.h"
+#include "mparser/runtime_object.h"
 
 #include <functional>
 #include <optional>
@@ -38,6 +38,7 @@ using RuntimeObjectMemberWriter = std::function<
 struct RuntimeLvalueHooks {
     RuntimeObjectMemberReader readObjectMember;
     RuntimeObjectMemberWriter writeObjectMember;
+    RuntimeObjectArrayPolicy objectArrays;
 };
 
 class RuntimeLvalueTransaction {

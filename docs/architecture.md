@@ -378,6 +378,44 @@ order while retaining row-major physical payloads. Typed/native recognition
 does not lower text operations and falls back to the bytecode VM before
 mutation or output publication.
 
+Object arrays use the same visible shape contract through `runtime_object`, but
+retain scalar objects as the established fast representation. A nonscalar
+object stores scalar `RuntimeValue` elements in row-major physical order;
+`runtimeObjectLogicalElement` and the shared index-selection planner perform
+all MATLAB-visible column-major mapping. Empty arrays retain class, handle/value
+category, and dimensions without manufacturing placeholder elements. Metadata
+and `MException` objects remain outside this class-object path.
+
+The object-array policy supplied by the bytecode VM owns two class-dependent
+operations: resolving a most-specific common class and invoking a default
+constructor for growth. Ordinary arrays require one exact class. A hierarchy
+whose root derives from `matlab.mixin.Heterogeneous` may contain multiple
+subclasses and records their most-specific shared user superclass as the array
+class. Value and handle categories cannot mix. Failed class resolution,
+default construction, shape validation, or element assignment leaves the root
+value unchanged.
+
+Indexing, assignment, deletion, concatenation, transpose, `reshape`,
+`permute`, `ipermute`, `squeeze`, `repmat`, and `cat` reconstruct arrays from
+logical element order and therefore share one layout invariant. Value elements
+copy their field maps; handle elements retain shared field identity unless
+growth creates a distinct default element. Nonscalar property reads produce a
+comma-separated list in logical order, while methods receive the complete
+array. Direct `array.Property = value` is rejected; indexed scalar writes use
+the lvalue transaction and copy modified value objects back through the array.
+`delete` and `isvalid` traverse handle arrays elementwise and tolerate repeated
+aliases without running destruction twice.
+
+Typed/native executors accept only their declared scalar-double and dense
+linear-double inputs. An object observed at a typed boundary fails the guard or
+executor input contract before mutation and resumes in the bytecode VM. Object
+addresses and handle storage never enter native cache keys or generated code.
+The remaining object-array compatibility limits are default-constructor
+single-call side-effect equivalence, heterogeneous
+`getDefaultScalarElement`/`convertObject`, ordinary class dominance conversion,
+custom `subsref`/`subsasgn`/concatenation overrides, and automatic
+reachability-based handle destruction.
+
 VM member access is lexical rather than inherited from the dynamic caller.
 Every function invocation pushes an access frame. Methods and class-private
 helpers place their canonical class in that frame; ordinary, namespace, path,
@@ -1112,10 +1150,11 @@ The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,
 optional LLVM ORC lowering behind the same backend contract, persistent
 cross-process code caches, moving-window array operations, automatic handle
-destruction and cycle-aware ownership, object/listener arrays, a built-in
-function signature catalog, reference-interpreter class execution,
-comma-separated-list Cell semantics, and eventual on-stack replacement while
-preserving the same commit/fallback contract.
+destruction and cycle-aware ownership, nonscalar event registration and custom
+object indexing/concatenation overrides, a built-in function signature catalog,
+reference-interpreter class execution, comma-separated-list Cell semantics,
+and eventual on-stack replacement while preserving the same commit/fallback
+contract.
 
 The release gates, compatibility-matrix requirement, builtin-extension
 architecture, embedding boundary, platform matrix, and explicit v1.0

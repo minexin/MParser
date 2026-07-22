@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.75.0. See [docs/v0.75.md](docs/v0.75.md) for the
+Current milestone: v0.76.0. See [docs/v0.76.md](docs/v0.76.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.74.md](docs/v0.74.md),
+iteration plan. Previous boundaries are kept in [docs/v0.75.md](docs/v0.75.md),
+[docs/v0.74.md](docs/v0.74.md),
 [docs/v0.73.md](docs/v0.73.md),
 [docs/v0.72.md](docs/v0.72.md),
 [docs/v0.71.md](docs/v0.71.md),
@@ -741,6 +742,21 @@ type predicates, missing-string masks, and UTF-8 CLI boundaries. Validated
 `char` and `string` class properties use the same shape-preserving path. Typed
 and native tiers conservatively fall back for text values.
 
+v0.76 adds a dedicated object-array payload and shared object operation layer.
+Value and handle objects now preserve MATLAB-visible column-major indexing over
+the runtime's row-major storage, including logical/vector/N-dimensional
+selection, transactional assignment and growth, deletion, concatenation,
+transpose, reshape, permutation, squeezing, and replication. Value-object
+nested writes copy back through the lvalue transaction, while handle elements
+retain aliases and independent default-filled identities. Classes deriving
+from `matlab.mixin.Heterogeneous` form arrays whose class is the most specific
+shared superclass; ordinary unlike classes remain a diagnostic. Nonscalar
+property reads produce comma-separated lists, methods receive the whole array,
+and direct nonscalar property assignment is rejected as MATLAB requires.
+Explicit `delete` and `isvalid` operate elementwise on handle arrays. Typed and
+native tiers treat objects as unsupported optimized inputs and safely execute
+the legal code in the bytecode VM.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 distinct UTF-16 character and string arrays,
@@ -1392,6 +1408,18 @@ The demo reports `summary = 36` and is also checked through `--run-hir` and
 `--run-bytecode`. Single quotes create character arrays, double quotes create
 string scalars or arrays, and legal text code outside optimized regions falls
 back to the bytecode VM.
+
+Run value, handle, and heterogeneous object arrays through the production
+interface:
+
+```powershell
+build\mparser.exe --run samples\object_array_demo.m
+```
+
+The demo reports `summary = 14` and is also checked with `--run-bytecode`. It
+covers object growth, value-copy isolation, property lists, whole-array method
+dispatch, N-dimensional transforms, deletion, handle identity and validity,
+and most-specific heterogeneous array classes.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:

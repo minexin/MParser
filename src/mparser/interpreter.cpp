@@ -11,6 +11,7 @@
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_object.h"
 #include "mparser/runtime_range.h"
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
@@ -277,6 +278,17 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     }
     if (left.kind == RuntimeValueKind::Object &&
         right.kind == RuntimeValueKind::Object) {
+        if (isRuntimeClassObject(left) &&
+            isRuntimeClassObject(right) &&
+            (!isRuntimeScalarObject(left) ||
+             !isRuntimeScalarObject(right))) {
+            return runtimeObjectArraysEqual(
+                left, right,
+                [](const RuntimeValue& leftElement,
+                   const RuntimeValue& rightElement) {
+                    return runtimeEqual(leftElement, rightElement);
+                });
+        }
         if (!left.enumerationMemberName.empty() ||
             !right.enumerationMemberName.empty()) {
             return left.className == right.className &&
@@ -3395,6 +3407,19 @@ private:
             return FunctionCallResult{{logicalValue(
                 isStruct(arguments.front()))}};
         }
+        if (name == "isequal") {
+            if (arguments.size() < 2) {
+                addDiagnostic(node,
+                              "isequal expects at least two arguments");
+                return FunctionCallResult{{missingValue()}};
+            }
+            const bool equal = std::all_of(
+                arguments.begin() + 1, arguments.end(),
+                [&](const RuntimeValue& value) {
+                    return runtimeEqual(arguments.front(), value);
+                });
+            return FunctionCallResult{{logicalValue(equal)}};
+        }
         if (name == "double" && arguments.size() == 1 &&
             isRuntimeCharacterArray(arguments.front())) {
             auto result = runtimeCharacterCodes(arguments.front());
@@ -4122,6 +4147,15 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         output << "<" << value.className;
         if (!value.enumerationMemberName.empty()) {
             output << "." << value.enumerationMemberName;
+        } else if (!isRuntimeScalarObject(value)) {
+            const auto dimensions = runtimeDimensions(value);
+            output << " ";
+            for (size_t index = 0; index < dimensions.size(); ++index) {
+                if (index != 0) {
+                    output << "x";
+                }
+                output << dimensions[index];
+            }
         }
         output << ">";
         return output.str();

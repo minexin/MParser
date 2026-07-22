@@ -174,7 +174,7 @@ bool knownBuiltinName(std::string_view name) {
         "getReport",
         "horzcat",  "inf",      "ipermute",    "isa",      "isenum",
         "isempty",  "ischar",   "isfield",     "islogical", "ismethod",
-        "ismissing", "isprop",  "isstring",    "isStringScalar", "isstruct",
+        "isequal", "ismissing", "isprop",  "isstring",    "isStringScalar", "isstruct",
         "isvalid",  "lastwarn", "length",   "linspace",    "listener", "log",
         "logical",  "max",      "mean",        "metaclass",
         "metafunction", "methods", "min",      "nan",      "nargin",

@@ -3,6 +3,7 @@
 #include "mparser/runtime_value.h"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,9 +22,30 @@ struct RuntimeIndexOperationResult {
     std::string error;
 };
 
+struct RuntimeIndexSelectionsResult {
+    bool succeeded = false;
+    bool logicalMask = false;
+    std::vector<std::vector<size_t>> indices;
+    std::vector<size_t> effectiveDimensions;
+    std::vector<size_t> resultDimensions;
+    std::string error;
+};
+
 RuntimeIndexSelectionResult runtimeResolveIndexSelection(
     const RuntimeValue& subscript, size_t extent,
     bool allowNumericGrowth);
+
+RuntimeIndexSelectionsResult runtimeResolveIndexSelections(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool allowNumericGrowth);
+
+std::optional<size_t> runtimeIndexSelectionSourceLogicalIndex(
+    const RuntimeIndexSelectionsResult& selections,
+    size_t resultLogicalIndex);
+
+std::optional<size_t> runtimeIndexSelectionRequiredExtent(
+    const std::vector<size_t>& selection);
 
 RuntimeIndexOperationResult runtimeIndexNumeric(
     const RuntimeValue& target,

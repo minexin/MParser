@@ -44,19 +44,6 @@ nonSingletonDimensions(const std::vector<size_t>& dimensions) {
     return result;
 }
 
-std::optional<size_t>
-requiredExtent(const std::vector<size_t>& selection) {
-    if (selection.empty()) {
-        return std::nullopt;
-    }
-    const size_t maximum =
-        *std::max_element(selection.begin(), selection.end());
-    if (maximum == std::numeric_limits<size_t>::max()) {
-        return std::nullopt;
-    }
-    return maximum + 1;
-}
-
 bool growNumericTarget(RuntimeValue& target,
                        const std::vector<size_t>& oldViewDimensions,
                        std::vector<size_t> newDimensions) {
@@ -97,7 +84,7 @@ bool growNumericTarget(RuntimeValue& target,
 
 RuntimeNumericAssignmentResult ensureLinearCapacity(
     RuntimeValue& target, const std::vector<size_t>& indices) {
-    const auto extent = requiredExtent(indices);
+    const auto extent = runtimeIndexSelectionRequiredExtent(indices);
     if (!extent || *extent <= runtimeShapeElementCount(target)) {
         return success();
     }
@@ -143,7 +130,8 @@ RuntimeNumericAssignmentResult ensureSubscriptCapacity(
     extents.reserve(selections.size());
     bool growthRequired = false;
     for (size_t index = 0; index < selections.size(); ++index) {
-        extents.push_back(requiredExtent(selections[index]));
+        extents.push_back(
+            runtimeIndexSelectionRequiredExtent(selections[index]));
         if (extents.back() &&
             *extents.back() > effectiveDimensions[index]) {
             growthRequired = true;
@@ -477,26 +465,15 @@ RuntimeNumericAssignmentResult runtimeAssignNumericIndexed(
         return failure("indexed assignment requires subscripts");
     }
 
-    std::vector<std::vector<size_t>> selections;
-    selections.reserve(subscripts.size());
-    const auto effectiveDimensions = runtimeEffectiveSubscriptDimensions(
-        target, subscripts.size());
-    for (size_t index = 0; index < subscripts.size(); ++index) {
-        const size_t extent = subscripts.size() == 1
-                                  ? runtimeShapeElementCount(target)
-                                  : effectiveDimensions[index];
-        auto selection = runtimeResolveIndexSelection(
-            subscripts[index], extent, true);
-        if (!selection.succeeded) {
-            return failure(std::move(selection.error));
-        }
-        selections.push_back(std::move(selection.indices));
+    auto selections = runtimeResolveIndexSelections(target, subscripts, true);
+    if (!selections.succeeded) {
+        return failure(std::move(selections.error));
     }
 
-    if (selections.size() == 1) {
-        return assignLinear(target, selections.front(), value);
+    if (selections.indices.size() == 1) {
+        return assignLinear(target, selections.indices.front(), value);
     }
-    return assignSubscripts(target, selections, value);
+    return assignSubscripts(target, selections.indices, value);
 }
 
 RuntimeNumericAssignmentResult runtimeDeleteNumericIndexed(
@@ -512,26 +489,15 @@ RuntimeNumericAssignmentResult runtimeDeleteNumericIndexed(
         return failure("null assignment subscript metadata is inconsistent");
     }
 
-    std::vector<std::vector<size_t>> selections;
-    selections.reserve(subscripts.size());
-    const auto effectiveDimensions = runtimeEffectiveSubscriptDimensions(
-        target, subscripts.size());
-    for (size_t index = 0; index < subscripts.size(); ++index) {
-        const size_t extent = subscripts.size() == 1
-                                  ? runtimeShapeElementCount(target)
-                                  : effectiveDimensions[index];
-        auto selection = runtimeResolveIndexSelection(
-            subscripts[index], extent, false);
-        if (!selection.succeeded) {
-            return failure(std::move(selection.error));
-        }
-        selections.push_back(std::move(selection.indices));
+    auto selections = runtimeResolveIndexSelections(target, subscripts, false);
+    if (!selections.succeeded) {
+        return failure(std::move(selections.error));
     }
 
-    if (selections.size() == 1) {
-        return deleteLinear(target, std::move(selections.front()));
+    if (selections.indices.size() == 1) {
+        return deleteLinear(target, std::move(selections.indices.front()));
     }
-    return deleteSlices(target, selections, colonSubscripts);
+    return deleteSlices(target, selections.indices, colonSubscripts);
 }
 
 } // namespace mparser

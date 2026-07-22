@@ -397,74 +397,6 @@ std::optional<RuntimeValue> normalizedStringValue(const RuntimeValue &value) {
   return makeRuntimeStringArray({dimensions[0], 1}, std::move(elements));
 }
 
-struct TextSelections {
-  std::vector<std::vector<size_t>> indices;
-  std::vector<size_t> effectiveDimensions;
-  std::vector<size_t> resultDimensions;
-};
-
-std::optional<TextSelections>
-resolveTextSelections(const RuntimeValue &target,
-                      const std::vector<RuntimeValue> &subscripts,
-                      bool allowGrowth, std::string &error) {
-  if (subscripts.empty()) {
-    error = "text indexing requires subscripts";
-    return std::nullopt;
-  }
-  TextSelections result;
-  result.effectiveDimensions =
-      runtimeEffectiveSubscriptDimensions(target, subscripts.size());
-  result.indices.reserve(subscripts.size());
-  bool logicalMask = false;
-  for (size_t index = 0; index < subscripts.size(); ++index) {
-    const size_t extent = subscripts.size() == 1
-                              ? runtimeShapeElementCount(target)
-                              : result.effectiveDimensions[index];
-    auto selection =
-        runtimeResolveIndexSelection(subscripts[index], extent, allowGrowth);
-    if (!selection.succeeded) {
-      error = std::move(selection.error);
-      return std::nullopt;
-    }
-    logicalMask = selection.logicalMask;
-    result.indices.push_back(std::move(selection.indices));
-  }
-  if (subscripts.size() == 1) {
-    result.resultDimensions = runtimeLinearIndexResultDimensions(
-        target, subscripts.front(), result.indices.front().size(), logicalMask);
-  } else {
-    result.resultDimensions.reserve(result.indices.size());
-    for (const auto &selection : result.indices) {
-      result.resultDimensions.push_back(selection.size());
-    }
-  }
-  return result;
-}
-
-std::optional<size_t> sourceLogicalIndex(const TextSelections &selections,
-                                         size_t resultLogicalIndex) {
-  if (selections.indices.size() == 1) {
-    return resultLogicalIndex < selections.indices.front().size()
-               ? std::optional<size_t>(
-                     selections.indices.front()[resultLogicalIndex])
-               : std::nullopt;
-  }
-  const auto coordinates = runtimeColumnMajorCoordinates(
-      resultLogicalIndex, selections.resultDimensions);
-  if (!coordinates) {
-    return std::nullopt;
-  }
-  std::vector<size_t> sourceCoordinates(selections.indices.size(), 0);
-  for (size_t index = 0; index < selections.indices.size(); ++index) {
-    if ((*coordinates)[index] >= selections.indices[index].size()) {
-      return std::nullopt;
-    }
-    sourceCoordinates[index] = selections.indices[index][(*coordinates)[index]];
-  }
-  return runtimeColumnMajorLinearIndex(sourceCoordinates,
-                                       selections.effectiveDimensions);
-}
-
 std::vector<size_t>
 nonSingletonDimensions(const std::vector<size_t> &dimensions) {
   std::vector<size_t> result;
@@ -474,16 +406,6 @@ nonSingletonDimensions(const std::vector<size_t> &dimensions) {
     }
   }
   return result;
-}
-
-std::optional<size_t> requiredExtent(const std::vector<size_t> &selection) {
-  if (selection.empty()) {
-    return std::nullopt;
-  }
-  const size_t maximum = *std::max_element(selection.begin(), selection.end());
-  return maximum == std::numeric_limits<size_t>::max()
-             ? std::nullopt
-             : std::optional<size_t>(maximum + 1);
 }
 
 bool growTextTarget(RuntimeValue &target,
@@ -534,10 +456,12 @@ bool growTextTarget(RuntimeValue &target,
 }
 
 RuntimeTextMutationResult ensureTextCapacity(RuntimeValue &target,
-                                             const TextSelections &selections) {
+                                             const RuntimeIndexSelectionsResult
+                                                 &selections) {
   const auto oldDimensions = runtimeDimensions(target);
   if (selections.indices.size() == 1) {
-    const auto extent = requiredExtent(selections.indices.front());
+    const auto extent =
+        runtimeIndexSelectionRequiredExtent(selections.indices.front());
     if (!extent || *extent <= runtimeShapeElementCount(target)) {
       return mutationSuccess();
     }
@@ -567,7 +491,8 @@ RuntimeTextMutationResult ensureTextCapacity(RuntimeValue &target,
   std::vector<std::optional<size_t>> extents;
   bool growthRequired = false;
   for (size_t index = 0; index < selections.indices.size(); ++index) {
-    extents.push_back(requiredExtent(selections.indices[index]));
+    extents.push_back(
+        runtimeIndexSelectionRequiredExtent(selections.indices[index]));
     growthRequired = growthRequired ||
                      (extents.back() &&
                       *extents.back() > selections.effectiveDimensions[index]);
@@ -704,14 +629,16 @@ runtimeIndexText(const RuntimeValue &target,
   if (!isRuntimeTextValue(target)) {
     return textFailure("text indexing requires a text target");
   }
-  std::string error;
+  if (subscripts.empty()) {
+    return textFailure("text indexing requires subscripts");
+  }
   const auto selections =
-      resolveTextSelections(target, subscripts, false, error);
-  if (!selections) {
-    return textFailure(std::move(error));
+      runtimeResolveIndexSelections(target, subscripts, false);
+  if (!selections.succeeded) {
+    return textFailure(selections.error);
   }
   const auto count =
-      checkedRuntimeDimensionProduct(selections->resultDimensions);
+      checkedRuntimeDimensionProduct(selections.resultDimensions);
   if (!count) {
     return textFailure("indexed text dimensions are too large");
   }
@@ -719,7 +646,8 @@ runtimeIndexText(const RuntimeValue &target,
     std::vector<char16_t> elements;
     elements.reserve(*count);
     for (size_t index = 0; index < *count; ++index) {
-      const auto source = sourceLogicalIndex(*selections, index);
+      const auto source =
+          runtimeIndexSelectionSourceLogicalIndex(selections, index);
       const auto element =
           source ? runtimeCharacterElement(target, *source) : std::nullopt;
       if (!element) {
@@ -728,7 +656,7 @@ runtimeIndexText(const RuntimeValue &target,
       elements.push_back(*element);
     }
     const auto result =
-        characterFromLogicalOrder(selections->resultDimensions, elements);
+        characterFromLogicalOrder(selections.resultDimensions, elements);
     return result ? textSuccess(*result)
                   : textFailure("indexed character shape is invalid");
   }
@@ -736,7 +664,8 @@ runtimeIndexText(const RuntimeValue &target,
   std::vector<RuntimeStringElement> elements;
   elements.reserve(*count);
   for (size_t index = 0; index < *count; ++index) {
-    const auto source = sourceLogicalIndex(*selections, index);
+    const auto source =
+        runtimeIndexSelectionSourceLogicalIndex(selections, index);
     const auto *element =
         source ? runtimeStringElement(target, *source) : nullptr;
     if (!element) {
@@ -745,7 +674,7 @@ runtimeIndexText(const RuntimeValue &target,
     elements.push_back(*element);
   }
   const auto result =
-      stringFromLogicalOrder(selections->resultDimensions, elements);
+      stringFromLogicalOrder(selections.resultDimensions, elements);
   return result ? textSuccess(*result)
                 : textFailure("indexed string shape is invalid");
 }
@@ -788,14 +717,16 @@ runtimeAssignTextIndexed(RuntimeValue &target,
     return mutationFailure(
         "text indexed assignment requires a compatible text value");
   }
-  std::string error;
+  if (subscripts.empty()) {
+    return mutationFailure("text indexing requires subscripts");
+  }
   const auto selections =
-      resolveTextSelections(target, subscripts, true, error);
-  if (!selections) {
-    return mutationFailure(std::move(error));
+      runtimeResolveIndexSelections(target, subscripts, true);
+  if (!selections.succeeded) {
+    return mutationFailure(selections.error);
   }
   const auto selectionCount =
-      checkedRuntimeDimensionProduct(selections->resultDimensions);
+      checkedRuntimeDimensionProduct(selections.resultDimensions);
   if (!selectionCount) {
     return mutationFailure("text indexed assignment dimensions are too large");
   }
@@ -805,21 +736,22 @@ runtimeAssignTextIndexed(RuntimeValue &target,
     return mutationFailure(
         "text indexed assignment requires matching element counts");
   }
-  if (!scalarExpansion && selections->indices.size() > 1 &&
-      nonSingletonDimensions(selections->resultDimensions) !=
+  if (!scalarExpansion && selections.indices.size() > 1 &&
+      nonSingletonDimensions(selections.resultDimensions) !=
           nonSingletonDimensions(runtimeDimensions(*assigned))) {
     return mutationFailure("text indexed assignment dimensions do not match");
   }
-  auto capacity = ensureTextCapacity(target, *selections);
+  auto capacity = ensureTextCapacity(target, selections);
   if (!capacity.succeeded) {
     return capacity;
   }
 
-  TextSelections grown = *selections;
+  RuntimeIndexSelectionsResult grown = selections;
   grown.effectiveDimensions =
       runtimeEffectiveSubscriptDimensions(target, subscripts.size());
   for (size_t ordinal = 0; ordinal < *selectionCount; ++ordinal) {
-    const auto targetIndex = sourceLogicalIndex(grown, ordinal);
+    const auto targetIndex =
+        runtimeIndexSelectionSourceLogicalIndex(grown, ordinal);
     if (!targetIndex || !assignTextElement(target, *targetIndex, *assigned,
                                            scalarExpansion ? 0 : ordinal)) {
       return mutationFailure(
@@ -839,15 +771,17 @@ runtimeDeleteTextIndexed(RuntimeValue &target,
   if (colonSubscripts.size() != subscripts.size()) {
     return mutationFailure("text deletion subscript metadata is inconsistent");
   }
-  std::string error;
+  if (subscripts.empty()) {
+    return mutationFailure("text indexing requires subscripts");
+  }
   const auto selections =
-      resolveTextSelections(target, subscripts, false, error);
-  if (!selections) {
-    return mutationFailure(std::move(error));
+      runtimeResolveIndexSelections(target, subscripts, false);
+  if (!selections.succeeded) {
+    return mutationFailure(selections.error);
   }
 
-  if (selections->indices.size() == 1) {
-    const auto indices = uniqueIndices(selections->indices.front());
+  if (selections.indices.size() == 1) {
+    const auto indices = uniqueIndices(selections.indices.front());
     if (indices.empty()) {
       return mutationSuccess();
     }
@@ -913,28 +847,28 @@ runtimeDeleteTextIndexed(RuntimeValue &target,
     return mutationSuccess();
   }
 
-  size_t deletionDimension = selections->indices.size();
+  size_t deletionDimension = selections.indices.size();
   for (size_t index = 0; index < colonSubscripts.size(); ++index) {
     if (colonSubscripts[index]) {
       continue;
     }
-    if (deletionDimension != selections->indices.size()) {
+    if (deletionDimension != selections.indices.size()) {
       return mutationFailure(
           "text deletion can have only one non-colon subscript");
     }
     deletionDimension = index;
   }
-  if (deletionDimension == selections->indices.size()) {
+  if (deletionDimension == selections.indices.size()) {
     return mutationFailure("text deletion requires one non-colon subscript");
   }
   auto oldDimensions = runtimeDimensions(target);
-  if (selections->indices.size() < oldDimensions.size()) {
+  if (selections.indices.size() < oldDimensions.size()) {
     return mutationFailure(
         "N-dimensional text deletion requires one subscript per dimension");
   }
-  oldDimensions.resize(selections->indices.size(), 1);
+  oldDimensions.resize(selections.indices.size(), 1);
   const auto removedIndices =
-      uniqueIndices(selections->indices[deletionDimension]);
+      uniqueIndices(selections.indices[deletionDimension]);
   if (removedIndices.empty()) {
     return mutationSuccess();
   }

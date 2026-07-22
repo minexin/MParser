@@ -3,6 +3,8 @@
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 
+#include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace mparser {
@@ -78,6 +80,91 @@ RuntimeIndexSelectionResult runtimeResolveIndexSelection(
     return result;
 }
 
+RuntimeIndexSelectionsResult runtimeResolveIndexSelections(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool allowNumericGrowth) {
+    RuntimeIndexSelectionsResult result;
+    if (subscripts.empty()) {
+        result.error = "indexing requires subscripts";
+        return result;
+    }
+
+    result.effectiveDimensions = runtimeEffectiveSubscriptDimensions(
+        target, subscripts.size());
+    result.indices.reserve(subscripts.size());
+    for (size_t index = 0; index < subscripts.size(); ++index) {
+        const size_t extent = subscripts.size() == 1
+                                  ? runtimeShapeElementCount(target)
+                                  : result.effectiveDimensions[index];
+        auto selection = runtimeResolveIndexSelection(
+            subscripts[index], extent, allowNumericGrowth);
+        if (!selection.succeeded) {
+            result.error = std::move(selection.error);
+            return result;
+        }
+        if (subscripts.size() == 1) {
+            result.logicalMask = selection.logicalMask;
+        }
+        result.indices.push_back(std::move(selection.indices));
+    }
+
+    if (subscripts.size() == 1) {
+        result.resultDimensions = runtimeLinearIndexResultDimensions(
+            target, subscripts.front(), result.indices.front().size(),
+            result.logicalMask);
+    } else {
+        result.resultDimensions.reserve(result.indices.size());
+        for (const auto& selection : result.indices) {
+            result.resultDimensions.push_back(selection.size());
+        }
+    }
+    result.succeeded = true;
+    return result;
+}
+
+std::optional<size_t> runtimeIndexSelectionSourceLogicalIndex(
+    const RuntimeIndexSelectionsResult& selections,
+    size_t resultLogicalIndex) {
+    if (!selections.succeeded || selections.indices.empty()) {
+        return std::nullopt;
+    }
+    if (selections.indices.size() == 1) {
+        return resultLogicalIndex < selections.indices.front().size()
+                   ? std::optional<size_t>(
+                         selections.indices.front()[resultLogicalIndex])
+                   : std::nullopt;
+    }
+
+    const auto coordinates = runtimeColumnMajorCoordinates(
+        resultLogicalIndex, selections.resultDimensions);
+    if (!coordinates) {
+        return std::nullopt;
+    }
+    std::vector<size_t> sourceCoordinates(selections.indices.size(), 0);
+    for (size_t index = 0; index < selections.indices.size(); ++index) {
+        if ((*coordinates)[index] >= selections.indices[index].size()) {
+            return std::nullopt;
+        }
+        sourceCoordinates[index] =
+            selections.indices[index][(*coordinates)[index]];
+    }
+    return runtimeColumnMajorLinearIndex(
+        sourceCoordinates, selections.effectiveDimensions);
+}
+
+std::optional<size_t> runtimeIndexSelectionRequiredExtent(
+    const std::vector<size_t>& selection) {
+    if (selection.empty()) {
+        return std::nullopt;
+    }
+    const size_t maximum =
+        *std::max_element(selection.begin(), selection.end());
+    return maximum == std::numeric_limits<size_t>::max()
+               ? std::nullopt
+               : std::optional<size_t>(maximum + 1);
+}
+
 RuntimeIndexOperationResult runtimeIndexNumeric(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts) {
@@ -88,82 +175,35 @@ RuntimeIndexOperationResult runtimeIndexNumeric(
         return operationFailure("indexing requires subscripts");
     }
 
-    std::vector<std::vector<size_t>> selections;
-    selections.reserve(subscripts.size());
-    const auto effectiveDimensions = runtimeEffectiveSubscriptDimensions(
-        target, subscripts.size());
-    for (size_t index = 0; index < subscripts.size(); ++index) {
-        const size_t extent = subscripts.size() == 1
-                                  ? runtimeShapeElementCount(target)
-                                  : effectiveDimensions[index];
-        auto selection = runtimeResolveIndexSelection(
-            subscripts[index], extent, false);
-        if (!selection.succeeded) {
-            return operationFailure(std::move(selection.error));
-        }
-        selections.push_back(std::move(selection.indices));
-    }
-
-    std::vector<size_t> resultDimensions;
-    if (selections.size() == 1) {
-        const auto selection = runtimeResolveIndexSelection(
-            subscripts.front(), runtimeShapeElementCount(target), false);
-        resultDimensions = runtimeLinearIndexResultDimensions(
-            target, subscripts.front(), selection.indices.size(),
-            selection.logicalMask);
-    } else {
-        resultDimensions.reserve(selections.size());
-        for (const auto& selection : selections) {
-            resultDimensions.push_back(selection.size());
-        }
+    const auto selections =
+        runtimeResolveIndexSelections(target, subscripts, false);
+    if (!selections.succeeded) {
+        return operationFailure(selections.error);
     }
 
     const auto resultCount =
-        checkedRuntimeDimensionProduct(resultDimensions);
+        checkedRuntimeDimensionProduct(selections.resultDimensions);
     if (!resultCount) {
         return operationFailure("indexed result dimensions are too large");
     }
 
     std::vector<double> values;
     values.reserve(*resultCount);
-    if (selections.size() == 1) {
-        for (const size_t logicalIndex : selections.front()) {
-            const auto value = runtimeNumericElement(target, logicalIndex);
-            if (!value) {
-                return operationFailure(
-                    "indexing could not read a linear element");
-            }
-            values.push_back(*value);
+    for (size_t ordinal = 0; ordinal < *resultCount; ++ordinal) {
+        const auto sourceLogicalIndex =
+            runtimeIndexSelectionSourceLogicalIndex(selections, ordinal);
+        const auto value = sourceLogicalIndex
+                               ? runtimeNumericElement(
+                                     target, *sourceLogicalIndex)
+                               : std::nullopt;
+        if (!value) {
+            return operationFailure("indexing could not map subscripts");
         }
-    } else {
-        for (size_t ordinal = 0; ordinal < *resultCount; ++ordinal) {
-            const auto selectionCoordinates =
-                runtimeColumnMajorCoordinates(ordinal, resultDimensions);
-            if (!selectionCoordinates) {
-                return operationFailure(
-                    "indexed result has an invalid shape");
-            }
-            std::vector<size_t> sourceCoordinates(subscripts.size(), 0);
-            for (size_t index = 0; index < subscripts.size(); ++index) {
-                sourceCoordinates[index] =
-                    selections[index][(*selectionCoordinates)[index]];
-            }
-            const auto sourceLogicalIndex = runtimeColumnMajorLinearIndex(
-                sourceCoordinates, effectiveDimensions);
-            const auto value = sourceLogicalIndex
-                                   ? runtimeNumericElement(
-                                         target, *sourceLogicalIndex)
-                                   : std::nullopt;
-            if (!value) {
-                return operationFailure(
-                    "indexing could not map subscripts");
-            }
-            values.push_back(*value);
-        }
+        values.push_back(*value);
     }
 
     const auto result = runtimeNumericValueFromLogicalOrder(
-        std::move(resultDimensions), std::move(values),
+        selections.resultDimensions, std::move(values),
         target.numericClass);
     if (!result) {
         return operationFailure("indexed result has an invalid shape");

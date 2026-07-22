@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.75.0 LANGUAGES C CXX)
+project(MParser VERSION 0.76.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -73,6 +73,7 @@ add_library(mparser_core
     src/mparser/runtime_math.cpp
     src/mparser/runtime_metadata.cpp
     src/mparser/runtime_numeric.cpp
+    src/mparser/runtime_object.cpp
     src/mparser/runtime_range.cpp
     src/mparser/runtime_reduction.cpp
     src/mparser/runtime_scan.cpp
@@ -175,6 +176,30 @@ add_executable(lvalue_runtime_smoke_tests
 target_link_libraries(lvalue_runtime_smoke_tests PRIVATE mparser_core)
 add_test(NAME lvalue_runtime_smoke
     COMMAND lvalue_runtime_smoke_tests)
+
+add_executable(object_array_runtime_smoke_tests
+    tests/object_array_runtime_smoke.cpp)
+target_link_libraries(object_array_runtime_smoke_tests PRIVATE mparser_core)
+add_test(NAME object_array_runtime_smoke
+    COMMAND object_array_runtime_smoke_tests)
+
+add_executable(object_array_vm_smoke_tests
+    tests/object_array_vm_smoke.cpp)
+target_link_libraries(object_array_vm_smoke_tests PRIVATE mparser_core)
+add_test(NAME object_array_vm_smoke
+    COMMAND object_array_vm_smoke_tests)
+
+add_test(NAME object_array_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/object_array_demo.m)
+set_tests_properties(object_array_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 14")
+
+add_test(NAME object_array_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/object_array_demo.m)
+set_tests_properties(object_array_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 14")
 
 add_test(NAME lvalue_runtime_interpreter_cli_smoke
     COMMAND mparser --run-hir
