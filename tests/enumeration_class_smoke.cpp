@@ -3,6 +3,7 @@
 #include "mparser/interpreter.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cmath>
@@ -100,9 +101,10 @@ void checkString(const mparser::BytecodeVmResult& result,
     const auto* value = findVariable(result, name);
     check(value != nullptr, "missing runtime variable: " +
                                 std::string(name));
-    check(value->kind == mparser::RuntimeValueKind::String,
-          "runtime variable is not a string: " + std::string(name));
-    check(value->text == expected,
+    const auto text = mparser::runtimeTextScalarUtf8(*value);
+    check(text.has_value(),
+          "runtime variable is not text: " + std::string(name));
+    check(*text == expected,
           "unexpected string value for: " + std::string(name));
 }
 

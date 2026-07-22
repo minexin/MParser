@@ -3,6 +3,7 @@
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 #include "mparser/runtime_value_ops.h"
 
 #include <algorithm>
@@ -16,14 +17,6 @@ namespace mparser {
 namespace {
 
 constexpr size_t kMaximumFieldNameLength = 63;
-
-RuntimeValue stringValue(std::string value) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::String;
-    result.text = std::move(value);
-    setRuntimeDimensions(result, {1, result.text.size()});
-    return result;
-}
 
 RuntimeValue cellValue(std::vector<size_t> dimensions,
                        std::vector<RuntimeValue> values) {
@@ -42,8 +35,8 @@ struct FieldNameListResult {
 };
 
 FieldNameListResult fieldNameList(const RuntimeValue& value) {
-    if (value.kind == RuntimeValueKind::String) {
-        return FieldNameListResult{true, {value.text}, {1, 1}, {}};
+    if (const auto name = runtimeTextScalarUtf8(value)) {
+        return FieldNameListResult{true, {*name}, {1, 1}, {}};
     }
     if (value.kind != RuntimeValueKind::Cell) {
         return FieldNameListResult{
@@ -55,13 +48,14 @@ FieldNameListResult fieldNameList(const RuntimeValue& value) {
     std::vector<std::string> names;
     names.reserve(value.cells.size());
     for (const RuntimeValue& element : value.cells) {
-        if (element.kind != RuntimeValueKind::String) {
+        const auto name = runtimeTextScalarUtf8(element);
+        if (!name) {
             return FieldNameListResult{
                 false, {}, {},
                 "every Cell field name must be a character vector or "
                 "string scalar"};
         }
-        names.push_back(element.text);
+        names.push_back(*name);
     }
     return FieldNameListResult{true, std::move(names),
                                runtimeDimensions(value), {}};
@@ -311,17 +305,18 @@ bool isRuntimeStructFieldName(std::string_view name) {
 
 RuntimeStructFieldNameResult
 runtimeStructFieldName(const RuntimeValue& value) {
-    if (value.kind != RuntimeValueKind::String) {
+    const auto name = runtimeTextScalarUtf8(value);
+    if (!name) {
         return RuntimeStructFieldNameResult{
             false, {},
             "dynamic field name must be a character vector or string "
             "scalar"};
     }
-    if (!isRuntimeStructFieldName(value.text)) {
+    if (!isRuntimeStructFieldName(*name)) {
         return RuntimeStructFieldNameResult{
-            false, {}, "invalid structure field name: " + value.text};
+            false, {}, "invalid structure field name: " + *name};
     }
-    return RuntimeStructFieldNameResult{true, value.text, {}};
+    return RuntimeStructFieldNameResult{true, *name, {}};
 }
 
 std::vector<std::string>
@@ -841,7 +836,7 @@ runtimeStructFieldNames(const RuntimeValue& structure) {
     std::vector<RuntimeValue> values;
     values.reserve(names.size());
     for (const std::string& name : names) {
-        values.push_back(stringValue(name));
+        values.push_back(makeRuntimeCharacterVectorUtf8(name));
     }
     return success(cellValue({names.size(), 1}, std::move(values)));
 }

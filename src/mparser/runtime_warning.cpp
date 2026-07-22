@@ -3,18 +3,15 @@
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_text.h"
 
 #include <utility>
 
 namespace mparser {
 namespace {
 
-RuntimeValue stringValue(std::string text) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::String;
-    result.text = std::move(text);
-    setRuntimeDimensions(result, {1, result.text.size()});
-    return result;
+RuntimeValue characterValue(std::string_view text) {
+    return makeRuntimeCharacterVectorUtf8(text);
 }
 
 RuntimeWarningOperationResult failure(std::string error) {
@@ -40,8 +37,8 @@ std::string stateText(bool enabled) {
 RuntimeStructElement settingElement(std::string identifier,
                                     bool enabled) {
     RuntimeStructElement result;
-    result.emplace("identifier", stringValue(std::move(identifier)));
-    result.emplace("state", stringValue(stateText(enabled)));
+    result.emplace("identifier", characterValue(identifier));
+    result.emplace("state", characterValue(stateText(enabled)));
     return result;
 }
 
@@ -114,11 +111,12 @@ void setSetting(RuntimeWarningState& state, const std::string& identifier,
 std::optional<std::string> textArgument(
     const RuntimeValue& value, std::string_view context,
     std::string& error) {
-    if (value.kind != RuntimeValueKind::String) {
+    const auto text = runtimeTextScalarUtf8(value);
+    if (!text) {
         error = std::string(context) + " must be text";
         return std::nullopt;
     }
-    return value.text;
+    return text;
 }
 
 std::optional<RuntimeWarningState> restoredState(
@@ -135,22 +133,24 @@ std::optional<RuntimeWarningState> restoredState(
             runtimeStructField(value, "identifier", index);
         const RuntimeValue* setting =
             runtimeStructField(value, "state", index);
-        if (!identifier || !setting ||
-            identifier->kind != RuntimeValueKind::String ||
-            setting->kind != RuntimeValueKind::String ||
-            (setting->text != "on" && setting->text != "off") ||
-            !validSettingIdentifier(identifier->text)) {
+        const auto identifierText = identifier
+            ? runtimeTextScalarUtf8(*identifier) : std::nullopt;
+        const auto settingText = setting
+            ? runtimeTextScalarUtf8(*setting) : std::nullopt;
+        if (!identifierText || !settingText ||
+            (*settingText != "on" && *settingText != "off") ||
+            !validSettingIdentifier(*identifierText)) {
             error = "warning setting structures require valid text "
                     "identifier and on/off state fields";
             return std::nullopt;
         }
         std::string resolved =
-            resolvedSettingIdentifier(identifier->text, restored);
+            resolvedSettingIdentifier(*identifierText, restored);
         if (resolved == "all" && !clearedOverrides) {
             restored.identifierStates.clear();
             clearedOverrides = true;
         }
-        setSetting(restored, resolved, setting->text == "on");
+        setSetting(restored, resolved, *settingText == "on");
     }
     return restored;
 }
@@ -198,10 +198,9 @@ RuntimeWarningOperationResult runtimeWarning(
                                  std::move(previous)});
     }
 
-    if (arguments.front().kind == RuntimeValueKind::String &&
-        (arguments.front().text == "on" ||
-         arguments.front().text == "off" ||
-         arguments.front().text == "query")) {
+    const auto operation = runtimeTextScalarUtf8(arguments.front());
+    if (operation && (*operation == "on" || *operation == "off" ||
+                      *operation == "query")) {
         if (arguments.size() > 2) {
             return failure("warning state operations accept at most one "
                            "identifier or mode");
@@ -223,9 +222,8 @@ RuntimeWarningOperationResult runtimeWarning(
         identifier = resolvedSettingIdentifier(std::move(identifier), state);
         const bool previousEnabled = settingEnabled(state, identifier);
         RuntimeValue previous = settingValue(identifier, previousEnabled);
-        if (arguments.front().text != "query") {
-            setSetting(state, identifier,
-                       arguments.front().text == "on");
+        if (*operation != "query") {
+            setSetting(state, identifier, *operation == "on");
         }
         return success(requestedOutputCount == 0
                            ? std::vector<RuntimeValue>{}
@@ -247,13 +245,18 @@ RuntimeWarningOperationResult runtimeWarning(
     if (!identifier || !message) {
         return failure("warning message construction failed");
     }
-    if (message->text.empty()) {
+    const auto identifierText = runtimeTextScalarUtf8(*identifier);
+    const auto messageText = runtimeTextScalarUtf8(*message);
+    if (!identifierText || !messageText) {
+        return failure("warning message construction produced invalid text");
+    }
+    if (messageText->empty()) {
         state.lastIdentifier.clear();
         state.lastMessage.clear();
         return success();
     }
-    state.lastIdentifier = identifier->text;
-    state.lastMessage = message->text;
+    state.lastIdentifier = *identifierText;
+    state.lastMessage = *messageText;
     if (!runtimeWarningIsEnabled(state, state.lastIdentifier)) {
         return success();
     }
@@ -269,28 +272,29 @@ RuntimeWarningOperationResult runtimeLastWarning(
                        "up to two outputs");
     }
     if (!arguments.empty()) {
-        if (arguments[0].kind != RuntimeValueKind::String ||
-            (arguments.size() == 2 &&
-             arguments[1].kind != RuntimeValueKind::String)) {
+        const auto message = runtimeTextScalarUtf8(arguments[0]);
+        const auto identifier = arguments.size() == 2
+            ? runtimeTextScalarUtf8(arguments[1])
+            : std::optional<std::string>(std::string{});
+        if (!message || !identifier) {
             return failure("lastwarn inputs must be text");
         }
-        const std::string nextIdentifier =
-            arguments.size() == 2 ? arguments[1].text : std::string{};
+        const std::string& nextIdentifier = *identifier;
         if (!nextIdentifier.empty() &&
             !isRuntimeExceptionIdentifier(nextIdentifier)) {
             return failure("invalid lastwarn identifier: " +
                            nextIdentifier);
         }
-        state.lastMessage = arguments[0].text;
+        state.lastMessage = *message;
         state.lastIdentifier = nextIdentifier;
     }
 
     std::vector<RuntimeValue> outputs;
     if (requestedOutputCount >= 1) {
-        outputs.push_back(stringValue(state.lastMessage));
+        outputs.push_back(characterValue(state.lastMessage));
     }
     if (requestedOutputCount >= 2) {
-        outputs.push_back(stringValue(state.lastIdentifier));
+        outputs.push_back(characterValue(state.lastIdentifier));
     }
     return success(std::move(outputs));
 }

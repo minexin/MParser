@@ -1,5 +1,6 @@
 #include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 
 #include <cassert>
 #include <cmath>
@@ -101,10 +102,8 @@ void shapeTextAndComparisonSmoke() {
                column, spec("double", {"mustBeColumn", "mustBeMatrix"}))
                .succeeded);
 
-    mparser::RuntimeValue text;
-    text.kind = mparser::RuntimeValueKind::String;
-    text.text = "hello";
-    mparser::setRuntimeDimensions(text, {1, 1});
+    mparser::RuntimeValue text =
+        mparser::makeRuntimeStringScalarUtf8("hello");
     assert(mparser::validateRuntimeArgument(
                text, spec("string", {"mustBeText", "mustBeTextScalar",
                                       "mustBeNonzeroLengthText"}))

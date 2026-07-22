@@ -5,6 +5,7 @@
 #include "mparser/parser.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cassert>
@@ -120,10 +121,10 @@ void assertScalarStructResult(const Result& result) {
     assert(mparser::runtimeDimensions(*names) ==
            std::vector<size_t>({4, 1}));
     assert(names->cells.size() == 4);
-    assert(names->cells[0].text == "beta");
-    assert(names->cells[1].text == "alpha");
-    assert(names->cells[2].text == "gamma");
-    assert(names->cells[3].text == "delta");
+    assert(mparser::runtimeTextScalarUtf8(names->cells[0]) == "beta");
+    assert(mparser::runtimeTextScalarUtf8(names->cells[1]) == "alpha");
+    assert(mparser::runtimeTextScalarUtf8(names->cells[2]) == "gamma");
+    assert(mparser::runtimeTextScalarUtf8(names->cells[3]) == "delta");
 
     const auto* flags = findVariable(result, "flags");
     assert(flags != nullptr);

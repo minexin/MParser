@@ -267,8 +267,10 @@ std::string runtimeValueClassName(const RuntimeValue& value) {
     case RuntimeValueKind::Matrix:
         return std::string(
             runtimeNumericClassName(value.numericClass));
-    case RuntimeValueKind::String:
+    case RuntimeValueKind::CharacterArray:
         return "char";
+    case RuntimeValueKind::StringArray:
+        return "string";
     case RuntimeValueKind::Cell:
         return "cell";
     case RuntimeValueKind::FunctionHandle:

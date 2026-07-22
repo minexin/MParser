@@ -3,6 +3,7 @@
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_metadata.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <algorithm>
@@ -114,9 +115,8 @@ void requireString(const mparser::BytecodeVmResult& result,
                    std::string_view name, std::string_view expected) {
     const auto* value = variable(result, name);
     require(value != nullptr, "expected string variable");
-    require(value->kind == mparser::RuntimeValueKind::String,
-            "runtime variable is not a string");
-    require(value->text == expected, "string runtime value mismatch");
+    require(mparser::runtimeTextScalarUtf8(*value) == expected,
+            "text runtime value mismatch");
 }
 
 constexpr std::string_view kMetadataClasses = R"(

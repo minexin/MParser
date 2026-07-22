@@ -3,6 +3,7 @@
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_exception.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cassert>
@@ -821,8 +822,8 @@ end
 
     const auto* message = findVariable(result, "message");
     assert(message != nullptr);
-    assert(message->kind == mparser::RuntimeValueKind::String);
-    assert(message->text == "unknown bytecode runtime variable: missingName");
+    assert(mparser::runtimeTextScalarUtf8(*message) ==
+           "unknown bytecode runtime variable: missingName");
 }
 
 void runSessionCommandSmoke() {

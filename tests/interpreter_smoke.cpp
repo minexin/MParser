@@ -2,6 +2,7 @@
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_exception.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cassert>
@@ -50,8 +51,7 @@ void assertString(const mparser::InterpreterResult& result,
                   std::string_view name, std::string_view expected) {
     const auto* value = findVariable(result, name);
     assert(value != nullptr);
-    assert(value->kind == mparser::RuntimeValueKind::String);
-    assert(value->text == expected);
+    assert(mparser::runtimeTextScalarUtf8(*value) == expected);
 }
 
 void assertException(const mparser::InterpreterResult& result,
@@ -63,8 +63,7 @@ void assertException(const mparser::InterpreterResult& result,
     const auto* message =
         mparser::runtimeExceptionProperty(*value, "message");
     assert(message != nullptr);
-    assert(message->kind == mparser::RuntimeValueKind::String);
-    assert(message->text == expectedMessage);
+    assert(mparser::runtimeTextScalarUtf8(*message) == expectedMessage);
 }
 
 void assertVector(const mparser::InterpreterResult& result,

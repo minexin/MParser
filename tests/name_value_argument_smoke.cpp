@@ -5,6 +5,7 @@
 #include "mparser/interpreter.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cmath>
@@ -135,12 +136,7 @@ mparser::RuntimeValue scalar(double value) {
 }
 
 mparser::RuntimeValue text(std::string value) {
-    mparser::RuntimeValue result;
-    result.kind = mparser::RuntimeValueKind::String;
-    result.text = std::move(value);
-    result.rows = 1;
-    result.columns = result.text.size();
-    return result;
+    return mparser::makeRuntimeStringScalarUtf8(value);
 }
 
 void syntaxAndRuntimeCoverage() {

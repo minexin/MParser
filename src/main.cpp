@@ -11,6 +11,7 @@
 #include "mparser/parser.h"
 #include "mparser/runtime_benchmark.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 #include "mparser/semantic_dump.h"
 #include "mparser/source_loader.h"
@@ -303,9 +304,8 @@ mparser::RuntimeValue parseRuntimeValue(const std::string& valueText) {
         mparser::setRuntimeDimensions(value, {1, value.elements.size()});
     } else if (valueText.size() >= 2 && valueText.front() == '"' &&
                valueText.back() == '"') {
-        value.kind = mparser::RuntimeValueKind::String;
-        value.text = valueText.substr(1, valueText.size() - 2);
-        mparser::setRuntimeDimensions(value, {1, value.text.size()});
+        value = mparser::makeRuntimeStringScalarUtf8(
+            valueText.substr(1, valueText.size() - 2));
     } else {
         size_t consumed = 0;
         try {

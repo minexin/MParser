@@ -5,6 +5,7 @@
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_text.h"
 #include "mparser/runtime_value_ops.h"
 
 #include <utility>
@@ -79,6 +80,12 @@ RuntimeLvalueOperationResult readSegment(
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
         }
+        if (isRuntimeTextValue(parent)) {
+            auto result = runtimeIndexText(parent, segment.subscripts);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
         {
             auto result = runtimeIndexNumeric(parent, segment.subscripts);
             return result.succeeded
@@ -86,6 +93,13 @@ RuntimeLvalueOperationResult readSegment(
                        : failure(std::move(result.error));
         }
     case RuntimeLvalueSegmentKind::Brace: {
+        if (isRuntimeStringArray(parent)) {
+            auto result = runtimeIndexStringContents(
+                parent, segment.subscripts);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
         auto result = runtimeIndexCellContents(parent, segment.subscripts);
         return result.succeeded
                    ? success(std::move(result.value))
@@ -151,6 +165,17 @@ RuntimeLvalueOperationResult writeSegment(
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
         }
+        if (isRuntimeTextValue(parent)) {
+            auto result = nullAssignment
+                              ? runtimeDeleteTextIndexed(
+                                    parent, segment.subscripts,
+                                    segment.colonSubscripts)
+                              : runtimeAssignTextIndexed(
+                                    parent, segment.subscripts, value);
+            return result.succeeded
+                       ? success(std::move(parent))
+                       : failure(std::move(result.error));
+        }
         if (nullAssignment) {
             auto result = runtimeDeleteNumericIndexed(
                 parent, segment.subscripts, segment.colonSubscripts);
@@ -166,6 +191,13 @@ RuntimeLvalueOperationResult writeSegment(
                        : failure(std::move(result.error));
         }
     case RuntimeLvalueSegmentKind::Brace: {
+        if (isRuntimeStringArray(parent)) {
+            auto result = runtimeAssignStringContents(
+                parent, segment.subscripts, value);
+            return result.succeeded
+                       ? success(std::move(parent))
+                       : failure(std::move(result.error));
+        }
         auto result = runtimeAssignCellContents(
             parent, segment.subscripts, value);
         return result.succeeded

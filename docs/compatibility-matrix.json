@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.74.0",
+  "version": "0.75.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -12,7 +12,7 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
       "evidence": ["parser_smoke", "cli_help_smoke"],
       "sources": ["src/mparser/lexer.cpp", "src/mparser/token.cpp", "tests/parser_smoke.cpp"],
-      "limits": "Text runtime values still combine character vectors and string scalars; command-form syntax is outside the target subset."
+      "limits": "Single and double quoted literals preserve distinct character-array and string-array runtime kinds; command-form syntax is outside the target subset."
     },
     {
       "id": "SYN-001",
@@ -79,6 +79,17 @@
       "evidence": ["logical_index_smoke", "array_deletion_smoke", "linear_array_kernel_cli_smoke"],
       "sources": ["src/mparser/runtime_index.cpp", "src/mparser/runtime_assignment.cpp", "tests/logical_index_smoke.cpp"],
       "limits": "Typed/native coverage is narrower than VM correctness and falls back under guards."
+    },
+    {
+      "id": "TEXT-001",
+      "area": "types",
+      "feature": "Distinct UTF-16 character arrays and string arrays with shared shape, indexing, mutation, conversion, and formatting contracts",
+      "status": "partial",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["text_runtime_smoke", "text_runtime_interpreter_cli_smoke", "text_runtime_bytecode_cli_smoke", "text_runtime_production_cli_smoke", "property_validation_smoke"],
+      "sources": ["src/mparser/runtime_value.h", "src/mparser/runtime_text.cpp", "src/mparser/runtime_array_ops.cpp", "tests/text_runtime_smoke.cpp", "samples/text_runtime_demo.m"],
+      "limits": "v0.75 covers quote/empty distinctions, UTF-8 boundaries, UTF-16 code-unit lengths, parenthesis and string-brace indexing, assignment/growth/deletion, concatenation, implicit expansion, transpose and array transforms, representative conversions and predicates, missing strings, class properties, and CLI formatting. Unicode normalization and non-ASCII case folding, complete text function families, tables/categorical values, and typed/native lowering remain open."
     },
     {
       "id": "CELL-001",
@@ -369,11 +380,11 @@
       "id": "G-TEXT-001",
       "area": "types",
       "priority": "must-have",
-      "state": "open",
+      "state": "closed",
       "target": "v0.75",
       "framework_impact": "representation-change",
       "requirement": "Separate character arrays from string scalars/arrays and define concatenation, indexing, conversion, and formatting semantics.",
-      "exit_evidence": "RuntimeValue shape/type tests and MATLAB differential fixtures for text operations."
+      "exit_evidence": "text_runtime_smoke differentially runs one UTF-16 character/string script through HIR and bytecode, validates supplementary code units, shape, storage, indexing, mutation, implicit expansion, conversions, missing strings, Cell layout, formatting inputs, and the runnable sample; all three public CLI modes report summary 36, and property_validation_smoke covers fixed-shape char/string class properties."
     },
     {
       "id": "G-CLASS-001",

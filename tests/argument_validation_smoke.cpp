@@ -2,6 +2,7 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cassert>
@@ -334,12 +335,14 @@ end
     const auto bytecode = run(source);
     assert(bytecode.diagnostics.empty());
     const auto* bytecodeAnswer = variable(bytecode, "answer");
-    assert(bytecodeAnswer != nullptr && bytecodeAnswer->text == "hello");
+    assert(bytecodeAnswer != nullptr &&
+           mparser::runtimeTextScalarUtf8(*bytecodeAnswer) == "hello");
 
     const auto interpreted = runInterpreter(source);
     assert(interpreted.diagnostics.empty());
     const auto* interpretedAnswer = variable(interpreted, "answer");
-    assert(interpretedAnswer != nullptr && interpretedAnswer->text == "hello");
+    assert(interpretedAnswer != nullptr &&
+           mparser::runtimeTextScalarUtf8(*interpretedAnswer) == "hello");
 }
 
 } // namespace

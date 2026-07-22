@@ -249,7 +249,20 @@ function families, not an unbounded builtin count.
   tests, source-graph precedence tests, and one sample checked through every
   public execution mode.
 
-### v0.75-v0.79: Remaining Runtime Foundations
+### v0.75: Character And String Runtime Contracts
+
+- Separate `CharacterArray` and `StringArray` storage behind a shared,
+  engine-facing `RuntimeValue` header with explicit UTF-16 payloads and UTF-8
+  boundaries.
+- Align HIR and bytecode behavior for text shape, emptiness, indexing, brace
+  access, assignment, growth, deletion, concatenation, implicit expansion,
+  conversions, formatting, missing strings, and representative builtins.
+- Route array transforms, diagnostics, metadata, dynamic calls, validated class
+  properties, and typed/native fallback through the same text contract.
+- Close `G-TEXT-001` with differential runtime tests, all public CLI modes,
+  a runnable sample, portable-only validation, and focused AArch64 evidence.
+
+### v0.76-v0.79: Remaining Runtime Foundations
 
 - Close the audited Must-have text, object-array/reflection, workspace, and
   remaining runtime-value boundaries with linked compatibility evidence.

@@ -2,6 +2,7 @@
 
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 
 #include <algorithm>
 #include <cmath>
@@ -114,7 +115,8 @@ bool parseScanOptions(ScanKind kind,
                                              : MissingPolicy::Include;
     for (size_t index = 1; index < arguments.size(); ++index) {
         const RuntimeValue& argument = arguments[index];
-        if (argument.kind != RuntimeValueKind::String) {
+        const auto text = runtimeTextScalarUtf8(argument);
+        if (!text) {
             if (options.dimension) {
                 error = "cumulative dimension was specified more than once";
                 return false;
@@ -127,18 +129,18 @@ bool parseScanOptions(ScanKind kind,
             continue;
         }
 
-        if (argument.text == "forward" || argument.text == "reverse") {
+        if (*text == "forward" || *text == "reverse") {
             if (options.directionSpecified) {
                 error = "cumulative direction was specified more than once";
                 return false;
             }
             options.directionSpecified = true;
-            options.reverse = argument.text == "reverse";
+            options.reverse = *text == "reverse";
             continue;
         }
 
         MissingPolicy policy;
-        if (parseMissingPolicy(argument.text, policy)) {
+        if (parseMissingPolicy(*text, policy)) {
             if (options.missingPolicySpecified) {
                 error =
                     "cumulative missing-value policy was specified more than once";
@@ -149,7 +151,7 @@ bool parseScanOptions(ScanKind kind,
             continue;
         }
 
-        error = "unsupported cumulative option: " + argument.text;
+        error = "unsupported cumulative option: " + *text;
         return false;
     }
     return true;

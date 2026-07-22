@@ -4,6 +4,7 @@
 #include "mparser/interpreter.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cmath>
@@ -86,11 +87,11 @@ void checkString(const Result& result, std::string_view name,
                  std::string_view expected) {
     const auto* value = findVariable(result, name);
     check(value != nullptr, "missing variable: " + std::string(name));
-    check(value->kind == mparser::RuntimeValueKind::String,
-          "variable is not text: " + std::string(name));
-    check(value->text == expected,
+    const auto text = mparser::runtimeTextScalarUtf8(*value);
+    check(text.has_value(), "variable is not text: " + std::string(name));
+    check(*text == expected,
           "unexpected text value for " + std::string(name) + ": " +
-              value->text);
+              *text);
 }
 
 bool hasDiagnostic(const std::vector<mparser::Diagnostic>& diagnostics,

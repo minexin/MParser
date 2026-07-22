@@ -6,6 +6,7 @@
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cmath>
@@ -96,11 +97,12 @@ const mparser::RuntimeValue& requiredVariable(
 }
 
 mparser::RuntimeValue stringValue(std::string text) {
-    mparser::RuntimeValue result;
-    result.kind = mparser::RuntimeValueKind::String;
-    result.text = std::move(text);
-    mparser::setRuntimeDimensions(result, {1, result.text.size()});
-    return result;
+    return mparser::makeRuntimeCharacterVectorUtf8(text);
+}
+
+std::string textValue(const mparser::RuntimeValue& value) {
+    return mparser::runtimeTextScalarUtf8(value).value_or(
+        std::string("<non-text>"));
 }
 
 mparser::RuntimeValue numberValue(double number) {
@@ -131,18 +133,16 @@ void verifyCaughtExceptions(const Result& result) {
     const auto& message = requiredProperty(*caught, "message");
     const auto& stack = requiredProperty(*caught, "stack");
     const auto& cause = requiredProperty(*caught, "cause");
-    require(identifier.kind == mparser::RuntimeValueKind::String &&
-                identifier.text == "MParserDemo:BadValue",
+    require(textValue(identifier) == "MParserDemo:BadValue",
             "caught exception identifier mismatch");
-    require(message.kind == mparser::RuntimeValueKind::String &&
-                message.text == "Value 7 for item",
+    require(textValue(message) == "Value 7 for item",
             "caught exception message mismatch");
     require(stack.kind == mparser::RuntimeValueKind::Struct,
             "caught exception stack is not a structure");
-    require(requiredStructField(stack, "file").text ==
+    require(textValue(requiredStructField(stack, "file")) ==
                 "exception_runtime_smoke.m",
             "caught exception source file mismatch");
-    require(requiredStructField(stack, "name").text ==
+    require(textValue(requiredStructField(stack, "name")) ==
                 "exception_runtime_demo",
             "caught exception function name mismatch");
     require(requiredStructField(stack, "line").number == 3.0,
@@ -316,21 +316,21 @@ void verifyCauseContract(const Result& result) {
         requiredProperty(causes.cells.front(), "identifier");
     const auto& causeMessage =
         requiredProperty(causes.cells.front(), "message");
-    require(causeIdentifier.text == "Cause:Root" &&
-                causeMessage.text == "root failure",
+    require(textValue(causeIdentifier) == "Cause:Root" &&
+                textValue(causeMessage) == "root failure",
             "nested MException cause metadata mismatch: id=" +
-                causeIdentifier.text + ", message=" + causeMessage.text);
+                textValue(causeIdentifier) + ", message=" +
+                textValue(causeMessage));
     const auto& basic = requiredVariable(result, "basic_report");
     const auto& extended = requiredVariable(result, "extended_report");
-    require(basic.kind == mparser::RuntimeValueKind::String &&
-                basic.text == "wrapper failure",
+    require(textValue(basic) == "wrapper failure",
             "basic exception report mismatch");
-    require(extended.kind == mparser::RuntimeValueKind::String &&
-                extended.text.find("Cause:Wrapper: wrapper failure") !=
+    const std::string extendedText = textValue(extended);
+    require(extendedText.find("Cause:Wrapper: wrapper failure") !=
                     std::string::npos &&
-                extended.text.find("Cause:Root: root failure") !=
+                extendedText.find("Cause:Root: root failure") !=
                     std::string::npos &&
-                extended.text.find("Caused by:") != std::string::npos,
+                extendedText.find("Caused by:") != std::string::npos,
             "extended exception report omitted stack or cause details");
 }
 
@@ -521,9 +521,9 @@ void verifyWarningContract(const Result& result) {
                 ok.number == 1.0,
             "lastwarn getter/setter contract mismatch");
     const auto& mutedState = requiredVariable(result, "muted_state");
-    require(requiredStructField(mutedState, "identifier").text ==
+    require(textValue(requiredStructField(mutedState, "identifier")) ==
                 "Warn:Muted" &&
-                requiredStructField(mutedState, "state").text == "off",
+                textValue(requiredStructField(mutedState, "state")) == "off",
             "warning query state mismatch");
 }
 
@@ -575,24 +575,24 @@ void verifyAssertAndCorrection(const Result& result) {
     const auto& correction = requiredVariable(result, "correction");
     const auto& correctionError =
         requiredVariable(result, "correction_error");
-    require(requiredProperty(defaulted, "identifier").text ==
+    require(textValue(requiredProperty(defaulted, "identifier")) ==
                 "MParser:AssertionFailed" &&
-                requiredProperty(defaulted, "message").text ==
+                textValue(requiredProperty(defaulted, "message")) ==
                     "Assertion failed.",
             "default assert exception mismatch");
-    require(requiredProperty(custom, "identifier").text ==
+    require(textValue(requiredProperty(custom, "identifier")) ==
                 "Assert:Custom" &&
-                requiredProperty(custom, "message").text == "bad 7",
+                textValue(requiredProperty(custom, "message")) == "bad 7",
             "custom assert exception mismatch");
-    require(requiredProperty(outputError, "identifier").text ==
+    require(textValue(requiredProperty(outputError, "identifier")) ==
                 "MParser:InvalidAssertion",
             "assert output-arity exception mismatch");
-    require(requiredProperty(constructorOutputError, "identifier").text ==
+    require(textValue(requiredProperty(constructorOutputError, "identifier")) ==
                 "MParser:InvalidException",
             "MException output-arity exception mismatch");
     require(correction.kind == mparser::RuntimeValueKind::Missing,
             "MException Correction placeholder mismatch");
-    require(requiredProperty(correctionError, "identifier").text ==
+    require(textValue(requiredProperty(correctionError, "identifier")) ==
                 "MParser:UnsupportedExceptionCorrection",
             "unsupported correction boundary diagnostic mismatch");
 }
@@ -619,7 +619,7 @@ void runSharedContractSmoke() {
          stringValue("%d %.1f %% %c"), numberValue(7),
          numberValue(2.25), stringValue("Z")});
     require(formatted.succeeded &&
-                requiredProperty(formatted.value, "message").text ==
+                textValue(requiredProperty(formatted.value, "message")) ==
                     "7 2.2 % Z",
             "scalar exception formatting mismatch");
 
@@ -631,9 +631,9 @@ void runSharedContractSmoke() {
     const auto structured =
         mparser::runtimeCreateErrorException({errorStruct});
     require(structured.succeeded &&
-                requiredProperty(structured.value, "identifier").text ==
+                textValue(requiredProperty(structured.value, "identifier")) ==
                     "Struct:Failure" &&
-                requiredProperty(structured.value, "message").text ==
+                textValue(requiredProperty(structured.value, "message")) ==
                     "structured failure",
             "error structure construction mismatch");
 

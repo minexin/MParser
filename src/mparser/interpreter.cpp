@@ -16,6 +16,7 @@
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_text.h"
 #include "mparser/runtime_value_ops.h"
 #include "mparser/runtime_warning.h"
 
@@ -60,12 +61,8 @@ RuntimeValue logicalValue(bool value) {
                        RuntimeNumericClass::Logical);
 }
 
-RuntimeValue stringValue(std::string value) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::String;
-    result.text = std::move(value);
-    setRuntimeDimensions(result, {1, result.text.size()});
-    return result;
+RuntimeValue characterValue(std::string value) {
+    return makeRuntimeCharacterVectorUtf8(value);
 }
 
 RuntimeValue vectorValue(
@@ -112,8 +109,8 @@ bool isNumber(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Number;
 }
 
-bool isString(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::String;
+bool isText(const RuntimeValue& value) {
+    return isRuntimeTextValue(value);
 }
 
 bool isVector(const RuntimeValue& value) {
@@ -210,8 +207,8 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
         return left.numericClass == right.numericClass &&
                left.number == right.number;
     }
-    if (isString(left) && isString(right)) {
-        return left.text == right.text;
+    if (isText(left) && isText(right)) {
+        return runtimeTextPayloadEqual(left, right);
     }
     if (isArray(left) && isArray(right)) {
         return left.numericClass == right.numericClass &&
@@ -1472,6 +1469,18 @@ private:
             targetValue = std::move(result.value);
             return;
         }
+        if (isRuntimeTextValue(targetValue)) {
+            const auto result = nullAssignment
+                                    ? runtimeDeleteTextIndexed(
+                                          targetValue, arguments,
+                                          colonSubscripts)
+                                    : runtimeAssignTextIndexed(
+                                          targetValue, arguments, value);
+            if (!result.succeeded) {
+                addDiagnostic(target, result.error);
+            }
+            return;
+        }
 
         if (!isNumeric(targetValue) || !isNumeric(value)) {
             addDiagnostic(target,
@@ -1508,20 +1517,29 @@ private:
                                       target.children.front()->label);
             return;
         }
-        RuntimeValue& cell = variable->second;
-        if (!isCell(cell)) {
-            addDiagnostic(target, "brace assignment requires a cell target");
-            return;
-        }
+        RuntimeValue& indexed = variable->second;
 
         const std::vector<RuntimeValue> arguments =
-            evaluateIndexArguments(target, cell);
-        auto result = runtimeAssignCellContents(cell, arguments, value);
+            evaluateIndexArguments(target, indexed);
+        if (isRuntimeStringArray(indexed)) {
+            const auto result = runtimeAssignStringContents(
+                indexed, arguments, value);
+            if (!result.succeeded) {
+                addDiagnostic(target, result.error);
+            }
+            return;
+        }
+        if (!isCell(indexed)) {
+            addDiagnostic(target,
+                          "brace assignment requires a cell or string target");
+            return;
+        }
+        auto result = runtimeAssignCellContents(indexed, arguments, value);
         if (!result.succeeded) {
             addDiagnostic(target, std::move(result.error));
             return;
         }
-        cell = std::move(result.value);
+        indexed = std::move(result.value);
     }
 
     void executeControl(const HirNode& node) {
@@ -1985,6 +2003,20 @@ private:
             return matrixValue(value.columns, value.rows,
                                std::move(transposed), value.numericClass);
         }
+        if (isRuntimeTextValue(value)) {
+            if (runtimeDimensionCount(value) > 2) {
+                addDiagnostic(node,
+                              "transpose requires a two-dimensional text array");
+                return missingValue();
+            }
+            auto result = runtimeArrayOperationBuiltin(
+                "permute", {value, vectorValue({2.0, 1.0})});
+            if (!result.succeeded) {
+                addDiagnostic(node, result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
 
         addDiagnostic(node, "transpose requires numeric input");
         return missingValue();
@@ -2034,7 +2066,10 @@ private:
 
         if (node.raw.size() >= 2 &&
             (node.raw.front() == '\'' || node.raw.front() == '"')) {
-            return stringValue(decodeStringLiteral(node.raw));
+            const std::string decoded = decodeStringLiteral(node.raw);
+            return node.raw.front() == '\''
+                       ? makeRuntimeCharacterVectorUtf8(decoded)
+                       : makeRuntimeStringScalarUtf8(decoded);
         }
 
         if (const auto number = parseNumber(node.label)) {
@@ -2078,113 +2113,37 @@ private:
         }
 
         if (node.children.front()->kind != HirKind::MatrixRow) {
-            std::vector<double> elements;
-            std::optional<RuntimeNumericClass> numericClass;
+            std::vector<RuntimeValue> values;
             for (const auto& child : node.children) {
-                if (!appendNumericElements(*child, elements,
-                                           numericClass)) {
-                    return missingValue();
-                }
+                appendRuntimeExpandedValues(values, evaluate(*child));
             }
-            return vectorValue(
-                std::move(elements),
-                numericClass.value_or(RuntimeNumericClass::Double));
+            return concatenateMatrixLiteral(node, "horzcat", values);
         }
 
-        std::vector<double> elements;
-        size_t columns = 0;
-        std::optional<RuntimeNumericClass> numericClass;
+        std::vector<RuntimeValue> rows;
         for (const auto& child : node.children) {
-            const RuntimeValue value = evaluate(*child);
-            if (isVector(value)) {
-                if (columns == 0) {
-                    columns = value.elements.size();
-                } else if (columns != value.elements.size()) {
-                    addDiagnostic(*child,
-                                  "matrix rows must have the same length");
-                    return missingValue();
-                }
-                if (!numericClass) {
-                    numericClass = value.numericClass;
-                }
-                for (const double element : value.elements) {
-                    const auto converted = runtimeCoerceNumericElement(
-                        element, *numericClass);
-                    if (!converted) {
-                        addDiagnostic(
-                            *child,
-                            "matrix literal cannot convert NaN to logical");
-                        return missingValue();
-                    }
-                    elements.push_back(*converted);
-                }
-                continue;
-            }
-
-            addDiagnostic(*child, "matrix row did not produce a row vector");
-            return missingValue();
+            appendRuntimeExpandedValues(rows, evaluate(*child));
         }
-
-        if (node.children.size() == 1) {
-            return vectorValue(
-                std::move(elements),
-                numericClass.value_or(RuntimeNumericClass::Double));
-        }
-        return matrixValue(
-            node.children.size(), columns, std::move(elements),
-            numericClass.value_or(RuntimeNumericClass::Double));
+        return concatenateMatrixLiteral(node, "vertcat", rows);
     }
 
     RuntimeValue evaluateMatrixRow(const HirNode& node) {
-        std::vector<double> elements;
-        std::optional<RuntimeNumericClass> numericClass;
+        std::vector<RuntimeValue> values;
         for (const auto& child : node.children) {
-            if (!appendNumericElements(*child, elements, numericClass)) {
-                return missingValue();
-            }
+            appendRuntimeExpandedValues(values, evaluate(*child));
         }
-
-        return vectorValue(
-            std::move(elements),
-            numericClass.value_or(RuntimeNumericClass::Double));
+        return concatenateMatrixLiteral(node, "horzcat", values);
     }
 
-    bool appendNumericElements(
-        const HirNode& node, std::vector<double>& elements,
-        std::optional<RuntimeNumericClass>& numericClass) {
-        const RuntimeValue value = evaluate(node);
-        std::vector<RuntimeValue> expanded;
-        appendRuntimeExpandedValues(expanded, value);
-        for (const RuntimeValue& elementValue : expanded) {
-            if (!isNumeric(elementValue)) {
-                addDiagnostic(
-                    node,
-                    "matrix literal currently supports numeric values");
-                return false;
-            }
-
-            if (!numericClass) {
-                numericClass = elementValue.numericClass;
-            }
-            const size_t count = isNumber(elementValue)
-                                     ? 1
-                                     : elementValue.elements.size();
-            for (size_t index = 0; index < count; ++index) {
-                const double element = isNumber(elementValue)
-                                           ? elementValue.number
-                                           : elementValue.elements[index];
-                const auto converted = runtimeCoerceNumericElement(
-                    element, *numericClass);
-                if (!converted) {
-                    addDiagnostic(
-                        node,
-                        "matrix literal cannot convert NaN to logical");
-                    return false;
-                }
-                elements.push_back(*converted);
-            }
+    RuntimeValue concatenateMatrixLiteral(
+        const HirNode& node, std::string_view operation,
+        const std::vector<RuntimeValue>& values) {
+        auto result = runtimeArrayOperationBuiltin(operation, values);
+        if (!result.succeeded) {
+            addDiagnostic(node, result.error);
+            return missingValue();
         }
-        return true;
+        return std::move(result.value);
     }
 
     RuntimeValue evaluateBinary(const HirNode& node) {
@@ -2229,16 +2188,25 @@ private:
         }
 
         const RuntimeValue right = evaluate(*node.children[1]);
-        if (isString(left) || isString(right)) {
-            if (isString(left) && isString(right) &&
-                (node.label == "==" || node.label == "~=")) {
-                const bool equal = runtimeEqual(left, right);
-                return logicalValue((node.label == "==") == equal);
+        if (isText(left) || isText(right)) {
+            if (isText(left) && isText(right)) {
+                RuntimeTextOperationResult result;
+                if (node.label == "+" &&
+                    (isRuntimeStringArray(left) ||
+                     isRuntimeStringArray(right))) {
+                    result = runtimeAppendText(left, right);
+                } else {
+                    result = runtimeCompareText(node.label, left, right);
+                }
+                if (result.succeeded) {
+                    return std::move(result.value);
+                }
+                addDiagnostic(node, result.error);
+                return missingValue();
             }
 
             addDiagnostic(node,
-                          "string binary operators currently support only "
-                          "== and ~= between strings");
+                          "text binary operators require compatible text values");
             return missingValue();
         }
         if (!isNumeric(left) || !isNumeric(right)) {
@@ -2611,70 +2579,34 @@ private:
         }
 
         if (node.children.front()->kind != HirKind::MatrixRow) {
-            std::vector<double> elements;
+            std::vector<RuntimeValue> values;
             for (const auto& child : node.children) {
-                appendNumericElementsWithIndexContext(*child, target, position,
-                                                      total, elements);
+                appendRuntimeExpandedValues(
+                    values, evaluateWithIndexContext(
+                                *child, target, position, total));
             }
-            return vectorValue(std::move(elements));
+            return concatenateMatrixLiteral(node, "horzcat", values);
         }
 
-        std::vector<double> elements;
-        size_t columns = 0;
+        std::vector<RuntimeValue> rows;
         for (const auto& child : node.children) {
-            const RuntimeValue value =
-                evaluateWithIndexContext(*child, target, position, total);
-            if (isVector(value)) {
-                if (columns == 0) {
-                    columns = value.elements.size();
-                } else if (columns != value.elements.size()) {
-                    addDiagnostic(*child,
-                                  "matrix rows must have the same length");
-                    return missingValue();
-                }
-                elements.insert(elements.end(), value.elements.begin(),
-                                value.elements.end());
-                continue;
-            }
-
-            addDiagnostic(*child, "matrix row did not produce a row vector");
-            return missingValue();
+            appendRuntimeExpandedValues(
+                rows, evaluateWithIndexContext(
+                          *child, target, position, total));
         }
-
-        if (node.children.size() == 1) {
-            return vectorValue(std::move(elements));
-        }
-        return matrixValue(node.children.size(), columns, std::move(elements));
+        return concatenateMatrixLiteral(node, "vertcat", rows);
     }
 
     RuntimeValue evaluateMatrixRowWithIndexContext(
         const HirNode& node, const RuntimeValue& target, size_t position,
         size_t total) {
-        std::vector<double> elements;
+        std::vector<RuntimeValue> values;
         for (const auto& child : node.children) {
-            appendNumericElementsWithIndexContext(*child, target, position,
-                                                  total, elements);
+            appendRuntimeExpandedValues(
+                values, evaluateWithIndexContext(
+                            *child, target, position, total));
         }
-
-        return vectorValue(std::move(elements));
-    }
-
-    void appendNumericElementsWithIndexContext(
-        const HirNode& node, const RuntimeValue& target, size_t position,
-        size_t total, std::vector<double>& elements) {
-        const RuntimeValue value =
-            evaluateWithIndexContext(node, target, position, total);
-        if (isNumber(value)) {
-            elements.push_back(value.number);
-            return;
-        }
-        if (isArray(value)) {
-            elements.insert(elements.end(), value.elements.begin(),
-                            value.elements.end());
-            return;
-        }
-
-        addDiagnostic(node, "matrix literal currently supports numeric values");
+        return concatenateMatrixLiteral(node, "horzcat", values);
     }
 
     RuntimeValue firstOutput(const FunctionCallResult& result) const {
@@ -2973,6 +2905,14 @@ private:
         const RuntimeValue target = evaluate(*node.children.front());
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(node, target);
+        if (isRuntimeStringArray(target)) {
+            auto result = runtimeIndexStringContents(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
         auto result = runtimeIndexCellContents(target, arguments);
         if (!result.succeeded) {
             addDiagnostic(node, std::move(result.error));
@@ -2998,6 +2938,14 @@ private:
         }
         if (isCell(target)) {
             auto result = runtimeIndexCell(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (isRuntimeTextValue(target)) {
+            auto result = runtimeIndexText(target, arguments);
             if (!result.succeeded) {
                 addDiagnostic(node, std::move(result.error));
                 return missingValue();
@@ -3032,9 +2980,9 @@ private:
             RuntimeValue handle;
             if (isFunctionHandle(arguments.front())) {
                 handle = arguments.front();
-            } else if (isString(arguments.front())) {
-                const auto resolved = functionHandleFromText(
-                    node, arguments.front().text);
+            } else if (const auto text =
+                           runtimeTextScalarUtf8(arguments.front())) {
+                const auto resolved = functionHandleFromText(node, *text);
                 if (!resolved) {
                     return missingOutputs();
                 }
@@ -3066,13 +3014,13 @@ private:
 
             RuntimeValue result;
             if (name == "str2func") {
-                if (!isString(arguments.front())) {
+                const auto text = runtimeTextScalarUtf8(arguments.front());
+                if (!text) {
                     addDiagnostic(node,
                                   "str2func expects a function name string");
                     return missingOutputs();
                 }
-                const auto resolved = functionHandleFromText(
-                    node, arguments.front().text);
+                const auto resolved = functionHandleFromText(node, *text);
                 if (!resolved) {
                     return missingOutputs();
                 }
@@ -3084,7 +3032,7 @@ private:
                     return missingOutputs();
                 }
                 result = name == "func2str"
-                             ? stringValue(runtimeFunctionHandleText(
+                             ? characterValue(runtimeFunctionHandleText(
                                    arguments.front()))
                              : runtimeFunctionHandleMetadata(
                                    arguments.front());
@@ -3170,8 +3118,12 @@ private:
                 runtimeExceptionProperty(result.value, "identifier");
             const RuntimeValue* message =
                 runtimeExceptionProperty(result.value, "message");
-            if (identifier && message && identifier->text.empty() &&
-                message->text.empty()) {
+            const auto identifierText = identifier
+                ? runtimeTextScalarUtf8(*identifier) : std::nullopt;
+            const auto messageText = message
+                ? runtimeTextScalarUtf8(*message) : std::nullopt;
+            if (identifierText && messageText && identifierText->empty() &&
+                messageText->empty()) {
                 return FunctionCallResult{
                     std::vector<RuntimeValue>(requestedOutputCount,
                                               missingValue())};
@@ -3220,8 +3172,8 @@ private:
             std::vector<RuntimeValue> errorArguments;
             if (arguments.size() == 1) {
                 errorArguments = {
-                    stringValue("MParser:AssertionFailed"),
-                    stringValue("Assertion failed.")};
+                    characterValue("MParser:AssertionFailed"),
+                    characterValue("Assertion failed.")};
             } else {
                 errorArguments.assign(arguments.begin() + 1,
                                       arguments.end());
@@ -3331,11 +3283,64 @@ private:
             return FunctionCallResult{{cellValueForDimensions(
                 *shape, std::vector<RuntimeValue>(*count, missingValue()))}};
         }
+        if (name == "strings") {
+            const auto shape = arguments.empty()
+                                   ? std::optional<std::vector<size_t>>(
+                                         std::vector<size_t>{1, 1})
+                                   : constructorShape(node, name, arguments);
+            if (!shape) {
+                return FunctionCallResult{{missingValue()}};
+            }
+            const auto count = checkedRuntimeDimensionProduct(*shape);
+            if (!count) {
+                addDiagnostic(node, "strings dimensions are too large");
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{makeRuntimeStringArray(
+                *shape, std::vector<RuntimeStringElement>(*count))}};
+        }
         if (name == "linspace") {
             return callLinspaceBuiltin(node, arguments);
         }
-        if (name == "strcmp") {
-            return callStrcmpBuiltin(node, arguments);
+        if (name == "strcmp" || name == "strcmpi") {
+            return callStrcmpBuiltin(node, name, arguments);
+        }
+        if (name == "char" || name == "string" || name == "cellstr" ||
+            name == "strlength" || name == "ismissing") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node, name + " expects one argument");
+                return FunctionCallResult{{missingValue()}};
+            }
+            RuntimeTextOperationResult result;
+            if (name == "char") {
+                result = runtimeConvertToCharacter(arguments.front());
+            } else if (name == "string") {
+                result = runtimeConvertToString(arguments.front());
+            } else if (name == "cellstr") {
+                result = runtimeCellstr(arguments.front());
+            } else if (name == "strlength") {
+                result = runtimeStringLengths(arguments.front());
+            } else {
+                result = runtimeTextMissingMask(arguments.front());
+            }
+            if (!result.succeeded) {
+                addDiagnostic(node, result.error);
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{std::move(result.value)}};
+        }
+        if (name == "ischar" || name == "isstring" ||
+            name == "isStringScalar") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node, name + " expects one argument");
+                return FunctionCallResult{{missingValue()}};
+            }
+            const bool result = name == "ischar"
+                                    ? isRuntimeCharacterArray(arguments.front())
+                                : name == "isstring"
+                                    ? isRuntimeStringArray(arguments.front())
+                                    : isRuntimeStringScalar(arguments.front());
+            return FunctionCallResult{{logicalValue(result)}};
         }
         if (name == "struct") {
             auto result = runtimeConstructScalarStruct(arguments);
@@ -3390,6 +3395,15 @@ private:
             return FunctionCallResult{{logicalValue(
                 isStruct(arguments.front()))}};
         }
+        if (name == "double" && arguments.size() == 1 &&
+            isRuntimeCharacterArray(arguments.front())) {
+            auto result = runtimeCharacterCodes(arguments.front());
+            if (!result.succeeded) {
+                addDiagnostic(node, result.error);
+                return FunctionCallResult{{missingValue()}};
+            }
+            return FunctionCallResult{{std::move(result.value)}};
+        }
         if (name == "logical" || name == "double") {
             if (arguments.size() != 1 || !isNumeric(arguments.front())) {
                 addDiagnostic(node,
@@ -3419,47 +3433,34 @@ private:
                 addDiagnostic(node, "class expects one argument");
                 return FunctionCallResult{{missingValue()}};
             }
-            const RuntimeValue& value = arguments.front();
-            if (isNumeric(value)) {
-                return FunctionCallResult{{stringValue(std::string(
-                    runtimeNumericClassName(value.numericClass)))}};
-            }
-            if (isString(value)) {
-                return FunctionCallResult{{stringValue("char")}};
-            }
-            if (isCell(value)) {
-                return FunctionCallResult{{stringValue("cell")}};
-            }
-            if (isStruct(value)) {
-                return FunctionCallResult{{stringValue("struct")}};
-            }
-            if (isRuntimeException(value)) {
-                return FunctionCallResult{{stringValue(
-                    std::string(kRuntimeExceptionClassName))}};
-            }
-            return FunctionCallResult{{stringValue("missing")}};
+            return FunctionCallResult{{characterValue(
+                runtimeValueClassName(arguments.front()))}};
         }
         if (name == "isa") {
-            if (arguments.size() != 2 || !isString(arguments[1])) {
+            const auto target = arguments.size() == 2
+                                    ? runtimeTextScalarUtf8(arguments[1])
+                                    : std::nullopt;
+            if (!target) {
                 addDiagnostic(node,
                               "isa expects a value and class-name string");
                 return FunctionCallResult{{missingValue()}};
             }
             const RuntimeValue& value = arguments.front();
-            const std::string& target = arguments[1].text;
             bool matches = false;
             if (isNumeric(value)) {
                 matches = isRuntimeLogical(value)
-                              ? target == "logical"
-                              : target == "double" || target == "numeric";
-            } else if (isString(value)) {
-                matches = target == "char" || target == "string";
+                              ? *target == "logical"
+                              : *target == "double" || *target == "numeric";
+            } else if (isRuntimeCharacterArray(value)) {
+                matches = *target == "char";
+            } else if (isRuntimeStringArray(value)) {
+                matches = *target == "string";
             } else if (isCell(value)) {
-                matches = target == "cell";
+                matches = *target == "cell";
             } else if (isStruct(value)) {
-                matches = target == "struct";
+                matches = *target == "struct";
             } else if (isRuntimeException(value)) {
-                matches = target == kRuntimeExceptionClassName;
+                matches = *target == kRuntimeExceptionClassName;
             }
             return FunctionCallResult{{logicalValue(matches)}};
         }
@@ -3508,16 +3509,21 @@ private:
     }
 
     FunctionCallResult
-    callStrcmpBuiltin(const HirNode& node,
+    callStrcmpBuiltin(const HirNode& node, std::string_view name,
                       const std::vector<RuntimeValue>& arguments) {
-        if (arguments.size() != 2 || !isString(arguments[0]) ||
-            !isString(arguments[1])) {
-            addDiagnostic(node, "strcmp expects two string arguments");
+        if (arguments.size() != 2 || !isText(arguments[0]) ||
+            !isText(arguments[1])) {
+            addDiagnostic(node, std::string(name) +
+                                    " expects two text arguments");
             return FunctionCallResult{{missingValue()}};
         }
-
-        return FunctionCallResult{{
-            logicalValue(runtimeEqual(arguments[0], arguments[1]))}};
+        auto result = runtimeCompareText(
+            name, arguments[0], arguments[1], name == "strcmpi");
+        if (!result.succeeded) {
+            addDiagnostic(node, result.error);
+            return FunctionCallResult{{missingValue()}};
+        }
+        return FunctionCallResult{{std::move(result.value)}};
     }
 
     FunctionCallResult callSizeBuiltin(
@@ -3865,9 +3871,9 @@ RuntimeValue runtimeFunctionHandleMetadata(const RuntimeValue& value) {
 
     const RuntimeFunctionHandle& handle = *value.functionHandle;
     std::map<std::string, RuntimeValue> fields{
-        {"file", stringValue(handle.sourceFile)},
-        {"function", stringValue(runtimeFunctionHandleText(value))},
-        {"type", stringValue(
+        {"file", characterValue(handle.sourceFile)},
+        {"function", characterValue(runtimeFunctionHandleText(value))},
+        {"type", characterValue(
                      handle.kind == RuntimeFunctionHandleKind::Anonymous
                          ? "anonymous"
                          : "simple")},
@@ -3894,9 +3900,83 @@ std::string runtimeValueToString(const RuntimeValue& value) {
     case RuntimeValueKind::Number:
         output << value.number;
         return output.str();
-    case RuntimeValueKind::String:
-        output << '"' << value.text << '"';
+    case RuntimeValueKind::CharacterArray: {
+        const auto dimensions = runtimeDimensions(value);
+        if (dimensions == std::vector<size_t>{0, 0}) {
+            return "''";
+        }
+        if (dimensions.size() == 2 && dimensions[0] == 1) {
+            const std::string text =
+                runtimeUtf16ToUtf8(value.characterElements);
+            output << '\'';
+            for (const char character : text) {
+                output << character;
+                if (character == '\'') {
+                    output << '\'';
+                }
+            }
+            output << '\'';
+            return output.str();
+        }
+        output << "char(" << dimensions[0] << "x" << dimensions[1]
+               << ")[";
+        for (size_t row = 0; row < dimensions[0]; ++row) {
+            if (row != 0) {
+                output << "; ";
+            }
+            const std::u16string_view rowText = dimensions[1] == 0
+                ? std::u16string_view{}
+                : std::u16string_view(
+                      value.characterElements.data() +
+                          row * dimensions[1],
+                      dimensions[1]);
+            output << '\'' << runtimeUtf16ToUtf8(rowText) << '\'';
+        }
+        output << "]";
         return output.str();
+    }
+    case RuntimeValueKind::StringArray: {
+        if (isRuntimeStringScalar(value)) {
+            if (value.stringElements.front().missing) {
+                return "<missing>";
+            }
+            const std::string text = runtimeUtf16ToUtf8(
+                value.stringElements.front().value);
+            output << '"';
+            for (const char character : text) {
+                output << character;
+                if (character == '"') {
+                    output << '"';
+                }
+            }
+            output << '"';
+            return output.str();
+        }
+        const auto dimensions = runtimeDimensions(value);
+        output << "string(";
+        for (size_t index = 0; index < dimensions.size(); ++index) {
+            if (index != 0) {
+                output << "x";
+            }
+            output << dimensions[index];
+        }
+        output << ")[";
+        for (size_t index = 0; index < value.stringElements.size(); ++index) {
+            if (index != 0) {
+                output << ", ";
+            }
+            if (value.stringElements[index].missing) {
+                output << "<missing>";
+            } else {
+                output << '"'
+                       << runtimeUtf16ToUtf8(
+                              value.stringElements[index].value)
+                       << '"';
+            }
+        }
+        output << "]";
+        return output.str();
+    }
     case RuntimeValueKind::Vector:
         output << "[";
         for (size_t index = 0; index < value.elements.size(); ++index) {

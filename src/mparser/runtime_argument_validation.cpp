@@ -2,6 +2,7 @@
 
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 
 #include <algorithm>
 #include <cmath>
@@ -26,19 +27,15 @@ bool isCell(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Cell;
 }
 
-bool isString(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::String;
-}
-
 size_t valueCount(const RuntimeValue& value, std::string_view className) {
     if (value.kind == RuntimeValueKind::Missing) {
         return 0;
     }
-    if (isString(value) && className == "string") {
-        return value.rows * value.columns;
+    if (isRuntimeStringArray(value) && className == "string") {
+        return runtimeShapeElementCount(value);
     }
-    if (isString(value)) {
-        return value.text.size();
+    if (isRuntimeTextValue(value)) {
+        return runtimeShapeElementCount(value);
     }
     if (isCell(value)) {
         return value.cells.size();
@@ -217,11 +214,12 @@ RuntimeInvocationNormalizationResult parseNameValueTail(
             value = arguments[index].cells.front();
             ++index;
         } else {
-            if (arguments[index].kind != RuntimeValueKind::String) {
+            const auto name = runtimeTextScalarUtf8(arguments[index]);
+            if (!name) {
                 return normalizationFailure(
                     "positional argument cannot follow a name-value argument");
             }
-            suppliedName = arguments[index].text;
+            suppliedName = *name;
             if (index + 1 >= arguments.size()) {
                 return normalizationFailure(
                     "name-value argument is missing a value: " +
@@ -266,14 +264,23 @@ RuntimeArgumentValidationResult coerceClass(
         }
         return success(std::move(*converted));
     }
-    if (type == "char" || type == "string") {
-        if (!isString(value)) {
-            return failure("value must be text for class " + type);
+    if (type == "char") {
+        if (isRuntimeCharacterArray(value)) {
+            return success(std::move(value));
         }
-        if (type == "string" && (value.rows != 0 || value.columns != 0)) {
-            setRuntimeDimensions(value, {1, 1});
+        if (const auto text = runtimeTextScalarCodeUnits(value)) {
+            return success(makeRuntimeCharacterVector(*text));
         }
-        return success(std::move(value));
+        return failure("value must be text for class char");
+    }
+    if (type == "string") {
+        if (isRuntimeStringArray(value)) {
+            return success(std::move(value));
+        }
+        if (const auto text = runtimeTextScalarCodeUnits(value)) {
+            return success(makeRuntimeStringScalar(*text));
+        }
+        return failure("value must be text for class string");
     }
     if (type == "cell") {
         return isCell(value) ? success(std::move(value))
@@ -339,7 +346,7 @@ RuntimeArgumentValidationResult reshapeValue(
         setRuntimeDimensions(value, std::move(dimensions));
         return success(std::move(value));
     }
-    if (isCell(value) || isString(value)) {
+    if (isCell(value) || isRuntimeTextValue(value)) {
         setRuntimeDimensions(value, std::move(dimensions));
         return success(std::move(value));
     }
@@ -377,7 +384,8 @@ RuntimeArgumentValidationResult coerceSize(RuntimeValue value,
     if (exact) {
         return success(std::move(value));
     }
-    if (!isNumeric(value) && !isCell(value) && !isString(value)) {
+    if (!isNumeric(value) && !isCell(value) &&
+        !isRuntimeTextValue(value)) {
         return failure("value shape does not match the argument size");
     }
 
@@ -472,8 +480,12 @@ std::optional<std::string> applyValidator(
     if (name == "mustBeRow") return (dimensions.size() == 2 && rows == 1) ? std::nullopt : std::optional<std::string>("value must be a row");
     if (name == "mustBeColumn") return (dimensions.size() == 2 && columns == 1) ? std::nullopt : std::optional<std::string>("value must be a column");
     if (name == "mustBeMatrix") return dimensions.size() == 2 ? std::nullopt : std::optional<std::string>("value must be a matrix");
-    if (name == "mustBeText" || name == "mustBeTextScalar") return isString(value) ? std::nullopt : std::optional<std::string>("value must be text");
-    if (name == "mustBeNonzeroLengthText") return (isString(value) && !value.text.empty()) ? std::nullopt : std::optional<std::string>("text value must have nonzero length");
+    if (name == "mustBeText") return isRuntimeTextValue(value) ? std::nullopt : std::optional<std::string>("value must be text");
+    if (name == "mustBeTextScalar") return runtimeTextScalarCodeUnits(value) ? std::nullopt : std::optional<std::string>("value must be a text scalar");
+    if (name == "mustBeNonzeroLengthText") {
+        const auto text = runtimeTextScalarCodeUnits(value);
+        return (text && !text->empty()) ? std::nullopt : std::optional<std::string>("text value must have nonzero length");
+    }
     if (name == "mustBeNonmissing") {
         const bool present = value.kind != RuntimeValueKind::Missing &&
             (!isNumeric(value) || allNumeric(value, [](double x) { return !std::isnan(x); }));
@@ -545,12 +557,12 @@ RuntimeInvocationNormalizationResult normalizeRuntimeInvocationArguments(
 
     const size_t scanEnd = firstWrapper.value_or(arguments.size());
     for (size_t index = required; index < scanEnd; ++index) {
-        if (!positionalPrefixIsValid(signature, index) ||
-            arguments[index].kind != RuntimeValueKind::String) {
+        const auto name = runtimeTextScalarUtf8(arguments[index]);
+        if (!positionalPrefixIsValid(signature, index) || !name) {
             continue;
         }
         const NameMatch match =
-            resolveNameValueName(fields, arguments[index].text);
+            resolveNameValueName(fields, *name);
         if (match.kind != NameMatchKind::None) {
             return parseNameValueTail(signature, fields, arguments, index);
         }
@@ -573,7 +585,7 @@ RuntimeInvocationNormalizationResult normalizeRuntimeInvocationArguments(
 
     for (size_t index = required; index < arguments.size(); ++index) {
         if (positionalPrefixIsValid(signature, index) &&
-            arguments[index].kind == RuntimeValueKind::String) {
+            runtimeTextScalarUtf8(arguments[index])) {
             return parseNameValueTail(signature, fields, arguments, index);
         }
     }

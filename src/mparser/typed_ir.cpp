@@ -118,8 +118,10 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "missing";
     case RuntimeValueKind::Number:
         return "number";
-    case RuntimeValueKind::String:
-        return "string";
+    case RuntimeValueKind::CharacterArray:
+        return "character-array";
+    case RuntimeValueKind::StringArray:
+        return "string-array";
     case RuntimeValueKind::Vector:
         return "vector";
     case RuntimeValueKind::Matrix:

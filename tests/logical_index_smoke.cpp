@@ -6,6 +6,7 @@
 #include "mparser/optimization_plan.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 #include "mparser/typed_ir.h"
 
@@ -168,9 +169,11 @@ void verifyLogicalBehavior(const Result& result) {
                    mparser::RuntimeNumericClass::Logical,
                    "shape-vector false constructor is wrong");
 
-    require(variable(result, "logicalClass").text == "logical",
+    require(mparser::runtimeTextScalarUtf8(
+                variable(result, "logicalClass")) == "logical",
             "class(logical) returned the wrong class");
-    require(variable(result, "doubleClass").text == "double",
+    require(mparser::runtimeTextScalarUtf8(
+                variable(result, "doubleClass")) == "double",
             "class(double) returned the wrong class");
     requireScalar(variable(result, "q1"), 1,
                   mparser::RuntimeNumericClass::Logical,

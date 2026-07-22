@@ -3,6 +3,7 @@
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cassert>
@@ -10,6 +11,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -215,8 +217,7 @@ label = record.Label;
     assertNumber(result, "limit", 11);
     const auto* label = findVariable(result, "label");
     assert(label != nullptr);
-    assert(label->kind == mparser::RuntimeValueKind::String);
-    assert(label->text == "origin");
+    assert(mparser::runtimeTextScalarUtf8(*label) == "origin");
 }
 
 void cacheHandleDefaultOnceSmoke() {
@@ -289,6 +290,42 @@ slot_rank = ndims(slots);
     assertNumber(result, "slot_rank", 3);
 }
 
+void executeTextPropertyDimensionsSmoke() {
+    const auto result = run(R"(classdef TextRecord
+    properties
+        Letters(2,2) char = ['ab'; 'cd']
+        Labels(2,2) string = ["one", "two"; "three", "four"]
+    end
+end
+
+record = TextRecord();
+record.Letters = 'abcd';
+record.Labels = ["one", "two", "three", "four"];
+letters = record.Letters;
+labels = record.Labels;
+letter_probe = strcmp(letters(2,2), 'd');
+label_probe = strcmp(labels(2,2), "four");
+)");
+
+    assert(result.diagnostics.empty());
+    const auto* letters = findVariable(result, "letters");
+    const auto* labels = findVariable(result, "labels");
+    assert(letters != nullptr);
+    assert(labels != nullptr);
+    assert(letters->kind == mparser::RuntimeValueKind::CharacterArray);
+    assert(labels->kind == mparser::RuntimeValueKind::StringArray);
+    assert(mparser::runtimeDimensions(*letters) ==
+           std::vector<size_t>({2, 2}));
+    assert(mparser::runtimeDimensions(*labels) ==
+           std::vector<size_t>({2, 2}));
+    assert(mparser::runtimeCharacterElement(*letters, 3) == u'd');
+    const auto* fourth = mparser::runtimeStringElement(*labels, 3);
+    assert(fourth != nullptr && !fourth->missing &&
+           mparser::runtimeUtf16ToUtf8(fourth->value) == "four");
+    assertNumber(result, "letter_probe", 1);
+    assertNumber(result, "label_probe", 1);
+}
+
 void rejectInvalidDefaultSmoke() {
     const auto result = run(R"(classdef BadDefault
     properties
@@ -341,6 +378,7 @@ int main() {
     executePropertyDefaultsAndValidationSmoke();
     cacheHandleDefaultOnceSmoke();
     executeNdPropertyDimensionsSmoke();
+    executeTextPropertyDimensionsSmoke();
     rejectInvalidDefaultSmoke();
     rejectInvalidAssignmentsSmoke();
     std::cout << "property validation smoke tests passed\n";

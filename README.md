@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.74.0. See [docs/v0.74.md](docs/v0.74.md) for the
+Current milestone: v0.75.0. See [docs/v0.75.md](docs/v0.75.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.73.md](docs/v0.73.md),
+iteration plan. Previous boundaries are kept in [docs/v0.74.md](docs/v0.74.md),
+[docs/v0.73.md](docs/v0.73.md),
 [docs/v0.72.md](docs/v0.72.md),
 [docs/v0.71.md](docs/v0.71.md),
 [docs/v0.70.md](docs/v0.70.md),
@@ -730,9 +731,19 @@ builtin handles may cross modules. Serialization, computed-string lazy source
 loading, anonymous text parsing, and HIR method handles remain explicit later
 boundaries.
 
+v0.75 separates character arrays from string arrays in the engine-facing
+`RuntimeValue` contract. Both use UTF-16 code units but retain distinct shape,
+empty-value, indexing, assignment, concatenation, conversion, comparison, and
+display behavior. Shared text operations now serve the HIR interpreter and
+bytecode VM, including string brace access, indexed growth/deletion, implicit
+expansion, array transforms, `char`/`string`/`strings`/`cellstr`/`strlength`,
+type predicates, missing-string masks, and UTF-8 CLI boundaries. Validated
+`char` and `string` class properties use the same shape-preserving path. Typed
+and native tiers conservatively fall back for text values.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
-string literals,
+distinct UTF-16 character and string arrays,
 assignments, local, namespace, ordinary path, and private function calls with
 isolated stack frames,
 named, anonymous, and builtin function handles with closure snapshots,
@@ -742,9 +753,11 @@ single-value calls, multiple-output destructuring such as `[a, b] = f(x)`,
 ignored outputs with `~`, `for` ranges, `while` loops, `break`/`continue`,
 `return`,
 `if`/`elseif`/`else` blocks, `switch`/`case`/`otherwise`, `try`/`catch`
-diagnostic recovery, short-circuit `&&`/`||`, string equality comparisons, MATLAB
+diagnostic recovery, short-circuit `&&`/`||`, text comparisons and string
+implicit expansion/append, MATLAB
 constants such as `pi`, one-argument math builtins such as `sin` and `sqrt`,
-string builtin `strcmp`, dimension-aware reductions through `sum`, `prod`,
+text builtins and conversions including `strcmp`, `strcmpi`, `char`, `string`,
+`strings`, `cellstr`, and `strlength`, dimension-aware reductions through `sum`, `prod`,
 `mean`, `min`, `max`, `any`, and `all`, multi-output `find`, cumulative
 `cumsum`, `cumprod`, `cummin`, and `cummax`, numeric `diff`, shape queries
 through `size` and `ndims` including multi-output and dimension-vector forms,
@@ -756,7 +769,7 @@ with automatic numeric-array growth, direct indexed `[]` deletion,
 logical-mask indexing and assignment,
 logical/double conversion and class queries, array constructors `zeros`,
 `ones`, and
-two-dimensional `eye`, `linspace` vector generation, numeric/Cell `reshape`,
+two-dimensional `eye`, `linspace` vector generation, numeric/text/Cell `reshape`,
 `permute`, `ipermute`, `squeeze`, `repmat`, `cat`, `horzcat`, and `vertcat`,
 transpose, basic numeric matrix multiplication, and
 N-dimensional Cells with parenthesis indexing/mutation and brace
@@ -1366,6 +1379,19 @@ The demo reports `summary = 106` and is checked through `--run-hir`,
 `--run-bytecode`, and `--run`. `str2func` and text `feval` can address loaded
 public functions; a computed function name does not implicitly load a new
 source file.
+
+Run the distinct UTF-16 character/string runtime, indexing and mutation,
+implicit expansion, conversions, array transforms, and validated text-property
+shape behavior through the production interface:
+
+```powershell
+build\mparser.exe --run samples\text_runtime_demo.m
+```
+
+The demo reports `summary = 36` and is also checked through `--run-hir` and
+`--run-bytecode`. Single quotes create character arrays, double quotes create
+string scalars or arrays, and legal text code outside optimized regions falls
+back to the bytecode VM.
 
 Run a namespace class whose instance, static, private, and default-public
 methods live in separate `@Counter` files with:

@@ -16,6 +16,7 @@
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_text.h"
 #include "mparser/runtime_value_ops.h"
 #include "mparser/runtime_warning.h"
 #include "mparser/typed_ir.h"
@@ -205,12 +206,8 @@ RuntimeValue logicalValue(bool value) {
                        RuntimeNumericClass::Logical);
 }
 
-RuntimeValue stringValue(std::string value) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::String;
-    result.text = std::move(value);
-    setRuntimeDimensions(result, {1, result.text.size()});
-    return result;
+RuntimeValue characterValue(std::string value) {
+    return makeRuntimeCharacterVectorUtf8(value);
 }
 
 RuntimeValue vectorValue(
@@ -265,7 +262,7 @@ bool isNumber(const RuntimeValue& value) {
 }
 
 bool isString(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::String;
+    return runtimeTextScalarCodeUnits(value).has_value();
 }
 
 bool isVector(const RuntimeValue& value) {
@@ -349,8 +346,10 @@ std::string runtimeKindName(const RuntimeValue& value) {
         return "missing";
     case RuntimeValueKind::Number:
         return "number";
-    case RuntimeValueKind::String:
-        return "string";
+    case RuntimeValueKind::CharacterArray:
+        return "character_array";
+    case RuntimeValueKind::StringArray:
+        return "string_array";
     case RuntimeValueKind::Vector:
         return "vector";
     case RuntimeValueKind::Matrix:
@@ -548,7 +547,7 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
                left.number == right.number;
     }
     if (isString(left) && isString(right)) {
-        return left.text == right.text;
+        return runtimeTextPayloadEqual(left, right);
     }
     if (isArray(left) && isArray(right)) {
         return left.numericClass == right.numericClass &&
@@ -5099,11 +5098,12 @@ private:
             return;
         }
         if (!isNumeric(target.value) && !isCell(target.value) &&
+            !isRuntimeTextValue(target.value) &&
             target.value.kind != RuntimeValueKind::Struct &&
             !isRuntimeMetadataObject(target.value)) {
             addDiagnostic(instruction,
-                          "bytecode index context requires a numeric, cell, "
-                          "structure, or metadata target");
+                          "bytecode index context requires a numeric, text, "
+                          "cell, structure, or metadata target");
             return;
         }
 
@@ -5536,8 +5536,12 @@ private:
         if (instruction.operand.size() >= 2 &&
             (instruction.operand.front() == '\'' ||
              instruction.operand.front() == '"')) {
+            const std::string decoded =
+                decodeStringLiteral(instruction.operand);
             stack_.push_back(runtimeStackValue(
-                stringValue(decodeStringLiteral(instruction.operand))));
+                instruction.operand.front() == '\''
+                    ? makeRuntimeCharacterVectorUtf8(decoded)
+                    : makeRuntimeStringScalarUtf8(decoded)));
             return;
         }
 
@@ -5776,9 +5780,9 @@ private:
             return {};
         }
         const auto name = descriptor.sharedFields->find("Name");
-        return name != descriptor.sharedFields->end() &&
-                       isString(name->second)
-                   ? name->second.text
+        return name != descriptor.sharedFields->end()
+                   ? runtimeTextScalarUtf8(name->second)
+                         .value_or(std::string{})
                    : std::string{};
     }
 
@@ -5851,11 +5855,11 @@ private:
             std::make_shared<std::map<std::string, RuntimeValue>>();
         auto& fields = *descriptor.sharedFields;
         fields[std::string(kListenerValidityField)] = logicalValue(true);
-        fields["Name"] = stringValue(name);
-        fields["Description"] = stringValue("");
-        fields["DetailedDescription"] = stringValue("");
-        fields["GetAccess"] = stringValue("public");
-        fields["SetAccess"] = stringValue("public");
+        fields["Name"] = characterValue(name);
+        fields["Description"] = characterValue("");
+        fields["DetailedDescription"] = characterValue("");
+        fields["GetAccess"] = characterValue("public");
+        fields["SetAccess"] = characterValue("public");
         fields["Dependent"] = logicalValue(false);
         fields["Constant"] = logicalValue(false);
         fields["Abstract"] = logicalValue(false);
@@ -5876,8 +5880,8 @@ private:
 
     std::optional<MemberAccessPolicy> dynamicPropertyAccessPolicy(
         const RuntimeValue& value) const {
-        if (isString(value)) {
-            const std::string access = lowerAscii(value.text);
+        if (const auto text = runtimeTextScalarUtf8(value)) {
+            const std::string access = lowerAscii(*text);
             if (access == "public") {
                 return MemberAccessPolicy{MemberAccessLevel::Public, {}};
             }
@@ -5956,7 +5960,7 @@ private:
         if (!requireUsableHandleObject(instruction, owner)) {
             return missingValue();
         }
-        const std::string& name = arguments[1].text;
+        const std::string name = *runtimeTextScalarUtf8(arguments[1]);
         if (!classDerivesFrom(owner.className,
                               std::string(kDynamicPropsClassName))) {
             addDiagnostic(instruction,
@@ -6006,7 +6010,7 @@ private:
         if (!requireUsableHandleObject(instruction, owner)) {
             return missingValue();
         }
-        const std::string& name = arguments[1].text;
+        const std::string name = *runtimeTextScalarUtf8(arguments[1]);
         if (const auto descriptor =
                 dynamicPropertyDescriptor(owner, name)) {
             return *descriptor;
@@ -6266,7 +6270,7 @@ private:
         std::vector<RuntimeValue> cells;
         cells.reserve(values.size());
         for (const auto& value : values) {
-            cells.push_back(stringValue(value));
+            cells.push_back(characterValue(value));
         }
         return cellValueForShape(values.size(), 1, std::move(cells));
     }
@@ -6284,17 +6288,17 @@ private:
         }
         switch (access.level) {
         case MemberAccessLevel::Public:
-            return stringValue("public");
+            return characterValue("public");
         case MemberAccessLevel::Protected:
-            return stringValue("protected");
+            return characterValue("protected");
         case MemberAccessLevel::Private:
-            return stringValue("private");
+            return characterValue("private");
         case MemberAccessLevel::Immutable:
-            return stringValue("immutable");
+            return characterValue("immutable");
         case MemberAccessLevel::ClassList:
             return metadataClassArray(access.classNames);
         }
-        return stringValue("public");
+        return characterValue("public");
     }
 
     RuntimeValue propertyMetadataList(const ClassInfo& klass) const {
@@ -6562,11 +6566,11 @@ private:
         }
 
         if (memberName == "Name") {
-            return stringValue(className);
+            return characterValue(className);
         }
         if (memberName == "Description" ||
             memberName == "DetailedDescription") {
-            return stringValue("");
+            return characterValue("");
         }
         if (memberName == "Hidden") {
             return logicalValue(
@@ -6725,11 +6729,11 @@ private:
             return missingValue();
         }
         if (memberName == "Name") {
-            return stringValue(property->name);
+            return characterValue(property->name);
         }
         if (memberName == "Description" ||
             memberName == "DetailedDescription") {
-            return stringValue("");
+            return characterValue("");
         }
         if (memberName == "GetAccess") {
             return accessMetadataValue(property->getAccess);
@@ -6809,13 +6813,13 @@ private:
             return missingValue();
         }
         if (memberName == "Name") {
-            return stringValue(method->displayName.empty()
-                                   ? method->name
-                                   : method->displayName);
+            return characterValue(method->displayName.empty()
+                                      ? method->name
+                                      : method->displayName);
         }
         if (memberName == "Description" ||
             memberName == "DetailedDescription") {
-            return stringValue("");
+            return characterValue("");
         }
         if (memberName == "Access") {
             return accessMetadataValue(method->access);
@@ -6852,7 +6856,7 @@ private:
                 methodCallSignatureIdentity(target.text));
         }
         if (memberName == "FullPath") {
-            return stringValue(method->fullPath);
+            return characterValue(method->fullPath);
         }
         if (memberName == "DefiningClass") {
             return metadataClassValue(method->declaringClass);
@@ -6877,17 +6881,17 @@ private:
             return missingValue();
         }
         if (memberName == "Name") {
-            return stringValue(function->displayName);
+            return characterValue(function->displayName);
         }
         if (memberName == "Description" ||
             memberName == "DetailedDescription") {
-            return stringValue("");
+            return characterValue("");
         }
         if (memberName == "FullPath") {
-            return stringValue(function->fullPath);
+            return characterValue(function->fullPath);
         }
         if (memberName == "NamespaceName") {
-            return stringValue(function->namespaceName);
+            return characterValue(function->namespaceName);
         }
         if (memberName == "Signature") {
             return makeRuntimeMetadataObject(
@@ -6969,7 +6973,7 @@ private:
         }
         if (memberName == "Description" ||
             memberName == "DetailedDescription") {
-            return stringValue("");
+            return characterValue("");
         }
         if (memberName == "Required") {
             return logicalValue(argument->required);
@@ -7029,10 +7033,10 @@ private:
             return missingValue();
         }
         if (memberName == "Name") {
-            return stringValue(name);
+            return characterValue(name);
         }
         if (memberName == "GroupName") {
-            return stringValue(groupName);
+            return characterValue(groupName);
         }
         addDiagnostic(
             instruction,
@@ -7140,7 +7144,7 @@ private:
             argument->contract->spec.validators[
                 static_cast<size_t>(parsed)];
         if (memberName == "Name") {
-            return stringValue(validator.name);
+            return characterValue(validator.name);
         }
         if (memberName == "Function") {
             return missingValue();
@@ -7177,7 +7181,7 @@ private:
             return missingValue();
         }
         if (memberName == "Expression") {
-            return stringValue(
+            return characterValue(
                 argument->contract->defaultExpression);
         }
         if (memberName == "ReferencedArguments") {
@@ -7258,11 +7262,11 @@ private:
             return missingValue();
         }
         if (memberName == "Name") {
-            return stringValue(event->name);
+            return characterValue(event->name);
         }
         if (memberName == "Description" ||
             memberName == "DetailedDescription") {
-            return stringValue("");
+            return characterValue("");
         }
         if (memberName == "Hidden") {
             return logicalValue(event->hidden);
@@ -7297,7 +7301,7 @@ private:
             return missingValue();
         }
         if (memberName == "Name") {
-            return stringValue(member->name);
+            return characterValue(member->name);
         }
         if (memberName == "Hidden") {
             return logicalValue(member->hidden);
@@ -7319,11 +7323,11 @@ private:
         std::string_view memberName) {
         const std::string& namespaceName = target.text;
         if (memberName == "Name") {
-            return stringValue(namespaceName);
+            return characterValue(namespaceName);
         }
         if (memberName == "Description" ||
             memberName == "DetailedDescription") {
-            return stringValue("");
+            return characterValue("");
         }
         if (memberName == "ClassList") {
             std::vector<std::string> classes;
@@ -8208,6 +8212,24 @@ private:
             currentFrame()[instruction.operand] = std::move(result.value);
             return;
         }
+        if (isRuntimeTextValue(*target)) {
+            RuntimeValue updated = *target;
+            const auto result = instruction.nullAssignment
+                                    ? runtimeDeleteTextIndexed(
+                                          updated, arguments,
+                                          instruction.colonSubscripts)
+                                    : runtimeAssignTextIndexed(
+                                          updated, arguments,
+                                          single.value);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return;
+            }
+            recordAssignment(instruction, "index", updated);
+            currentFrame()[instruction.operand] = std::move(updated);
+            return;
+        }
         if (!isNumeric(*target) || !isNumeric(single.value)) {
             addDiagnostic(
                 instruction,
@@ -8281,16 +8303,26 @@ private:
             return;
         }
 
-        if (isString(*left) || isString(*right)) {
-            if (isString(*left) && isString(*right) &&
-                (instruction.operand == "==" || instruction.operand == "~=")) {
-                const bool equal = runtimeEqual(*left, *right);
-                pushRuntime(
-                    logicalValue((instruction.operand == "==") == equal));
+        if (isRuntimeTextValue(*left) || isRuntimeTextValue(*right)) {
+            if (isRuntimeTextValue(*left) && isRuntimeTextValue(*right)) {
+                RuntimeTextOperationResult result;
+                if (instruction.operand == "+" &&
+                    (isRuntimeStringArray(*left) ||
+                     isRuntimeStringArray(*right))) {
+                    result = runtimeAppendText(*left, *right);
+                } else {
+                    result = runtimeCompareText(
+                        instruction.operand, *left, *right);
+                }
+                if (result.succeeded) {
+                    pushRuntime(std::move(result.value));
+                    return;
+                }
+                addDiagnostic(instruction, "bytecode " + result.error);
                 return;
             }
             addDiagnostic(instruction,
-                          "bytecode string operators support only == and ~=");
+                          "bytecode text operators require compatible text values");
             return;
         }
 
@@ -8395,6 +8427,23 @@ private:
             return;
         }
 
+        if (isRuntimeTextValue(*value)) {
+            if (runtimeDimensionCount(*value) > 2) {
+                addDiagnostic(instruction,
+                              "bytecode transpose requires a two-dimensional text array");
+                return;
+            }
+            auto result = runtimeArrayOperationBuiltin(
+                "permute", {*value, vectorValue({2.0, 1.0})});
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return;
+            }
+            pushRuntime(std::move(result.value));
+            return;
+        }
+
         addDiagnostic(instruction, "bytecode transpose requires numeric input");
     }
 
@@ -8405,36 +8454,12 @@ private:
             return;
         }
         const auto values = runtimeExpandedValues(*rawValues);
-
-        std::vector<double> elements;
-        std::optional<RuntimeNumericClass> numericClass;
-        for (const auto& value : values) {
-            if (!isNumeric(value)) {
-                addDiagnostic(instruction,
-                              "bytecode matrix rows require numeric values");
-                return;
-            }
-            if (!numericClass) {
-                numericClass = value.numericClass;
-            }
-            const size_t count = isNumber(value) ? 1 : value.elements.size();
-            for (size_t index = 0; index < count; ++index) {
-                const double element =
-                    isNumber(value) ? value.number : value.elements[index];
-                const auto converted = runtimeCoerceNumericElement(
-                    element, *numericClass);
-                if (!converted) {
-                    addDiagnostic(
-                        instruction,
-                        "bytecode matrix literal cannot convert NaN to logical");
-                    return;
-                }
-                elements.push_back(*converted);
-            }
+        auto result = runtimeArrayOperationBuiltin("horzcat", values);
+        if (!result.succeeded) {
+            addDiagnostic(instruction, "bytecode " + result.error);
+            return;
         }
-        pushRuntime(vectorValue(
-            std::move(elements),
-            numericClass.value_or(RuntimeNumericClass::Double)));
+        pushRuntime(std::move(result.value));
     }
 
     void makeMatrix(const BytecodeInstruction& instruction) {
@@ -8449,53 +8474,12 @@ private:
             return;
         }
 
-        if (rows.size() == 1) {
-            if (isVector(rows.front())) {
-                pushRuntime(rows.front());
-                return;
-            }
-            if (isNumber(rows.front())) {
-                pushRuntime(vectorValue({rows.front().number},
-                                        rows.front().numericClass));
-                return;
-            }
+        auto result = runtimeArrayOperationBuiltin("vertcat", rows);
+        if (!result.succeeded) {
+            addDiagnostic(instruction, "bytecode " + result.error);
+            return;
         }
-
-        size_t columns = 0;
-        std::vector<double> elements;
-        std::optional<RuntimeNumericClass> numericClass;
-        for (const auto& row : rows) {
-            if (!isVector(row)) {
-                addDiagnostic(instruction,
-                              "bytecode matrix rows must be row vectors");
-                return;
-            }
-            if (columns == 0) {
-                columns = row.elements.size();
-            } else if (columns != row.elements.size()) {
-                addDiagnostic(instruction,
-                              "bytecode matrix rows must have equal length");
-                return;
-            }
-            if (!numericClass) {
-                numericClass = row.numericClass;
-            }
-            for (const double element : row.elements) {
-                const auto converted = runtimeCoerceNumericElement(
-                    element, *numericClass);
-                if (!converted) {
-                    addDiagnostic(
-                        instruction,
-                        "bytecode matrix literal cannot convert NaN to logical");
-                    return;
-                }
-                elements.push_back(*converted);
-            }
-        }
-
-        pushRuntime(matrixValue(
-            rows.size(), columns, std::move(elements),
-            numericClass.value_or(RuntimeNumericClass::Double)));
+        pushRuntime(std::move(result.value));
     }
 
     void makeCell(const BytecodeInstruction& instruction) {
@@ -8514,6 +8498,16 @@ private:
         const auto target = popRuntime(instruction, "cell index target");
         finishIndexContext();
         if (!arguments || !target) {
+            return;
+        }
+        if (isRuntimeStringArray(*target)) {
+            auto result = runtimeIndexStringContents(
+                *target, runtimeExpandedValues(*arguments));
+            if (!result.succeeded) {
+                addDiagnostic(instruction, std::move(result.error));
+                return;
+            }
+            pushRuntime(std::move(result.value));
             return;
         }
         auto result = runtimeIndexCellContents(
@@ -8544,6 +8538,18 @@ private:
         if (instruction.operand.empty()) {
             addDiagnostic(instruction,
                           "cell assignment requires a variable target");
+            return;
+        }
+        if (isRuntimeStringArray(*target)) {
+            RuntimeValue updated = *target;
+            const auto result = runtimeAssignStringContents(
+                updated, runtimeExpandedValues(*arguments), single.value);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, result.error);
+                return;
+            }
+            currentFrame()[instruction.operand] = updated;
+            recordAssignment(instruction, "string-content", updated);
             return;
         }
         auto result = runtimeAssignCellContents(
@@ -8655,12 +8661,13 @@ private:
         }
 
         if (!isNumeric(callee->value) &&
+            !isRuntimeTextValue(callee->value) &&
             callee->value.kind != RuntimeValueKind::Struct &&
             callee->value.kind != RuntimeValueKind::Cell &&
             !isRuntimeMetadataObject(callee->value)) {
             finishIndexContext();
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric, Cell, "
+                          "bytecode indexing requires a numeric, text, cell, "
                           "structure, or metadata target");
             return;
         }
@@ -9062,8 +9069,10 @@ private:
                     "metadata descriptor");
                 return std::nullopt;
             }
+            const std::string selectorName =
+                *runtimeTextScalarUtf8(selector);
             if (const auto descriptor = dynamicPropertyDescriptor(
-                    source, selector.text)) {
+                    source, selectorName)) {
                 return PropertyListenerTarget{
                     *descriptor, dynamicPropertyName(*descriptor), {},
                     descriptor->opaqueId,
@@ -9073,11 +9082,11 @@ private:
                                                 "SetObservable")};
             }
             const auto property =
-                selectProperty(klass->second, selector.text);
+                selectProperty(klass->second, selectorName);
             if (!property) {
                 addDiagnostic(instruction,
                               "property is not available for listener: " +
-                                  source.className + "." + selector.text);
+                                  source.className + "." + selectorName);
                 return std::nullopt;
             }
             return PropertyListenerTarget{
@@ -9188,7 +9197,8 @@ private:
         if (!requireUsableHandleObject(instruction, source)) {
             return missingValue();
         }
-        const std::string& eventName = arguments[1].text;
+        const std::string eventName =
+            *runtimeTextScalarUtf8(arguments[1]);
         const EventInfo* event = selectEvent(source, eventName);
         if (!event) {
             addDiagnostic(instruction,
@@ -9207,7 +9217,7 @@ private:
         const size_t id = nextEventListenerId_++;
         std::map<std::string, RuntimeValue> fields;
         fields["Source"] = source;
-        fields["EventName"] = stringValue(eventName);
+        fields["EventName"] = characterValue(eventName);
         fields["Callback"] = arguments[2];
         fields["Enabled"] = numberValue(1.0);
         fields["Recursive"] = numberValue(0.0);
@@ -9253,7 +9263,8 @@ private:
         if (!requireUsableHandleObject(instruction, source)) {
             return missingValue();
         }
-        const std::string& eventName = arguments[2].text;
+        const std::string eventName =
+            *runtimeTextScalarUtf8(arguments[2]);
         if (!isPropertyEventName(eventName)) {
             addDiagnostic(instruction,
                           "unknown property event name: " + eventName);
@@ -9282,7 +9293,7 @@ private:
         std::map<std::string, RuntimeValue> fields;
         fields["Source"] = target->descriptor;
         fields["Object"] = cellValue({source});
-        fields["EventName"] = stringValue(eventName);
+        fields["EventName"] = characterValue(eventName);
         fields["Callback"] = arguments[3];
         fields["Enabled"] = logicalValue(true);
         fields["Recursive"] = logicalValue(false);
@@ -9380,7 +9391,7 @@ private:
         RuntimeValue eventData = objectValue(
             std::string(kPropertyEventClassName),
             {{"AffectedObject", source},
-             {"EventName", stringValue(std::string(eventName))},
+             {"EventName", characterValue(std::string(eventName))},
              {"Source", descriptor}},
             true);
         for (const size_t id : listeners) {
@@ -9402,7 +9413,8 @@ private:
             return missingValue();
         }
         const std::string className = canonicalRuntimeMetadataClassName(
-            isString(arguments[0]) ? arguments[0].text
+            isString(arguments[0])
+                ? *runtimeTextScalarUtf8(arguments[0])
                                    : arguments[0].className);
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end()) {
@@ -9458,7 +9470,8 @@ private:
             return missingValue();
         }
         const std::string className =
-            canonicalRuntimeMetadataClassName(arguments.front().text);
+            canonicalRuntimeMetadataClassName(
+                *runtimeTextScalarUtf8(arguments.front()));
         if (!reflectableClassExists(className)) {
             return makeRuntimeMetadataArray(
                 RuntimeMetadataKind::Class, {}, {0, 1});
@@ -9499,7 +9512,8 @@ private:
             selector.kind = MetafunctionSelectorKind::ArgumentTypes;
             if (isString(value)) {
                 selector.argumentTypes.push_back(
-                    canonicalRuntimeMetadataClassName(value.text));
+                    canonicalRuntimeMetadataClassName(
+                        *runtimeTextScalarUtf8(value)));
                 return selector;
             }
             if (value.kind != RuntimeValueKind::Cell) {
@@ -9518,7 +9532,8 @@ private:
                     return std::nullopt;
                 }
                 selector.argumentTypes.push_back(
-                    canonicalRuntimeMetadataClassName(type.text));
+                    canonicalRuntimeMetadataClassName(
+                        *runtimeTextScalarUtf8(type)));
             }
             return selector;
         }
@@ -9701,7 +9716,8 @@ private:
         if (!selector) {
             return missingValue();
         }
-        const std::string& identifier = arguments.front().text;
+        const std::string identifier =
+            *runtimeTextScalarUtf8(arguments.front());
 
         if (ambiguousFunctionMetadataIdentifiers_.contains(identifier)) {
             addDiagnostic(
@@ -9840,7 +9856,8 @@ private:
             return missingValue();
         }
         const std::string className = canonicalRuntimeMetadataClassName(
-            isString(arguments.front()) ? arguments.front().text
+            isString(arguments.front())
+                ? *runtimeTextScalarUtf8(arguments.front())
                                         : arguments.front().className);
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end()) {
@@ -9905,7 +9922,7 @@ private:
              !isObject(arguments.front())) ||
             (arguments.size() == 2 &&
              (!isString(arguments[1]) ||
-              arguments[1].text != "-full"))) {
+              *runtimeTextScalarUtf8(arguments[1]) != "-full"))) {
             addDiagnostic(
                 instruction,
                 "methods expects a class-name string or object and optional "
@@ -9919,7 +9936,8 @@ private:
             return missingValue();
         }
         const std::string className = canonicalRuntimeMetadataClassName(
-            isString(arguments.front()) ? arguments.front().text
+            isString(arguments.front())
+                ? *runtimeTextScalarUtf8(arguments.front())
                                         : arguments.front().className);
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end()) {
@@ -9982,19 +10000,21 @@ private:
         }
         const std::string className =
             canonicalRuntimeMetadataClassName(arguments[0].className);
+        const std::string propertyName =
+            *runtimeTextScalarUtf8(arguments[1]);
         if (dynamicPropertyDescriptor(arguments[0],
-                                      arguments[1].text)) {
+                                      propertyName)) {
             return logicalValue(true);
         }
         const auto klass = classesByName_.find(className);
         if (klass != classesByName_.end()) {
             return logicalValue(
-                klass->second.properties.contains(arguments[1].text));
+                klass->second.properties.contains(propertyName));
         }
         if (isBuiltinReflectableClass(className)) {
             const auto names = builtinMetadataPropertyNames(className);
             return logicalValue(std::find(names.begin(), names.end(),
-                                          arguments[1].text) != names.end());
+                                          propertyName) != names.end());
         }
         return logicalValue(false);
     }
@@ -10010,24 +10030,25 @@ private:
         }
         const std::string className =
             canonicalRuntimeMetadataClassName(arguments[0].className);
+        const std::string methodName =
+            *runtimeTextScalarUtf8(arguments[1]);
         if (runtimeMetadataKind(arguments[0]) ==
                 RuntimeMetadataKind::DynamicProperty &&
-            (arguments[1].text == "delete" ||
-             arguments[1].text == "isvalid")) {
+            (methodName == "delete" || methodName == "isvalid")) {
             return logicalValue(true);
         }
-        if ((arguments[1].text == "addprop" &&
+        if ((methodName == "addprop" &&
              classDerivesFrom(className,
                               std::string(kDynamicPropsClassName))) ||
-            ((arguments[1].text == "addlistener" ||
-              arguments[1].text == "delete" ||
-              arguments[1].text == "findobj" ||
-              arguments[1].text == "findprop" ||
-              arguments[1].text == "isvalid" ||
-              arguments[1].text == "listener" ||
-              arguments[1].text == "notify") &&
+            ((methodName == "addlistener" ||
+              methodName == "delete" ||
+              methodName == "findobj" ||
+              methodName == "findprop" ||
+              methodName == "isvalid" ||
+              methodName == "listener" ||
+              methodName == "notify") &&
              arguments[0].handleObject)) {
-            if (arguments[1].text == "delete") {
+            if (methodName == "delete") {
                 const auto klass = classesByName_.find(className);
                 if (klass != classesByName_.end()) {
                     const auto declaredDelete =
@@ -10049,7 +10070,7 @@ private:
         const auto klass = classesByName_.find(className);
         if (klass != classesByName_.end()) {
             const auto method =
-                klass->second.methods.find(arguments[1].text);
+                klass->second.methods.find(methodName);
             return logicalValue(
                 method != klass->second.methods.end() &&
                 !method->second.hidden &&
@@ -10061,7 +10082,7 @@ private:
         if (isBuiltinReflectableClass(className)) {
             const auto names = builtinMetadataMethodNames(className);
             return logicalValue(std::find(names.begin(), names.end(),
-                                          arguments[1].text) != names.end());
+                                          methodName) != names.end());
         }
         return logicalValue(false);
     }
@@ -10204,7 +10225,7 @@ private:
 
         RuntimeValue eventData = objectValue(
             std::string(kEventDataClassName),
-            {{"EventName", stringValue(std::string(
+            {{"EventName", characterValue(std::string(
                                kObjectBeingDestroyedEventName))},
              {"Source", source}},
             true);
@@ -10313,7 +10334,8 @@ private:
         if (!requireUsableHandleObject(instruction, source)) {
             return;
         }
-        const std::string& eventName = arguments[1].text;
+        const std::string eventName =
+            *runtimeTextScalarUtf8(arguments[1]);
         const EventInfo* event = selectEvent(source, eventName);
         if (!event) {
             addDiagnostic(instruction,
@@ -10348,11 +10370,11 @@ private:
             }
             (*eventData.sharedFields)["Source"] = source;
             (*eventData.sharedFields)["EventName"] =
-                stringValue(eventName);
+                characterValue(eventName);
         } else {
             eventData = objectValue(
                 std::string(kEventDataClassName),
-                {{"EventName", stringValue(eventName)},
+                {{"EventName", characterValue(eventName)},
                  {"Source", source}},
                 true);
         }
@@ -10397,7 +10419,8 @@ private:
                 handle = arguments.front();
             } else if (isString(arguments.front())) {
                 const auto resolved = functionHandleFromText(
-                    instruction, arguments.front().text);
+                    instruction,
+                    *runtimeTextScalarUtf8(arguments.front()));
                 if (!resolved) {
                     return missingOutputs(requestedCount);
                 }
@@ -10437,7 +10460,8 @@ private:
                     return missingOutputs(requestedCount);
                 }
                 const auto resolved = functionHandleFromText(
-                    instruction, arguments.front().text);
+                    instruction,
+                    *runtimeTextScalarUtf8(arguments.front()));
                 if (!resolved) {
                     return missingOutputs(requestedCount);
                 }
@@ -10449,7 +10473,7 @@ private:
                     return missingOutputs(requestedCount);
                 }
                 result = name == "func2str"
-                             ? stringValue(runtimeFunctionHandleText(
+                             ? characterValue(runtimeFunctionHandleText(
                                    arguments.front()))
                              : runtimeFunctionHandleMetadata(
                                    arguments.front());
@@ -10816,7 +10840,7 @@ private:
 
         std::string className;
         if (isString(arguments.front())) {
-            className = arguments.front().text;
+            className = *runtimeTextScalarUtf8(arguments.front());
         } else if (isObject(arguments.front()) &&
                    !arguments.front().enumerationMemberName.empty()) {
             className = arguments.front().className;
@@ -10867,7 +10891,7 @@ private:
                 return missingOutputs(requestedCount);
             }
             values.push_back(*value);
-            names.push_back(stringValue(memberName));
+            names.push_back(characterValue(memberName));
         }
 
         if (requestedCount == 0) {
@@ -10905,30 +10929,24 @@ private:
 
     std::pair<size_t, size_t> propertyValueShape(
         const RuntimeValue& value, const PropertyInfo& property) const {
-        if (isString(value) && property.spec.className == "string") {
-            return {value.rows, value.columns};
-        }
+        (void)property;
         return {rowCount(value), columnCount(value)};
     }
 
     std::vector<size_t> propertyValueDimensions(
         const RuntimeValue& value, const PropertyInfo& property) const {
-        if (isString(value) && property.spec.className == "string") {
-            return normalizeRuntimeDimensions({value.rows, value.columns});
-        }
+        (void)property;
         return runtimeDimensions(value);
     }
 
     size_t propertyValueCount(const RuntimeValue& value,
                               const PropertyInfo& property) const {
+        (void)property;
         if (value.kind == RuntimeValueKind::Missing) {
             return 0;
         }
-        if (isString(value) && property.spec.className == "string") {
-            return value.rows * value.columns;
-        }
-        if (isString(value)) {
-            return value.text.size();
+        if (isRuntimeTextValue(value)) {
+            return runtimeShapeElementCount(value);
         }
         if (isCell(value)) {
             return value.cells.size();
@@ -10978,19 +10996,22 @@ private:
             return converted;
         }
         if (type == "char") {
-            if (isString(value)) {
+            if (isRuntimeCharacterArray(value)) {
                 return value;
+            }
+            if (const auto text = runtimeTextScalarCodeUnits(value)) {
+                return makeRuntimeCharacterVector(*text);
             }
             propertyValidationError(instruction, property,
                                     "value must be text for class char");
             return std::nullopt;
         }
         if (type == "string") {
-            if (isString(value)) {
-                if (value.rows != 0 || value.columns != 0) {
-                    setRuntimeDimensions(value, {1, 1});
-                }
+            if (isRuntimeStringArray(value)) {
                 return value;
+            }
+            if (const auto text = runtimeTextScalarCodeUnits(value)) {
+                return makeRuntimeStringScalar(*text);
             }
             propertyValidationError(instruction, property,
                                     "value must be text for class string");
@@ -11082,6 +11103,21 @@ private:
             }
             return std::move(reshaped.value);
         }
+        if (isRuntimeTextValue(value)) {
+            if (runtimeShapeElementCount(value) != *count) {
+                propertyValidationError(
+                    instruction, property,
+                    "text value has incompatible property dimensions");
+                return std::nullopt;
+            }
+            auto reshaped = runtimeReshapeValue(value, dimensions);
+            if (!reshaped.succeeded) {
+                propertyValidationError(instruction, property,
+                                        "property " + reshaped.error);
+                return std::nullopt;
+            }
+            return std::move(reshaped.value);
+        }
 
         propertyValidationError(instruction, property,
                                 "value cannot be reshaped to the property size");
@@ -11130,7 +11166,8 @@ private:
             return value;
         }
 
-        if (!isNumeric(value) && !isCell(value)) {
+        if (!isNumeric(value) && !isCell(value) &&
+            !isRuntimeTextValue(value)) {
             propertyValidationError(instruction, property,
                                     "value shape does not match the property size");
             return std::nullopt;
@@ -11299,13 +11336,19 @@ private:
                                               instruction, property,
                                               "value must be a matrix");
         }
-        if (name == "mustBeText" || name == "mustBeTextScalar") {
-            return isString(value) || propertyValidationError(
+        if (name == "mustBeText") {
+            return isRuntimeTextValue(value) || propertyValidationError(
                                           instruction, property,
                                           "value must be text");
         }
+        if (name == "mustBeTextScalar") {
+            return runtimeTextScalarCodeUnits(value).has_value() ||
+                   propertyValidationError(instruction, property,
+                                           "value must be a text scalar");
+        }
         if (name == "mustBeNonzeroLengthText") {
-            return (isString(value) && !value.text.empty()) ||
+            const auto text = runtimeTextScalarCodeUnits(value);
+            return (text && !text->empty()) ||
                    propertyValidationError(
                        instruction, property,
                        "text value must have nonzero length");
@@ -11417,32 +11460,12 @@ private:
                                   : RuntimeNumericClass::Double);
         }
         if (type == "char") {
-            if (dimensions.size() > 2) {
-                propertyValidationError(
-                    instruction, property,
-                    "implicit char defaults require two dimensions");
-                return std::nullopt;
-            }
-            RuntimeValue value = stringValue(std::string(*count, ' '));
-            setRuntimeDimensions(value, dimensions);
-            return value;
+            return makeRuntimeCharacterArray(
+                dimensions, std::u16string(*count, u' '));
         }
         if (type == "string") {
-            if (property.spec.dimensions.empty()) {
-                RuntimeValue value = stringValue("");
-                setRuntimeDimensions(value, {0, 0});
-                return value;
-            }
-            if (*count == 1) {
-                RuntimeValue value = stringValue("");
-                setRuntimeDimensions(value, {1, 1});
-                return value;
-            }
-            propertyValidationError(
-                instruction, property,
-                "implicit string-array defaults beyond scalar are not "
-                "represented yet");
-            return std::nullopt;
+            return makeRuntimeStringArray(
+                dimensions, std::vector<RuntimeStringElement>(*count));
         }
         if (type == "cell") {
             return cellValueForDimensions(
@@ -11601,7 +11624,7 @@ private:
                     klass->second.declaredEnumerationOrder.front();
             } else if (arguments.size() == 1 &&
                        isString(arguments.front())) {
-                memberName = arguments.front().text;
+                memberName = *runtimeTextScalarUtf8(arguments.front());
             } else {
                 addDiagnostic(
                     instruction,
@@ -12041,8 +12064,12 @@ private:
                 runtimeExceptionProperty(result.value, "identifier");
             const RuntimeValue* message =
                 runtimeExceptionProperty(result.value, "message");
-            if (identifier && message && identifier->text.empty() &&
-                message->text.empty()) {
+            const auto identifierText = identifier
+                ? runtimeTextScalarUtf8(*identifier) : std::nullopt;
+            const auto messageText = message
+                ? runtimeTextScalarUtf8(*message) : std::nullopt;
+            if (identifierText && messageText && identifierText->empty() &&
+                messageText->empty()) {
                 return missingValue();
             }
             raiseException(
@@ -12084,8 +12111,8 @@ private:
             std::vector<RuntimeValue> errorArguments;
             if (arguments.size() == 1) {
                 errorArguments = {
-                    stringValue("MParser:AssertionFailed"),
-                    stringValue("Assertion failed.")};
+                    characterValue("MParser:AssertionFailed"),
+                    characterValue("Assertion failed.")};
             } else {
                 errorArguments.assign(arguments.begin() + 1,
                                       arguments.end());
@@ -12149,6 +12176,23 @@ private:
             }
             return cellValueForDimensions(
                 *shape, std::vector<RuntimeValue>(*count, missingValue()));
+        }
+        if (name == "strings") {
+            const auto shape = arguments.empty()
+                                   ? std::optional<std::vector<size_t>>(
+                                         std::vector<size_t>{1, 1})
+                                   : constructorShape(instruction, arguments);
+            if (!shape) {
+                return missingValue();
+            }
+            const auto count = checkedRuntimeDimensionProduct(*shape);
+            if (!count) {
+                addDiagnostic(instruction,
+                              "bytecode strings dimensions are too large");
+                return missingValue();
+            }
+            return makeRuntimeStringArray(
+                *shape, std::vector<RuntimeStringElement>(*count));
         }
         if (name == "metaclass") {
             return metaclassBuiltin(instruction, arguments);
@@ -12260,7 +12304,7 @@ private:
                               "bytecode class expects one argument");
                 return missingValue();
             }
-            return stringValue(runtimeValueClassName(arguments.front()));
+            return characterValue(runtimeValueClassName(arguments.front()));
         }
         if (name == "isa") {
             if (arguments.size() != 2 || !isString(arguments[1])) {
@@ -12271,7 +12315,8 @@ private:
             }
             const RuntimeValue& value = arguments.front();
             const std::string target =
-                canonicalRuntimeMetadataClassName(arguments[1].text);
+                canonicalRuntimeMetadataClassName(
+                    *runtimeTextScalarUtf8(arguments[1]));
             bool matches = false;
             if (isRuntimeMetadataObject(value)) {
                 matches = runtimeMetadataIsa(value, target);
@@ -12282,8 +12327,10 @@ private:
                 matches = isRuntimeLogical(value)
                               ? target == "logical"
                               : target == "double" || target == "numeric";
-            } else if (isString(value)) {
-                matches = target == "char" || target == "string";
+            } else if (isRuntimeCharacterArray(value)) {
+                matches = target == "char";
+            } else if (isRuntimeStringArray(value)) {
+                matches = target == "string";
             } else if (isCell(value)) {
                 matches = target == "cell";
             } else if (value.kind == RuntimeValueKind::Struct) {
@@ -12292,6 +12339,16 @@ private:
                 matches = target == "function_handle";
             }
             return logicalValue(matches);
+        }
+        if (name == "double" && arguments.size() == 1 &&
+            isRuntimeCharacterArray(arguments.front())) {
+            auto result = runtimeCharacterCodes(arguments.front());
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
         }
         if (name == "logical" || name == "double") {
             if (arguments.size() != 1 || !isNumeric(arguments.front())) {
@@ -12319,6 +12376,20 @@ private:
             }
             return logicalValue(isRuntimeLogical(arguments.front()));
         }
+        if (name == "ischar" || name == "isstring" ||
+            name == "isStringScalar") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode " + name + " expects one argument");
+                return missingValue();
+            }
+            return logicalValue(
+                name == "ischar"
+                    ? isRuntimeCharacterArray(arguments.front())
+                : name == "isstring"
+                    ? isRuntimeStringArray(arguments.front())
+                    : isRuntimeStringScalar(arguments.front()));
+        }
         if (name == "char" || name == "string") {
             if (arguments.size() != 1) {
                 addDiagnostic(instruction,
@@ -12326,18 +12397,41 @@ private:
                                   " expects one argument");
                 return missingValue();
             }
-            if (isString(arguments.front())) {
-                return arguments.front();
+            auto result = name == "char"
+                              ? runtimeConvertToCharacter(arguments.front())
+                              : runtimeConvertToString(arguments.front());
+            if (result.succeeded) {
+                return std::move(result.value);
             }
             if (isObject(arguments.front()) &&
                 !arguments.front().enumerationMemberName.empty()) {
-                return stringValue(
-                    arguments.front().enumerationMemberName);
+                return name == "char"
+                           ? makeRuntimeCharacterVectorUtf8(
+                                 arguments.front().enumerationMemberName)
+                           : makeRuntimeStringScalarUtf8(
+                                 arguments.front().enumerationMemberName);
             }
             addDiagnostic(instruction,
-                          "bytecode " + name +
-                              " conversion is not available for this value");
+                          "bytecode " + result.error);
             return missingValue();
+        }
+        if (name == "cellstr" || name == "strlength" ||
+            name == "ismissing") {
+            if (arguments.size() != 1) {
+                addDiagnostic(instruction,
+                              "bytecode " + name + " expects one argument");
+                return missingValue();
+            }
+            RuntimeTextOperationResult result =
+                name == "cellstr" ? runtimeCellstr(arguments.front())
+                : name == "strlength" ? runtimeStringLengths(arguments.front())
+                                      : runtimeTextMissingMask(arguments.front());
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
         }
         if (name == "length" || name == "numel" || name == "size" ||
             name == "ndims" || name == "isempty") {
@@ -12426,14 +12520,23 @@ private:
         if (name == "linspace") {
             return linspaceBuiltin(instruction, arguments);
         }
-        if (name == "strcmp") {
-            if (arguments.size() != 2 || !isString(arguments[0]) ||
-                !isString(arguments[1])) {
+        if (name == "strcmp" || name == "strcmpi") {
+            if (arguments.size() != 2 ||
+                !isRuntimeTextValue(arguments[0]) ||
+                !isRuntimeTextValue(arguments[1])) {
                 addDiagnostic(instruction,
-                              "bytecode strcmp expects two string arguments");
+                              "bytecode " + name +
+                                  " expects two text arguments");
                 return missingValue();
             }
-            return logicalValue(runtimeEqual(arguments[0], arguments[1]));
+            auto result = runtimeCompareText(
+                name, arguments[0], arguments[1], name == "strcmpi");
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
         }
 
         if (arguments.size() != 1 || !isNumeric(arguments.front())) {
@@ -12628,6 +12731,14 @@ private:
         }
         if (target.kind == RuntimeValueKind::Cell) {
             auto result = runtimeIndexCell(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (isRuntimeTextValue(target)) {
+            auto result = runtimeIndexText(target, arguments);
             if (!result.succeeded) {
                 addDiagnostic(instruction, "bytecode " + result.error);
                 return missingValue();

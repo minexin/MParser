@@ -2,6 +2,7 @@
 
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 
 #include <algorithm>
 #include <cmath>
@@ -139,8 +140,8 @@ bool parseDimensionSelection(const RuntimeValue& value,
         return false;
     }
     selection.specified = true;
-    if (value.kind == RuntimeValueKind::String) {
-        if (value.text != "all") {
+    if (const auto text = runtimeTextScalarUtf8(value)) {
+        if (*text != "all") {
             error = "reduction dimension string must be \"all\"";
             return false;
         }
@@ -170,7 +171,8 @@ bool parseOrdinaryReductionOptions(
     bool outputTypeSpecified = false;
     for (size_t index = 1; index < arguments.size(); ++index) {
         const RuntimeValue& argument = arguments[index];
-        if (argument.kind != RuntimeValueKind::String) {
+        const auto text = runtimeTextScalarUtf8(argument);
+        if (!text) {
             if (!parseDimensionSelection(argument, options.selection,
                                          error)) {
                 return false;
@@ -178,22 +180,22 @@ bool parseOrdinaryReductionOptions(
             continue;
         }
 
-        if (argument.text == "all") {
+        if (*text == "all") {
             if (!parseDimensionSelection(argument, options.selection,
                                          error)) {
                 return false;
             }
             continue;
         }
-        if (parseMissingPolicy(argument.text, options.missingPolicy)) {
+        if (parseMissingPolicy(*text, options.missingPolicy)) {
             if (kind == ReductionKind::Any || kind == ReductionKind::All) {
                 error = "any and all do not accept a missing-value flag";
                 return false;
             }
             continue;
         }
-        if (argument.text == "default" || argument.text == "double" ||
-            argument.text == "native") {
+        if (*text == "default" || *text == "double" ||
+            *text == "native") {
             if (kind == ReductionKind::Any || kind == ReductionKind::All) {
                 error = "any and all do not accept an output type";
                 return false;
@@ -203,13 +205,13 @@ bool parseOrdinaryReductionOptions(
                 return false;
             }
             outputTypeSpecified = true;
-            if (argument.text == "native" &&
+            if (*text == "native" &&
                 kind != ReductionKind::Mean) {
                 options.outputClass = input.numericClass;
             }
             continue;
         }
-        error = "unsupported reduction option: " + argument.text;
+        error = "unsupported reduction option: " + *text;
         return false;
     }
     return true;
@@ -535,21 +537,22 @@ RuntimeReductionResult extremaBuiltin(
     std::string error;
     for (size_t index = optionBegin; index < arguments.size(); ++index) {
         const RuntimeValue& argument = arguments[index];
-        if (argument.kind != RuntimeValueKind::String) {
+        const auto text = runtimeTextScalarUtf8(argument);
+        if (!text) {
             if (!parseDimensionSelection(argument, options.selection,
                                          error)) {
                 return failure(std::move(error));
             }
             continue;
         }
-        if (argument.text == "all") {
+        if (*text == "all") {
             if (!parseDimensionSelection(argument, options.selection,
                                          error)) {
                 return failure(std::move(error));
             }
             continue;
         }
-        if (argument.text == "linear") {
+        if (*text == "linear") {
             if (options.linearIndices) {
                 return failure(
                     "min/max linear index option was specified twice");
@@ -557,10 +560,10 @@ RuntimeReductionResult extremaBuiltin(
             options.linearIndices = true;
             continue;
         }
-        if (parseMissingPolicy(argument.text, options.missingPolicy)) {
+        if (parseMissingPolicy(*text, options.missingPolicy)) {
             continue;
         }
-        return failure("unsupported min/max option: " + argument.text);
+        return failure("unsupported min/max option: " + *text);
     }
     return reduceNumeric(kind, arguments.front(), std::move(options),
                          requestedOutputCount);
@@ -610,13 +613,13 @@ RuntimeReductionResult findBuiltin(
     }
     bool last = false;
     if (arguments.size() == 3) {
-        if (arguments[2].kind != RuntimeValueKind::String ||
-            (arguments[2].text != "first" &&
-             arguments[2].text != "last")) {
+        const auto direction = runtimeTextScalarUtf8(arguments[2]);
+        if (!direction ||
+            (*direction != "first" && *direction != "last")) {
             return failure(
                 "find direction must be \"first\" or \"last\"");
         }
-        last = arguments[2].text == "last";
+        last = *direction == "last";
     }
 
     std::vector<size_t> matches;

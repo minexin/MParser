@@ -34,8 +34,10 @@ std::vector<size_t> runtimeDimensions(const RuntimeValue& value) {
     case RuntimeValueKind::NameValueArgument:
     case RuntimeValueKind::Object:
         return {1, 1};
-    case RuntimeValueKind::String:
-        return {1, value.text.size()};
+    case RuntimeValueKind::CharacterArray:
+        return {1, value.characterElements.size()};
+    case RuntimeValueKind::StringArray:
+        return {1, value.stringElements.size()};
     case RuntimeValueKind::Vector:
     case RuntimeValueKind::Matrix:
     case RuntimeValueKind::Cell:

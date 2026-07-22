@@ -44,8 +44,10 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
         return true;
     case RuntimeValueKind::Number:
         return left.number == right.number;
-    case RuntimeValueKind::String:
-        return left.text == right.text;
+    case RuntimeValueKind::CharacterArray:
+        return left.characterElements == right.characterElements;
+    case RuntimeValueKind::StringArray:
+        return left.stringElements == right.stringElements;
     case RuntimeValueKind::Vector:
     case RuntimeValueKind::Matrix:
         return left.elements == right.elements;

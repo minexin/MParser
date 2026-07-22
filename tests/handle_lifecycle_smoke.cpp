@@ -2,6 +2,7 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
 #include <cmath>
@@ -91,11 +92,12 @@ void checkNumber(const mparser::BytecodeVmResult& result,
 void checkString(const mparser::BytecodeVmResult& result,
                  std::string_view name, std::string_view expected) {
     const auto* value = findVariable(result, name);
-    check(value && value->kind == mparser::RuntimeValueKind::String,
-          "missing text variable: " + std::string(name));
-    check(value->text == expected,
+    check(value != nullptr, "missing text variable: " + std::string(name));
+    const auto text = mparser::runtimeTextScalarUtf8(*value);
+    check(text.has_value(), "variable is not text: " + std::string(name));
+    check(*text == expected,
           "unexpected text for " + std::string(name) + ": " +
-              value->text);
+              *text);
 }
 
 bool hasDiagnostic(const mparser::BytecodeVmResult& result,

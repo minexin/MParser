@@ -360,6 +360,24 @@ linear or multidimensional access through MATLAB column-major coordinates.
 This isolates storage compatibility from language semantics and provides one
 shape contract for both baseline runtimes and optimization metadata.
 
+Text has a separate engine-facing contract in `runtime_value.h` and
+`runtime_text`. `CharacterArray` stores a rectangular UTF-16 code-unit payload;
+`StringArray` stores a shaped array of independently sized UTF-16 elements plus
+an explicit missing bit. A single-quoted literal is therefore a character
+array, while a double-quoted literal is always a string scalar. `''` is 0-by-0
+char and `""` is 1-by-1 string. UTF-8 decoding and encoding are explicit at
+source, CLI, diagnostic, and embedding-facing text boundaries, so neither
+`wchar_t` width nor the process locale affects Windows, Linux, or AArch64
+behavior.
+
+Both baseline engines delegate text indexing, string brace access, indexed
+assignment, growth, deletion, concatenation, comparison, implicit expansion,
+conversion, missing masks, and Cell conversion to `runtime_text`. General
+array transforms reuse `runtime_array_ops` and preserve logical column-major
+order while retaining row-major physical payloads. Typed/native recognition
+does not lower text operations and falls back to the bytecode VM before
+mutation or output publication.
+
 VM member access is lexical rather than inherited from the dynamic caller.
 Every function invocation pushes an access frame. Methods and class-private
 helpers place their canonical class in that frame; ordinary, namespace, path,
@@ -615,9 +633,9 @@ identity, so base and subclass defaults with the same surface name coexist in
 both value objects and shared handle storage.
 
 Property writes use a class, size, validator pipeline. The current class subset
-supports `double`, `logical`, `char`, scalar `string`, `cell`, and same-file
-user classes. N-dimensional positive-integer/colon size constraints support
-numeric scalar expansion and numeric/Cell reshaping that preserves MATLAB
+supports `double`, `logical`, `char`, string arrays, `cell`, and same-file user
+classes. N-dimensional positive-integer/colon size constraints support numeric
+scalar expansion and numeric/Cell/text reshaping that preserves MATLAB
 column-major linear order. Built-in numeric, shape,
 text, comparison, and missing-value validators execute left to right. The same
 pipeline validates explicit and implicit defaults and direct member writes;
@@ -677,7 +695,7 @@ complete resolved access policy.
 
 The VM intentionally still rejects non-`handle` built-in superclass
 construction, full MATLAB property conversion, custom validators, validator
-set-membership/range functions, non-scalar string arrays,
+set-membership/range functions,
 `HandleCompatible` enforcement, cross-file function discovery from command-form
 calls, anonymous-function text parsing, lazy source discovery from computed
 function-name strings, `.mlx`, `.p`, and MEX precedence, class-folder Live

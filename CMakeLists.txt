@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.74.0 LANGUAGES C CXX)
+project(MParser VERSION 0.75.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -78,6 +78,7 @@ add_library(mparser_core
     src/mparser/runtime_scan.cpp
     src/mparser/runtime_shape.cpp
     src/mparser/runtime_struct.cpp
+    src/mparser/runtime_text.cpp
     src/mparser/runtime_value_ops.cpp
     src/mparser/semantic.cpp
     src/mparser/semantic_dump.cpp
@@ -1050,6 +1051,30 @@ set_tests_properties(function_metadata_bytecode_cli_smoke PROPERTIES
 add_executable(interpreter_smoke_tests tests/interpreter_smoke.cpp)
 target_link_libraries(interpreter_smoke_tests PRIVATE mparser_core)
 add_test(NAME interpreter_smoke COMMAND interpreter_smoke_tests)
+
+add_executable(text_runtime_smoke_tests tests/text_runtime_smoke.cpp)
+target_link_libraries(text_runtime_smoke_tests PRIVATE mparser_core)
+add_test(NAME text_runtime_smoke
+    COMMAND text_runtime_smoke_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
+
+add_test(NAME text_runtime_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
+set_tests_properties(text_runtime_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 36")
+
+add_test(NAME text_runtime_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
+set_tests_properties(text_runtime_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 36")
+
+add_test(NAME text_runtime_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
+set_tests_properties(text_runtime_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 36")
 
 # The smoke executables use standard assert as a lightweight test primitive.
 # Keep those contracts active in optimized CI and release-validation builds.

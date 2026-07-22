@@ -2,6 +2,7 @@
 
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 
 #include <algorithm>
 #include <cmath>
@@ -30,7 +31,8 @@ bool isCell(const RuntimeValue& value) {
 }
 
 bool isSupportedArray(const RuntimeValue& value) {
-    return isNumeric(value) || isCell(value);
+    return isNumeric(value) || isCell(value) ||
+           isRuntimeTextValue(value);
 }
 
 RuntimeArrayOperationResult failure(std::string message) {
@@ -144,7 +146,7 @@ RuntimeArrayOperationResult reshapeBuiltin(
         return failure("reshape expects an array and at least two dimensions");
     }
     if (!isSupportedArray(arguments.front())) {
-        return failure("reshape supports numeric and cell arrays");
+        return failure("reshape supports numeric, text, and cell arrays");
     }
 
     std::vector<std::optional<size_t>> requested;
@@ -268,7 +270,7 @@ std::optional<std::vector<size_t>> permutationOrder(
 RuntimeArrayOperationResult permuteValue(
     const RuntimeValue& value, const std::vector<size_t>& order) {
     if (!isSupportedArray(value)) {
-        return failure("permute supports numeric and cell arrays");
+        return failure("permute supports numeric, text, and cell arrays");
     }
 
     auto sourceDimensions = runtimeDimensions(value);
@@ -303,6 +305,51 @@ RuntimeArrayOperationResult permuteValue(
         }
         return success(numericResult(outputDimensions, std::move(elements),
                                      isNumber(value), value.numericClass));
+    }
+
+    if (isRuntimeCharacterArray(value)) {
+        std::u16string elements(*count, u'\0');
+        for (size_t sourceOffset = 0; sourceOffset < *count;
+             ++sourceOffset) {
+            const auto sourceCoordinates = runtimeRowMajorCoordinates(
+                sourceOffset, sourceDimensions);
+            std::vector<size_t> outputCoordinates(order.size(), 0);
+            for (size_t index = 0; index < order.size(); ++index) {
+                outputCoordinates[index] =
+                    sourceCoordinates[order[index] - 1];
+            }
+            const auto outputOffset = runtimeRowMajorStorageOffset(
+                outputCoordinates, outputDimensions);
+            if (!outputOffset ||
+                sourceOffset >= value.characterElements.size()) {
+                return failure("permute could not map a character element");
+            }
+            elements[*outputOffset] = value.characterElements[sourceOffset];
+        }
+        return success(makeRuntimeCharacterArray(
+            outputDimensions, std::move(elements)));
+    }
+
+    if (isRuntimeStringArray(value)) {
+        std::vector<RuntimeStringElement> elements(*count);
+        for (size_t sourceOffset = 0; sourceOffset < *count;
+             ++sourceOffset) {
+            const auto sourceCoordinates = runtimeRowMajorCoordinates(
+                sourceOffset, sourceDimensions);
+            std::vector<size_t> outputCoordinates(order.size(), 0);
+            for (size_t index = 0; index < order.size(); ++index) {
+                outputCoordinates[index] =
+                    sourceCoordinates[order[index] - 1];
+            }
+            const auto outputOffset = runtimeRowMajorStorageOffset(
+                outputCoordinates, outputDimensions);
+            if (!outputOffset || sourceOffset >= value.stringElements.size()) {
+                return failure("permute could not map a string element");
+            }
+            elements[*outputOffset] = value.stringElements[sourceOffset];
+        }
+        return success(makeRuntimeStringArray(
+            outputDimensions, std::move(elements)));
     }
 
     std::vector<RuntimeValue> cells(*count);
@@ -347,7 +394,7 @@ RuntimeArrayOperationResult permutationBuiltin(
 RuntimeArrayOperationResult squeezeBuiltin(
     const std::vector<RuntimeValue>& arguments) {
     if (arguments.size() != 1 || !isSupportedArray(arguments.front())) {
-        return failure("squeeze expects one numeric or cell array");
+        return failure("squeeze expects one numeric, text, or cell array");
     }
     const auto dimensions = runtimeDimensions(arguments.front());
     if (dimensions.size() <= 2) {
@@ -420,7 +467,7 @@ std::optional<std::vector<size_t>> repetitionFactors(
 RuntimeArrayOperationResult repmatBuiltin(
     const std::vector<RuntimeValue>& arguments) {
     if (arguments.empty() || !isSupportedArray(arguments.front())) {
-        return failure("repmat supports numeric and cell arrays");
+        return failure("repmat supports numeric, text, and cell arrays");
     }
     std::string error;
     const auto parsedFactors = repetitionFactors(arguments, error);
@@ -476,6 +523,54 @@ RuntimeArrayOperationResult repmatBuiltin(
                                      arguments.front().numericClass));
     }
 
+    if (isRuntimeCharacterArray(arguments.front())) {
+        std::u16string elements(*outputCount, u'\0');
+        for (size_t outputOffset = 0; outputOffset < *outputCount;
+             ++outputOffset) {
+            const auto outputCoordinates = runtimeRowMajorCoordinates(
+                outputOffset, outputDimensions);
+            std::vector<size_t> sourceCoordinates(dimensionCount, 0);
+            for (size_t index = 0; index < dimensionCount; ++index) {
+                sourceCoordinates[index] =
+                    outputCoordinates[index] % sourceDimensions[index];
+            }
+            const auto sourceOffset = runtimeRowMajorStorageOffset(
+                sourceCoordinates, sourceDimensions);
+            if (!sourceOffset ||
+                *sourceOffset >= arguments.front().characterElements.size()) {
+                return failure("repmat could not map a character element");
+            }
+            elements[outputOffset] =
+                arguments.front().characterElements[*sourceOffset];
+        }
+        return success(makeRuntimeCharacterArray(
+            outputDimensions, std::move(elements)));
+    }
+
+    if (isRuntimeStringArray(arguments.front())) {
+        std::vector<RuntimeStringElement> elements(*outputCount);
+        for (size_t outputOffset = 0; outputOffset < *outputCount;
+             ++outputOffset) {
+            const auto outputCoordinates = runtimeRowMajorCoordinates(
+                outputOffset, outputDimensions);
+            std::vector<size_t> sourceCoordinates(dimensionCount, 0);
+            for (size_t index = 0; index < dimensionCount; ++index) {
+                sourceCoordinates[index] =
+                    outputCoordinates[index] % sourceDimensions[index];
+            }
+            const auto sourceOffset = runtimeRowMajorStorageOffset(
+                sourceCoordinates, sourceDimensions);
+            if (!sourceOffset ||
+                *sourceOffset >= arguments.front().stringElements.size()) {
+                return failure("repmat could not map a string element");
+            }
+            elements[outputOffset] =
+                arguments.front().stringElements[*sourceOffset];
+        }
+        return success(makeRuntimeStringArray(
+            outputDimensions, std::move(elements)));
+    }
+
     std::vector<RuntimeValue> cells(*outputCount);
     for (size_t outputOffset = 0; outputOffset < *outputCount;
          ++outputOffset) {
@@ -500,6 +595,35 @@ RuntimeArrayOperationResult concatenate(
     size_t dimension, const std::vector<RuntimeValue>& values) {
     if (values.empty()) {
         return failure("concatenation requires at least one array");
+    }
+    if (values.size() > 1) {
+        std::vector<RuntimeValue> nonempty;
+        nonempty.reserve(values.size());
+        for (const auto& value : values) {
+            if (runtimeShapeElementCount(value) != 0 ||
+                runtimeDimensions(value) != std::vector<size_t>{0, 0}) {
+                nonempty.push_back(value);
+            }
+        }
+        if (nonempty.empty()) {
+            return success(values.front());
+        }
+        if (nonempty.size() != values.size()) {
+            return concatenate(dimension, nonempty);
+        }
+    }
+    const bool text = isRuntimeTextValue(values.front());
+    if (text || std::any_of(values.begin(), values.end(),
+                            isRuntimeTextValue)) {
+        if (!std::all_of(values.begin(), values.end(),
+                         isRuntimeTextValue)) {
+            return failure(
+                "concatenation inputs must have compatible types");
+        }
+        auto result = runtimeConcatenateText(dimension, values);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
     }
     const bool cells = isCell(values.front());
     const bool numeric = isNumeric(values.front());
@@ -662,7 +786,7 @@ RuntimeArrayOperationResult runtimeArrayOperationBuiltin(
 RuntimeArrayOperationResult runtimeReshapeValue(
     const RuntimeValue& value, std::vector<size_t> dimensions) {
     if (!isSupportedArray(value)) {
-        return failure("reshape supports numeric and cell arrays");
+        return failure("reshape supports numeric, text, and cell arrays");
     }
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
     const auto count = checkedRuntimeDimensionProduct(dimensions);
@@ -698,6 +822,52 @@ RuntimeArrayOperationResult runtimeReshapeValue(
         }
         return success(numericResult(dimensions, std::move(elements),
                                      isNumber(value), value.numericClass));
+    }
+
+    if (isRuntimeCharacterArray(value)) {
+        std::u16string elements(*count, u'\0');
+        for (size_t logicalIndex = 0; logicalIndex < *count;
+             ++logicalIndex) {
+            const auto sourceOffset =
+                runtimeColumnMajorLinearToStorageOffset(value, logicalIndex);
+            const auto targetCoordinates = runtimeColumnMajorCoordinates(
+                logicalIndex, dimensions);
+            const auto targetOffset = targetCoordinates
+                                          ? runtimeRowMajorStorageOffset(
+                                                *targetCoordinates, dimensions)
+                                          : std::nullopt;
+            if (!sourceOffset || !targetOffset ||
+                *sourceOffset >= value.characterElements.size()) {
+                return failure(
+                    "reshape could not preserve logical character order");
+            }
+            elements[*targetOffset] = value.characterElements[*sourceOffset];
+        }
+        return success(makeRuntimeCharacterArray(
+            dimensions, std::move(elements)));
+    }
+
+    if (isRuntimeStringArray(value)) {
+        std::vector<RuntimeStringElement> elements(*count);
+        for (size_t logicalIndex = 0; logicalIndex < *count;
+             ++logicalIndex) {
+            const auto sourceOffset =
+                runtimeColumnMajorLinearToStorageOffset(value, logicalIndex);
+            const auto targetCoordinates = runtimeColumnMajorCoordinates(
+                logicalIndex, dimensions);
+            const auto targetOffset = targetCoordinates
+                                          ? runtimeRowMajorStorageOffset(
+                                                *targetCoordinates, dimensions)
+                                          : std::nullopt;
+            if (!sourceOffset || !targetOffset ||
+                *sourceOffset >= value.stringElements.size()) {
+                return failure(
+                    "reshape could not preserve logical string order");
+            }
+            elements[*targetOffset] = value.stringElements[*sourceOffset];
+        }
+        return success(makeRuntimeStringArray(
+            dimensions, std::move(elements)));
     }
 
     std::vector<RuntimeValue> cells(*count);

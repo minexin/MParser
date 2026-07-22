@@ -2,6 +2,7 @@
 
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
+#include "mparser/runtime_text.h"
 
 #include <algorithm>
 #include <cmath>
@@ -29,12 +30,8 @@ constexpr bool isAsciiIdentifierCharacter(char character) {
            character == '_';
 }
 
-RuntimeValue stringValue(std::string value) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::String;
-    result.text = std::move(value);
-    setRuntimeDimensions(result, {1, result.text.size()});
-    return result;
+RuntimeValue characterValue(std::string_view value) {
+    return makeRuntimeCharacterVectorUtf8(value);
 }
 
 RuntimeValue numberValue(double value) {
@@ -60,8 +57,8 @@ RuntimeValue emptyStackValue() {
 RuntimeStructElement stackFrameElement(
     const RuntimeExceptionFrame& frame) {
     RuntimeStructElement result;
-    result.emplace("file", stringValue(frame.file));
-    result.emplace("name", stringValue(frame.name));
+    result.emplace("file", characterValue(frame.file));
+    result.emplace("name", characterValue(frame.name));
     result.emplace("line", numberValue(static_cast<double>(frame.line)));
     return result;
 }
@@ -73,8 +70,8 @@ RuntimeValue exceptionValue(std::string identifier, std::string message) {
     setRuntimeDimensions(result, {1, 1});
     result.fieldOrder = {"identifier", "message", "stack", "cause",
                          "Correction"};
-    result.fields.emplace("identifier", stringValue(std::move(identifier)));
-    result.fields.emplace("message", stringValue(std::move(message)));
+    result.fields.emplace("identifier", characterValue(identifier));
+    result.fields.emplace("message", characterValue(message));
     result.fields.emplace("stack", emptyStackValue());
     result.fields.emplace("cause", emptyCellValue());
     result.fields.emplace("Correction", RuntimeValue{});
@@ -162,16 +159,25 @@ std::optional<std::string> formatValue(
     }
 
     if (specifier.conversion == 's') {
-        if (value.kind != RuntimeValueKind::String) {
+        const auto text = runtimeTextScalarUtf8(value);
+        if (!text) {
             error = "%s exception message values must be text scalars";
             return std::nullopt;
         }
-        output << value.text;
+        output << *text;
         return output.str();
     }
     if (specifier.conversion == 'c') {
-        if (value.kind == RuntimeValueKind::String && !value.text.empty()) {
-            output << value.text.front();
+        const auto text = runtimeTextScalarCodeUnits(value);
+        if (text && !text->empty()) {
+            size_t length = 1;
+            if ((*text)[0] >= 0xd800 && (*text)[0] <= 0xdbff &&
+                text->size() >= 2 && (*text)[1] >= 0xdc00 &&
+                (*text)[1] <= 0xdfff) {
+                length = 2;
+            }
+            output << runtimeUtf16ToUtf8(
+                std::u16string_view(text->data(), length));
             return output.str();
         }
         if (value.kind == RuntimeValueKind::Number) {
@@ -252,12 +258,13 @@ std::optional<std::string> formatMessage(
 RuntimeExceptionOperationResult constructException(
     std::string identifier, const RuntimeValue& message,
     const std::vector<RuntimeValue>& replacements) {
-    if (message.kind != RuntimeValueKind::String) {
+    const auto messageText = runtimeTextScalarUtf8(message);
+    if (!messageText) {
         return failure("exception message must be a character vector or "
                        "string scalar");
     }
     std::string error;
-    auto formatted = formatMessage(message.text, replacements, error);
+    auto formatted = formatMessage(*messageText, replacements, error);
     if (!formatted) {
         return failure(std::move(error));
     }
@@ -268,11 +275,10 @@ RuntimeExceptionOperationResult constructException(
 std::string exceptionTextProperty(const RuntimeValue& exception,
                                   std::string_view name) {
     const auto field = exception.fields.find(std::string(name));
-    if (field == exception.fields.end() ||
-        field->second.kind != RuntimeValueKind::String) {
+    if (field == exception.fields.end()) {
         return {};
     }
-    return field->second.text;
+    return runtimeTextScalarUtf8(field->second).value_or(std::string{});
 }
 
 std::optional<std::vector<RuntimeExceptionFrame>> stackFramesFromValue(
@@ -293,9 +299,11 @@ std::optional<std::vector<RuntimeExceptionFrame>> stackFramesFromValue(
         const RuntimeValue* file = runtimeStructField(stack, "file", index);
         const RuntimeValue* name = runtimeStructField(stack, "name", index);
         const RuntimeValue* line = runtimeStructField(stack, "line", index);
-        if (!file || !name || !line ||
-            file->kind != RuntimeValueKind::String ||
-            name->kind != RuntimeValueKind::String ||
+        const auto fileText = file
+            ? runtimeTextScalarUtf8(*file) : std::nullopt;
+        const auto nameText = name
+            ? runtimeTextScalarUtf8(*name) : std::nullopt;
+        if (!fileText || !nameText || !line ||
             line->kind != RuntimeValueKind::Number ||
             !std::isfinite(line->number) || line->number < 1.0 ||
             std::floor(line->number) != line->number ||
@@ -306,7 +314,7 @@ std::optional<std::vector<RuntimeExceptionFrame>> stackFramesFromValue(
             return std::nullopt;
         }
         frames.push_back(RuntimeExceptionFrame{
-            file->text, name->text, static_cast<int>(line->number)});
+            *fileText, *nameText, static_cast<int>(line->number)});
     }
     return frames;
 }
@@ -359,17 +367,17 @@ bool isRuntimeExceptionIdentifier(std::string_view identifier) {
 
 RuntimeExceptionOperationResult runtimeConstructMException(
     const std::vector<RuntimeValue>& arguments) {
-    if (arguments.size() < 2 ||
-        arguments[0].kind != RuntimeValueKind::String) {
+    const auto identifier = arguments.empty()
+        ? std::nullopt : runtimeTextScalarUtf8(arguments[0]);
+    if (arguments.size() < 2 || !identifier) {
         return failure("MException expects an identifier, message, and "
                        "optional replacement values");
     }
-    if (!isRuntimeExceptionIdentifier(arguments[0].text)) {
-        return failure("invalid MException identifier: " +
-                       arguments[0].text);
+    if (!isRuntimeExceptionIdentifier(*identifier)) {
+        return failure("invalid MException identifier: " + *identifier);
     }
     return constructException(
-        arguments[0].text, arguments[1],
+        *identifier, arguments[1],
         std::vector<RuntimeValue>(arguments.begin() + 2, arguments.end()));
 }
 
@@ -391,7 +399,7 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
             runtimeStructField(arguments.front(), "stack");
         const RuntimeValue* correction =
             runtimeStructField(arguments.front(), "correction");
-        if (!message || message->kind != RuntimeValueKind::String) {
+        if (!message || !runtimeTextScalarUtf8(*message)) {
             return failure("error structure requires a text message field");
         }
         if (correction && correction->kind != RuntimeValueKind::Missing) {
@@ -400,13 +408,14 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
         }
         std::string id;
         if (identifier) {
-            if (identifier->kind != RuntimeValueKind::String ||
-                (!identifier->text.empty() &&
-                 !isRuntimeExceptionIdentifier(identifier->text))) {
+            const auto identifierText = runtimeTextScalarUtf8(*identifier);
+            if (!identifierText ||
+                (!identifierText->empty() &&
+                 !isRuntimeExceptionIdentifier(*identifierText))) {
                 return failure("error structure contains an invalid "
                                "identifier field");
             }
-            id = identifier->text;
+            id = *identifierText;
         }
         auto result = constructException(std::move(id), *message, {});
         if (!result.succeeded || !stack) {
@@ -420,7 +429,8 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
         attachFrames(result.value, *frames);
         return result;
     }
-    if (arguments.front().kind != RuntimeValueKind::String) {
+    const auto firstText = runtimeTextScalarUtf8(arguments.front());
+    if (!firstText) {
         return failure("error message must be a character vector or string "
                        "scalar");
     }
@@ -428,9 +438,9 @@ RuntimeExceptionOperationResult runtimeCreateErrorException(
     size_t messageIndex = 0;
     std::string identifier;
     if (arguments.size() >= 2 &&
-        isRuntimeExceptionIdentifier(arguments.front().text) &&
-        arguments[1].kind == RuntimeValueKind::String) {
-        identifier = arguments.front().text;
+        isRuntimeExceptionIdentifier(*firstText) &&
+        runtimeTextScalarUtf8(arguments[1])) {
+        identifier = *firstText;
         messageIndex = 1;
     }
     return constructException(
@@ -579,35 +589,34 @@ RuntimeExceptionOperationResult runtimeGetExceptionReport(
 
     std::string type = "extended";
     if (arguments.size() >= 2) {
-        if (arguments[1].kind != RuntimeValueKind::String ||
-            (arguments[1].text != "basic" &&
-             arguments[1].text != "extended")) {
+        const auto typeText = runtimeTextScalarUtf8(arguments[1]);
+        if (!typeText ||
+            (*typeText != "basic" && *typeText != "extended")) {
             return failure("getReport type must be basic or extended");
         }
-        type = arguments[1].text;
+        type = *typeText;
     }
     if (arguments.size() == 3) {
         return failure("getReport hyperlinks requires a name and value");
     }
     if (arguments.size() == 4) {
-        if (arguments[2].kind != RuntimeValueKind::String ||
-            arguments[2].text != "hyperlinks" ||
-            arguments[3].kind != RuntimeValueKind::String ||
-            (arguments[3].text != "default" &&
-             arguments[3].text != "on" &&
-             arguments[3].text != "off")) {
+        const auto name = runtimeTextScalarUtf8(arguments[2]);
+        const auto value = runtimeTextScalarUtf8(arguments[3]);
+        if (!name || *name != "hyperlinks" || !value ||
+            (*value != "default" && *value != "on" &&
+             *value != "off")) {
             return failure("getReport hyperlinks must be default, on, or "
                            "off");
         }
     }
 
     if (type == "basic") {
-        return success(stringValue(
+        return success(characterValue(
             exceptionTextProperty(arguments.front(), "message")));
     }
     std::ostringstream report;
     appendExceptionReport(report, arguments.front(), {}, 0);
-    return success(stringValue(report.str()));
+    return success(characterValue(report.str()));
 }
 
 RuntimeValue runtimeExceptionFromDiagnostic(
