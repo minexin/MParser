@@ -4,6 +4,7 @@
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_assignment.h"
+#include "mparser/runtime_call_frame.h"
 #include "mparser/runtime_cell.h"
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
@@ -161,23 +162,17 @@ bool isRuntimeIdentifier(std::string_view name) {
 }
 
 RuntimeValue missingValue() {
-    return RuntimeValue{};
+    return makeRuntimeMissingValue();
 }
 
 RuntimeValue numberValue(
     double value,
     RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Number;
-    result.number = value;
-    result.numericClass = numericClass;
-    setRuntimeDimensions(result, {1, 1});
-    return result;
+    return makeRuntimeNumberValue(value, numericClass);
 }
 
 RuntimeValue logicalValue(bool value) {
-    return numberValue(value ? 1.0 : 0.0,
-                       RuntimeNumericClass::Logical);
+    return makeRuntimeLogicalValue(value);
 }
 
 RuntimeValue characterValue(std::string value) {
@@ -187,32 +182,19 @@ RuntimeValue characterValue(std::string value) {
 RuntimeValue vectorValue(
     std::vector<double> values,
     RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Vector;
-    result.elements = std::move(values);
-    result.numericClass = numericClass;
-    setRuntimeDimensions(result, {1, result.elements.size()});
-    return result;
+    return makeRuntimeVectorValue(std::move(values), numericClass);
 }
 
 RuntimeValue matrixValue(size_t rows, size_t columns,
                          std::vector<double> values,
                          RuntimeNumericClass numericClass =
                              RuntimeNumericClass::Double) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Matrix;
-    setRuntimeDimensions(result, {rows, columns});
-    result.elements = std::move(values);
-    result.numericClass = numericClass;
-    return result;
+    return makeRuntimeMatrixValue(rows, columns, std::move(values),
+                                  numericClass);
 }
 
 RuntimeValue cellValue(std::vector<RuntimeValue> values) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Cell;
-    result.cells = std::move(values);
-    setRuntimeDimensions(result, {1, result.cells.size()});
-    return result;
+    return makeRuntimeCellValue(std::move(values));
 }
 
 RuntimeValue cellValueForShape(size_t rows, size_t columns,
@@ -224,11 +206,8 @@ RuntimeValue cellValueForShape(size_t rows, size_t columns,
 
 RuntimeValue cellValueForDimensions(std::vector<size_t> dimensions,
                                     std::vector<RuntimeValue> values) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Cell;
-    result.cells = std::move(values);
-    setRuntimeDimensions(result, std::move(dimensions));
-    return result;
+    return makeRuntimeCellValue(std::move(dimensions),
+                                std::move(values));
 }
 
 bool isNumber(const RuntimeValue& value) {
@@ -1141,7 +1120,7 @@ public:
         activeExceptionFunctionNames_.clear();
         scriptModeActive_ = false;
         frames_.clear();
-        frames_.push_back({});
+        frames_.push_back(makeRuntimeScriptFrame());
         baseGlobalNames_.clear();
         activePersistentFunctionKeys_.clear();
         activeClassFunctions_.clear();
@@ -1181,7 +1160,7 @@ public:
         finalizeEntryOutputs();
 
         BytecodeVmResult result;
-        auto variables = frames_.front();
+        auto variables = frames_.front().workspace;
         for (const auto& name : baseGlobalNames_) {
             if (const auto value = sessionState_->findGlobal(name)) {
                 variables[name] = *value;
@@ -3864,6 +3843,8 @@ private:
             execution.eligible =
                 region.region.eligibleForTypedExecution;
             execution.backend = "none";
+            execution.lastFallbackKind =
+                region.region.fallbackKind;
             execution.lastReason = region.region.reason;
             typedRegionExecutions_[region.id] = execution;
 
@@ -4041,7 +4022,7 @@ private:
 
     bool validateFunctionOutputs(
         const std::string& name, const FunctionInfo& info,
-        std::map<std::string, RuntimeValue>& frame) {
+        RuntimeWorkspace& frame) {
         std::vector<RuntimeOutputArgumentContract> contracts;
         for (const auto& contract : info.argumentContracts) {
             if (contract.blockKind != ArgumentBlockKind::Output &&
@@ -4137,10 +4118,9 @@ private:
                                            ": " + normalized.error);
             return std::nullopt;
         }
-        currentFrame()["nargin"] = numberValue(static_cast<double>(
-            normalized.positionalArgumentCount));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(requestedOutputCount));
+        setRuntimeCallFrameArity(
+            frames_.back(), normalized.positionalArgumentCount,
+            requestedOutputCount);
         const auto& positionalArguments = normalized.positionalArguments;
 
         const size_t fixedParameterCount =
@@ -4255,7 +4235,7 @@ private:
             }
         }
 
-        std::map<std::string, RuntimeValue> nameValueStructures;
+        RuntimeWorkspace nameValueStructures;
         for (size_t index = 0; index < info.signature.parameters.size();
              ++index) {
             if (functionParameterKind(info.signature, index) ==
@@ -4350,6 +4330,13 @@ private:
             return false;
         }
 
+        RuntimeWorkspace entryWorkspace =
+            std::move(frames_.front().workspace);
+        frames_.front() = makeRuntimeFunctionFrame(
+            RuntimeCallFrameKind::Function, instruction.operand,
+            instruction.span, entryArguments_.size(),
+            requestedOutputCount,
+            std::move(entryWorkspace));
         auto validated = validateFunctionArguments(
             instruction, instruction.operand, function->second,
             entryArguments_, requestedOutputCount);
@@ -4386,7 +4373,7 @@ private:
         if (!entrySignature_) {
             return;
         }
-        auto& frame = frames_.front();
+        auto& frame = frames_.front().workspace;
         if (diagnostics_.empty()) {
             const auto function = functionsByName_.find(executedEntryFunction_);
             if (function != functionsByName_.end() &&
@@ -4422,14 +4409,12 @@ private:
             currentFrame()["varargin"] = cellValue(std::move(values));
         }
         initializeRuntimeFunctionOutputs(currentFrame(), signature);
-        currentFrame()["nargin"] =
-            numberValue(static_cast<double>(providedArgumentCount));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(requestedOutputCount));
+        setRuntimeCallFrameArity(frames_.back(), providedArgumentCount,
+                                 requestedOutputCount);
     }
 
     std::vector<RuntimeValue> collectFunctionOutputs(
-        const std::map<std::string, RuntimeValue>& frame,
+        const RuntimeWorkspace& frame,
         const FunctionSignature& signature, size_t requestedOutputCount) const {
         return collectRuntimeFunctionOutputs(frame, signature,
                                              requestedOutputCount);
@@ -4989,6 +4974,8 @@ private:
         ++execution.attemptCount;
         if (stack_.empty()) {
             ++execution.fallbackCount;
+            execution.lastFallbackKind =
+                RuntimeFallbackKind::MissingStackValue;
             execution.lastReason = "typed loop range stack value is missing";
             return std::nullopt;
         }
@@ -4996,6 +4983,8 @@ private:
         if (rangeValue.isBuiltinReference ||
             rangeValue.isFunctionReference) {
             ++execution.fallbackCount;
+            execution.lastFallbackKind =
+                RuntimeFallbackKind::UnsupportedRuntimeValue;
             execution.lastReason =
                 "typed loop range is not a runtime value";
             return std::nullopt;
@@ -5011,6 +5000,9 @@ private:
                 typedRegionBackendName(typedRegionBackend_);
             execution.nativePlatform =
                 std::move(result.nativePlatform);
+            execution.lastFallbackKind = result.fallbackKind;
+            execution.nativeFallbackKind =
+                result.nativeFallbackKind;
             execution.nativeFallbackReason =
                 std::move(result.nativeFallbackReason);
             execution.lastReason = result.reason;
@@ -5071,6 +5063,9 @@ private:
             result.nativeCacheEvictedCodeBytes;
         execution.nativeCodeSize = result.nativeCodeSize;
         execution.nativePlatform = std::move(result.nativePlatform);
+        execution.lastFallbackKind = result.fallbackKind;
+        execution.nativeFallbackKind =
+            result.nativeFallbackKind;
         execution.nativeFallbackReason =
             std::move(result.nativeFallbackReason);
         execution.lastReason = result.reason;
@@ -9509,16 +9504,18 @@ private:
         switchContextStack_.clear();
         tryContextStack_.clear();
 
-        frames_.push_back(info.capturedVariables);
+        frames_.push_back(makeRuntimeFunctionFrame(
+            RuntimeCallFrameKind::AnonymousFunction,
+            info.display.empty() ? std::string("<anonymous>")
+                                 : info.display,
+            info.span, arguments.size(),
+            static_cast<size_t>(requestedCount),
+            info.capturedVariables));
         for (size_t index = 0; index < info.parameters.size(); ++index) {
             if (info.parameters[index] != "~") {
                 currentFrame()[info.parameters[index]] = arguments[index];
             }
         }
-        currentFrame()["nargin"] =
-            numberValue(static_cast<double>(arguments.size()));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(requestedCount));
 
         if (!info.lexicalClassName.empty()) {
             activeClassFunctions_.push_back(ActiveClassFunction{
@@ -11612,7 +11609,8 @@ private:
         switchContextStack_.clear();
         tryContextStack_.clear();
         returnRequested_ = false;
-        frames_.push_back({});
+        frames_.push_back(makeRuntimeInitializerFrame(
+            member.declaringClass + "." + member.name, member.span));
         activeClassFunctions_.push_back(ActiveClassFunction{
             member.declaringClass,
             "<enumeration-member:" + member.name + ">", {}, nullptr});
@@ -12494,7 +12492,9 @@ private:
         switchContextStack_.clear();
         tryContextStack_.clear();
         returnRequested_ = false;
-        frames_.push_back({});
+        frames_.push_back(makeRuntimeInitializerFrame(
+            property.declaringClass + "." + property.name,
+            property.span));
         activeClassFunctions_.push_back(ActiveClassFunction{
             property.declaringClass,
             "<property-default:" + property.name + ">", {}, nullptr});
@@ -12944,7 +12944,9 @@ private:
         ExceptionFunctionGuard exceptionTrace(*this, traceName,
                                               instruction.span);
 
-        frames_.push_back({});
+        frames_.push_back(makeRuntimeFunctionFrame(
+            RuntimeCallFrameKind::Function, traceName, info.span,
+            arguments.size(), static_cast<size_t>(requestedCount)));
         auto validatedArguments =
             validateFunctionArguments(instruction, name, info, arguments,
                                       static_cast<size_t>(requestedCount));
@@ -12964,7 +12966,10 @@ private:
         switchContextStack_.clear();
         tryContextStack_.clear();
 
-        frames_.push_back({});
+        frames_.push_back(makeRuntimeFunctionFrame(
+            RuntimeCallFrameKind::Function, traceName, info.span,
+            validatedArguments->positionalArgumentCount,
+            static_cast<size_t>(requestedCount)));
         initializeFunctionFrame(info.signature, validatedArguments->values,
                                 static_cast<size_t>(requestedCount),
                                 validatedArguments->positionalArgumentCount);
@@ -14225,12 +14230,12 @@ private:
         diagnostics_.push_back(std::move(diagnostic));
     }
 
-    std::map<std::string, RuntimeValue>& currentFrame() {
-        return frames_.back();
+    RuntimeWorkspace& currentFrame() {
+        return frames_.back().workspace;
     }
 
-    const std::map<std::string, RuntimeValue>& currentFrame() const {
-        return frames_.back();
+    const RuntimeWorkspace& currentFrame() const {
+        return frames_.back().workspace;
     }
 
     std::optional<std::string> symbolName(BindingRef binding) const {
@@ -14253,7 +14258,7 @@ private:
     std::vector<std::unique_ptr<ActiveLvalue>> lvalueStack_;
     std::vector<SwitchContext> switchContextStack_;
     std::vector<TryContext> tryContextStack_;
-    std::vector<std::map<std::string, RuntimeValue>> frames_;
+    std::vector<RuntimeCallFrame> frames_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
     std::set<std::string> baseGlobalNames_;
     std::vector<std::string> activePersistentFunctionKeys_;

@@ -165,6 +165,8 @@ end
     assert(execution->attemptCount == 1);
     assert(execution->executionCount == 1);
     assert(execution->fallbackCount == 0);
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::None);
     assert(execution->iterationCount == 12);
     assert(execution->executedInstructionCount == 72);
     assert(execution->executedKernelInstructionCount == 24);
@@ -195,6 +197,8 @@ end
     assert(execution->attemptCount == 1);
     assert(execution->executionCount == 0);
     assert(execution->fallbackCount == 1);
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::KernelRejected);
     assert(execution->lastReason.find("y") != std::string::npos);
 
     const auto* output = findVariable(optimized.variables, "y");
@@ -422,6 +426,8 @@ end
         rowVector({1.0, 2.0, 4.0}), variables, backend);
     assert(boundsFailure.status ==
            mparser::TypedRegionExecutionStatus::Fallback);
+    assert(boundsFailure.fallbackKind ==
+           mparser::RuntimeFallbackKind::RuntimeFailed);
     assert(boundsFailure.variables.empty());
     assert(boundsFailure.reason.find("preallocated array bounds") !=
            std::string::npos);
@@ -433,6 +439,8 @@ end
         variables, backend);
     assert(integerFailure.status ==
            mparser::TypedRegionExecutionStatus::Fallback);
+    assert(integerFailure.fallbackKind ==
+           mparser::RuntimeFallbackKind::RuntimeFailed);
     assert(integerFailure.variables.empty());
     assert(integerFailure.reason.find("finite positive integer") !=
            std::string::npos);
@@ -1042,6 +1050,10 @@ end
         findExecution(optimized, "scalar-loop", "i");
     assert(execution != nullptr);
     assert(execution->backend == "portable");
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::None);
+    assert(execution->nativeFallbackKind ==
+           mparser::RuntimeFallbackKind::BackendUnavailable);
     assert(execution->nativeFallbackReason.find("disabled") !=
            std::string::npos);
 }

@@ -140,6 +140,29 @@ void copySet(const std::set<std::string>& source,
     destination.assign(source.begin(), source.end());
 }
 
+RuntimeFallbackKind rejectionKind(
+    const BytecodeRegionContract& contract) {
+    if (!contract.available) {
+        return RuntimeFallbackKind::RegionUnavailable;
+    }
+    if (!contract.closed) {
+        return RuntimeFallbackKind::RegionNotClosed;
+    }
+    if (contract.hasCalls) {
+        return RuntimeFallbackKind::ContainsCall;
+    }
+    if (contract.hasUnsupportedMutation) {
+        return RuntimeFallbackKind::UnsupportedMutation;
+    }
+    if (contract.hasUnsupportedControlFlow) {
+        return RuntimeFallbackKind::UnsupportedControlFlow;
+    }
+    if (contract.hasUnsupportedOperations) {
+        return RuntimeFallbackKind::UnsupportedOperation;
+    }
+    return RuntimeFallbackKind::None;
+}
+
 std::string rejectionReason(const BytecodeRegionContract& contract) {
     if (!contract.available) {
         return "region boundary is unavailable";
@@ -170,6 +193,11 @@ std::string rejectionReason(const BytecodeRegionContract& contract) {
         reason += " with linear numeric indexing";
     }
     return reason;
+}
+
+void finalizeContract(BytecodeRegionContract& contract) {
+    contract.fallbackKind = rejectionKind(contract);
+    contract.reason = rejectionReason(contract);
 }
 
 void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
@@ -487,7 +515,7 @@ BytecodeRegionContract analyzePointRegion(const BytecodeProgram& program,
                                           std::string_view target) {
     BytecodeRegionContract contract;
     if (sourcePc >= program.instructions.size()) {
-        contract.reason = rejectionReason(contract);
+        finalizeContract(contract);
         return contract;
     }
 
@@ -510,7 +538,7 @@ BytecodeRegionContract analyzePointRegion(const BytecodeProgram& program,
         contract.hasCalls = true;
         contract.callTargets.push_back(std::string(target));
     }
-    contract.reason = rejectionReason(contract);
+    finalizeContract(contract);
     return contract;
 }
 
@@ -518,18 +546,18 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
                                          size_t sourcePc) {
     BytecodeRegionContract contract;
     if (sourcePc >= program.instructions.size()) {
-        contract.reason = rejectionReason(contract);
+        finalizeContract(contract);
         return contract;
     }
 
     const auto& header = program.instructions[sourcePc];
     if (header.op != BytecodeOp::ForBegin || header.target < 0) {
-        contract.reason = rejectionReason(contract);
+        finalizeContract(contract);
         return contract;
     }
     const size_t exitPc = static_cast<size_t>(header.target);
     if (exitPc <= sourcePc + 1 || exitPc > program.instructions.size()) {
-        contract.reason = rejectionReason(contract);
+        finalizeContract(contract);
         return contract;
     }
 
@@ -546,7 +574,7 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
         }
     }
     if (latchPc == exitPc) {
-        contract.reason = rejectionReason(contract);
+        finalizeContract(contract);
         return contract;
     }
 
@@ -588,7 +616,7 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
         !contract.hasCalls && !contract.hasUnsupportedMutation &&
         !contract.hasUnsupportedControlFlow &&
         !contract.hasUnsupportedOperations;
-    contract.reason = rejectionReason(contract);
+    finalizeContract(contract);
     return contract;
 }
 

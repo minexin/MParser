@@ -1,8 +1,8 @@
 #pragma once
 
-#include "mparser/interpreter.h"
 #include "mparser/function_signature.h"
 #include "mparser/property_spec.h"
+#include "mparser/runtime_value.h"
 
 #include <functional>
 #include <map>
@@ -25,7 +25,7 @@ struct RuntimeArgumentValidationResult {
 struct RuntimeInvocationNormalizationResult {
     bool succeeded = false;
     std::vector<RuntimeValue> positionalArguments;
-    std::map<std::string, RuntimeValue> nameValueArguments;
+    RuntimeWorkspace nameValueArguments;
     size_t positionalArgumentCount = 0;
     std::string error;
 };
@@ -54,16 +54,16 @@ RuntimeInvocationNormalizationResult normalizeRuntimeInvocationArguments(
     const std::vector<RuntimeValue>& arguments);
 
 void initializeRuntimeFunctionOutputs(
-    std::map<std::string, RuntimeValue>& frame,
+    RuntimeWorkspace& frame,
     const FunctionSignature& signature);
 
 RuntimeOutputValidationResult validateRuntimeFunctionOutputs(
-    std::map<std::string, RuntimeValue>& frame,
+    RuntimeWorkspace& frame,
     const std::vector<RuntimeOutputArgumentContract>& contracts,
     const RuntimeArgumentValidationOptions& options = {});
 
 std::vector<RuntimeValue> collectRuntimeFunctionOutputs(
-    const std::map<std::string, RuntimeValue>& frame,
+    const RuntimeWorkspace& frame,
     const FunctionSignature& signature, size_t requestedOutputCount);
 
 std::vector<std::string> runtimeFunctionOutputNames(

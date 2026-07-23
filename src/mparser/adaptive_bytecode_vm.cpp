@@ -459,6 +459,10 @@ void AdaptiveBytecodeVmSession::processTypedExecutions(
         size_t sourcePc = 0;
         std::string target;
         std::string reason;
+        RuntimeFallbackKind fallbackKind =
+            RuntimeFallbackKind::None;
+        RuntimeFallbackKind nativeFallbackKind =
+            RuntimeFallbackKind::None;
     };
     std::vector<FailedRegion> invalidatedRegions;
 
@@ -476,7 +480,9 @@ void AdaptiveBytecodeVmSession::processTypedExecutions(
             consecutiveFallbacks_[sourcePc] = 0;
             appendEvent(AdaptiveBytecodeEventKind::TypedExecution,
                         execution.regionId, sourcePc, target,
-                        execution.lastReason);
+                        execution.lastReason,
+                        execution.lastFallbackKind,
+                        execution.nativeFallbackKind);
         }
         if (execution.fallbackCount == 0) {
             continue;
@@ -486,11 +492,15 @@ void AdaptiveBytecodeVmSession::processTypedExecutions(
         fallbackCount += execution.fallbackCount;
         appendEvent(AdaptiveBytecodeEventKind::TypedFallback,
                     execution.regionId, sourcePc, target,
-                    execution.lastReason);
+                    execution.lastReason,
+                    execution.lastFallbackKind,
+                    execution.nativeFallbackKind);
         if (fallbackCount >= options_.fallbackInvalidationThreshold) {
             invalidatedRegions.push_back(FailedRegion{
                 execution.regionId, sourcePc, target,
-                execution.lastReason});
+                execution.lastReason,
+                execution.lastFallbackKind,
+                execution.nativeFallbackKind});
         }
     }
 
@@ -506,7 +516,8 @@ void AdaptiveBytecodeVmSession::processTypedExecutions(
         consecutiveFallbacks_.erase(region.sourcePc);
         appendEvent(AdaptiveBytecodeEventKind::Invalidation,
                     region.regionId, region.sourcePc, region.target,
-                    region.reason);
+                    region.reason, region.fallbackKind,
+                    region.nativeFallbackKind);
     }
     typedModule_ = {};
     hasTypedModule_ = false;
@@ -532,12 +543,15 @@ void AdaptiveBytecodeVmSession::applyRetrainingRequirements(
         }
 
         region.region.eligibleForTypedExecution = false;
+        region.region.fallbackKind =
+            RuntimeFallbackKind::AdaptiveRetrainingRejected;
         region.region.reason = "adaptive retraining rejected: " +
                                evidence.second;
         if (reportedRetrainingRejections_.insert(region.sourcePc).second) {
             appendEvent(AdaptiveBytecodeEventKind::RetrainingRejected,
                         region.id, region.sourcePc, region.target,
-                        evidence.second);
+                        evidence.second,
+                        RuntimeFallbackKind::AdaptiveRetrainingRejected);
         }
     }
 }
@@ -627,10 +641,12 @@ AdaptiveBytecodeVmSession::findTypedRegion(size_t regionId) const {
 
 void AdaptiveBytecodeVmSession::appendEvent(
     AdaptiveBytecodeEventKind kind, size_t regionId, size_t sourcePc,
-    std::string target, std::string reason) {
+    std::string target, std::string reason,
+    RuntimeFallbackKind fallbackKind,
+    RuntimeFallbackKind nativeFallbackKind) {
     events_.push_back(AdaptiveBytecodeEvent{
         kind, invocationCount_, regionId, sourcePc, std::move(target),
-        std::move(reason)});
+        std::move(reason), fallbackKind, nativeFallbackKind});
 }
 
 } // namespace mparser

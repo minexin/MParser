@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.78.0 LANGUAGES C CXX)
+project(MParser VERSION 0.79.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -65,8 +65,10 @@ add_library(mparser_core
     src/mparser/runtime_argument_validation.cpp
     src/mparser/runtime_assignment.cpp
     src/mparser/runtime_benchmark.cpp
+    src/mparser/runtime_call_frame.cpp
     src/mparser/runtime_cell.cpp
     src/mparser/runtime_exception.cpp
+    src/mparser/runtime_fallback.cpp
     src/mparser/runtime_warning.cpp
     src/mparser/runtime_index.cpp
     src/mparser/runtime_lvalue.cpp
@@ -81,6 +83,7 @@ add_library(mparser_core
     src/mparser/runtime_shape.cpp
     src/mparser/runtime_struct.cpp
     src/mparser/runtime_text.cpp
+    src/mparser/runtime_value.cpp
     src/mparser/runtime_value_ops.cpp
     src/mparser/semantic.cpp
     src/mparser/semantic_dump.cpp
@@ -537,6 +540,29 @@ add_executable(runtime_session_smoke_tests
     tests/runtime_session_smoke.cpp)
 target_link_libraries(runtime_session_smoke_tests PRIVATE mparser_core)
 add_test(NAME runtime_session_smoke COMMAND runtime_session_smoke_tests)
+
+add_executable(runtime_contract_smoke_tests
+    tests/runtime_contract_smoke.cpp)
+target_link_libraries(runtime_contract_smoke_tests PRIVATE mparser_core)
+add_test(NAME runtime_contract_smoke COMMAND runtime_contract_smoke_tests)
+
+add_test(NAME runtime_contract_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/runtime_contract_demo.m)
+set_tests_properties(runtime_contract_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 11023")
+
+add_test(NAME runtime_contract_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/runtime_contract_demo.m)
+set_tests_properties(runtime_contract_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 11023")
+
+add_test(NAME runtime_contract_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/runtime_contract_demo.m)
+set_tests_properties(runtime_contract_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 11023")
 
 add_test(NAME workspace_session_interpreter_cli_smoke
     COMMAND mparser --run-hir

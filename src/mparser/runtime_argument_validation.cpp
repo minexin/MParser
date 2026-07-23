@@ -594,7 +594,7 @@ RuntimeInvocationNormalizationResult normalizeRuntimeInvocationArguments(
 }
 
 void initializeRuntimeFunctionOutputs(
-    std::map<std::string, RuntimeValue>& frame,
+    RuntimeWorkspace& frame,
     const FunctionSignature& signature) {
     const std::string_view repeatingName =
         functionRepeatingOutputName(signature);
@@ -612,7 +612,7 @@ void initializeRuntimeFunctionOutputs(
 }
 
 RuntimeOutputValidationResult validateRuntimeFunctionOutputs(
-    std::map<std::string, RuntimeValue>& frame,
+    RuntimeWorkspace& frame,
     const std::vector<RuntimeOutputArgumentContract>& contracts,
     const RuntimeArgumentValidationOptions& options) {
     for (const auto& contract : contracts) {
@@ -655,7 +655,7 @@ RuntimeOutputValidationResult validateRuntimeFunctionOutputs(
 }
 
 std::vector<RuntimeValue> collectRuntimeFunctionOutputs(
-    const std::map<std::string, RuntimeValue>& frame,
+    const RuntimeWorkspace& frame,
     const FunctionSignature& signature, size_t requestedOutputCount) {
     std::vector<RuntimeValue> outputs;
     outputs.reserve(requestedOutputCount);

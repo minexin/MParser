@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mparser/bytecode.h"
+#include "mparser/runtime_fallback.h"
 
 #include <cstddef>
 #include <string>
@@ -34,6 +35,7 @@ struct BytecodeRegionContract {
     bool hasUnsupportedControlFlow = false;
     bool hasUnsupportedOperations = false;
     bool eligibleForTypedExecution = false;
+    RuntimeFallbackKind fallbackKind = RuntimeFallbackKind::None;
     std::string reason;
 };
 

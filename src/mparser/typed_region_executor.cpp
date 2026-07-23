@@ -231,14 +231,33 @@ std::optional<LoopRangeView> loopValues(const RuntimeValue& range) {
     return std::nullopt;
 }
 
-TypedRegionExecutionResult fallback(std::string reason) {
+TypedRegionExecutionResult fallback(RuntimeFallbackKind kind,
+                                    std::string reason) {
     TypedRegionExecutionResult result;
+    result.fallbackKind = kind;
     result.reason = std::move(reason);
     return result;
 }
 
+RuntimeFallbackKind nativeFallbackKind(
+    NativeScalarJitStatus status) {
+    switch (status) {
+    case NativeScalarJitStatus::Executed:
+        return RuntimeFallbackKind::None;
+    case NativeScalarJitStatus::Unavailable:
+        return RuntimeFallbackKind::BackendUnavailable;
+    case NativeScalarJitStatus::Unsupported:
+        return RuntimeFallbackKind::BackendUnsupported;
+    case NativeScalarJitStatus::CompilationFailed:
+        return RuntimeFallbackKind::CompilationFailed;
+    case NativeScalarJitStatus::RuntimeFailed:
+        return RuntimeFallbackKind::RuntimeFailed;
+    }
+    return RuntimeFallbackKind::RuntimeFailed;
+}
+
 size_t findOrAddSlot(ScalarKernel& kernel, std::string_view name,
-                     const std::map<std::string, RuntimeValue>& variables) {
+                     const RuntimeWorkspace& variables) {
     const auto existing = std::find(kernel.slotNames.begin(),
                                     kernel.slotNames.end(), name);
     if (existing != kernel.slotNames.end()) {
@@ -308,7 +327,7 @@ bool requireStack(const std::vector<ScalarKernelStackValue>& stack,
 
 std::optional<ScalarKernel> compileKernel(
     const BytecodeProgram& program, const BytecodeRegionContract& region,
-    const std::map<std::string, RuntimeValue>& variables,
+    const RuntimeWorkspace& variables,
     std::string& failureReason) {
     ScalarKernel kernel;
     kernel.instructions.reserve(region.bodyEndPc - region.bodyBeginPc);
@@ -1272,33 +1291,44 @@ bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
 TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     const BytecodeProgram& program, const BytecodeRegionContract& region,
     const RuntimeValue& loopRange,
-    const std::map<std::string, RuntimeValue>& variables,
+    const RuntimeWorkspace& variables,
     TypedRegionBackend backend) const {
     if (!region.available || !region.closed ||
         !region.eligibleForTypedExecution) {
-        return fallback("typed region contract is not executable");
+        return fallback(
+            region.fallbackKind == RuntimeFallbackKind::None
+                ? RuntimeFallbackKind::InvalidContract
+                : region.fallbackKind,
+            "typed region contract is not executable");
     }
     if (region.beginPc >= program.instructions.size() ||
         region.endPc > program.instructions.size() ||
         region.bodyBeginPc > region.bodyEndPc ||
         region.bodyEndPc >= region.endPc) {
-        return fallback("typed region contract has invalid PC boundaries");
+        return fallback(
+            RuntimeFallbackKind::InvalidContract,
+            "typed region contract has invalid PC boundaries");
     }
 
     const auto& header = program.instructions[region.beginPc];
     if (header.op != BytecodeOp::ForBegin || header.operand.empty()) {
-        return fallback("typed region entry is not a named for loop");
+        return fallback(
+            RuntimeFallbackKind::InvalidContract,
+            "typed region entry is not a named for loop");
     }
 
     const auto values = loopValues(loopRange);
     if (!values) {
-        return fallback("typed loop range is not numeric");
+        return fallback(RuntimeFallbackKind::UnsupportedRange,
+                        "typed loop range is not numeric");
     }
 
     for (const auto& input : region.inputs) {
         const auto variable = variables.find(input);
         if (variable == variables.end()) {
-            return fallback("typed region input is unavailable: " + input);
+            return fallback(
+                RuntimeFallbackKind::MissingInput,
+                "typed region input is unavailable: " + input);
         }
         const bool supportedScalar =
             variable->second.kind == RuntimeValueKind::Number &&
@@ -1306,6 +1336,7 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
         if (!supportedScalar &&
             !isDirectLinearDoubleArray(variable->second)) {
             return fallback(
+                RuntimeFallbackKind::UnsupportedInput,
                 "typed region input is not a supported double scalar or linear array: " +
                 input);
         }
@@ -1314,10 +1345,13 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     std::string compileFailure;
     auto kernel = compileKernel(program, region, variables, compileFailure);
     if (!kernel) {
-        return fallback(std::move(compileFailure));
+        return fallback(RuntimeFallbackKind::KernelRejected,
+                        std::move(compileFailure));
     }
 
     std::string nativeFallbackReason;
+    RuntimeFallbackKind nativeFallbackCode =
+        RuntimeFallbackKind::None;
     if (backend != TypedRegionBackend::Portable) {
         std::vector<double> nativeOuterValues;
         nativeOuterValues.reserve(values->size());
@@ -1330,8 +1364,7 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
             nativeKernel, nativeOuterValues.data(),
             nativeOuterValues.size());
         if (native.status == NativeScalarJitStatus::Executed) {
-            std::map<std::string, RuntimeValue> workingVariables =
-                variables;
+            RuntimeWorkspace workingVariables = variables;
             for (size_t slot = 0;
                  slot < nativeKernel.slotNames.size(); ++slot) {
                 if (native.writtenSlots[slot] != 0) {
@@ -1374,12 +1407,16 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
             return result;
         }
         if (backend == TypedRegionBackend::Native) {
-            auto result = fallback(std::move(native.reason));
+            const RuntimeFallbackKind kind =
+                nativeFallbackKind(native.status);
+            auto result = fallback(kind, std::move(native.reason));
             result.backend = TypedRegionBackend::Native;
             result.nativePlatform = nativeScalarJitPlatform();
+            result.nativeFallbackKind = kind;
             result.nativeFallbackReason = result.reason;
             return result;
         }
+        nativeFallbackCode = nativeFallbackKind(native.status);
         nativeFallbackReason = std::move(native.reason);
     }
 
@@ -1394,10 +1431,15 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
         if (!executeKernelSpan(*kernel, 0, kernel->instructions.size(),
                                registers, written, writtenArrays, counters,
                                compileFailure)) {
-            return fallback(std::move(compileFailure));
+            auto result = fallback(RuntimeFallbackKind::RuntimeFailed,
+                                   std::move(compileFailure));
+            result.nativeFallbackKind = nativeFallbackCode;
+            result.nativeFallbackReason =
+                std::move(nativeFallbackReason);
+            return result;
         }
     }
-    std::map<std::string, RuntimeValue> workingVariables = variables;
+    RuntimeWorkspace workingVariables = variables;
     for (size_t slot = 0; slot < kernel->slotNames.size(); ++slot) {
         if (written[slot]) {
             workingVariables[kernel->slotNames[slot]] =
@@ -1419,6 +1461,7 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     result.executedInstructionCount = counters.sourceInstructions;
     result.executedKernelInstructionCount = counters.kernelInstructions;
     result.backend = TypedRegionBackend::Portable;
+    result.nativeFallbackKind = nativeFallbackCode;
     result.nativeFallbackReason = std::move(nativeFallbackReason);
     if (!kernel->arrays.empty()) {
         result.reason = kernel->nestedLoopCount == 0

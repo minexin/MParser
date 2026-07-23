@@ -40,6 +40,10 @@ struct AdaptiveBytecodeEvent {
     size_t sourcePc = 0;
     std::string target;
     std::string reason;
+    RuntimeFallbackKind fallbackKind =
+        RuntimeFallbackKind::None;
+    RuntimeFallbackKind nativeFallbackKind =
+        RuntimeFallbackKind::None;
 };
 
 struct AdaptiveBytecodeVmOptions {
@@ -103,7 +107,11 @@ private:
     const BytecodeTypedIrRegion* findTypedRegion(size_t regionId) const;
     void appendEvent(AdaptiveBytecodeEventKind kind, size_t regionId,
                      size_t sourcePc, std::string target,
-                     std::string reason);
+                     std::string reason,
+                     RuntimeFallbackKind fallbackKind =
+                         RuntimeFallbackKind::None,
+                     RuntimeFallbackKind nativeFallbackKind =
+                         RuntimeFallbackKind::None);
 
     const BytecodeProgram* program_ = nullptr;
     const SemanticResult* semantic_ = nullptr;

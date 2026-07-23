@@ -1,5 +1,6 @@
 #include "mparser/bytecode.h"
 #include "mparser/bytecode_vm.h"
+#include "mparser/interpreter.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_text.h"

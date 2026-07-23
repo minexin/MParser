@@ -1222,6 +1222,55 @@ capture mutable session pointers in a portable or native specialization.
 Legal workspace code therefore executes in the VM through the existing guarded
 fallback contract, including store-only loop variables.
 
+v0.79 separates the canonical runtime value contract from either baseline
+engine. `runtime_value` owns the value representation, factories, display and
+function-handle metadata helpers, the `RuntimeWorkspace` alias, ownership
+classification, storable-value rule, and recursive contract validator.
+Runtime headers that only consume values no longer include `interpreter.h`.
+This prevents the v0.80 builtin layer from depending on an execution engine
+merely to exchange values.
+
+The ownership categories describe copy and lifetime behavior:
+
+- immediate scalar values carry their payload directly;
+- value arrays, text, Cells, structures, and value objects copy their value
+  containers, while contained handles and callables retain their own shared
+  identities;
+- handle objects share property storage and may form cycles;
+- function handles share one identity-bearing callable descriptor and retain
+  their module context;
+- Missing, comma-separated-list, and name-value transport values are transient
+  and are not ordinary workspace storage values.
+
+Shape remains part of each `RuntimeValue`. Explicit dimensions are normalized,
+their product must fit `size_t`, rows and columns must match the first two
+dimensions, and each payload must match the resulting element count.
+Structures additionally validate one ordered schema, object arrays validate
+scalar element storage and value/handle consistency, and module-backed
+function handles require a callable context. Validation is cycle-safe for
+shared handle fields and function-handle captures. It is an invariant checker,
+not a serializer or a claim that every MATLAB storage class exists.
+
+HIR and bytecode execution now share `RuntimeCallFrame`, with distinct script,
+function, anonymous-function, and initializer kinds. Function frames record
+the callable and source span, supplied positional argument count, requested
+output count, workspace, and canonical `nargin`/`nargout` values.
+Initializers deliberately do not synthesize function arity variables.
+
+Optimization fallback has a parallel machine-readable contract.
+`RuntimeFallbackKind` distinguishes region-shape rejection, calls, unsupported
+mutation or control flow, malformed contracts, missing or unsupported runtime
+inputs, typed-kernel rejection, backend availability/compilation/runtime
+failure, and adaptive retraining rejection. Region analysis, typed execution,
+native fallback, VM profiles, adaptive events, and CLI details propagate these
+codes while retaining human-readable reasons. A successful portable execution
+after an automatic native rejection records the native fallback separately
+without turning the overall execution into a failure.
+
+This is an internal source-level freeze for the builtin registry and remaining
+engine work. Struct layout, public symbol visibility, serialization, the narrow
+C ABI, and the versioned machine protocol remain v0.90 release gates.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,
 optional LLVM ORC lowering behind the same backend contract, persistent

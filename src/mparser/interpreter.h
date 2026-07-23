@@ -28,14 +28,4 @@ public:
                           const InterpreterOptions& options);
 };
 
-RuntimeValue makeRuntimeStructValue(
-    std::map<std::string, RuntimeValue> fields = {});
-RuntimeValue makeRuntimeNameValueArgument(std::string name,
-                                          RuntimeValue value);
-std::shared_ptr<RuntimeCallableContext> makeRuntimeCallableContext();
-RuntimeValue makeRuntimeFunctionHandleValue(RuntimeFunctionHandle handle);
-std::string runtimeFunctionHandleText(const RuntimeValue& value);
-RuntimeValue runtimeFunctionHandleMetadata(const RuntimeValue& value);
-std::string runtimeValueToString(const RuntimeValue& value);
-
 } // namespace mparser

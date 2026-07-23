@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mparser {
@@ -44,6 +45,14 @@ enum class RuntimeFunctionHandleBackend {
   Independent,
   Hir,
   Bytecode,
+};
+
+enum class RuntimeValueOwnership {
+  Immediate,
+  Value,
+  SharedHandle,
+  Callable,
+  Transient,
 };
 
 struct RuntimeCallableContext {
@@ -84,6 +93,8 @@ struct RuntimeValue {
   RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
 };
 
+using RuntimeWorkspace = std::map<std::string, RuntimeValue>;
+
 struct RuntimeFunctionHandle {
   size_t identity = 0;
   RuntimeFunctionHandleKind kind = RuntimeFunctionHandleKind::Function;
@@ -99,7 +110,7 @@ struct RuntimeFunctionHandle {
   std::string sourceFile;
   std::optional<RuntimeValue> receiver;
   std::vector<std::string> parameters;
-  std::map<std::string, RuntimeValue> capturedVariables;
+  RuntimeWorkspace capturedVariables;
   const HirNode *hirBody = nullptr;
   size_t entry = 0;
   size_t end = 0;
@@ -110,5 +121,43 @@ struct RuntimeVariable {
   std::string name;
   RuntimeValue value;
 };
+
+struct RuntimeValueContractResult {
+  bool valid = false;
+  std::string path;
+  std::string error;
+};
+
+RuntimeValue makeRuntimeMissingValue();
+RuntimeValue makeRuntimeNumberValue(
+    double value,
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double);
+RuntimeValue makeRuntimeLogicalValue(bool value);
+RuntimeValue makeRuntimeVectorValue(
+    std::vector<double> values,
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double);
+RuntimeValue makeRuntimeMatrixValue(
+    size_t rows, size_t columns, std::vector<double> values,
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double);
+RuntimeValue makeRuntimeCellValue(std::vector<RuntimeValue> values);
+RuntimeValue makeRuntimeCellValue(
+    std::vector<size_t> dimensions, std::vector<RuntimeValue> values);
+RuntimeValue makeRuntimeStructValue(RuntimeWorkspace fields = {});
+RuntimeValue makeRuntimeNameValueArgument(std::string name,
+                                          RuntimeValue value);
+std::shared_ptr<RuntimeCallableContext> makeRuntimeCallableContext();
+RuntimeValue makeRuntimeFunctionHandleValue(RuntimeFunctionHandle handle);
+
+std::string_view runtimeValueKindName(RuntimeValueKind kind);
+std::string_view runtimeValueOwnershipName(
+    RuntimeValueOwnership ownership);
+RuntimeValueOwnership runtimeValueOwnership(const RuntimeValue& value);
+bool runtimeValueIsStorable(const RuntimeValue& value);
+RuntimeValueContractResult validateRuntimeValueContract(
+    const RuntimeValue& value);
+
+std::string runtimeFunctionHandleText(const RuntimeValue& value);
+RuntimeValue runtimeFunctionHandleMetadata(const RuntimeValue& value);
+std::string runtimeValueToString(const RuntimeValue& value);
 
 } // namespace mparser

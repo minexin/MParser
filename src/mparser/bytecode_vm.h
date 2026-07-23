@@ -1,7 +1,8 @@
 #pragma once
 
 #include "mparser/bytecode.h"
-#include "mparser/interpreter.h"
+#include "mparser/runtime_session_state.h"
+#include "mparser/runtime_value.h"
 #include "mparser/semantic.h"
 #include "mparser/typed_region_executor.h"
 
@@ -138,6 +139,10 @@ struct BytecodeTypedRegionExecutionProfile {
     size_t nativeCacheEvictedCodeBytes = 0;
     size_t nativeCodeSize = 0;
     std::string nativePlatform;
+    RuntimeFallbackKind lastFallbackKind =
+        RuntimeFallbackKind::None;
+    RuntimeFallbackKind nativeFallbackKind =
+        RuntimeFallbackKind::None;
     std::string nativeFallbackReason;
     std::string lastReason;
 };

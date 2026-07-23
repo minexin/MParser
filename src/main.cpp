@@ -905,9 +905,17 @@ void printTypedRegionExecutions(
         }
         std::cout << "\n";
         if (!execution.nativeFallbackReason.empty()) {
-            std::cout << "      nativeFallback="
+            std::cout << "      nativeFallbackKind="
+                      << mparser::runtimeFallbackKindName(
+                             execution.nativeFallbackKind)
+                      << "\n"
+                      << "      nativeFallback="
                       << execution.nativeFallbackReason << "\n";
         }
+        std::cout << "      fallbackKind="
+                  << mparser::runtimeFallbackKindName(
+                         execution.lastFallbackKind)
+                  << "\n";
         std::cout << "      reason=" << execution.lastReason << "\n";
     }
     if (!baselineValidated) {

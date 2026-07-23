@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.78.0",
+  "version": "0.79.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -145,6 +145,17 @@
       "evidence": ["parser_smoke", "semantic_smoke", "bytecode_smoke", "bytecode_region_smoke", "runtime_session_smoke", "workspace_session_interpreter_cli_smoke", "workspace_session_bytecode_cli_smoke", "workspace_session_production_cli_smoke"],
       "sources": ["src/mparser/runtime_session_state.h", "src/mparser/runtime_session_state.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "src/mparser/compiled_module.cpp", "tests/runtime_session_smoke.cpp", "samples/workspace_session_demo.m"],
       "limits": "v0.78 requires declarations before use, initializes first declarations as 0-by-0 doubles, keys persistent variables by compiled callable identity plus canonical function identity, and routes all supported writes through RuntimeSessionState. Different modules may share globals without colliding same-named persistent functions. No-argument clear preserves shared state; MATLAB command forms for clearing names, globals, or functions remain unsupported. Individual state operations are mutex-protected, but callers must serialize compound invocation on one shared state. Typed/native regions fall back to the VM."
+    },
+    {
+      "id": "RUNTIME-001",
+      "area": "engine",
+      "feature": "Canonical RuntimeValue ownership, shape, workspace, call-frame, and structured fallback contracts",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["runtime_contract_smoke", "bytecode_region_smoke", "typed_region_executor_smoke", "adaptive_bytecode_vm_smoke", "runtime_contract_interpreter_cli_smoke", "runtime_contract_bytecode_cli_smoke", "runtime_contract_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_value.h", "src/mparser/runtime_value.cpp", "src/mparser/runtime_call_frame.h", "src/mparser/runtime_call_frame.cpp", "src/mparser/runtime_fallback.h", "src/mparser/runtime_fallback.cpp", "tests/runtime_contract_smoke.cpp", "samples/runtime_contract_demo.m"],
+      "limits": "v0.79 freezes the internal source contract needed by the builtin registry: explicit ownership classes, storable transport boundaries, normalized shape/payload invariants, value-copy versus handle-alias behavior, function-handle identity/context lifetime, shared call-frame arity, and machine-readable fallback categories. It is not a frozen public C++ ABI, C ABI, serializer, garbage collector, or claim of MATLAB type completeness; those external boundaries remain v0.90 and v1.0 gates."
     },
     {
       "id": "EXC-001",
@@ -307,9 +318,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke"],
-      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp"],
-      "limits": "v0.78 adds owning CompiledModuleSession state, explicit reset/clear APIs, and lifetime anchoring for sessions and module-bound handles. The API remains pre-freeze and does not yet provide the narrow C ABI, resource contract, or versioned machine protocol required by v1.0."
+      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke"],
+      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h"],
+      "limits": "v0.78 adds owning CompiledModuleSession state, explicit reset/clear APIs, and lifetime anchoring for sessions and module-bound handles. v0.79 stress-tests repeated invocation against the shared internal RuntimeValue contract. The API remains pre-freeze and does not yet provide the narrow C ABI, resource contract, or versioned machine protocol required by v1.0."
     },
     {
       "id": "EMBED-002",
@@ -442,11 +453,11 @@
       "id": "G-RUNTIME-001",
       "area": "engine",
       "priority": "must-have",
-      "state": "open",
+      "state": "closed",
       "target": "v0.79",
       "framework_impact": "representation-change",
       "requirement": "Freeze RuntimeValue ownership, shape, indexing, object, exception, call-frame, and output-arity contracts before registry migration.",
-      "exit_evidence": "Architecture review plus compile-once/invoke-many stress and no known feature requiring main IR or VM replacement."
+      "exit_evidence": "docs/v0.79.md and architecture.md define the internal freeze. runtime_contract_smoke covers factories, normalized payload/shape invariants, malformed values, deep value copies, shared handle aliases and cycles, function-handle identity, storable transport values, shared call frames, every fallback name, and 2,048 invocations of one compiled persistent multi-output function. Region, typed, and adaptive tests assert structured fallback propagation, and all three CLI modes run runtime_contract_demo.m with summary 11023. Remaining target-subset and release gaps are additive or contract extensions rather than known replacements of the main IR or VM."
     },
     {
       "id": "G-BUILTIN-001",

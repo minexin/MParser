@@ -109,6 +109,18 @@ size_t eventCount(
     return count;
 }
 
+const mparser::AdaptiveBytecodeEvent* findLastEvent(
+    const mparser::AdaptiveBytecodeVmSession& session,
+    mparser::AdaptiveBytecodeEventKind kind) {
+    for (auto event = session.events().rbegin();
+         event != session.events().rend(); ++event) {
+        if (event->kind == kind) {
+            return &*event;
+        }
+    }
+    return nullptr;
+}
+
 void runAdaptivePromotionSmoke() {
     auto fixture = lower(R"(function y = main()
 y = 0;
@@ -206,6 +218,8 @@ end
     assert(execution->attemptCount == 1);
     assert(execution->executionCount == 0);
     assert(execution->fallbackCount == 1);
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::KernelRejected);
     assert(execution->lastReason ==
            "typed region binary operation received a non-scalar");
 
@@ -248,6 +262,21 @@ end
     assert(eventCount(
                session,
                mparser::AdaptiveBytecodeEventKind::RetrainingRejected) == 1);
+    const auto* fallbackEvent = findLastEvent(
+        session, mparser::AdaptiveBytecodeEventKind::TypedFallback);
+    assert(fallbackEvent != nullptr);
+    assert(fallbackEvent->fallbackKind ==
+           mparser::RuntimeFallbackKind::KernelRejected);
+    const auto* invalidationEvent = findLastEvent(
+        session, mparser::AdaptiveBytecodeEventKind::Invalidation);
+    assert(invalidationEvent != nullptr);
+    assert(invalidationEvent->fallbackKind ==
+           mparser::RuntimeFallbackKind::KernelRejected);
+    const auto* rejectionEvent = findLastEvent(
+        session, mparser::AdaptiveBytecodeEventKind::RetrainingRejected);
+    assert(rejectionEvent != nullptr);
+    assert(rejectionEvent->fallbackKind ==
+           mparser::RuntimeFallbackKind::AdaptiveRetrainingRejected);
 }
 
 void runAdaptiveStaticRejectionSmoke() {

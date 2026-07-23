@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.78.0. See [docs/v0.78.md](docs/v0.78.md) for the
+Current milestone: v0.79.0. See [docs/v0.79.md](docs/v0.79.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.77.md](docs/v0.77.md),
+iteration plan. Previous boundaries are kept in [docs/v0.78.md](docs/v0.78.md),
+[docs/v0.77.md](docs/v0.77.md),
 [docs/v0.76.md](docs/v0.76.md),
 [docs/v0.75.md](docs/v0.75.md),
 [docs/v0.74.md](docs/v0.74.md),
@@ -791,6 +792,18 @@ intentional global sharing is required without merging same-named persistent
 functions from different compiled modules. Shared-state accesses remain VM operations;
 typed and native regions reject them during region selection and preserve
 correctness through ordinary fallback.
+
+v0.79 freezes the engine-facing runtime foundation used by both baseline
+engines and the optimization tiers. `RuntimeValue` now has shared factories,
+one `RuntimeWorkspace` type, explicit immediate/value/shared-handle/callable/
+transient ownership categories, recursive shape/payload validation, and
+cycle-safe validation for handle graphs and function closures. HIR and
+bytecode execution use the same `RuntimeCallFrame` kinds and `nargin`/
+`nargout` initialization. Typed-region selection, portable execution, native
+SLJIT, adaptive invalidation, and CLI detail output carry a
+`RuntimeFallbackKind` in addition to explanatory text. The source contract is
+stable enough for the v0.80 builtin registry; the public C++ ABI and future C
+ABI remain intentionally pre-freeze until the v0.90 embedding gate.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,

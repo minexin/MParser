@@ -85,6 +85,7 @@ end
     assert(!region.hasUnsupportedControlFlow);
     assert(!region.hasUnsupportedOperations);
     assert(region.eligibleForTypedExecution);
+    assert(region.fallbackKind == mparser::RuntimeFallbackKind::None);
 }
 
 void runStructuredBranchRegionSmoke() {
@@ -111,6 +112,7 @@ end
     assert(region.conditionalBranchCount == 2);
     assert(!region.hasUnsupportedControlFlow);
     assert(region.eligibleForTypedExecution);
+    assert(region.fallbackKind == mparser::RuntimeFallbackKind::None);
     assert(!hasName(region.inputs, "branchValue"));
     assert(hasName(region.inputs, "y"));
     assert(region.reason ==
@@ -155,6 +157,8 @@ end
     assert(loop->region.closed);
     assert(loop->region.hasUnsupportedControlFlow);
     assert(!loop->region.eligibleForTypedExecution);
+    assert(loop->region.fallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedControlFlow);
 }
 
 void runNestedLoopRegionSmoke() {
@@ -219,6 +223,8 @@ end
     assert(hasName(loop->region.callTargets, "sum"));
     assert(loop->region.hasCalls);
     assert(!loop->region.eligibleForTypedExecution);
+    assert(loop->region.fallbackKind ==
+           mparser::RuntimeFallbackKind::ContainsCall);
 }
 
 void runLinearIndexRegionSmoke() {
@@ -267,6 +273,8 @@ end
     assert(loop->region.hasUnsupportedMutation);
     assert(loop->region.hasUnsupportedOperations);
     assert(!loop->region.eligibleForTypedExecution);
+    assert(loop->region.fallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedMutation);
 }
 
 void runSessionBindingRejectionSmoke() {
@@ -283,6 +291,8 @@ end
     assert(globalStoreLoop != nullptr);
     assert(globalStoreLoop->region.hasUnsupportedOperations);
     assert(!globalStoreLoop->region.eligibleForTypedExecution);
+    assert(globalStoreLoop->region.fallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedOperation);
 
     const auto persistentStore = plan(R"(function y = main()
 persistent count
@@ -298,6 +308,8 @@ end
     assert(persistentStoreLoop != nullptr);
     assert(persistentStoreLoop->region.hasUnsupportedOperations);
     assert(!persistentStoreLoop->region.eligibleForTypedExecution);
+    assert(persistentStoreLoop->region.fallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedOperation);
 
     const auto globalLoopVariable = plan(R"(function y = main()
 global i
@@ -311,6 +323,8 @@ end
     assert(globalLoop != nullptr);
     assert(globalLoop->region.hasUnsupportedOperations);
     assert(!globalLoop->region.eligibleForTypedExecution);
+    assert(globalLoop->region.fallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedOperation);
 
     const auto declarationOnly = plan(R"(function y = main()
 y = 0;
@@ -326,6 +340,8 @@ end
     assert(declarationLoop != nullptr);
     assert(declarationLoop->region.hasUnsupportedOperations);
     assert(!declarationLoop->region.eligibleForTypedExecution);
+    assert(declarationLoop->region.fallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedOperation);
 }
 
 } // namespace

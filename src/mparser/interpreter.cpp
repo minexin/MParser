@@ -1,6 +1,7 @@
 #include "mparser/interpreter.h"
 #include "mparser/argument_contract.h"
 #include "mparser/function_signature.h"
+#include "mparser/runtime_call_frame.h"
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
 #include "mparser/runtime_assignment.h"
@@ -22,45 +23,33 @@
 #include "mparser/runtime_warning.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
-#include <iomanip>
 #include <iterator>
 #include <limits>
 #include <map>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <string_view>
 #include <utility>
 
 namespace mparser {
 namespace {
 
-std::atomic_size_t nextCallableContextIdentity{1};
-std::atomic_size_t nextFunctionHandleIdentity{1};
-
 RuntimeValue missingValue() {
-    return RuntimeValue{};
+    return makeRuntimeMissingValue();
 }
 
 RuntimeValue numberValue(
     double value,
     RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Number;
-    result.number = value;
-    result.numericClass = numericClass;
-    setRuntimeDimensions(result, {1, 1});
-    return result;
+    return makeRuntimeNumberValue(value, numericClass);
 }
 
 RuntimeValue logicalValue(bool value) {
-    return numberValue(value ? 1.0 : 0.0,
-                       RuntimeNumericClass::Logical);
+    return makeRuntimeLogicalValue(value);
 }
 
 RuntimeValue characterValue(std::string value) {
@@ -70,41 +59,25 @@ RuntimeValue characterValue(std::string value) {
 RuntimeValue vectorValue(
     std::vector<double> values,
     RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Vector;
-    result.elements = std::move(values);
-    result.numericClass = numericClass;
-    setRuntimeDimensions(result, {1, result.elements.size()});
-    return result;
+    return makeRuntimeVectorValue(std::move(values), numericClass);
 }
 
 RuntimeValue matrixValue(size_t rows, size_t columns,
                          std::vector<double> values,
                          RuntimeNumericClass numericClass =
                              RuntimeNumericClass::Double) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Matrix;
-    result.elements = std::move(values);
-    result.numericClass = numericClass;
-    setRuntimeDimensions(result, {rows, columns});
-    return result;
+    return makeRuntimeMatrixValue(rows, columns, std::move(values),
+                                  numericClass);
 }
 
 RuntimeValue cellValue(std::vector<RuntimeValue> values) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Cell;
-    result.cells = std::move(values);
-    setRuntimeDimensions(result, {1, result.cells.size()});
-    return result;
+    return makeRuntimeCellValue(std::move(values));
 }
 
 RuntimeValue cellValueForDimensions(std::vector<size_t> dimensions,
                                     std::vector<RuntimeValue> values) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Cell;
-    result.cells = std::move(values);
-    setRuntimeDimensions(result, std::move(dimensions));
-    return result;
+    return makeRuntimeCellValue(std::move(dimensions),
+                                std::move(values));
 }
 
 bool isNumber(const RuntimeValue& value) {
@@ -434,7 +407,7 @@ public:
                             ? options.sessionState
                             : std::make_shared<RuntimeSessionState>();
         pendingException_.reset();
-        frames_.push_back({});
+        frames_.push_back(makeRuntimeScriptFrame());
         if (semantic.root) {
             argumentCatalog_ =
                 buildArgumentContractCatalog(*semantic.root);
@@ -674,12 +647,12 @@ private:
                diagnostics_.size() > *diagnosticTrapBase_;
     }
 
-    std::map<std::string, RuntimeValue>& currentFrame() {
-        return frames_.back();
+    RuntimeWorkspace& currentFrame() {
+        return frames_.back().workspace;
     }
 
-    const std::map<std::string, RuntimeValue>& currentFrame() const {
-        return frames_.back();
+    const RuntimeWorkspace& currentFrame() const {
+        return frames_.back().workspace;
     }
 
     std::string persistentFunctionKey(
@@ -910,12 +883,10 @@ private:
             return missingOutputs();
         }
 
-        frames_.push_back({});
-        currentFrame()["nargin"] =
-            numberValue(static_cast<double>(
-                normalized.positionalArgumentCount));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(outputCount));
+        frames_.push_back(makeRuntimeFunctionFrame(
+            RuntimeCallFrameKind::Function,
+            publicFunctionName(node.label), node.span,
+            normalized.positionalArgumentCount, outputCount));
         auto validateValue = [&](RuntimeValue value,
                                  const ResolvedArgumentContract* contract,
                                  std::optional<size_t> occurrence =
@@ -1035,7 +1006,7 @@ private:
             currentFrame()["varargin"] = cellValue(std::move(values));
         }
 
-        std::map<std::string, RuntimeValue> nameValueStructures;
+        RuntimeWorkspace nameValueStructures;
         for (size_t index = 0; index < signature.parameters.size(); ++index) {
             if (functionParameterKind(signature, index) ==
                 FunctionParameterKind::NameValue) {
@@ -1087,11 +1058,6 @@ private:
             currentFrame()[name] = std::move(structure);
         }
         initializeRuntimeFunctionOutputs(currentFrame(), signature);
-        currentFrame()["nargin"] =
-            numberValue(static_cast<double>(
-                normalized.positionalArgumentCount));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(outputCount));
 
         executeChildren(node);
 
@@ -2942,16 +2908,17 @@ private:
             return missingOutputs();
         }
 
-        frames_.push_back(info.capturedVariables);
+        frames_.push_back(makeRuntimeFunctionFrame(
+            RuntimeCallFrameKind::AnonymousFunction,
+            info.display.empty() ? std::string("<anonymous>")
+                                 : info.display,
+            info.span, arguments.size(), requestedOutputCount,
+            info.capturedVariables));
         for (size_t index = 0; index < info.parameters.size(); ++index) {
             if (info.parameters[index] != "~") {
                 currentFrame()[info.parameters[index]] = arguments[index];
             }
         }
-        currentFrame()["nargin"] =
-            numberValue(static_cast<double>(arguments.size()));
-        currentFrame()["nargout"] =
-            numberValue(static_cast<double>(requestedOutputCount));
 
         RuntimeValue output = missingValue();
         const size_t diagnosticCount = diagnostics_.size();
@@ -3925,14 +3892,14 @@ private:
     const SemanticResult* semantic_ = nullptr;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
-    std::vector<std::map<std::string, RuntimeValue>> frames_;
+    std::vector<RuntimeCallFrame> frames_;
     std::vector<std::string> activeFunctionNames_;
     std::vector<std::string> activePersistentFunctionKeys_;
     std::set<std::string> baseGlobalNames_;
     std::vector<RuntimeExceptionFrame> exceptionCallerFrames_;
     std::map<std::string, const HirNode*> functionsByName_;
     ArgumentContractCatalog argumentCatalog_;
-    std::map<std::string, RuntimeValue> resultFrame_;
+    RuntimeWorkspace resultFrame_;
     std::vector<Diagnostic> diagnostics_;
     std::vector<Diagnostic> warnings_;
     std::optional<RuntimeValue> pendingException_;
@@ -3955,351 +3922,6 @@ InterpreterResult Interpreter::run(
     const InterpreterOptions& options) {
     InterpreterContext context;
     return context.run(semantic, options);
-}
-
-RuntimeValue makeRuntimeStructValue(
-    std::map<std::string, RuntimeValue> fields) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::Struct;
-    result.fieldOrder.reserve(fields.size());
-    for (const auto& [name, value] : fields) {
-        (void)value;
-        result.fieldOrder.push_back(name);
-    }
-    result.structElements.push_back(std::move(fields));
-    setRuntimeDimensions(result, {1, 1});
-    return result;
-}
-
-RuntimeValue makeRuntimeNameValueArgument(std::string name,
-                                          RuntimeValue value) {
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::NameValueArgument;
-    result.text = std::move(name);
-    result.cells.push_back(std::move(value));
-    setRuntimeDimensions(result, {1, 1});
-    return result;
-}
-
-std::shared_ptr<RuntimeCallableContext> makeRuntimeCallableContext() {
-    auto context = std::make_shared<RuntimeCallableContext>();
-    context->identity = nextCallableContextIdentity.fetch_add(
-        1, std::memory_order_relaxed);
-    return context;
-}
-
-RuntimeValue makeRuntimeFunctionHandleValue(
-    RuntimeFunctionHandle handle) {
-    handle.identity = nextFunctionHandleIdentity.fetch_add(
-        1, std::memory_order_relaxed);
-    auto descriptor =
-        std::make_shared<RuntimeFunctionHandle>(std::move(handle));
-
-    RuntimeValue result;
-    result.kind = RuntimeValueKind::FunctionHandle;
-    result.functionHandle = std::move(descriptor);
-    result.opaqueId = result.functionHandle->identity;
-    result.text = result.functionHandle->display;
-    setRuntimeDimensions(result, {1, 1});
-    return result;
-}
-
-std::string runtimeFunctionHandleText(const RuntimeValue& value) {
-    if (value.kind != RuntimeValueKind::FunctionHandle ||
-        !value.functionHandle) {
-        return {};
-    }
-
-    const RuntimeFunctionHandle& handle = *value.functionHandle;
-    if (handle.kind == RuntimeFunctionHandleKind::Anonymous) {
-        return handle.display;
-    }
-    if (!handle.display.empty()) {
-        return handle.display.front() == '@'
-                   ? handle.display.substr(1)
-                   : handle.display;
-    }
-    if (handle.kind == RuntimeFunctionHandleKind::Method) {
-        return handle.className.empty()
-                   ? handle.methodName
-                   : handle.className + "." + handle.methodName;
-    }
-    return handle.targetName;
-}
-
-RuntimeValue runtimeFunctionHandleMetadata(const RuntimeValue& value) {
-    if (value.kind != RuntimeValueKind::FunctionHandle ||
-        !value.functionHandle) {
-        return makeRuntimeStructValue();
-    }
-
-    const RuntimeFunctionHandle& handle = *value.functionHandle;
-    std::map<std::string, RuntimeValue> fields{
-        {"file", characterValue(handle.sourceFile)},
-        {"function", characterValue(runtimeFunctionHandleText(value))},
-        {"type", characterValue(
-                     handle.kind == RuntimeFunctionHandleKind::Anonymous
-                         ? "anonymous"
-                         : "simple")},
-    };
-    if (handle.kind == RuntimeFunctionHandleKind::Anonymous) {
-        fields["workspace"] = cellValue(
-            {makeRuntimeStructValue(handle.capturedVariables)});
-    }
-    RuntimeValue result = makeRuntimeStructValue(std::move(fields));
-    result.fieldOrder = {"function", "type", "file"};
-    if (handle.kind == RuntimeFunctionHandleKind::Anonymous) {
-        result.fieldOrder.push_back("workspace");
-    }
-    return result;
-}
-
-std::string runtimeValueToString(const RuntimeValue& value) {
-    std::ostringstream output;
-    output << std::setprecision(15);
-
-    switch (value.kind) {
-    case RuntimeValueKind::Missing:
-        return "<missing>";
-    case RuntimeValueKind::Number:
-        output << value.number;
-        return output.str();
-    case RuntimeValueKind::CharacterArray: {
-        const auto dimensions = runtimeDimensions(value);
-        if (dimensions == std::vector<size_t>{0, 0}) {
-            return "''";
-        }
-        if (dimensions.size() == 2 && dimensions[0] == 1) {
-            const std::string text =
-                runtimeUtf16ToUtf8(value.characterElements);
-            output << '\'';
-            for (const char character : text) {
-                output << character;
-                if (character == '\'') {
-                    output << '\'';
-                }
-            }
-            output << '\'';
-            return output.str();
-        }
-        output << "char(" << dimensions[0] << "x" << dimensions[1]
-               << ")[";
-        for (size_t row = 0; row < dimensions[0]; ++row) {
-            if (row != 0) {
-                output << "; ";
-            }
-            const std::u16string_view rowText = dimensions[1] == 0
-                ? std::u16string_view{}
-                : std::u16string_view(
-                      value.characterElements.data() +
-                          row * dimensions[1],
-                      dimensions[1]);
-            output << '\'' << runtimeUtf16ToUtf8(rowText) << '\'';
-        }
-        output << "]";
-        return output.str();
-    }
-    case RuntimeValueKind::StringArray: {
-        if (isRuntimeStringScalar(value)) {
-            if (value.stringElements.front().missing) {
-                return "<missing>";
-            }
-            const std::string text = runtimeUtf16ToUtf8(
-                value.stringElements.front().value);
-            output << '"';
-            for (const char character : text) {
-                output << character;
-                if (character == '"') {
-                    output << '"';
-                }
-            }
-            output << '"';
-            return output.str();
-        }
-        const auto dimensions = runtimeDimensions(value);
-        output << "string(";
-        for (size_t index = 0; index < dimensions.size(); ++index) {
-            if (index != 0) {
-                output << "x";
-            }
-            output << dimensions[index];
-        }
-        output << ")[";
-        for (size_t index = 0; index < value.stringElements.size(); ++index) {
-            if (index != 0) {
-                output << ", ";
-            }
-            if (value.stringElements[index].missing) {
-                output << "<missing>";
-            } else {
-                output << '"'
-                       << runtimeUtf16ToUtf8(
-                              value.stringElements[index].value)
-                       << '"';
-            }
-        }
-        output << "]";
-        return output.str();
-    }
-    case RuntimeValueKind::Vector:
-        output << "[";
-        for (size_t index = 0; index < value.elements.size(); ++index) {
-            if (index > 0) {
-                output << " ";
-            }
-            output << value.elements[index];
-        }
-        output << "]";
-        return output.str();
-    case RuntimeValueKind::Matrix:
-        if (runtimeDimensionCount(value) > 2) {
-            const auto dimensions = runtimeDimensions(value);
-            output << "array(";
-            for (size_t index = 0; index < dimensions.size(); ++index) {
-                if (index != 0) {
-                    output << "x";
-                }
-                output << dimensions[index];
-            }
-            output << ")[";
-            for (size_t index = 0; index < value.elements.size(); ++index) {
-                if (index != 0) {
-                    output << " ";
-                }
-                const auto storageOffset =
-                    runtimeColumnMajorLinearToStorageOffset(value, index);
-                output << value.elements[*storageOffset];
-            }
-            output << "]";
-            return output.str();
-        }
-        output << "[";
-        for (size_t row = 0; row < value.rows; ++row) {
-            if (row > 0) {
-                output << "; ";
-            }
-            for (size_t column = 0; column < value.columns; ++column) {
-                if (column > 0) {
-                    output << " ";
-                }
-                output << value.elements[row * value.columns + column];
-            }
-        }
-        output << "]";
-        return output.str();
-    case RuntimeValueKind::Cell:
-        if (runtimeDimensionCount(value) > 2) {
-            const auto dimensions = runtimeDimensions(value);
-            output << "cell(";
-            for (size_t index = 0; index < dimensions.size(); ++index) {
-                if (index != 0) {
-                    output << "x";
-                }
-                output << dimensions[index];
-            }
-            output << "){";
-            for (size_t index = 0; index < value.cells.size(); ++index) {
-                if (index != 0) {
-                    output << ", ";
-                }
-                const auto storageOffset =
-                    runtimeColumnMajorLinearToStorageOffset(value, index);
-                output << runtimeValueToString(value.cells[*storageOffset]);
-            }
-            output << "}";
-            return output.str();
-        }
-        output << "{";
-        for (size_t index = 0; index < value.cells.size(); ++index) {
-            if (index > 0) {
-                output << ", ";
-            }
-            output << runtimeValueToString(value.cells[index]);
-        }
-        output << "}";
-        return output.str();
-    case RuntimeValueKind::CommaSeparatedList:
-        output << "<comma-separated-list:" << value.cells.size() << ">";
-        return output.str();
-    case RuntimeValueKind::FunctionHandle:
-        return value.text.empty() ? "<function_handle>" : value.text;
-    case RuntimeValueKind::Struct: {
-        const size_t elementCount = runtimeStructElementCount(value);
-        if (elementCount != 1) {
-            const auto dimensions = runtimeDimensions(value);
-            output << "struct(";
-            for (size_t index = 0; index < dimensions.size(); ++index) {
-                if (index != 0) {
-                    output << "x";
-                }
-                output << dimensions[index];
-            }
-            output << "; fields=";
-            const auto fieldNames = runtimeStructFieldOrder(value);
-            for (size_t index = 0; index < fieldNames.size(); ++index) {
-                if (index != 0) {
-                    output << ",";
-                }
-                output << fieldNames[index];
-            }
-            output << ")";
-            return output.str();
-        }
-        output << "struct(";
-        const auto fieldNames = runtimeStructFieldOrder(value);
-        for (size_t index = 0; index < fieldNames.size(); ++index) {
-            if (index != 0) {
-                output << ", ";
-            }
-            const RuntimeValue* field =
-                runtimeStructField(value, fieldNames[index]);
-            output << fieldNames[index] << "="
-                   << (field ? runtimeValueToString(*field)
-                             : std::string("<missing>"));
-        }
-        output << ")";
-        return output.str();
-    }
-    case RuntimeValueKind::NameValueArgument:
-        return value.text + "=" +
-               (value.cells.empty() ? std::string("<missing>")
-                                    : runtimeValueToString(value.cells.front()));
-    case RuntimeValueKind::Object:
-        if (isRuntimeMetadataObject(value)) {
-            output << "<"
-                   << canonicalRuntimeMetadataClassName(value.className);
-            if (isRuntimeMetadataScalar(value)) {
-                output << " " << value.text;
-            } else {
-                const auto dimensions = runtimeDimensions(value);
-                output << " ";
-                for (size_t index = 0; index < dimensions.size(); ++index) {
-                    if (index != 0) {
-                        output << "x";
-                    }
-                    output << dimensions[index];
-                }
-            }
-            output << ">";
-            return output.str();
-        }
-        output << "<" << value.className;
-        if (!value.enumerationMemberName.empty()) {
-            output << "." << value.enumerationMemberName;
-        } else if (!isRuntimeScalarObject(value)) {
-            const auto dimensions = runtimeDimensions(value);
-            output << " ";
-            for (size_t index = 0; index < dimensions.size(); ++index) {
-                if (index != 0) {
-                    output << "x";
-                }
-                output << dimensions[index];
-            }
-        }
-        output << ">";
-        return output.str();
-    }
-    return "<missing>";
 }
 
 } // namespace mparser

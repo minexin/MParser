@@ -305,12 +305,20 @@ function families, not an unbounded builtin count.
 
 ### v0.79: Remaining Runtime Foundation Freeze
 
-- Audit and freeze the engine-facing `RuntimeValue` ownership, shape, indexing,
-  object, exception, call-frame, output-count, diagnostic, and fallback
-  contracts needed by the v0.80 extension layer.
-- Close `G-RUNTIME-001` with compile-once/invoke-many stress, linked
+- Separate `RuntimeValue`, `RuntimeWorkspace`, value factories, ownership,
+  rendering, handle metadata, and recursive invariant validation from both
+  baseline engines.
+- Use one `RuntimeCallFrame` contract for HIR and VM script, function,
+  anonymous-function, and initializer execution, including canonical
+  `nargin`/`nargout` initialization.
+- Propagate structured fallback kinds through region analysis, portable typed
+  execution, native SLJIT, VM profiles, adaptive events, and CLI detail output.
+- Close `G-RUNTIME-001` with copy/alias/cycle tests, malformed-value tests,
+  2,048 compile-once/invoke-many calls, three-engine sample parity, linked
   compatibility evidence, and no known target-subset feature requiring
   replacement of the main IR or VM contracts.
+- Treat this as an internal source-contract freeze for v0.80. Public C++ ABI,
+  narrow C ABI, serialization, and the machine protocol remain v0.90 gates.
 
 ### v0.80: Function Extension Infrastructure
 

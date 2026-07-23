@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mparser/bytecode_region.h"
-#include "mparser/interpreter.h"
+#include "mparser/runtime_value.h"
 
 #include <cstddef>
 #include <map>
@@ -26,7 +26,10 @@ std::string_view typedRegionBackendName(TypedRegionBackend backend);
 struct TypedRegionExecutionResult {
     TypedRegionExecutionStatus status =
         TypedRegionExecutionStatus::Fallback;
-    std::map<std::string, RuntimeValue> variables;
+    RuntimeFallbackKind fallbackKind = RuntimeFallbackKind::None;
+    RuntimeFallbackKind nativeFallbackKind =
+        RuntimeFallbackKind::None;
+    RuntimeWorkspace variables;
     size_t iterationCount = 0;
     size_t nestedIterationCount = 0;
     size_t executedInstructionCount = 0;
@@ -50,7 +53,7 @@ public:
         const BytecodeProgram& program,
         const BytecodeRegionContract& region,
         const RuntimeValue& loopRange,
-        const std::map<std::string, RuntimeValue>& variables,
+        const RuntimeWorkspace& variables,
         TypedRegionBackend backend = TypedRegionBackend::Auto) const;
 };
 

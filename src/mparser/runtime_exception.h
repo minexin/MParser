@@ -1,6 +1,7 @@
 #pragma once
 
-#include "mparser/interpreter.h"
+#include "mparser/diagnostic.h"
+#include "mparser/runtime_value.h"
 
 #include <string>
 #include <string_view>
