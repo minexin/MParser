@@ -89,14 +89,15 @@ bool isBuiltinHandleRuntimeClass(std::string_view name) {
            canonical == kPropertyEventClassName ||
            canonical == kEventListenerClassName ||
            canonical == kPropertyListenerClassName ||
-           canonical.rfind("matlab.metadata.", 0) == 0;
+           runtimeMetadataClassIsa(canonical, "handle");
 }
 
 bool isBuiltinReflectableClass(std::string_view name) {
     const std::string canonical =
         canonicalRuntimeMetadataClassName(name);
     return canonical == "double" || canonical == "logical" ||
-           canonical == "char" || canonical == "cell" ||
+           canonical == "char" || canonical == "string" ||
+           canonical == "cell" ||
            canonical == "struct" || canonical == "function_handle" ||
            canonical == "numeric" || canonical == "handle" ||
            canonical == kDynamicPropsClassName ||
@@ -104,42 +105,7 @@ bool isBuiltinReflectableClass(std::string_view name) {
            canonical == kPropertyEventClassName ||
            canonical == kEventListenerClassName ||
            canonical == kPropertyListenerClassName ||
-           canonical == runtimeMetadataClassName(
-                            RuntimeMetadataKind::MetaData) ||
-           canonical == runtimeMetadataClassName(
-                            RuntimeMetadataKind::Class) ||
-           canonical == runtimeMetadataClassName(
-                            RuntimeMetadataKind::Property) ||
-           canonical == runtimeMetadataClassName(
-                            RuntimeMetadataKind::DynamicProperty) ||
-           canonical == runtimeMetadataClassName(
-                            RuntimeMetadataKind::Method) ||
-           canonical == runtimeMetadataClassName(
-                            RuntimeMetadataKind::Event) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::EnumerationMember) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::Namespace) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::Function) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::CallSignature) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::Argument) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::ArgumentIdentifier) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::ArgumentValidation) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::ArgumentValidator) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::DefaultArgumentValue) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::ArrayDimension) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::FixedDimension) ||
-           canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::UnrestrictedDimension);
+           findRuntimeMetadataTypeDescriptor(canonical) != nullptr;
 }
 
 std::pair<std::string, std::string>
@@ -6049,11 +6015,13 @@ private:
         fields["GetObservable"] = logicalValue(false);
         fields["SetObservable"] = logicalValue(false);
         fields["AbortSet"] = logicalValue(false);
-        fields["NonCopyable"] = logicalValue(false);
+        fields["NonCopyable"] = logicalValue(true);
         fields["WeakHandle"] = logicalValue(false);
         fields["PartialMatchPriority"] = numberValue(1.0);
         fields["HasDefault"] = logicalValue(false);
         fields["DefaultValue"] = vectorValue({});
+        fields["Validation"] = makeRuntimeMetadataArray(
+            RuntimeMetadataKind::PropertyValidation, {}, {0, 0});
         fields["GetMethod"] = vectorValue({});
         fields["SetMethod"] = vectorValue({});
         return descriptor;
@@ -6206,6 +6174,203 @@ private:
             }
         }
         return emptyMetadataArray(RuntimeMetadataKind::Property);
+    }
+
+    RuntimeValue findMetadataObjectsBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() < 3 ||
+            arguments.size() % 2 == 0 ||
+            !isRuntimeMetadataObject(arguments.front())) {
+            addDiagnostic(
+                instruction,
+                "findobj expects a metadata object array followed by "
+                "property-name/value pairs");
+            return missingValue();
+        }
+        for (size_t index = 1; index < arguments.size(); index += 2) {
+            if (!isString(arguments[index])) {
+                addDiagnostic(
+                    instruction,
+                    "findobj metadata property names must be text scalars");
+                return missingValue();
+            }
+        }
+
+        std::vector<RuntimeValue> candidates;
+        if (isRuntimeMetadataScalar(arguments.front())) {
+            candidates.push_back(arguments.front());
+        } else {
+            candidates = arguments.front().cells;
+        }
+
+        std::vector<RuntimeValue> matches;
+        for (const auto& candidate : candidates) {
+            if (!isRuntimeMetadataScalar(candidate)) {
+                addDiagnostic(
+                    instruction,
+                    "findobj metadata array contains a non-scalar element");
+                return missingValue();
+            }
+            bool matched = true;
+            for (size_t index = 1; index < arguments.size();
+                 index += 2) {
+                const std::string propertyName =
+                    *runtimeTextScalarUtf8(arguments[index]);
+                const auto names =
+                    runtimeMetadataPropertyNames(candidate.className);
+                if (std::find(names.begin(), names.end(),
+                              propertyName) == names.end()) {
+                    addDiagnostic(
+                        instruction,
+                        "findobj metadata property is not available: " +
+                            canonicalRuntimeMetadataClassName(
+                                candidate.className) +
+                            "." + propertyName);
+                    return missingValue();
+                }
+                const size_t diagnosticCount = diagnostics_.size();
+                const RuntimeValue actual =
+                    metadataScalarMemberValue(
+                        instruction, candidate, propertyName);
+                if (diagnostics_.size() != diagnosticCount) {
+                    return missingValue();
+                }
+                if (!runtimeEqual(actual, arguments[index + 1])) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) {
+                matches.push_back(candidate);
+            }
+        }
+
+        if (matches.size() == 1) {
+            return std::move(matches.front());
+        }
+        const RuntimeMetadataKind kind =
+            *runtimeMetadataKind(arguments.front());
+        const size_t matchCount = matches.size();
+        return makeRuntimeMetadataArray(
+            kind, std::move(matches), {matchCount, 1});
+    }
+
+    RuntimeValue findClassObjectsBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        const RuntimeValue& source = arguments.front();
+        if (!isRuntimeClassObject(source) ||
+            !source.handleObject) {
+            addDiagnostic(
+                instruction,
+                "findobj expects a handle object or metadata array");
+            return missingValue();
+        }
+
+        std::vector<RuntimeValue> candidates;
+        candidates.reserve(runtimeObjectElementCount(source));
+        for (size_t index = 0;
+             index < runtimeObjectElementCount(source); ++index) {
+            const auto* candidate =
+                runtimeObjectLogicalElement(source, index);
+            if (!candidate) {
+                addDiagnostic(
+                    instruction,
+                    "findobj could not map a handle-array element");
+                return missingValue();
+            }
+            candidates.push_back(*candidate);
+        }
+
+        std::vector<RuntimeValue> matches;
+        for (const auto& candidate : candidates) {
+            bool matched = true;
+            for (size_t index = 1; index < arguments.size();
+                 index += 2) {
+                const std::string propertyName =
+                    *runtimeTextScalarUtf8(arguments[index]);
+                const size_t diagnosticCount = diagnostics_.size();
+                BytecodeInstruction memberInstruction = instruction;
+                memberInstruction.operand = propertyName;
+                memberInstruction.resultCount = 1;
+                const auto actual = resolveScalarObjectMember(
+                    memberInstruction, candidate);
+                if (diagnostics_.size() != diagnosticCount) {
+                    return missingValue();
+                }
+                if (!actual || actual->isBuiltinReference ||
+                    actual->isFunctionReference ||
+                    actual->isClassReference ||
+                    actual->isMethodReference) {
+                    addDiagnostic(
+                        instruction,
+                        "findobj class member is not a readable property: " +
+                            candidate.className + "." + propertyName);
+                    return missingValue();
+                }
+                if (!runtimeEqual(
+                        actual->value, arguments[index + 1])) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) {
+                matches.push_back(candidate);
+            }
+        }
+
+        if (matches.size() == 1) {
+            return std::move(matches.front());
+        }
+        const size_t matchCount = matches.size();
+        auto result = runtimeMakeObjectArrayFromLogicalOrder(
+            std::move(matches), {matchCount, 1}, source.className,
+            source.handleObject, objectArrayPolicy(instruction),
+            source.className);
+        if (!result.succeeded) {
+            addDiagnostic(
+                instruction, "findobj " + std::move(result.error));
+            return missingValue();
+        }
+        return std::move(result.value);
+    }
+
+    RuntimeValue findObjectsBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.empty() ||
+            arguments.size() % 2 == 0) {
+            addDiagnostic(
+                instruction,
+                "findobj expects a source followed by "
+                "property-name/value pairs");
+            return missingValue();
+        }
+        if (arguments.size() == 1) {
+            if (isRuntimeMetadataObject(arguments.front()) ||
+                (isRuntimeClassObject(arguments.front()) &&
+                 arguments.front().handleObject)) {
+                return arguments.front();
+            }
+            addDiagnostic(
+                instruction,
+                "findobj expects a handle object or metadata array");
+            return missingValue();
+        }
+        for (size_t index = 1; index < arguments.size(); index += 2) {
+            if (!isString(arguments[index])) {
+                addDiagnostic(
+                    instruction,
+                    "findobj property names must be text scalars");
+                return missingValue();
+            }
+        }
+        return isRuntimeMetadataObject(arguments.front())
+                   ? findMetadataObjectsBuiltin(
+                         instruction, arguments)
+                   : findClassObjectsBuiltin(
+                         instruction, arguments);
     }
 
     RuntimeValue dynamicPropertyMember(
@@ -6580,97 +6745,8 @@ private:
         std::string_view className) const {
         const std::string canonical =
             canonicalRuntimeMetadataClassName(className);
-        if (canonical ==
-            runtimeMetadataClassName(RuntimeMetadataKind::Class)) {
-            return {
-                "Name", "Description", "DetailedDescription", "Hidden",
-                "Sealed", "Abstract", "Enumeration", "ConstructOnLoad",
-                "HandleCompatible", "InferiorClasses", "Namespace",
-                "Aliases", "RestrictsSubclassing", "PropertyList",
-                "MethodList", "EventList", "EnumerationMemberList",
-                "SuperclassList"};
-        }
-        if (canonical ==
-                runtimeMetadataClassName(RuntimeMetadataKind::Property) ||
-            canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::DynamicProperty)) {
-            return {
-                "Name", "Description", "DetailedDescription", "GetAccess",
-                "SetAccess", "Dependent", "Constant", "Abstract",
-                "Transient", "Hidden", "GetObservable", "SetObservable",
-                "AbortSet", "NonCopyable", "WeakHandle",
-                "PartialMatchPriority", "HasDefault", "DefaultValue",
-                "GetMethod", "SetMethod", "DefiningClass"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(RuntimeMetadataKind::Method)) {
-            return {
-                "Name", "Description", "DetailedDescription", "Access",
-                "Static", "Abstract", "Sealed", "Hidden", "InputNames",
-                "OutputNames", "Signature", "FullPath",
-                "DefiningClass"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(RuntimeMetadataKind::Event)) {
-            return {
-                "Name", "Description", "DetailedDescription", "Hidden",
-                "ListenAccess", "NotifyAccess", "DefiningClass"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(
-                RuntimeMetadataKind::EnumerationMember)) {
-            return {"Name", "Hidden", "DefiningClass"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(RuntimeMetadataKind::Namespace)) {
-            return {
-                "Name", "Description", "DetailedDescription", "ClassList",
-                "FunctionList", "InnerNamespaces", "OuterNamespace"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(RuntimeMetadataKind::Function)) {
-            return {
-                "Name", "Description", "DetailedDescription", "FullPath",
-                "NamespaceName", "Signature"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(
-                RuntimeMetadataKind::CallSignature)) {
-            return {
-                "Inputs", "Outputs", "HasInputValidation",
-                "HasOutputValidation"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(RuntimeMetadataKind::Argument)) {
-            return {
-                "Identifier", "Description", "DetailedDescription",
-                "Required", "Repeating", "NameValue", "Validation",
-                "DefaultValue", "SourceClass"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(
-                RuntimeMetadataKind::ArgumentIdentifier)) {
-            return {"Name", "GroupName"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(
-                RuntimeMetadataKind::ArgumentValidation)) {
-            return {"Class", "Size", "Functions"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(
-                RuntimeMetadataKind::ArgumentValidator)) {
-            return {"Name", "Function", "ReferencedArguments"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(
-                RuntimeMetadataKind::DefaultArgumentValue)) {
-            return {"Expression", "ReferencedArguments"};
-        }
-        if (canonical ==
-            runtimeMetadataClassName(
-                RuntimeMetadataKind::FixedDimension)) {
-            return {"Length"};
+        if (findRuntimeMetadataTypeDescriptor(canonical)) {
+            return runtimeMetadataPropertyNames(canonical);
         }
         if (canonical == kEventDataClassName) {
             return {"Source", "EventName"};
@@ -6693,16 +6769,8 @@ private:
         std::string_view className) const {
         const std::string canonical =
             canonicalRuntimeMetadataClassName(className);
-        if (canonical ==
-            runtimeMetadataClassName(RuntimeMetadataKind::Class)) {
-            return {"fromName", "eq", "ne", "lt", "le", "gt", "ge"};
-        }
-        if (canonical == runtimeMetadataClassName(
-                             RuntimeMetadataKind::DynamicProperty)) {
-            return {"delete", "eq", "isvalid", "ne"};
-        }
-        if (canonical.rfind("matlab.metadata.", 0) == 0) {
-            return {"eq", "ne"};
+        if (findRuntimeMetadataTypeDescriptor(canonical)) {
+            return runtimeMetadataMethodNames(canonical);
         }
         if (canonical == "handle") {
             return {"addlistener", "delete", "findobj", "findprop",
@@ -6740,6 +6808,8 @@ private:
         const auto found = classesByName_.find(className);
         const ClassInfo* klass =
             found == classesByName_.end() ? nullptr : &found->second;
+        const auto* metadataType =
+            findRuntimeMetadataTypeDescriptor(className);
         if (!klass && !isBuiltinReflectableClass(className)) {
             addDiagnostic(instruction,
                           "metadata class is not available: " + className);
@@ -6756,25 +6826,20 @@ private:
         if (memberName == "Hidden") {
             return logicalValue(
                 klass ? klass->hidden
-                      : className ==
-                            runtimeMetadataClassName(
-                                RuntimeMetadataKind::Namespace));
+                      : metadataType && metadataType->hiddenClass);
         }
         if (memberName == "Sealed") {
-            const bool metadataNamespace =
-                className ==
-                runtimeMetadataClassName(RuntimeMetadataKind::Namespace);
             return logicalValue(
                 klass ? klass->sealedClass
-                      : metadataNamespace ||
+                      : (metadataType && metadataType->sealedClass) ||
                             className == kPropertyEventClassName);
         }
         if (memberName == "Abstract") {
-            const bool metadataClass =
-                className.rfind("matlab.metadata.", 0) == 0;
             return logicalValue(
                 klass ? klass->abstractClass
-                      : metadataClass || className == "handle" ||
+                      : (metadataType &&
+                         metadataType->abstractClass) ||
+                            className == "handle" ||
                             className == "numeric" ||
                             className == kDynamicPropsClassName);
         }
@@ -6784,7 +6849,9 @@ private:
         if (memberName == "ConstructOnLoad") {
             return logicalValue(
                 klass ? klass->constructOnLoad
-                      : className == kPropertyEventClassName ||
+                      : (metadataType &&
+                         metadataType->constructOnLoad) ||
+                            className == kPropertyEventClassName ||
                             className == kPropertyListenerClassName);
         }
         if (memberName == "HandleCompatible") {
@@ -6795,7 +6862,8 @@ private:
                 className == kPropertyEventClassName ||
                 className == kEventListenerClassName ||
                 className == kPropertyListenerClassName ||
-                className.rfind("matlab.metadata.", 0) == 0;
+                (metadataType &&
+                 metadataType->handleCompatible);
             return logicalValue(
                 klass ? klass->handleClass ||
                             klass->handleCompatible
@@ -6805,9 +6873,8 @@ private:
             return logicalValue(
                 klass ? klass->sealedClass ||
                             klass->restrictsSubclassing
-                      : className ==
-                                runtimeMetadataClassName(
-                                    RuntimeMetadataKind::Namespace) ||
+                      : (metadataType &&
+                         metadataType->restrictsSubclassing) ||
                             className == kPropertyEventClassName);
         }
         if (memberName == "InferiorClasses") {
@@ -6860,19 +6927,10 @@ private:
             if (klass) {
                 return metadataClassArray(klass->superclasses);
             }
-            if (className == runtimeMetadataClassName(
-                                 RuntimeMetadataKind::DynamicProperty)) {
+            if (metadataType && metadataType->superclass) {
                 return metadataClassArray(
                     {std::string(runtimeMetadataClassName(
-                        RuntimeMetadataKind::Property))});
-            }
-            if (className.rfind("matlab.metadata.", 0) == 0 &&
-                className !=
-                    runtimeMetadataClassName(
-                        RuntimeMetadataKind::MetaData)) {
-                return metadataClassArray(
-                    {std::string(runtimeMetadataClassName(
-                        RuntimeMetadataKind::MetaData))});
+                        *metadataType->superclass))});
             }
             if (className == kPropertyEventClassName) {
                 return metadataClassArray(
@@ -6967,6 +7025,18 @@ private:
             }
             const auto value = propertyDefault(*property);
             return value.value_or(missingValue());
+        }
+        if (memberName == "Validation") {
+            const bool validated =
+                !property->spec.className.empty() ||
+                !property->spec.dimensions.empty() ||
+                !property->spec.validators.empty();
+            return validated
+                       ? makeRuntimeMetadataObject(
+                             RuntimeMetadataKind::PropertyValidation,
+                             target.text)
+                       : emptyMetadataArray(
+                             RuntimeMetadataKind::PropertyValidation);
         }
         if (memberName == "GetMethod" ||
             memberName == "SetMethod") {
@@ -7226,6 +7296,35 @@ private:
         return missingValue();
     }
 
+    RuntimeValue metadataValidationSize(
+        std::string_view identity, const PropertySpec& spec) const {
+        std::vector<RuntimeValue> values;
+        values.reserve(spec.dimensions.size());
+        bool allFixed = !spec.dimensions.empty();
+        bool allUnrestricted = !spec.dimensions.empty();
+        for (size_t index = 0; index < spec.dimensions.size(); ++index) {
+            const bool unrestricted =
+                spec.dimensions[index].text == ":";
+            allFixed = allFixed && !unrestricted;
+            allUnrestricted = allUnrestricted && unrestricted;
+            values.push_back(makeRuntimeMetadataObject(
+                unrestricted
+                    ? RuntimeMetadataKind::UnrestrictedDimension
+                    : RuntimeMetadataKind::FixedDimension,
+                std::string(identity) + "/dimension/" +
+                    std::to_string(index)));
+        }
+        const RuntimeMetadataKind kind =
+            allFixed
+                ? RuntimeMetadataKind::FixedDimension
+                : allUnrestricted
+                ? RuntimeMetadataKind::UnrestrictedDimension
+                : RuntimeMetadataKind::ArrayDimension;
+        const size_t valueCount = values.size();
+        return makeRuntimeMetadataArray(
+            kind, std::move(values), {1, valueCount});
+    }
+
     RuntimeValue metadataArgumentValidationMember(
         const BytecodeInstruction& instruction,
         const RuntimeValue& target,
@@ -7245,31 +7344,7 @@ private:
                        : metadataClassValue(spec.className);
         }
         if (memberName == "Size") {
-            std::vector<RuntimeValue> values;
-            values.reserve(spec.dimensions.size());
-            bool allFixed = !spec.dimensions.empty();
-            bool allUnrestricted = !spec.dimensions.empty();
-            for (size_t index = 0; index < spec.dimensions.size(); ++index) {
-                const bool unrestricted =
-                    spec.dimensions[index].text == ":";
-                allFixed = allFixed && !unrestricted;
-                allUnrestricted = allUnrestricted && unrestricted;
-                values.push_back(makeRuntimeMetadataObject(
-                    unrestricted
-                        ? RuntimeMetadataKind::UnrestrictedDimension
-                        : RuntimeMetadataKind::FixedDimension,
-                    target.text + "/dimension/" +
-                        std::to_string(index)));
-            }
-            const RuntimeMetadataKind kind =
-                allFixed
-                    ? RuntimeMetadataKind::FixedDimension
-                    : allUnrestricted
-                    ? RuntimeMetadataKind::UnrestrictedDimension
-                    : RuntimeMetadataKind::ArrayDimension;
-            const size_t valueCount = values.size();
-            return makeRuntimeMetadataArray(
-                kind, std::move(values), {1, valueCount});
+            return metadataValidationSize(target.text, spec);
         }
         if (memberName == "Functions") {
             std::vector<RuntimeValue> values;
@@ -7288,6 +7363,55 @@ private:
         addDiagnostic(
             instruction,
             "metadata argument validation field is not available: " +
+                std::string(memberName));
+        return missingValue();
+    }
+
+    RuntimeValue metadataPropertyValidationMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        const PropertyInfoPtr property =
+            propertyForMetadata(target.text);
+        if (!property) {
+            addDiagnostic(
+                instruction,
+                "metadata property validation descriptor is not available");
+            return missingValue();
+        }
+        const PropertySpec& spec = property->spec;
+        if (memberName == "Class") {
+            return spec.className.empty()
+                       ? emptyMetadataArray(RuntimeMetadataKind::Class)
+                       : metadataClassValue(spec.className);
+        }
+        if (memberName == "Size") {
+            return metadataValidationSize(target.text, spec);
+        }
+        if (memberName == "ValidationFunctions") {
+            std::vector<RuntimeValue> functions;
+            functions.reserve(spec.validators.size());
+            for (size_t index = 0; index < spec.validators.size(); ++index) {
+                RuntimeFunctionHandle handle;
+                handle.kind = RuntimeFunctionHandleKind::Function;
+                handle.backend =
+                    RuntimeFunctionHandleBackend::Bytecode;
+                handle.context = callableContext_;
+                handle.display =
+                    "@" + spec.validators[index].name;
+                handle.targetName =
+                    "__mparser_property_validator/" + target.text +
+                    "/validator/" + std::to_string(index);
+                functions.push_back(
+                    makeRuntimeFunctionHandleValue(std::move(handle)));
+            }
+            const size_t functionCount = functions.size();
+            return cellValueForShape(
+                1, functionCount, std::move(functions));
+        }
+        addDiagnostic(
+            instruction,
+            "metadata property validation field is not available: " +
                 std::string(memberName));
         return missingValue();
     }
@@ -7401,13 +7525,20 @@ private:
         char* end = nullptr;
         const unsigned long long parsed =
             std::strtoull(indexText.c_str(), &end, 10);
-        const auto argument = reflectedArgumentForMetadata(
-            target.text.substr(0, separator));
-        if (!end || *end != '\0' || !argument || !argument->contract ||
-            parsed >= argument->contract->spec.dimensions.size() ||
-            argument->contract->spec
-                    .dimensions[static_cast<size_t>(parsed)]
-                    .text == ":") {
+        const std::string validationIdentity =
+            target.text.substr(0, separator);
+        const PropertySpec* spec = nullptr;
+        if (const auto argument =
+                reflectedArgumentForMetadata(validationIdentity);
+            argument && argument->contract) {
+            spec = &argument->contract->spec;
+        } else if (const PropertyInfoPtr property =
+                       propertyForMetadata(validationIdentity)) {
+            spec = &property->spec;
+        }
+        if (!end || *end != '\0' || !spec ||
+            parsed >= spec->dimensions.size() ||
+            spec->dimensions[static_cast<size_t>(parsed)].text == ":") {
             addDiagnostic(
                 instruction,
                 "metadata fixed dimension descriptor is not available");
@@ -7415,9 +7546,7 @@ private:
         }
         if (memberName == "Length") {
             const std::string& text =
-                argument->contract->spec
-                    .dimensions[static_cast<size_t>(parsed)]
-                    .text;
+                spec->dimensions[static_cast<size_t>(parsed)].text;
             char* lengthEnd = nullptr;
             const unsigned long long length =
                 std::strtoull(text.c_str(), &lengthEnd, 10);
@@ -7483,6 +7612,10 @@ private:
         }
         if (memberName == "Name") {
             return characterValue(member->name);
+        }
+        if (memberName == "Description" ||
+            memberName == "DetailedDescription") {
+            return characterValue("");
         }
         if (memberName == "Hidden") {
             return logicalValue(member->hidden);
@@ -7610,7 +7743,7 @@ private:
         return missingValue();
     }
 
-    RuntimeValue metadataMemberValue(
+    RuntimeValue metadataScalarMemberValue(
         const BytecodeInstruction& instruction,
         const RuntimeValue& target,
         std::string_view memberName) {
@@ -7655,6 +7788,9 @@ private:
         case RuntimeMetadataKind::DefaultArgumentValue:
             return metadataDefaultArgumentValueMember(
                 instruction, target, memberName);
+        case RuntimeMetadataKind::PropertyValidation:
+            return metadataPropertyValidationMember(
+                instruction, target, memberName);
         case RuntimeMetadataKind::FixedDimension:
             return metadataFixedDimensionMember(
                 instruction, target, memberName);
@@ -7667,6 +7803,55 @@ private:
                       "metadata member is not available: " +
                           std::string(memberName));
         return missingValue();
+    }
+
+    RuntimeValue metadataMemberValue(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& target,
+        std::string_view memberName) {
+        if (isRuntimeMetadataScalar(target)) {
+            return metadataScalarMemberValue(
+                instruction, target, memberName);
+        }
+        if (!isRuntimeMetadataArray(target)) {
+            addDiagnostic(
+                instruction,
+                "metadata member access requires a metadata object");
+            return missingValue();
+        }
+
+        const auto properties =
+            runtimeMetadataPropertyNames(target.className);
+        if (std::find(properties.begin(), properties.end(),
+                      memberName) == properties.end()) {
+            addDiagnostic(
+                instruction,
+                "metadata array property is not available: " +
+                    canonicalRuntimeMetadataClassName(target.className) +
+                    "." + std::string(memberName));
+            return missingValue();
+        }
+
+        std::vector<RuntimeValue> values;
+        values.reserve(target.cells.size());
+        for (const auto& element : target.cells) {
+            if (!isRuntimeMetadataScalar(element) ||
+                !runtimeMetadataClassIsa(
+                    element.className, target.className)) {
+                addDiagnostic(
+                    instruction,
+                    "metadata array contains an incompatible element");
+                return missingValue();
+            }
+            const size_t diagnosticCount = diagnostics_.size();
+            RuntimeValue value = metadataScalarMemberValue(
+                instruction, element, memberName);
+            if (diagnostics_.size() != diagnosticCount) {
+                return missingValue();
+            }
+            values.push_back(std::move(value));
+        }
+        return makeRuntimeCommaSeparatedList(std::move(values));
     }
 
     void memberAccess(const BytecodeInstruction& instruction) {
@@ -7753,6 +7938,7 @@ private:
                 target.handleObject &&
                 (instruction.operand == "addlistener" ||
                  instruction.operand == "delete" ||
+                 instruction.operand == "findobj" ||
                  instruction.operand == "findprop" ||
                  instruction.operand == "isvalid" ||
                  instruction.operand == "listener" ||
@@ -7952,16 +8138,56 @@ private:
             return;
         }
         if (isRuntimeMetadataObject(target->value)) {
-            if (runtimeMetadataKind(target->value) ==
+            const auto metadataKind =
+                runtimeMetadataKind(target->value);
+            const bool dynamicPropertyMethod =
+                metadataKind ==
                     RuntimeMetadataKind::DynamicProperty &&
                 (instruction.operand == "delete" ||
-                 instruction.operand == "isvalid")) {
+                 instruction.operand == "isvalid");
+            const bool propertyValidationMethod =
+                metadataKind ==
+                    RuntimeMetadataKind::PropertyValidation &&
+                (instruction.operand == "isValidValue" ||
+                 instruction.operand == "validateValue");
+            if (dynamicPropertyMethod ||
+                propertyValidationMethod) {
+                if (!isRuntimeMetadataScalar(target->value)) {
+                    addDiagnostic(
+                        instruction,
+                        "metadata method access requires a scalar "
+                        "metadata object");
+                    return;
+                }
                 stack_.push_back(builtinStackValue(
                     instruction.operand, target->value));
                 return;
             }
-            stack_.push_back(runtimeStackValue(metadataMemberValue(
-                instruction, target->value, instruction.operand)));
+            RuntimeValue value = metadataMemberValue(
+                instruction, target->value, instruction.operand);
+            if (instruction.resultCount == 0) {
+                return;
+            }
+            if (instruction.resultCount == 1) {
+                pushRuntime(std::move(value));
+                return;
+            }
+            std::vector<RuntimeValue> values;
+            appendRuntimeExpandedValues(values, value);
+            if (values.size() !=
+                static_cast<size_t>(instruction.resultCount)) {
+                addDiagnostic(
+                    instruction,
+                    "metadata property produced " +
+                        std::to_string(values.size()) +
+                        " comma-separated values for " +
+                        std::to_string(instruction.resultCount) +
+                        " outputs");
+                return;
+            }
+            for (auto& item : values) {
+                pushRuntime(std::move(item));
+            }
             return;
         }
         if (isRuntimeClassObject(target->value) &&
@@ -8090,6 +8316,7 @@ private:
             target->value.handleObject &&
             (instruction.operand == "addlistener" ||
              instruction.operand == "delete" ||
+             instruction.operand == "findobj" ||
              instruction.operand == "findprop" ||
              instruction.operand == "isvalid");
         const bool eventMethod =
@@ -9179,6 +9406,12 @@ private:
         if (info.kind == RuntimeFunctionHandleKind::Anonymous) {
             outputs = callAnonymousFunctionHandle(
                 instruction, info, arguments, requestedCount);
+        } else if (
+            info.targetName.rfind(
+                "__mparser_property_validator/", 0) == 0) {
+            outputs = callPropertyValidatorHandle(
+                instruction, info.targetName, arguments,
+                requestedCount);
         } else if (info.kind == RuntimeFunctionHandleKind::Builtin) {
             outputs = callBuiltinOutputs(instruction, info.targetName,
                                          arguments, requestedCount);
@@ -10413,6 +10646,10 @@ private:
             canonicalRuntimeMetadataClassName(arguments[0].className);
         const std::string methodName =
             *runtimeTextScalarUtf8(arguments[1]);
+        const bool semanticHandle =
+            isRuntimeMetadataObject(arguments[0])
+                ? runtimeMetadataIsa(arguments[0], "handle")
+                : arguments[0].handleObject;
         if (runtimeMetadataKind(arguments[0]) ==
                 RuntimeMetadataKind::DynamicProperty &&
             (methodName == "delete" || methodName == "isvalid")) {
@@ -10428,7 +10665,7 @@ private:
               methodName == "isvalid" ||
               methodName == "listener" ||
               methodName == "notify") &&
-             arguments[0].handleObject)) {
+             semanticHandle)) {
             if (methodName == "delete") {
                 const auto klass = classesByName_.find(className);
                 if (klass != classesByName_.end()) {
@@ -10980,6 +11217,27 @@ private:
             addDiagnostic(instruction, "assert does not produce outputs",
                           "MParser:InvalidAssertion");
             return missingOutputs(requestedCount);
+        }
+
+        if (name == "isValidValue" ||
+            name == "validateValue") {
+            return callPropertyValidationMethod(
+                instruction, name, arguments, requestedCount);
+        }
+
+        if (name == "findobj") {
+            if (requestedCount > 1) {
+                addDiagnostic(
+                    instruction,
+                    "findobj supports at most one output");
+                return missingOutputs(requestedCount);
+            }
+            RuntimeValue result =
+                findObjectsBuiltin(instruction, arguments);
+            return requestedCount == 0
+                       ? std::vector<RuntimeValue>{}
+                       : std::vector<RuntimeValue>{
+                             std::move(result)};
         }
 
         if (name == "addprop" || name == "findprop") {
@@ -11856,6 +12114,117 @@ private:
             }
         }
         return sizedValue;
+    }
+
+    std::vector<RuntimeValue> callPropertyValidationMethod(
+        const BytecodeInstruction& instruction, std::string_view name,
+        const std::vector<RuntimeValue>& arguments,
+        int requestedCount) {
+        if (arguments.size() != 2 ||
+            runtimeMetadataKind(arguments.front()) !=
+                RuntimeMetadataKind::PropertyValidation ||
+            !isRuntimeMetadataScalar(arguments.front())) {
+            addDiagnostic(
+                instruction,
+                std::string(name) +
+                    " expects a scalar PropertyValidation object and "
+                    "one candidate value");
+            return missingOutputs(requestedCount);
+        }
+        const PropertyInfoPtr property =
+            propertyForMetadata(arguments.front().text);
+        if (!property) {
+            addDiagnostic(
+                instruction,
+                "metadata property validation descriptor is not available");
+            return missingOutputs(requestedCount);
+        }
+
+        if (name == "isValidValue") {
+            if (requestedCount > 1) {
+                addDiagnostic(
+                    instruction,
+                    "isValidValue supports at most one output");
+                return missingOutputs(requestedCount);
+            }
+            const size_t diagnosticCount = diagnostics_.size();
+            const auto pendingException = pendingException_;
+            const bool valid =
+                validatePropertyValue(
+                    instruction, *property, arguments[1])
+                    .has_value();
+            diagnostics_.resize(diagnosticCount);
+            pendingException_ = pendingException;
+            return requestedCount == 0
+                       ? std::vector<RuntimeValue>{}
+                       : std::vector<RuntimeValue>{
+                             logicalValue(valid)};
+        }
+
+        if (requestedCount != 0) {
+            addDiagnostic(
+                instruction,
+                "validateValue does not produce outputs");
+            return missingOutputs(requestedCount);
+        }
+        (void)validatePropertyValue(
+            instruction, *property, arguments[1]);
+        return {};
+    }
+
+    std::vector<RuntimeValue> callPropertyValidatorHandle(
+        const BytecodeInstruction& instruction,
+        std::string_view encodedName,
+        const std::vector<RuntimeValue>& arguments,
+        int requestedCount) {
+        constexpr std::string_view prefix =
+            "__mparser_property_validator/";
+        constexpr std::string_view marker = "/validator/";
+        if (requestedCount != 0) {
+            addDiagnostic(
+                instruction,
+                "property validation functions do not produce outputs");
+            return missingOutputs(requestedCount);
+        }
+        if (arguments.size() != 1 ||
+            encodedName.rfind(prefix, 0) != 0) {
+            addDiagnostic(
+                instruction,
+                "property validation function expects one candidate value");
+            return {};
+        }
+
+        const std::string_view identityAndIndex =
+            encodedName.substr(prefix.size());
+        const size_t separator =
+            identityAndIndex.rfind(marker);
+        if (separator == std::string_view::npos) {
+            addDiagnostic(
+                instruction,
+                "property validation function descriptor is malformed");
+            return {};
+        }
+        const std::string identity(
+            identityAndIndex.substr(0, separator));
+        const std::string indexText(
+            identityAndIndex.substr(separator + marker.size()));
+        char* end = nullptr;
+        const unsigned long long parsed =
+            std::strtoull(indexText.c_str(), &end, 10);
+        const PropertyInfoPtr property =
+            propertyForMetadata(identity);
+        if (!end || *end != '\0' || !property ||
+            parsed >= property->spec.validators.size()) {
+            addDiagnostic(
+                instruction,
+                "property validation function descriptor is not available");
+            return {};
+        }
+        (void)applyPropertyValidator(
+            instruction, *property,
+            property->spec.validators[static_cast<size_t>(parsed)],
+            arguments.front());
+        return {};
     }
 
     std::optional<RuntimeValue> implicitPropertyDefault(

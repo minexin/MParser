@@ -275,10 +275,24 @@ function families, not an unbounded builtin count.
   production sample, typed/native fallback evidence, portable-only validation,
   and focused AArch64 execution.
 
-### v0.77-v0.79: Remaining Runtime Foundations
+### v0.77: Reflection Metadata Contracts
 
-- Close the audited Must-have reflection, workspace, and remaining
-  runtime-value boundaries with linked compatibility evidence.
+- Centralize the supported metadata type graph, canonical and legacy names,
+  direct inheritance, class flags, and public members in one runtime schema.
+- Support logical-order metadata-array projection and direct `findobj`
+  property filters over inherited, private-owner, static, and dynamic
+  descriptors.
+- Expose property validation metadata, executable validation probes and
+  checks, callable module-bound validator handles, and explicit unsupported
+  member diagnostics.
+- Close `G-REFLECT-001` with a compatibility table, direct schema tests,
+  end-to-end VM tests, a production sample, portable-only validation, and
+  focused AArch64 execution.
+
+### v0.78-v0.79: Remaining Runtime Foundations
+
+- Close the audited Must-have workspace, state, and remaining runtime-value
+  boundaries with linked compatibility evidence.
 - Freeze the engine-facing value, shape, indexing, call-frame, output-count,
   diagnostic, and fallback contracts needed by the v0.80 extension layer.
 

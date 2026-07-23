@@ -25,10 +25,42 @@ enum class RuntimeMetadataKind {
     ArgumentValidation,
     ArgumentValidator,
     DefaultArgumentValue,
+    PropertyValidation,
     ArrayDimension,
     FixedDimension,
     UnrestrictedDimension,
 };
+
+struct RuntimeMetadataTypeDescriptor {
+    RuntimeMetadataKind kind = RuntimeMetadataKind::MetaData;
+    std::string_view canonicalName;
+    std::vector<std::string_view> aliases;
+    std::optional<RuntimeMetadataKind> superclass;
+    std::vector<std::string_view> declaredProperties;
+    std::vector<std::string_view> declaredMethods;
+    bool abstractClass = false;
+    bool sealedClass = false;
+    bool hiddenClass = false;
+    bool handleClass = false;
+    bool handleCompatible = false;
+    bool constructOnLoad = false;
+    bool restrictsSubclassing = false;
+};
+
+const RuntimeMetadataTypeDescriptor&
+runtimeMetadataTypeDescriptor(RuntimeMetadataKind kind);
+
+const RuntimeMetadataTypeDescriptor*
+findRuntimeMetadataTypeDescriptor(std::string_view className);
+
+std::vector<std::string>
+runtimeMetadataPropertyNames(std::string_view className);
+
+std::vector<std::string>
+runtimeMetadataMethodNames(std::string_view className);
+
+bool runtimeMetadataClassIsa(std::string_view actualClassName,
+                             std::string_view targetClassName);
 
 std::string_view runtimeMetadataClassName(RuntimeMetadataKind kind);
 

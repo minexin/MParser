@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.76.0 LANGUAGES C CXX)
+project(MParser VERSION 0.77.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -1072,6 +1072,24 @@ add_test(NAME function_metadata_bytecode_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/function_metadata_demo.m)
 set_tests_properties(function_metadata_bytecode_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 17")
+
+add_executable(reflection_contract_smoke_tests
+    tests/reflection_contract_smoke.cpp)
+target_link_libraries(reflection_contract_smoke_tests PRIVATE mparser_core)
+add_test(NAME reflection_contract_smoke
+    COMMAND reflection_contract_smoke_tests)
+
+add_test(NAME reflection_contract_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/reflection_contract_demo.m)
+set_tests_properties(reflection_contract_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 22")
+
+add_test(NAME reflection_contract_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/reflection_contract_demo.m)
+set_tests_properties(reflection_contract_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 22")
 
 add_executable(interpreter_smoke_tests tests/interpreter_smoke.cpp)
 target_link_libraries(interpreter_smoke_tests PRIVATE mparser_core)

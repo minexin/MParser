@@ -1146,6 +1146,36 @@ analysis classifies all path setup, descent, and store instructions as
 unsupported dynamic operations and resumes in the VM without changing script
 semantics.
 
+v0.77 replaces the VM's duplicated metadata class tests, member-name lists,
+and superclass assumptions with one `RuntimeMetadataTypeDescriptor` graph in
+`runtime_metadata`. Each descriptor declares its canonical class, recognized
+legacy names, direct metadata superclass, public properties and methods, and
+the class flags needed by `metaclass`. Canonicalization, runtime class names,
+`isa`, `properties`, `methods`, and built-in reflection all consume that graph.
+The semantic graph deliberately differs from storage: R2026a signature,
+argument, validation, and dimension support objects still use object-shaped
+`RuntimeValue` storage, but only the class-related descriptors through
+`Function` inherit `MetaData` and `handle`.
+
+Metadata arrays keep their canonical descriptor class and Cell-backed element
+payload. VM member access projects a declared property over each scalar in
+logical order and returns the existing internal comma-separated-list value;
+requested-output expansion therefore uses the same mechanics as structure and
+object-array property reads. `findobj` performs direct property-pair filtering
+through scalar descriptor resolvers, preserving identities rather than copying
+resolved field snapshots. Unsupported properties and scalar-only method calls
+have separate deterministic diagnostics.
+
+`Property.Validation` is a lazy identity referencing the same `PropertyInfo`
+and `PropertySpec` used by assignment. Its class, dimensions, and validation
+functions cannot drift from executable property checks. `isValidValue`
+temporarily runs the assignment validator and restores the pending exception
+and diagnostics, while `validateValue` keeps the ordinary error. Reflected
+validator handles encode the property identity and validator index, carry the
+owning `RuntimeCallableContext`, and pass through the standard cross-module
+handle guard before invoking one validator. No raw property pointer or class
+table address is stored in a handle or native cache key.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,
 optional LLVM ORC lowering behind the same backend contract, persistent

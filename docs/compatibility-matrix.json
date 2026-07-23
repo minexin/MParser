@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.76.0",
+  "version": "0.77.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -204,13 +204,13 @@
     {
       "id": "CLASS-005",
       "area": "classdef",
-      "feature": "Class, property, method, event, function, and dynamic-property metadata queries",
+      "feature": "Class, member, function, call-signature, argument, validation, namespace, and dynamic-property metadata queries",
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "unsupported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["class_metadata_smoke", "function_metadata_smoke", "dynamic_property_smoke"],
-      "sources": ["src/mparser/runtime_metadata.cpp", "tests/class_metadata_smoke.cpp"],
-      "limits": "Reflection is a declared subset and does not yet expose the complete MATLAB meta.* graph."
+      "evidence": ["class_metadata_smoke", "function_metadata_smoke", "dynamic_property_smoke", "reflection_contract_smoke", "reflection_contract_bytecode_cli_smoke", "reflection_contract_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_metadata.h", "src/mparser/runtime_metadata.cpp", "src/mparser/bytecode_vm.cpp", "tests/class_metadata_smoke.cpp", "tests/reflection_contract_smoke.cpp", "samples/reflection_contract_demo.m"],
+      "limits": "v0.77 freezes the supported metadata graph, aliases, direct inheritance, class flags, public member lists, metadata-array projection, direct property-pair findobj filtering, property validation metadata/methods, module-bound validator handles, and dynamic-property defaults. Descriptions remain empty; custom class aliases and InferiorClasses are not populated; GetMethod, SetMethod, and ArgumentValidator.Function reflection is incomplete; recursive handle-graph findobj options, metadata lifecycle events, direct metadata construction, HIR class execution, serialization, and the complete MATLAB metadata surface remain unsupported."
     },
     {
       "id": "CLASS-006",
@@ -411,11 +411,11 @@
       "id": "G-REFLECT-001",
       "area": "classdef",
       "priority": "must-have",
-      "state": "open",
+      "state": "closed",
       "target": "v0.77",
       "framework_impact": "additive",
       "requirement": "Freeze the supported meta.* graph, reflection access rules, dynamic dispatch hooks, and explicit unsupported metadata members.",
-      "exit_evidence": "Metadata compatibility table with inherited/private/static and dynamic-property query tests."
+      "exit_evidence": "docs/v0.77.md freezes the supported metadata compatibility table; reflection_contract_smoke covers canonical and legacy type names, nuanced inheritance, inherited/private/static queries, logical-order array projection, direct property-pair metadata and handle findobj filters, PropertyValidation methods and callable module-bound validator handles, dynamic-property defaults, string metaclass lookup, and explicit unsupported-field diagnostics; bytecode and production CLI gates run reflection_contract_demo.m with summary 22."
     },
     {
       "id": "G-RUNTIME-001",

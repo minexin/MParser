@@ -3,128 +3,393 @@
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 
+#include <algorithm>
+#include <array>
+#include <set>
 #include <utility>
 
 namespace mparser {
 namespace {
 
-constexpr std::string_view kMetadataMetaDataClass =
-    "matlab.metadata.MetaData";
-constexpr std::string_view kMetadataClassClass =
-    "matlab.metadata.Class";
-constexpr std::string_view kMetadataPropertyClass =
-    "matlab.metadata.Property";
-constexpr std::string_view kMetadataDynamicPropertyClass =
-    "matlab.metadata.DynamicProperty";
-constexpr std::string_view kMetadataMethodClass =
-    "matlab.metadata.Method";
-constexpr std::string_view kMetadataEventClass =
-    "matlab.metadata.Event";
-constexpr std::string_view kMetadataEnumerationMemberClass =
-    "matlab.metadata.EnumerationMember";
-constexpr std::string_view kMetadataNamespaceClass =
-    "matlab.metadata.Namespace";
-constexpr std::string_view kMetadataFunctionClass =
-    "matlab.metadata.Function";
-constexpr std::string_view kMetadataCallSignatureClass =
-    "matlab.metadata.CallSignature";
-constexpr std::string_view kMetadataArgumentClass =
-    "matlab.metadata.Argument";
-constexpr std::string_view kMetadataArgumentIdentifierClass =
-    "matlab.metadata.ArgumentIdentifier";
-constexpr std::string_view kMetadataArgumentValidationClass =
-    "matlab.metadata.ArgumentValidation";
-constexpr std::string_view kMetadataArgumentValidatorClass =
-    "matlab.metadata.ArgumentValidator";
-constexpr std::string_view kMetadataDefaultArgumentValueClass =
-    "matlab.metadata.DefaultArgumentValue";
-constexpr std::string_view kMetadataArrayDimensionClass =
-    "matlab.metadata.ArrayDimension";
-constexpr std::string_view kMetadataFixedDimensionClass =
-    "matlab.metadata.FixedDimension";
-constexpr std::string_view kMetadataUnrestrictedDimensionClass =
-    "matlab.metadata.UnrestrictedDimension";
+const std::vector<RuntimeMetadataTypeDescriptor>&
+runtimeMetadataDescriptors() {
+    static const std::vector<RuntimeMetadataTypeDescriptor> descriptors = {
+        {
+            RuntimeMetadataKind::MetaData,
+            "matlab.metadata.MetaData",
+            {"meta.MetaData"},
+            std::nullopt,
+            {},
+            {"eq", "ne"},
+            true,
+            false,
+            false,
+            true,
+            true,
+        },
+        {
+            RuntimeMetadataKind::Class,
+            "matlab.metadata.Class",
+            {"meta.class"},
+            RuntimeMetadataKind::MetaData,
+            {
+                "Name", "Description", "DetailedDescription", "Hidden",
+                "Sealed", "Abstract", "Enumeration", "ConstructOnLoad",
+                "HandleCompatible", "InferiorClasses", "Namespace",
+                "Aliases", "RestrictsSubclassing", "PropertyList",
+                "MethodList", "EventList", "EnumerationMemberList",
+                "SuperclassList",
+            },
+            {"fromName", "lt", "le", "gt", "ge"},
+            true,
+            false,
+            false,
+            true,
+            true,
+        },
+        {
+            RuntimeMetadataKind::Property,
+            "matlab.metadata.Property",
+            {"meta.property"},
+            RuntimeMetadataKind::MetaData,
+            {
+                "Name", "Description", "DetailedDescription", "GetAccess",
+                "SetAccess", "Dependent", "Constant", "Abstract",
+                "Transient", "Hidden", "GetObservable", "SetObservable",
+                "AbortSet", "NonCopyable", "WeakHandle",
+                "PartialMatchPriority", "GetMethod", "SetMethod",
+                "HasDefault", "DefaultValue", "Validation",
+                "DefiningClass",
+            },
+            {},
+            true,
+            false,
+            false,
+            true,
+            true,
+            true,
+        },
+        {
+            RuntimeMetadataKind::DynamicProperty,
+            "matlab.metadata.DynamicProperty",
+            {"meta.DynamicProperty"},
+            RuntimeMetadataKind::Property,
+            {},
+            {"delete", "isvalid"},
+            false,
+            false,
+            false,
+            true,
+            true,
+        },
+        {
+            RuntimeMetadataKind::Method,
+            "matlab.metadata.Method",
+            {"meta.method"},
+            RuntimeMetadataKind::MetaData,
+            {
+                "Name", "Description", "DetailedDescription", "Access",
+                "Static", "Abstract", "Sealed", "Hidden", "InputNames",
+                "OutputNames", "Signature", "FullPath", "DefiningClass",
+            },
+            {},
+            true,
+            false,
+            false,
+            true,
+            true,
+        },
+        {
+            RuntimeMetadataKind::Event,
+            "matlab.metadata.Event",
+            {"meta.event"},
+            RuntimeMetadataKind::MetaData,
+            {
+                "Name", "Description", "DetailedDescription", "Hidden",
+                "ListenAccess", "NotifyAccess", "DefiningClass",
+            },
+            {},
+            true,
+            false,
+            false,
+            true,
+            true,
+        },
+        {
+            RuntimeMetadataKind::EnumerationMember,
+            "matlab.metadata.EnumerationMember",
+            {"meta.EnumerationMember", "meta.EnumeratedValue"},
+            RuntimeMetadataKind::MetaData,
+            {
+                "Name", "Description", "DetailedDescription", "Hidden",
+                "DefiningClass",
+            },
+            {},
+            true,
+            false,
+            false,
+            true,
+            true,
+        },
+        {
+            RuntimeMetadataKind::Namespace,
+            "matlab.metadata.Namespace",
+            {"meta.package"},
+            RuntimeMetadataKind::MetaData,
+            {
+                "Name", "Description", "DetailedDescription", "ClassList",
+                "FunctionList", "InnerNamespaces", "OuterNamespace",
+            },
+            {},
+            true,
+            true,
+            true,
+            true,
+            true,
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::Function,
+            "matlab.metadata.Function",
+            {},
+            RuntimeMetadataKind::MetaData,
+            {
+                "Name", "Description", "DetailedDescription", "FullPath",
+                "NamespaceName", "Signature",
+            },
+            {},
+            true,
+            false,
+            false,
+            true,
+            true,
+        },
+        {
+            RuntimeMetadataKind::CallSignature,
+            "matlab.metadata.CallSignature",
+            {},
+            std::nullopt,
+            {
+                "Inputs", "Outputs", "HasInputValidation",
+                "HasOutputValidation",
+            },
+            {"eq", "ne"},
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::Argument,
+            "matlab.metadata.Argument",
+            {},
+            std::nullopt,
+            {
+                "Identifier", "Description", "DetailedDescription",
+                "Required", "Repeating", "NameValue", "Validation",
+                "DefaultValue", "SourceClass",
+            },
+            {"eq", "ne"},
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::ArgumentIdentifier,
+            "matlab.metadata.ArgumentIdentifier",
+            {},
+            std::nullopt,
+            {"Name", "GroupName"},
+            {"eq", "ne"},
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::ArgumentValidation,
+            "matlab.metadata.ArgumentValidation",
+            {},
+            std::nullopt,
+            {"Class", "Size", "Functions"},
+            {"eq", "ne"},
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::ArgumentValidator,
+            "matlab.metadata.ArgumentValidator",
+            {},
+            std::nullopt,
+            {"Name", "Function", "ReferencedArguments"},
+            {"eq", "ne"},
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::DefaultArgumentValue,
+            "matlab.metadata.DefaultArgumentValue",
+            {},
+            std::nullopt,
+            {"Expression", "ReferencedArguments"},
+            {"eq", "ne"},
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::PropertyValidation,
+            "matlab.metadata.PropertyValidation",
+            {"matlab.metadata.Validation", "meta.Validation"},
+            std::nullopt,
+            {"Class", "Size", "ValidationFunctions"},
+            {"isValidValue", "validateValue", "eq", "ne"},
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::ArrayDimension,
+            "matlab.metadata.ArrayDimension",
+            {"meta.ArrayDimension"},
+            std::nullopt,
+            {},
+            {"eq", "ne"},
+            true,
+        },
+        {
+            RuntimeMetadataKind::FixedDimension,
+            "matlab.metadata.FixedDimension",
+            {"meta.FixedDimension"},
+            RuntimeMetadataKind::ArrayDimension,
+            {"Length"},
+            {},
+            false,
+            true,
+        },
+        {
+            RuntimeMetadataKind::UnrestrictedDimension,
+            "matlab.metadata.UnrestrictedDimension",
+            {"meta.UnrestrictedDimension"},
+            RuntimeMetadataKind::ArrayDimension,
+            {},
+            {},
+            false,
+            true,
+        },
+    };
+    return descriptors;
+}
+
+void appendMetadataMembers(
+    const RuntimeMetadataTypeDescriptor& descriptor, bool properties,
+    std::vector<std::string>& result, std::set<std::string>& seen) {
+    if (descriptor.superclass) {
+        appendMetadataMembers(
+            runtimeMetadataTypeDescriptor(*descriptor.superclass),
+            properties, result, seen);
+    }
+    const auto& declared = properties ? descriptor.declaredProperties
+                                      : descriptor.declaredMethods;
+    for (const std::string_view member : declared) {
+        if (seen.insert(std::string(member)).second) {
+            result.emplace_back(member);
+        }
+    }
+}
 
 } // namespace
 
-std::string_view runtimeMetadataClassName(RuntimeMetadataKind kind) {
-    switch (kind) {
-    case RuntimeMetadataKind::MetaData:
-        return kMetadataMetaDataClass;
-    case RuntimeMetadataKind::Class:
-        return kMetadataClassClass;
-    case RuntimeMetadataKind::Property:
-        return kMetadataPropertyClass;
-    case RuntimeMetadataKind::DynamicProperty:
-        return kMetadataDynamicPropertyClass;
-    case RuntimeMetadataKind::Method:
-        return kMetadataMethodClass;
-    case RuntimeMetadataKind::Event:
-        return kMetadataEventClass;
-    case RuntimeMetadataKind::EnumerationMember:
-        return kMetadataEnumerationMemberClass;
-    case RuntimeMetadataKind::Namespace:
-        return kMetadataNamespaceClass;
-    case RuntimeMetadataKind::Function:
-        return kMetadataFunctionClass;
-    case RuntimeMetadataKind::CallSignature:
-        return kMetadataCallSignatureClass;
-    case RuntimeMetadataKind::Argument:
-        return kMetadataArgumentClass;
-    case RuntimeMetadataKind::ArgumentIdentifier:
-        return kMetadataArgumentIdentifierClass;
-    case RuntimeMetadataKind::ArgumentValidation:
-        return kMetadataArgumentValidationClass;
-    case RuntimeMetadataKind::ArgumentValidator:
-        return kMetadataArgumentValidatorClass;
-    case RuntimeMetadataKind::DefaultArgumentValue:
-        return kMetadataDefaultArgumentValueClass;
-    case RuntimeMetadataKind::ArrayDimension:
-        return kMetadataArrayDimensionClass;
-    case RuntimeMetadataKind::FixedDimension:
-        return kMetadataFixedDimensionClass;
-    case RuntimeMetadataKind::UnrestrictedDimension:
-        return kMetadataUnrestrictedDimensionClass;
+const RuntimeMetadataTypeDescriptor&
+runtimeMetadataTypeDescriptor(RuntimeMetadataKind kind) {
+    const auto& descriptors = runtimeMetadataDescriptors();
+    const auto found = std::find_if(
+        descriptors.begin(), descriptors.end(),
+        [kind](const RuntimeMetadataTypeDescriptor& descriptor) {
+            return descriptor.kind == kind;
+        });
+    return found == descriptors.end() ? descriptors.front() : *found;
+}
+
+const RuntimeMetadataTypeDescriptor*
+findRuntimeMetadataTypeDescriptor(std::string_view className) {
+    const auto& descriptors = runtimeMetadataDescriptors();
+    const auto found = std::find_if(
+        descriptors.begin(), descriptors.end(),
+        [className](const RuntimeMetadataTypeDescriptor& descriptor) {
+            return descriptor.canonicalName == className ||
+                   std::find(descriptor.aliases.begin(),
+                             descriptor.aliases.end(),
+                             className) != descriptor.aliases.end();
+        });
+    return found == descriptors.end() ? nullptr : &*found;
+}
+
+std::vector<std::string>
+runtimeMetadataPropertyNames(std::string_view className) {
+    const auto* descriptor =
+        findRuntimeMetadataTypeDescriptor(className);
+    if (!descriptor) {
+        return {};
     }
-    return kMetadataMetaDataClass;
+    std::vector<std::string> result;
+    std::set<std::string> seen;
+    appendMetadataMembers(*descriptor, true, result, seen);
+    return result;
+}
+
+std::vector<std::string>
+runtimeMetadataMethodNames(std::string_view className) {
+    const auto* descriptor =
+        findRuntimeMetadataTypeDescriptor(className);
+    if (!descriptor) {
+        return {};
+    }
+    std::vector<std::string> result;
+    std::set<std::string> seen;
+    appendMetadataMembers(*descriptor, false, result, seen);
+    return result;
+}
+
+bool runtimeMetadataClassIsa(std::string_view actualClassName,
+                             std::string_view targetClassName) {
+    const auto* actual =
+        findRuntimeMetadataTypeDescriptor(actualClassName);
+    if (!actual) {
+        return false;
+    }
+
+    if (targetClassName == "handle") {
+        std::optional<RuntimeMetadataKind> current = actual->kind;
+        while (current) {
+            const auto& descriptor =
+                runtimeMetadataTypeDescriptor(*current);
+            if (descriptor.handleClass) {
+                return true;
+            }
+            current = descriptor.superclass;
+        }
+        return false;
+    }
+
+    const auto* target =
+        findRuntimeMetadataTypeDescriptor(targetClassName);
+    if (!target) {
+        return false;
+    }
+    std::optional<RuntimeMetadataKind> current = actual->kind;
+    while (current) {
+        if (*current == target->kind) {
+            return true;
+        }
+        current = runtimeMetadataTypeDescriptor(*current).superclass;
+    }
+    return false;
+}
+
+std::string_view runtimeMetadataClassName(RuntimeMetadataKind kind) {
+    return runtimeMetadataTypeDescriptor(kind).canonicalName;
 }
 
 std::string canonicalRuntimeMetadataClassName(std::string_view name) {
-    if (name == "meta.MetaData") {
-        return std::string(kMetadataMetaDataClass);
-    }
-    if (name == "meta.class") {
-        return std::string(kMetadataClassClass);
-    }
-    if (name == "meta.property") {
-        return std::string(kMetadataPropertyClass);
-    }
-    if (name == "meta.DynamicProperty") {
-        return std::string(kMetadataDynamicPropertyClass);
-    }
-    if (name == "meta.method") {
-        return std::string(kMetadataMethodClass);
-    }
-    if (name == "meta.event") {
-        return std::string(kMetadataEventClass);
-    }
-    if (name == "meta.EnumerationMember" ||
-        name == "meta.EnumeratedValue") {
-        return std::string(kMetadataEnumerationMemberClass);
-    }
-    if (name == "meta.package") {
-        return std::string(kMetadataNamespaceClass);
-    }
-    if (name == "meta.ArrayDimension") {
-        return std::string(kMetadataArrayDimensionClass);
-    }
-    if (name == "meta.FixedDimension") {
-        return std::string(kMetadataFixedDimensionClass);
-    }
-    if (name == "meta.UnrestrictedDimension") {
-        return std::string(kMetadataUnrestrictedDimensionClass);
-    }
-    return std::string(name);
+    const auto* descriptor =
+        findRuntimeMetadataTypeDescriptor(name);
+    return descriptor ? std::string(descriptor->canonicalName)
+                      : std::string(name);
 }
 
 std::optional<RuntimeMetadataKind>
@@ -133,63 +398,9 @@ runtimeMetadataKind(const RuntimeValue& value) {
         return std::nullopt;
     }
 
-    const std::string canonical =
-        canonicalRuntimeMetadataClassName(value.className);
-    if (canonical == kMetadataMetaDataClass) {
-        return RuntimeMetadataKind::MetaData;
-    }
-    if (canonical == kMetadataClassClass) {
-        return RuntimeMetadataKind::Class;
-    }
-    if (canonical == kMetadataPropertyClass) {
-        return RuntimeMetadataKind::Property;
-    }
-    if (canonical == kMetadataDynamicPropertyClass) {
-        return RuntimeMetadataKind::DynamicProperty;
-    }
-    if (canonical == kMetadataMethodClass) {
-        return RuntimeMetadataKind::Method;
-    }
-    if (canonical == kMetadataEventClass) {
-        return RuntimeMetadataKind::Event;
-    }
-    if (canonical == kMetadataEnumerationMemberClass) {
-        return RuntimeMetadataKind::EnumerationMember;
-    }
-    if (canonical == kMetadataNamespaceClass) {
-        return RuntimeMetadataKind::Namespace;
-    }
-    if (canonical == kMetadataFunctionClass) {
-        return RuntimeMetadataKind::Function;
-    }
-    if (canonical == kMetadataCallSignatureClass) {
-        return RuntimeMetadataKind::CallSignature;
-    }
-    if (canonical == kMetadataArgumentClass) {
-        return RuntimeMetadataKind::Argument;
-    }
-    if (canonical == kMetadataArgumentIdentifierClass) {
-        return RuntimeMetadataKind::ArgumentIdentifier;
-    }
-    if (canonical == kMetadataArgumentValidationClass) {
-        return RuntimeMetadataKind::ArgumentValidation;
-    }
-    if (canonical == kMetadataArgumentValidatorClass) {
-        return RuntimeMetadataKind::ArgumentValidator;
-    }
-    if (canonical == kMetadataDefaultArgumentValueClass) {
-        return RuntimeMetadataKind::DefaultArgumentValue;
-    }
-    if (canonical == kMetadataArrayDimensionClass) {
-        return RuntimeMetadataKind::ArrayDimension;
-    }
-    if (canonical == kMetadataFixedDimensionClass) {
-        return RuntimeMetadataKind::FixedDimension;
-    }
-    if (canonical == kMetadataUnrestrictedDimensionClass) {
-        return RuntimeMetadataKind::UnrestrictedDimension;
-    }
-    return std::nullopt;
+    const auto* descriptor =
+        findRuntimeMetadataTypeDescriptor(value.className);
+    return descriptor ? std::optional(descriptor->kind) : std::nullopt;
 }
 
 bool isRuntimeMetadataObject(const RuntimeValue& value) {
@@ -232,30 +443,12 @@ RuntimeValue makeRuntimeMetadataArray(
 
 bool runtimeMetadataIsa(const RuntimeValue& value,
                         std::string_view className) {
-    if (!isRuntimeMetadataObject(value)) {
+    const auto actualKind = runtimeMetadataKind(value);
+    if (!actualKind) {
         return false;
     }
-
-    const std::string actual =
-        canonicalRuntimeMetadataClassName(value.className);
-    const std::string target =
-        canonicalRuntimeMetadataClassName(className);
-    if (actual == target) {
-        return true;
-    }
-    if (target == kMetadataArrayDimensionClass &&
-        (actual == kMetadataFixedDimensionClass ||
-         actual == kMetadataUnrestrictedDimensionClass)) {
-        return true;
-    }
-    if (target == kMetadataPropertyClass &&
-        actual == kMetadataDynamicPropertyClass) {
-        return true;
-    }
-    if (target == "handle" || target == kMetadataMetaDataClass) {
-        return true;
-    }
-    return false;
+    return runtimeMetadataClassIsa(
+        runtimeMetadataClassName(*actualKind), className);
 }
 
 std::string runtimeValueClassName(const RuntimeValue& value) {

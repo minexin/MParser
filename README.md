@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.76.0. See [docs/v0.76.md](docs/v0.76.md) for the
+Current milestone: v0.77.0. See [docs/v0.77.md](docs/v0.77.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.75.md](docs/v0.75.md),
+iteration plan. Previous boundaries are kept in [docs/v0.76.md](docs/v0.76.md),
+[docs/v0.75.md](docs/v0.75.md),
 [docs/v0.74.md](docs/v0.74.md),
 [docs/v0.73.md](docs/v0.73.md),
 [docs/v0.72.md](docs/v0.72.md),
@@ -756,6 +757,21 @@ and direct nonscalar property assignment is rejected as MATLAB requires.
 Explicit `delete` and `isvalid` operate elementwise on handle arrays. Typed and
 native tiers treat objects as unsupported optimized inputs and safely execute
 the legal code in the bytecode VM.
+
+v0.77 freezes the supported reflection graph behind one
+`RuntimeMetadataTypeDescriptor` table. Canonical `matlab.metadata.*` names,
+legacy `meta.*` aliases, direct superclasses, class flags, and public member
+lists now drive `class`, `isa`, `metaclass`, `properties`, `methods`, and VM
+member dispatch from the same source. Metadata arrays project properties as
+logical-order comma-separated lists, while `findobj` filters metadata or
+handle arrays by one or more property-name/value pairs. Property descriptors
+expose `PropertyValidation` (including the `matlab.metadata.Validation` and
+`meta.Validation` aliases), class and dimension restrictions, callable
+validation-function handles, `isValidValue`, and `validateValue`. Dynamic
+properties now default `NonCopyable` to true and expose empty validation
+metadata. Module-bound validation handles retain the existing
+`CompiledModule` identity guard. Reflection remains a documented VM subset;
+typed and native execution safely fall back.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
