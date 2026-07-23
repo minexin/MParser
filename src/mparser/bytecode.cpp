@@ -67,7 +67,8 @@ private:
                 int target = -1, int resultCount = 1) {
         program_.instructions.push_back(BytecodeInstruction{
             op, node.label.empty() ? node.raw : node.label, {}, {},
-            node.binding, node.span, operandCount, target, resultCount});
+            node.binding, {}, node.span, operandCount, target,
+            resultCount});
         return program_.instructions.size() - 1;
     }
 
@@ -89,6 +90,16 @@ private:
                       node);
             break;
         case HirKind::Import:
+            break;
+        case HirKind::GlobalDeclaration:
+            for (const auto& child : node.children) {
+                emit(BytecodeOp::DeclareGlobal, *child);
+            }
+            break;
+        case HirKind::PersistentDeclaration:
+            for (const auto& child : node.children) {
+                emit(BytecodeOp::DeclarePersistent, *child);
+            }
             break;
         case HirKind::ArgumentBlock:
             lowerChildren(node);
@@ -507,7 +518,13 @@ private:
         if (header.children.empty()) {
             return;
         }
-        lowerNode(*header.children.front());
+        const HirNode& condition = *header.children.front();
+        if (condition.kind == HirKind::Statement &&
+            condition.children.size() == 1) {
+            lowerExpression(*condition.children.front());
+            return;
+        }
+        lowerExpression(condition);
     }
 
     std::optional<size_t> findControlArm(
@@ -865,7 +882,11 @@ private:
                  node.children.front()->binding.kind ==
                      BindingKind::FunctionParameter ||
                  node.children.front()->binding.kind ==
-                     BindingKind::FunctionOutput);
+                     BindingKind::FunctionOutput ||
+                 node.children.front()->binding.kind ==
+                     BindingKind::GlobalVariable ||
+                 node.children.front()->binding.kind ==
+                     BindingKind::PersistentVariable);
             if (!node.children.empty() && !directVariableReceiver) {
                 lowerNode(*node.children.front());
             }
@@ -877,6 +898,8 @@ private:
             if (directVariableReceiver) {
                 program_.instructions[store].receiverName =
                     node.children.front()->label;
+                program_.instructions[store].receiverBinding =
+                    node.children.front()->binding;
             }
             break;
         }
@@ -1020,6 +1043,10 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "ForNext";
     case BytecodeOp::Pop:
         return "Pop";
+    case BytecodeOp::DeclareGlobal:
+        return "DeclareGlobal";
+    case BytecodeOp::DeclarePersistent:
+        return "DeclarePersistent";
     case BytecodeOp::BeginIndexContext:
         return "BeginIndexContext";
     case BytecodeOp::BeginIndexArgument:

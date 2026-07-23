@@ -269,6 +269,65 @@ end
     assert(!loop->region.eligibleForTypedExecution);
 }
 
+void runSessionBindingRejectionSmoke() {
+    const auto globalStore = plan(R"(function y = main()
+global shared
+shared = 0;
+for i = 1:12
+    shared = i;
+end
+y = shared;
+end
+)");
+    const auto* globalStoreLoop = findLoop(globalStore, "i");
+    assert(globalStoreLoop != nullptr);
+    assert(globalStoreLoop->region.hasUnsupportedOperations);
+    assert(!globalStoreLoop->region.eligibleForTypedExecution);
+
+    const auto persistentStore = plan(R"(function y = main()
+persistent count
+count = 0;
+for i = 1:12
+    count = i;
+end
+y = count;
+end
+)");
+    const auto* persistentStoreLoop =
+        findLoop(persistentStore, "i");
+    assert(persistentStoreLoop != nullptr);
+    assert(persistentStoreLoop->region.hasUnsupportedOperations);
+    assert(!persistentStoreLoop->region.eligibleForTypedExecution);
+
+    const auto globalLoopVariable = plan(R"(function y = main()
+global i
+for i = 1:12
+end
+y = i;
+end
+)");
+    const auto* globalLoop =
+        findLoop(globalLoopVariable, "i");
+    assert(globalLoop != nullptr);
+    assert(globalLoop->region.hasUnsupportedOperations);
+    assert(!globalLoop->region.eligibleForTypedExecution);
+
+    const auto declarationOnly = plan(R"(function y = main()
+y = 0;
+for i = 1:12
+    global declared_shared
+    persistent declared_count
+    y = y + i;
+end
+end
+)");
+    const auto* declarationLoop =
+        findLoop(declarationOnly, "i");
+    assert(declarationLoop != nullptr);
+    assert(declarationLoop->region.hasUnsupportedOperations);
+    assert(!declarationLoop->region.eligibleForTypedExecution);
+}
+
 } // namespace
 
 int main() {
@@ -281,6 +340,7 @@ int main() {
     runGeneralBuiltinCallRejectionSmoke();
     runLinearIndexRegionSmoke();
     runMultidimensionalIndexRejectionSmoke();
+    runSessionBindingRejectionSmoke();
     std::cout << "bytecode region smoke tests passed\n";
     return 0;
 }

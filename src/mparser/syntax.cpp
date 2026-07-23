@@ -40,6 +40,10 @@ const char* syntaxKindName(SyntaxKind kind) {
         return "ImportStatement";
     case SyntaxKind::ImportItem:
         return "ImportItem";
+    case SyntaxKind::GlobalStatement:
+        return "GlobalStatement";
+    case SyntaxKind::PersistentStatement:
+        return "PersistentStatement";
     case SyntaxKind::IfBlock:
         return "IfBlock";
     case SyntaxKind::ForBlock:

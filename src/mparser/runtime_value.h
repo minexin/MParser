@@ -48,6 +48,7 @@ enum class RuntimeFunctionHandleBackend {
 
 struct RuntimeCallableContext {
   size_t identity = 0;
+  std::shared_ptr<const void> lifetimeAnchor;
 };
 
 struct RuntimeStringElement {

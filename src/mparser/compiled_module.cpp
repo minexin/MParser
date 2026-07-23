@@ -14,6 +14,15 @@
 #include <utility>
 
 namespace mparser {
+
+struct CompiledModuleData {
+    std::vector<SourceUnit> sources;
+    SemanticResult semantic;
+    BytecodeProgram bytecode;
+    std::vector<CompiledFunctionInfo> functions;
+    std::vector<Diagnostic> diagnostics;
+};
+
 namespace {
 
 void collectInvocableFunctions(
@@ -300,6 +309,12 @@ std::string firstDiagnosticMessage(
 
 } // namespace
 
+CompiledModule::CompiledModule()
+    : data_(std::make_shared<CompiledModuleData>()),
+      callableContext_(makeRuntimeCallableContext()) {
+    callableContext_->lifetimeAnchor = data_;
+}
+
 CompiledModule CompiledModule::compile(std::string source) {
     std::vector<SourceUnit> sources;
     sources.push_back(SourceUnit{"<memory>", std::move(source)});
@@ -308,10 +323,9 @@ CompiledModule CompiledModule::compile(std::string source) {
 
 CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
     CompiledModule module;
-    module.callableContext_ = makeRuntimeCallableContext();
-    module.sources_ = std::move(sources);
-    if (module.sources_.empty()) {
-        module.diagnostics_.push_back(Diagnostic{
+    module.data_->sources = std::move(sources);
+    if (module.data_->sources.empty()) {
+        module.data_->diagnostics.push_back(Diagnostic{
             SourceSpan{}, "compiled module requires at least one source"});
         return module;
     }
@@ -320,8 +334,9 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
     bool rootSpanInitialized = false;
     std::map<std::string, SourceSpan> classDefinitions;
     std::vector<PendingClassMethod> pendingClassMethods;
-    for (size_t sourceId = 0; sourceId < module.sources_.size(); ++sourceId) {
-        auto& source = module.sources_[sourceId];
+    for (size_t sourceId = 0;
+         sourceId < module.data_->sources.size(); ++sourceId) {
+        auto& source = module.data_->sources[sourceId];
         if (source.name.empty()) {
             source.name = "<source:" + std::to_string(sourceId) + ">";
         }
@@ -329,14 +344,16 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
         Lexer lexer(source.content, sourceId);
         Parser parser(lexer.lex());
         auto parse = parser.parse();
-        appendDiagnostics(module.diagnostics_, parse.diagnostics);
+        appendDiagnostics(module.data_->diagnostics,
+                          parse.diagnostics);
         if (!parse.root) {
             continue;
         }
 
         if (!source.classMethodOwner.empty()) {
             if (auto method = extractClassMethod(
-                    *parse.root, source, *root, module.diagnostics_)) {
+                    *parse.root, source, *root,
+                    module.data_->diagnostics)) {
                 pendingClassMethods.push_back(std::move(*method));
             }
             continue;
@@ -344,7 +361,7 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
 
         applySourceIdentity(*parse.root, source);
         collectTopLevelClasses(*parse.root, classDefinitions,
-                               module.diagnostics_);
+                               module.data_->diagnostics);
         if (!rootSpanInitialized) {
             root->span = parse.root->span;
             rootSpanInitialized = true;
@@ -357,52 +374,63 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
     }
 
     for (auto& method : pendingClassMethods) {
-        attachClassMethod(*root, std::move(method), module.diagnostics_);
+        attachClassMethod(*root, std::move(method),
+                          module.data_->diagnostics);
     }
 
-    if (!module.diagnostics_.empty()) {
+    if (!module.data_->diagnostics.empty()) {
         return module;
     }
 
     SemanticAnalyzer analyzer;
-    module.semantic_ = analyzer.analyze(*root, module.sources_);
-    appendDiagnostics(module.diagnostics_, module.semantic_.diagnostics);
-    if (!module.semantic_.root || !module.semantic_.diagnostics.empty()) {
+    module.data_->semantic =
+        analyzer.analyze(*root, module.data_->sources);
+    appendDiagnostics(module.data_->diagnostics,
+                      module.data_->semantic.diagnostics);
+    if (!module.data_->semantic.root ||
+        !module.data_->semantic.diagnostics.empty()) {
         return module;
     }
 
     BytecodeLowerer lowerer;
-    module.bytecode_ = lowerer.lower(module.semantic_);
-    appendDiagnostics(module.diagnostics_, module.bytecode_.diagnostics);
-    if (!module.bytecode_.diagnostics.empty()) {
+    module.data_->bytecode =
+        lowerer.lower(module.data_->semantic);
+    appendDiagnostics(module.data_->diagnostics,
+                      module.data_->bytecode.diagnostics);
+    if (!module.data_->bytecode.diagnostics.empty()) {
         return module;
     }
 
     const ArgumentContractCatalog argumentCatalog =
-        buildArgumentContractCatalog(*module.semantic_.root);
-    collectInvocableFunctions(module.semantic_.root.get(), module.functions_,
-                              module.diagnostics_, argumentCatalog);
+        buildArgumentContractCatalog(*module.data_->semantic.root);
+    collectInvocableFunctions(
+        module.data_->semantic.root.get(),
+        module.data_->functions, module.data_->diagnostics,
+        argumentCatalog);
     return module;
 }
 
 bool CompiledModule::valid() const {
-    return semantic_.root != nullptr && diagnostics_.empty();
+    return data_ && data_->semantic.root != nullptr &&
+           data_->diagnostics.empty();
 }
 
 std::string_view CompiledModule::source() const {
-    return sources_.empty() ? std::string_view{}
-                            : std::string_view{sources_.front().content};
+    return !data_ || data_->sources.empty()
+               ? std::string_view{}
+               : std::string_view{
+                     data_->sources.front().content};
 }
 
 const std::vector<SourceUnit>& CompiledModule::sources() const {
-    return sources_;
+    return data_->sources;
 }
 
 std::string_view CompiledModule::sourceName(size_t sourceId) const {
-    if (sourceId >= sources_.size()) {
+    if (!data_ || sourceId >= data_->sources.size()) {
         return {};
     }
-    return sources_[sourceId].name;
+    return data_->sources[sourceId].name;
 }
 
 std::string_view CompiledModule::sourceName(SourceSpan span) const {
@@ -410,24 +438,24 @@ std::string_view CompiledModule::sourceName(SourceSpan span) const {
 }
 
 const std::vector<Diagnostic>& CompiledModule::diagnostics() const {
-    return diagnostics_;
+    return data_->diagnostics;
 }
 
 const SemanticResult& CompiledModule::semantic() const {
-    return semantic_;
+    return data_->semantic;
 }
 
 const BytecodeProgram& CompiledModule::bytecode() const {
-    return bytecode_;
+    return data_->bytecode;
 }
 
 const std::vector<CompiledFunctionInfo>& CompiledModule::functions() const {
-    return functions_;
+    return data_->functions;
 }
 
 const CompiledFunctionInfo* CompiledModule::findFunction(
     std::string_view name) const {
-    for (const auto& function : functions_) {
+    for (const auto& function : data_->functions) {
         if (function.name == name) {
             return &function;
         }
@@ -439,7 +467,7 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
     std::string_view entryFunction, size_t argumentCount,
     std::optional<size_t> requestedOutputCount) const {
     if (!valid()) {
-        return diagnostics_;
+        return data_->diagnostics;
     }
     if (entryFunction.empty()) {
         return {};
@@ -483,7 +511,7 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
     const std::vector<RuntimeValue>& arguments,
     std::optional<size_t> requestedOutputCount) const {
     if (!valid()) {
-        return diagnostics_;
+        return data_->diagnostics;
     }
     if (entryFunction.empty()) {
         return {};
@@ -527,7 +555,8 @@ BytecodeVmResult CompiledModule::invoke(
     BytecodeVm vm;
     BytecodeVmOptions runtimeOptions = options;
     runtimeOptions.callableContext = callableContext_;
-    return vm.run(bytecode_, semantic_, runtimeOptions);
+    return vm.run(data_->bytecode, data_->semantic,
+                  runtimeOptions);
 }
 
 AdaptiveBytecodeVmSession CompiledModule::createAdaptiveSession(
@@ -540,7 +569,63 @@ AdaptiveBytecodeVmSession CompiledModule::createAdaptiveSession(
     }
     AdaptiveBytecodeVmOptions runtimeOptions = options;
     runtimeOptions.callableContext = callableContext_;
-    return AdaptiveBytecodeVmSession(bytecode_, semantic_, runtimeOptions);
+    return AdaptiveBytecodeVmSession(
+        data_->bytecode, data_->semantic, runtimeOptions);
+}
+
+CompiledModuleSession CompiledModule::createSession(
+    std::shared_ptr<RuntimeSessionState> state) const {
+    if (!state) {
+        state = std::make_shared<RuntimeSessionState>();
+    }
+    return CompiledModuleSession(*this, std::move(state));
+}
+
+CompiledModuleSession::CompiledModuleSession(
+    CompiledModule module,
+    std::shared_ptr<RuntimeSessionState> state)
+    : module_(std::move(module)), state_(std::move(state)) {}
+
+BytecodeVmResult CompiledModuleSession::invoke(
+    const BytecodeVmOptions& options) const {
+    BytecodeVmOptions runtimeOptions = options;
+    runtimeOptions.sessionState = state_;
+    return module_.invoke(runtimeOptions);
+}
+
+std::shared_ptr<RuntimeSessionState>
+CompiledModuleSession::state() const {
+    return state_;
+}
+
+std::vector<RuntimeVariable>
+CompiledModuleSession::globals() const {
+    return state_->globals();
+}
+
+std::vector<RuntimePersistentVariable>
+CompiledModuleSession::persistentVariables() const {
+    return state_->persistentVariables(
+        module_.callableContext_->identity);
+}
+
+bool CompiledModuleSession::clearGlobal(
+    std::string_view name) {
+    return state_->clearGlobal(name);
+}
+
+size_t CompiledModuleSession::clearFunction(
+    std::string_view function) {
+    return state_->clearFunction(
+        module_.callableContext_->identity, function);
+}
+
+void CompiledModuleSession::clearGlobals() {
+    state_->clearGlobals();
+}
+
+void CompiledModuleSession::reset() {
+    state_->reset();
 }
 
 } // namespace mparser

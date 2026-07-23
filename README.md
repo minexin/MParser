@@ -1,8 +1,9 @@
 # MParser
 
-Current milestone: v0.77.0. See [docs/v0.77.md](docs/v0.77.md) for the
+Current milestone: v0.78.0. See [docs/v0.78.md](docs/v0.78.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.76.md](docs/v0.76.md),
+iteration plan. Previous boundaries are kept in [docs/v0.77.md](docs/v0.77.md),
+[docs/v0.76.md](docs/v0.76.md),
 [docs/v0.75.md](docs/v0.75.md),
 [docs/v0.74.md](docs/v0.74.md),
 [docs/v0.73.md](docs/v0.73.md),
@@ -191,13 +192,16 @@ name, bind positional runtime arguments, and return declared outputs separately
 from the diagnostic variable snapshot. Full profiles record function parameter
 and result kind/shape observations, and adaptive sessions can retrain from
 changing argument values.
-The frontend pipeline is also available through `CompiledModule`: it owns the
-source set, semantic HIR, lowered bytecode, compile diagnostics, and a catalog of
-invocable top-level function signatures. Embedders can compile once, validate
-an entry, invoke the ordinary VM repeatedly, or create an adaptive session over
-the same immutable artifacts. Class methods remain excluded from the top-level
-entry catalog because module entries do not yet carry a class receiver or
-constructor-dispatch contract.
+The frontend pipeline is also available through `CompiledModule`: shared
+immutable storage owns the source set, semantic HIR, lowered bytecode, compile
+diagnostics, and a catalog of invocable top-level function signatures.
+Embedders can compile once, validate an entry, invoke the ordinary VM
+repeatedly, create an adaptive session, or create an isolated
+`CompiledModuleSession` over the same artifacts. Sessions and module-bound
+function handles keep those artifacts alive even after the original
+`CompiledModule` object is destroyed. Class methods remain excluded from the
+top-level entry catalog because module entries do not yet carry a class
+receiver or constructor-dispatch contract.
 `AdaptiveModuleRuntime` adds a longer-lived module execution layer above those
 artifacts. It creates one adaptive session per named function, so invocation
 heat, arguments, workspaces, promotions, typed executions, fallbacks,
@@ -772,6 +776,21 @@ properties now default `NonCopyable` to true and expose empty validation
 metadata. Module-bound validation handles retain the existing
 `CompiledModule` identity guard. Reflection remains a documented VM subset;
 typed and native execution safely fall back.
+
+v0.78 adds explicit MATLAB-like `global` and `persistent` declarations to the
+syntax, semantic HIR, bytecode, reference interpreter, and production VM.
+`RuntimeSessionState` is the shared state boundary: globals are keyed by name,
+persistent values by compiled callable identity, canonical function, and
+variable name, and first declaration produces an empty 0-by-0 double matrix.
+Every supported assignment path, including indexed, brace, member, nested
+lvalue, and `for` target writes, uses the same binding route.
+`CompiledModuleSession` provides isolated
+compile-once/invoke-many state, snapshots, targeted clearing, and reset while
+retaining the module artifacts it executes. Callers may inject one state when
+intentional global sharing is required without merging same-named persistent
+functions from different compiled modules. Shared-state accesses remain VM operations;
+typed and native regions reject them during region selection and preserve
+correctness through ordinary fallback.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,

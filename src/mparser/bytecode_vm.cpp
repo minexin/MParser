@@ -664,6 +664,7 @@ struct ForLoopState {
     size_t nextIndex = 0;
     size_t headerPc = 0;
     RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
+    BindingRef binding;
 };
 
 struct IndexContext {
@@ -674,11 +675,14 @@ struct IndexContext {
 
 struct ActiveLvalue {
     std::string rootName;
+    BindingRef binding;
     RuntimeLvalueTransaction transaction;
     bool failed = false;
 
-    ActiveLvalue(std::string name, RuntimeValue root)
-        : rootName(std::move(name)), transaction(std::move(root)) {}
+    ActiveLvalue(std::string name, BindingRef rootBinding,
+                 RuntimeValue root)
+        : rootName(std::move(name)), binding(rootBinding),
+          transaction(std::move(root)) {}
 };
 
 struct SwitchContext {
@@ -1086,6 +1090,8 @@ bool isTopLevelRuntimeOp(BytecodeOp op) {
     case BytecodeOp::ForBegin:
     case BytecodeOp::ForNext:
     case BytecodeOp::Pop:
+    case BytecodeOp::DeclareGlobal:
+    case BytecodeOp::DeclarePersistent:
     case BytecodeOp::BeginIndexContext:
     case BytecodeOp::BeginIndexArgument:
     case BytecodeOp::BeginLvalue:
@@ -1113,6 +1119,9 @@ public:
         callableContext_ = options.callableContext
                                ? options.callableContext
                                : makeRuntimeCallableContext();
+        sessionState_ = options.sessionState
+                            ? options.sessionState
+                            : std::make_shared<RuntimeSessionState>();
         profilingEnabled_ =
             options.profiling == BytecodeVmProfilingMode::Full;
         typedRegionBackend_ = options.typedRegionBackend;
@@ -1133,6 +1142,8 @@ public:
         scriptModeActive_ = false;
         frames_.clear();
         frames_.push_back({});
+        baseGlobalNames_.clear();
+        activePersistentFunctionKeys_.clear();
         activeClassFunctions_.clear();
         eventListeners_.clear();
         dynamicProperties_.clear();
@@ -1170,7 +1181,12 @@ public:
         finalizeEntryOutputs();
 
         BytecodeVmResult result;
-        const auto& variables = frames_.front();
+        auto variables = frames_.front();
+        for (const auto& name : baseGlobalNames_) {
+            if (const auto value = sessionState_->findGlobal(name)) {
+                variables[name] = *value;
+            }
+        }
         for (const auto& [name, value] : variables) {
             result.variables.push_back(RuntimeVariable{name, value});
         }
@@ -3883,6 +3899,7 @@ private:
         bool ranFirstFunction = false;
         bool enteredProfile = false;
         bool enteredExceptionFunction = false;
+        bool enteredPersistentFunction = false;
         size_t skipDepth = 0;
 
         if (scriptMode) {
@@ -3932,8 +3949,11 @@ private:
                 enterFunctionProfile(instruction.operand, instruction.span);
                 activeExceptionFunctionNames_.push_back(
                     publicFunctionIdentifier(instruction.operand));
+                activePersistentFunctionKeys_.push_back(
+                    persistentFunctionKey(instruction.operand));
                 enteredProfile = true;
                 enteredExceptionFunction = true;
+                enteredPersistentFunction = true;
                 activeFunction = true;
                 ranFirstFunction = true;
                 ++pc;
@@ -3946,8 +3966,12 @@ private:
                     if (enteredExceptionFunction) {
                         activeExceptionFunctionNames_.pop_back();
                     }
+                    if (enteredPersistentFunction) {
+                        activePersistentFunctionKeys_.pop_back();
+                    }
                     enteredProfile = false;
                     enteredExceptionFunction = false;
+                    enteredPersistentFunction = false;
                     activeFunction = false;
                     break;
                 }
@@ -3989,6 +4013,10 @@ private:
         if (enteredExceptionFunction &&
             !activeExceptionFunctionNames_.empty()) {
             activeExceptionFunctionNames_.pop_back();
+        }
+        if (enteredPersistentFunction &&
+            !activePersistentFunctionKeys_.empty()) {
+            activePersistentFunctionKeys_.pop_back();
         }
         scriptModeActive_ = false;
         if (!scriptMode && !requestedEntryFunction_.empty() &&
@@ -4454,6 +4482,10 @@ private:
             break;
         case BytecodeOp::StoreName:
             storeName(instruction);
+            break;
+        case BytecodeOp::DeclareGlobal:
+        case BytecodeOp::DeclarePersistent:
+            declareWorkspaceVariable(instruction);
             break;
         case BytecodeOp::StoreMember:
             storeMember(instruction);
@@ -4938,10 +4970,10 @@ private:
             return checkedTarget(instruction);
         }
 
-        currentFrame()[instruction.operand] = firstValue;
+        storeVariable(instruction, firstValue);
         forLoopStack_.push_back(
             ForLoopState{instruction.operand, *values, 1, currentPc_,
-                         range->numericClass});
+                         range->numericClass, instruction.binding});
         return std::nullopt;
     }
 
@@ -5005,7 +5037,8 @@ private:
                     active->second.contract.bodyEndPc];
                 ForLoopState state{instruction.operand, loopValues, 1,
                                    currentPc_,
-                                   RuntimeNumericClass::Double};
+                                   RuntimeNumericClass::Double,
+                                   instruction.binding};
                 for (size_t index = 1; index < loopValues.size(); ++index) {
                     recordForBackedge(state, latch,
                                       numberValue(loopValues[index]));
@@ -5063,7 +5096,8 @@ private:
 
         RuntimeValue nextValue = numberValue(
             state.values[state.nextIndex], state.numericClass);
-        currentFrame()[state.variable] = nextValue;
+        storeVariable(state.variable, state.binding, nextValue,
+                      instruction);
         ++state.nextIndex;
         recordForBackedge(state, instruction, nextValue);
         return checkedTarget(instruction);
@@ -5297,12 +5331,12 @@ private:
     }
 
     void beginLvalue(const BytecodeInstruction& instruction) {
-        const auto variable = currentFrame().find(instruction.operand);
-        RuntimeValue root = variable == currentFrame().end()
-                                ? missingValue()
-                                : variable->second;
+        const auto variable = loadStoredVariable(instruction);
+        RuntimeValue root =
+            variable ? *variable : missingValue();
         lvalueStack_.push_back(std::make_unique<ActiveLvalue>(
-            instruction.operand, std::move(root)));
+            instruction.operand, instruction.binding,
+            std::move(root)));
     }
 
     void beginLvalueIndexContext(
@@ -5521,10 +5555,132 @@ private:
                             RuntimeLvalueSegmentKind::Brace);
     }
 
+    static bool isSessionBinding(BindingRef binding) {
+        return binding.kind == BindingKind::GlobalVariable ||
+               binding.kind == BindingKind::PersistentVariable;
+    }
+
+    std::string persistentFunctionKey(
+        const FunctionInfo& info) const {
+        if (!info.declaringClass.empty()) {
+            return info.declaringClass + "." + info.name;
+        }
+        return info.name;
+    }
+
+    std::string persistentFunctionKey(
+        std::string_view functionName) const {
+        const auto function =
+            functionsByName_.find(std::string(functionName));
+        return function == functionsByName_.end()
+                   ? std::string(functionName)
+                   : persistentFunctionKey(function->second);
+    }
+
+    std::optional<RuntimeValue> loadStoredVariable(
+        const BytecodeInstruction& instruction) {
+        if (instruction.binding.kind == BindingKind::GlobalVariable) {
+            RuntimeValue value =
+                sessionState_->declareGlobal(instruction.operand);
+            currentFrame()[instruction.operand] = value;
+            return value;
+        }
+        if (instruction.binding.kind ==
+            BindingKind::PersistentVariable) {
+            if (activePersistentFunctionKeys_.empty()) {
+                addDiagnostic(
+                    instruction,
+                    "persistent variable has no active function: " +
+                        instruction.operand);
+                return std::nullopt;
+            }
+            RuntimeValue value = sessionState_->declarePersistent(
+                callableContext_->identity,
+                activePersistentFunctionKeys_.back(),
+                instruction.operand);
+            currentFrame()[instruction.operand] = value;
+            return value;
+        }
+        const auto variable =
+            currentFrame().find(instruction.operand);
+        return variable == currentFrame().end()
+                   ? std::nullopt
+                   : std::optional<RuntimeValue>(variable->second);
+    }
+
+    void storeVariable(const BytecodeInstruction& instruction,
+                       RuntimeValue value) {
+        if (instruction.binding.kind == BindingKind::GlobalVariable) {
+            sessionState_->storeGlobal(instruction.operand, value);
+            currentFrame()[instruction.operand] = std::move(value);
+            return;
+        }
+        if (instruction.binding.kind ==
+            BindingKind::PersistentVariable) {
+            if (activePersistentFunctionKeys_.empty()) {
+                addDiagnostic(
+                    instruction,
+                    "persistent variable has no active function: " +
+                        instruction.operand);
+                return;
+            }
+            sessionState_->storePersistent(
+                callableContext_->identity,
+                activePersistentFunctionKeys_.back(),
+                instruction.operand, value);
+            currentFrame()[instruction.operand] = std::move(value);
+            return;
+        }
+        currentFrame()[instruction.operand] = std::move(value);
+    }
+
+    void storeVariable(std::string name, BindingRef binding,
+                       RuntimeValue value,
+                       const BytecodeInstruction& source) {
+        BytecodeInstruction instruction = source;
+        instruction.operand = std::move(name);
+        instruction.binding = binding;
+        storeVariable(instruction, std::move(value));
+    }
+
+    void declareWorkspaceVariable(
+        const BytecodeInstruction& instruction) {
+        if (instruction.op == BytecodeOp::DeclareGlobal) {
+            RuntimeValue value =
+                sessionState_->declareGlobal(instruction.operand);
+            currentFrame()[instruction.operand] = std::move(value);
+            if (frames_.size() == 1) {
+                baseGlobalNames_.insert(instruction.operand);
+            }
+            return;
+        }
+        if (activePersistentFunctionKeys_.empty()) {
+            addDiagnostic(
+                instruction,
+                "persistent declaration has no active function: " +
+                    instruction.operand);
+            return;
+        }
+        currentFrame()[instruction.operand] =
+            sessionState_->declarePersistent(
+                callableContext_->identity,
+                activePersistentFunctionKeys_.back(),
+                instruction.operand);
+    }
+
     void loadName(const BytecodeInstruction& instruction) {
-        if (const auto variable = currentFrame().find(instruction.operand);
+        if (isSessionBinding(instruction.binding)) {
+            const auto variable = loadStoredVariable(instruction);
+            if (variable) {
+                stack_.push_back(runtimeStackValue(*variable));
+            }
+            return;
+        }
+        if (const auto variable =
+                currentFrame().find(instruction.operand);
             variable != currentFrame().end()) {
-            stack_.push_back(runtimeStackValue(variable->second));
+            stack_.push_back(
+                runtimeStackValue(variable->second));
             return;
         }
 
@@ -5704,7 +5860,7 @@ private:
             addDiagnostic(instruction, single.error);
             return;
         }
-        currentFrame()[instruction.operand] = single.value;
+        storeVariable(instruction, single.value);
         recordAssignment(instruction, "name", single.value);
     }
 
@@ -8358,11 +8514,13 @@ private:
     void storeMemberResolved(const BytecodeInstruction& instruction) {
         std::optional<StackValue> target;
         if (!instruction.receiverName.empty()) {
-            const auto variable =
-                currentFrame().find(instruction.receiverName);
-            target = variable == currentFrame().end()
-                         ? runtimeStackValue(makeRuntimeStructValue())
-                         : runtimeStackValue(variable->second);
+            BytecodeInstruction receiver = instruction;
+            receiver.operand = instruction.receiverName;
+            receiver.binding = instruction.receiverBinding;
+            const auto variable = loadStoredVariable(receiver);
+            target = variable
+                         ? runtimeStackValue(*variable)
+                         : runtimeStackValue(makeRuntimeStructValue());
         } else {
             target = popStackValue(instruction,
                                    "member assignment target");
@@ -8414,7 +8572,9 @@ private:
                     "direct field assignment requires a scalar structure");
                 return;
             }
-            currentFrame()[instruction.receiverName] = updated;
+            storeVariable(instruction.receiverName,
+                          instruction.receiverBinding,
+                          updated, instruction);
             recordAssignment(instruction, "struct-member", updated);
             return;
         }
@@ -8436,7 +8596,9 @@ private:
                 RuntimeMetadataKind::DynamicProperty) {
                 storeDynamicPropertyMetadata(instruction, updated, *value);
                 if (!instruction.receiverName.empty()) {
-                    currentFrame()[instruction.receiverName] = updated;
+                    storeVariable(instruction.receiverName,
+                                  instruction.receiverBinding, updated,
+                                  instruction);
                 }
                 return;
             }
@@ -8493,7 +8655,9 @@ private:
             }
             (*updated.sharedFields)[instruction.operand] = *value;
             if (!instruction.receiverName.empty()) {
-                currentFrame()[instruction.receiverName] = updated;
+                storeVariable(instruction.receiverName,
+                              instruction.receiverBinding, updated,
+                              instruction);
             }
             recordAssignment(instruction, "listener-member", updated);
             return;
@@ -8516,7 +8680,9 @@ private:
                 return;
             }
             if (!instruction.receiverName.empty()) {
-                currentFrame()[instruction.receiverName] = updated;
+                storeVariable(instruction.receiverName,
+                              instruction.receiverBinding, updated,
+                              instruction);
             }
             recordAssignment(instruction, "dynamic-member", updated);
             return;
@@ -8564,7 +8730,9 @@ private:
                 return;
             }
             writeStoredProperty(updated, info, *value);
-            currentFrame()[instruction.receiverName] = updated;
+            storeVariable(instruction.receiverName,
+                          instruction.receiverBinding,
+                          updated, instruction);
             recordAssignment(instruction, "member", updated);
             return;
         }
@@ -8581,7 +8749,9 @@ private:
                 return;
             }
             if (runtimeEqual(*current, *validated)) {
-                currentFrame()[instruction.receiverName] = updated;
+                storeVariable(instruction.receiverName,
+                              instruction.receiverBinding, updated,
+                              instruction);
                 return;
             }
         }
@@ -8637,7 +8807,9 @@ private:
             }
             writeStoredProperty(updated, info, *validated);
         }
-        currentFrame()[instruction.receiverName] = updated;
+        storeVariable(instruction.receiverName,
+                      instruction.receiverBinding,
+                      updated, instruction);
         recordAssignment(instruction, "member", updated);
         if (info.setObservable && updated.handleObject) {
             (void)dispatchPropertyEvent(
@@ -8669,7 +8841,8 @@ private:
             }
             return;
         }
-        currentFrame()[active->rootName] = active->transaction.root();
+        storeVariable(active->rootName, active->binding,
+                      active->transaction.root(), instruction);
         BytecodeInstruction profileInstruction = instruction;
         profileInstruction.operand = active->rootName;
         recordAssignment(profileInstruction, "path",
@@ -8758,7 +8931,7 @@ private:
                 return;
             }
             recordAssignment(instruction, "index", result.value);
-            currentFrame()[instruction.operand] = std::move(result.value);
+            storeVariable(instruction, std::move(result.value));
             return;
         }
         if (target->kind == RuntimeValueKind::Cell) {
@@ -8774,7 +8947,7 @@ private:
                 return;
             }
             recordAssignment(instruction, "index", result.value);
-            currentFrame()[instruction.operand] = std::move(result.value);
+            storeVariable(instruction, std::move(result.value));
             return;
         }
         if (isRuntimeTextValue(*target)) {
@@ -8792,7 +8965,7 @@ private:
                 return;
             }
             recordAssignment(instruction, "index", updated);
-            currentFrame()[instruction.operand] = std::move(updated);
+            storeVariable(instruction, std::move(updated));
             return;
         }
         if (isRuntimeClassObject(*target)) {
@@ -8812,7 +8985,7 @@ private:
                 return;
             }
             recordAssignment(instruction, "index", result.value);
-            currentFrame()[instruction.operand] = std::move(result.value);
+            storeVariable(instruction, std::move(result.value));
             return;
         }
         if (!isNumeric(*target) || !isNumeric(single.value)) {
@@ -8835,7 +9008,7 @@ private:
             return;
         }
         recordAssignment(instruction, "index", updated);
-        currentFrame()[instruction.operand] = std::move(updated);
+        storeVariable(instruction, std::move(updated));
     }
 
     void applyUnary(const BytecodeInstruction& instruction) {
@@ -9155,7 +9328,7 @@ private:
                 addDiagnostic(instruction, result.error);
                 return;
             }
-            currentFrame()[instruction.operand] = updated;
+            storeVariable(instruction, updated);
             recordAssignment(instruction, "string-content", updated);
             return;
         }
@@ -9165,7 +9338,7 @@ private:
             addDiagnostic(instruction, std::move(result.error));
             return;
         }
-        currentFrame()[instruction.operand] = result.value;
+        storeVariable(instruction, result.value);
         recordAssignment(instruction, "cell", result.value);
     }
 
@@ -12805,12 +12978,15 @@ private:
                 ? info.signature.outputs.front()
                 : std::string{},
             construction});
+        activePersistentFunctionKeys_.push_back(
+            persistentFunctionKey(info));
 
         enterFunctionProfile(name, info.span);
         const size_t bodyDiagnosticCount = diagnostics_.size();
         executeFunctionBody(info.entry, info.end);
         leaveFunctionProfile();
 
+        activePersistentFunctionKeys_.pop_back();
         activeClassFunctions_.pop_back();
 
         auto completedFrame = std::move(currentFrame());
@@ -12948,6 +13124,9 @@ private:
             }
             if (name == "clear") {
                 currentFrame().clear();
+                if (frames_.size() == 1) {
+                    baseGlobalNames_.clear();
+                }
                 return missingValue();
             }
             if (name == "clc") {
@@ -14075,6 +14254,9 @@ private:
     std::vector<SwitchContext> switchContextStack_;
     std::vector<TryContext> tryContextStack_;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
+    std::shared_ptr<RuntimeSessionState> sessionState_;
+    std::set<std::string> baseGlobalNames_;
+    std::vector<std::string> activePersistentFunctionKeys_;
     std::vector<ActiveClassFunction> activeClassFunctions_;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::map<size_t, EventListenerRecord> eventListeners_;

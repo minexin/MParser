@@ -446,13 +446,15 @@ package function, static method, or bound object method. Builtin descriptors
 are backend-independent; source-backed descriptors remain tied to the engine
 and compiled source graph that owns their executable body.
 
-`CompiledModule` and adaptive sessions retain one callable context across
-invocations. A module-bound handle can therefore be returned, stored by the
-embedding caller, and passed back to later invocations of that same module.
-Passing it to another compiled module fails deterministically instead of using
-foreign instruction or HIR addresses. Context-free builtin handles may cross
-that boundary. This is an in-process lifetime contract, not a serialized or
-cross-process handle ABI.
+`CompiledModule`, module sessions, adaptive sessions, and module-bound handles
+retain one callable context across invocations. The context carries a shared
+lifetime anchor to the immutable compiled artifacts, so a returned handle or
+session remains valid after the original `CompiledModule` object is destroyed.
+The handle can be passed back to later invocations of that same compiled
+identity. Passing it to another compiled module fails deterministically instead
+of using foreign instruction or HIR addresses. Context-free builtin handles
+may cross that boundary. This is an in-process lifetime contract, not a
+serialized or cross-process handle ABI.
 
 Both baseline engines share the MATLAB-like dynamic-call contract. A neutral
 `CallOrIndexExpr` evaluates an unresolved target once, invokes it when it is a
@@ -564,15 +566,15 @@ invocations, so retraining can prove a region input from a stable function
 parameter when no preceding assignment defines it.
 
 `CompiledModule` is the reusable embedding boundary above those runtime paths.
-It owns an ordered set of named, namespace-aware sources, caller-specific
-function bindings, class-method ownership, semantic HIR,
-bytecode, diagnostics, and the invocable
-top-level function catalog. Compilation stops after a failed parse, semantic
-analysis, or lowering phase. Valid modules can preflight a named entry, execute
-independent ordinary VM invocations, or construct adaptive sessions that point
-at the same immutable HIR and bytecode. The module must therefore outlive every
-adaptive session created from it. Class methods remain excluded from the entry
-catalog because module entries do not yet carry a class receiver or
+Its shared immutable data owns an ordered set of named, namespace-aware
+sources, caller-specific function bindings, class-method ownership, semantic
+HIR, bytecode, diagnostics, and the invocable top-level function catalog.
+Compilation stops after a failed parse, semantic analysis, or lowering phase.
+Valid modules can preflight a named entry, execute independent ordinary VM
+invocations, or construct adaptive and stateful module sessions over the same
+artifacts. These derived objects retain the shared data, so the original module
+object does not impose their lifetime. Class methods remain excluded from the
+entry catalog because module entries do not yet carry a class receiver or
 constructor-dispatch contract. Source IDs survive the merge, so parser,
 semantic, bytecode, and runtime diagnostics can map a span back to the owning
 file. Duplicate top-level classes are rejected before semantic analysis.
@@ -580,6 +582,34 @@ Public namespace functions are exposed by canonical name; source-local helper
 and dependency-loaded path/private identities remain available to bytecode
 binding but are omitted from the public entry catalog. `--module-info` exposes
 the source identity and caller binding graph for diagnostics.
+
+`RuntimeSessionState` is the mutable workspace boundary shared by the HIR
+interpreter, bytecode VM, production fallback, and adaptive execution. Global
+bindings use the declared variable name. Persistent bindings use the canonical
+compiled callable identity, owning function identity, and variable name; class
+methods use a class-qualified function key. This preserves global sharing while
+preventing same-named functions in different compiled modules from sharing
+persistent storage accidentally. First declaration installs a 0-by-0 double
+matrix, matching the empty-value checks expected by initialization idioms.
+Reads and every supported write form route through this state rather than
+through an engine private map. Individual map operations and snapshots are
+mutex-protected;
+compound script invocation and read-modify-write sequences are not atomic, so
+an embedding caller must serialize concurrent use of one intentionally shared
+state.
+
+`CompiledModule::createSession()` creates an isolated state by default and
+returns a `CompiledModuleSession` that owns both the module identity and state.
+It supports repeated invocation, global and persistent snapshots, clearing one
+global, clearing all persistent values for one function, clearing all globals,
+and resetting all shared state. A caller may inject a state to share globals
+deliberately; persistent values remain scoped to the compiled callable
+identity. A session's persistent snapshot and targeted function clear are
+filtered to that identity. Bare `CompiledModule::invoke()` remains an
+independent invocation unless options provide a state. Adaptive-session
+`reset()` resets tiering observations and workspaces but deliberately preserves
+the runtime state; module-session or `RuntimeSessionState` reset is the explicit
+state-erasure operation.
 
 `AdaptiveModuleRuntime` partitions mutable tiering state by named entry
 function. Each lazily created function session owns its cumulative profiles,
@@ -1175,6 +1205,22 @@ validator handles encode the property identity and validator index, carry the
 owning `RuntimeCallableContext`, and pass through the standard cross-module
 handle guard before invoking one validator. No raw property pointer or class
 table address is stored in a handle or native cache key.
+
+v0.78 represents `global` and `persistent` as explicit syntax, HIR binding
+kinds, and bytecode declarations. Semantic predeclaration is scoped to the
+containing script or function, does not descend into nested functions or
+classes, rejects conflicting declaration roles, and requires a workspace
+declaration before a reference in the supported subset. A no-argument MATLAB
+`clear` still clears the current execution frame's local association without
+erasing `RuntimeSessionState`. Command forms such as `clear name`,
+`clear global name`, and `clear functionName` are not yet executable language
+syntax; embedders use the explicit session APIs above.
+
+Typed-region discovery treats shared binding declarations, loads, stores, and
+session-bound loop targets as unsupported optimization operations. It does not
+capture mutable session pointers in a portable or native specialization.
+Legal workspace code therefore executes in the VM through the existing guarded
+fallback contract, including store-only loop variables.
 
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,

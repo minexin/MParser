@@ -315,6 +315,45 @@ end
     assert(matrix->children[1]->children.size() == 2);
 }
 
+void parseWorkspaceDeclarationSmoke() {
+    const std::string source = R"(global shared, cache
+function y = f(x)
+persistent count values
+global shared
+y = x;
+end
+)";
+
+    auto result = parse(source);
+    assert(result.diagnostics.empty());
+    assert(result.root->children.size() == 2);
+
+    const auto& global = *result.root->children.front();
+    assert(global.kind == mparser::SyntaxKind::GlobalStatement);
+    assert(global.children.size() == 2);
+    assert(global.children[0]->label == "shared");
+    assert(global.children[1]->label == "cache");
+
+    const auto& function = *result.root->children[1];
+    assert(function.kind == mparser::SyntaxKind::FunctionDef);
+    const auto* persistent =
+        firstChild(function, mparser::SyntaxKind::PersistentStatement);
+    assert(persistent != nullptr);
+    assert(persistent->children.size() == 2);
+    assert(persistent->children[0]->label == "count");
+    assert(persistent->children[1]->label == "values");
+
+    const auto* functionGlobal =
+        firstChild(function, mparser::SyntaxKind::GlobalStatement);
+    assert(functionGlobal != nullptr);
+    assert(functionGlobal->children.size() == 1);
+    assert(functionGlobal->children[0]->label == "shared");
+
+    assert(!parse("global\n").diagnostics.empty());
+    assert(!parse("global first,\n").diagnostics.empty());
+    assert(!parse("persistent first,,second\n").diagnostics.empty());
+}
+
 } // namespace
 
 int main() {
@@ -326,6 +365,7 @@ int main() {
     parseSwitchSmoke();
     parseTryCatchSmoke();
     parseMatrixRowsSmoke();
+    parseWorkspaceDeclarationSmoke();
     std::cout << "parser smoke tests passed\n";
     return 0;
 }

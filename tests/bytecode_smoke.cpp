@@ -204,6 +204,49 @@ void lowerNondeterministicAssignmentSmoke() {
     assert(store->nondeterministicAssignment);
 }
 
+void lowerWorkspaceDeclarationSmoke() {
+    const std::string source = R"(global shared
+shared.Value = 1;
+function y = f()
+persistent cache
+cache(1) = 2;
+y = cache(1);
+end
+)";
+
+    mparser::SemanticResult semantic;
+    const auto program = lower(source, semantic);
+
+    const auto* global =
+        findInstruction(program, mparser::BytecodeOp::DeclareGlobal,
+                        "shared");
+    assert(global != nullptr);
+    assert(global->binding.kind ==
+           mparser::BindingKind::GlobalVariable);
+
+    const auto* persistent =
+        findInstruction(program, mparser::BytecodeOp::DeclarePersistent,
+                        "cache");
+    assert(persistent != nullptr);
+    assert(persistent->binding.kind ==
+           mparser::BindingKind::PersistentVariable);
+
+    const auto* storeMember =
+        findInstruction(program, mparser::BytecodeOp::StoreMember,
+                        "Value");
+    assert(storeMember != nullptr);
+    assert(storeMember->receiverName == "shared");
+    assert(storeMember->receiverBinding.kind ==
+           mparser::BindingKind::GlobalVariable);
+
+    const auto* storeIndex =
+        findInstruction(program, mparser::BytecodeOp::StoreIndex,
+                        "cache");
+    assert(storeIndex != nullptr);
+    assert(storeIndex->binding.kind ==
+           mparser::BindingKind::PersistentVariable);
+}
+
 } // namespace
 
 int main() {
@@ -213,6 +256,7 @@ int main() {
     lowerIndexedAssignmentSmoke();
     lowerSwitchAndTrySmoke();
     lowerNondeterministicAssignmentSmoke();
+    lowerWorkspaceDeclarationSmoke();
     std::cout << "bytecode smoke tests passed\n";
     return 0;
 }

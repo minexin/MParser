@@ -43,6 +43,16 @@ bool containsHirKind(const mparser::HirNode& node, mparser::HirKind kind) {
     return false;
 }
 
+bool hasDiagnostic(const mparser::SemanticResult& result,
+                   std::string_view text) {
+    for (const auto& diagnostic : result.diagnostics) {
+        if (diagnostic.message.find(text) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 const mparser::HirNode* findNameRef(const mparser::HirNode& node,
                                     std::string_view name) {
     if (node.kind == mparser::HirKind::NameRef && node.label == name) {
@@ -251,6 +261,73 @@ end
     assert(objName->binding.kind == mparser::BindingKind::FunctionOutput);
 }
 
+void analyzeWorkspaceDeclarationSmoke() {
+    const std::string source = R"(global shared
+shared = 1;
+function y = f(x)
+persistent count
+global shared
+count = count + 1;
+shared = shared + x;
+y = count + shared;
+end
+)";
+
+    auto result = analyze(source);
+    assert(result.diagnostics.empty());
+    assert(containsHirKind(*result.root,
+                           mparser::HirKind::GlobalDeclaration));
+    assert(containsHirKind(*result.root,
+                           mparser::HirKind::PersistentDeclaration));
+    assert(hasSymbol(result, mparser::SymbolKind::GlobalVariable,
+                     "shared"));
+    assert(hasSymbol(result, mparser::SymbolKind::PersistentVariable,
+                     "count"));
+    assert(findBoundNode(*result.root, mparser::HirKind::NameRef,
+                         mparser::BindingKind::GlobalVariable) != nullptr);
+    assert(findBoundNode(*result.root, mparser::HirKind::NameRef,
+                         mparser::BindingKind::PersistentVariable) != nullptr);
+
+    const auto localShadow = analyze(R"(global shared
+function y = local_shadow()
+shared = 4;
+y = shared;
+end
+)");
+    assert(localShadow.diagnostics.empty());
+    assert(findBoundNode(*localShadow.root, mparser::HirKind::NameRef,
+                         mparser::BindingKind::LocalVariable) != nullptr);
+
+    const auto topLevelPersistent = analyze("persistent count\n");
+    assert(hasDiagnostic(topLevelPersistent,
+                         "only valid inside a function"));
+
+    const auto parameterConflict = analyze(R"(function y = bad(x)
+global x
+y = x;
+end
+)");
+    assert(hasDiagnostic(parameterConflict,
+                         "conflicts with existing FunctionParameter"));
+
+    const auto mixedDeclaration = analyze(R"(function y = bad()
+global value
+persistent value
+y = 0;
+end
+)");
+    assert(hasDiagnostic(mixedDeclaration,
+                         "both global and persistent"));
+
+    const auto lateDeclaration = analyze(R"(function y = bad()
+y = value;
+persistent value
+end
+)");
+    assert(hasDiagnostic(lateDeclaration,
+                         "must be declared before it is referenced"));
+}
+
 } // namespace
 
 int main() {
@@ -260,6 +337,7 @@ int main() {
     analyzeBuiltinSmoke();
     analyzeBuiltinShadowSmoke();
     analyzeClassSmoke();
+    analyzeWorkspaceDeclarationSmoke();
     std::cout << "semantic smoke tests passed\n";
     return 0;
 }

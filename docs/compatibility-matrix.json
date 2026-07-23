@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.77.0",
+  "version": "0.78.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -134,6 +134,17 @@
       "evidence": ["lvalue_runtime_smoke", "lvalue_runtime_interpreter_cli_smoke", "lvalue_runtime_bytecode_cli_smoke", "lvalue_runtime_production_cli_smoke", "lvalue_object_production_cli_smoke"],
       "sources": ["src/mparser/runtime_lvalue.cpp", "src/mparser/runtime_cell.cpp", "src/mparser/bytecode.cpp", "src/mparser/bytecode_vm.cpp", "tests/lvalue_runtime_smoke.cpp", "samples/lvalue_copyback_demo.m"],
       "limits": "Intermediate selections must resolve to one value; HIR does not execute classdef objects; object setters and handle aliases retain their documented side effects; typed/native tiers fall back to the VM."
+    },
+    {
+      "id": "WORKSPACE-001",
+      "area": "workspace",
+      "feature": "Scoped global and per-function persistent bindings with reusable runtime sessions",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["parser_smoke", "semantic_smoke", "bytecode_smoke", "bytecode_region_smoke", "runtime_session_smoke", "workspace_session_interpreter_cli_smoke", "workspace_session_bytecode_cli_smoke", "workspace_session_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_session_state.h", "src/mparser/runtime_session_state.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "src/mparser/compiled_module.cpp", "tests/runtime_session_smoke.cpp", "samples/workspace_session_demo.m"],
+      "limits": "v0.78 requires declarations before use, initializes first declarations as 0-by-0 doubles, keys persistent variables by compiled callable identity plus canonical function identity, and routes all supported writes through RuntimeSessionState. Different modules may share globals without colliding same-named persistent functions. No-argument clear preserves shared state; MATLAB command forms for clearing names, globals, or functions remain unsupported. Individual state operations are mutex-protected, but callers must serialize compound invocation on one shared state. Typed/native regions fall back to the VM."
     },
     {
       "id": "EXC-001",
@@ -281,13 +292,13 @@
     {
       "id": "JIT-003",
       "area": "jit",
-      "feature": "Adaptive tiering, guarded invalidation, process-local native cache, and persistent module sessions",
+      "feature": "Adaptive tiering, guarded invalidation, process-local native cache, and stateful module sessions",
       "status": "partial",
       "priority": "should-have",
       "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["adaptive_bytecode_vm_smoke", "adaptive_module_runtime_smoke", "native_scalar_jit_cache_smoke"],
-      "sources": ["src/mparser/adaptive_bytecode_vm.cpp", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/native_scalar_jit.cpp"],
-      "limits": "The cache is process-local; a versioned atomic disk cache is only a Should-have if its invalidation contract is complete."
+      "evidence": ["adaptive_bytecode_vm_smoke", "adaptive_module_runtime_smoke", "native_scalar_jit_cache_smoke", "runtime_session_smoke"],
+      "sources": ["src/mparser/adaptive_bytecode_vm.cpp", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/native_scalar_jit.cpp", "src/mparser/runtime_session_state.cpp"],
+      "limits": "RuntimeSessionState persists global and function-persistent bindings independently from adaptive profiling; adaptive reset does not erase it. The cache is process-local; a versioned atomic disk cache is only a Should-have if its invalidation contract is complete."
     },
     {
       "id": "EMBED-001",
@@ -296,9 +307,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke"],
-      "sources": ["src/mparser/compiled_module.cpp", "src/mparser/adaptive_module_runtime.cpp"],
-      "limits": "The API is pre-freeze and does not yet provide the narrow C ABI, resource contract, or versioned machine protocol required by v1.0."
+      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke"],
+      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp"],
+      "limits": "v0.78 adds owning CompiledModuleSession state, explicit reset/clear APIs, and lifetime anchoring for sessions and module-bound handles. The API remains pre-freeze and does not yet provide the narrow C ABI, resource contract, or versioned machine protocol required by v1.0."
     },
     {
       "id": "EMBED-002",
@@ -416,6 +427,16 @@
       "framework_impact": "additive",
       "requirement": "Freeze the supported meta.* graph, reflection access rules, dynamic dispatch hooks, and explicit unsupported metadata members.",
       "exit_evidence": "docs/v0.77.md freezes the supported metadata compatibility table; reflection_contract_smoke covers canonical and legacy type names, nuanced inheritance, inherited/private/static queries, logical-order array projection, direct property-pair metadata and handle findobj filters, PropertyValidation methods and callable module-bound validator handles, dynamic-property defaults, string metaclass lookup, and explicit unsupported-field diagnostics; bytecode and production CLI gates run reflection_contract_demo.m with summary 22."
+    },
+    {
+      "id": "G-WORKSPACE-001",
+      "area": "workspace",
+      "priority": "must-have",
+      "state": "closed",
+      "target": "v0.78",
+      "framework_impact": "contract-extension",
+      "requirement": "Define global and function-persistent declaration, storage, assignment, lifetime, clearing, embedding, concurrency, and optimization-fallback boundaries.",
+      "exit_evidence": "docs/v0.78.md defines the supported contract; parser_smoke, semantic_smoke, bytecode_smoke, bytecode_region_smoke, and runtime_session_smoke cover syntax through shared execution, every supported write route, isolated and injected state, targeted clearing, reset, adaptive reuse, and compiled-artifact lifetime; all three public CLI modes run workspace_session_demo.m with summary 14389."
     },
     {
       "id": "G-RUNTIME-001",

@@ -119,6 +119,10 @@ AdaptiveBytecodeVmSession::AdaptiveBytecodeVmSession(
     if (!options_.callableContext) {
         options_.callableContext = makeRuntimeCallableContext();
     }
+    if (!options_.sessionState) {
+        options_.sessionState =
+            std::make_shared<RuntimeSessionState>();
+    }
     reset();
 }
 
@@ -132,6 +136,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
         BytecodeVmOptions vmOptions;
         vmOptions.profiling = BytecodeVmProfilingMode::Disabled;
         vmOptions.callableContext = options_.callableContext;
+        vmOptions.sessionState = options_.sessionState;
         vmOptions.initialWorkspace = workspace_;
         vmOptions.entryFunction = options_.entryFunction;
         vmOptions.arguments = arguments_;
@@ -154,6 +159,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
     result.tier = AdaptiveBytecodeTier::Profiling;
     BytecodeVmOptions vmOptions;
     vmOptions.callableContext = options_.callableContext;
+    vmOptions.sessionState = options_.sessionState;
     vmOptions.initialWorkspace = workspace_;
     vmOptions.entryFunction = options_.entryFunction;
     vmOptions.arguments = arguments_;

@@ -28,6 +28,8 @@ enum class SyntaxKind {
     ArgumentDecl,
     ImportStatement,
     ImportItem,
+    GlobalStatement,
+    PersistentStatement,
     IfBlock,
     ForBlock,
     ParforBlock,

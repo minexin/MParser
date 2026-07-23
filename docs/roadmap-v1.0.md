@@ -289,12 +289,28 @@ function families, not an unbounded builtin count.
   end-to-end VM tests, a production sample, portable-only validation, and
   focused AArch64 execution.
 
-### v0.78-v0.79: Remaining Runtime Foundations
+### v0.78: Workspace And Runtime Session Contracts
 
-- Close the audited Must-have workspace, state, and remaining runtime-value
-  boundaries with linked compatibility evidence.
-- Freeze the engine-facing value, shape, indexing, call-frame, output-count,
-  diagnostic, and fallback contracts needed by the v0.80 extension layer.
+- Add scoped `global` and per-function `persistent` declarations across
+  Parser, HIR, semantic bindings, bytecode, HIR execution, and VM execution.
+- Route shared loads and every supported assignment form through one
+  `RuntimeSessionState`, with deterministic empty initialization, snapshots,
+  targeted clearing, reset, and explicit concurrency boundaries.
+- Add owning `CompiledModuleSession` compile-once/invoke-many state and make
+  module sessions, adaptive sessions, and function handles retain immutable
+  compiled artifacts independently of the original module object's lifetime.
+- Keep shared bindings outside typed/native regions and prove VM fallback,
+  differential engine behavior, session isolation, lifetime safety, runnable
+  samples, portable-only execution, and focused AArch64 execution.
+
+### v0.79: Remaining Runtime Foundation Freeze
+
+- Audit and freeze the engine-facing `RuntimeValue` ownership, shape, indexing,
+  object, exception, call-frame, output-count, diagnostic, and fallback
+  contracts needed by the v0.80 extension layer.
+- Close `G-RUNTIME-001` with compile-once/invoke-many stress, linked
+  compatibility evidence, and no known target-subset feature requiring
+  replacement of the main IR or VM contracts.
 
 ### v0.80: Function Extension Infrastructure
 

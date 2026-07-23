@@ -1812,6 +1812,11 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
         return parseArgumentsBlock();
     }
 
+    if (atAny({TokenKind::KeywordGlobal,
+               TokenKind::KeywordPersistent})) {
+        return parseWorkspaceDeclaration();
+    }
+
     if (at(TokenKind::KeywordImport)) {
         return parseImportStatement();
     }
@@ -1824,6 +1829,65 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
     consumeSeparator();
 
     return buildStatementLikeNode(tokens, SyntaxKind::ExpressionStatement);
+}
+
+std::unique_ptr<SyntaxNode> Parser::parseWorkspaceDeclaration() {
+    const bool persistent = at(TokenKind::KeywordPersistent);
+    auto node = makeNode(
+        persistent ? SyntaxKind::PersistentStatement
+                   : SyntaxKind::GlobalStatement,
+        current().span.begin);
+    node->label = current().text;
+    advance();
+
+    const auto tokens = collectUntilSeparator();
+    node->raw = joinTokens(tokens);
+    bool sawName = false;
+    bool previousWasComma = false;
+    for (const auto& token : tokens) {
+        if (token.kind == TokenKind::Comma) {
+            if (!sawName || previousWasComma) {
+                diagnostics_.push_back(Diagnostic{
+                    token.span,
+                    "expected variable name in " + node->label +
+                        " declaration"});
+            }
+            previousWasComma = true;
+            continue;
+        }
+        if (token.kind != TokenKind::Identifier) {
+            diagnostics_.push_back(Diagnostic{
+                token.span,
+                "expected variable name in " + node->label +
+                    " declaration"});
+            previousWasComma = false;
+            continue;
+        }
+
+        auto name = std::make_unique<SyntaxNode>(
+            SyntaxKind::IdentifierExpr);
+        name->label = token.text;
+        name->raw = token.text;
+        name->span = token.span;
+        node->children.push_back(std::move(name));
+        sawName = true;
+        previousWasComma = false;
+    }
+
+    if (!sawName) {
+        diagnostics_.push_back(Diagnostic{
+            node->span,
+            node->label + " declaration requires at least one variable"});
+    } else if (previousWasComma) {
+        diagnostics_.push_back(Diagnostic{
+            tokens.back().span,
+            "expected variable name after ',' in " + node->label +
+                " declaration"});
+    }
+
+    consumeSeparator();
+    finishNode(*node);
+    return node;
 }
 
 std::unique_ptr<SyntaxNode> Parser::parseImportStatement() {

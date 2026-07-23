@@ -40,6 +40,7 @@ private:
     std::unique_ptr<SyntaxNode> parseFunction();
     std::unique_ptr<SyntaxNode> parseArgumentsBlock();
     std::unique_ptr<SyntaxNode> parseImportStatement();
+    std::unique_ptr<SyntaxNode> parseWorkspaceDeclaration();
     std::unique_ptr<SyntaxNode> parseControlBlock();
     std::unique_ptr<SyntaxNode> parseStatement();
 

@@ -3,14 +3,19 @@
 #include "mparser/adaptive_bytecode_vm.h"
 #include "mparser/bytecode.h"
 #include "mparser/function_signature.h"
+#include "mparser/runtime_session_state.h"
 #include "mparser/source.h"
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace mparser {
+
+struct CompiledModuleData;
+class CompiledModuleSession;
 
 struct CompiledFunctionInfo {
     std::string name;
@@ -46,16 +51,39 @@ public:
     BytecodeVmResult invoke(const BytecodeVmOptions& options = {}) const;
     AdaptiveBytecodeVmSession createAdaptiveSession(
         const AdaptiveBytecodeVmOptions& options = {}) const;
+    CompiledModuleSession createSession(
+        std::shared_ptr<RuntimeSessionState> state = {}) const;
 
 private:
-    CompiledModule() = default;
+    CompiledModule();
+    friend class CompiledModuleSession;
 
-    std::vector<SourceUnit> sources_;
-    SemanticResult semantic_;
-    BytecodeProgram bytecode_;
-    std::vector<CompiledFunctionInfo> functions_;
-    std::vector<Diagnostic> diagnostics_;
+    std::shared_ptr<CompiledModuleData> data_;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
+};
+
+class CompiledModuleSession {
+public:
+    BytecodeVmResult invoke(
+        const BytecodeVmOptions& options = {}) const;
+
+    std::shared_ptr<RuntimeSessionState> state() const;
+    std::vector<RuntimeVariable> globals() const;
+    std::vector<RuntimePersistentVariable>
+    persistentVariables() const;
+    bool clearGlobal(std::string_view name);
+    size_t clearFunction(std::string_view function);
+    void clearGlobals();
+    void reset();
+
+private:
+    friend class CompiledModule;
+    CompiledModuleSession(
+        CompiledModule module,
+        std::shared_ptr<RuntimeSessionState> state);
+
+    CompiledModule module_;
+    std::shared_ptr<RuntimeSessionState> state_;
 };
 
 } // namespace mparser

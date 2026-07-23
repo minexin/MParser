@@ -139,6 +139,10 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
         return BindingKind::FunctionParameter;
     case SymbolKind::FunctionOutput:
         return BindingKind::FunctionOutput;
+    case SymbolKind::GlobalVariable:
+        return BindingKind::GlobalVariable;
+    case SymbolKind::PersistentVariable:
+        return BindingKind::PersistentVariable;
     case SymbolKind::Function:
         return BindingKind::Function;
     case SymbolKind::Method:
@@ -313,6 +317,7 @@ public:
         result_.root = makeNode(HirKind::Module, root);
         pushScope(ScopeKind::Module, "module");
         predeclareModuleSymbols(root);
+        predeclareWorkspaceDeclarations(root, false);
         registerExternalFunctionBindings(sources);
         predeclareClassScopes(root);
         collectImportsForCurrentScope(root);
@@ -585,6 +590,142 @@ private:
         }
     }
 
+    void collectWorkspaceDeclarations(
+        const SyntaxNode& owner,
+        std::vector<const SyntaxNode*>& declarations) const {
+        for (const auto& child : owner.children) {
+            if (child->kind == SyntaxKind::FunctionDef ||
+                child->kind == SyntaxKind::ClassDef) {
+                continue;
+            }
+            if (child->kind == SyntaxKind::GlobalStatement ||
+                child->kind == SyntaxKind::PersistentStatement) {
+                declarations.push_back(child.get());
+                continue;
+            }
+            collectWorkspaceDeclarations(*child, declarations);
+        }
+    }
+
+    bool referencesNameBefore(
+        const SyntaxNode& node, const std::string& name,
+        const SourcePosition& declaration) const {
+        if (node.kind == SyntaxKind::FunctionDef ||
+            node.kind == SyntaxKind::ClassDef ||
+            node.kind == SyntaxKind::GlobalStatement ||
+            node.kind == SyntaxKind::PersistentStatement) {
+            return false;
+        }
+        if (node.kind == SyntaxKind::IdentifierExpr &&
+            node.label == name &&
+            node.span.begin.sourceId == declaration.sourceId &&
+            node.span.begin.offset < declaration.offset) {
+            return true;
+        }
+        for (const auto& child : node.children) {
+            if (referencesNameBefore(*child, name, declaration)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void predeclareWorkspaceDeclarations(
+        const SyntaxNode& owner, bool persistentAllowed) {
+        std::vector<const SyntaxNode*> declarations;
+        collectWorkspaceDeclarations(owner, declarations);
+
+        struct DeclarationInfo {
+            SymbolKind kind = SymbolKind::GlobalVariable;
+            const SyntaxNode* declaration = nullptr;
+            SourceSpan nameSpan;
+        };
+        std::vector<std::pair<std::string, DeclarationInfo>> declared;
+        std::unordered_map<std::string, size_t> declaredByName;
+        for (const SyntaxNode* declaration : declarations) {
+            const bool persistent =
+                declaration->kind == SyntaxKind::PersistentStatement;
+            if (persistent && !persistentAllowed) {
+                result_.diagnostics.push_back(Diagnostic{
+                    declaration->span,
+                    "persistent declaration is only valid inside a function"});
+                continue;
+            }
+            const SymbolKind kind =
+                persistent ? SymbolKind::PersistentVariable
+                           : SymbolKind::GlobalVariable;
+            for (const auto& name : declaration->children) {
+                const auto [existing, inserted] =
+                    declaredByName.try_emplace(
+                        name->label, declared.size());
+                if (inserted) {
+                    declared.emplace_back(
+                        name->label,
+                        DeclarationInfo{
+                            kind, declaration, name->span});
+                    continue;
+                }
+                if (declared[existing->second].second.kind != kind) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        name->span,
+                        "variable cannot be both global and persistent: " +
+                            name->label});
+                }
+            }
+        }
+
+        for (const auto& [name, declaration] : declared) {
+            bool incompatible = false;
+            for (int symbolId : currentScope().symbols) {
+                const auto& symbol =
+                    result_.symbols[static_cast<size_t>(symbolId)];
+                if (symbol.name != name) {
+                    continue;
+                }
+                if (symbol.kind == declaration.kind) {
+                    incompatible = true;
+                    break;
+                }
+                if (symbol.kind == SymbolKind::Variable ||
+                    symbol.kind == SymbolKind::FunctionParameter ||
+                    symbol.kind == SymbolKind::FunctionOutput ||
+                    symbol.kind == SymbolKind::GlobalVariable ||
+                    symbol.kind == SymbolKind::PersistentVariable) {
+                    result_.diagnostics.push_back(Diagnostic{
+                        declaration.nameSpan,
+                        "workspace declaration conflicts with existing " +
+                            std::string(symbolKindName(symbol.kind)) +
+                            ": " + name});
+                    incompatible = true;
+                    break;
+                }
+            }
+            if (incompatible) {
+                continue;
+            }
+            bool referencedBefore = false;
+            if (declaration.declaration) {
+                for (const auto& child : owner.children) {
+                    if (referencesNameBefore(
+                            *child, name,
+                            declaration.declaration->span.begin)) {
+                        referencedBefore = true;
+                        break;
+                    }
+                }
+            }
+            if (referencedBefore) {
+                result_.diagnostics.push_back(Diagnostic{
+                    declaration.nameSpan,
+                    "workspace variable must be declared before it is "
+                    "referenced: " +
+                        name});
+            }
+            declareSymbol(declaration.kind, name,
+                          declaration.nameSpan);
+        }
+    }
+
     std::unique_ptr<HirNode> lower(const SyntaxNode& syntax) {
         switch (syntax.kind) {
         case SyntaxKind::CompilationUnit:
@@ -601,6 +742,12 @@ private:
             return lowerGeneric(syntax, HirKind::Import);
         case SyntaxKind::ImportItem:
             return lowerGeneric(syntax, HirKind::Import);
+        case SyntaxKind::GlobalStatement:
+            return lowerWorkspaceDeclaration(
+                syntax, HirKind::GlobalDeclaration);
+        case SyntaxKind::PersistentStatement:
+            return lowerWorkspaceDeclaration(
+                syntax, HirKind::PersistentDeclaration);
         case SyntaxKind::PropertyDecl:
             return lowerDeclaration(syntax, HirKind::Property, SymbolKind::Property);
         case SyntaxKind::EventDecl:
@@ -769,6 +916,7 @@ private:
                           syntax.span);
         }
 
+        predeclareWorkspaceDeclarations(syntax, true);
         validateArgumentBlocks(syntax, signature);
         if (nestedFunction &&
             std::any_of(syntax.children.begin(), syntax.children.end(),
@@ -1233,6 +1381,13 @@ private:
         return lowerGeneric(syntax, kind);
     }
 
+    std::unique_ptr<HirNode> lowerWorkspaceDeclaration(
+        const SyntaxNode& syntax, HirKind kind) {
+        auto node = makeNode(kind, syntax);
+        lowerChildren(syntax, *node);
+        return node;
+    }
+
     std::unique_ptr<HirNode> lowerEnumerationMember(
         const SyntaxNode& syntax) {
         auto node = makeNode(HirKind::EnumerationMember, syntax);
@@ -1502,6 +1657,11 @@ private:
             for (int symbolId : scope.symbols) {
                 const auto& symbol = result_.symbols[static_cast<size_t>(symbolId)];
                 if (symbol.name == name) {
+                    if ((symbol.kind == SymbolKind::GlobalVariable ||
+                         symbol.kind == SymbolKind::PersistentVariable) &&
+                        scope.id != scopeStack_.back()) {
+                        continue;
+                    }
                     return BindingRef{bindingKindForSymbol(symbol.kind), symbol.id};
                 }
             }
@@ -1519,7 +1679,14 @@ private:
                 if (symbol.name != name ||
                     (symbol.kind != SymbolKind::Variable &&
                      symbol.kind != SymbolKind::FunctionParameter &&
-                     symbol.kind != SymbolKind::FunctionOutput)) {
+                     symbol.kind != SymbolKind::FunctionOutput &&
+                     symbol.kind != SymbolKind::GlobalVariable &&
+                     symbol.kind != SymbolKind::PersistentVariable)) {
+                    continue;
+                }
+                if ((symbol.kind == SymbolKind::GlobalVariable ||
+                     symbol.kind == SymbolKind::PersistentVariable) &&
+                    scope.id != scopeStack_.back()) {
                     continue;
                 }
                 return BindingRef{bindingKindForSymbol(symbol.kind),
@@ -1538,7 +1705,9 @@ private:
                 if (symbol.name == name &&
                     symbol.kind != SymbolKind::Variable &&
                     symbol.kind != SymbolKind::FunctionParameter &&
-                    symbol.kind != SymbolKind::FunctionOutput) {
+                    symbol.kind != SymbolKind::FunctionOutput &&
+                    symbol.kind != SymbolKind::GlobalVariable &&
+                    symbol.kind != SymbolKind::PersistentVariable) {
                     return BindingRef{bindingKindForSymbol(symbol.kind),
                                       symbol.id};
                 }
@@ -2301,6 +2470,10 @@ const char* hirKindName(HirKind kind) {
         return "Argument";
     case HirKind::Import:
         return "Import";
+    case HirKind::GlobalDeclaration:
+        return "GlobalDeclaration";
+    case HirKind::PersistentDeclaration:
+        return "PersistentDeclaration";
     case HirKind::Property:
         return "Property";
     case HirKind::Event:
@@ -2369,6 +2542,10 @@ const char* bindingKindName(BindingKind kind) {
         return "FunctionParameter";
     case BindingKind::FunctionOutput:
         return "FunctionOutput";
+    case BindingKind::GlobalVariable:
+        return "GlobalVariable";
+    case BindingKind::PersistentVariable:
+        return "PersistentVariable";
     case BindingKind::Function:
         return "Function";
     case BindingKind::Method:
@@ -2395,6 +2572,10 @@ const char* symbolKindName(SymbolKind kind) {
         return "FunctionParameter";
     case SymbolKind::FunctionOutput:
         return "FunctionOutput";
+    case SymbolKind::GlobalVariable:
+        return "GlobalVariable";
+    case SymbolKind::PersistentVariable:
+        return "PersistentVariable";
     case SymbolKind::Function:
         return "Function";
     case SymbolKind::Method:

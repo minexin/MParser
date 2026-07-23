@@ -184,6 +184,9 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         if (!loops.beginPcs.contains(pc)) {
             contract.hasUnsupportedControlFlow = true;
         }
+        if (!isVariableBinding(instruction.binding.kind)) {
+            contract.hasUnsupportedOperations = true;
+        }
         if (!instruction.operand.empty()) {
             writes.insert(instruction.operand);
             outputs.insert(instruction.operand);
@@ -209,7 +212,8 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         reads.insert(instruction.operand);
         break;
     case BytecodeOp::StoreName:
-        if (instruction.operand.empty()) {
+        if (!isVariableBinding(instruction.binding.kind) ||
+            instruction.operand.empty()) {
             contract.hasUnsupportedOperations = true;
             break;
         }
@@ -319,6 +323,10 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         contract.hasUnsupportedControlFlow = true;
         break;
     case BytecodeOp::Pop:
+        break;
+    case BytecodeOp::DeclareGlobal:
+    case BytecodeOp::DeclarePersistent:
+        contract.hasUnsupportedOperations = true;
         break;
     case BytecodeOp::BeginIndexContext:
         if (instruction.operandCount != 1) {

@@ -40,6 +40,8 @@ enum class BytecodeOp {
     ForBegin,
     ForNext,
     Pop,
+    DeclareGlobal,
+    DeclarePersistent,
     BeginIndexContext,
     BeginIndexArgument,
     BeginLvalue,
@@ -78,6 +80,7 @@ struct BytecodeInstruction {
     std::string receiverName;
     std::vector<std::string> parameters;
     BindingRef binding;
+    BindingRef receiverBinding;
     SourceSpan span;
     int operandCount = 0;
     int target = -1;

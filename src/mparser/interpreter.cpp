@@ -32,6 +32,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -423,9 +424,15 @@ struct FunctionCallResult {
 
 class InterpreterContext {
 public:
-    InterpreterResult run(const SemanticResult& semantic) {
+    InterpreterResult run(const SemanticResult& semantic,
+                          const InterpreterOptions& options) {
         semantic_ = &semantic;
-        callableContext_ = makeRuntimeCallableContext();
+        callableContext_ = options.callableContext
+                               ? options.callableContext
+                               : makeRuntimeCallableContext();
+        sessionState_ = options.sessionState
+                            ? options.sessionState
+                            : std::make_shared<RuntimeSessionState>();
         pendingException_.reset();
         frames_.push_back({});
         if (semantic.root) {
@@ -436,8 +443,16 @@ public:
         }
 
         InterpreterResult result;
-        const auto& variables = resultFrame_.empty() ? currentFrame()
-                                                     : resultFrame_;
+        auto variables = resultFrame_.empty() ? currentFrame()
+                                              : resultFrame_;
+        if (resultFrame_.empty()) {
+            for (const auto& name : baseGlobalNames_) {
+                if (const auto value =
+                        sessionState_->findGlobal(name)) {
+                    variables[name] = *value;
+                }
+            }
+        }
         for (const auto& [name, value] : variables) {
             result.variables.push_back(RuntimeVariable{name, value});
         }
@@ -667,6 +682,90 @@ private:
         return frames_.back();
     }
 
+    std::string persistentFunctionKey(
+        const HirNode& function) const {
+        if (!function.lexicalClassName.empty()) {
+            return function.lexicalClassName + "." + function.label;
+        }
+        return function.label;
+    }
+
+    std::optional<RuntimeValue> loadStoredVariable(
+        const HirNode& node) {
+        if (node.binding.kind == BindingKind::GlobalVariable) {
+            RuntimeValue value =
+                sessionState_->declareGlobal(node.label);
+            currentFrame()[node.label] = value;
+            return value;
+        }
+        if (node.binding.kind == BindingKind::PersistentVariable) {
+            if (activePersistentFunctionKeys_.empty()) {
+                addDiagnostic(
+                    node,
+                    "persistent variable has no active function: " +
+                        node.label);
+                return std::nullopt;
+            }
+            RuntimeValue value = sessionState_->declarePersistent(
+                callableContext_->identity,
+                activePersistentFunctionKeys_.back(), node.label);
+            currentFrame()[node.label] = value;
+            return value;
+        }
+        const auto variable = currentFrame().find(node.label);
+        return variable == currentFrame().end()
+                   ? std::nullopt
+                   : std::optional<RuntimeValue>(variable->second);
+    }
+
+    void storeVariable(const HirNode& node, RuntimeValue value) {
+        if (node.binding.kind == BindingKind::GlobalVariable) {
+            sessionState_->storeGlobal(node.label, value);
+            currentFrame()[node.label] = std::move(value);
+            return;
+        }
+        if (node.binding.kind == BindingKind::PersistentVariable) {
+            if (activePersistentFunctionKeys_.empty()) {
+                addDiagnostic(
+                    node,
+                    "persistent variable has no active function: " +
+                        node.label);
+                return;
+            }
+            sessionState_->storePersistent(
+                callableContext_->identity,
+                activePersistentFunctionKeys_.back(), node.label, value);
+            currentFrame()[node.label] = std::move(value);
+            return;
+        }
+        currentFrame()[node.label] = std::move(value);
+    }
+
+    void executeWorkspaceDeclaration(const HirNode& node) {
+        for (const auto& name : node.children) {
+            if (node.kind == HirKind::GlobalDeclaration) {
+                currentFrame()[name->label] =
+                    sessionState_->declareGlobal(name->label);
+                if (frames_.size() == 1) {
+                    baseGlobalNames_.insert(name->label);
+                }
+                continue;
+            }
+            if (activePersistentFunctionKeys_.empty()) {
+                addDiagnostic(
+                    *name,
+                    "persistent declaration has no active function: " +
+                        name->label);
+                return;
+            }
+            currentFrame()[name->label] =
+                sessionState_->declarePersistent(
+                    callableContext_->identity,
+                    activePersistentFunctionKeys_.back(),
+                    name->label);
+        }
+    }
+
     void collectFunctions(const HirNode& node) {
         if (node.kind == HirKind::Module) {
             for (const auto& child : node.children) {
@@ -739,6 +838,9 @@ private:
                                              std::move(callerFrame));
         FunctionNameGuard functionName(
             activeFunctionNames_, publicFunctionName(node.label));
+        FunctionNameGuard persistentFunction(
+            activePersistentFunctionKeys_,
+            persistentFunctionKey(node));
 
         const FunctionSignature signature = parseFunctionSignature(node);
         const size_t outputCount =
@@ -1041,6 +1143,10 @@ private:
         case HirKind::Assignment:
             executeAssignment(node);
             break;
+        case HirKind::GlobalDeclaration:
+        case HirKind::PersistentDeclaration:
+            executeWorkspaceDeclaration(node);
+            break;
         case HirKind::Control:
             executeControl(node);
             break;
@@ -1299,10 +1405,9 @@ private:
             return false;
         }
 
-        const auto variable = currentFrame().find(root->label);
+        const auto variable = loadStoredVariable(*root);
         RuntimeLvalueTransaction transaction(
-            variable == currentFrame().end() ? missingValue()
-                                             : variable->second);
+            variable ? *variable : missingValue());
         for (size_t index = 0; index + 1 < segments.size(); ++index) {
             const auto segment = evaluateLvalueSegment(
                 *segments[index], transaction.current());
@@ -1328,7 +1433,7 @@ private:
             addDiagnostic(target, std::move(assigned.error));
             return true;
         }
-        currentFrame()[root->label] = transaction.root();
+        storeVariable(*root, transaction.root());
         return true;
     }
 
@@ -1339,7 +1444,7 @@ private:
         }
         switch (target.kind) {
         case HirKind::NameRef:
-            currentFrame()[target.label] = value;
+            storeVariable(target, value);
             break;
         case HirKind::OutputList:
             for (const auto& child : target.children) {
@@ -1376,7 +1481,8 @@ private:
                           "variable target");
             return;
         }
-        const std::string& name = target.children.front()->label;
+        const HirNode& root = *target.children.front();
+        const std::string& name = root.label;
         std::string fieldName = target.label;
         if (target.label == ".()") {
             if (target.children.size() != 2) {
@@ -1394,24 +1500,23 @@ private:
             fieldName = dynamicName.name;
         }
 
-        auto variable = currentFrame().find(name);
-        if (variable == currentFrame().end()) {
-            variable = currentFrame()
-                           .emplace(name, makeRuntimeStructValue())
-                           .first;
-        }
-        if (!isStruct(variable->second)) {
+        const auto variable = loadStoredVariable(root);
+        RuntimeValue updated =
+            variable ? *variable : makeRuntimeStructValue();
+        if (!isStruct(updated)) {
             addDiagnostic(target,
                           "member assignment requires a structure target: " +
                               name);
             return;
         }
-        if (!runtimeSetStructField(variable->second, std::move(fieldName),
+        if (!runtimeSetStructField(updated, std::move(fieldName),
                                    value)) {
             addDiagnostic(
                 target,
                 "direct field assignment requires a scalar structure");
+            return;
         }
+        storeVariable(root, std::move(updated));
     }
 
     void assignIndexedTarget(const HirNode& target, const RuntimeValue& value,
@@ -1428,14 +1533,14 @@ private:
             return;
         }
 
-        auto variable = currentFrame().find(callee.label);
-        if (variable == currentFrame().end()) {
+        const auto variable = loadStoredVariable(callee);
+        if (!variable) {
             addDiagnostic(target,
                           "indexed assignment target is not defined: " +
                               callee.label);
             return;
         }
-        RuntimeValue& targetValue = variable->second;
+        RuntimeValue targetValue = *variable;
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(target, targetValue);
         if (arguments.empty()) {
@@ -1455,7 +1560,7 @@ private:
                 addDiagnostic(target, result.error);
                 return;
             }
-            targetValue = std::move(result.value);
+            storeVariable(callee, std::move(result.value));
             return;
         }
 
@@ -1478,7 +1583,7 @@ private:
                 addDiagnostic(target, std::move(result.error));
                 return;
             }
-            targetValue = std::move(result.value);
+            storeVariable(callee, std::move(result.value));
             return;
         }
         if (isRuntimeTextValue(targetValue)) {
@@ -1490,7 +1595,9 @@ private:
                                           targetValue, arguments, value);
             if (!result.succeeded) {
                 addDiagnostic(target, result.error);
+                return;
             }
+            storeVariable(callee, std::move(targetValue));
             return;
         }
 
@@ -1511,7 +1618,9 @@ private:
         }
         if (!result.succeeded) {
             addDiagnostic(target, result.error);
+            return;
         }
+        storeVariable(callee, std::move(targetValue));
     }
 
     void assignBraceIndexedTarget(const HirNode& target,
@@ -1523,13 +1632,14 @@ private:
             return;
         }
 
-        auto variable = currentFrame().find(target.children.front()->label);
-        if (variable == currentFrame().end()) {
+        const HirNode& root = *target.children.front();
+        const auto variable = loadStoredVariable(root);
+        if (!variable) {
             addDiagnostic(target, "brace assignment target is not defined: " +
-                                      target.children.front()->label);
+                                      root.label);
             return;
         }
-        RuntimeValue& indexed = variable->second;
+        RuntimeValue indexed = *variable;
 
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(target, indexed);
@@ -1538,7 +1648,9 @@ private:
                 indexed, arguments, value);
             if (!result.succeeded) {
                 addDiagnostic(target, result.error);
+                return;
             }
+            storeVariable(root, std::move(indexed));
             return;
         }
         if (!isCell(indexed)) {
@@ -1551,7 +1663,7 @@ private:
             addDiagnostic(target, std::move(result.error));
             return;
         }
-        indexed = std::move(result.value);
+        storeVariable(root, std::move(result.value));
     }
 
     void executeControl(const HirNode& node) {
@@ -1600,14 +1712,15 @@ private:
             return;
         }
 
-        const std::string loopVariable = assignment.children.front()->label;
+        const HirNode& loopTarget = *assignment.children.front();
         const RuntimeValue range = evaluate(*assignment.children[1]);
         const std::vector<double> values = valuesForLoopRange(range);
 
         LoopDepthGuard loop(loopDepth_);
         for (double value : values) {
-            currentFrame()[loopVariable] =
-                numberValue(value, range.numericClass);
+            storeVariable(
+                loopTarget,
+                numberValue(value, range.numericClass));
             executeRange(node, 1, node.children.size());
             if (diagnosticTrapTriggered()) {
                 return;
@@ -1837,10 +1950,17 @@ private:
             return missingValue();
         }
         if (header.children.front()->kind == HirKind::Assignment) {
-            executeAssignment(*header.children.front());
-            return currentFrame()[header.children.front()
-                                      ->children.front()
-                                      ->label];
+            const HirNode& assignment =
+                *header.children.front();
+            executeAssignment(assignment);
+            if (!assignment.children.empty() &&
+                assignment.children.front()->kind ==
+                    HirKind::NameRef) {
+                const auto value = loadStoredVariable(
+                    *assignment.children.front());
+                return value ? *value : missingValue();
+            }
+            return missingValue();
         }
         return evaluate(*header.children.front());
     }
@@ -1885,6 +2005,8 @@ private:
         case HirKind::ArgumentBlock:
         case HirKind::Argument:
         case HirKind::Import:
+        case HirKind::GlobalDeclaration:
+        case HirKind::PersistentDeclaration:
         case HirKind::Property:
         case HirKind::Event:
         case HirKind::EnumerationMember:
@@ -2035,6 +2157,11 @@ private:
     }
 
     RuntimeValue evaluateName(const HirNode& node) {
+        if (node.binding.kind == BindingKind::GlobalVariable ||
+            node.binding.kind == BindingKind::PersistentVariable) {
+            const auto variable = loadStoredVariable(node);
+            return variable ? *variable : missingValue();
+        }
         const auto variable = currentFrame().find(node.label);
         if (variable != currentFrame().end()) {
             return variable->second;
@@ -3227,6 +3354,9 @@ private:
             }
             if (name == "clear") {
                 currentFrame().clear();
+                if (frames_.size() == 1) {
+                    baseGlobalNames_.clear();
+                }
                 return FunctionCallResult{{missingValue()}};
             }
             if (name == "clc") {
@@ -3794,8 +3924,11 @@ private:
 
     const SemanticResult* semantic_ = nullptr;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
+    std::shared_ptr<RuntimeSessionState> sessionState_;
     std::vector<std::map<std::string, RuntimeValue>> frames_;
     std::vector<std::string> activeFunctionNames_;
+    std::vector<std::string> activePersistentFunctionKeys_;
+    std::set<std::string> baseGlobalNames_;
     std::vector<RuntimeExceptionFrame> exceptionCallerFrames_;
     std::map<std::string, const HirNode*> functionsByName_;
     ArgumentContractCatalog argumentCatalog_;
@@ -3814,8 +3947,14 @@ private:
 } // namespace
 
 InterpreterResult Interpreter::run(const SemanticResult& semantic) {
+    return run(semantic, InterpreterOptions{});
+}
+
+InterpreterResult Interpreter::run(
+    const SemanticResult& semantic,
+    const InterpreterOptions& options) {
     InterpreterContext context;
-    return context.run(semantic);
+    return context.run(semantic, options);
 }
 
 RuntimeValue makeRuntimeStructValue(
