@@ -322,11 +322,18 @@ function families, not an unbounded builtin count.
 
 ### v0.80: Function Extension Infrastructure
 
+- Status: closed by the v0.80 registry implementation and linked evidence in
+  `docs/v0.80.md` and `BUILTIN-002`.
 - Land the unified builtin registry, descriptor, call/result, and error model.
 - Migrate representative math, reduction, scan, array, multi-output, and
   context builtins with cross-tier consistency tests.
 - Publish the extension-author rules and a reusable builtin conformance-test
   template.
+- Preserve `.m` functions as the smallest extension level, define the
+  source-level C++ registry path, and reserve the narrow external C/C++ adapter
+  and stable ABI for v0.90.
+- Keep broad long-tail function growth in v1.x; v0.80 proves that ordinary
+  additions no longer require parallel semantic, HIR, VM, and JIT name lists.
 
 ### v0.90: Embedding And Release Candidate APIs
 

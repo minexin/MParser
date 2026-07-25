@@ -1,6 +1,6 @@
 #include "mparser/typed_region_executor.h"
+#include "mparser/builtin_registry.h"
 #include "mparser/native_scalar_jit.h"
-#include "mparser/runtime_math.h"
 #include "mparser/runtime_range.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/typed_scalar_kernel.h"
@@ -183,38 +183,48 @@ std::optional<ScalarKernelOp> binaryOperation(std::string_view operation) {
     return std::nullopt;
 }
 
-std::optional<ScalarKernelOp> mathOperation(std::string_view name) {
-    if (name == "abs") {
+std::optional<ScalarKernelOp> mathOperation(
+    BuiltinTypedLowering lowering) {
+    if (lowering == BuiltinTypedLowering::Absolute) {
         return ScalarKernelOp::Absolute;
     }
-    if (name == "acos") {
+    if (lowering == BuiltinTypedLowering::ArcCosine) {
         return ScalarKernelOp::ArcCosine;
     }
-    if (name == "asin") {
+    if (lowering == BuiltinTypedLowering::ArcSine) {
         return ScalarKernelOp::ArcSine;
     }
-    if (name == "atan") {
+    if (lowering == BuiltinTypedLowering::ArcTangent) {
         return ScalarKernelOp::ArcTangent;
     }
-    if (name == "cos") {
+    if (lowering == BuiltinTypedLowering::Cosine) {
         return ScalarKernelOp::Cosine;
     }
-    if (name == "exp") {
+    if (lowering == BuiltinTypedLowering::Exponential) {
         return ScalarKernelOp::Exponential;
     }
-    if (name == "log") {
+    if (lowering == BuiltinTypedLowering::Logarithm) {
         return ScalarKernelOp::Logarithm;
     }
-    if (name == "sin") {
+    if (lowering == BuiltinTypedLowering::Sine) {
         return ScalarKernelOp::Sine;
     }
-    if (name == "sqrt") {
+    if (lowering == BuiltinTypedLowering::SquareRoot) {
         return ScalarKernelOp::SquareRoot;
     }
-    if (name == "tan") {
+    if (lowering == BuiltinTypedLowering::Tangent) {
         return ScalarKernelOp::Tangent;
     }
     return std::nullopt;
+}
+
+std::optional<ScalarKernelOp> mathOperation(
+    const BuiltinRegistry& builtinRegistry,
+    std::string_view name) {
+    const BuiltinDescriptor* descriptor =
+        builtinRegistry.find(name);
+    return descriptor ? mathOperation(descriptor->typedLowering)
+                      : std::nullopt;
 }
 
 std::optional<LoopRangeView> loopValues(const RuntimeValue& range) {
@@ -328,6 +338,7 @@ bool requireStack(const std::vector<ScalarKernelStackValue>& stack,
 std::optional<ScalarKernel> compileKernel(
     const BytecodeProgram& program, const BytecodeRegionContract& region,
     const RuntimeWorkspace& variables,
+    const BuiltinRegistry& builtinRegistry,
     std::string& failureReason) {
     ScalarKernel kernel;
     kernel.instructions.reserve(region.bodyEndPc - region.bodyBeginPc);
@@ -408,8 +419,12 @@ std::optional<ScalarKernel> compileKernel(
         ++pendingSourceInstructionCount;
         switch (instruction.op) {
         case BytecodeOp::LoadName: {
+            const BuiltinDescriptor* descriptor =
+                builtinRegistry.find(instruction.operand);
             if (instruction.binding.kind == BindingKind::Builtin &&
-                isRuntimePureUnaryMathBuiltin(instruction.operand)) {
+                descriptor &&
+                descriptor->typedLowering !=
+                    BuiltinTypedLowering::None) {
                 break;
             }
             if (const auto slot = findSlot(kernel, instruction.operand)) {
@@ -613,7 +628,8 @@ std::optional<ScalarKernel> compileKernel(
                     return std::nullopt;
                 }
                 const auto operation =
-                    mathOperation(instruction.calleeName);
+                    mathOperation(builtinRegistry,
+                                  instruction.calleeName);
                 if (!operation) {
                     failureReason =
                         "typed region builtin call is unsupported";
@@ -1288,6 +1304,15 @@ bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
 
 } // namespace
 
+ScalarTypedRegionExecutor::ScalarTypedRegionExecutor()
+    : builtinRegistry_(defaultBuiltinRegistry()) {}
+
+ScalarTypedRegionExecutor::ScalarTypedRegionExecutor(
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry)
+    : builtinRegistry_(builtinRegistry
+                           ? std::move(builtinRegistry)
+                           : defaultBuiltinRegistry()) {}
+
 TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     const BytecodeProgram& program, const BytecodeRegionContract& region,
     const RuntimeValue& loopRange,
@@ -1343,7 +1368,9 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     }
 
     std::string compileFailure;
-    auto kernel = compileKernel(program, region, variables, compileFailure);
+    auto kernel = compileKernel(
+        program, region, variables, *builtinRegistry_,
+        compileFailure);
     if (!kernel) {
         return fallback(RuntimeFallbackKind::KernelRejected,
                         std::move(compileFailure));

@@ -24,10 +24,21 @@ struct CompiledFunctionInfo {
     SourceSpan span;
 };
 
+struct CompiledModuleCompileOptions {
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry;
+};
+
 class CompiledModule {
 public:
     static CompiledModule compile(std::string source);
-    static CompiledModule compile(std::vector<SourceUnit> sources);
+    static CompiledModule compile(
+        std::string source,
+        const CompiledModuleCompileOptions& options);
+    static CompiledModule compile(
+        std::vector<SourceUnit> sources);
+    static CompiledModule compile(
+        std::vector<SourceUnit> sources,
+        const CompiledModuleCompileOptions& options);
 
     bool valid() const;
     std::string_view source() const;

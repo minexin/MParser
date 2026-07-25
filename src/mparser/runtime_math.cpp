@@ -46,4 +46,33 @@ runtimeApplyPureUnaryMathBuiltin(std::string_view name, double value) {
     return std::nullopt;
 }
 
+std::optional<RuntimeValue>
+runtimeApplyPureUnaryMathBuiltin(std::string_view name,
+                                 const RuntimeValue& value) {
+    if (value.kind == RuntimeValueKind::Number) {
+        const auto mapped =
+            runtimeApplyPureUnaryMathBuiltin(name, value.number);
+        return mapped
+                   ? std::optional<RuntimeValue>(
+                         makeRuntimeNumberValue(*mapped))
+                   : std::nullopt;
+    }
+    if (value.kind != RuntimeValueKind::Vector &&
+        value.kind != RuntimeValueKind::Matrix) {
+        return std::nullopt;
+    }
+
+    RuntimeValue result = value;
+    result.numericClass = RuntimeNumericClass::Double;
+    for (double& element : result.elements) {
+        const auto mapped =
+            runtimeApplyPureUnaryMathBuiltin(name, element);
+        if (!mapped) {
+            return std::nullopt;
+        }
+        element = *mapped;
+    }
+    return result;
+}
+
 } // namespace mparser

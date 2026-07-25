@@ -1271,6 +1271,39 @@ This is an internal source-level freeze for the builtin registry and remaining
 engine work. Struct layout, public symbol visibility, serialization, the narrow
 C ABI, and the versioned machine protocol remain v0.90 release gates.
 
+v0.80 places one `BuiltinRegistry` between semantic name resolution and every
+runtime tier. A `SemanticResult` retains a shared immutable registry, so
+compiled artifacts cannot resolve a custom name with one catalog and execute
+it with another. The default catalog is frozen; embedders construct a mutable
+copy with defaults, add descriptors, freeze it, and supply it through
+`CompiledModuleCompileOptions`.
+
+Each `BuiltinDescriptor` owns canonical and alias names, input/output arity,
+argument value/shape constraints, implementation kind, purity, determinism,
+thread-safety, side-effect and context flags, diagnostic identity, and optional
+typed lowering. `BuiltinCall` borrows arguments and invocation context;
+`BuiltinResult` returns exact requested outputs plus diagnostics. The registry
+validates required context, converts host exceptions, rejects transient or
+malformed output values, and enforces the same arity contract before either
+baseline engine observes the result.
+
+Shared and context handlers run identically from HIR and bytecode. Intrinsics
+remain explicit engine operations, and unsupported catalog entries produce a
+deterministic diagnostic. Representative math, reduction, scan,
+array-transform, multi-output, and warning-state builtins have moved to shared
+handlers; their old baseline-engine dispatch branches no longer exist.
+Semantic resolution, builtin handles, typed-region analysis, optimization
+planning, portable execution, native SLJIT, adaptive planning, and benchmark
+planning all consume the retained descriptor metadata.
+
+Typed lowering is a closed set of audited kernel identities, not an arbitrary
+native callback. A descriptor lacking a valid pure lowering executes in the
+VM. This keeps optimization coverage additive and preserves the v1.0 rule that
+legal but unoptimized target-subset code must remain correct. Extension levels,
+ownership rules, diagnostics, threading, conformance tests, and the future C
+adapter boundary are specified in
+[extending-builtins.md](extending-builtins.md).
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,
 optional LLVM ORC lowering behind the same backend contract, persistent

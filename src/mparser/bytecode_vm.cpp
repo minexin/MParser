@@ -1,5 +1,6 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/argument_contract.h"
+#include "mparser/builtin_registry.h"
 #include "mparser/function_signature.h"
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_argument_validation.h"
@@ -9,13 +10,10 @@
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_lvalue.h"
-#include "mparser/runtime_math.h"
 #include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_object.h"
 #include "mparser/runtime_range.h"
-#include "mparser/runtime_reduction.h"
-#include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
@@ -4734,7 +4732,7 @@ private:
             return true;
         }
 
-        if (isKnownBuiltinName(target)) {
+        if (builtinRegistry().contains(target)) {
             info.kind = RuntimeFunctionHandleKind::Builtin;
             info.backend = RuntimeFunctionHandleBackend::Independent;
             info.targetName = target;
@@ -4820,7 +4818,7 @@ private:
             }
         }
 
-        if (isKnownBuiltinName(name)) {
+        if (builtinRegistry().contains(name)) {
             info.kind = RuntimeFunctionHandleKind::Builtin;
             info.backend = RuntimeFunctionHandleBackend::Independent;
             info.targetName = name;
@@ -4990,7 +4988,8 @@ private:
             return std::nullopt;
         }
 
-        ScalarTypedRegionExecutor executor;
+        ScalarTypedRegionExecutor executor(
+            semantic_ ? semantic_->builtinRegistry : nullptr);
         auto result = executor.execute(
             *program_, active->second.contract, rangeValue.value,
             currentFrame(), typedRegionBackend_);
@@ -11249,6 +11248,32 @@ private:
             return {};
         }
 
+        if (const BuiltinDescriptor* descriptor =
+                builtinRegistry().find(name);
+            descriptor &&
+            descriptor->implementation !=
+                BuiltinImplementationKind::Intrinsic) {
+            RuntimeObjectArrayPolicy objectPolicy =
+                objectArrayPolicy(instruction);
+            BuiltinCallContext context;
+            context.workspace = &currentFrame();
+            context.warningState = &warningState_;
+            context.objectArrayPolicy = &objectPolicy;
+            BuiltinResult result = builtinRegistry().invoke(
+                name,
+                BuiltinCall{
+                    arguments,
+                    static_cast<size_t>(requestedCount),
+                    instruction.span,
+                    &context});
+            appendBuiltinDiagnostics(
+                instruction, std::move(result.diagnostics));
+            if (!result.succeeded) {
+                return missingOutputs(requestedCount);
+            }
+            return std::move(result.outputs);
+        }
+
         if (name == "feval") {
             if (arguments.empty()) {
                 addDiagnostic(
@@ -11331,26 +11356,6 @@ private:
                           "MException supports at most one output",
                           "MParser:InvalidException");
             return missingOutputs(requestedCount);
-        }
-
-        if (name == "warning" || name == "lastwarn") {
-            auto result =
-                name == "warning"
-                    ? runtimeWarning(arguments,
-                                     static_cast<size_t>(requestedCount),
-                                     warningState_)
-                    : runtimeLastWarning(
-                          arguments, static_cast<size_t>(requestedCount),
-                          warningState_);
-            if (!result.succeeded) {
-                addDiagnostic(instruction, std::move(result.error),
-                              "MParser:InvalidWarning");
-                return missingOutputs(requestedCount);
-            }
-            if (result.emitted) {
-                addWarning(instruction, std::move(*result.emitted));
-            }
-            return std::move(result.outputs);
         }
 
         if (name == "addCause" || name == "getReport") {
@@ -11483,27 +11488,6 @@ private:
         if (name == "enumeration") {
             return enumerationBuiltinOutputs(instruction, arguments,
                                              requestedCount);
-        }
-
-        if (isRuntimeReductionBuiltin(name)) {
-            auto result = runtimeReductionBuiltin(
-                name, arguments, static_cast<size_t>(requestedCount));
-            if (!result.succeeded) {
-                addDiagnostic(instruction,
-                              "bytecode " + std::move(result.error));
-                return missingOutputs(requestedCount);
-            }
-            return std::move(result.outputs);
-        }
-        if (isRuntimeScanBuiltin(name)) {
-            auto result = runtimeScanBuiltin(
-                name, arguments, static_cast<size_t>(requestedCount));
-            if (!result.succeeded) {
-                addDiagnostic(instruction,
-                              "bytecode " + std::move(result.error));
-                return missingOutputs(requestedCount);
-            }
-            return std::move(result.outputs);
         }
 
         if (requestedCount == 0) {
@@ -13150,15 +13134,6 @@ private:
                 std::chrono::steady_clock::now() - *ticStart_;
             return numberValue(elapsed.count());
         }
-        if (isRuntimeArrayOperationBuiltin(name)) {
-            auto result = runtimeArrayOperationBuiltin(
-                name, arguments, objectArrayPolicy(instruction));
-            if (!result.succeeded) {
-                addDiagnostic(instruction, "bytecode " + result.error);
-                return missingValue();
-            }
-            return std::move(result.value);
-        }
         if (name == "cell") {
             const auto shape = constructorShape(instruction, arguments);
             if (!shape) {
@@ -13548,18 +13523,6 @@ private:
             return std::move(result.value);
         }
 
-        if (arguments.size() != 1 || !isNumeric(arguments.front())) {
-            addDiagnostic(instruction,
-                          "bytecode builtin expects one numeric argument: " +
-                              name);
-            return missingValue();
-        }
-
-        if (isRuntimePureUnaryMathBuiltin(name)) {
-            return mapUnary(arguments.front(), [&](double value) {
-                return *runtimeApplyPureUnaryMathBuiltin(name, value);
-            });
-        }
         addDiagnostic(instruction,
                       "bytecode builtin is not executable yet: " + name);
         return missingValue();
@@ -14203,13 +14166,34 @@ private:
         diagnostics_.push_back(std::move(diagnostic));
     }
 
-    void addWarning(const BytecodeInstruction& instruction,
-                    RuntimeWarningRecord warning) {
-        Diagnostic diagnostic{
-            instruction.span, std::move(warning.message),
-            std::move(warning.identifier), DiagnosticSeverity::Warning};
-        diagnostic.stack = exceptionFrames(instruction.span);
-        warnings_.push_back(std::move(diagnostic));
+    const BuiltinRegistry& builtinRegistry() const {
+        if (semantic_ && semantic_->builtinRegistry) {
+            return *semantic_->builtinRegistry;
+        }
+        return *defaultBuiltinRegistry();
+    }
+
+    void appendBuiltinDiagnostics(
+        const BytecodeInstruction& instruction,
+        std::vector<Diagnostic> diagnostics) {
+        for (auto& diagnostic : diagnostics) {
+            if (diagnostic.span.begin.sourceId ==
+                kInvalidSourceId) {
+                diagnostic.span = instruction.span;
+            }
+            if (diagnostic.stack.empty()) {
+                diagnostic.stack =
+                    exceptionFrames(instruction.span);
+            }
+            if (diagnostic.severity ==
+                DiagnosticSeverity::Warning) {
+                warnings_.push_back(std::move(diagnostic));
+                continue;
+            }
+            pendingException_ = runtimeExceptionFromDiagnostic(
+                diagnostic, diagnostic.stack);
+            diagnostics_.push_back(std::move(diagnostic));
+        }
     }
 
     void raiseException(const BytecodeInstruction& instruction,

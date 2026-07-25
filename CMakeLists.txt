@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.79.0 LANGUAGES C CXX)
+project(MParser VERSION 0.80.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -50,6 +50,7 @@ add_library(mparser_core
     src/mparser/adaptive_module_runtime.cpp
     src/mparser/adaptive_bytecode_vm.cpp
     src/mparser/argument_contract.cpp
+    src/mparser/builtin_registry.cpp
     src/mparser/bytecode.cpp
     src/mparser/bytecode_dump.cpp
     src/mparser/bytecode_region.cpp
@@ -1168,6 +1169,31 @@ add_test(NAME text_runtime_production_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
 set_tests_properties(text_runtime_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 36")
+
+add_executable(builtin_registry_smoke_tests
+    tests/builtin_registry_smoke.cpp)
+target_link_libraries(builtin_registry_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME builtin_registry_smoke
+    COMMAND builtin_registry_smoke_tests)
+
+add_test(NAME builtin_registry_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/builtin_registry_demo.m)
+set_tests_properties(builtin_registry_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 510446")
+
+add_test(NAME builtin_registry_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/builtin_registry_demo.m)
+set_tests_properties(builtin_registry_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 510446")
+
+add_test(NAME builtin_registry_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/builtin_registry_demo.m)
+set_tests_properties(builtin_registry_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 510446")
 
 # The smoke executables use standard assert as a lightweight test primitive.
 # Keep those contracts active in optimized CI and release-validation builds.

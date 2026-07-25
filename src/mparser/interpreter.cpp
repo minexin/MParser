@@ -1,5 +1,6 @@
 #include "mparser/interpreter.h"
 #include "mparser/argument_contract.h"
+#include "mparser/builtin_registry.h"
 #include "mparser/function_signature.h"
 #include "mparser/runtime_call_frame.h"
 #include "mparser/runtime_array_ops.h"
@@ -9,13 +10,10 @@
 #include "mparser/runtime_exception.h"
 #include "mparser/runtime_index.h"
 #include "mparser/runtime_lvalue.h"
-#include "mparser/runtime_math.h"
 #include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_object.h"
 #include "mparser/runtime_range.h"
-#include "mparser/runtime_reduction.h"
-#include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
@@ -615,15 +613,6 @@ private:
         diagnostics_.push_back(std::move(diagnostic));
     }
 
-    void addWarning(const HirNode& node,
-                    RuntimeWarningRecord warning) {
-        Diagnostic diagnostic{
-            node.span, std::move(warning.message),
-            std::move(warning.identifier), DiagnosticSeverity::Warning};
-        diagnostic.stack = exceptionFrames(node.span);
-        warnings_.push_back(std::move(diagnostic));
-    }
-
     void raiseException(const HirNode& node,
                         const RuntimeValue& exception,
                         RuntimeExceptionStackPolicy policy) {
@@ -653,6 +642,35 @@ private:
 
     const RuntimeWorkspace& currentFrame() const {
         return frames_.back().workspace;
+    }
+
+    const BuiltinRegistry& builtinRegistry() const {
+        if (semantic_ && semantic_->builtinRegistry) {
+            return *semantic_->builtinRegistry;
+        }
+        return *defaultBuiltinRegistry();
+    }
+
+    void appendBuiltinDiagnostics(
+        const HirNode& node,
+        std::vector<Diagnostic> diagnostics) {
+        for (auto& diagnostic : diagnostics) {
+            if (diagnostic.span.begin.sourceId ==
+                kInvalidSourceId) {
+                diagnostic.span = node.span;
+            }
+            if (diagnostic.stack.empty()) {
+                diagnostic.stack = exceptionFrames(node.span);
+            }
+            if (diagnostic.severity ==
+                DiagnosticSeverity::Warning) {
+                warnings_.push_back(std::move(diagnostic));
+                continue;
+            }
+            pendingException_ = runtimeExceptionFromDiagnostic(
+                diagnostic, diagnostic.stack);
+            diagnostics_.push_back(std::move(diagnostic));
+        }
     }
 
     std::string persistentFunctionKey(
@@ -2765,7 +2783,7 @@ private:
             info.sourceFile = sourceFileName(candidate->span);
             return makeRuntimeFunctionHandleValue(std::move(info));
         }
-        if (isKnownBuiltinName(target)) {
+        if (builtinRegistry().contains(target)) {
             info.kind = RuntimeFunctionHandleKind::Builtin;
             info.backend = RuntimeFunctionHandleBackend::Independent;
             info.targetName = std::string(target);
@@ -2830,7 +2848,7 @@ private:
             return makeRuntimeFunctionHandleValue(std::move(info));
         }
         if (node.binding.kind == BindingKind::Builtin ||
-            isKnownBuiltinName(node.label)) {
+            builtinRegistry().contains(node.label)) {
             info.kind = RuntimeFunctionHandleKind::Builtin;
             info.backend = RuntimeFunctionHandleBackend::Independent;
             info.targetName = node.label;
@@ -3075,6 +3093,25 @@ private:
                 requestedOutputCount, missingValue())};
         };
 
+        if (const BuiltinDescriptor* descriptor =
+                builtinRegistry().find(name);
+            descriptor &&
+            descriptor->implementation !=
+                BuiltinImplementationKind::Intrinsic) {
+            BuiltinCallContext context;
+            context.workspace = &currentFrame();
+            context.warningState = &warningState_;
+            BuiltinResult result = builtinRegistry().invoke(
+                name, BuiltinCall{arguments, requestedOutputCount,
+                                  node.span, &context});
+            appendBuiltinDiagnostics(
+                node, std::move(result.diagnostics));
+            if (!result.succeeded) {
+                return missingOutputs();
+            }
+            return FunctionCallResult{std::move(result.outputs)};
+        }
+
         if (name == "feval") {
             if (arguments.empty()) {
                 addDiagnostic(
@@ -3294,25 +3331,6 @@ private:
                            RuntimeExceptionStackPolicy::Replace);
             return FunctionCallResult{{missingValue()}};
         }
-        if (name == "warning" || name == "lastwarn") {
-            auto result =
-                name == "warning"
-                    ? runtimeWarning(arguments, requestedOutputCount,
-                                     warningState_)
-                    : runtimeLastWarning(arguments, requestedOutputCount,
-                                         warningState_);
-            if (!result.succeeded) {
-                addDiagnostic(node, std::move(result.error),
-                              "MParser:InvalidWarning");
-                return FunctionCallResult{
-                    std::vector<RuntimeValue>(requestedOutputCount,
-                                              missingValue())};
-            }
-            if (result.emitted) {
-                addWarning(node, std::move(*result.emitted));
-            }
-            return FunctionCallResult{std::move(result.outputs)};
-        }
         if (name == "clear" || name == "clc" || name == "tic" ||
             name == "toc") {
             if (!arguments.empty()) {
@@ -3340,36 +3358,6 @@ private:
             const std::chrono::duration<double> elapsed =
                 std::chrono::steady_clock::now() - *ticStart_;
             return FunctionCallResult{{numberValue(elapsed.count())}};
-        }
-        if (isRuntimeReductionBuiltin(name)) {
-            auto result = runtimeReductionBuiltin(
-                name, arguments, requestedOutputCount);
-            if (!result.succeeded) {
-                addDiagnostic(node, std::move(result.error));
-                return FunctionCallResult{
-                    std::vector<RuntimeValue>(requestedOutputCount,
-                                              missingValue())};
-            }
-            return FunctionCallResult{std::move(result.outputs)};
-        }
-        if (isRuntimeScanBuiltin(name)) {
-            auto result = runtimeScanBuiltin(
-                name, arguments, requestedOutputCount);
-            if (!result.succeeded) {
-                addDiagnostic(node, std::move(result.error));
-                return FunctionCallResult{
-                    std::vector<RuntimeValue>(requestedOutputCount,
-                                              missingValue())};
-            }
-            return FunctionCallResult{std::move(result.outputs)};
-        }
-        if (isRuntimeArrayOperationBuiltin(name)) {
-            auto result = runtimeArrayOperationBuiltin(name, arguments);
-            if (!result.succeeded) {
-                addDiagnostic(node, result.error);
-                return FunctionCallResult{{missingValue()}};
-            }
-            return FunctionCallResult{{std::move(result.value)}};
         }
         if (name == "zeros" || name == "ones" || name == "eye" ||
             name == "true" || name == "false") {
@@ -3613,19 +3601,6 @@ private:
                 elementCount(arguments.front()) == 0)}};
         }
 
-        if (arguments.size() != 1 || !isNumeric(arguments.front())) {
-            addDiagnostic(node, "builtin call currently requires one numeric "
-                                "argument: " +
-                                    name);
-            return FunctionCallResult{{missingValue()}};
-        }
-
-        if (isRuntimePureUnaryMathBuiltin(name)) {
-            return FunctionCallResult{{mapUnary(
-                arguments.front(), [&](double value) {
-                    return *runtimeApplyPureUnaryMathBuiltin(name, value);
-                })}};
-        }
         addDiagnostic(node, "builtin is not executable yet: " + name);
         return FunctionCallResult{{missingValue()}};
     }

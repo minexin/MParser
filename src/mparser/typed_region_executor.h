@@ -5,10 +5,13 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 
 namespace mparser {
+
+class BuiltinRegistry;
 
 enum class TypedRegionExecutionStatus {
     Executed,
@@ -49,12 +52,19 @@ struct TypedRegionExecutionResult {
 
 class ScalarTypedRegionExecutor {
 public:
+    ScalarTypedRegionExecutor();
+    explicit ScalarTypedRegionExecutor(
+        std::shared_ptr<const BuiltinRegistry> builtinRegistry);
+
     TypedRegionExecutionResult execute(
         const BytecodeProgram& program,
         const BytecodeRegionContract& region,
         const RuntimeValue& loopRange,
         const RuntimeWorkspace& variables,
         TypedRegionBackend backend = TypedRegionBackend::Auto) const;
+
+private:
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
 };
 
 } // namespace mparser

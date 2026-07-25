@@ -1,5 +1,5 @@
 #include "mparser/bytecode_region.h"
-#include "mparser/runtime_math.h"
+#include "mparser/builtin_registry.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -9,6 +9,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace mparser {
@@ -202,6 +203,7 @@ void finalizeContract(BytecodeRegionContract& contract) {
 
 void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
                         size_t exitPc, const LoopStructure& loops,
+                        const BuiltinRegistry& builtinRegistry,
                         std::set<std::string>& reads,
                         std::set<std::string>& writes,
                         std::set<std::string>& outputs,
@@ -274,10 +276,13 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         }
         break;
     case BytecodeOp::CallOrIndex:
-        if (instruction.binding.kind == BindingKind::Builtin &&
+        if (const BuiltinDescriptor* descriptor =
+                builtinRegistry.find(instruction.calleeName);
+            instruction.binding.kind == BindingKind::Builtin &&
             instruction.operandCount == 1 &&
-            instruction.resultCount == 1 &&
-            isRuntimePureUnaryMathBuiltin(instruction.calleeName)) {
+            instruction.resultCount == 1 && descriptor &&
+            descriptor->purity == BuiltinPurity::Pure &&
+            descriptor->typedLowering != BuiltinTypedLowering::None) {
             calls.insert(instruction.calleeName);
             break;
         }
@@ -543,7 +548,9 @@ BytecodeRegionContract analyzePointRegion(const BytecodeProgram& program,
 }
 
 BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
-                                         size_t sourcePc) {
+                                         size_t sourcePc,
+                                         const BuiltinRegistry&
+                                             builtinRegistry) {
     BytecodeRegionContract contract;
     if (sourcePc >= program.instructions.size()) {
         finalizeContract(contract);
@@ -601,7 +608,8 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
     std::set<std::string> calls;
     for (size_t pc = sourcePc; pc < exitPc; ++pc) {
         analyzeInstruction(program.instructions[pc], pc, exitPc, loops,
-                           reads, writes, outputs, calls, contract);
+                           builtinRegistry, reads, writes, outputs,
+                           calls, contract);
     }
     if (!collectDefiniteInputs(program, sourcePc, exitPc, inputs)) {
         contract.hasUnsupportedControlFlow = true;
@@ -622,11 +630,21 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
 
 } // namespace
 
+BytecodeRegionAnalyzer::BytecodeRegionAnalyzer()
+    : builtinRegistry_(defaultBuiltinRegistry()) {}
+
+BytecodeRegionAnalyzer::BytecodeRegionAnalyzer(
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry)
+    : builtinRegistry_(builtinRegistry
+                           ? std::move(builtinRegistry)
+                           : defaultBuiltinRegistry()) {}
+
 BytecodeRegionContract BytecodeRegionAnalyzer::analyze(
     const BytecodeProgram& program, std::string_view candidateKind,
     size_t sourcePc, std::string_view target) const {
     if (candidateKind == "hot-loop") {
-        return analyzeLoopRegion(program, sourcePc);
+        return analyzeLoopRegion(
+            program, sourcePc, *builtinRegistry_);
     }
     return analyzePointRegion(program, sourcePc, target);
 }

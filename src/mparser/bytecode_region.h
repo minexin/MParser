@@ -4,11 +4,14 @@
 #include "mparser/runtime_fallback.h"
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace mparser {
+
+class BuiltinRegistry;
 
 struct BytecodeRegionContract {
     bool available = false;
@@ -41,9 +44,16 @@ struct BytecodeRegionContract {
 
 class BytecodeRegionAnalyzer {
 public:
+    BytecodeRegionAnalyzer();
+    explicit BytecodeRegionAnalyzer(
+        std::shared_ptr<const BuiltinRegistry> builtinRegistry);
+
     BytecodeRegionContract analyze(
         const BytecodeProgram& program, std::string_view candidateKind,
         size_t sourcePc, std::string_view target) const;
+
+private:
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
 };
 
 } // namespace mparser

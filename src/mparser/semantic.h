@@ -11,6 +11,8 @@
 
 namespace mparser {
 
+class BuiltinRegistry;
+
 enum class HirKind {
     Module,
     Class,
@@ -137,13 +139,21 @@ struct SemanticResult {
     std::vector<SemanticSymbol> symbols;
     std::vector<SemanticSourceInfo> sources;
     std::vector<Diagnostic> diagnostics;
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry;
 };
 
 class SemanticAnalyzer {
 public:
+    SemanticAnalyzer();
+    explicit SemanticAnalyzer(
+        std::shared_ptr<const BuiltinRegistry> builtinRegistry);
+
     SemanticResult analyze(
         const SyntaxNode& root,
         const std::vector<SourceUnit>& sources = {});
+
+private:
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
 };
 
 const char* hirKindName(HirKind kind);

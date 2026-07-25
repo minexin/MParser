@@ -3,6 +3,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace mparser {
 namespace {
@@ -63,8 +64,17 @@ std::map<size_t, bool> hotLoopMap(const BytecodeVmProfile& profile) {
 } // namespace
 
 BytecodeOptimizationPlan
+BytecodeOptimizationPlanner::plan(
+    const BytecodeVmProfile& profile,
+    const BytecodeProgram& program) const {
+    return plan(profile, program, {});
+}
+
+BytecodeOptimizationPlan
 BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
-                                  const BytecodeProgram& program) const {
+                                  const BytecodeProgram& program,
+                                  std::shared_ptr<const BuiltinRegistry>
+                                      builtinRegistry) const {
     BytecodeOptimizationPlan result;
     result.hotLoopThreshold = profile.hotLoopThreshold;
     const auto hotLoops = hotLoopMap(profile);
@@ -138,7 +148,8 @@ BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
         result.candidates.push_back(std::move(candidate));
     }
 
-    BytecodeRegionAnalyzer regionAnalyzer;
+    BytecodeRegionAnalyzer regionAnalyzer(
+        std::move(builtinRegistry));
     for (auto& candidate : result.candidates) {
         candidate.region = regionAnalyzer.analyze(
             program, candidate.kind, candidate.pc, candidate.target);
@@ -147,10 +158,18 @@ BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
     return result;
 }
 
-BytecodeOptimizationPlan BytecodeOptimizationPlanner::planStaticLoops(
+BytecodeOptimizationPlan
+BytecodeOptimizationPlanner::planStaticLoops(
     const BytecodeProgram& program) const {
+    return planStaticLoops(program, {});
+}
+
+BytecodeOptimizationPlan BytecodeOptimizationPlanner::planStaticLoops(
+    const BytecodeProgram& program,
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry) const {
     BytecodeOptimizationPlan result;
-    BytecodeRegionAnalyzer regionAnalyzer;
+    BytecodeRegionAnalyzer regionAnalyzer(
+        std::move(builtinRegistry));
 
     for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
         const auto& instruction = program.instructions[pc];

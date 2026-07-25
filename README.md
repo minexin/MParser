@@ -1,8 +1,11 @@
 # MParser
 
-Current milestone: v0.79.0. See [docs/v0.79.md](docs/v0.79.md) for the
+Current milestone: v0.80.0. See [docs/v0.80.md](docs/v0.80.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan. Previous boundaries are kept in [docs/v0.78.md](docs/v0.78.md),
+iteration plan, and [docs/extending-builtins.md](docs/extending-builtins.md)
+for the source-level C++ builtin extension contract. Previous boundaries are
+kept in [docs/v0.79.md](docs/v0.79.md),
+[docs/v0.78.md](docs/v0.78.md),
 [docs/v0.77.md](docs/v0.77.md),
 [docs/v0.76.md](docs/v0.76.md),
 [docs/v0.75.md](docs/v0.75.md),
@@ -804,6 +807,21 @@ SLJIT, adaptive invalidation, and CLI detail output carry a
 `RuntimeFallbackKind` in addition to explanatory text. The source contract is
 stable enough for the v0.80 builtin registry; the public C++ ABI and future C
 ABI remain intentionally pre-freeze until the v0.90 embedding gate.
+
+v0.80 makes `BuiltinRegistry` and `BuiltinDescriptor` the shared source of
+truth for semantic builtin resolution, function handles, HIR/bytecode
+execution, typed-region selection, and portable/native lowering. Descriptors
+declare arity, value/shape constraints, purity, determinism, thread safety,
+side effects, context permissions, diagnostics, and typed/JIT eligibility.
+Representative math, reduction, scan, array-transform, multi-output, and
+warning-state families now execute through shared `BuiltinCall`/
+`BuiltinResult` handlers; the displaced interpreter and VM dispatch branches
+are gone. Embedders may compile a module with a frozen custom registry, and the
+module retains it across all tiers. Registration, host exceptions, context,
+output ownership, HIR/VM parity, handles, shadowing, portable typed execution,
+and native SLJIT execution are covered by one reusable conformance suite.
+This stabilizes how the function library grows; it does not claim broad
+long-tail MATLAB or toolbox function coverage.
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,

@@ -178,8 +178,9 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
     mergeProfile(result.runtime.profile);
     BytecodeOptimizationPlanner planner;
     BytecodeTypedIrBuilder builder;
-    auto candidateModule =
-        builder.build(planner.plan(accumulatedProfile_, *program_));
+    auto candidateModule = builder.build(planner.plan(
+        accumulatedProfile_, *program_,
+        semantic_->builtinRegistry));
     applyRetrainingRequirements(candidateModule);
     const size_t executableCount =
         executableRegionCount(candidateModule);

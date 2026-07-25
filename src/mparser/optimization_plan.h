@@ -3,6 +3,7 @@
 #include "mparser/bytecode_region.h"
 #include "mparser/bytecode_vm.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -39,8 +40,15 @@ class BytecodeOptimizationPlanner {
 public:
     BytecodeOptimizationPlan plan(const BytecodeVmProfile& profile,
                                   const BytecodeProgram& program) const;
+    BytecodeOptimizationPlan plan(
+        const BytecodeVmProfile& profile,
+        const BytecodeProgram& program,
+        std::shared_ptr<const BuiltinRegistry> builtinRegistry) const;
     BytecodeOptimizationPlan planStaticLoops(
         const BytecodeProgram& program) const;
+    BytecodeOptimizationPlan planStaticLoops(
+        const BytecodeProgram& program,
+        std::shared_ptr<const BuiltinRegistry> builtinRegistry) const;
 };
 
 } // namespace mparser

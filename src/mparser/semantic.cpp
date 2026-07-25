@@ -1,6 +1,7 @@
 #include "mparser/semantic.h"
 
 #include "mparser/argument_contract.h"
+#include "mparser/builtin_registry.h"
 #include "mparser/function_signature.h"
 
 #include <algorithm>
@@ -161,49 +162,6 @@ BindingKind bindingKindForSymbol(SymbolKind kind) {
     return BindingKind::Unresolved;
 }
 
-bool knownBuiltinName(std::string_view name) {
-    static constexpr const char* kBuiltinNames[] = {
-        "MException", "abs",      "acos",     "addCause", "addCorrection",
-        "addlistener", "addprop",  "all",
-        "any",
-        "asin",     "assert",   "atan",        "cat",      "cell",
-        "cellstr",  "char",     "class",       "clc",      "clear", "cos",
-        "cummax",   "cummin",   "cumprod",     "cumsum",
-        "delete",   "disp",
-        "diff",     "double",   "empty",       "enumeration", "eps",
-        "error",
-        "events",   "exp",      "eye",         "false",    "fieldnames",
-        "find",
-        "feval",    "findobj",   "findprop",    "fprintf",  "func2str",
-        "functions",
-        "getReport",
-        "horzcat",  "inf",      "ipermute",    "isa",      "isenum",
-        "isempty",  "ischar",   "isfield",     "islogical", "ismethod",
-        "isequal", "ismissing", "isprop",  "isstring",    "isStringScalar", "isstruct",
-        "isvalid",  "lastwarn", "length",   "linspace",    "listener", "log",
-        "logical",  "max",      "mean",        "metaclass",
-        "metafunction", "methods", "min",      "nan",      "nargin",
-        "nargout",  "ndims",    "notify",      "numel",    "ones",
-        "permute",  "pi",       "plot",        "prod",     "properties",
-        "rand",     "randn",    "repmat",      "reshape",  "rmfield",
-        "single",   "sin",      "size",        "sqrt",     "squeeze",
-        "str2func", "strcmp",   "strcmpi",     "string",   "strings",
-        "strlength", "struct",  "sum",         "table",
-        "tan",      "throw",    "throwAsCaller", "tic", "toc", "true",
-        "rethrow",  "vertcat", "warning",
-        "zeros",    "matlab.metadata.Class.fromName",
-        "meta.class.fromName", "event.proplistener",
-    };
-
-    for (const char* builtin : kBuiltinNames) {
-        if (name == builtin) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 bool isInputArgumentBlock(ArgumentBlockKind kind) {
     return kind == ArgumentBlockKind::Input ||
            kind == ArgumentBlockKind::RepeatingInput;
@@ -302,6 +260,14 @@ bool containsForbiddenArgumentFunction(const SyntaxNode& node,
 
 class AnalyzerContext {
 public:
+    explicit AnalyzerContext(
+        std::shared_ptr<const BuiltinRegistry> builtinRegistry)
+        : builtinRegistry_(builtinRegistry
+                               ? std::move(builtinRegistry)
+                               : defaultBuiltinRegistry()) {
+        result_.builtinRegistry = builtinRegistry_;
+    }
+
     SemanticResult analyze(const SyntaxNode& root,
                            const std::vector<SourceUnit>& sources) {
         result_.sources.reserve(sources.size());
@@ -1886,7 +1852,7 @@ private:
     }
 
     BindingRef resolveBuiltin(const std::string& name) {
-        if (!knownBuiltinName(name)) {
+        if (!builtinRegistry_->contains(name)) {
             return BindingRef{};
         }
 
@@ -2442,17 +2408,27 @@ private:
         externalFunctionAliases_;
     std::unordered_map<size_t, std::string> lexicalClassBySource_;
     std::vector<RegisteredImport> registeredImports_;
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
 };
 
 } // namespace
 
 bool isKnownBuiltinName(std::string_view name) {
-    return knownBuiltinName(name);
+    return defaultBuiltinRegistry()->contains(name);
 }
+
+SemanticAnalyzer::SemanticAnalyzer()
+    : builtinRegistry_(defaultBuiltinRegistry()) {}
+
+SemanticAnalyzer::SemanticAnalyzer(
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry)
+    : builtinRegistry_(builtinRegistry
+                           ? std::move(builtinRegistry)
+                           : defaultBuiltinRegistry()) {}
 
 SemanticResult SemanticAnalyzer::analyze(
     const SyntaxNode& root, const std::vector<SourceUnit>& sources) {
-    AnalyzerContext context;
+    AnalyzerContext context(builtinRegistry_);
     return context.analyze(root, sources);
 }
 

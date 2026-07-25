@@ -1646,7 +1646,8 @@ int main(int argc, char** argv) {
                     mparser::BytecodeOptimizationPlanner planner;
                     mparser::BytecodeTypedIrBuilder builder;
                     const auto module = builder.build(
-                        planner.plan(runtime.profile, bytecode));
+                        planner.plan(runtime.profile, bytecode,
+                                     semantic.builtinRegistry));
                     mparser::BytecodeVm typedVm;
                     mparser::BytecodeVmOptions steadyOptions = vmOptions;
                     steadyOptions.profiling =
@@ -1678,14 +1679,16 @@ int main(int argc, char** argv) {
                 if (planBytecode) {
                     mparser::BytecodeOptimizationPlanner planner;
                     printBytecodeOptimizationPlan(
-                        planner.plan(runtime.profile, bytecode));
+                        planner.plan(runtime.profile, bytecode,
+                                     semantic.builtinRegistry));
                 }
                 if (typedIrBytecode) {
                     mparser::BytecodeOptimizationPlanner planner;
                     mparser::BytecodeTypedIrBuilder builder;
                     printBytecodeTypedIr(
                         builder.build(
-                            planner.plan(runtime.profile, bytecode)));
+                            planner.plan(runtime.profile, bytecode,
+                                         semantic.builtinRegistry)));
                 }
                 if (checkTypedIrBytecode) {
                     mparser::BytecodeOptimizationPlanner planner;
@@ -1693,7 +1696,8 @@ int main(int argc, char** argv) {
                     mparser::BytecodeTypedIrGuardEvaluator evaluator;
                     const auto typedModule =
                         builder.build(
-                            planner.plan(runtime.profile, bytecode));
+                            planner.plan(runtime.profile, bytecode,
+                                         semantic.builtinRegistry));
                     printBytecodeTypedIrEvaluation(
                         evaluator.evaluate(typedModule,
                                            runtime.variables));

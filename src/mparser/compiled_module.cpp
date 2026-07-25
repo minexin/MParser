@@ -1,6 +1,7 @@
 #include "mparser/compiled_module.h"
 
 #include "mparser/argument_contract.h"
+#include "mparser/builtin_registry.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_argument_validation.h"
@@ -316,17 +317,38 @@ CompiledModule::CompiledModule()
 }
 
 CompiledModule CompiledModule::compile(std::string source) {
-    std::vector<SourceUnit> sources;
-    sources.push_back(SourceUnit{"<memory>", std::move(source)});
-    return compile(std::move(sources));
+    return compile(std::move(source), {});
 }
 
-CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
+CompiledModule CompiledModule::compile(
+    std::string source,
+    const CompiledModuleCompileOptions& options) {
+    std::vector<SourceUnit> sources;
+    sources.push_back(SourceUnit{"<memory>", std::move(source)});
+    return compile(std::move(sources), options);
+}
+
+CompiledModule CompiledModule::compile(
+    std::vector<SourceUnit> sources) {
+    return compile(std::move(sources), {});
+}
+
+CompiledModule CompiledModule::compile(
+    std::vector<SourceUnit> sources,
+    const CompiledModuleCompileOptions& options) {
     CompiledModule module;
     module.data_->sources = std::move(sources);
     if (module.data_->sources.empty()) {
         module.data_->diagnostics.push_back(Diagnostic{
             SourceSpan{}, "compiled module requires at least one source"});
+        return module;
+    }
+    if (options.builtinRegistry &&
+        !options.builtinRegistry->frozen()) {
+        module.data_->diagnostics.push_back(Diagnostic{
+            SourceSpan{},
+            "custom builtin registry must be frozen before compilation",
+            "MParser:MutableBuiltinRegistry"});
         return module;
     }
 
@@ -382,7 +404,7 @@ CompiledModule CompiledModule::compile(std::vector<SourceUnit> sources) {
         return module;
     }
 
-    SemanticAnalyzer analyzer;
+    SemanticAnalyzer analyzer(options.builtinRegistry);
     module.data_->semantic =
         analyzer.analyze(*root, module.data_->sources);
     appendDiagnostics(module.data_->diagnostics,

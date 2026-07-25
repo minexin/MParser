@@ -309,7 +309,8 @@ RuntimeBenchmarkResult RuntimeBenchmarkRunner::run(
     BytecodeTypedIrBuilder builder;
     const auto typedIr =
         builder.build(planner.plan(
-            result.lastProfiledBytecodeVmResult.profile, bytecode));
+            result.lastProfiledBytecodeVmResult.profile, bytecode,
+            semantic.builtinRegistry));
     result.typedRegionCount = typedIr.regions.size();
     BytecodeVmOptions steadyOptions;
     steadyOptions.profiling = BytecodeVmProfilingMode::Disabled;
