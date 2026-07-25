@@ -372,10 +372,31 @@ function families, not an unbounded builtin count.
   cancellation, runnable host behavior, and focused native/portable AArch64
   execution.
 
+### v0.83: Narrow C Embedding ABI
+
+- Status: closed by the v0.83 shared-library implementation and linked
+  evidence in `docs/v0.83.md`, `docs/embedding-c-api.md`, and `EMBED-005`.
+- Add one pure C header and shared library with version/status queries,
+  opaque retained module/session/result/value/cancellation handles, and no
+  exposed C++ layout or exception.
+- Project compile-once/invoke-many, staged diagnostics, multiple outputs,
+  result workspaces, resource controls, cancellation, and summaries through
+  the engine-neutral request/result boundary.
+- Define MATLAB column-major external arrays, copied numeric/logical/UTF-16/
+  Cell/Struct inputs, and returned object/function-handle lifetimes.
+- Retain producing modules for module-bound values, reject cross-module use,
+  and preserve independent builtin handles across modules.
+- Prove the boundary with a C11 regression and runnable C sample in Windows,
+  Linux, native AArch64, and portable AArch64 jobs.
+- Keep ABI candidate 1 explicitly pre-freeze; multi-source loading, machine
+  protocol, install/export consumers, optional views/adapters, and final
+  compatibility policy remain v0.90 gates.
+
 ### v0.90: Embedding And Release Candidate APIs
 
-- Stabilize compile-once/invoke-many C++ and narrow C interfaces plus the
-  versioned machine protocol.
+- Freeze the compile-once/invoke-many C++ and narrow C candidates, complete
+  multi-source loading and installed consumers, and add the versioned machine
+  protocol.
 - Validate representative function families, persistent runtime behavior,
   resource boundaries, cross-platform consumers, and cache invalidation.
 - Freeze v1.0 API/ABI/protocol candidates and require explicit compatibility

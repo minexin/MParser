@@ -1,10 +1,13 @@
 # MParser
 
-Current milestone: v0.82.0. See [docs/v0.82.md](docs/v0.82.md) for the
+Current milestone: v0.83.0. See [docs/v0.83.md](docs/v0.83.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan, and [docs/extending-builtins.md](docs/extending-builtins.md)
+iteration plan, [docs/embedding-c-api.md](docs/embedding-c-api.md) for the
+narrow pure C embedding contract, and
+[docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.81.md](docs/v0.81.md),
+kept in [docs/v0.82.md](docs/v0.82.md),
+[docs/v0.81.md](docs/v0.81.md),
 [docs/v0.80.md](docs/v0.80.md),
 [docs/v0.79.md](docs/v0.79.md),
 [docs/v0.78.md](docs/v0.78.md),
@@ -852,11 +855,33 @@ retain guarded optimized execution. Context builtins can declare
 `std::bad_alloc` still propagates to the embedder because no allocation-safe
 reporting reserve has been frozen.
 
+v0.83 adds the first narrow pure C ABI over the same engine-neutral contract.
+`mparser_c_api` builds a shared library named `mparser_c`, while
+`include/mparser/c_api.h` exposes only opaque retained handles, fixed-width
+constants, borrowed UTF-8/UTF-16 views, and versioned C structures. A C host
+can compile one UTF-8 source, invoke statelessly or through a serialized
+persistent session, pass column-major numeric/logical/text/Cell/Struct values,
+return object and function-handle values, inspect diagnostics and execution
+summaries, enforce resource limits, and cancel from another thread.
+Module-defined objects and closures retain their producing module and are
+rejected before cross-module use; independent builtin handles can cross
+modules. No C++ exception crosses this boundary, including allocation failure.
+ABI candidate 1 remains pre-freeze until v0.90 completes multi-source loading,
+machine protocol, installed consumers, compatibility policy, and platform
+package evidence.
+
 Build and run the resource-control embedding example:
 
 ```powershell
 cmake --build build --target mparser_embedding_resource_control_demo
 build\mparser_embedding_resource_control_demo.exe
+```
+
+Build and run the pure C embedding example:
+
+```powershell
+cmake --build build --target mparser_c_embedding_demo
+build\mparser_c_embedding_demo.exe
 ```
 
 There is also a small reference interpreter over HIR. It executes scalar double

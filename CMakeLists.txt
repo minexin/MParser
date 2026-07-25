@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.82.0 LANGUAGES C CXX)
+project(MParser VERSION 0.83.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -37,6 +37,8 @@ if(MPARSER_ENABLE_NATIVE_JIT)
 
     add_library(mparser_sljit STATIC
         "${_mparser_sljit_source_dir}/sljit_src/sljitLir.c")
+    set_target_properties(mparser_sljit PROPERTIES
+        POSITION_INDEPENDENT_CODE ON)
     target_include_directories(mparser_sljit SYSTEM PUBLIC
         "${_mparser_sljit_source_dir}/sljit_src")
     if(MSVC)
@@ -99,6 +101,8 @@ add_library(mparser_core
     src/mparser/token.cpp
 )
 
+set_target_properties(mparser_core PROPERTIES
+    POSITION_INDEPENDENT_CODE ON)
 target_include_directories(mparser_core PUBLIC src)
 target_link_libraries(mparser_core PRIVATE Threads::Threads)
 
@@ -111,6 +115,31 @@ if(MSVC)
     target_compile_options(mparser_core PRIVATE /W4 /permissive-)
 else()
     target_compile_options(mparser_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_library(mparser_c_api SHARED
+    src/mparser/c_api.cpp)
+target_include_directories(mparser_c_api
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_link_libraries(mparser_c_api PRIVATE mparser_core)
+target_compile_definitions(mparser_c_api
+    PRIVATE
+        MPARSER_C_API_BUILD=1
+        MPARSER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+        MPARSER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+        MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+    INTERFACE
+        MPARSER_C_API_SHARED=1)
+set_target_properties(mparser_c_api PROPERTIES
+    OUTPUT_NAME mparser_c
+    VERSION ${PROJECT_VERSION}
+    SOVERSION 0)
+if(MSVC)
+    target_compile_options(mparser_c_api PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(mparser_c_api PRIVATE
+        -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(mparser src/main.cpp)
@@ -1229,6 +1258,28 @@ add_test(NAME embedding_resource_control_demo_smoke
 set_tests_properties(embedding_resource_control_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "summary = instruction-limit,cancelled,42")
+
+add_executable(c_api_smoke_tests tests/c_api_smoke.c)
+target_link_libraries(c_api_smoke_tests PRIVATE mparser_c_api)
+set_target_properties(c_api_smoke_tests PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+add_test(NAME c_api_smoke COMMAND c_api_smoke_tests)
+
+add_executable(mparser_c_embedding_demo
+    samples/c_embedding_demo.c)
+target_link_libraries(mparser_c_embedding_demo PRIVATE
+    mparser_c_api)
+set_target_properties(mparser_c_embedding_demo PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+add_test(NAME c_embedding_demo_smoke
+    COMMAND mparser_c_embedding_demo)
+set_tests_properties(c_embedding_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "summary = 5050,instruction-limit,42")
 
 # The smoke executables use standard assert as a lightweight test primitive.
 # Keep those contracts active in optimized CI and release-validation builds.

@@ -1268,8 +1268,10 @@ after an automatic native rejection records the native fallback separately
 without turning the overall execution into a failure.
 
 This is an internal source-level freeze for the builtin registry and remaining
-engine work. Struct layout, public symbol visibility, serialization, the narrow
-C ABI, and the versioned machine protocol remain v0.90 release gates.
+engine work. Struct layout, final public symbol/version policy, serialization,
+and the versioned machine protocol remain v0.90 release gates. v0.83 now
+projects this internal value model through an opaque candidate C ABI without
+exposing the C++ layout.
 
 v0.80 places one `BuiltinRegistry` between semantic name resolution and every
 runtime tier. A `SemanticResult` retains a shared immutable registry, so
@@ -1358,6 +1360,37 @@ context builtins declare `ExecutionControl` permission and must preflight or
 checkpoint their own host work. Ordinary host exceptions remain contained,
 while `std::bad_alloc` propagates until an allocation-safe reporting reserve is
 defined.
+
+v0.83 adds a narrow C projection in `include/mparser/c_api.h` and
+`src/mparser/c_api.cpp`. `mparser_c_api` is a shared library; the static core
+and optional SLJIT dependency are position-independent inputs. The public
+header contains no C++ layout. Modules, sessions, results, values, and
+cancellation tokens are atomically retained opaque handles, while diagnostic
+pointers and string/data views borrow storage from one of those owners.
+
+All C value handles own validated `RuntimeValue` copies. Constructor and
+accessor payloads use MATLAB column-major order and are converted at the
+boundary, so internal row-major physical storage is not an ABI promise.
+Numeric/logical, UTF-16 character/string, Cell, and scalar Struct values can be
+constructed externally. Objects and function handles can be returned and
+re-injected. Module-defined callable/object graphs retain the producing module;
+the request builder rejects a different module identity before execution and
+propagates ownership through Cell/Struct composition. Independent builtin
+handles do not retain a module.
+
+The C request/result layer maps directly to the v0.81-v0.82 execution
+contract, including backend selection, initial workspaces, multiple outputs,
+diagnostic trees, resource controls, cancellation, and summaries. Stateless
+calls remain isolated. One C session serializes calls around its persistent
+state. API misuse returns fixed-width status codes, language failure remains a
+result status, and all C++ exceptions are contained; allocation failure maps to
+an explicit C status.
+
+ABI candidate 1 requires initialized full-size options/summary structures.
+Final tail-extension rules, symbol/version policy, multi-source loading,
+machine serialization, install/export consumers, optional buffer views, and
+supported-platform binary evidence remain v0.90 gates. See
+[embedding-c-api.md](embedding-c-api.md).
 
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,
