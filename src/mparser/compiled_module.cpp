@@ -32,6 +32,15 @@ struct CompiledModuleData {
 
 namespace {
 
+std::filesystem::path pathFromUtf8(std::string_view value) {
+    std::u8string encoded;
+    encoded.reserve(value.size());
+    for (const unsigned char byte : value) {
+        encoded.push_back(static_cast<char8_t>(byte));
+    }
+    return std::filesystem::path(encoded);
+}
+
 void collectInvocableFunctions(
     const HirNode* node, std::vector<CompiledFunctionInfo>& functions,
     std::vector<Diagnostic>& diagnostics,
@@ -118,7 +127,7 @@ void applySourceIdentity(SyntaxNode& root, const SourceUnit& source) {
         }
         if (owner.empty()) {
             owner = std::string(namespaceName) + "." +
-                    std::filesystem::path(source.name).stem().string();
+                    pathFromUtf8(source.name).stem().string();
         }
     }
 
@@ -161,7 +170,7 @@ std::optional<PendingClassMethod> extractClassMethod(
 
     auto implementation = std::move(sourceRoot.children.front());
     const std::string fileMethodName =
-        std::filesystem::path(source.name).stem().string();
+        pathFromUtf8(source.name).stem().string();
     if (implementation->label != fileMethodName) {
         diagnostics.push_back(Diagnostic{
             implementation->span,

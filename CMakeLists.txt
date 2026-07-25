@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.83.0 LANGUAGES C CXX)
+project(MParser VERSION 0.84.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -1265,7 +1265,17 @@ set_target_properties(c_api_smoke_tests PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
     C_EXTENSIONS OFF)
-add_test(NAME c_api_smoke COMMAND c_api_smoke_tests)
+add_test(NAME c_api_smoke
+    COMMAND c_api_smoke_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/app/run_demo.m
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
+
+add_executable(c_api_utf8_source_graph_smoke_tests
+    tests/c_api_utf8_source_graph_smoke.cpp)
+target_link_libraries(c_api_utf8_source_graph_smoke_tests PRIVATE
+    mparser_c_api)
+add_test(NAME c_api_utf8_source_graph_smoke
+    COMMAND c_api_utf8_source_graph_smoke_tests)
 
 add_executable(mparser_c_embedding_demo
     samples/c_embedding_demo.c)
@@ -1280,6 +1290,22 @@ add_test(NAME c_embedding_demo_smoke
 set_tests_properties(c_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "summary = 5050,instruction-limit,42")
+
+add_executable(mparser_c_source_graph_demo
+    samples/c_source_graph_demo.c)
+target_link_libraries(mparser_c_source_graph_demo PRIVATE
+    mparser_c_api)
+set_target_properties(mparser_c_source_graph_demo PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+add_test(NAME c_source_graph_demo_smoke
+    COMMAND mparser_c_source_graph_demo
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/app/run_demo.m
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
+set_tests_properties(c_source_graph_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "summary = 21,107,12,12")
 
 # The smoke executables use standard assert as a lightweight test primitive.
 # Keep those contracts active in optimized CI and release-validation builds.

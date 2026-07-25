@@ -1,12 +1,13 @@
 # MParser
 
-Current milestone: v0.83.0. See [docs/v0.83.md](docs/v0.83.md) for the
+Current milestone: v0.84.0. See [docs/v0.84.md](docs/v0.84.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan, [docs/embedding-c-api.md](docs/embedding-c-api.md) for the
 narrow pure C embedding contract, and
 [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.82.md](docs/v0.82.md),
+kept in [docs/v0.83.md](docs/v0.83.md),
+[docs/v0.82.md](docs/v0.82.md),
 [docs/v0.81.md](docs/v0.81.md),
 [docs/v0.80.md](docs/v0.80.md),
 [docs/v0.79.md](docs/v0.79.md),
@@ -866,9 +867,19 @@ summaries, enforce resource limits, and cancel from another thread.
 Module-defined objects and closures retain their producing module and are
 rejected before cross-module use; independent builtin handles can cross
 modules. No C++ exception crosses this boundary, including allocation failure.
-ABI candidate 1 remains pre-freeze until v0.90 completes multi-source loading,
-machine protocol, installed consumers, compatibility policy, and platform
-package evidence.
+ABI candidate 1 remains pre-freeze until v0.90.
+
+v0.84 extends the C boundary to complete source-graph ingestion.
+`mparser_module_compile_sources` copies an ordered set of versioned in-memory
+source descriptors, while `mparser_module_load_file_utf8` loads an entry file
+and ordered search paths through the same `SourceLoader` used by the CLI.
+Filesystem loading therefore preserves ordinary/private/path functions,
+`+package` namespaces, `@Class` folders, separated methods, imports, and
+dependency discovery. Paths and retained source names are UTF-8 on every
+platform. Hosts can enumerate module sources, and load failures return a
+stable status plus an inspectable module diagnostic. The original one-source
+entry remains compatible; installed consumers, machine protocol,
+forward-compatible ABI policy, and final platform evidence remain v0.90 work.
 
 Build and run the resource-control embedding example:
 
@@ -882,6 +893,15 @@ Build and run the pure C embedding example:
 ```powershell
 cmake --build build --target mparser_c_embedding_demo
 build\mparser_c_embedding_demo.exe
+```
+
+Build and run the pure C source-graph example:
+
+```powershell
+cmake --build build --target mparser_c_source_graph_demo
+build\mparser_c_source_graph_demo.exe `
+  samples\class_folders\app\run_demo.m `
+  samples\class_folders\lib
 ```
 
 There is also a small reference interpreter over HIR. It executes scalar double

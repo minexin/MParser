@@ -1269,9 +1269,10 @@ without turning the overall execution into a failure.
 
 This is an internal source-level freeze for the builtin registry and remaining
 engine work. Struct layout, final public symbol/version policy, serialization,
-and the versioned machine protocol remain v0.90 release gates. v0.83 now
-projects this internal value model through an opaque candidate C ABI without
-exposing the C++ layout.
+and the versioned machine protocol remain v0.90 release gates. v0.83 projects
+this internal value model through an opaque candidate C ABI without exposing
+the C++ layout, and v0.84 feeds complete source graphs into that same module
+boundary.
 
 v0.80 places one `BuiltinRegistry` between semantic name resolution and every
 runtime tier. A `SemanticResult` retains a shared immutable registry, so
@@ -1387,10 +1388,34 @@ result status, and all C++ exceptions are contained; allocation failure maps to
 an explicit C status.
 
 ABI candidate 1 requires initialized full-size options/summary structures.
-Final tail-extension rules, symbol/version policy, multi-source loading,
-machine serialization, install/export consumers, optional buffer views, and
-supported-platform binary evidence remain v0.90 gates. See
+Final tail-extension rules, symbol/version policy, machine serialization,
+install/export consumers, optional buffer views, and supported-platform binary
+evidence remain v0.90 gates. See
 [embedding-c-api.md](embedding-c-api.md).
+
+v0.84 adds two C ingestion paths without creating a second execution model.
+`mparser_module_compile_sources` copies an ordered array of versioned
+name/source descriptors and compiles it directly through `CompiledModule`.
+This is the deterministic host-supplied graph path: the first descriptor is
+the entry and source-linked diagnostics retain descriptor identity.
+
+`mparser_module_load_file_utf8` is the filesystem-semantic path. It converts
+length-delimited UTF-8 entry/search paths directly to
+`std::filesystem::path`, then delegates to `SourceLoader`. The loader discovers
+ordinary and private functions, package functions/classes, class folders and
+separated methods, imports, superclasses, property types, meta references,
+function handles, and call dependencies. It emits the existing `SourceUnit`
+metadata for namespace, external function identity, class ownership, private
+ownership, and alias bindings; none of that internal metadata is exposed as C
+ABI layout.
+
+Both paths converge before Lexer -> Parser -> HIR -> Semantic -> Bytecode and
+therefore share cached Typed IR, guarded native/portable execution, VM
+fallback, diagnostics, values, sessions, and resource controls. Modules own
+all source data. Borrowed source-name views are exposed only through module
+enumeration. Filesystem failures create an invalid module with a stable
+`MParser:SourceLoadFailed` diagnostic so the host retains one inspection
+pattern for compilation and loading failures.
 
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,

@@ -82,10 +82,35 @@ static const char k_object_source[] =
 static const char k_object_consumer_source[] =
     "scaled = input_meter.Value;\n";
 
+static const char k_inline_entry_source[] =
+    "counter = InlineCounter(5);\n"
+    "inline_value = counter.add(3);\n";
+
+static const char k_inline_class_source[] =
+    "classdef InlineCounter\n"
+    "    properties\n"
+    "        Value\n"
+    "    end\n"
+    "    methods\n"
+    "        function obj = InlineCounter(value)\n"
+    "            obj.Value = value;\n"
+    "        end\n"
+    "        function result = add(obj, amount)\n"
+    "            result = obj.Value + amount;\n"
+    "        end\n"
+    "    end\n"
+    "end\n";
+
 static int view_equals(mparser_utf8_view view, const char* expected) {
     const size_t size = strlen(expected);
     return view.size == size &&
            (size == 0 || memcmp(view.data, expected, size) == 0);
+}
+
+static int view_ends_with(mparser_utf8_view view, const char* suffix) {
+    const size_t size = strlen(suffix);
+    return view.size >= size &&
+           memcmp(view.data + view.size - size, suffix, size) == 0;
 }
 
 static mparser_invocation_options options_for(const char* entry) {
@@ -153,6 +178,22 @@ static mparser_api_status find_variable(const mparser_result* result,
     return MPARSER_API_STATUS_OUT_OF_RANGE;
 }
 
+static int variable_is_scalar(const mparser_result* result,
+                              const char* name,
+                              double expected) {
+    mparser_value* value = NULL;
+    const double* data = NULL;
+    size_t count = 0;
+    CHECK(find_variable(result, name, &value) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_value_numeric_data(value, &data, &count) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(count == 1);
+    CHECK(fabs(data[0] - expected) < 1e-9);
+    mparser_value_release(value);
+    return 1;
+}
+
 static int compile_valid(const char* source,
                          const char* source_name,
                          mparser_module** out_module) {
@@ -178,7 +219,7 @@ static int run_header_and_diagnostic_smoke(void) {
 
     CHECK(mparser_c_abi_version() == MPARSER_C_ABI_VERSION);
     CHECK(mparser_version_major() == 0);
-    CHECK(mparser_version_minor() == 83);
+    CHECK(mparser_version_minor() == 84);
     CHECK(mparser_version_patch() == 0);
     CHECK(view_equals(
         mparser_api_status_name(MPARSER_API_STATUS_OWNER_MISMATCH),
@@ -186,6 +227,10 @@ static int run_header_and_diagnostic_smoke(void) {
     CHECK(mparser_invocation_options_init(NULL) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_execution_summary_init(NULL) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(mparser_source_unit_init(NULL) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(mparser_source_load_options_init(NULL) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_invocation_options_init(&options) ==
           MPARSER_API_STATUS_OK);
@@ -222,6 +267,188 @@ static int run_header_and_diagnostic_smoke(void) {
     CHECK(begin.line >= 1);
     CHECK(mparser_module_diagnostic(invalid_module, 100) == NULL);
     mparser_module_release(invalid_module);
+    return 1;
+}
+
+static int run_multi_source_compilation_smoke(void) {
+    char entry_name[] = "inline_main.m";
+    char class_name[] = "InlineCounter.m";
+    char entry_source[sizeof(k_inline_entry_source)];
+    char class_source[sizeof(k_inline_class_source)];
+    mparser_source_unit sources[2];
+    mparser_source_unit invalid_source;
+    mparser_module* module = NULL;
+    mparser_invocation_options options;
+    mparser_result* result = NULL;
+    const mparser_diagnostic* diagnostic;
+
+    memcpy(entry_source, k_inline_entry_source, sizeof(entry_source));
+    memcpy(class_source, k_inline_class_source, sizeof(class_source));
+    CHECK(mparser_source_unit_init(&sources[0]) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_source_unit_init(&sources[1]) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(sources[0].struct_size == sizeof(sources[0]));
+    CHECK(sources[0].abi_version == MPARSER_C_ABI_VERSION);
+    sources[0].source_name = entry_name;
+    sources[0].source_name_size = strlen(entry_name);
+    sources[0].source = entry_source;
+    sources[0].source_size = strlen(entry_source);
+    sources[1].source_name = class_name;
+    sources[1].source_name_size = strlen(class_name);
+    sources[1].source = class_source;
+    sources[1].source_size = strlen(class_source);
+
+    CHECK(mparser_module_compile_sources(
+              sources, 2, &module) == MPARSER_API_STATUS_OK);
+    CHECK(module != NULL);
+    CHECK(mparser_module_is_valid(module) == 1);
+    CHECK(mparser_module_source_count(module) == 2);
+    CHECK(view_equals(
+        mparser_module_source_name(module, 0), "inline_main.m"));
+    CHECK(view_equals(
+        mparser_module_source_name(module, 1), "InlineCounter.m"));
+    CHECK(mparser_module_source_name(module, 2).size == 0);
+
+    entry_name[0] = 'x';
+    class_name[0] = 'x';
+    entry_source[0] = '?';
+    class_source[0] = '?';
+    CHECK(mparser_invocation_options_init(&options) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_module_execute(module, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(result != NULL && mparser_result_succeeded(result) == 1);
+    CHECK(variable_is_scalar(result, "inline_value", 8.0));
+    mparser_result_release(result);
+    mparser_module_release(module);
+    result = NULL;
+    module = NULL;
+
+    CHECK(mparser_module_compile_sources(NULL, 0, &module) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(module == NULL);
+    CHECK(mparser_source_unit_init(&invalid_source) ==
+          MPARSER_API_STATUS_OK);
+    invalid_source.abi_version += 1;
+    CHECK(mparser_module_compile_sources(
+              &invalid_source, 1, &module) ==
+          MPARSER_API_STATUS_ABI_MISMATCH);
+    CHECK(module == NULL);
+
+    CHECK(mparser_source_unit_init(&sources[0]) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_source_unit_init(&sources[1]) ==
+          MPARSER_API_STATUS_OK);
+    sources[0].source_name = "valid.m";
+    sources[0].source_name_size = strlen("valid.m");
+    sources[0].source = "value = 1;\n";
+    sources[0].source_size = strlen("value = 1;\n");
+    sources[1].source_name = "broken_inline.m";
+    sources[1].source_name_size = strlen("broken_inline.m");
+    sources[1].source = "classdef Broken\nproperties\nValue(\nend\nend\n";
+    sources[1].source_size = strlen(sources[1].source);
+    CHECK(mparser_module_compile_sources(
+              sources, 2, &module) ==
+          MPARSER_API_STATUS_COMPILATION_FAILED);
+    CHECK(module != NULL);
+    CHECK(mparser_module_is_valid(module) == 0);
+    CHECK(mparser_module_source_count(module) == 2);
+    CHECK(mparser_module_diagnostic_count(module) > 0);
+    diagnostic = mparser_module_diagnostic(module, 0);
+    CHECK(diagnostic != NULL);
+    CHECK(view_equals(
+        mparser_diagnostic_source_name(diagnostic),
+        "broken_inline.m"));
+    mparser_module_release(module);
+    return 1;
+}
+
+static int run_file_source_graph_smoke(const char* entry_path,
+                                       const char* library_path) {
+    mparser_source_load_options load_options;
+    mparser_utf8_view search_path;
+    mparser_module* module = NULL;
+    mparser_invocation_options options;
+    mparser_result* result = NULL;
+    const mparser_diagnostic* diagnostic;
+    const char missing_path[] =
+        "mparser_c_api_missing_entry_84.m";
+
+    CHECK(mparser_source_load_options_init(&load_options) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(load_options.struct_size == sizeof(load_options));
+    CHECK(load_options.abi_version == MPARSER_C_ABI_VERSION);
+    search_path.data = library_path;
+    search_path.size = strlen(library_path);
+    load_options.search_paths = &search_path;
+    load_options.search_path_count = 1;
+    CHECK(mparser_module_load_file_utf8(
+              entry_path, strlen(entry_path),
+              &load_options, &module) == MPARSER_API_STATUS_OK);
+    CHECK(module != NULL);
+    CHECK(mparser_module_is_valid(module) == 1);
+    CHECK(mparser_module_source_count(module) == 7);
+    CHECK(view_ends_with(
+        mparser_module_source_name(module, 0), "run_demo.m"));
+    CHECK(mparser_module_diagnostic_count(module) == 0);
+
+    CHECK(mparser_invocation_options_init(&options) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_module_execute(module, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(result != NULL && mparser_result_succeeded(result) == 1);
+    CHECK(variable_is_scalar(result, "scaled", 21.0));
+    CHECK(variable_is_scalar(result, "revealed", 107.0));
+    CHECK(variable_is_scalar(result, "offset_value", 12.0));
+    CHECK(variable_is_scalar(result, "static_value", 12.0));
+    mparser_result_release(result);
+    mparser_module_release(module);
+    result = NULL;
+    module = NULL;
+
+    load_options.abi_version += 1;
+    CHECK(mparser_module_load_file_utf8(
+              entry_path, strlen(entry_path),
+              &load_options, &module) ==
+          MPARSER_API_STATUS_ABI_MISMATCH);
+    CHECK(module == NULL);
+    CHECK(mparser_source_load_options_init(&load_options) ==
+          MPARSER_API_STATUS_OK);
+    search_path.data = NULL;
+    search_path.size = 1;
+    load_options.search_paths = &search_path;
+    load_options.search_path_count = 1;
+    CHECK(mparser_module_load_file_utf8(
+              entry_path, strlen(entry_path),
+              &load_options, &module) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(module == NULL);
+    CHECK(mparser_module_load_file_utf8(
+              "", 0, NULL, &module) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(module == NULL);
+
+    CHECK(mparser_module_load_file_utf8(
+              missing_path, strlen(missing_path),
+              NULL, &module) ==
+          MPARSER_API_STATUS_SOURCE_LOAD_FAILED);
+    CHECK(view_equals(
+        mparser_api_status_name(MPARSER_API_STATUS_SOURCE_LOAD_FAILED),
+        "source-load-failed"));
+    CHECK(module != NULL);
+    CHECK(mparser_module_is_valid(module) == 0);
+    CHECK(mparser_module_source_count(module) == 0);
+    CHECK(mparser_module_diagnostic_count(module) == 1);
+    diagnostic = mparser_module_diagnostic(module, 0);
+    CHECK(diagnostic != NULL);
+    CHECK(view_equals(
+        mparser_diagnostic_identifier(diagnostic),
+        "MParser:SourceLoadFailed"));
+    CHECK(view_equals(
+        mparser_diagnostic_source_name(diagnostic), missing_path));
+    CHECK(mparser_diagnostic_source_begin(diagnostic).line == 1);
+    mparser_module_release(module);
     return 1;
 }
 
@@ -750,9 +977,14 @@ static int run_module_metadata_smoke(mparser_module* module) {
     return 1;
 }
 
-int main(void) {
+int main(int argc, char** argv) {
     mparser_module* module = NULL;
 
+    if (argc != 3) {
+        fprintf(stderr,
+                "usage: c_api_smoke <entry.m> <search-path>\n");
+        return 1;
+    }
     if (!run_header_and_diagnostic_smoke()) {
         return 1;
     }
@@ -761,7 +993,9 @@ int main(void) {
         return 1;
     }
 
-    if (!run_module_metadata_smoke(module) ||
+    if (!run_multi_source_compilation_smoke() ||
+        !run_file_source_graph_smoke(argv[1], argv[2]) ||
+        !run_module_metadata_smoke(module) ||
         !run_scalar_resource_and_session_smoke(module) ||
         !run_array_text_and_composite_smoke(module) ||
         !run_function_handle_ownership_smoke(module) ||

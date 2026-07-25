@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.83.0",
+  "version": "0.84.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -318,9 +318,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "module_resource_control_smoke", "embedding_execution_demo_smoke", "embedding_resource_control_demo_smoke", "c_api_smoke", "c_embedding_demo_smoke"],
-      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/runtime_execution_control.h", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/module_execution_smoke.cpp", "tests/module_resource_control_smoke.cpp", "tests/c_api_smoke.c", "samples/embedding_execution_demo.cpp", "samples/embedding_resource_control_demo.cpp", "samples/c_embedding_demo.c"],
-      "limits": "v0.83 provides engine-neutral stateless/persistent compile-once execution, guarded JIT fallback, staged diagnostics, resource controls, and opaque C ownership/value handles. The C boundary is ABI candidate 1 and currently compiles one UTF-8 source. Final C++/C ABI policy, multi-source loading, installed consumers, and the versioned machine protocol remain v0.90 gates."
+      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "module_resource_control_smoke", "embedding_execution_demo_smoke", "embedding_resource_control_demo_smoke", "c_api_smoke", "c_embedding_demo_smoke", "c_source_graph_demo_smoke"],
+      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/source_loader.h", "src/mparser/source_loader.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/runtime_execution_control.h", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/module_execution_smoke.cpp", "tests/module_resource_control_smoke.cpp", "tests/c_api_smoke.c", "samples/embedding_execution_demo.cpp", "samples/embedding_resource_control_demo.cpp", "samples/c_embedding_demo.c", "samples/c_source_graph_demo.c"],
+      "limits": "v0.84 provides engine-neutral stateless/persistent compile-once execution, guarded JIT fallback, staged diagnostics, resource controls, opaque C ownership/value handles, explicit multi-source compilation, and shared filesystem source-graph loading. Final C++/C ABI policy, installed consumers, and the versioned machine protocol remain v0.90 gates."
     },
     {
       "id": "EMBED-003",
@@ -353,7 +353,18 @@
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["c_api_smoke", "c_embedding_demo_smoke", "module_execution_smoke", "module_resource_control_smoke"],
       "sources": ["include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/c_api_smoke.c", "samples/c_embedding_demo.c", "docs/embedding-c-api.md", "docs/v0.83.md"],
-      "limits": "ABI candidate 1 exposes copied numeric/logical/UTF-16/Cell/scalar-Struct inputs plus returned objects and function handles. It uses one-source UTF-8 compilation and immutable column-major payload views. Multi-source loading, installed package consumers, zero-copy views/adapters, machine serialization, forward-compatible tail negotiation, and the final symbol/version freeze remain open."
+      "limits": "ABI candidate 1 exposes copied numeric/logical/UTF-16/Cell/scalar-Struct inputs plus returned objects and function handles. It provides one-source and explicit multi-source UTF-8 compilation, shared filesystem loading, and immutable column-major payload views. Installed package consumers, zero-copy views/adapters, machine serialization, forward-compatible tail negotiation, and the final symbol/version freeze remain open."
+    },
+    {
+      "id": "EMBED-006",
+      "area": "embedding",
+      "feature": "Pure C explicit source graphs and UTF-8 entry/search-path loading with source enumeration and stable load diagnostics",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["source_loader_smoke", "function_path_smoke", "class_folder_smoke", "c_api_smoke", "c_api_utf8_source_graph_smoke", "c_source_graph_demo_smoke"],
+      "sources": ["include/mparser/c_api.h", "src/mparser/c_api.cpp", "src/mparser/source_loader.h", "src/mparser/source_loader.cpp", "tests/c_api_smoke.c", "tests/c_api_utf8_source_graph_smoke.cpp", "samples/c_source_graph_demo.c", "docs/embedding-c-api.md", "docs/v0.84.md"],
+      "limits": "In-memory descriptors intentionally carry only names and source text; hosts requiring package, private, path-precedence, or class-folder identity use the filesystem loader. Paths must be valid UTF-8. Installation/export packages and final ABI compatibility policy remain v0.90 work."
     },
     {
       "id": "EMBED-002",
@@ -362,9 +373,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "partial", "production": "partial", "typed": "partial", "native": "partial"},
-      "evidence": ["module_execution_smoke", "c_api_smoke", "c_embedding_demo_smoke"],
-      "sources": ["docs/roadmap-v1.0.md", "src/mparser/compiled_module.h", "include/mparser/c_api.h", "src/mparser/c_api.cpp", "docs/embedding-c-api.md"],
-      "limits": "The source-level C++ request/result API and narrow C ABI candidate are implemented. Neither public interface is frozen; multi-source loading, installed consumers, machine protocol, compatibility policy, and final platform ABI evidence remain v0.90 work."
+      "evidence": ["module_execution_smoke", "c_api_smoke", "c_embedding_demo_smoke", "c_source_graph_demo_smoke"],
+      "sources": ["docs/roadmap-v1.0.md", "src/mparser/compiled_module.h", "src/mparser/source_loader.cpp", "include/mparser/c_api.h", "src/mparser/c_api.cpp", "docs/embedding-c-api.md", "docs/v0.84.md"],
+      "limits": "The source-level C++ request/result API and narrow C ABI candidate include multi-source and filesystem loading. Neither public interface is frozen; installed consumers, machine protocol, compatibility policy, and final platform ABI evidence remain v0.90 work."
     },
     {
       "id": "PLATFORM-001",
@@ -520,7 +531,17 @@
       "target": "v0.90",
       "framework_impact": "contract-extension",
       "requirement": "Freeze compile/load/invoke-many C++ API, narrow C ABI, value ownership, diagnostics, lifecycle, and versioned machine protocol.",
-      "exit_evidence": "v0.83 provides a pure C shared-library candidate, C11 ownership/value/resource tests, and a runnable C host on x64 and focused AArch64 paths. Closure still requires multi-source loading, installed C/C++ consumers on every supported platform, protocol golden tests, and final compatibility review."
+      "exit_evidence": "v0.84 provides a pure C shared-library candidate, C11 ownership/value/resource/source-graph tests, explicit multi-source compilation, shared UTF-8 filesystem loading, and runnable C hosts on x64 and focused AArch64 paths. Closure still requires installed C/C++ consumers on every supported platform, protocol golden tests, and final compatibility review."
+    },
+    {
+      "id": "G-EMBED-SOURCE-001",
+      "area": "embedding",
+      "priority": "must-have",
+      "state": "closed",
+      "target": "v0.84",
+      "framework_impact": "contract-extension",
+      "requirement": "Expose copied multi-source and shared UTF-8 filesystem source-graph compilation through the narrow C ABI without leaking SourceUnit internals.",
+      "exit_evidence": "docs/v0.84.md and docs/embedding-c-api.md define the contract. c_api_smoke covers descriptor versioning, owned source buffers, cross-source diagnostics, source enumeration, package/class-folder loading, invalid options, and stable load failures. c_api_utf8_source_graph_smoke proves non-ASCII entry/search paths and retained source names. c_source_graph_demo_smoke runs the real +folderpkg/@Counter graph, and both focused AArch64 jobs include the C evidence."
     },
     {
       "id": "G-RESOURCE-001",

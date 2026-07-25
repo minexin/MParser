@@ -34,6 +34,7 @@ typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_ALLOCATION_FAILED 6u
 #define MPARSER_API_STATUS_INTERNAL_ERROR 7u
 #define MPARSER_API_STATUS_ABI_MISMATCH 8u
+#define MPARSER_API_STATUS_SOURCE_LOAD_FAILED 9u
 
 typedef uint32_t mparser_invocation_status;
 #define MPARSER_INVOCATION_SUCCEEDED 0u
@@ -103,6 +104,22 @@ typedef struct mparser_utf16_view {
     uint32_t missing;
 } mparser_utf16_view;
 
+typedef struct mparser_source_unit {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    const char* source_name;
+    size_t source_name_size;
+    const char* source;
+    size_t source_size;
+} mparser_source_unit;
+
+typedef struct mparser_source_load_options {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    const mparser_utf8_view* search_paths;
+    size_t search_path_count;
+} mparser_source_load_options;
+
 typedef struct mparser_named_value {
     const char* name;
     size_t name_size;
@@ -170,6 +187,10 @@ MPARSER_C_API mparser_api_status
 mparser_invocation_options_init(mparser_invocation_options* options);
 MPARSER_C_API mparser_api_status
 mparser_execution_summary_init(mparser_execution_summary* summary);
+MPARSER_C_API mparser_api_status
+mparser_source_unit_init(mparser_source_unit* source);
+MPARSER_C_API mparser_api_status mparser_source_load_options_init(
+    mparser_source_load_options* options);
 
 MPARSER_C_API mparser_api_status mparser_module_compile_utf8(
     const char* source,
@@ -177,10 +198,23 @@ MPARSER_C_API mparser_api_status mparser_module_compile_utf8(
     const char* source_name,
     size_t source_name_size,
     mparser_module** out_module);
+MPARSER_C_API mparser_api_status mparser_module_compile_sources(
+    const mparser_source_unit* sources,
+    size_t source_count,
+    mparser_module** out_module);
+MPARSER_C_API mparser_api_status mparser_module_load_file_utf8(
+    const char* entry_path,
+    size_t entry_path_size,
+    const mparser_source_load_options* options,
+    mparser_module** out_module);
 MPARSER_C_API void mparser_module_retain(mparser_module* module);
 MPARSER_C_API void mparser_module_release(mparser_module* module);
 MPARSER_C_API uint32_t
 mparser_module_is_valid(const mparser_module* module);
+MPARSER_C_API size_t
+mparser_module_source_count(const mparser_module* module);
+MPARSER_C_API mparser_utf8_view
+mparser_module_source_name(const mparser_module* module, size_t index);
 MPARSER_C_API size_t
 mparser_module_diagnostic_count(const mparser_module* module);
 MPARSER_C_API const mparser_diagnostic*

@@ -4,12 +4,15 @@
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 #include "mparser/runtime_value.h"
+#include "mparser/source_loader.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -292,6 +295,65 @@ std::optional<std::string> copyBytes(
         return std::nullopt;
     }
     return std::string(data ? data : "", size);
+}
+
+std::filesystem::path pathFromUtf8(std::string_view value) {
+    std::u8string encoded;
+    encoded.reserve(value.size());
+    for (const unsigned char byte : value) {
+        encoded.push_back(static_cast<char8_t>(byte));
+    }
+    return std::filesystem::path(encoded);
+}
+
+bool validPathText(std::string_view value) noexcept {
+    return !value.empty() &&
+           value.find('\0') == std::string_view::npos;
+}
+
+mparser_api_status publishCompiledModule(
+    mparser::CompiledModule compiled,
+    mparser_module** out_module) {
+    auto state =
+        std::make_shared<ModuleState>(std::move(compiled));
+    state->diagnostics.reserve(
+        state->module.diagnostics().size());
+    for (const auto& diagnostic :
+         state->module.diagnostics()) {
+        state->diagnostics.push_back(
+            compilationDiagnostic(
+                diagnostic, state->module));
+    }
+    auto* handle = new mparser_module;
+    handle->state = std::move(state);
+    *out_module = handle;
+    return handle->state->module.valid()
+               ? MPARSER_API_STATUS_OK
+               : MPARSER_API_STATUS_COMPILATION_FAILED;
+}
+
+mparser_api_status publishSourceLoadFailure(
+    std::string sourceName,
+    std::string message,
+    mparser_module** out_module) {
+    auto state = std::make_shared<ModuleState>(
+        mparser::CompiledModule::compile(
+            std::vector<mparser::SourceUnit>{}));
+    mparser_diagnostic diagnostic;
+    diagnostic.phase = MPARSER_DIAGNOSTIC_COMPILATION;
+    diagnostic.severity = MPARSER_DIAGNOSTIC_ERROR;
+    diagnostic.identifier = "MParser:SourceLoadFailed";
+    diagnostic.message = std::move(message);
+    diagnostic.sourceAvailable = !sourceName.empty();
+    diagnostic.sourceName = std::move(sourceName);
+    diagnostic.begin = mparser_source_position{0, 1, 1};
+    diagnostic.end = diagnostic.begin;
+    state->diagnostics.push_back(std::move(diagnostic));
+
+    auto* handle = new mparser_module;
+    handle->state = std::move(state);
+    *out_module = handle;
+    return MPARSER_API_STATUS_SOURCE_LOAD_FAILED;
 }
 
 bool uint64ToSize(uint64_t value, size_t& result) noexcept {
@@ -945,6 +1007,8 @@ mparser_api_status_name(mparser_api_status status) {
         return utf8View("internal-error");
     case MPARSER_API_STATUS_ABI_MISMATCH:
         return utf8View("abi-mismatch");
+    case MPARSER_API_STATUS_SOURCE_LOAD_FAILED:
+        return utf8View("source-load-failed");
     default:
         return utf8View("unknown");
     }
@@ -977,6 +1041,30 @@ mparser_execution_summary_init(
     return MPARSER_API_STATUS_OK;
 }
 
+mparser_api_status
+mparser_source_unit_init(mparser_source_unit* source) {
+    if (!source) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *source = {};
+    source->struct_size =
+        static_cast<uint32_t>(sizeof(*source));
+    source->abi_version = MPARSER_C_ABI_VERSION;
+    return MPARSER_API_STATUS_OK;
+}
+
+mparser_api_status mparser_source_load_options_init(
+    mparser_source_load_options* options) {
+    if (!options) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *options = {};
+    options->struct_size =
+        static_cast<uint32_t>(sizeof(*options));
+    options->abi_version = MPARSER_C_ABI_VERSION;
+    return MPARSER_API_STATUS_OK;
+}
+
 mparser_api_status mparser_module_compile_utf8(
     const char* source,
     size_t source_size,
@@ -1000,23 +1088,115 @@ mparser_api_status mparser_module_compile_utf8(
         sources.push_back(mparser::SourceUnit{
             sourceName->empty() ? "<memory>" : *sourceName,
             *sourceText});
-        auto state = std::make_shared<ModuleState>(
+        return publishCompiledModule(
             mparser::CompiledModule::compile(
-                std::move(sources)));
-        state->diagnostics.reserve(
-            state->module.diagnostics().size());
-        for (const auto& diagnostic :
-             state->module.diagnostics()) {
-            state->diagnostics.push_back(
-                compilationDiagnostic(
-                    diagnostic, state->module));
+                std::move(sources)),
+            out_module);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_api_status mparser_module_compile_sources(
+    const mparser_source_unit* sources,
+    size_t source_count,
+    mparser_module** out_module) {
+    using namespace mparser_c_detail;
+    if (!out_module) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_module = nullptr;
+    if (!sources || source_count == 0) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::vector<mparser::SourceUnit> copiedSources;
+        copiedSources.reserve(source_count);
+        for (size_t index = 0; index < source_count; ++index) {
+            const auto& source = sources[index];
+            if (source.struct_size < sizeof(source) ||
+                source.abi_version != MPARSER_C_ABI_VERSION) {
+                return MPARSER_API_STATUS_ABI_MISMATCH;
+            }
+            const auto sourceName = copyBytes(
+                source.source_name, source.source_name_size);
+            const auto sourceText =
+                copyBytes(source.source, source.source_size);
+            if (!sourceName || !sourceText) {
+                return MPARSER_API_STATUS_INVALID_ARGUMENT;
+            }
+            copiedSources.push_back(mparser::SourceUnit{
+                *sourceName, *sourceText});
         }
-        auto* handle = new mparser_module;
-        handle->state = std::move(state);
-        *out_module = handle;
-        return handle->state->module.valid()
-                   ? MPARSER_API_STATUS_OK
-                   : MPARSER_API_STATUS_COMPILATION_FAILED;
+        return publishCompiledModule(
+            mparser::CompiledModule::compile(
+                std::move(copiedSources)),
+            out_module);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_api_status mparser_module_load_file_utf8(
+    const char* entry_path,
+    size_t entry_path_size,
+    const mparser_source_load_options* options,
+    mparser_module** out_module) {
+    using namespace mparser_c_detail;
+    if (!out_module) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_module = nullptr;
+    try {
+        const auto entryText =
+            copyBytes(entry_path, entry_path_size);
+        if (!entryText || !validPathText(*entryText)) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+
+        mparser::SourceLoaderOptions loaderOptions;
+        if (options) {
+            if (options->struct_size < sizeof(*options) ||
+                options->abi_version != MPARSER_C_ABI_VERSION) {
+                return MPARSER_API_STATUS_ABI_MISMATCH;
+            }
+            if (!options->search_paths &&
+                options->search_path_count != 0) {
+                return MPARSER_API_STATUS_INVALID_ARGUMENT;
+            }
+            loaderOptions.searchPaths.reserve(
+                options->search_path_count);
+            for (size_t index = 0;
+                 index < options->search_path_count; ++index) {
+                const auto path = copyBytes(
+                    options->search_paths[index].data,
+                    options->search_paths[index].size);
+                if (!path || !validPathText(*path)) {
+                    return MPARSER_API_STATUS_INVALID_ARGUMENT;
+                }
+                loaderOptions.searchPaths.push_back(
+                    pathFromUtf8(*path));
+            }
+        }
+
+        mparser::SourceLoaderResult loaded;
+        try {
+            loaded = mparser::SourceLoader{}.load(
+                pathFromUtf8(*entryText), loaderOptions);
+        } catch (const std::bad_alloc&) {
+            throw;
+        } catch (const std::exception& error) {
+            return publishSourceLoadFailure(
+                *entryText, error.what(), out_module);
+        }
+        return publishCompiledModule(
+            mparser::CompiledModule::compile(
+                std::move(loaded.sources)),
+            out_module);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {
@@ -1038,6 +1218,24 @@ mparser_module_is_valid(const mparser_module* module) {
                    module->state->module.valid()
                ? 1u
                : 0u;
+}
+
+size_t
+mparser_module_source_count(const mparser_module* module) {
+    return module && module->state
+               ? module->state->module.sources().size()
+               : 0;
+}
+
+mparser_utf8_view
+mparser_module_source_name(
+    const mparser_module* module, size_t index) {
+    if (!module || !module->state ||
+        index >= module->state->module.sources().size()) {
+        return mparser_c_detail::emptyUtf8View();
+    }
+    return mparser_c_detail::utf8View(
+        module->state->module.sourceName(index));
 }
 
 size_t

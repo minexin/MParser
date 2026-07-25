@@ -392,11 +392,29 @@ function families, not an unbounded builtin count.
   protocol, install/export consumers, optional views/adapters, and final
   compatibility policy remain v0.90 gates.
 
+### v0.84: C Source Graph Embedding
+
+- Status: closed by the v0.84 source/load implementation and linked evidence
+  in `docs/v0.84.md`, `docs/embedding-c-api.md`, and `EMBED-006`.
+- Add versioned, copied C source descriptors for deterministic in-memory
+  multi-source compilation with retained source order and diagnostics.
+- Add a UTF-8 entry/search-path loader over the shared `SourceLoader`, covering
+  ordinary/private functions, packages, class folders, separated methods, and
+  discovered source dependencies without exposing internal `SourceUnit`
+  metadata.
+- Return inspectable invalid modules for stable source-load failures and expose
+  borrowed module source enumeration under the existing ownership model.
+- Prove source-buffer independence, cross-source diagnostics, real
+  `+package/@Class` loading, native/no-JIT parity, and focused AArch64
+  native/portable execution with a C11 regression and runnable C host.
+- Keep ABI candidate 1 pre-freeze; installed consumers, machine protocol,
+  forward-compatible layout/symbol policy, stress, and final platform evidence
+  remain v0.90 gates.
+
 ### v0.90: Embedding And Release Candidate APIs
 
-- Freeze the compile-once/invoke-many C++ and narrow C candidates, complete
-  multi-source loading and installed consumers, and add the versioned machine
-  protocol.
+- Freeze the compile/load/invoke-many C++ and narrow C candidates, complete
+  installed consumers, and add the versioned machine protocol.
 - Validate representative function families, persistent runtime behavior,
   resource boundaries, cross-platform consumers, and cache invalidation.
 - Freeze v1.0 API/ABI/protocol candidates and require explicit compatibility

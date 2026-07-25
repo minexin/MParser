@@ -47,11 +47,18 @@ std::filesystem::path normalizedPath(const std::filesystem::path& path) {
     return error ? absolute.lexically_normal() : canonical;
 }
 
+std::string pathToUtf8(const std::filesystem::path& path) {
+    const auto encoded = path.generic_u8string();
+    return std::string(
+        reinterpret_cast<const char*>(encoded.data()),
+        encoded.size());
+}
+
 std::string readSourceFile(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         throw std::runtime_error("failed to open input file: " +
-                                 path.string());
+                                 pathToUtf8(path));
     }
     std::ostringstream buffer;
     buffer << input.rdbuf();
@@ -579,7 +586,7 @@ SourceLoaderResult SourceLoader::load(
     std::error_code error;
     if (!std::filesystem::is_regular_file(entry, error) || error) {
         throw std::runtime_error("failed to open input file: " +
-                                 entry.string());
+                                 pathToUtf8(entry));
     }
 
     SourceLoaderResult result;
@@ -621,7 +628,8 @@ SourceLoaderResult SourceLoader::load(
         }
         sourcePaths.push_back(path);
         result.sources.push_back(SourceUnit{
-            path.string(), std::move(content), std::move(namespaceName),
+            pathToUtf8(path), std::move(content),
+            std::move(namespaceName),
             std::move(functionIdentity), std::move(classMethodOwner),
             std::move(classPrivateOwner), {}});
     };

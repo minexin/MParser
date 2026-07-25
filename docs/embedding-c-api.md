@@ -1,8 +1,10 @@
 # MParser C Embedding API
 
-MParser v0.83 introduces a narrow, pure C embedding boundary in
+MParser v0.83 introduced a narrow, pure C embedding boundary in
 `include/mparser/c_api.h`. It is implemented by the `mparser_c_api` CMake
-shared-library target, whose output name is `mparser_c`.
+shared-library target, whose output name is `mparser_c`. v0.84 extends that
+same boundary with explicit multi-source compilation and UTF-8 filesystem
+source-graph loading.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
@@ -21,13 +23,17 @@ From the source tree:
 
 ```powershell
 cmake -S . -B build
-cmake --build build --target mparser_c_api mparser_c_embedding_demo
+cmake --build build --target mparser_c_api mparser_c_embedding_demo `
+  mparser_c_source_graph_demo
 build\mparser_c_embedding_demo.exe
+build\mparser_c_source_graph_demo.exe `
+  samples\class_folders\app\run_demo.m `
+  samples\class_folders\lib
 ```
 
 On Linux the shared-library output is `libmparser_c.so`; on Windows it is
 `mparser_c.dll` plus the toolchain import library. Installation and exported
-package targets remain a v0.90 task. v0.83 consumers therefore build against
+package targets remain a v0.90 task. v0.84 consumers therefore build against
 this source tree and its CMake target.
 
 ## Handles And Ownership
@@ -64,14 +70,37 @@ session's persistent/global state.
 ## Compilation And Invocation
 
 `mparser_module_compile_utf8` compiles one owned copy of a UTF-8 source buffer
-and source name. On success it returns `MPARSER_API_STATUS_OK` and a valid
-module. On a language compilation failure it returns
-`MPARSER_API_STATUS_COMPILATION_FAILED` and still returns an inspectable module
-whose diagnostics preserve source positions.
+and source name. It remains the one-source convenience API.
 
-v0.83 exposes single-source compilation. Source-graph loading and installed
-file/package resolution remain available through the source-level C++ API and
-will receive a C loading contract before the final embedding freeze.
+`mparser_module_compile_sources` accepts one or more versioned
+`mparser_source_unit` descriptors. Initialize each descriptor with
+`mparser_source_unit_init`. The module copies every name and source buffer,
+preserves the supplied order, and treats the first unit as the entry source.
+This route supports explicit top-level scripts, functions, and classes, but it
+does not infer package/private/class-folder identity from source names.
+
+For MATLAB filesystem semantics, initialize `mparser_source_load_options` and
+call `mparser_module_load_file_utf8` with an entry `.m` file and ordered search
+paths. This invokes the same `SourceLoader` used by the CLI and supports:
+
+- entry-directory and ordered search-path precedence;
+- ordinary path and private functions;
+- `+package` functions and classes;
+- `@Class` folders, separated methods, and class-private functions;
+- discovered imports, superclasses, typed properties, and callable
+  dependencies.
+
+Paths are length-delimited UTF-8 and are converted directly to native
+filesystem paths. Loaded source names remain UTF-8. The host can inspect the
+ordered graph through `mparser_module_source_count` and
+`mparser_module_source_name`; returned names are borrowed from the module.
+
+On a language compilation failure either route returns
+`MPARSER_API_STATUS_COMPILATION_FAILED` and an inspectable invalid module whose
+diagnostics preserve source positions. A filesystem loading failure returns
+`MPARSER_API_STATUS_SOURCE_LOAD_FAILED` and an inspectable invalid module with
+a stable `MParser:SourceLoadFailed` compilation diagnostic. Descriptor or
+option contract errors return without creating a module.
 
 Initialize every invocation with `mparser_invocation_options_init`. The
 request can select:
@@ -119,7 +148,7 @@ Unicode code units represented by `uint16_t`.
 All external array payloads and linear element indexes use MATLAB column-major
 order. MParser converts to and from its internal storage without exposing that
 storage layout. Accessor pointers are immutable and owned by the value handle.
-There is no zero-copy external buffer or mutable view in v0.83.
+There is no zero-copy external buffer or mutable view in v0.84.
 
 Cell and structure constructors copy the represented runtime values. Releasing
 the child handles after construction is valid. A scalar structure is created
@@ -174,7 +203,11 @@ so their width does not depend on the host compiler's enum ABI.
 `c_api_smoke` is compiled as C11 and links only through the shared C target. It
 covers:
 
-- version negotiation and compilation diagnostics;
+- version negotiation, multi-source compilation, source enumeration, and
+  source-linked diagnostics;
+- copied host source-buffer ownership and versioned load options;
+- package/class-folder/search-path loading and stable load failures;
+- non-ASCII entry/search paths and retained UTF-8 source names;
 - scalar and multiple-output invocation;
 - MATLAB column-major numeric, character, and string round trips;
 - Cell and Struct construction with independent child lifetimes;
@@ -185,15 +218,17 @@ covers:
 - resource stops, pre-cancellation, execution summaries, and session recovery;
 - retain/release and ABI-request validation.
 
-`c_embedding_demo_smoke` runs the C host sample. Both are included in Linux
-AArch64 native-JIT and portable-only QEMU jobs in addition to the complete
-Windows x64 and Linux x64 suites.
+`c_api_utf8_source_graph_smoke` creates non-ASCII entry and library
+directories. `c_embedding_demo_smoke` runs the single-source C host and
+`c_source_graph_demo_smoke` loads a real `+package/@Class` graph. All are
+included in Linux AArch64 native-JIT and portable-only QEMU jobs in addition
+to the complete Windows x64 and Linux x64 suites.
 
 ## Remaining Freeze Work
 
 The v0.90 embedding gate still requires:
 
-1. multi-source/load-path C compilation and installed consumer packages;
+1. installed C/C++ consumer packages;
 2. the versioned machine-readable CLI/result protocol;
 3. explicit forward-compatible structure and symbol-version policy;
 4. external adapter and optional array-view validation;
