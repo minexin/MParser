@@ -348,9 +348,29 @@ function families, not an unbounded builtin count.
   VM fallback.
 - Reject malformed arguments/workspaces before execution and preserve the old
   VM-specific APIs as compatibility paths.
-- Keep public binary layout, external value ownership, resource limits, C ABI,
-  machine protocol, install/export consumers, and final freeze in the v0.90
-  gate.
+- Defer public binary layout, external value ownership, resource controls,
+  C ABI, machine protocol, install/export consumers, and final freeze to later
+  embedding milestones.
+
+### v0.82: Resource-Controlled Embedding
+
+- Status: closed by the v0.82 execution-control implementation and linked
+  evidence in `docs/v0.82.md`, `EMBED-004`, and `G-RESOURCE-001`.
+- Add request-level instruction, steady-clock wall-time, call-depth,
+  per-value recursive array-payload, and diagnostic limits plus copyable
+  cross-thread cancellation.
+- Make resource stops uncatchable terminal runtime failures with stable
+  identifiers, stop reasons, high-water marks, and deterministic retention of
+  one terminal diagnostic.
+- Suppress typed/native regions for controls that require instruction polling,
+  preserve optimized execution for compatible controls, and report the policy
+  fallback explicitly.
+- Expose declared execution-control context to cooperative C++ builtins,
+  preserve ordinary host exception containment, and continue propagating
+  `std::bad_alloc` until allocation-safe reporting is available.
+- Prove exact termination, session reuse, non-rollback semantics, live
+  cancellation, runnable host behavior, and focused native/portable AArch64
+  execution.
 
 ### v0.90: Embedding And Release Candidate APIs
 

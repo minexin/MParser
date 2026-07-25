@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mparser/bytecode.h"
+#include "mparser/runtime_execution_control.h"
 #include "mparser/runtime_session_state.h"
 #include "mparser/runtime_value.h"
 #include "mparser/semantic.h"
@@ -115,6 +116,7 @@ struct BytecodeVmOptions {
     std::vector<RuntimeValue> arguments;
     std::optional<size_t> requestedOutputCount;
     TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
+    std::shared_ptr<RuntimeExecutionControl> executionControl;
 };
 
 struct BytecodeTypedRegionExecutionProfile {
@@ -155,6 +157,7 @@ struct BytecodeVmResult {
     size_t requestedOutputCount = 0;
     std::vector<Diagnostic> diagnostics;
     size_t executedInstructionCount = 0;
+    RuntimeExecutionSnapshot execution;
     BytecodeVmProfile profile;
     std::vector<BytecodeTypedRegionExecutionProfile> typedRegionExecutions;
 };

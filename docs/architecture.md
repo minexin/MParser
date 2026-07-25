@@ -1325,8 +1325,39 @@ share one request/result contract.
 tiers, instruction count, typed attempts/executions/fallbacks, and native
 compile/cache-hit counts. The low-level `invoke(BytecodeVmOptions)` APIs remain
 for profiling tools and source compatibility. The external value ownership
-model, resource/cancellation controls, serialization, narrow C ABI, symbol
-visibility, and binary compatibility remain v0.90 gates.
+model, serialization, narrow C ABI, symbol visibility, and binary compatibility
+remain v0.90 gates.
+
+v0.82 attaches one `RuntimeExecutionControl` to each engine-neutral
+invocation. `RuntimeExecutionLimits` defines zero-as-unlimited instruction,
+steady-clock wall-time, call-depth, per-value recursive array-payload, and
+diagnostic budgets. A copyable `RuntimeCancellationToken` shares atomic
+one-shot cancellation state between the host and execution thread. The VM
+checks cancellation and time around instruction dispatch, counts completed
+instructions exactly, guards root/function/anonymous calls, and observes live
+runtime values and diagnostic volume after controlled instructions.
+
+Resource stops are terminal engine events, not language exceptions. They
+produce one stable identifier, bypass bytecode `try` recovery, set
+`RuntimeFailed`, and preserve a machine-readable `RuntimeExecutionStopReason`
+plus resource high-water marks in `ModuleExecutionSummary`. A session remains
+usable after a stop, but side effects completed before the stop are not rolled
+back.
+
+Strict checkpoint controls currently suppress portable and native typed
+regions because those kernels do not yet contain safe cancellation polls.
+Call-depth, payload, and diagnostic controls preserve eligible optimized
+regions. This policy is explicit in the execution summary and keeps resource
+correctness additive: the guarded VM remains the semantic authority.
+
+`runtimeValueArrayBytes()` counts recursive dynamic payload for one
+`RuntimeValue`, with cycle guards for shared object fields and function-handle
+captures. It is not an aggregate process-heap meter. Host inputs are rejected
+before entry and live VM values are observed at checkpoints; allocation-heavy
+context builtins declare `ExecutionControl` permission and must preflight or
+checkpoint their own host work. Ordinary host exceptions remain contained,
+while `std::bad_alloc` propagates until an allocation-safe reporting reserve is
+defined.
 
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,

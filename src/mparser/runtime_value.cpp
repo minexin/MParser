@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <iomanip>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -263,6 +264,137 @@ private:
     std::string error_;
 };
 
+class RuntimeValueArrayByteCounter {
+public:
+    std::optional<size_t> count(const RuntimeValue& value) {
+        if (!countValue(value)) {
+            return std::nullopt;
+        }
+        return bytes_;
+    }
+
+private:
+    bool add(size_t bytes) {
+        if (bytes >
+            std::numeric_limits<size_t>::max() - bytes_) {
+            return false;
+        }
+        bytes_ += bytes;
+        return true;
+    }
+
+    bool addElements(size_t count, size_t elementSize) {
+        if (elementSize != 0 &&
+            count > std::numeric_limits<size_t>::max() /
+                        elementSize) {
+            return false;
+        }
+        return add(count * elementSize);
+    }
+
+    bool countWorkspace(const RuntimeWorkspace& workspace) {
+        for (const auto& [name, value] : workspace) {
+            (void)name;
+            if (!countValue(value)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool countFunctionHandle(const RuntimeValue& value) {
+        if (!value.functionHandle) {
+            return true;
+        }
+        const void* identity = value.functionHandle.get();
+        if (!visitedFunctionHandles_.insert(identity).second) {
+            return true;
+        }
+        const auto& handle = *value.functionHandle;
+        if (handle.receiver && !countValue(*handle.receiver)) {
+            return false;
+        }
+        return countWorkspace(handle.capturedVariables);
+    }
+
+    bool countObjectFields(const RuntimeValue& value) {
+        if (value.handleObject) {
+            if (!value.sharedFields) {
+                return true;
+            }
+            const void* identity = value.sharedFields.get();
+            if (!visitedSharedFields_.insert(identity).second) {
+                return true;
+            }
+            return countWorkspace(*value.sharedFields);
+        }
+        return countWorkspace(value.fields);
+    }
+
+    bool countValue(const RuntimeValue& value) {
+        switch (value.kind) {
+        case RuntimeValueKind::Missing:
+            return true;
+        case RuntimeValueKind::Number:
+            return add(sizeof(double));
+        case RuntimeValueKind::CharacterArray:
+            return addElements(value.characterElements.size(),
+                               sizeof(char16_t));
+        case RuntimeValueKind::StringArray:
+            for (const auto& element : value.stringElements) {
+                if (!addElements(element.value.size(),
+                                 sizeof(char16_t))) {
+                    return false;
+                }
+            }
+            return true;
+        case RuntimeValueKind::Vector:
+        case RuntimeValueKind::Matrix:
+            return addElements(value.elements.size(),
+                               sizeof(double));
+        case RuntimeValueKind::Cell:
+        case RuntimeValueKind::CommaSeparatedList:
+            for (const auto& element : value.cells) {
+                if (!countValue(element)) {
+                    return false;
+                }
+            }
+            return true;
+        case RuntimeValueKind::FunctionHandle:
+            return countFunctionHandle(value);
+        case RuntimeValueKind::Struct:
+            for (const auto& element : value.structElements) {
+                if (!countWorkspace(element)) {
+                    return false;
+                }
+            }
+            return true;
+        case RuntimeValueKind::NameValueArgument:
+            for (const auto& element : value.cells) {
+                if (!countValue(element)) {
+                    return false;
+                }
+            }
+            return true;
+        case RuntimeValueKind::Object:
+            if (!value.objectElements.empty()) {
+                for (const auto& element : value.objectElements) {
+                    if (!countValue(element)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            return countObjectFields(value);
+        }
+        return false;
+    }
+
+    size_t bytes_ = 0;
+    std::set<const void*> visitedFunctionHandles_;
+    std::set<const void*> visitedSharedFields_;
+};
+
 } // namespace
 
 RuntimeValue makeRuntimeMissingValue() {
@@ -447,6 +579,12 @@ RuntimeValueContractResult validateRuntimeValueContract(
     const RuntimeValue& value) {
     RuntimeValueContractValidator validator;
     return validator.validate(value);
+}
+
+std::optional<size_t> runtimeValueArrayBytes(
+    const RuntimeValue& value) {
+    RuntimeValueArrayByteCounter counter;
+    return counter.count(value);
 }
 
 std::string runtimeFunctionHandleText(const RuntimeValue& value) {

@@ -155,6 +155,8 @@ RuntimeValueOwnership runtimeValueOwnership(const RuntimeValue& value);
 bool runtimeValueIsStorable(const RuntimeValue& value);
 RuntimeValueContractResult validateRuntimeValueContract(
     const RuntimeValue& value);
+std::optional<size_t> runtimeValueArrayBytes(
+    const RuntimeValue& value);
 
 std::string runtimeFunctionHandleText(const RuntimeValue& value);
 RuntimeValue runtimeFunctionHandleMetadata(const RuntimeValue& value);

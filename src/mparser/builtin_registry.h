@@ -16,6 +16,7 @@
 namespace mparser {
 
 struct RuntimeObjectArrayPolicy;
+class RuntimeExecutionControl;
 struct RuntimeWarningState;
 
 struct BuiltinArity {
@@ -91,6 +92,7 @@ enum class BuiltinContextPermission : std::uint32_t {
     WarningState = 1U << 1U,
     ObjectArrayPolicy = 1U << 2U,
     DynamicCall = 1U << 3U,
+    ExecutionControl = 1U << 4U,
 };
 
 BuiltinSideEffect operator|(BuiltinSideEffect left,
@@ -137,6 +139,7 @@ struct BuiltinCallContext {
     RuntimeWorkspace* workspace = nullptr;
     RuntimeWarningState* warningState = nullptr;
     const RuntimeObjectArrayPolicy* objectArrayPolicy = nullptr;
+    RuntimeExecutionControl* executionControl = nullptr;
     BuiltinDynamicInvoker dynamicInvoker;
 };
 

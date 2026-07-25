@@ -12,6 +12,7 @@
 #include <exception>
 #include <initializer_list>
 #include <limits>
+#include <new>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -473,6 +474,10 @@ std::string missingContextName(
     if (permission == BuiltinContextPermission::DynamicCall) {
         return "dynamic invoker";
     }
+    if (permission ==
+        BuiltinContextPermission::ExecutionControl) {
+        return "execution control";
+    }
     return "runtime context";
 }
 
@@ -493,6 +498,10 @@ bool contextAvailable(const BuiltinCallContext* context,
     }
     if (permission == BuiltinContextPermission::DynamicCall) {
         return static_cast<bool>(context->dynamicInvoker);
+    }
+    if (permission ==
+        BuiltinContextPermission::ExecutionControl) {
+        return context->executionControl != nullptr;
     }
     return true;
 }
@@ -820,7 +829,8 @@ BuiltinResult BuiltinRegistry::invoke(
              BuiltinContextPermission::Workspace,
              BuiltinContextPermission::WarningState,
              BuiltinContextPermission::ObjectArrayPolicy,
-             BuiltinContextPermission::DynamicCall}) {
+             BuiltinContextPermission::DynamicCall,
+             BuiltinContextPermission::ExecutionControl}) {
         if (hasBuiltinContextPermission(
                 descriptor->requiredContext, permission) &&
             !contextAvailable(call.context, permission)) {
@@ -835,6 +845,8 @@ BuiltinResult BuiltinRegistry::invoke(
     BuiltinResult result;
     try {
         result = descriptor->handler(call);
+    } catch (const std::bad_alloc&) {
+        throw;
     } catch (const std::exception& error) {
         return BuiltinResult::failure(
             call.span,

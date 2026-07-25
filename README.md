@@ -1,10 +1,11 @@
 # MParser
 
-Current milestone: v0.81.0. See [docs/v0.81.md](docs/v0.81.md) for the
+Current milestone: v0.82.0. See [docs/v0.82.md](docs/v0.82.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan, and [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.80.md](docs/v0.80.md),
+kept in [docs/v0.81.md](docs/v0.81.md),
+[docs/v0.80.md](docs/v0.80.md),
 [docs/v0.79.md](docs/v0.79.md),
 [docs/v0.78.md](docs/v0.78.md),
 [docs/v0.77.md](docs/v0.77.md),
@@ -836,6 +837,27 @@ all preserve VM fallback. `CompiledModuleSession::execute()` uses the same
 contract with persistent state. The old VM-specific `invoke()` API remains
 available. This is a source-level API candidate, not yet the frozen C++ ABI,
 narrow C ABI, resource contract, or versioned machine protocol.
+
+v0.82 adds cooperative cancellation and bounded production execution to that
+embedding contract. Each request may set instruction, steady-clock wall-time,
+call-depth, per-value recursive array-payload, and retained-diagnostic limits,
+or carry a copyable cross-thread cancellation token. Resource stops are
+uncatchable terminal runtime failures with stable identifiers and an explicit
+stop reason in `ModuleExecutionSummary`; persistent sessions remain reusable
+but do not roll back effects completed before a stop. Instruction, deadline,
+and cancellation checks suppress typed/native regions until those kernels
+have safe polling points, while call-depth, array, and diagnostic controls
+retain guarded optimized execution. Context builtins can declare
+`ExecutionControl` permission and cooperate before long host operations.
+`std::bad_alloc` still propagates to the embedder because no allocation-safe
+reporting reserve has been frozen.
+
+Build and run the resource-control embedding example:
+
+```powershell
+cmake --build build --target mparser_embedding_resource_control_demo
+build\mparser_embedding_resource_control_demo.exe
+```
 
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,

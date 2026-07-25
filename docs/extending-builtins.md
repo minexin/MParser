@@ -72,10 +72,11 @@ analysis, so function resolution and all later execution tiers see the same
 catalog.
 
 `CompiledModule::execute()` also builds and retains static typed regions from
-that registry. It is the preferred v0.81 embedding path: automatic, portable,
+that registry. It is the preferred v0.82 embedding path: automatic, portable,
 and native requests use guarded optimized execution, while unsupported code
-continues in the VM. The older `invoke(BytecodeVmOptions)` entry remains the
-low-level compatibility path.
+continues in the VM. Request-level resource controls may deliberately suppress
+optimized regions that lack safe checkpoints. The older
+`invoke(BytecodeVmOptions)` entry remains the low-level compatibility path.
 
 ## Descriptor Rules
 
@@ -108,8 +109,8 @@ required properties.
 `contextPermissions` lists every context capability a handler may use.
 `requiredContext` is the subset that must be present for every invocation.
 The current context fields are workspace, warning state, object-array policy,
-and a reserved dynamic invoker. A context handler must not retain raw pointers
-from `BuiltinCallContext` after returning.
+execution control, and a reserved dynamic invoker. A context handler must not
+retain raw pointers from `BuiltinCallContext` after returning.
 
 `typedLowering` is optional. `None` means the legal call executes in the
 baseline VM. A non-`None` value may be used only when the custom function is
@@ -137,7 +138,9 @@ Use `BuiltinResult::failure(call.span, message, identifier)` for expected host
 validation errors. Return a specific, stable identifier. Standard and unknown
 C++ exceptions are caught at the registry boundary and converted to
 `MParser:BuiltinHostException`, but exception conversion is a last-resort
-safety boundary rather than ordinary control flow.
+safety boundary rather than ordinary control flow. `std::bad_alloc` propagates
+to the embedder until MParser has an allocation-safe preallocated reporting
+path.
 
 ## Context And Threading
 
@@ -152,6 +155,26 @@ call. The dynamic invoker field is reserved and currently absent from engine
 calls, so declaring it as required produces a deterministic missing-context
 diagnostic.
 
+## Resource Cooperation
+
+An allocation-heavy or long-running context builtin should declare
+`BuiltinContextPermission::ExecutionControl`. Mark it as required only when the
+builtin cannot operate without a production VM execution control; the
+reference HIR interpreter does not provide this embedding context.
+
+`call.context->executionControl` is borrowed for one handler call. Use
+`checkpoint()` between bounded chunks of work and return promptly when it
+fails. Before allocating a large result, compute the requested payload with
+overflow checks, compare it with `limits().maxArrayBytes`, and call
+`observeArrayBytes()` to register the preflight. Successful outputs are still
+validated and observed by the VM after the instruction.
+
+Cancellation and wall time are cooperative. MParser cannot interrupt a builtin
+blocked in a system call or host library that does not return to a checkpoint.
+The array-byte limit measures recursive payload for one `RuntimeValue`; it is
+not an aggregate heap quota. Do not advertise a builtin as resource-bounded
+unless its internal work obeys these constraints.
+
 ## Conformance Tests
 
 Include `tests/builtin_conformance.h` from a project smoke executable. Compile
@@ -163,6 +186,7 @@ compare every observable output. At minimum, test:
 - each declared value/shape constraint;
 - zero-output and multi-output behavior when declared;
 - every required context and its missing-context diagnostic;
+- execution-control polling and allocation preflight when applicable;
 - host exceptions and malformed outputs;
 - source-function shadowing and function-handle invocation;
 - portable typed execution when a typed lowering is declared;

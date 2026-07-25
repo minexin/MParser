@@ -414,6 +414,12 @@ std::vector<Diagnostic> validateModuleInvocationRequest(
         break;
     }
 
+    if (request.limits.maxWallTime.count() < 0) {
+        diagnostics.push_back(requestDiagnostic(
+            "module wall-time limit cannot be negative",
+            "MParser:InvalidExecutionLimits"));
+    }
+
     if (request.entryFunction.empty()) {
         if (!request.arguments.empty()) {
             diagnostics.push_back(requestDiagnostic(
@@ -431,20 +437,34 @@ std::vector<Diagnostic> validateModuleInvocationRequest(
     for (size_t index = 0; index < request.arguments.size(); ++index) {
         const auto contract =
             validateRuntimeValueContract(request.arguments[index]);
-        if (contract.valid) {
+        if (!contract.valid) {
+            std::string message =
+                "argument " + std::to_string(index + 1) +
+                " violates the RuntimeValue contract";
+            if (!contract.path.empty()) {
+                message += " at " + contract.path;
+            }
+            if (!contract.error.empty()) {
+                message += ": " + contract.error;
+            }
+            diagnostics.push_back(requestDiagnostic(
+                std::move(message),
+                "MParser:InvalidArgumentValue"));
             continue;
         }
-        std::string message =
-            "argument " + std::to_string(index + 1) +
-            " violates the RuntimeValue contract";
-        if (!contract.path.empty()) {
-            message += " at " + contract.path;
+        if (request.limits.maxArrayBytes != 0) {
+            const auto bytes =
+                runtimeValueArrayBytes(request.arguments[index]);
+            if (!bytes ||
+                *bytes > request.limits.maxArrayBytes) {
+                diagnostics.push_back(requestDiagnostic(
+                    "argument " + std::to_string(index + 1) +
+                        " exceeds the array-byte limit of " +
+                        std::to_string(
+                            request.limits.maxArrayBytes),
+                    "MParser:ArrayByteLimitExceeded"));
+            }
         }
-        if (!contract.error.empty()) {
-            message += ": " + contract.error;
-        }
-        diagnostics.push_back(requestDiagnostic(
-            std::move(message), "MParser:InvalidArgumentValue"));
     }
 
     std::set<std::string> workspaceNames;
@@ -486,6 +506,21 @@ std::vector<Diagnostic> validateModuleInvocationRequest(
                 "initial workspace variable is transient: " +
                     variable.name,
                 "MParser:TransientWorkspaceValue"));
+            continue;
+        }
+        if (request.limits.maxArrayBytes != 0) {
+            const auto bytes =
+                runtimeValueArrayBytes(variable.value);
+            if (!bytes ||
+                *bytes > request.limits.maxArrayBytes) {
+                diagnostics.push_back(requestDiagnostic(
+                    "initial workspace variable " +
+                        variable.name +
+                        " exceeds the array-byte limit of " +
+                        std::to_string(
+                            request.limits.maxArrayBytes),
+                    "MParser:ArrayByteLimitExceeded"));
+            }
         }
     }
     return diagnostics;
@@ -513,6 +548,19 @@ ModuleExecutionSummary summarizeExecution(
     summary.profilingCollected = runtime.profile.collected;
     summary.executedInstructionCount =
         runtime.executedInstructionCount;
+    summary.resourceControlsActive =
+        runtime.execution.controlsActive;
+    summary.optimizedExecutionSuppressed =
+        runtime.execution.optimizedExecutionSuppressed;
+    summary.stopReason = runtime.execution.stopReason;
+    summary.maximumCallDepth =
+        runtime.execution.maximumCallDepth;
+    summary.maximumArrayBytes =
+        runtime.execution.maximumArrayBytes;
+    summary.maximumDiagnosticCount =
+        runtime.execution.maximumDiagnosticCount;
+    summary.elapsedNanoseconds =
+        runtime.execution.elapsedNanoseconds;
     summary.typedRegionCount =
         runtime.typedRegionExecutions.size();
 
@@ -537,7 +585,9 @@ ModuleExecutionSummary summarizeExecution(
     }
     summary.fallbackOccurred =
         summary.fallbackOccurred ||
-        summary.typedRegionFallbackCount != 0;
+        summary.typedRegionFallbackCount != 0 ||
+        (summary.optimizedExecutionSuppressed &&
+         requestedBackend != ModuleExecutionBackend::Bytecode);
     if (usedPortable && usedNative) {
         summary.effectiveTier = ModuleExecutionTier::Mixed;
     } else if (usedNative) {
@@ -546,6 +596,16 @@ ModuleExecutionSummary summarizeExecution(
         summary.effectiveTier = ModuleExecutionTier::Portable;
     }
     return summary;
+}
+
+ModuleExecutionSummary summarizeExecutionControl(
+    const RuntimeExecutionControl& control,
+    ModuleExecutionBackend requestedBackend) {
+    BytecodeVmResult runtime;
+    runtime.execution = control.snapshot();
+    runtime.executedInstructionCount =
+        runtime.execution.executedInstructionCount;
+    return summarizeExecution(runtime, requestedBackend);
 }
 
 } // namespace
@@ -884,6 +944,10 @@ ModuleInvocationResult CompiledModule::execute(
         request.requestedOutputCount;
     runtimeOptions.typedRegionBackend =
         typedBackendFor(request.backend);
+    const auto executionControl =
+        std::make_shared<RuntimeExecutionControl>(
+            request.limits, request.cancellationToken);
+    runtimeOptions.executionControl = executionControl;
 
     BytecodeVmResult runtime;
     try {
@@ -901,6 +965,8 @@ ModuleInvocationResult CompiledModule::execute(
         throw;
     } catch (const std::exception& exception) {
         result.status = ModuleInvocationStatus::RuntimeFailed;
+        result.execution = summarizeExecutionControl(
+            *executionControl, request.backend);
         const std::vector<Diagnostic> diagnostics{
             Diagnostic{
                 SourceSpan{},
@@ -913,6 +979,8 @@ ModuleInvocationResult CompiledModule::execute(
         return result;
     } catch (...) {
         result.status = ModuleInvocationStatus::RuntimeFailed;
+        result.execution = summarizeExecutionControl(
+            *executionControl, request.backend);
         const std::vector<Diagnostic> diagnostics{
             Diagnostic{
                 SourceSpan{},
@@ -924,9 +992,12 @@ ModuleInvocationResult CompiledModule::execute(
         return result;
     }
 
-    result.status = hasErrorDiagnostics(runtime.diagnostics)
-                        ? ModuleInvocationStatus::RuntimeFailed
-                        : ModuleInvocationStatus::Succeeded;
+    result.status =
+        runtime.execution.stopReason !=
+                RuntimeExecutionStopReason::None ||
+            hasErrorDiagnostics(runtime.diagnostics)
+            ? ModuleInvocationStatus::RuntimeFailed
+            : ModuleInvocationStatus::Succeeded;
     result.entryFunction = runtime.entryFunction.empty()
                                ? request.entryFunction
                                : runtime.entryFunction;

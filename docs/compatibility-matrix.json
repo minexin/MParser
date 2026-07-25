@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.81.0",
+  "version": "0.82.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -318,9 +318,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "embedding_execution_demo_smoke"],
-      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "tests/module_execution_smoke.cpp", "samples/embedding_execution_demo.cpp"],
-      "limits": "v0.81 adds one engine-neutral request/result contract for stateless and persistent compile-once execution, cached registry-aware static Typed IR, guarded automatic/portable/native execution with VM fallback, staged owned diagnostics, request validation, and execution summaries. RuntimeValue is still a source-level C++ value contract; public binary layout, external value handles, resource/cancellation controls, the narrow C ABI, and the versioned machine protocol remain v0.90 gates."
+      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "module_resource_control_smoke", "embedding_execution_demo_smoke", "embedding_resource_control_demo_smoke"],
+      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/runtime_execution_control.h", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "tests/module_execution_smoke.cpp", "tests/module_resource_control_smoke.cpp", "samples/embedding_execution_demo.cpp", "samples/embedding_resource_control_demo.cpp"],
+      "limits": "v0.82 provides one engine-neutral request/result/resource-control contract for stateless and persistent compile-once execution, cached registry-aware static Typed IR, guarded automatic/portable/native execution with VM fallback, staged owned diagnostics, request validation, execution summaries, cooperative cancellation, and deterministic resource stops. RuntimeValue is still a source-level C++ value contract; public binary layout, external value handles, the narrow C ABI, and the versioned machine protocol remain v0.90 gates."
     },
     {
       "id": "EMBED-003",
@@ -331,7 +331,18 @@
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["module_execution_smoke", "embedding_execution_demo_smoke", "runtime_session_smoke", "typed_region_executor_smoke"],
       "sources": ["src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "tests/module_execution_smoke.cpp", "samples/embedding_execution_demo.cpp", "docs/v0.81.md"],
-      "limits": "The v0.81 names and behavior are source-level v1.0 API candidates. Existing VM-specific invoke APIs remain available. C++ ABI layout, machine serialization, resource status values, C ownership handles, and symbol/version negotiation are not frozen."
+      "limits": "The v0.82 names and behavior, including resource stop fields, are source-level v1.0 API candidates. Existing VM-specific invoke APIs remain available. C++ ABI layout, machine serialization, C ownership handles, and symbol/version negotiation are not frozen."
+    },
+    {
+      "id": "EMBED-004",
+      "area": "runtime-safety",
+      "feature": "Cooperative cancellation plus instruction, wall-time, call-depth, per-value array-payload, and diagnostic execution limits",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
+      "evidence": ["module_resource_control_smoke", "embedding_resource_control_demo_smoke", "module_execution_smoke", "runtime_session_smoke", "builtin_registry_smoke"],
+      "sources": ["src/mparser/runtime_execution_control.h", "src/mparser/runtime_execution_control.cpp", "src/mparser/runtime_value.cpp", "src/mparser/module_execution.h", "src/mparser/compiled_module.cpp", "src/mparser/bytecode_vm.cpp", "src/mparser/builtin_registry.h", "tests/module_resource_control_smoke.cpp", "samples/embedding_resource_control_demo.cpp", "docs/v0.82.md"],
+      "limits": "Instruction, deadline, and cancellation controls suppress current typed/native regions and use deterministic VM checkpoints. Call-depth, per-value recursive payload, and diagnostic limits preserve eligible optimized regions. Cancellation is cooperative; noncooperative blocking host code cannot be forcibly interrupted. Array bytes are not an aggregate process-heap cap, completed side effects are not rolled back, and std::bad_alloc propagates until allocation-safe reporting is available."
     },
     {
       "id": "EMBED-002",
@@ -504,11 +515,11 @@
       "id": "G-RESOURCE-001",
       "area": "runtime-safety",
       "priority": "must-have",
-      "state": "open",
-      "target": "v0.90",
+      "state": "closed",
+      "target": "v0.82",
       "framework_impact": "contract-extension",
       "requirement": "Add cancellation and limits for instructions, time, call depth, array bytes, diagnostics, and host exception containment.",
-      "exit_evidence": "Stress tests proving deterministic termination and cleanup at every configured resource boundary."
+      "exit_evidence": "docs/v0.82.md defines zero-as-unlimited request controls, cooperative cancellation, stable uncatchable stops, per-value payload semantics, JIT suppression, non-rollback, and builtin cooperation. module_resource_control_smoke proves exact instruction and call-depth termination, live cross-thread cancellation, wall-time stop, input/runtime payload limits, diagnostic truncation, session reuse, optimized fallback policy, host exception containment, and deliberate bad_alloc propagation. embedding_resource_control_demo_smoke runs the deterministic host sample in focused native and portable AArch64 jobs."
     },
     {
       "id": "G-PLATFORM-001",

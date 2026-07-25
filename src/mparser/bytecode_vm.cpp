@@ -43,6 +43,57 @@ namespace {
 
 constexpr size_t kHotLoopThreshold = 10;
 constexpr std::string_view kScriptProfileName = "<script>";
+
+std::string_view executionStopIdentifier(
+    RuntimeExecutionStopReason reason) {
+    switch (reason) {
+    case RuntimeExecutionStopReason::Cancelled:
+        return "MParser:ExecutionCancelled";
+    case RuntimeExecutionStopReason::InstructionLimit:
+        return "MParser:InstructionLimitExceeded";
+    case RuntimeExecutionStopReason::WallTimeLimit:
+        return "MParser:WallTimeLimitExceeded";
+    case RuntimeExecutionStopReason::CallDepthLimit:
+        return "MParser:CallDepthLimitExceeded";
+    case RuntimeExecutionStopReason::ArrayByteLimit:
+        return "MParser:ArrayByteLimitExceeded";
+    case RuntimeExecutionStopReason::DiagnosticLimit:
+        return "MParser:DiagnosticLimitExceeded";
+    case RuntimeExecutionStopReason::None:
+        break;
+    }
+    return "MParser:RuntimeStopped";
+}
+
+std::string executionStopMessage(
+    RuntimeExecutionStopReason reason,
+    const RuntimeExecutionLimits& limits) {
+    switch (reason) {
+    case RuntimeExecutionStopReason::Cancelled:
+        return "module execution was cancelled";
+    case RuntimeExecutionStopReason::InstructionLimit:
+        return "module execution reached the instruction limit of " +
+               std::to_string(limits.maxInstructionCount);
+    case RuntimeExecutionStopReason::WallTimeLimit:
+        return "module execution reached the wall-time limit of " +
+               std::to_string(limits.maxWallTime.count()) +
+               " nanoseconds";
+    case RuntimeExecutionStopReason::CallDepthLimit:
+        return "module execution reached the call-depth limit of " +
+               std::to_string(limits.maxCallDepth);
+    case RuntimeExecutionStopReason::ArrayByteLimit:
+        return "module execution exceeded the per-value array-byte "
+               "limit of " +
+               std::to_string(limits.maxArrayBytes);
+    case RuntimeExecutionStopReason::DiagnosticLimit:
+        return "module execution exceeded the diagnostic limit of " +
+               std::to_string(limits.maxDiagnosticCount);
+    case RuntimeExecutionStopReason::None:
+        break;
+    }
+    return "module execution stopped";
+}
+
 constexpr std::string_view kEventDataClassName = "event.EventData";
 constexpr std::string_view kPropertyEventClassName = "event.PropertyEvent";
 constexpr std::string_view kEventListenerClassName = "event.listener";
@@ -1099,6 +1150,11 @@ public:
         sessionState_ = options.sessionState
                             ? options.sessionState
                             : std::make_shared<RuntimeSessionState>();
+        executionControl_ = options.executionControl
+                                ? options.executionControl
+                                : std::make_shared<
+                                      RuntimeExecutionControl>();
+        executionControlActive_ = executionControl_->active();
         profilingEnabled_ =
             options.profiling == BytecodeVmProfilingMode::Full;
         typedRegionBackend_ = options.typedRegionBackend;
@@ -1113,6 +1169,7 @@ public:
         diagnostics_ = program.diagnostics;
         warnings_.clear();
         pendingException_.reset();
+        executionStopDiagnosticAdded_ = false;
         warningState_ = RuntimeWarningState{};
         exceptionCallerFrames_.clear();
         activeExceptionFunctionNames_.clear();
@@ -1142,7 +1199,14 @@ public:
         finalizeEnumerationSemantics();
         validateResolvedClassMembers();
         registerWorkspaceDynamicProperties();
-        collectTypedRegions(typedIr);
+        if (typedIr && !typedIr->regions.empty() &&
+            executionControl_->
+                requiresInstructionCheckpoints()) {
+            executionControl_->
+                markOptimizedExecutionSuppressed();
+        } else {
+            collectTypedRegions(typedIr);
+        }
 
         const bool scriptMode = requestedEntryFunction_.empty() &&
                                 hasTopLevelExecutable(program);
@@ -1153,7 +1217,15 @@ public:
             diagnostics_.push_back(Diagnostic{
                 SourceSpan{}, "script entry does not declare outputs"});
         } else if (diagnostics_.empty()) {
-            execute(scriptMode);
+            const SourceSpan entrySpan =
+                program.instructions.empty()
+                    ? SourceSpan{}
+                    : program.instructions.front().span;
+            if (prepareExecutionControl(entrySpan) &&
+                enterExecutionCall(entrySpan)) {
+                execute(scriptMode);
+                leaveExecutionCall();
+            }
         }
         finalizeEntryOutputs();
 
@@ -1177,6 +1249,7 @@ public:
             std::make_move_iterator(diagnostics_.begin()),
             std::make_move_iterator(diagnostics_.end()));
         result.executedInstructionCount = executedInstructionCount_;
+        result.execution = executionControl_->snapshot();
         if (profilingEnabled_) {
             result.profile = buildProfile();
         }
@@ -1260,6 +1333,187 @@ private:
         }
 
         return profile;
+    }
+
+    void trimDiagnosticsToLimit() {
+        const size_t limit =
+            executionControl_->limits().maxDiagnosticCount;
+        if (limit == 0) {
+            return;
+        }
+        if (warnings_.size() > limit) {
+            warnings_.resize(limit);
+        }
+        const size_t remaining =
+            limit - std::min(limit, warnings_.size());
+        if (diagnostics_.size() > remaining) {
+            diagnostics_.resize(remaining);
+        }
+    }
+
+    void addExecutionStopDiagnostic(const SourceSpan& span) {
+        if (executionStopDiagnosticAdded_ ||
+            !executionControl_ ||
+            executionControl_->stopReason() ==
+                RuntimeExecutionStopReason::None) {
+            return;
+        }
+        if (executionControl_->stopReason() ==
+            RuntimeExecutionStopReason::DiagnosticLimit) {
+            trimDiagnosticsToLimit();
+        }
+        pendingException_.reset();
+        Diagnostic diagnostic{
+            span,
+            executionStopMessage(
+                executionControl_->stopReason(),
+                executionControl_->limits()),
+            std::string(executionStopIdentifier(
+                executionControl_->stopReason()))};
+        diagnostic.stack = exceptionFrames(span);
+        diagnostics_.push_back(std::move(diagnostic));
+        executionStopDiagnosticAdded_ = true;
+    }
+
+    bool observeRuntimeState(const SourceSpan& span) {
+        if (!executionControlActive_ ||
+            !executionControl_->hasArrayByteLimit()) {
+            return true;
+        }
+        const auto observe = [this](const RuntimeValue& value) {
+            return executionControl_->observeValue(value);
+        };
+
+        for (const auto& frame : frames_) {
+            for (const auto& [name, value] : frame.workspace) {
+                (void)name;
+                if (!observe(value)) {
+                    addExecutionStopDiagnostic(span);
+                    return false;
+                }
+            }
+        }
+        for (const auto& value : stack_) {
+            if (!observe(value.value) ||
+                (value.receiver && !observe(*value.receiver))) {
+                addExecutionStopDiagnostic(span);
+                return false;
+            }
+        }
+        for (const auto& loop : forLoopStack_) {
+            const size_t bytes =
+                loop.values.size() >
+                        std::numeric_limits<size_t>::max() /
+                            sizeof(double)
+                    ? std::numeric_limits<size_t>::max()
+                    : loop.values.size() * sizeof(double);
+            if (!executionControl_->observeArrayBytes(bytes)) {
+                addExecutionStopDiagnostic(span);
+                return false;
+            }
+        }
+        for (const auto& context : indexContextStack_) {
+            if (!observe(context.target)) {
+                addExecutionStopDiagnostic(span);
+                return false;
+            }
+        }
+        for (const auto& lvalue : lvalueStack_) {
+            if (lvalue &&
+                (!observe(lvalue->transaction.root()) ||
+                 !observe(lvalue->transaction.current()))) {
+                addExecutionStopDiagnostic(span);
+                return false;
+            }
+        }
+        for (const auto& context : switchContextStack_) {
+            if (!observe(context.selector)) {
+                addExecutionStopDiagnostic(span);
+                return false;
+            }
+        }
+        if (pendingException_ && !observe(*pendingException_)) {
+            addExecutionStopDiagnostic(span);
+            return false;
+        }
+        for (const auto& value : entryArguments_) {
+            if (!observe(value)) {
+                addExecutionStopDiagnostic(span);
+                return false;
+            }
+        }
+        for (const auto& value : entryOutputs_) {
+            if (!observe(value)) {
+                addExecutionStopDiagnostic(span);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool observeDiagnosticBudget(const SourceSpan& span) {
+        if (!executionControlActive_ ||
+            !executionControl_->hasDiagnosticLimit()) {
+            return true;
+        }
+        if (executionControl_->observeDiagnosticCount(
+                warnings_.size() + diagnostics_.size())) {
+            return true;
+        }
+        addExecutionStopDiagnostic(span);
+        return false;
+    }
+
+    bool prepareExecutionControl(const SourceSpan& span) {
+        if (!executionControlActive_) {
+            return true;
+        }
+        if (!executionControl_->checkpoint()) {
+            addExecutionStopDiagnostic(span);
+            return false;
+        }
+        return observeRuntimeState(span) &&
+               observeDiagnosticBudget(span);
+    }
+
+    bool beforeControlledInstruction(const SourceSpan& span) {
+        if (!executionControlActive_) {
+            return true;
+        }
+        if (executionControl_->beforeInstruction()) {
+            return true;
+        }
+        addExecutionStopDiagnostic(span);
+        return false;
+    }
+
+    bool afterControlledInstruction(const SourceSpan& span) {
+        if (!executionControlActive_) {
+            return true;
+        }
+        if (!executionControl_->completeInstruction()) {
+            addExecutionStopDiagnostic(span);
+            return false;
+        }
+        return observeRuntimeState(span) &&
+               observeDiagnosticBudget(span);
+    }
+
+    bool enterExecutionCall(const SourceSpan& span) {
+        if (!executionControlActive_) {
+            return true;
+        }
+        if (executionControl_->enterCall()) {
+            return true;
+        }
+        addExecutionStopDiagnostic(span);
+        return false;
+    }
+
+    void leaveExecutionCall() noexcept {
+        if (executionControlActive_) {
+            executionControl_->leaveCall();
+        }
     }
 
     void initializeWorkspace(
@@ -1448,6 +1702,29 @@ private:
         }
         return &semantic_->sources[span.begin.sourceId];
     }
+
+    class ExecutionCallGuard {
+    public:
+        ExecutionCallGuard(BytecodeVmContext& context,
+                           const SourceSpan& callSite)
+            : context_(context),
+              entered_(
+                  context_.enterExecutionCall(callSite)) {}
+
+        ~ExecutionCallGuard() {
+            if (entered_) {
+                context_.leaveExecutionCall();
+            }
+        }
+
+        explicit operator bool() const noexcept {
+            return entered_;
+        }
+
+    private:
+        BytecodeVmContext& context_;
+        bool entered_ = false;
+    };
 
     class ExceptionFunctionGuard {
     public:
@@ -3970,9 +4247,15 @@ private:
                 break;
             }
 
+            if (!beforeControlledInstruction(instruction.span)) {
+                break;
+            }
             recordInstruction(pc, instruction);
             const auto nextPc = executeInstruction(instruction);
             ++executedInstructionCount_;
+            if (!afterControlledInstruction(instruction.span)) {
+                break;
+            }
             if (!diagnostics_.empty()) {
                 if (const auto recovery = recoverTryDiagnostic()) {
                     pc = *recovery;
@@ -4434,9 +4717,15 @@ private:
                 break;
             }
 
+            if (!beforeControlledInstruction(instruction.span)) {
+                break;
+            }
             recordInstruction(pc, instruction);
             const auto nextPc = executeInstruction(instruction);
             ++executedInstructionCount_;
+            if (!afterControlledInstruction(instruction.span)) {
+                break;
+            }
             if (!diagnostics_.empty()) {
                 if (const auto recovery = recoverTryDiagnostic()) {
                     pc = *recovery;
@@ -9485,6 +9774,10 @@ private:
             return missingOutputs(requestedCount);
         }
 
+        ExecutionCallGuard executionCall(*this, instruction.span);
+        if (!executionCall) {
+            return missingOutputs(requestedCount);
+        }
         ExceptionFunctionGuard exceptionTrace(
             *this, info.display.empty() ? std::string("<anonymous>")
                                         : info.display,
@@ -11259,6 +11552,8 @@ private:
             context.workspace = &currentFrame();
             context.warningState = &warningState_;
             context.objectArrayPolicy = &objectPolicy;
+            context.executionControl =
+                executionControl_.get();
             BuiltinResult result = builtinRegistry().invoke(
                 name,
                 BuiltinCall{
@@ -12921,6 +13216,10 @@ private:
             return missingOutputs(requestedCount);
         }
 
+        ExecutionCallGuard executionCall(*this, instruction.span);
+        if (!executionCall) {
+            return missingOutputs(requestedCount);
+        }
         const std::string traceName =
             info.metadataIdentifier.empty()
                 ? publicFunctionIdentifier(name)
@@ -14244,6 +14543,7 @@ private:
     std::vector<TryContext> tryContextStack_;
     std::vector<RuntimeCallFrame> frames_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
+    std::shared_ptr<RuntimeExecutionControl> executionControl_;
     std::set<std::string> baseGlobalNames_;
     std::vector<std::string> activePersistentFunctionKeys_;
     std::vector<ActiveClassFunction> activeClassFunctions_;
@@ -14287,6 +14587,8 @@ private:
     bool returnRequested_ = false;
     bool profilingEnabled_ = true;
     bool scriptModeActive_ = false;
+    bool executionControlActive_ = false;
+    bool executionStopDiagnosticAdded_ = false;
     TypedRegionBackend typedRegionBackend_ = TypedRegionBackend::Auto;
     std::string requestedEntryFunction_;
     std::vector<RuntimeValue> entryArguments_;

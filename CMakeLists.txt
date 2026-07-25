@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.81.0 LANGUAGES C CXX)
+project(MParser VERSION 0.82.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -70,6 +70,7 @@ add_library(mparser_core
     src/mparser/runtime_call_frame.cpp
     src/mparser/runtime_cell.cpp
     src/mparser/runtime_exception.cpp
+    src/mparser/runtime_execution_control.cpp
     src/mparser/runtime_fallback.cpp
     src/mparser/runtime_warning.cpp
     src/mparser/runtime_index.cpp
@@ -1203,6 +1204,13 @@ target_link_libraries(module_execution_smoke_tests PRIVATE
 add_test(NAME module_execution_smoke
     COMMAND module_execution_smoke_tests)
 
+add_executable(module_resource_control_smoke_tests
+    tests/module_resource_control_smoke.cpp)
+target_link_libraries(module_resource_control_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME module_resource_control_smoke
+    COMMAND module_resource_control_smoke_tests)
+
 add_executable(mparser_embedding_execution_demo
     samples/embedding_execution_demo.cpp)
 target_link_libraries(mparser_embedding_execution_demo PRIVATE
@@ -1211,6 +1219,16 @@ add_test(NAME embedding_execution_demo_smoke
     COMMAND mparser_embedding_execution_demo)
 set_tests_properties(embedding_execution_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 5075")
+
+add_executable(mparser_embedding_resource_control_demo
+    samples/embedding_resource_control_demo.cpp)
+target_link_libraries(mparser_embedding_resource_control_demo PRIVATE
+    mparser_core)
+add_test(NAME embedding_resource_control_demo_smoke
+    COMMAND mparser_embedding_resource_control_demo)
+set_tests_properties(embedding_resource_control_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "summary = instruction-limit,cancelled,42")
 
 # The smoke executables use standard assert as a lightweight test primitive.
 # Keep those contracts active in optimized CI and release-validation builds.

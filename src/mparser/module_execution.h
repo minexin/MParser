@@ -1,8 +1,10 @@
 #pragma once
 
+#include "mparser/runtime_execution_control.h"
 #include "mparser/runtime_value.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -97,6 +99,8 @@ struct ModuleInvocationRequest {
     ModuleExecutionBackend backend =
         ModuleExecutionBackend::Automatic;
     bool collectProfile = false;
+    RuntimeExecutionLimits limits;
+    std::optional<RuntimeCancellationToken> cancellationToken;
 };
 
 struct ModuleExecutionSummary {
@@ -106,6 +110,10 @@ struct ModuleExecutionSummary {
         ModuleExecutionTier::Bytecode;
     bool profilingCollected = false;
     bool fallbackOccurred = false;
+    bool resourceControlsActive = false;
+    bool optimizedExecutionSuppressed = false;
+    RuntimeExecutionStopReason stopReason =
+        RuntimeExecutionStopReason::None;
     size_t executedInstructionCount = 0;
     size_t typedRegionCount = 0;
     size_t typedRegionAttemptCount = 0;
@@ -113,6 +121,10 @@ struct ModuleExecutionSummary {
     size_t typedRegionFallbackCount = 0;
     size_t nativeCompilationCount = 0;
     size_t nativeCacheHitCount = 0;
+    size_t maximumCallDepth = 0;
+    size_t maximumArrayBytes = 0;
+    size_t maximumDiagnosticCount = 0;
+    std::uint64_t elapsedNanoseconds = 0;
 };
 
 struct ModuleInvocationResult {
