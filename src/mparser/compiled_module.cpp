@@ -3,13 +3,18 @@
 #include "mparser/argument_contract.h"
 #include "mparser/builtin_registry.h"
 #include "mparser/lexer.h"
+#include "mparser/optimization_plan.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_argument_validation.h"
+#include "mparser/typed_ir.h"
 
+#include <exception>
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <new>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -20,6 +25,7 @@ struct CompiledModuleData {
     std::vector<SourceUnit> sources;
     SemanticResult semantic;
     BytecodeProgram bytecode;
+    BytecodeTypedIrModule staticTypedModule;
     std::vector<CompiledFunctionInfo> functions;
     std::vector<Diagnostic> diagnostics;
 };
@@ -308,6 +314,240 @@ std::string firstDiagnosticMessage(
     return diagnostics.front().message;
 }
 
+ModuleSourcePosition projectSourcePosition(
+    const SourcePosition& position) {
+    return ModuleSourcePosition{
+        position.offset, position.line, position.column};
+}
+
+ModuleSourceRange projectSourceRange(
+    SourceSpan span, const std::vector<SourceUnit>& sources) {
+    ModuleSourceRange result;
+    if (span.begin.sourceId == kInvalidSourceId ||
+        span.begin.sourceId >= sources.size()) {
+        return result;
+    }
+    result.available = true;
+    result.sourceName = sources[span.begin.sourceId].name;
+    result.begin = projectSourcePosition(span.begin);
+    result.end = projectSourcePosition(span.end);
+    return result;
+}
+
+ModuleDiagnosticFrame projectDiagnosticFrame(
+    const DiagnosticFrame& frame) {
+    return ModuleDiagnosticFrame{
+        frame.file, frame.name, frame.line};
+}
+
+ModuleDiagnosticCause projectDiagnosticCause(
+    const DiagnosticCause& cause) {
+    ModuleDiagnosticCause result;
+    result.identifier = cause.identifier;
+    result.message = cause.message;
+    for (const auto& frame : cause.stack) {
+        result.stack.push_back(projectDiagnosticFrame(frame));
+    }
+    for (const auto& nested : cause.causes) {
+        result.causes.push_back(projectDiagnosticCause(nested));
+    }
+    return result;
+}
+
+ModuleDiagnostic projectDiagnostic(
+    const Diagnostic& diagnostic, ModuleDiagnosticPhase phase,
+    const std::vector<SourceUnit>& sources,
+    std::string_view fallbackIdentifier) {
+    ModuleDiagnostic result;
+    result.phase = phase;
+    result.severity =
+        diagnostic.severity == DiagnosticSeverity::Warning
+            ? ModuleDiagnosticSeverity::Warning
+            : ModuleDiagnosticSeverity::Error;
+    result.identifier = diagnostic.identifier.empty()
+                            ? std::string(fallbackIdentifier)
+                            : diagnostic.identifier;
+    result.message = diagnostic.message;
+    result.source = projectSourceRange(diagnostic.span, sources);
+    for (const auto& frame : diagnostic.stack) {
+        result.stack.push_back(projectDiagnosticFrame(frame));
+    }
+    for (const auto& cause : diagnostic.causes) {
+        result.causes.push_back(projectDiagnosticCause(cause));
+    }
+    return result;
+}
+
+std::vector<ModuleDiagnostic> projectDiagnostics(
+    const std::vector<Diagnostic>& diagnostics,
+    ModuleDiagnosticPhase phase,
+    const std::vector<SourceUnit>& sources,
+    std::string_view fallbackIdentifier) {
+    std::vector<ModuleDiagnostic> result;
+    result.reserve(diagnostics.size());
+    for (const auto& diagnostic : diagnostics) {
+        result.push_back(projectDiagnostic(
+            diagnostic, phase, sources, fallbackIdentifier));
+    }
+    return result;
+}
+
+Diagnostic requestDiagnostic(
+    std::string message, std::string identifier) {
+    return Diagnostic{
+        SourceSpan{}, std::move(message), std::move(identifier)};
+}
+
+std::vector<Diagnostic> validateModuleInvocationRequest(
+    const ModuleInvocationRequest& request) {
+    std::vector<Diagnostic> diagnostics;
+    switch (request.backend) {
+    case ModuleExecutionBackend::Automatic:
+    case ModuleExecutionBackend::Bytecode:
+    case ModuleExecutionBackend::Portable:
+    case ModuleExecutionBackend::Native:
+        break;
+    default:
+        diagnostics.push_back(requestDiagnostic(
+            "module execution backend is invalid",
+            "MParser:InvalidExecutionBackend"));
+        break;
+    }
+
+    if (request.entryFunction.empty()) {
+        if (!request.arguments.empty()) {
+            diagnostics.push_back(requestDiagnostic(
+                "script invocation does not accept arguments",
+                "MParser:ScriptArgumentsUnsupported"));
+        }
+        if (request.requestedOutputCount &&
+            *request.requestedOutputCount != 0) {
+            diagnostics.push_back(requestDiagnostic(
+                "script invocation does not produce function outputs",
+                "MParser:ScriptOutputsUnsupported"));
+        }
+    }
+
+    for (size_t index = 0; index < request.arguments.size(); ++index) {
+        const auto contract =
+            validateRuntimeValueContract(request.arguments[index]);
+        if (contract.valid) {
+            continue;
+        }
+        std::string message =
+            "argument " + std::to_string(index + 1) +
+            " violates the RuntimeValue contract";
+        if (!contract.path.empty()) {
+            message += " at " + contract.path;
+        }
+        if (!contract.error.empty()) {
+            message += ": " + contract.error;
+        }
+        diagnostics.push_back(requestDiagnostic(
+            std::move(message), "MParser:InvalidArgumentValue"));
+    }
+
+    std::set<std::string> workspaceNames;
+    for (size_t index = 0;
+         index < request.initialWorkspace.size(); ++index) {
+        const auto& variable = request.initialWorkspace[index];
+        if (variable.name.empty()) {
+            diagnostics.push_back(requestDiagnostic(
+                "initial workspace variable name cannot be empty",
+                "MParser:InvalidWorkspaceName"));
+            continue;
+        }
+        if (!workspaceNames.insert(variable.name).second) {
+            diagnostics.push_back(requestDiagnostic(
+                "duplicate initial workspace variable: " +
+                    variable.name,
+                "MParser:DuplicateWorkspaceVariable"));
+            continue;
+        }
+        const auto contract =
+            validateRuntimeValueContract(variable.value);
+        if (!contract.valid) {
+            std::string message =
+                "initial workspace variable " + variable.name +
+                " violates the RuntimeValue contract";
+            if (!contract.path.empty()) {
+                message += " at " + contract.path;
+            }
+            if (!contract.error.empty()) {
+                message += ": " + contract.error;
+            }
+            diagnostics.push_back(requestDiagnostic(
+                std::move(message),
+                "MParser:InvalidWorkspaceValue"));
+            continue;
+        }
+        if (!runtimeValueIsStorable(variable.value)) {
+            diagnostics.push_back(requestDiagnostic(
+                "initial workspace variable is transient: " +
+                    variable.name,
+                "MParser:TransientWorkspaceValue"));
+        }
+    }
+    return diagnostics;
+}
+
+TypedRegionBackend typedBackendFor(
+    ModuleExecutionBackend backend) {
+    switch (backend) {
+    case ModuleExecutionBackend::Portable:
+        return TypedRegionBackend::Portable;
+    case ModuleExecutionBackend::Native:
+        return TypedRegionBackend::Native;
+    case ModuleExecutionBackend::Automatic:
+    case ModuleExecutionBackend::Bytecode:
+        return TypedRegionBackend::Auto;
+    }
+    return TypedRegionBackend::Auto;
+}
+
+ModuleExecutionSummary summarizeExecution(
+    const BytecodeVmResult& runtime,
+    ModuleExecutionBackend requestedBackend) {
+    ModuleExecutionSummary summary;
+    summary.requestedBackend = requestedBackend;
+    summary.profilingCollected = runtime.profile.collected;
+    summary.executedInstructionCount =
+        runtime.executedInstructionCount;
+    summary.typedRegionCount =
+        runtime.typedRegionExecutions.size();
+
+    bool usedPortable = false;
+    bool usedNative = false;
+    for (const auto& execution : runtime.typedRegionExecutions) {
+        summary.typedRegionAttemptCount += execution.attemptCount;
+        summary.typedRegionExecutionCount += execution.executionCount;
+        summary.typedRegionFallbackCount += execution.fallbackCount;
+        summary.nativeCompilationCount +=
+            execution.nativeCompilationCount;
+        summary.nativeCacheHitCount += execution.nativeCacheHitCount;
+        summary.fallbackOccurred =
+            summary.fallbackOccurred ||
+            execution.lastFallbackKind != RuntimeFallbackKind::None ||
+            execution.nativeFallbackKind != RuntimeFallbackKind::None;
+        if (execution.executionCount == 0) {
+            continue;
+        }
+        usedPortable = usedPortable || execution.backend == "portable";
+        usedNative = usedNative || execution.backend == "native";
+    }
+    summary.fallbackOccurred =
+        summary.fallbackOccurred ||
+        summary.typedRegionFallbackCount != 0;
+    if (usedPortable && usedNative) {
+        summary.effectiveTier = ModuleExecutionTier::Mixed;
+    } else if (usedNative) {
+        summary.effectiveTier = ModuleExecutionTier::Native;
+    } else if (usedPortable) {
+        summary.effectiveTier = ModuleExecutionTier::Portable;
+    }
+    return summary;
+}
+
 } // namespace
 
 CompiledModule::CompiledModule()
@@ -423,6 +663,13 @@ CompiledModule CompiledModule::compile(
         return module;
     }
 
+    BytecodeOptimizationPlanner planner;
+    BytecodeTypedIrBuilder builder;
+    module.data_->staticTypedModule = builder.build(
+        planner.planStaticLoops(
+            module.data_->bytecode,
+            module.data_->semantic.builtinRegistry));
+
     const ArgumentContractCatalog argumentCatalog =
         buildArgumentContractCatalog(*module.data_->semantic.root);
     collectInvocableFunctions(
@@ -499,7 +746,8 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
     if (!function) {
         return {Diagnostic{SourceSpan{},
                            "entry function is not available: " +
-                               std::string(entryFunction)}};
+                               std::string(entryFunction),
+                           "MParser:EntryFunctionNotFound"}};
     }
     const auto argumentCountStatus =
         functionArgumentCountStatus(function->signature, argumentCount);
@@ -511,19 +759,22 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
                 ": expected a multiple of " +
                 std::to_string(functionRepeatingParameterCount(
                     function->signature)) +
-                " values"}};
+                " values",
+            "MParser:IncompleteRepeatingArguments"}};
     }
     if (argumentCountStatus == FunctionArgumentCountStatus::Mismatch) {
         return {Diagnostic{
             function->span,
-            "function argument count mismatch for: " + function->name}};
+            "function argument count mismatch for: " + function->name,
+            "MParser:ArgumentCountMismatch"}};
     }
     if (requestedOutputCount &&
         !functionOutputCountIsValid(function->signature,
                                     *requestedOutputCount)) {
         return {Diagnostic{
             function->span,
-            "function output count mismatch for: " + function->name}};
+            "function output count mismatch for: " + function->name,
+            "MParser:OutputCountMismatch"}};
     }
     return {};
 }
@@ -543,7 +794,8 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
     if (!function) {
         return {Diagnostic{SourceSpan{},
                            "entry function is not available: " +
-                               std::string(entryFunction)}};
+                               std::string(entryFunction),
+                           "MParser:EntryFunctionNotFound"}};
     }
     const auto normalized = normalizeRuntimeInvocationArguments(
         function->signature, function->nameValueArguments, arguments);
@@ -551,14 +803,16 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
         return {Diagnostic{
             function->span,
             "function invocation failed for " + function->name + ": " +
-                normalized.error}};
+                normalized.error,
+            "MParser:ArgumentValidationFailed"}};
     }
     if (requestedOutputCount &&
         !functionOutputCountIsValid(function->signature,
                                     *requestedOutputCount)) {
         return {Diagnostic{
             function->span,
-            "function output count mismatch for: " + function->name}};
+            "function output count mismatch for: " + function->name,
+            "MParser:OutputCountMismatch"}};
     }
     return {};
 }
@@ -579,6 +833,113 @@ BytecodeVmResult CompiledModule::invoke(
     runtimeOptions.callableContext = callableContext_;
     return vm.run(data_->bytecode, data_->semantic,
                   runtimeOptions);
+}
+
+ModuleInvocationResult CompiledModule::execute(
+    const ModuleInvocationRequest& request) const {
+    return execute(request, {});
+}
+
+ModuleInvocationResult CompiledModule::execute(
+    const ModuleInvocationRequest& request,
+    const std::shared_ptr<RuntimeSessionState>& state) const {
+    ModuleInvocationResult result;
+    result.entryFunction = request.entryFunction;
+    result.requestedOutputCount =
+        request.requestedOutputCount.value_or(0);
+    result.execution.requestedBackend = request.backend;
+
+    if (!valid()) {
+        result.status = ModuleInvocationStatus::CompilationFailed;
+        result.diagnostics = projectDiagnostics(
+            data_->diagnostics, ModuleDiagnosticPhase::Compilation,
+            data_->sources, "MParser:CompilationFailed");
+        return result;
+    }
+
+    auto validation = validateModuleInvocationRequest(request);
+    const auto invocationValidation = validateInvocation(
+        request.entryFunction, request.arguments,
+        request.requestedOutputCount);
+    appendDiagnostics(validation, invocationValidation);
+    if (!validation.empty()) {
+        result.status = ModuleInvocationStatus::RequestRejected;
+        result.diagnostics = projectDiagnostics(
+            validation, ModuleDiagnosticPhase::Validation,
+            data_->sources, "MParser:InvocationRejected");
+        return result;
+    }
+
+    BytecodeVmOptions runtimeOptions;
+    runtimeOptions.profiling =
+        request.collectProfile
+            ? BytecodeVmProfilingMode::Full
+            : BytecodeVmProfilingMode::Disabled;
+    runtimeOptions.callableContext = callableContext_;
+    runtimeOptions.sessionState = state;
+    runtimeOptions.initialWorkspace = request.initialWorkspace;
+    runtimeOptions.entryFunction = request.entryFunction;
+    runtimeOptions.arguments = request.arguments;
+    runtimeOptions.requestedOutputCount =
+        request.requestedOutputCount;
+    runtimeOptions.typedRegionBackend =
+        typedBackendFor(request.backend);
+
+    BytecodeVmResult runtime;
+    try {
+        BytecodeVm vm;
+        if (request.backend ==
+            ModuleExecutionBackend::Bytecode) {
+            runtime = vm.run(data_->bytecode, data_->semantic,
+                             runtimeOptions);
+        } else {
+            runtime = vm.run(
+                data_->bytecode, data_->semantic,
+                data_->staticTypedModule, runtimeOptions);
+        }
+    } catch (const std::bad_alloc&) {
+        throw;
+    } catch (const std::exception& exception) {
+        result.status = ModuleInvocationStatus::RuntimeFailed;
+        const std::vector<Diagnostic> diagnostics{
+            Diagnostic{
+                SourceSpan{},
+                "host exception escaped module execution: " +
+                    std::string(exception.what()),
+                "MParser:HostExecutionException"}};
+        result.diagnostics = projectDiagnostics(
+            diagnostics, ModuleDiagnosticPhase::Execution,
+            data_->sources, "MParser:RuntimeFailed");
+        return result;
+    } catch (...) {
+        result.status = ModuleInvocationStatus::RuntimeFailed;
+        const std::vector<Diagnostic> diagnostics{
+            Diagnostic{
+                SourceSpan{},
+                "unknown host exception escaped module execution",
+                "MParser:HostExecutionException"}};
+        result.diagnostics = projectDiagnostics(
+            diagnostics, ModuleDiagnosticPhase::Execution,
+            data_->sources, "MParser:RuntimeFailed");
+        return result;
+    }
+
+    result.status = hasErrorDiagnostics(runtime.diagnostics)
+                        ? ModuleInvocationStatus::RuntimeFailed
+                        : ModuleInvocationStatus::Succeeded;
+    result.entryFunction = runtime.entryFunction.empty()
+                               ? request.entryFunction
+                               : runtime.entryFunction;
+    result.requestedOutputCount = runtime.requestedOutputCount;
+    result.outputNames = std::move(runtime.outputNames);
+    result.outputs = std::move(runtime.outputs);
+    result.variables = std::move(runtime.variables);
+    result.diagnostics = projectDiagnostics(
+        runtime.diagnostics, ModuleDiagnosticPhase::Execution,
+        data_->sources, "MParser:RuntimeFailed");
+    result.execution =
+        summarizeExecution(runtime, request.backend);
+    return result;
 }
 
 AdaptiveBytecodeVmSession CompiledModule::createAdaptiveSession(
@@ -613,6 +974,11 @@ BytecodeVmResult CompiledModuleSession::invoke(
     BytecodeVmOptions runtimeOptions = options;
     runtimeOptions.sessionState = state_;
     return module_.invoke(runtimeOptions);
+}
+
+ModuleInvocationResult CompiledModuleSession::execute(
+    const ModuleInvocationRequest& request) const {
+    return module_.execute(request, state_);
 }
 
 std::shared_ptr<RuntimeSessionState>

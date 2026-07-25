@@ -1,10 +1,11 @@
 # MParser
 
-Current milestone: v0.80.0. See [docs/v0.80.md](docs/v0.80.md) for the
+Current milestone: v0.81.0. See [docs/v0.81.md](docs/v0.81.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan, and [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.79.md](docs/v0.79.md),
+kept in [docs/v0.80.md](docs/v0.80.md),
+[docs/v0.79.md](docs/v0.79.md),
 [docs/v0.78.md](docs/v0.78.md),
 [docs/v0.77.md](docs/v0.77.md),
 [docs/v0.76.md](docs/v0.76.md),
@@ -823,6 +824,19 @@ and native SLJIT execution are covered by one reusable conformance suite.
 This stabilizes how the function library grows; it does not claim broad
 long-tail MATLAB or toolbox function coverage.
 
+v0.81 adds an engine-neutral C++ embedding execution contract.
+`ModuleInvocationRequest` carries the entry, arguments, output count, initial
+workspace, backend preference, and profiling choice.
+`ModuleInvocationResult` separates compilation failure, request rejection,
+runtime failure, and success while returning owned phase-aware diagnostics,
+outputs, workspace values, and a compact execution summary. `CompiledModule`
+builds and retains registry-aware static Typed IR once; `execute()` defaults to
+guarded automatic JIT, while explicit bytecode, portable, and native requests
+all preserve VM fallback. `CompiledModuleSession::execute()` uses the same
+contract with persistent state. The old VM-specific `invoke()` API remains
+available. This is a source-level API candidate, not yet the frozen C++ ABI,
+narrow C ABI, resource contract, or versioned machine protocol.
+
 There is also a small reference interpreter over HIR. It executes scalar double
 expressions, N-dimensional numeric arrays,
 distinct UTF-16 character and string arrays,
@@ -1238,6 +1252,14 @@ build\mparser.exe --run-bytecode --entry-function=configure `
   samples\name_value_arguments_demo.m
 build\mparser.exe --run-module-runtime --module-call=configure:2:Scale=4 `
   samples\name_value_arguments_demo.m
+```
+
+Run the compile-once C++ embedding request/result and persistent-session sample
+with:
+
+```powershell
+cmake --build build --target mparser_embedding_execution_demo
+build\mparser_embedding_execution_demo.exe
 ```
 
 Run fixed output conversion and named repeating output expansion through both

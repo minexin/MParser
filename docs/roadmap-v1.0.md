@@ -335,6 +335,23 @@ function families, not an unbounded builtin count.
 - Keep broad long-tail function growth in v1.x; v0.80 proves that ordinary
   additions no longer require parallel semantic, HIR, VM, and JIT name lists.
 
+### v0.81: Engine-Neutral Embedding Execution
+
+- Status: closed by the v0.81 request/result implementation and linked evidence
+  in `docs/v0.81.md` and `EMBED-003`.
+- Add one request/result contract shared by stateless `CompiledModule` and
+  persistent `CompiledModuleSession` execution.
+- Separate compilation, validation, warning, and runtime-failure diagnostics
+  from bytecode profiles and preserve owned source/cause information.
+- Cache registry-aware static Typed IR in each compiled module and expose
+  automatic, bytecode, portable, and native backend preferences with mandatory
+  VM fallback.
+- Reject malformed arguments/workspaces before execution and preserve the old
+  VM-specific APIs as compatibility paths.
+- Keep public binary layout, external value ownership, resource limits, C ABI,
+  machine protocol, install/export consumers, and final freeze in the v0.90
+  gate.
+
 ### v0.90: Embedding And Release Candidate APIs
 
 - Stabilize compile-once/invoke-many C++ and narrow C interfaces plus the

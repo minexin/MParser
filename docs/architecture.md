@@ -1304,6 +1304,30 @@ ownership rules, diagnostics, threading, conformance tests, and the future C
 adapter boundary are specified in
 [extending-builtins.md](extending-builtins.md).
 
+v0.81 adds an engine-neutral host boundary above the bytecode VM.
+`ModuleInvocationRequest` contains entry selection, arguments, output arity,
+initial workspace, backend preference, and profiling policy.
+`ModuleInvocationResult` owns status, outputs, workspace, projected
+diagnostics, and an execution summary without exposing the full VM profile.
+Compilation, validation, and execution diagnostics are distinct phases;
+warnings do not change a successful status.
+
+After bytecode lowering, `CompiledModule` builds one static
+`BytecodeTypedIrModule` with the retained builtin registry and stores it beside
+the semantic and bytecode artifacts. `execute()` uses that cached module for
+automatic, portable, or native guarded execution and uses the ordinary VM for
+an explicit bytecode request. Unsupported optimized regions always fall back
+to the VM. `CompiledModuleSession::execute()` injects its existing
+`RuntimeSessionState` into the same path, so stateless and persistent hosts
+share one request/result contract.
+
+`ModuleExecutionSummary` folds engine details into requested and effective
+tiers, instruction count, typed attempts/executions/fallbacks, and native
+compile/cache-hit counts. The low-level `invoke(BytecodeVmOptions)` APIs remain
+for profiling tools and source compatibility. The external value ownership
+model, resource/cancellation controls, serialization, narrow C ABI, symbol
+visibility, and binary compatibility remain v0.90 gates.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,
 optional LLVM ORC lowering behind the same backend contract, persistent

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.80.0 LANGUAGES C CXX)
+project(MParser VERSION 0.81.0 LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 
@@ -59,6 +59,7 @@ add_library(mparser_core
     src/mparser/function_signature.cpp
     src/mparser/interpreter.cpp
     src/mparser/lexer.cpp
+    src/mparser/module_execution.cpp
     src/mparser/native_scalar_jit.cpp
     src/mparser/optimization_plan.cpp
     src/mparser/parser.cpp
@@ -1194,6 +1195,22 @@ add_test(NAME builtin_registry_production_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/builtin_registry_demo.m)
 set_tests_properties(builtin_registry_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 510446")
+
+add_executable(module_execution_smoke_tests
+    tests/module_execution_smoke.cpp)
+target_link_libraries(module_execution_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME module_execution_smoke
+    COMMAND module_execution_smoke_tests)
+
+add_executable(mparser_embedding_execution_demo
+    samples/embedding_execution_demo.cpp)
+target_link_libraries(mparser_embedding_execution_demo PRIVATE
+    mparser_core)
+add_test(NAME embedding_execution_demo_smoke
+    COMMAND mparser_embedding_execution_demo)
+set_tests_properties(embedding_execution_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 5075")
 
 # The smoke executables use standard assert as a lightweight test primitive.
 # Keep those contracts active in optimized CI and release-validation builds.

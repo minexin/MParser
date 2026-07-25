@@ -1,0 +1,385 @@
+#include "mparser/compiled_module.h"
+#include "mparser/native_scalar_jit.h"
+#include "mparser/runtime_value.h"
+
+#include <cmath>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+namespace {
+
+void require(bool condition, std::string message) {
+    if (!condition) {
+        throw std::runtime_error(std::move(message));
+    }
+}
+
+mparser::RuntimeValue number(double value) {
+    return mparser::makeRuntimeNumberValue(value);
+}
+
+void requireScalar(
+    const mparser::RuntimeValue& value, double expected,
+    std::string_view label) {
+    require(value.kind == mparser::RuntimeValueKind::Number,
+            std::string(label) + " is not a scalar number");
+    require(std::abs(value.number - expected) < 1e-9,
+            std::string(label) + " has an unexpected value");
+}
+
+void requireOutputs(
+    const mparser::ModuleInvocationResult& result,
+    double first, double second) {
+    require(result.succeeded(), "module invocation did not succeed");
+    require(result.outputs.size() == 2,
+            "module invocation did not return two outputs");
+    requireScalar(result.outputs[0], first, "first output");
+    requireScalar(result.outputs[1], second, "second output");
+}
+
+const mparser::ModuleDiagnostic* findDiagnostic(
+    const mparser::ModuleInvocationResult& result,
+    std::string_view identifier) {
+    for (const auto& diagnostic : result.diagnostics) {
+        if (diagnostic.identifier == identifier) {
+            return &diagnostic;
+        }
+    }
+    return nullptr;
+}
+
+const mparser::RuntimeValue* findVariable(
+    const mparser::ModuleInvocationResult& result,
+    std::string_view name) {
+    for (const auto& variable : result.variables) {
+        if (variable.name == name) {
+            return &variable.value;
+        }
+    }
+    return nullptr;
+}
+
+const std::string kModuleSource = R"(function [total, last] = accumulate(limit)
+total = 0;
+for i = 1:limit
+    total = total + i;
+end
+last = i;
+end
+
+function out = nextCounter(step)
+persistent count
+if isempty(count)
+    count = 0;
+end
+count = count + step;
+out = count;
+end
+
+function out = emitWarning()
+warning("Embed:Notice", "notice %d", 3);
+out = 7;
+end
+
+function out = failNow()
+error("Embed:Failure", "failed %d", 9);
+out = 0;
+end
+)";
+
+mparser::ModuleInvocationRequest accumulateRequest(
+    mparser::ModuleExecutionBackend backend) {
+    mparser::ModuleInvocationRequest request;
+    request.entryFunction = "accumulate";
+    request.arguments = {number(100)};
+    request.requestedOutputCount = 2;
+    request.backend = backend;
+    return request;
+}
+
+void runBackendSmoke(const mparser::CompiledModule& module) {
+    auto bytecodeRequest = accumulateRequest(
+        mparser::ModuleExecutionBackend::Bytecode);
+    bytecodeRequest.collectProfile = true;
+    const auto bytecode = module.execute(bytecodeRequest);
+    requireOutputs(bytecode, 5050, 100);
+    require(bytecode.execution.requestedBackend ==
+                mparser::ModuleExecutionBackend::Bytecode,
+            "bytecode request backend was not retained");
+    require(bytecode.execution.effectiveTier ==
+                mparser::ModuleExecutionTier::Bytecode,
+            "bytecode request used an optimized tier");
+    require(bytecode.execution.profilingCollected,
+            "bytecode profiling was not collected");
+    require(bytecode.execution.executedInstructionCount > 0,
+            "bytecode instruction count is empty");
+    require(bytecode.execution.typedRegionAttemptCount == 0,
+            "bytecode request attempted a typed region");
+
+    const auto portable = module.execute(accumulateRequest(
+        mparser::ModuleExecutionBackend::Portable));
+    requireOutputs(portable, 5050, 100);
+    require(portable.execution.effectiveTier ==
+                mparser::ModuleExecutionTier::Portable,
+            "portable request did not execute a portable region");
+    require(portable.execution.typedRegionAttemptCount > 0,
+            "portable request did not attempt a typed region");
+    require(portable.execution.typedRegionExecutionCount > 0,
+            "portable request did not execute a typed region");
+    require(!portable.execution.fallbackOccurred,
+            "portable request unexpectedly fell back");
+
+    const auto native = module.execute(accumulateRequest(
+        mparser::ModuleExecutionBackend::Native));
+    requireOutputs(native, 5050, 100);
+    if (mparser::nativeScalarJitAvailable()) {
+        require(native.execution.effectiveTier ==
+                    mparser::ModuleExecutionTier::Native,
+                "native request did not execute native code");
+        require(native.execution.typedRegionExecutionCount > 0,
+                "native request did not execute a typed region");
+        require(native.execution.nativeCompilationCount +
+                    native.execution.nativeCacheHitCount >
+                    0,
+                "native request recorded neither compilation nor cache hit");
+    } else {
+        require(native.execution.effectiveTier ==
+                    mparser::ModuleExecutionTier::Bytecode,
+                "unavailable native backend did not fall back to bytecode");
+        require(native.execution.fallbackOccurred,
+                "unavailable native backend did not report fallback");
+    }
+
+    const auto automatic = module.execute(accumulateRequest(
+        mparser::ModuleExecutionBackend::Automatic));
+    requireOutputs(automatic, 5050, 100);
+    require(automatic.execution.effectiveTier !=
+                mparser::ModuleExecutionTier::Mixed,
+            "single-region automatic request reported a mixed tier");
+}
+
+void runDiagnosticSmoke(const mparser::CompiledModule& module) {
+    auto missingRequest = accumulateRequest(
+        mparser::ModuleExecutionBackend::Bytecode);
+    missingRequest.entryFunction = "missingEntry";
+    const auto missing = module.execute(missingRequest);
+    require(missing.status ==
+                mparser::ModuleInvocationStatus::RequestRejected,
+            "missing entry was not rejected");
+    const auto* missingDiagnostic = findDiagnostic(
+        missing, "MParser:EntryFunctionNotFound");
+    require(missingDiagnostic != nullptr,
+            "missing entry diagnostic identifier was not stable");
+    require(missingDiagnostic->phase ==
+                mparser::ModuleDiagnosticPhase::Validation,
+            "missing entry diagnostic has the wrong phase");
+
+    auto outputRequest = accumulateRequest(
+        mparser::ModuleExecutionBackend::Bytecode);
+    outputRequest.requestedOutputCount = 3;
+    const auto outputMismatch = module.execute(outputRequest);
+    require(findDiagnostic(
+                outputMismatch,
+                "MParser:OutputCountMismatch") != nullptr,
+            "output count mismatch was not identified");
+
+    auto malformedRequest = accumulateRequest(
+        mparser::ModuleExecutionBackend::Bytecode);
+    malformedRequest.arguments.front() =
+        mparser::makeRuntimeMatrixValue(2, 2, {1, 2, 3, 4});
+    malformedRequest.arguments.front().elements.pop_back();
+    const auto malformed = module.execute(malformedRequest);
+    require(findDiagnostic(
+                malformed,
+                "MParser:InvalidArgumentValue") != nullptr,
+            "malformed RuntimeValue argument was not rejected");
+
+    auto duplicateWorkspace = accumulateRequest(
+        mparser::ModuleExecutionBackend::Bytecode);
+    duplicateWorkspace.initialWorkspace = {
+        {"seed", number(1)}, {"seed", number(2)}};
+    const auto duplicate = module.execute(duplicateWorkspace);
+    require(findDiagnostic(
+                duplicate,
+                "MParser:DuplicateWorkspaceVariable") != nullptr,
+            "duplicate workspace variable was not rejected");
+
+    auto transientWorkspace = accumulateRequest(
+        mparser::ModuleExecutionBackend::Bytecode);
+    transientWorkspace.initialWorkspace = {
+        {"missing", mparser::makeRuntimeMissingValue()}};
+    const auto transient = module.execute(transientWorkspace);
+    require(findDiagnostic(
+                transient,
+                "MParser:TransientWorkspaceValue") != nullptr,
+            "transient workspace value was not rejected");
+
+    auto invalidBackend = accumulateRequest(
+        mparser::ModuleExecutionBackend::Bytecode);
+    invalidBackend.backend =
+        static_cast<mparser::ModuleExecutionBackend>(1000);
+    const auto invalid = module.execute(invalidBackend);
+    require(findDiagnostic(
+                invalid,
+                "MParser:InvalidExecutionBackend") != nullptr,
+            "invalid backend was not rejected");
+
+    mparser::ModuleInvocationRequest warningRequest;
+    warningRequest.entryFunction = "emitWarning";
+    warningRequest.requestedOutputCount = 1;
+    warningRequest.backend =
+        mparser::ModuleExecutionBackend::Bytecode;
+    const auto warning = module.execute(warningRequest);
+    require(warning.succeeded(),
+            "warning incorrectly failed module execution");
+    require(warning.hasWarnings(),
+            "warning result did not report warning presence");
+    const auto* warningDiagnostic =
+        findDiagnostic(warning, "Embed:Notice");
+    require(warningDiagnostic != nullptr,
+            "warning identifier was not preserved");
+    require(warningDiagnostic->severity ==
+                mparser::ModuleDiagnosticSeverity::Warning,
+            "warning severity was not preserved");
+    require(warningDiagnostic->phase ==
+                mparser::ModuleDiagnosticPhase::Execution,
+            "warning phase was not execution");
+
+    mparser::ModuleInvocationRequest failureRequest;
+    failureRequest.entryFunction = "failNow";
+    failureRequest.requestedOutputCount = 1;
+    failureRequest.backend =
+        mparser::ModuleExecutionBackend::Bytecode;
+    const auto failure = module.execute(failureRequest);
+    require(failure.status ==
+                mparser::ModuleInvocationStatus::RuntimeFailed,
+            "uncaught runtime error did not fail execution");
+    const auto* failureDiagnostic =
+        findDiagnostic(failure, "Embed:Failure");
+    require(failureDiagnostic != nullptr,
+            "runtime error identifier was not preserved");
+    require(failureDiagnostic->phase ==
+                mparser::ModuleDiagnosticPhase::Execution,
+            "runtime error phase was not execution");
+}
+
+void runCompilationAndScriptSmoke() {
+    std::vector<mparser::SourceUnit> invalidSources{
+        mparser::SourceUnit{
+            "broken_module.m",
+            "function out = broken(\nout = 1;\nend\n"}};
+    const auto invalidModule =
+        mparser::CompiledModule::compile(std::move(invalidSources));
+    const auto compilation = invalidModule.execute();
+    require(compilation.status ==
+                mparser::ModuleInvocationStatus::CompilationFailed,
+            "invalid module did not report compilation failure");
+    require(!compilation.diagnostics.empty(),
+            "compilation failure did not project diagnostics");
+    require(compilation.diagnostics.front().phase ==
+                mparser::ModuleDiagnosticPhase::Compilation,
+            "compilation diagnostic has the wrong phase");
+    require(compilation.diagnostics.front().source.available,
+            "compilation diagnostic has no source range");
+    require(compilation.diagnostics.front().source.sourceName ==
+                "broken_module.m",
+            "compilation diagnostic lost its source name");
+
+    const auto script =
+        mparser::CompiledModule::compile("summary = seed + 1;");
+    require(script.valid(), "workspace script did not compile");
+    mparser::ModuleInvocationRequest scriptRequest;
+    scriptRequest.initialWorkspace = {{"seed", number(41)}};
+    scriptRequest.backend =
+        mparser::ModuleExecutionBackend::Bytecode;
+    const auto scriptResult = script.execute(scriptRequest);
+    require(scriptResult.succeeded(),
+            "script workspace invocation failed");
+    const auto* summary = findVariable(scriptResult, "summary");
+    require(summary != nullptr,
+            "script result did not expose workspace variables");
+    requireScalar(*summary, 42, "script summary");
+
+    scriptRequest.arguments = {number(1)};
+    const auto scriptArguments = script.execute(scriptRequest);
+    require(findDiagnostic(
+                scriptArguments,
+                "MParser:ScriptArgumentsUnsupported") != nullptr,
+            "script arguments were not rejected");
+}
+
+void runSessionSmoke(const mparser::CompiledModule& module) {
+    auto session = module.createSession();
+    mparser::ModuleInvocationRequest request;
+    request.entryFunction = "nextCounter";
+    request.requestedOutputCount = 1;
+    request.backend = mparser::ModuleExecutionBackend::Bytecode;
+
+    request.arguments = {number(2)};
+    const auto first = session.execute(request);
+    require(first.succeeded() && first.outputs.size() == 1,
+            "first session invocation failed");
+    requireScalar(first.outputs.front(), 2, "first session output");
+
+    request.arguments = {number(3)};
+    const auto second = session.execute(request);
+    require(second.succeeded() && second.outputs.size() == 1,
+            "second session invocation failed");
+    requireScalar(second.outputs.front(), 5, "second session output");
+    require(session.persistentVariables().size() == 1,
+            "session did not retain persistent state");
+
+    session.reset();
+    request.arguments = {number(1)};
+    const auto reset = session.execute(request);
+    require(reset.succeeded() && reset.outputs.size() == 1,
+            "reset session invocation failed");
+    requireScalar(reset.outputs.front(), 1, "reset session output");
+}
+
+void runNameSmoke() {
+    require(mparser::moduleExecutionBackendName(
+                mparser::ModuleExecutionBackend::Automatic) ==
+                "automatic",
+            "backend name is unstable");
+    require(mparser::moduleExecutionTierName(
+                mparser::ModuleExecutionTier::Mixed) == "mixed",
+            "tier name is unstable");
+    require(mparser::moduleInvocationStatusName(
+                mparser::ModuleInvocationStatus::RequestRejected) ==
+                "request-rejected",
+            "status name is unstable");
+    require(mparser::moduleDiagnosticPhaseName(
+                mparser::ModuleDiagnosticPhase::Validation) ==
+                "validation",
+            "diagnostic phase name is unstable");
+    require(mparser::moduleDiagnosticSeverityName(
+                mparser::ModuleDiagnosticSeverity::Warning) ==
+                "warning",
+            "diagnostic severity name is unstable");
+}
+
+} // namespace
+
+int main() {
+    try {
+        const auto module =
+            mparser::CompiledModule::compile(kModuleSource);
+        require(module.valid(), "embedding module did not compile");
+        runBackendSmoke(module);
+        runDiagnosticSmoke(module);
+        runCompilationAndScriptSmoke();
+        runSessionSmoke(module);
+        runNameSmoke();
+        std::cout << "module execution smoke tests passed\n";
+        return 0;
+    } catch (const std::exception& exception) {
+        std::cerr << "module execution smoke tests failed: "
+                  << exception.what() << "\n";
+        return 1;
+    }
+}

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.80.0",
+  "version": "0.81.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -318,9 +318,20 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke"],
-      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h"],
-      "limits": "v0.78 adds owning CompiledModuleSession state, explicit reset/clear APIs, and lifetime anchoring for sessions and module-bound handles. v0.79 stress-tests repeated invocation against the shared internal RuntimeValue contract. The API remains pre-freeze and does not yet provide the narrow C ABI, resource contract, or versioned machine protocol required by v1.0."
+      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "embedding_execution_demo_smoke"],
+      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "tests/module_execution_smoke.cpp", "samples/embedding_execution_demo.cpp"],
+      "limits": "v0.81 adds one engine-neutral request/result contract for stateless and persistent compile-once execution, cached registry-aware static Typed IR, guarded automatic/portable/native execution with VM fallback, staged owned diagnostics, request validation, and execution summaries. RuntimeValue is still a source-level C++ value contract; public binary layout, external value handles, resource/cancellation controls, the narrow C ABI, and the versioned machine protocol remain v0.90 gates."
+    },
+    {
+      "id": "EMBED-003",
+      "area": "embedding",
+      "feature": "Engine-neutral module invocation request/result, staged diagnostics, backend selection, and execution summary",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["module_execution_smoke", "embedding_execution_demo_smoke", "runtime_session_smoke", "typed_region_executor_smoke"],
+      "sources": ["src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "tests/module_execution_smoke.cpp", "samples/embedding_execution_demo.cpp", "docs/v0.81.md"],
+      "limits": "The v0.81 names and behavior are source-level v1.0 API candidates. Existing VM-specific invoke APIs remain available. C++ ABI layout, machine serialization, resource status values, C ownership handles, and symbol/version negotiation are not frozen."
     },
     {
       "id": "EMBED-002",
@@ -468,6 +479,16 @@
       "framework_impact": "contract-extension",
       "requirement": "Land BuiltinRegistry, descriptors, shared call/result/error contract, extension levels, and representative family migration.",
       "exit_evidence": "docs/v0.80.md and docs/extending-builtins.md define the source contract and three extension levels. builtin_registry_smoke covers the frozen 118-name catalog, metadata, custom names and aliases, duplicate/freeze/context/exception/output boundaries, local shadowing, builtin handles, HIR/VM parity, portable typed execution, and native SLJIT when available. All three public CLI modes run builtin_registry_demo.m with summary 510446, and the focused AArch64 native/portable jobs execute the same evidence."
+    },
+    {
+      "id": "G-EMBED-REQUEST-001",
+      "area": "embedding",
+      "priority": "must-have",
+      "state": "closed",
+      "target": "v0.81",
+      "framework_impact": "contract-extension",
+      "requirement": "Separate host-facing compile/invoke status, diagnostics, backend selection, outputs, workspace, and execution summaries from BytecodeVmOptions and BytecodeVmResult.",
+      "exit_evidence": "docs/v0.81.md defines the source contract. module_execution_smoke covers cached bytecode/portable/native/automatic execution, multi-output, profiling, compilation/validation/warning/runtime diagnostics, malformed values, workspace transport, source projection, session persistence, and reset. embedding_execution_demo_smoke runs a compile-once C++ host sample with summary 5075 in native and portable platform jobs."
     },
     {
       "id": "G-EMBED-001",

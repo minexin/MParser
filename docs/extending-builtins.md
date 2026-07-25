@@ -71,6 +71,12 @@ Freeze the registry before sharing it or compiling modules. A
 analysis, so function resolution and all later execution tiers see the same
 catalog.
 
+`CompiledModule::execute()` also builds and retains static typed regions from
+that registry. It is the preferred v0.81 embedding path: automatic, portable,
+and native requests use guarded optimized execution, while unsupported code
+continues in the VM. The older `invoke(BytecodeVmOptions)` entry remains the
+low-level compatibility path.
+
 ## Descriptor Rules
 
 `name` is the canonical spelling. Each alias resolves to the same descriptor.

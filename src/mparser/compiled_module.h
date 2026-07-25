@@ -3,6 +3,7 @@
 #include "mparser/adaptive_bytecode_vm.h"
 #include "mparser/bytecode.h"
 #include "mparser/function_signature.h"
+#include "mparser/module_execution.h"
 #include "mparser/runtime_session_state.h"
 #include "mparser/source.h"
 
@@ -60,6 +61,8 @@ public:
         const std::vector<RuntimeValue>& arguments,
         std::optional<size_t> requestedOutputCount = std::nullopt) const;
     BytecodeVmResult invoke(const BytecodeVmOptions& options = {}) const;
+    ModuleInvocationResult execute(
+        const ModuleInvocationRequest& request = {}) const;
     AdaptiveBytecodeVmSession createAdaptiveSession(
         const AdaptiveBytecodeVmOptions& options = {}) const;
     CompiledModuleSession createSession(
@@ -69,6 +72,10 @@ private:
     CompiledModule();
     friend class CompiledModuleSession;
 
+    ModuleInvocationResult execute(
+        const ModuleInvocationRequest& request,
+        const std::shared_ptr<RuntimeSessionState>& state) const;
+
     std::shared_ptr<CompiledModuleData> data_;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
 };
@@ -77,6 +84,8 @@ class CompiledModuleSession {
 public:
     BytecodeVmResult invoke(
         const BytecodeVmOptions& options = {}) const;
+    ModuleInvocationResult execute(
+        const ModuleInvocationRequest& request = {}) const;
 
     std::shared_ptr<RuntimeSessionState> state() const;
     std::vector<RuntimeVariable> globals() const;
