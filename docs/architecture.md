@@ -1417,6 +1417,23 @@ enumeration. Filesystem failures create an invalid module with a stable
 `MParser:SourceLoadFailed` diagnostic so the host retains one inspection
 pattern for compilation and loading failures.
 
+v0.85 gives the narrow C projection a relocatable installation boundary.
+`mparser_c_api` and the CLI are exported as `MParser::c_api` and
+`MParser::cli`; `MParserConfig.cmake` derives header, library, and executable
+locations from its containing prefix. The exported C target carries only the
+public C include path and shared-library import contract. The static core and
+its C++ headers remain implementation details rather than a premature public
+C++ SDK.
+
+The installed-consumer regression configures a separate C11 project after
+renaming the installation prefix. It links only the imported C target,
+verifies the package/header/runtime versions and C ABI candidate, invokes a
+two-output function, and runs the imported CLI. Cross builds do not register a
+host-side nested CTest; the AArch64 CI explicitly installs and cross-builds
+both SLJIT-enabled and portable packages, then executes their consumers under
+QEMU. `BUILD_TESTING=OFF` leaves only the core, shared C library, and CLI
+production targets.
+
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,
 optional LLVM ORC lowering behind the same backend contract, persistent

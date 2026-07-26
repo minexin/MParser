@@ -407,14 +407,31 @@ function families, not an unbounded builtin count.
 - Prove source-buffer independence, cross-source diagnostics, real
   `+package/@Class` loading, native/no-JIT parity, and focused AArch64
   native/portable execution with a C11 regression and runnable C host.
-- Keep ABI candidate 1 pre-freeze; installed consumers, machine protocol,
-  forward-compatible layout/symbol policy, stress, and final platform evidence
-  remain v0.90 gates.
+- Keep ABI candidate 1 pre-freeze; install/export consumers, machine protocol,
+  forward-compatible layout/symbol policy, stress, and final platform
+  evidence remain later gates.
+
+### v0.85: Installable C SDK
+
+- Status: closed by the v0.85 install/export implementation and linked
+  evidence in `docs/v0.85.md`, `docs/embedding-c-api.md`, and `EMBED-007`.
+- Install the C header, shared runtime, CLI, examples, documentation, and
+  third-party notices using standard GNU directory variables.
+- Export relocatable `MParser::c_api` and `MParser::cli` CMake targets plus
+  package, project-version, and C ABI metadata.
+- Prove isolation with a separate C11 project configured only against a moved
+  installation prefix; require version/ABI parity, multi-output execution, and
+  imported CLI execution.
+- Validate Windows x64 and Linux x64 through the complete native suite, and
+  validate both native-JIT and portable Linux AArch64 installations through
+  explicit cross-consumer builds and QEMU execution.
+- Keep public C++ packaging, machine protocol, final ABI policy, macOS
+  consumers, distribution licensing, and release archives as later gates.
 
 ### v0.90: Embedding And Release Candidate APIs
 
 - Freeze the compile/load/invoke-many C++ and narrow C candidates, complete
-  installed consumers, and add the versioned machine protocol.
+  the public C++ packaging decision, and add the versioned machine protocol.
 - Validate representative function families, persistent runtime behavior,
   resource boundaries, cross-platform consumers, and cache invalidation.
 - Freeze v1.0 API/ABI/protocol candidates and require explicit compatibility

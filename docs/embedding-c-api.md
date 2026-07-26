@@ -4,7 +4,7 @@ MParser v0.83 introduced a narrow, pure C embedding boundary in
 `include/mparser/c_api.h`. It is implemented by the `mparser_c_api` CMake
 shared-library target, whose output name is `mparser_c`. v0.84 extends that
 same boundary with explicit multi-source compilation and UTF-8 filesystem
-source-graph loading.
+source-graph loading. v0.85 installs it as a relocatable CMake package.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
@@ -32,9 +32,31 @@ build\mparser_c_source_graph_demo.exe `
 ```
 
 On Linux the shared-library output is `libmparser_c.so`; on Windows it is
-`mparser_c.dll` plus the toolchain import library. Installation and exported
-package targets remain a v0.90 task. v0.84 consumers therefore build against
-this source tree and its CMake target.
+`mparser_c.dll` plus the toolchain import library.
+
+For a production-only installed SDK:
+
+```powershell
+cmake -S . -B build-sdk -DBUILD_TESTING=OFF
+cmake --build build-sdk --config Release
+cmake --install build-sdk --config Release --prefix C:\mparser-sdk
+```
+
+An independent CMake project can then use:
+
+```cmake
+find_package(MParser 0.85.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+target_link_libraries(host PRIVATE MParser::c_api)
+```
+
+`MParser::cli` is the imported matching CLI executable. The package also
+exports project-version components, `MParser_C_ABI_VERSION`,
+`MParser_C_INCLUDE_DIR`, and `MParser_CLI_DIR`. Its paths are relative to the
+package prefix, so the installed tree may be moved as a unit before consumer
+configuration. On Windows, deploy `mparser_c.dll` beside the host executable
+or expose the SDK `bin` directory to the runtime loader.
+
+This is an installed C SDK, not yet a public C++ SDK or final binary freeze.
 
 ## Handles And Ownership
 
@@ -150,7 +172,7 @@ Unicode code units represented by `uint16_t`.
 All external array payloads and linear element indexes use MATLAB column-major
 order. MParser converts to and from its internal storage without exposing that
 storage layout. Accessor pointers are immutable and owned by the value handle.
-There is no zero-copy external buffer or mutable view in v0.84.
+There is no zero-copy external buffer or mutable view in v0.85.
 
 Cell and structure constructors copy the represented runtime values. Releasing
 the child handles after construction is valid. A scalar structure is created
@@ -226,14 +248,20 @@ directories. `c_embedding_demo_smoke` runs the single-source C host and
 included in Linux AArch64 native-JIT and portable-only QEMU jobs in addition
 to the complete Windows x64 and Linux x64 suites.
 
+`installed_c_consumer_smoke` installs the SDK, moves its prefix, configures a
+separate C11 project through `find_package`, and verifies C ABI execution plus
+the imported CLI on Windows x64 and Linux x64. The AArch64 job independently
+installs and cross-consumes both native-JIT and portable packages, then runs
+the installed consumer and CLI under QEMU.
+
 ## Remaining Freeze Work
 
 The v0.90 embedding gate still requires:
 
-1. installed C/C++ consumer packages;
+1. the public C++ SDK/export decision and external C++ consumer;
 2. the versioned machine-readable CLI/result protocol;
 3. explicit forward-compatible structure and symbol-version policy;
 4. external adapter and optional array-view validation;
 5. repeated library load/unload, stress, sanitizer, and allocation-failure
    evidence;
-6. final supported-platform ABI and package-consumer evidence.
+6. macOS x64/ARM64 consumers and final release-package review.

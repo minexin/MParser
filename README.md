@@ -1,12 +1,13 @@
 # MParser
 
-Current milestone: v0.84.0. See [docs/v0.84.md](docs/v0.84.md) for the
+Current milestone: v0.85.0. See [docs/v0.85.md](docs/v0.85.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan, [docs/embedding-c-api.md](docs/embedding-c-api.md) for the
 narrow pure C embedding contract, and
 [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.83.md](docs/v0.83.md),
+kept in [docs/v0.84.md](docs/v0.84.md),
+[docs/v0.83.md](docs/v0.83.md),
 [docs/v0.82.md](docs/v0.82.md),
 [docs/v0.81.md](docs/v0.81.md),
 [docs/v0.80.md](docs/v0.80.md),
@@ -878,8 +879,32 @@ Filesystem loading therefore preserves ordinary/private/path functions,
 dependency discovery. Paths and retained source names are UTF-8 on every
 platform. Hosts can enumerate module sources, and load failures return a
 stable status plus an inspectable module diagnostic. The original one-source
-entry remains compatible; installed consumers, machine protocol,
-forward-compatible ABI policy, and final platform evidence remain v0.90 work.
+entry remains compatible.
+
+v0.85 packages that C boundary as a relocatable SDK. A production build may
+set standard CMake `BUILD_TESTING=OFF`, install the pure C header, shared
+library, CLI, examples, notices, and package metadata, then expose
+`MParser::c_api` and `MParser::cli` through
+`find_package(MParser CONFIG)`. The regression installs to one prefix, moves
+the entire tree, and configures a separate C11 project that has no source-tree
+access; it verifies ABI/version queries, a two-input/two-output invocation,
+and the imported CLI. Windows x64, Linux x64, and both native-JIT and portable
+Linux AArch64 paths validate the installed package. This is still C ABI
+candidate 1: public C++ packaging, machine protocol, final compatibility
+policy, macOS evidence, and release archives remain v0.90 work.
+
+Install and consume the C SDK:
+
+```powershell
+cmake -S . -B build-sdk -DBUILD_TESTING=OFF
+cmake --build build-sdk --config Release
+cmake --install build-sdk --config Release --prefix C:\mparser-sdk
+```
+
+```cmake
+find_package(MParser 0.85.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+target_link_libraries(host PRIVATE MParser::c_api)
+```
 
 Build and run the resource-control embedding example:
 

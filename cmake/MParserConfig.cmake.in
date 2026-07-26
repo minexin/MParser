@@ -1,0 +1,19 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/MParserTargets.cmake")
+
+set(MParser_VERSION "@PROJECT_VERSION@")
+set(MParser_VERSION_MAJOR "@PROJECT_VERSION_MAJOR@")
+set(MParser_VERSION_MINOR "@PROJECT_VERSION_MINOR@")
+set(MParser_VERSION_PATCH "@PROJECT_VERSION_PATCH@")
+set(MParser_C_ABI_VERSION 1)
+set(MParser_C_FOUND TRUE)
+set(MParser_CLI_FOUND TRUE)
+set_and_check(
+    MParser_C_INCLUDE_DIR
+    "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set_and_check(
+    MParser_CLI_DIR
+    "@PACKAGE_CMAKE_INSTALL_BINDIR@")
+
+check_required_components(MParser)

@@ -219,7 +219,7 @@ static int run_header_and_diagnostic_smoke(void) {
 
     CHECK(mparser_c_abi_version() == MPARSER_C_ABI_VERSION);
     CHECK(mparser_version_major() == 0);
-    CHECK(mparser_version_minor() == 84);
+    CHECK(mparser_version_minor() == 85);
     CHECK(mparser_version_patch() == 0);
     CHECK(view_equals(
         mparser_api_status_name(MPARSER_API_STATUS_OWNER_MISMATCH),

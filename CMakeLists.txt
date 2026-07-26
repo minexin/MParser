@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.84.0 LANGUAGES C CXX)
+project(MParser VERSION 0.85.0 LANGUAGES C CXX)
 
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
 find_package(Threads REQUIRED)
+
+set(MPARSER_INSTALL_CMAKEDIR
+    "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
+    CACHE STRING "Install directory for the MParser CMake package")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -122,7 +128,8 @@ add_library(mparser_c_api SHARED
     src/mparser/c_api.cpp)
 target_include_directories(mparser_c_api
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_link_libraries(mparser_c_api PRIVATE mparser_core)
 target_compile_definitions(mparser_c_api
     PRIVATE
@@ -133,6 +140,7 @@ target_compile_definitions(mparser_c_api
     INTERFACE
         MPARSER_C_API_SHARED=1)
 set_target_properties(mparser_c_api PROPERTIES
+    EXPORT_NAME c_api
     OUTPUT_NAME mparser_c
     VERSION ${PROJECT_VERSION}
     SOVERSION 0)
@@ -146,11 +154,16 @@ endif()
 add_executable(mparser src/main.cpp)
 target_link_libraries(mparser PRIVATE mparser_core)
 target_compile_definitions(mparser PRIVATE MPARSER_VERSION="${PROJECT_VERSION}")
+set_target_properties(mparser PROPERTIES EXPORT_NAME cli)
 if(WIN32)
     target_link_libraries(mparser PRIVATE Wer)
 endif()
 
-enable_testing()
+add_library(MParser::c_api ALIAS mparser_c_api)
+add_executable(MParser::cli ALIAS mparser)
+
+include(CTest)
+if(BUILD_TESTING)
 
 add_executable(mparser_smoke_tests tests/parser_smoke.cpp)
 target_link_libraries(mparser_smoke_tests PRIVATE mparser_core)
@@ -1308,6 +1321,31 @@ set_tests_properties(c_source_graph_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "summary = 21,107,12,12")
 
+if(NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME installed_c_consumer_smoke
+        COMMAND "${CMAKE_COMMAND}"
+            "-DMPARSER_CMAKE_COMMAND=${CMAKE_COMMAND}"
+            "-DMPARSER_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}"
+            "-DMPARSER_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            "-DMPARSER_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_c_consumer"
+            "-DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-consumer-smoke/$<CONFIG>"
+            "-DMPARSER_INSTALL_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}"
+            "-DMPARSER_INSTALL_CMAKEDIR=${MPARSER_INSTALL_CMAKEDIR}"
+            "-DMPARSER_GENERATOR=${CMAKE_GENERATOR}"
+            "-DMPARSER_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            "-DMPARSER_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+            "-DMPARSER_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+            "-DMPARSER_C_COMPILER=${CMAKE_C_COMPILER}"
+            "-DMPARSER_RC_COMPILER=${CMAKE_RC_COMPILER}"
+            "-DMPARSER_MT=${CMAKE_MT}"
+            "-DMPARSER_TEST_CONFIG=$<CONFIG>"
+            "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+            "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_installed_c_consumer.cmake")
+    set_tests_properties(installed_c_consumer_smoke PROPERTIES
+        TIMEOUT 180)
+endif()
+
 # The smoke executables use standard assert as a lightweight test primitive.
 # Keep those contracts active in optimized CI and release-validation builds.
 get_property(mparser_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
@@ -1320,3 +1358,42 @@ foreach(mparser_target IN LISTS mparser_directory_targets)
         endif()
     endif()
 endforeach()
+endif()
+
+configure_package_config_file(
+    cmake/MParserConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/MParserConfig.cmake"
+    INSTALL_DESTINATION "${MPARSER_INSTALL_CMAKEDIR}"
+    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_BINDIR)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/MParserConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMinorVersion)
+
+install(TARGETS mparser_c_api mparser
+    EXPORT MParserTargets
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+install(FILES include/mparser/c_api.h
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/mparser")
+install(EXPORT MParserTargets
+    FILE MParserTargets.cmake
+    NAMESPACE MParser::
+    DESTINATION "${MPARSER_INSTALL_CMAKEDIR}")
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/MParserConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/MParserConfigVersion.cmake"
+    DESTINATION "${MPARSER_INSTALL_CMAKEDIR}")
+install(FILES
+    README.md
+    THIRD_PARTY_NOTICES.md
+    docs/embedding-c-api.md
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}")
+install(FILES
+    samples/c_embedding_demo.c
+    samples/c_source_graph_demo.c
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
+install(DIRECTORY samples/class_folders/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples/class_folders"
+    FILES_MATCHING PATTERN "*.m")
