@@ -8,6 +8,8 @@ source-graph loading. v0.85 installs it as a relocatable CMake package. v0.86
 adds a separate machine-readable CLI result protocol over the same
 engine-neutral invocation result. v0.87 adds executable ABI-major-1 evolution
 rules, sized structure initialization, and a frozen old-header consumer.
+v0.88 adds a separate public C++20 RAII facade over this same boundary; see
+`embedding-cpp-api.md`.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
@@ -49,7 +51,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 An independent CMake project can then use:
 
 ```cmake
-find_package(MParser 0.87.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 0.88.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
@@ -61,7 +63,9 @@ package prefix, so the installed tree may be moved as a unit before consumer
 configuration. On Windows, deploy `mparser_c.dll` beside the host executable
 or expose the SDK `bin` directory to the runtime loader.
 
-This is an installed C SDK, not yet a public C++ SDK or final binary freeze.
+The C package remains independently consumable. v0.88 also exports
+`MParser::cpp_api`, but neither source API nor the binary boundary reaches its
+final freeze before the v0.90 review.
 
 ## Handles And Ownership
 

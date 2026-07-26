@@ -66,8 +66,8 @@ jobs:
       - name: Run native JIT smokes under QEMU
         run: >-
           ctest --test-dir build-arm64-jit --output-on-failure
-          -R "^(native_scalar_jit_cache_smoke|bytecode_region_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|native_linear_array_kernel_cli_smoke|production_run_native_jit_cli_smoke|native_jit_benchmark_native_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|c_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|compatibility_matrix_smoke)$"
-      - name: Validate installed native JIT C SDK under QEMU
+          -R "^(native_scalar_jit_cache_smoke|bytecode_region_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|native_linear_array_kernel_cli_smoke|production_run_native_jit_cli_smoke|native_jit_benchmark_native_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|cpp_api_smoke|cpp_embedding_demo_smoke|c_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|compatibility_matrix_smoke)$"
+      - name: Validate installed native JIT C and C++ SDKs under QEMU
         shell: bash
         run: |
           cmake --install build-arm64-jit --prefix "$PWD/install-arm64-jit"
@@ -76,14 +76,24 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/install-arm64-jit" \
-            -DMPARSER_REQUIRED_VERSION=0.87.0
+            -DMPARSER_REQUIRED_VERSION=0.88.0
           cmake --build build-arm64-jit-consumer --parallel
           LD_LIBRARY_PATH="$PWD/install-arm64-jit/lib" \
             ctest --test-dir build-arm64-jit-consumer --output-on-failure \
               -R "^installed_c_api_runtime$"
+          cmake -S tests/installed_cpp_consumer -B build-arm64-jit-cpp-consumer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
+            -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
+            -DCMAKE_PREFIX_PATH="$PWD/install-arm64-jit" \
+            -DMPARSER_REQUIRED_VERSION=0.88.0
+          cmake --build build-arm64-jit-cpp-consumer --parallel
+          LD_LIBRARY_PATH="$PWD/install-arm64-jit/lib" \
+            ctest --test-dir build-arm64-jit-cpp-consumer --output-on-failure \
+              -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./install-arm64-jit/bin/mparser --version | tee arm64-jit-sdk-version.txt
-          grep --fixed-strings "MParser 0.87.0" arm64-jit-sdk-version.txt
+          grep --fixed-strings "MParser 0.88.0" arm64-jit-sdk-version.txt
       - name: Configure portable fallback build
         run: >-
           cmake -S . -B build-arm64-portable -G Ninja
@@ -96,8 +106,8 @@ jobs:
       - name: Run portable runtime smokes under QEMU
         run: >-
           ctest --test-dir build-arm64-portable --output-on-failure
-          -R "^(bytecode_region_smoke|native_scalar_jit_cache_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|linear_array_kernel_cli_smoke|cli_help_smoke|production_run_cli_smoke|production_run_portable_jit_cli_smoke|production_run_jit_off_cli_smoke|production_run_cli_contract_smoke|native_jit_benchmark_portable_cli_smoke|class_metadata_smoke|class_metadata_bytecode_cli_smoke|dynamic_property_smoke|dynamic_property_bytecode_cli_smoke|property_listener_smoke|property_listener_bytecode_cli_smoke|handle_lifecycle_smoke|handle_lifecycle_bytecode_cli_smoke|function_metadata_smoke|function_metadata_bytecode_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|c_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|compatibility_matrix_smoke)$"
-      - name: Validate installed portable C SDK under QEMU
+          -R "^(bytecode_region_smoke|native_scalar_jit_cache_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|linear_array_kernel_cli_smoke|cli_help_smoke|production_run_cli_smoke|production_run_portable_jit_cli_smoke|production_run_jit_off_cli_smoke|production_run_cli_contract_smoke|native_jit_benchmark_portable_cli_smoke|class_metadata_smoke|class_metadata_bytecode_cli_smoke|dynamic_property_smoke|dynamic_property_bytecode_cli_smoke|property_listener_smoke|property_listener_bytecode_cli_smoke|handle_lifecycle_smoke|handle_lifecycle_bytecode_cli_smoke|function_metadata_smoke|function_metadata_bytecode_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|cpp_api_smoke|cpp_embedding_demo_smoke|c_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|compatibility_matrix_smoke)$"
+      - name: Validate installed portable C and C++ SDKs under QEMU
         shell: bash
         run: |
           cmake --install build-arm64-portable --prefix "$PWD/install-arm64-portable"
@@ -106,14 +116,24 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/install-arm64-portable" \
-            -DMPARSER_REQUIRED_VERSION=0.87.0
+            -DMPARSER_REQUIRED_VERSION=0.88.0
           cmake --build build-arm64-portable-consumer --parallel
           LD_LIBRARY_PATH="$PWD/install-arm64-portable/lib" \
             ctest --test-dir build-arm64-portable-consumer --output-on-failure \
               -R "^installed_c_api_runtime$"
+          cmake -S tests/installed_cpp_consumer -B build-arm64-portable-cpp-consumer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
+            -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
+            -DCMAKE_PREFIX_PATH="$PWD/install-arm64-portable" \
+            -DMPARSER_REQUIRED_VERSION=0.88.0
+          cmake --build build-arm64-portable-cpp-consumer --parallel
+          LD_LIBRARY_PATH="$PWD/install-arm64-portable/lib" \
+            ctest --test-dir build-arm64-portable-cpp-consumer --output-on-failure \
+              -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./install-arm64-portable/bin/mparser --version | tee arm64-portable-sdk-version.txt
-          grep --fixed-strings "MParser 0.87.0" arm64-portable-sdk-version.txt
+          grep --fixed-strings "MParser 0.88.0" arm64-portable-sdk-version.txt
       - name: Run portable branch sample under QEMU
         shell: bash
         run: |

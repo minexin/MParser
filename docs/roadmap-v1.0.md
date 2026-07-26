@@ -464,12 +464,17 @@ function families, not an unbounded builtin count.
 
 ### v0.88: Installable C++ Embedding SDK
 
-- Planned: add a C++20 RAII facade over the narrow C ABI rather than exporting
+- Status: closed by the v0.88 SDK implementation and linked evidence in
+  `docs/v0.88.md`, `docs/embedding-cpp-api.md`, and `EMBED-010`.
+- Add a C++20 RAII facade over the narrow C ABI rather than exporting
   internal Parser/HIR/Bytecode/RuntimeValue layouts.
 - Export an installed `MParser::cpp_api` target with compile/load/invoke-many,
   sessions, values, diagnostics, cancellation, and resource summaries.
 - Prove source-tree isolation and relocation with an external C++ consumer on
   the release platform matrix.
+- Preserve language failures as inspectable modules/results, reserve
+  `ApiError` for host-boundary failures, and validate independent value/module
+  ownership plus caller-defined Struct field order.
 
 ### v0.89: Embedding Stress And Platform Evidence
 
@@ -482,7 +487,7 @@ function families, not an unbounded builtin count.
 ### v0.90: Embedding And Release Candidate APIs
 
 - Freeze the compile/load/invoke-many C++ and narrow C candidates, complete
-  the public C++ packaging decision, and perform the final versioned machine
+  the public C++ packaging review, and perform the final versioned machine
   protocol compatibility review.
 - Validate representative function families, persistent runtime behavior,
   resource boundaries, cross-platform consumers, and cache invalidation.

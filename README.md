@@ -1,8 +1,10 @@
 # MParser
 
-Current milestone: v0.87.0. See [docs/v0.87.md](docs/v0.87.md) for the
+Current milestone: v0.88.0. See [docs/v0.88.md](docs/v0.88.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan,
+[docs/embedding-cpp-api.md](docs/embedding-cpp-api.md) for the public C++20
+RAII embedding SDK,
 [docs/c-abi-compatibility.md](docs/c-abi-compatibility.md) for C ABI evolution
 and structure-versioning rules,
 [docs/machine-result-protocol.md](docs/machine-result-protocol.md) for the
@@ -11,7 +13,8 @@ versioned CLI automation contract,
 embedding contract, and
 [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.86.md](docs/v0.86.md),
+kept in [docs/v0.87.md](docs/v0.87.md),
+[docs/v0.86.md](docs/v0.86.md),
 [docs/v0.85.md](docs/v0.85.md),
 [docs/v0.84.md](docs/v0.84.md),
 [docs/v0.83.md](docs/v0.83.md),
@@ -920,6 +923,15 @@ sealed. A frozen v0.86 header consumer, future-tail execution/load/summary
 tests, an ABI compatibility sample, relocated installed consumer, and focused
 AArch64 QEMU paths enforce the policy.
 
+v0.88 adds an installed header-only C++20 facade over that narrow C ABI.
+`mparser::sdk` supplies copyable RAII modules, sessions, results, values, and
+cancellation tokens together with source compilation/loading, invocation,
+diagnostic, resource-limit, and execution-summary types. The facade exports no
+internal compiler or VM layout and keeps the shared-library boundary in C.
+`MParser::cpp_api` is exercised from the source tree and from a separate C++20
+project after the installed prefix is moved; focused native and portable Linux
+AArch64 jobs cross-build and run the same consumer under QEMU.
+
 Install and consume the C SDK:
 
 ```powershell
@@ -929,8 +941,8 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 0.87.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
-target_link_libraries(host PRIVATE MParser::c_api)
+find_package(MParser 0.88.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 
 Build and run the resource-control embedding example:
@@ -945,6 +957,13 @@ Build and run the pure C embedding example:
 ```powershell
 cmake --build build --target mparser_c_embedding_demo
 build\mparser_c_embedding_demo.exe
+```
+
+Build and run the C++20 embedding example:
+
+```powershell
+cmake --build build --target mparser_cpp_embedding_demo
+build\mparser_cpp_embedding_demo.exe
 ```
 
 Build and run the C ABI compatibility example:

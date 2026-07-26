@@ -1442,8 +1442,18 @@ verifies the package/header/runtime versions and C ABI `1.1`, invokes a
 two-output function, and runs the imported CLI. Cross builds do not register a
 host-side nested CTest; the AArch64 CI explicitly installs and cross-builds
 both SLJIT-enabled and portable packages, then executes their consumers under
-QEMU. `BUILD_TESTING=OFF` leaves only the core, shared C library, and CLI
-production targets.
+QEMU. `BUILD_TESTING=OFF` leaves only the core, shared C library, header-only
+C++ interface, and CLI production targets.
+
+v0.88 layers `include/mparser/cpp_api.hpp` over the narrow C ABI as a
+header-only C++20 facade. Its RAII wrappers retain opaque module, session,
+result, value, and cancellation handles; no internal compiler/VM layout or C++
+binary ABI is exported by the shared library. `cpp_api_smoke` covers all
+current external value kinds, compile/load/invoke-many, multi-output,
+diagnostic trees, limits, cancellation, sessions, retained values, and the
+production UTF-8 source graph. The package exports `MParser::cpp_api`, and a
+separate C++20 consumer builds after the install prefix is renamed. Focused
+AArch64 native/portable jobs cross-build and execute both C and C++ consumers.
 
 v0.87 adds two independent ABI evolution probes. `c_api_smoke` places the
 extensible prefixes inside larger host records, verifies old and sized write

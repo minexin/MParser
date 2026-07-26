@@ -9,10 +9,12 @@ set(MParser_VERSION_PATCH "@PROJECT_VERSION_PATCH@")
 set(MParser_C_ABI_VERSION 1)
 set(MParser_C_ABI_REVISION 1)
 set(MParser_C_FOUND TRUE)
+set(MParser_CPP_FOUND TRUE)
 set(MParser_CLI_FOUND TRUE)
 set_and_check(
     MParser_C_INCLUDE_DIR
     "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set(MParser_CPP_INCLUDE_DIR "${MParser_C_INCLUDE_DIR}")
 set_and_check(
     MParser_CLI_DIR
     "@PACKAGE_CMAKE_INSTALL_BINDIR@")

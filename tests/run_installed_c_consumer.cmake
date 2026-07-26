@@ -68,12 +68,19 @@ if(NOT MPARSER_TEST_CONFIG STREQUAL "")
 endif()
 mparser_run_checked("MParser install" ${mparser_install_command})
 
-foreach(required_path IN ITEMS
+set(mparser_required_paths
         "${mparser_initial_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/c_api.h"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/c_abi_compat_demo.c"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserConfig.cmake"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserTargets.cmake")
+if(DEFINED MPARSER_REQUIRE_CPP_SDK AND MPARSER_REQUIRE_CPP_SDK)
+    list(APPEND mparser_required_paths
+        "${mparser_initial_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/cpp_api.hpp"
+        "${mparser_initial_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/cpp_embedding_demo.cpp"
+        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/embedding-cpp-api.md")
+endif()
+foreach(required_path IN LISTS mparser_required_paths)
     if(NOT EXISTS "${required_path}")
         message(FATAL_ERROR
             "Installed SDK artifact is missing: ${required_path}")
@@ -115,6 +122,11 @@ if(DEFINED MPARSER_C_COMPILER AND
    NOT MPARSER_C_COMPILER STREQUAL "")
     list(APPEND mparser_configure_command
         "-DCMAKE_C_COMPILER=${MPARSER_C_COMPILER}")
+endif()
+if(DEFINED MPARSER_CXX_COMPILER AND
+   NOT MPARSER_CXX_COMPILER STREQUAL "")
+    list(APPEND mparser_configure_command
+        "-DCMAKE_CXX_COMPILER=${MPARSER_CXX_COMPILER}")
 endif()
 if(DEFINED MPARSER_RC_COMPILER AND
    NOT MPARSER_RC_COMPILER STREQUAL "")

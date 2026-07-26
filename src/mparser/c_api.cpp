@@ -2038,6 +2038,8 @@ mparser_api_status mparser_value_create_struct(
     }
     try {
         mparser::RuntimeWorkspace runtimeFields;
+        std::vector<std::string> fieldOrder;
+        fieldOrder.reserve(field_count);
         std::shared_ptr<ModuleState> owner;
         for (size_t index = 0;
              index < field_count; ++index) {
@@ -2059,10 +2061,13 @@ mparser_api_status mparser_value_create_struct(
                     *name, field.value->state->value).second) {
                 return MPARSER_API_STATUS_INVALID_ARGUMENT;
             }
+            fieldOrder.push_back(*name);
         }
+        auto runtimeValue = mparser::makeRuntimeStructValue(
+            std::move(runtimeFields));
+        runtimeValue.fieldOrder = std::move(fieldOrder);
         return makeValueHandle(
-            mparser::makeRuntimeStructValue(
-                std::move(runtimeFields)),
+            std::move(runtimeValue),
             std::move(owner), out_value);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;

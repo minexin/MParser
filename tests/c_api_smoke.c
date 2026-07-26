@@ -259,7 +259,7 @@ static int run_header_and_diagnostic_smoke(void) {
     CHECK(MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ==
           sizeof(mparser_source_load_options));
     CHECK(mparser_version_major() == 0);
-    CHECK(mparser_version_minor() == 87);
+    CHECK(mparser_version_minor() == 88);
     CHECK(mparser_version_patch() == 0);
     CHECK(view_equals(
         mparser_api_status_name(MPARSER_API_STATUS_OWNER_MISMATCH),
@@ -950,12 +950,12 @@ static int run_array_text_and_composite_smoke(
     mparser_result_release(result);
     result = NULL;
 
-    fields[0].name = "answer";
-    fields[0].name_size = strlen("answer");
-    fields[0].value = scalar;
-    fields[1].name = "payload";
-    fields[1].name_size = strlen("payload");
-    fields[1].value = cell;
+    fields[0].name = "payload";
+    fields[0].name_size = strlen("payload");
+    fields[0].value = cell;
+    fields[1].name = "answer";
+    fields[1].name_size = strlen("answer");
+    fields[1].value = scalar;
     CHECK(mparser_value_create_struct(fields, 2, &structure) ==
           MPARSER_API_STATUS_OK);
     mparser_value_release(scalar);
@@ -968,6 +968,10 @@ static int run_array_text_and_composite_smoke(
     CHECK(mparser_result_output(result, 0, &output) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_value_struct_field_count(output) == 2);
+    CHECK(view_equals(
+        mparser_value_struct_field_name(output, 0), "payload"));
+    CHECK(view_equals(
+        mparser_value_struct_field_name(output, 1), "answer"));
     for (index = 0;
          index < mparser_value_struct_field_count(output);
          ++index) {

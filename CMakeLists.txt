@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.87.0 LANGUAGES C CXX)
+project(MParser VERSION 0.88.0 LANGUAGES C CXX)
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -152,6 +152,16 @@ else()
         -Wall -Wextra -Wpedantic)
 endif()
 
+add_library(mparser_cpp_api INTERFACE)
+target_include_directories(mparser_cpp_api
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_link_libraries(mparser_cpp_api INTERFACE mparser_c_api)
+target_compile_features(mparser_cpp_api INTERFACE cxx_std_20)
+set_target_properties(mparser_cpp_api PROPERTIES
+    EXPORT_NAME cpp_api)
+
 add_executable(mparser src/main.cpp)
 target_link_libraries(mparser PRIVATE mparser_core)
 target_compile_definitions(mparser PRIVATE MPARSER_VERSION="${PROJECT_VERSION}")
@@ -161,6 +171,7 @@ if(WIN32)
 endif()
 
 add_library(MParser::c_api ALIAS mparser_c_api)
+add_library(MParser::cpp_api ALIAS mparser_cpp_api)
 add_executable(MParser::cli ALIAS mparser)
 
 include(CTest)
@@ -1310,6 +1321,36 @@ add_test(NAME c_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/app/run_demo.m
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 
+add_executable(cpp_api_smoke_tests
+    tests/cpp_api_smoke.cpp)
+target_link_libraries(cpp_api_smoke_tests PRIVATE
+    mparser_cpp_api)
+add_test(NAME cpp_api_smoke
+    COMMAND cpp_api_smoke_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/app/run_demo.m
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
+set_tests_properties(cpp_api_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "cpp api smoke = 5050,42,21,abi-1.1")
+
+add_executable(mparser_cpp_embedding_demo
+    samples/cpp_embedding_demo.cpp)
+target_link_libraries(mparser_cpp_embedding_demo PRIVATE
+    mparser_cpp_api)
+if(MSVC)
+    target_compile_options(cpp_api_smoke_tests PRIVATE /W4 /permissive-)
+    target_compile_options(mparser_cpp_embedding_demo PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(cpp_api_smoke_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+    target_compile_options(mparser_cpp_embedding_demo PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME cpp_embedding_demo_smoke
+    COMMAND mparser_cpp_embedding_demo)
+set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "cpp sdk = 5050,5,abi-1.1")
+
 add_executable(c_api_v1_compat_smoke_tests
     tests/c_api_v1_compat_smoke.c)
 target_link_libraries(c_api_v1_compat_smoke_tests PRIVATE
@@ -1400,6 +1441,33 @@ if(NOT CMAKE_CROSSCOMPILING)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_installed_c_consumer.cmake")
     set_tests_properties(installed_c_consumer_smoke PROPERTIES
         TIMEOUT 180)
+
+    add_test(NAME installed_cpp_consumer_smoke
+        COMMAND "${CMAKE_COMMAND}"
+            "-DMPARSER_CMAKE_COMMAND=${CMAKE_COMMAND}"
+            "-DMPARSER_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}"
+            "-DMPARSER_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            "-DMPARSER_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_cpp_consumer"
+            "-DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-cpp-consumer-smoke/$<CONFIG>"
+            "-DMPARSER_INSTALL_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}"
+            "-DMPARSER_INSTALL_DATADIR=${CMAKE_INSTALL_DATADIR}"
+            "-DMPARSER_INSTALL_DOCDIR=${CMAKE_INSTALL_DOCDIR}"
+            "-DMPARSER_INSTALL_CMAKEDIR=${MPARSER_INSTALL_CMAKEDIR}"
+            "-DMPARSER_GENERATOR=${CMAKE_GENERATOR}"
+            "-DMPARSER_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            "-DMPARSER_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+            "-DMPARSER_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+            "-DMPARSER_C_COMPILER=${CMAKE_C_COMPILER}"
+            "-DMPARSER_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DMPARSER_RC_COMPILER=${CMAKE_RC_COMPILER}"
+            "-DMPARSER_MT=${CMAKE_MT}"
+            "-DMPARSER_TEST_CONFIG=$<CONFIG>"
+            "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+            "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+            -DMPARSER_REQUIRE_CPP_SDK=ON
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_installed_c_consumer.cmake")
+    set_tests_properties(installed_cpp_consumer_smoke PROPERTIES
+        TIMEOUT 180)
 endif()
 
 # The smoke executables use standard assert as a lightweight test primitive.
@@ -1426,12 +1494,12 @@ write_basic_package_version_file(
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion)
 
-install(TARGETS mparser_c_api mparser
+install(TARGETS mparser_c_api mparser_cpp_api mparser
     EXPORT MParserTargets
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-install(FILES include/mparser/c_api.h
+install(FILES include/mparser/c_api.h include/mparser/cpp_api.hpp
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/mparser")
 install(EXPORT MParserTargets
     FILE MParserTargets.cmake
@@ -1446,11 +1514,13 @@ install(FILES
     THIRD_PARTY_NOTICES.md
     docs/c-abi-compatibility.md
     docs/embedding-c-api.md
+    docs/embedding-cpp-api.md
     docs/machine-result-protocol.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
     samples/c_abi_compat_demo.c
     samples/c_embedding_demo.c
+    samples/cpp_embedding_demo.cpp
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
