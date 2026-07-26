@@ -5,6 +5,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <string_view>
 
@@ -33,6 +34,29 @@ void writeFile(const std::filesystem::path& path,
     assert(output);
     output << content;
     assert(output.good());
+}
+
+void printLoadFailure(mparser_api_status status,
+                      const mparser_module* module) {
+    const auto statusName = mparser_api_status_name(status);
+    std::cerr << "load status: "
+              << std::string_view(statusName.data, statusName.size)
+              << '\n';
+    for (size_t index = 0;
+         index < mparser_module_diagnostic_count(module);
+         ++index) {
+        const auto* diagnostic =
+            mparser_module_diagnostic(module, index);
+        const auto identifier =
+            mparser_diagnostic_identifier(diagnostic);
+        const auto message =
+            mparser_diagnostic_message(diagnostic);
+        std::cerr
+            << std::string_view(identifier.data, identifier.size)
+            << ": "
+            << std::string_view(message.data, message.size)
+            << '\n';
+    }
 }
 
 const mparser_value* findVariable(
@@ -69,7 +93,8 @@ int main() {
     const auto entryDirectory =
         temporary.path /
         std::filesystem::path(
-            std::u8string(u8"entry_\u8def\u5f84"));
+            std::u8string(
+                u8"entry_\u8def\u5f84_\U0001f9ea"));
     const auto libraryDirectory =
         temporary.path /
         std::filesystem::path(
@@ -104,10 +129,13 @@ int main() {
     loadOptions.search_path_count = 1;
 
     mparser_module* module = nullptr;
-    assert(mparser_module_load_file_utf8(
-               entryUtf8.data(), entryUtf8.size(),
-               &loadOptions, &module) ==
-           MPARSER_API_STATUS_OK);
+    const auto loadStatus = mparser_module_load_file_utf8(
+        entryUtf8.data(), entryUtf8.size(),
+        &loadOptions, &module);
+    if (loadStatus != MPARSER_API_STATUS_OK) {
+        printLoadFailure(loadStatus, module);
+    }
+    assert(loadStatus == MPARSER_API_STATUS_OK);
     assert(module != nullptr);
     assert(mparser_module_is_valid(module) == 1);
     assert(mparser_module_source_count(module) == 2);

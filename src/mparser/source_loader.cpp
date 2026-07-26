@@ -1,5 +1,6 @@
 #include "mparser/source_loader.h"
 
+#include "mparser/filesystem_utf8.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 
@@ -45,13 +46,6 @@ std::filesystem::path normalizedPath(const std::filesystem::path& path) {
     }
     auto canonical = std::filesystem::weakly_canonical(absolute, error);
     return error ? absolute.lexically_normal() : canonical;
-}
-
-std::string pathToUtf8(const std::filesystem::path& path) {
-    const auto encoded = path.generic_u8string();
-    return std::string(
-        reinterpret_cast<const char*>(encoded.data()),
-        encoded.size());
 }
 
 std::string readSourceFile(const std::filesystem::path& path) {
@@ -121,14 +115,16 @@ SourceNamespaceLocation sourceNamespaceLocation(
     const std::filesystem::path& sourcePath) {
     std::vector<std::string> parts;
     auto directory = sourcePath.parent_path();
-    const std::string immediateFolder = directory.filename().string();
+    const std::string immediateFolder =
+        pathToUtf8(directory.filename());
     if (immediateFolder.size() >= 2 && immediateFolder.front() == '@' &&
         isSimpleClassName(immediateFolder.substr(1))) {
         directory = directory.parent_path();
     }
     SourceNamespaceLocation result{directory, {}};
     while (!directory.empty()) {
-        const std::string folder = directory.filename().string();
+        const std::string folder =
+            pathToUtf8(directory.filename());
         if (folder.size() < 2 || folder.front() != '+' ||
             !isSimpleClassName(folder.substr(1))) {
             break;
@@ -416,7 +412,8 @@ std::optional<std::string> classPrivateFunctionOwner(
     }
 
     const auto classFolder = privateFolder.parent_path();
-    const std::string folderName = classFolder.filename().string();
+    const std::string folderName =
+        pathToUtf8(classFolder.filename());
     if (folderName.size() < 2 || folderName.front() != '@' ||
         !isSimpleClassName(folderName.substr(1))) {
         return std::nullopt;
@@ -541,12 +538,14 @@ std::optional<std::filesystem::path> findSymbolSource(
 std::optional<std::string> classFolderOwnerForDefinition(
     const std::filesystem::path& path, std::string_view namespaceName,
     const InspectedSource& inspected) {
-    const std::string folder = path.parent_path().filename().string();
+    const std::string folder =
+        pathToUtf8(path.parent_path().filename());
     if (folder.size() < 2 || folder.front() != '@') {
         return std::nullopt;
     }
     const std::string className = folder.substr(1);
-    if (!isSimpleClassName(className) || path.stem().string() != className ||
+    if (!isSimpleClassName(className) ||
+        pathToUtf8(path.stem()) != className ||
         !inspected.classes.contains(className)) {
         return std::nullopt;
     }
@@ -649,7 +648,7 @@ SourceLoaderResult SourceLoader::load(
             }
             const auto path = normalizedPath(iterator->path());
             if (path == definitionPath || path.extension() != ".m" ||
-                !isSimpleClassName(path.stem().string())) {
+                !isSimpleClassName(pathToUtf8(path.stem()))) {
                 continue;
             }
             methodPaths.push_back(path);

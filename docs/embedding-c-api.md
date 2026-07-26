@@ -94,6 +94,8 @@ Paths are length-delimited UTF-8 and are converted directly to native
 filesystem paths. Loaded source names remain UTF-8. The host can inspect the
 ordered graph through `mparser_module_source_count` and
 `mparser_module_source_name`; returned names are borrowed from the module.
+Empty paths, embedded nulls, and malformed UTF-8 return
+`MPARSER_API_STATUS_INVALID_ARGUMENT` without creating a module.
 
 On a language compilation failure either route returns
 `MPARSER_API_STATUS_COMPILATION_FAILED` and an inspectable invalid module whose

@@ -58,6 +58,7 @@ add_library(mparser_core
     src/mparser/bytecode_region.cpp
     src/mparser/bytecode_vm.cpp
     src/mparser/compiled_module.cpp
+    src/mparser/filesystem_utf8.cpp
     src/mparser/function_signature.cpp
     src/mparser/interpreter.cpp
     src/mparser/lexer.cpp

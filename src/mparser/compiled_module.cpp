@@ -2,6 +2,7 @@
 
 #include "mparser/argument_contract.h"
 #include "mparser/builtin_registry.h"
+#include "mparser/filesystem_utf8.h"
 #include "mparser/lexer.h"
 #include "mparser/optimization_plan.h"
 #include "mparser/parser.h"
@@ -31,15 +32,6 @@ struct CompiledModuleData {
 };
 
 namespace {
-
-std::filesystem::path pathFromUtf8(std::string_view value) {
-    std::u8string encoded;
-    encoded.reserve(value.size());
-    for (const unsigned char byte : value) {
-        encoded.push_back(static_cast<char8_t>(byte));
-    }
-    return std::filesystem::path(encoded);
-}
 
 void collectInvocableFunctions(
     const HirNode* node, std::vector<CompiledFunctionInfo>& functions,
@@ -127,7 +119,7 @@ void applySourceIdentity(SyntaxNode& root, const SourceUnit& source) {
         }
         if (owner.empty()) {
             owner = std::string(namespaceName) + "." +
-                    pathFromUtf8(source.name).stem().string();
+                    pathToUtf8(pathFromUtf8(source.name).stem());
         }
     }
 
@@ -170,7 +162,7 @@ std::optional<PendingClassMethod> extractClassMethod(
 
     auto implementation = std::move(sourceRoot.children.front());
     const std::string fileMethodName =
-        pathFromUtf8(source.name).stem().string();
+        pathToUtf8(pathFromUtf8(source.name).stem());
     if (implementation->label != fileMethodName) {
         diagnostics.push_back(Diagnostic{
             implementation->span,

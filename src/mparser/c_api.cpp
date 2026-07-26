@@ -1,6 +1,7 @@
 #include "mparser/c_api.h"
 
 #include "mparser/compiled_module.h"
+#include "mparser/filesystem_utf8.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 #include "mparser/runtime_value.h"
@@ -297,18 +298,10 @@ std::optional<std::string> copyBytes(
     return std::string(data ? data : "", size);
 }
 
-std::filesystem::path pathFromUtf8(std::string_view value) {
-    std::u8string encoded;
-    encoded.reserve(value.size());
-    for (const unsigned char byte : value) {
-        encoded.push_back(static_cast<char8_t>(byte));
-    }
-    return std::filesystem::path(encoded);
-}
-
 bool validPathText(std::string_view value) noexcept {
     return !value.empty() &&
-           value.find('\0') == std::string_view::npos;
+           value.find('\0') == std::string_view::npos &&
+           mparser::isValidUtf8(value);
 }
 
 mparser_api_status publishCompiledModule(
@@ -1179,14 +1172,14 @@ mparser_api_status mparser_module_load_file_utf8(
                     return MPARSER_API_STATUS_INVALID_ARGUMENT;
                 }
                 loaderOptions.searchPaths.push_back(
-                    pathFromUtf8(*path));
+                    mparser::pathFromUtf8(*path));
             }
         }
 
         mparser::SourceLoaderResult loaded;
         try {
             loaded = mparser::SourceLoader{}.load(
-                pathFromUtf8(*entryText), loaderOptions);
+                mparser::pathFromUtf8(*entryText), loaderOptions);
         } catch (const std::bad_alloc&) {
             throw;
         } catch (const std::exception& error) {

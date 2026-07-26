@@ -374,6 +374,8 @@ static int run_file_source_graph_smoke(const char* entry_path,
     const mparser_diagnostic* diagnostic;
     const char missing_path[] =
         "mparser_c_api_missing_entry_84.m";
+    const char invalid_utf8_path[] = {
+        'b', 'a', 'd', '_', (char)0xc0, (char)0xaf, '.', 'm'};
 
     CHECK(mparser_source_load_options_init(&load_options) ==
           MPARSER_API_STATUS_OK);
@@ -426,6 +428,22 @@ static int run_file_source_graph_smoke(const char* entry_path,
     CHECK(module == NULL);
     CHECK(mparser_module_load_file_utf8(
               "", 0, NULL, &module) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(module == NULL);
+    CHECK(mparser_module_load_file_utf8(
+              invalid_utf8_path, sizeof(invalid_utf8_path),
+              NULL, &module) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(module == NULL);
+    CHECK(mparser_source_load_options_init(&load_options) ==
+          MPARSER_API_STATUS_OK);
+    search_path.data = invalid_utf8_path;
+    search_path.size = sizeof(invalid_utf8_path);
+    load_options.search_paths = &search_path;
+    load_options.search_path_count = 1;
+    CHECK(mparser_module_load_file_utf8(
+              entry_path, strlen(entry_path),
+              &load_options, &module) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(module == NULL);
 
