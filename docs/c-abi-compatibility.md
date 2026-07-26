@@ -1,6 +1,6 @@
 # MParser C ABI Compatibility
 
-MParser v0.87 defines the evolution rules for C ABI candidate major 1. The
+MParser v0.89 enforces the evolution rules for C ABI candidate major 1. The
 candidate is still pre-v1.0, but its compatibility behavior is executable and
 must be reviewed before any public layout or symbol changes.
 
@@ -8,7 +8,7 @@ The current tuple is:
 
 - ABI major: `MPARSER_C_ABI_VERSION_MAJOR == 1`;
 - ABI revision: `MPARSER_C_ABI_REVISION == 1`;
-- engine release: `0.87.0`.
+- engine release: `0.89.0`.
 
 `mparser_c_abi_version()` returns the ABI major.
 `mparser_c_abi_revision()` returns the additive feature revision. The engine
@@ -36,6 +36,17 @@ Within one ABI major, MParser must not:
 
 An incompatible correction requires a new ABI major and, once the v1.0
 binary boundary is frozen, a matching shared-library ABI name.
+
+The current shared-library implementation version is `1.1.0`, with ABI-major
+SONAME/install name 1:
+
+- ELF: `libmparser_c.so.1`;
+- macOS: `libmparser_c.1.dylib`;
+- Windows: `mparser_c.dll` plus its import library.
+
+The engine release remains independent. Internal compiler, VM, C++ facade,
+and SLJIT symbols have hidden visibility. The complete public export set is
+the 90-name manifest in `tests/c_api_abi1_symbols.txt`.
 
 ## Extensible Structures
 
@@ -143,10 +154,10 @@ borrowed-view rules remain those in `embedding-c-api.md`.
 
 | Host binary | Runtime library | Contract |
 | --- | --- | --- |
-| v0.86 ABI-major-1 header | v0.87 | Supported through frozen old symbols and prefixes |
-| v0.87 current header | v0.87 | Supported, including sized initialization |
-| Future ABI-major-1 header | v0.87 | Supported for known prefix fields when revision-1 symbols are available |
-| v0.87 code using revision-1 symbols | v0.86 | Not load-compatible because those additive symbols do not exist |
+| v0.86 ABI-major-1 header | v0.89 | Supported through frozen old symbols and prefixes |
+| v0.89 current header | v0.89 | Supported, including sized initialization |
+| Future ABI-major-1 header | v0.89 | Supported for known prefix fields when revision-1 symbols are available |
+| v0.89 code using revision-1 symbols | v0.86 | Not load-compatible because those additive symbols do not exist |
 | Different ABI major | Any | Rejected or requires a separately named ABI/library |
 
 Use package-version constraints when deploying code that depends on a newer
@@ -168,6 +179,12 @@ future-tail request and summary storage. The installed consumer checks ABI
 `1.1` after package relocation. Focused Linux AArch64 native and portable jobs
 run the same evidence under QEMU.
 
-The shared library keeps pre-release `SOVERSION 0` until the final v0.90
-compatibility review. v0.87 defines an evolution candidate, not the final
-v1.0 ABI freeze.
+`c_api_shared_library_abi` inspects the built dynamic library with
+`dumpbin`, `nm`, `readelf`, or `otool` as appropriate. It rejects missing or
+unexpected `mparser_*` exports and rejects an ELF SONAME or macOS install name
+whose major differs from ABI major 1.
+
+SOVERSION 1 names the current ABI-major candidate but does not declare the
+v1.0 freeze early. The v0.90 review may still require a new ABI major for an
+incompatible correction; after v1.0, such a change requires the documented
+major-version transition.

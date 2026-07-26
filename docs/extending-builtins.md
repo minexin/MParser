@@ -1,8 +1,9 @@
 # Extending MParser Builtins
 
-This guide defines the v0.80 source-level rules for extending MParser. The
-interfaces below are intentionally usable by an embedding C++ application,
-but their binary layout is not frozen until the v0.90 embedding gate.
+This guide defines the source-level rules for extending MParser. The
+interfaces below are engine source-integration APIs, not installed C++ ABI.
+Their C++ layout may evolve with the engine even after the public v1.0
+embedding boundary freezes.
 
 ## Choose The Smallest Extension Level
 
@@ -15,10 +16,34 @@ or a performance kernel. Register it once and pass the registry into module
 compilation. Do not add parallel name lists or dispatch branches to semantic
 analysis, the HIR interpreter, the bytecode VM, or the typed planner.
 
-An external C ABI adapter is not part of v0.80. Keep independently compiled
-plugins behind an application-owned C++ boundary for now. The future adapter
-will define version negotiation, array ownership, error conversion, threading,
-and lifecycle rules rather than exposing C++ standard-library types.
+An external native callback adapter is not part of the v1.0 contract. Keep
+independently compiled integrations behind an application-owned boundary or
+build their descriptors into the engine. This prevents an unreviewed plugin
+ABI from freezing `RuntimeValue`, registry, VM, or C++ standard-library
+layouts.
+
+## External Adapter Decision
+
+The three extension levels are:
+
+1. `.m` functions loaded through the ordinary source graph;
+2. source-integrated C++ builtins registered through `BuiltinRegistry`;
+3. a future independently compiled native adapter, explicitly Post-v1.0.
+
+The future third level must be a separately versioned pure C function table.
+It must negotiate structure sizes and ABI major/revision, use opaque handles
+or copied plain-C values, contain every exception at the boundary, and declare
+thread safety, determinism, side effects, workspace/context permissions, and
+resource-control cooperation. It must also define callback and allocator
+lifetime, array ownership, alignment, mutability, teardown order, and module
+unload behavior. It must not expose C++ classes, `RuntimeValue`,
+`BuiltinDescriptor`, STL containers, or VM pointers.
+
+v1.0 host-created arrays therefore remain copy-in. Public result accessors
+provide readonly runtime-owned spans tied to a retained value handle. A future
+borrowed-input adapter must use a new additive descriptor carrying a release
+callback and explicit lifetime/threading contract; it cannot reinterpret the
+existing constructors.
 
 ## Minimal C++ Registration
 

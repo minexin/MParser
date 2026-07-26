@@ -1328,8 +1328,8 @@ share one request/result contract.
 tiers, instruction count, typed attempts/executions/fallbacks, and native
 compile/cache-hit counts. The low-level `invoke(BytecodeVmOptions)` APIs remain
 for profiling tools and source compatibility. v0.86 projects this result into
-the CLI machine protocol. Public C++ packaging, final C ABI policy, symbol
-visibility, and binary compatibility remain v0.90 gates.
+the CLI machine protocol. v0.88 packages the header-only C++ facade; final
+C/C++/protocol compatibility review remains a v0.90 gate.
 
 v0.82 attaches one `RuntimeExecutionControl` to each engine-neutral
 invocation. `RuntimeExecutionLimits` defines zero-as-unlimited instruction,
@@ -1399,8 +1399,7 @@ keeps v0.86 binaries safe when later headers append fields.
 size the descriptor stride. Oversized units are rejected; a future extensible
 descriptor requires a new stride-aware API. Status values and symbols are
 additive within the ABI major, while incompatible changes require a new major.
-Final shared-library version freeze, optional external buffer views, and final
-platform evidence remain v0.90 gates. See
+Final compatibility review and release packaging remain v0.90 gates. See
 [embedding-c-api.md](embedding-c-api.md) and
 [c-abi-compatibility.md](c-abi-compatibility.md).
 
@@ -1454,6 +1453,31 @@ diagnostic trees, limits, cancellation, sessions, retained values, and the
 production UTF-8 source graph. The package exports `MParser::cpp_api`, and a
 separate C++20 consumer builds after the install prefix is renamed. Focused
 AArch64 native/portable jobs cross-build and execute both C and C++ consumers.
+
+v0.89 adds a module-owned recursive graph lock at the public C boundary.
+Stateless requests without module-bound values remain concurrent. Requests
+carrying module-owned objects or closures serialize while the runtime may
+read or mutate their shared graphs. Every session execute, clear, and reset
+operation acquires the module graph lock before its session lock; this fixed
+order protects handle objects retained in persistent/global state and objects
+that escape into another host call. The conservative policy serializes
+distinct sessions from one module and leaves finer object-grained locking as
+a compatible future optimization. Runtime wall-time accounting starts after
+lock admission.
+
+The same milestone gives the shared library implementation version `1.1.0`
+and ABI-major SONAME/install name 1. Core, SLJIT, and non-C boundary symbols
+compile with hidden visibility; `tests/c_api_abi1_symbols.txt` is the exact
+90-symbol public manifest checked with platform object tools. Repeated dynamic
+load/unload, concurrent retain/release, pure invocation, shared handle,
+session, cancellation, and resource-isolation stress run beside relocated
+macOS x64/ARM64 C and C++ consumers.
+
+Array ownership is closed for the v1.0 candidate: host-created payloads copy
+into `RuntimeValue`, while result spans are immutable runtime-owned views tied
+to one retained value handle. A stable external native callback interface is
+Post-v1.0 and must be a new versioned pure-C function table; it will not
+expose the source-level registry or C++ runtime layout.
 
 v0.87 adds two independent ABI evolution probes. `c_api_smoke` places the
 extensible prefixes inside larger host records, verifies old and sized write

@@ -15,6 +15,13 @@
 
 namespace mparser::sdk {
 
+/*
+ * Copy a wrapper before handing it to another thread. Independent wrapper
+ * copies own independent retained references; concurrent assignment,
+ * move, reset, or destruction of the same wrapper object is not supported.
+ * Pure stateless calls may run concurrently. Module-bound mutable values and
+ * sessions are serialized by their owning module.
+ */
 using ApiStatus = mparser_api_status;
 
 enum class Backend : std::uint32_t {

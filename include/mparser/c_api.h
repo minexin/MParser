@@ -88,6 +88,19 @@ typedef uint32_t mparser_numeric_class;
 #define MPARSER_NUMERIC_DOUBLE 0u
 #define MPARSER_NUMERIC_LOGICAL 1u
 
+/*
+ * Threading and lifetime contract:
+ * - Retain/release is atomic while at least one live reference remains.
+ * - A thread must own its retained reference before another thread may
+ *   release the same handle.
+ * - Immutable handles and borrowed views may be read through independent
+ *   retained references.
+ * - Stateless executions without module-bound values may run concurrently.
+ * - Module-bound mutable graphs and all sessions from one module are
+ *   serialized by that module. Operations on one session are also ordered.
+ * - Do not concurrently overwrite, release, or otherwise mutate one host
+ *   handle variable. Retain a separate reference for each thread.
+ */
 typedef struct mparser_module mparser_module;
 typedef struct mparser_session mparser_session;
 typedef struct mparser_result mparser_result;

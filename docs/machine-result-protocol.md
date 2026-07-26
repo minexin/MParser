@@ -60,7 +60,7 @@ must treat JSON object member order as insignificant:
 ```json
 {
   "protocol": {"name": "mparser.result", "major": 1, "minor": 0},
-  "engine": {"name": "MParser", "version": "0.88.0"},
+  "engine": {"name": "MParser", "version": "0.89.0"},
   "status": "succeeded",
   "entry_function": "",
   "requested_output_count": 0,

@@ -1,6 +1,6 @@
 # MParser
 
-Current milestone: v0.88.0. See [docs/v0.88.md](docs/v0.88.md) for the
+Current milestone: v0.89.0. See [docs/v0.89.md](docs/v0.89.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan,
 [docs/embedding-cpp-api.md](docs/embedding-cpp-api.md) for the public C++20
@@ -13,7 +13,8 @@ versioned CLI automation contract,
 embedding contract, and
 [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.87.md](docs/v0.87.md),
+kept in [docs/v0.88.md](docs/v0.88.md),
+[docs/v0.87.md](docs/v0.87.md),
 [docs/v0.86.md](docs/v0.86.md),
 [docs/v0.85.md](docs/v0.85.md),
 [docs/v0.84.md](docs/v0.84.md),
@@ -932,6 +933,18 @@ internal compiler or VM layout and keeps the shared-library boundary in C.
 project after the installed prefix is moved; focused native and portable Linux
 AArch64 jobs cross-build and run the same consumer under QEMU.
 
+v0.89 hardens that embedding boundary under concurrency and across release
+platforms. Pure stateless calls remain concurrent, while module-bound mutable
+objects and every session operation use one fixed module-then-session lock
+order. New stress tests cover shared handle mutation, retain/release,
+cancellation, isolated resource budgets, and 256 dynamic load/unload cycles.
+The C library now has ABI implementation version `1.1.0`, SOVERSION/install
+name 1, hidden internal symbols, and an exact 90-symbol public manifest.
+macOS x64 and ARM64 jobs build and test native SLJIT, relocate a production
+install, and consume both public C and C++ SDKs. The v1.0 transport candidate
+uses copy-in arrays plus readonly output spans; a stable external native
+callback table is explicitly Post-v1.0.
+
 Install and consume the C SDK:
 
 ```powershell
@@ -941,7 +954,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 0.88.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 0.89.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 

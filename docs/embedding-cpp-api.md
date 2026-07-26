@@ -1,6 +1,6 @@
 # MParser C++ Embedding SDK
 
-MParser v0.88 provides a public C++20 facade in
+MParser v0.89 provides a public C++20 facade in
 `include/mparser/cpp_api.hpp`. The facade is header-only and delegates to the
 narrow C ABI shared library. It does not expose Parser, HIR, Bytecode,
 `RuntimeValue`, VM, SLJIT, or C++ standard-library layouts from the shared
@@ -23,7 +23,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 Consume it from a C++20 CMake project:
 
 ```cmake
-find_package(MParser 0.88.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 0.89.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 
@@ -79,10 +79,18 @@ Passing a module-bound value to another module raises `ApiError` with
 Cell and Struct values.
 
 The wrapper performs no global initialization and holds no process-wide C++
-state. Stateless `Module::execute` calls have isolated runtime state. A
-`Session` preserves globals and function-persistent values and serializes its
-own calls through the underlying C session. Concurrent access rules otherwise
-follow the C API: every thread must own its own retained handle reference.
+state. Copy a wrapper before handing it to another thread so each thread owns
+an independent retained reference. Concurrent assignment, move, reset, or
+destruction of the same wrapper object is not supported.
+
+Pure stateless `Module::execute` calls have isolated runtime state and may run
+concurrently. Calls carrying module-bound objects or closures serialize on
+their producing module. A `Session` preserves globals and
+function-persistent values; every session operation from one module is
+serialized at the module graph boundary and then at the individual session.
+This also protects objects that escape from session state. Wall-time and
+cancellation accounting begins after this lock admission, so queue wait is
+not part of a request's wall-time budget.
 
 ## Compilation And Loading
 
@@ -146,8 +154,14 @@ whose lifetime is tied to that `Value`. `stringElement`, `cellElement`, and
 
 Structure field indexes follow the order supplied to `Value::structure`; that
 order survives a module round trip. The current public constructor creates a
-scalar Struct. General external Struct-array construction and zero-copy
-external array views remain open design decisions for v0.89/v0.90.
+scalar Struct. General external Struct-array construction remains additive
+future work.
+
+The v1.0 ownership candidate deliberately uses copy-in for host-created array
+payloads. `numericData()` and `characterData()` are readonly runtime-owned
+views tied to one `Value`; no host buffer is borrowed and no writable external
+view exists. A later borrowed-input API must use a new C descriptor with
+explicit lifetime, alignment, mutability, and thread-safety fields.
 
 ## Errors And Diagnostics
 
@@ -168,13 +182,20 @@ copied strings, vectors, or diagnostics.
 
 ## Current Boundary
 
-v0.88 validates this SDK on Windows x64, Linux x64, and native-JIT plus
-portable Linux AArch64 builds. Source-tree and relocated installed consumers
+v0.89 validates this SDK on Windows x64, Linux x64, macOS x64/ARM64, and
+native-JIT plus portable Linux AArch64 builds. Source-tree and relocated
+installed consumers
 exercise compile-once invocation, multi-output results, composite values,
 retained lifetimes, diagnostics, sessions, cancellation, resource limits, and
 UTF-8 source graphs.
 
-The API is not frozen until the v0.90 candidate review. v0.89 still needs
-lifecycle/concurrency stress, macOS x64/ARM64 consumers, external-adapter and
-optional array-view decisions, distribution licensing, and shared-library
-versioning evidence.
+Lifecycle and concurrency stress covers pure calls, shared handle mutation,
+same and independent sessions, cross-session escaped objects, shared
+cancellation, isolated limits, and concurrent retain/release. The shared C
+library carries ABI-major version 1
+and an exact exported-symbol manifest; the C++ facade remains header-only and
+source-compatible rather than a C++ binary ABI.
+
+The API is not frozen until the v0.90 candidate review. Distribution
+licensing, release archive policy, final sanitizer/allocation evidence, and
+the combined C/C++/protocol compatibility review remain open.

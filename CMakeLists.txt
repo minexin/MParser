@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.88.0 LANGUAGES C CXX)
+project(MParser VERSION 0.89.0 LANGUAGES C CXX)
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -9,6 +9,10 @@ find_package(Threads REQUIRED)
 set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
+set(MPARSER_C_ABI_VERSION 1)
+set(MPARSER_C_ABI_REVISION 1)
+set(MPARSER_C_ABI_LIBRARY_VERSION
+    "${MPARSER_C_ABI_VERSION}.${MPARSER_C_ABI_REVISION}.0")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,7 +48,8 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     add_library(mparser_sljit STATIC
         "${_mparser_sljit_source_dir}/sljit_src/sljitLir.c")
     set_target_properties(mparser_sljit PROPERTIES
-        POSITION_INDEPENDENT_CODE ON)
+        POSITION_INDEPENDENT_CODE ON
+        C_VISIBILITY_PRESET hidden)
     target_include_directories(mparser_sljit SYSTEM PUBLIC
         "${_mparser_sljit_source_dir}/sljit_src")
     if(MSVC)
@@ -110,7 +115,9 @@ add_library(mparser_core
 )
 
 set_target_properties(mparser_core PROPERTIES
-    POSITION_INDEPENDENT_CODE ON)
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES)
 target_include_directories(mparser_core PUBLIC src)
 target_link_libraries(mparser_core PRIVATE Threads::Threads)
 
@@ -138,13 +145,17 @@ target_compile_definitions(mparser_c_api
         MPARSER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         MPARSER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
         MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+        MPARSER_C_ABI_VERSION_EXPECTED=${MPARSER_C_ABI_VERSION}
+        MPARSER_C_ABI_REVISION_EXPECTED=${MPARSER_C_ABI_REVISION}
     INTERFACE
         MPARSER_C_API_SHARED=1)
 set_target_properties(mparser_c_api PROPERTIES
     EXPORT_NAME c_api
     OUTPUT_NAME mparser_c
-    VERSION ${PROJECT_VERSION}
-    SOVERSION 0)
+    VERSION ${MPARSER_C_ABI_LIBRARY_VERSION}
+    SOVERSION ${MPARSER_C_ABI_VERSION}
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES)
 if(MSVC)
     target_compile_options(mparser_c_api PRIVATE /W4 /permissive-)
 else()
@@ -1321,6 +1332,55 @@ add_test(NAME c_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/app/run_demo.m
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 
+add_executable(c_api_lifecycle_stress_tests
+    tests/c_api_lifecycle_stress.cpp)
+target_link_libraries(c_api_lifecycle_stress_tests PRIVATE
+    mparser_c_api Threads::Threads)
+if(MSVC)
+    target_compile_options(c_api_lifecycle_stress_tests PRIVATE
+        /W4 /permissive-)
+else()
+    target_compile_options(c_api_lifecycle_stress_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME c_api_lifecycle_stress
+    COMMAND c_api_lifecycle_stress_tests)
+set_tests_properties(c_api_lifecycle_stress PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "c api lifecycle stress = 160000,retained-session,retained-handle"
+    TIMEOUT 120)
+
+add_executable(embedding_unload_stress_tests
+    tests/embedding_unload_stress.cpp)
+add_dependencies(embedding_unload_stress_tests mparser_c_api)
+target_link_libraries(embedding_unload_stress_tests PRIVATE
+    ${CMAKE_DL_LIBS})
+if(MSVC)
+    target_compile_options(embedding_unload_stress_tests PRIVATE
+        /W4 /permissive-)
+else()
+    target_compile_options(embedding_unload_stress_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME embedding_unload_stress
+    COMMAND embedding_unload_stress_tests
+        $<TARGET_FILE:mparser_c_api>)
+set_tests_properties(embedding_unload_stress PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "embedding unload stress = 256,abi-1.1"
+    TIMEOUT 120)
+
+add_test(NAME c_api_shared_library_abi
+    COMMAND "${CMAKE_COMMAND}"
+        "-DMPARSER_SHARED_LIBRARY=$<TARGET_FILE:mparser_c_api>"
+        "-DMPARSER_SYMBOL_LIST=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_abi1_symbols.txt"
+        "-DMPARSER_ABI_SOVERSION=${MPARSER_C_ABI_VERSION}"
+        "-DMPARSER_LINKER=${CMAKE_LINKER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
+set_tests_properties(c_api_shared_library_abi PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "MParser shared C ABI validated: 90 symbols, SOVERSION 1")
+
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
 target_link_libraries(cpp_api_smoke_tests PRIVATE
@@ -1333,15 +1393,30 @@ set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "cpp api smoke = 5050,42,21,abi-1.1")
 
+add_executable(cpp_api_concurrency_stress_tests
+    tests/cpp_api_concurrency_stress.cpp)
+target_link_libraries(cpp_api_concurrency_stress_tests PRIVATE
+    mparser_cpp_api Threads::Threads)
+add_test(NAME cpp_api_concurrency_stress
+    COMMAND cpp_api_concurrency_stress_tests)
+set_tests_properties(cpp_api_concurrency_stress PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "cpp api concurrency stress = 800,800,200,50,cancelled-8,limited-8"
+    TIMEOUT 120)
+
 add_executable(mparser_cpp_embedding_demo
     samples/cpp_embedding_demo.cpp)
 target_link_libraries(mparser_cpp_embedding_demo PRIVATE
     mparser_cpp_api)
 if(MSVC)
     target_compile_options(cpp_api_smoke_tests PRIVATE /W4 /permissive-)
+    target_compile_options(cpp_api_concurrency_stress_tests PRIVATE
+        /W4 /permissive-)
     target_compile_options(mparser_cpp_embedding_demo PRIVATE /W4 /permissive-)
 else()
     target_compile_options(cpp_api_smoke_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+    target_compile_options(cpp_api_concurrency_stress_tests PRIVATE
         -Wall -Wextra -Wpedantic)
     target_compile_options(mparser_cpp_embedding_demo PRIVATE
         -Wall -Wextra -Wpedantic)

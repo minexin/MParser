@@ -478,11 +478,21 @@ function families, not an unbounded builtin count.
 
 ### v0.89: Embedding Stress And Platform Evidence
 
-- Planned: add repeated load/unload, retain/release, concurrent stateless
-  invocation, serialized session, cancellation, and resource-pressure tests.
-- Add macOS x64/ARM64 build, test, install, and C/C++ consumer evidence.
-- Resolve external adapter, optional array-view, distribution-license, and
-  shared-library versioning decisions needed for the final candidate review.
+- Status: closed by the v0.89 implementation and linked evidence in
+  `docs/v0.89.md`, the embedding guides, and `EMBED-011`.
+- Add repeated load/unload and retain/release stress plus concurrent pure
+  invocation, shared-handle mutation, session, cancellation, and independent
+  resource-pressure tests.
+- Serialize module-bound mutable graphs and conservative session operations,
+  with a documented lock-admission and wall-time boundary.
+- Add macOS x64/ARM64 build, test, production install, relocation, and C/C++
+  consumer evidence.
+- Assign shared-library ABI version `1.1.0`/SOVERSION 1, hide internal
+  symbols, and machine-check the exact public C export manifest.
+- Freeze v1.0 array transport at copy-in plus readonly runtime-owned output
+  views. Defer a versioned pure-C external callback table to Post-v1.0.
+- Keep redistribution disabled until the project owner selects an explicit
+  project license; carry that decision as a v0.90 release gate.
 
 ### v0.90: Embedding And Release Candidate APIs
 

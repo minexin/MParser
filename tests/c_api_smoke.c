@@ -259,7 +259,7 @@ static int run_header_and_diagnostic_smoke(void) {
     CHECK(MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ==
           sizeof(mparser_source_load_options));
     CHECK(mparser_version_major() == 0);
-    CHECK(mparser_version_minor() == 88);
+    CHECK(mparser_version_minor() == 89);
     CHECK(mparser_version_patch() == 0);
     CHECK(view_equals(
         mparser_api_status_name(MPARSER_API_STATUS_OWNER_MISMATCH),

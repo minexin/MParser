@@ -37,6 +37,13 @@
 #define MPARSER_VERSION_PATCH 0
 #endif
 
+static_assert(
+    MPARSER_C_ABI_VERSION ==
+    MPARSER_C_ABI_VERSION_EXPECTED);
+static_assert(
+    MPARSER_C_ABI_REVISION ==
+    MPARSER_C_ABI_REVISION_EXPECTED);
+
 namespace mparser_c_detail {
 
 struct DiagnosticFrame {
@@ -84,6 +91,7 @@ struct ModuleState {
 
     mparser::CompiledModule module;
     std::vector<mparser_diagnostic> diagnostics;
+    std::recursive_mutex sharedGraphMutex;
 };
 
 struct SessionState {
@@ -609,6 +617,14 @@ mparser_api_status makeValueHandle(
     }
     *outValue = nullptr;
     try {
+        std::unique_lock<std::recursive_mutex> sharedGraphLock;
+        const bool requiresModule =
+            owner && runtimeValueRequiresModule(value);
+        if (requiresModule) {
+            sharedGraphLock =
+                std::unique_lock<std::recursive_mutex>(
+                    owner->sharedGraphMutex);
+        }
         if (!externallyTransportable(value)) {
             return MPARSER_API_STATUS_TYPE_MISMATCH;
         }
@@ -620,8 +636,7 @@ mparser_api_status makeValueHandle(
         auto state = std::make_shared<ValueState>();
         state->value =
             std::forward<RuntimeValue>(value);
-        if (owner &&
-            runtimeValueRequiresModule(state->value)) {
+        if (requiresModule) {
             state->owner = std::move(owner);
         }
         if (!buildExternalCaches(*state)) {
@@ -720,7 +735,9 @@ std::optional<mparser::ModuleExecutionBackend> backend(
 mparser_api_status buildRequest(
     const mparser_invocation_options* options,
     const std::shared_ptr<ModuleState>& module,
-    mparser::ModuleInvocationRequest& request) {
+    mparser::ModuleInvocationRequest& request,
+    bool& usesSharedGraph) {
+    usesSharedGraph = false;
     if (!options) {
         return MPARSER_API_STATUS_OK;
     }
@@ -762,6 +779,9 @@ mparser_api_status buildRequest(
                        ? MPARSER_API_STATUS_OWNER_MISMATCH
                        : MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
+        usesSharedGraph =
+            usesSharedGraph ||
+            static_cast<bool>(value->state->owner);
         request.arguments.push_back(value->state->value);
     }
     request.initialWorkspace.reserve(
@@ -781,6 +801,9 @@ mparser_api_status buildRequest(
             }
             return MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
+        usesSharedGraph =
+            usesSharedGraph ||
+            static_cast<bool>(variable.value->state->owner);
         request.initialWorkspace.push_back(
             mparser::RuntimeVariable{
                 *name, variable.value->state->value});
@@ -1337,10 +1360,19 @@ mparser_api_status mparser_module_execute(
     }
     try {
         mparser::ModuleInvocationRequest request;
+        bool usesSharedGraph = false;
         const auto requestStatus =
-            buildRequest(options, module->state, request);
+            buildRequest(
+                options, module->state, request,
+                usesSharedGraph);
         if (requestStatus != MPARSER_API_STATUS_OK) {
             return requestStatus;
+        }
+        std::unique_lock<std::recursive_mutex> sharedGraphLock;
+        if (usesSharedGraph) {
+            sharedGraphLock =
+                std::unique_lock<std::recursive_mutex>(
+                    module->state->sharedGraphMutex);
         }
         return makeResultHandle(
             module->state->module.execute(request),
@@ -1403,11 +1435,16 @@ mparser_api_status mparser_session_execute(
     }
     try {
         mparser::ModuleInvocationRequest request;
+        bool usesSharedGraph = false;
         const auto requestStatus = buildRequest(
-            options, session->state->module, request);
+            options, session->state->module, request,
+            usesSharedGraph);
         if (requestStatus != MPARSER_API_STATUS_OK) {
             return requestStatus;
         }
+        (void)usesSharedGraph;
+        std::lock_guard sharedGraphLock(
+            session->state->module->sharedGraphMutex);
         std::lock_guard lock(session->state->mutex);
         return makeResultHandle(
             session->state->session.execute(request),
@@ -1433,6 +1470,8 @@ mparser_session_clear_global(
         if (!copied || copied->empty()) {
             return MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
+        std::lock_guard sharedGraphLock(
+            session->state->module->sharedGraphMutex);
         std::lock_guard lock(session->state->mutex);
         return session->state->session.clearGlobal(*copied)
                    ? MPARSER_API_STATUS_OK
@@ -1450,6 +1489,8 @@ mparser_session_clear_globals(mparser_session* session) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
+        std::lock_guard sharedGraphLock(
+            session->state->module->sharedGraphMutex);
         std::lock_guard lock(session->state->mutex);
         session->state->session.clearGlobals();
         return MPARSER_API_STATUS_OK;
@@ -1466,6 +1507,8 @@ mparser_session_reset(mparser_session* session) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
+        std::lock_guard sharedGraphLock(
+            session->state->module->sharedGraphMutex);
         std::lock_guard lock(session->state->mutex);
         session->state->session.reset();
         return MPARSER_API_STATUS_OK;

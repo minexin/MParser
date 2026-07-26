@@ -9,7 +9,9 @@ adds a separate machine-readable CLI result protocol over the same
 engine-neutral invocation result. v0.87 adds executable ABI-major-1 evolution
 rules, sized structure initialization, and a frozen old-header consumer.
 v0.88 adds a separate public C++20 RAII facade over this same boundary; see
-`embedding-cpp-api.md`.
+`embedding-cpp-api.md`. v0.89 adds the shared-object concurrency boundary,
+ABI-major shared-library naming, an exact public symbol manifest, repeated
+lifecycle/unload stress, and macOS package consumers.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
@@ -37,8 +39,11 @@ build\mparser_c_source_graph_demo.exe `
   samples\class_folders\lib
 ```
 
-On Linux the shared-library output is `libmparser_c.so`; on Windows it is
-`mparser_c.dll` plus the toolchain import library.
+On Linux the link name is `libmparser_c.so` and its ABI-major SONAME is
+`libmparser_c.so.1`. On macOS the corresponding install name is
+`libmparser_c.1.dylib`. On Windows it is `mparser_c.dll` plus the toolchain
+import library. The complete shared-library implementation version is
+`1.1.0`, independently of the engine release.
 
 For a production-only installed SDK:
 
@@ -51,7 +56,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 An independent CMake project can then use:
 
 ```cmake
-find_package(MParser 0.88.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 0.89.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
@@ -94,9 +99,24 @@ released. The host must not free or modify view storage.
 
 Retain/release counters and cancellation state are atomic. A thread that keeps
 a handle after another thread may release its reference must first own a
-retained reference. Stateless module invocations have isolated runtime state.
-Calls through one C session are serialized by the wrapper and share that
-session's persistent/global state.
+retained reference. Do not concurrently assign, release, or replace the same
+host handle variable; retain one reference per thread.
+
+Stateless module invocations have isolated runtime state and may execute
+concurrently when their arguments and initial workspace contain no
+module-bound value. Requests carrying module-bound objects or closures are
+serialized by their producing module so shared handle fields cannot race.
+All execute, clear, and reset operations on every session from one module use
+that same graph lock and then the session lock. This conservative rule also
+serializes different sessions from one module; it preserves escaped handle
+objects even when they are retained in persistent or global state. A future
+finer-grained object lock may relax this without changing host-visible
+semantics.
+
+Invocation wall-time and cancellation accounting starts after lock admission.
+Time spent waiting behind an operation on the same module/session is not part
+of the requested wall-time limit. Cancellation remains observable once the
+queued invocation enters the runtime.
 
 ## Compilation And Invocation
 
@@ -183,7 +203,13 @@ Unicode code units represented by `uint16_t`.
 All external array payloads and linear element indexes use MATLAB column-major
 order. MParser converts to and from its internal storage without exposing that
 storage layout. Accessor pointers are immutable and owned by the value handle.
-There is no zero-copy external buffer or mutable view in v0.87.
+There is no zero-copy external input buffer or mutable view in the v1.0
+candidate. Copy-in is the frozen ownership rule for host-created arrays.
+Runtime-owned numeric and character accessor pointers are immutable zero-copy
+views whose lifetime is bounded by their `mparser_value`; they must not be
+retained after that value is released. A future borrowed-input API requires a
+new additive descriptor with explicit deleter, alignment, mutability, and
+threading rules.
 
 Cell and structure constructors copy the represented runtime values. Releasing
 the child handles after construction is valid. A scalar structure is created
@@ -271,6 +297,21 @@ directories. `c_embedding_demo_smoke` runs the single-source C host and
 included in Linux AArch64 native-JIT and portable-only QEMU jobs in addition
 to the complete Windows x64 and Linux x64 suites.
 
+`c_api_lifecycle_stress` performs concurrent retain/release cycles for every
+public handle family and proves retained sessions and module-bound values
+outlive their original module/result handles. `cpp_api_concurrency_stress`
+proves concurrent pure stateless calls, exact shared-handle mutation,
+serialized sessions, cross-session escaped-object safety, independent session
+state, shared cancellation, and per-invocation resource isolation.
+`embedding_unload_stress` dynamically
+loads, queries, and unloads the shared library 256 times.
+
+`c_api_shared_library_abi` compares the dynamic export table against
+`tests/c_api_abi1_symbols.txt` and validates ELF SONAME or macOS install-name
+major 1. Internal compiler, VM, C++ facade, and SLJIT symbols use hidden
+visibility. Windows x64, Linux x64, macOS x64/ARM64, and focused Linux
+AArch64 jobs execute the applicable ABI and stress evidence.
+
 `installed_c_consumer_smoke` installs the SDK, moves its prefix, configures a
 separate C11 project through `find_package`, and verifies C ABI execution plus
 the imported CLI on Windows x64 and Linux x64. The AArch64 job independently
@@ -281,14 +322,17 @@ the installed consumer and CLI under QEMU.
 
 The v0.90 embedding gate still requires:
 
-1. the public C++ SDK/export decision and external C++ consumer;
-2. final ABI symbol/layout review and shared-library version freeze;
-3. external adapter and optional array-view validation;
-4. repeated library load/unload, stress, sanitizer, and allocation-failure
-   evidence;
-5. macOS x64/ARM64 consumers and final release-package review;
-6. final compatibility review of protocol major 1 alongside the C/C++
-   candidates.
+1. final compatibility review of C ABI major 1, the header-only C++ source
+   API, and machine protocol major 1;
+2. sanitizer and allocation-failure evidence for the remaining resource
+   boundary;
+3. release archive, signing/checksum, and installation-policy review;
+4. an explicit project distribution license selected by the project owner.
+
+The v1.0 candidate deliberately excludes a stable external native callback
+ABI and zero-copy borrowed input arrays. Their future additive rules are
+defined in `extending-builtins.md`; neither blocks correct `.m` functions,
+source-integrated C++ builtins, or the public host invocation APIs.
 
 The CLI schema and exit/channel contract are defined separately in
 [machine-result-protocol.md](machine-result-protocol.md).

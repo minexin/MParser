@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.88.0",
+  "version": "0.89.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -318,9 +318,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "module_resource_control_smoke", "machine_protocol_smoke", "machine_protocol_cli_smoke", "machine_protocol_production_cli_smoke", "embedding_execution_demo_smoke", "embedding_resource_control_demo_smoke", "c_api_smoke", "cpp_api_smoke", "c_api_v1_compat_smoke", "c_embedding_demo_smoke", "cpp_embedding_demo_smoke", "c_abi_compat_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
-      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/source_loader.h", "src/mparser/source_loader.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "src/mparser/runtime_execution_control.h", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "include/mparser/c_api.h", "include/mparser/cpp_api.hpp", "src/mparser/c_api.cpp", "tests/module_execution_smoke.cpp", "tests/module_resource_control_smoke.cpp", "tests/machine_protocol_smoke.cpp", "tests/c_api_smoke.c", "tests/cpp_api_smoke.cpp", "tests/c_api_v1_compat_smoke.c", "tests/installed_c_consumer/main.c", "tests/installed_cpp_consumer/main.cpp", "samples/machine_protocol_demo.m", "samples/embedding_execution_demo.cpp", "samples/embedding_resource_control_demo.cpp", "samples/c_embedding_demo.c", "samples/cpp_embedding_demo.cpp", "samples/c_abi_compat_demo.c", "samples/c_source_graph_demo.c"],
-      "limits": "v0.88 provides engine-neutral stateless/persistent compile-once execution, guarded JIT fallback, staged diagnostics, resource controls, opaque C ownership/value handles, source-graph loading, installable relocatable C and C++20 SDKs, a versioned one-shot machine result protocol, and executable C ABI evolution rules. Stress/platform evidence and final API/ABI freeze remain v0.89-v0.90 gates."
+      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "module_resource_control_smoke", "machine_protocol_smoke", "machine_protocol_cli_smoke", "machine_protocol_production_cli_smoke", "embedding_execution_demo_smoke", "embedding_resource_control_demo_smoke", "c_api_smoke", "c_api_lifecycle_stress", "c_api_shared_library_abi", "cpp_api_smoke", "cpp_api_concurrency_stress", "embedding_unload_stress", "c_api_v1_compat_smoke", "c_embedding_demo_smoke", "cpp_embedding_demo_smoke", "c_abi_compat_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
+      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/source_loader.h", "src/mparser/source_loader.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "src/mparser/runtime_execution_control.h", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "include/mparser/c_api.h", "include/mparser/cpp_api.hpp", "src/mparser/c_api.cpp", "tests/module_execution_smoke.cpp", "tests/module_resource_control_smoke.cpp", "tests/machine_protocol_smoke.cpp", "tests/c_api_smoke.c", "tests/c_api_lifecycle_stress.cpp", "tests/cpp_api_smoke.cpp", "tests/cpp_api_concurrency_stress.cpp", "tests/embedding_unload_stress.cpp", "tests/c_api_v1_compat_smoke.c", "tests/installed_c_consumer/main.c", "tests/installed_cpp_consumer/main.cpp", "samples/machine_protocol_demo.m", "samples/embedding_execution_demo.cpp", "samples/embedding_resource_control_demo.cpp", "samples/c_embedding_demo.c", "samples/cpp_embedding_demo.cpp", "samples/c_abi_compat_demo.c", "samples/c_source_graph_demo.c"],
+      "limits": "v0.89 provides engine-neutral stateless/persistent compile-once execution, guarded JIT fallback, staged diagnostics, resource controls, opaque C ownership/value handles, source-graph loading, installable relocatable C and C++20 SDKs, a versioned one-shot machine result protocol, executable C ABI evolution rules, concurrency/lifecycle stress, and the full release OS/architecture CI matrix. Final combined API/ABI/protocol freeze remains the v0.90 gate."
     },
     {
       "id": "EMBED-003",
@@ -351,9 +351,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["c_api_smoke", "c_api_v1_compat_smoke", "c_embedding_demo_smoke", "c_abi_compat_demo_smoke", "module_execution_smoke", "module_resource_control_smoke", "installed_c_consumer_smoke"],
-      "sources": ["include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/c_api_smoke.c", "tests/c_api_v1_compat_smoke.c", "tests/c_api_v1_snapshot.h", "tests/installed_c_consumer/main.c", "samples/c_embedding_demo.c", "samples/c_abi_compat_demo.c", "docs/embedding-c-api.md", "docs/c-abi-compatibility.md", "docs/v0.83.md", "docs/v0.85.md", "docs/v0.87.md"],
-      "limits": "ABI-major-1 revision 1 exposes copied numeric/logical/UTF-16/Cell/scalar-Struct inputs plus returned objects and function handles. It provides one-source and explicit multi-source UTF-8 compilation, shared filesystem loading, immutable column-major payload views, caller-sized extensible roots, sealed fixed-stride records, and a frozen old-symbol compatibility probe. Zero-copy views/adapters and the final shared-library symbol/version freeze remain open."
+      "evidence": ["c_api_smoke", "c_api_lifecycle_stress", "c_api_shared_library_abi", "embedding_unload_stress", "c_api_v1_compat_smoke", "c_embedding_demo_smoke", "c_abi_compat_demo_smoke", "module_execution_smoke", "module_resource_control_smoke", "installed_c_consumer_smoke"],
+      "sources": ["include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/c_api_smoke.c", "tests/c_api_lifecycle_stress.cpp", "tests/c_api_abi1_symbols.txt", "tests/validate_shared_library_abi.cmake", "tests/embedding_unload_stress.cpp", "tests/c_api_v1_compat_smoke.c", "tests/c_api_v1_snapshot.h", "tests/installed_c_consumer/main.c", "samples/c_embedding_demo.c", "samples/c_abi_compat_demo.c", "docs/embedding-c-api.md", "docs/c-abi-compatibility.md", "docs/v0.83.md", "docs/v0.85.md", "docs/v0.87.md", "docs/v0.89.md"],
+      "limits": "ABI-major-1 revision 1 exposes copied numeric/logical/UTF-16/Cell/scalar-Struct inputs plus returned objects and function handles. It provides source-graph loading, immutable column-major runtime-owned output views, caller-sized extensible roots, sealed fixed-stride records, old-header compatibility, module-bound graph synchronization, SOVERSION 1, and an exact export manifest. Borrowed input buffers and an external native callback table are explicitly Post-v1.0."
     },
     {
       "id": "EMBED-006",
@@ -375,7 +375,7 @@
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "c_api_smoke", "cpp_api_smoke"],
       "sources": ["CMakeLists.txt", "cmake/MParserConfig.cmake.in", "tests/run_installed_c_consumer.cmake", "tests/installed_c_consumer/CMakeLists.txt", "tests/installed_c_consumer/main.c", "tests/installed_cpp_consumer/CMakeLists.txt", "tests/installed_cpp_consumer/main.cpp", ".github/workflows/ci.yml", "samples/c_abi_compat_demo.c", "samples/cpp_embedding_demo.cpp", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/v0.85.md", "docs/v0.87.md", "docs/v0.88.md"],
-      "limits": "v0.85 installs and relocates the pure C header/shared library, CLI, metadata, examples, documentation, and notices. v0.86 adds the installed CLI protocol contract; v0.87 adds ABI revision metadata and policy; v0.88 adds the header-only C++20 facade and independent relocated consumer. Final SOVERSION, signed release archives, and project distribution licensing remain open."
+      "limits": "v0.85 installs and relocates the pure C header/shared library, CLI, metadata, examples, documentation, and notices. v0.86 adds the installed CLI protocol contract; v0.87 adds ABI revision metadata and policy; v0.88 adds the header-only C++20 facade and independent relocated consumer; v0.89 adds SOVERSION 1 and macOS x64/ARM64 consumers. Signed release archives and project distribution licensing remain open."
     },
     {
       "id": "EMBED-008",
@@ -395,9 +395,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["c_api_smoke", "c_api_v1_compat_smoke", "c_abi_compat_demo_smoke", "installed_c_consumer_smoke"],
-      "sources": ["include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/c_api_smoke.c", "tests/c_api_v1_compat_smoke.c", "tests/c_api_v1_snapshot.h", "samples/c_abi_compat_demo.c", "tests/installed_c_consumer/main.c", "cmake/MParserConfig.cmake.in", ".github/workflows/ci.yml", "docs/c-abi-compatibility.md", "docs/embedding-c-api.md", "docs/v0.87.md"],
-      "limits": "ABI major 1 revision 1 supports append-only root records from revision 1 onward and preserves v0.86 binaries through frozen legacy initializer writes. Source-unit and other array/view records are sealed. The final SOVERSION, external adapter, optional zero-copy views, stress evidence, and v1.0 freeze remain open."
+      "evidence": ["c_api_smoke", "c_api_lifecycle_stress", "c_api_shared_library_abi", "embedding_unload_stress", "c_api_v1_compat_smoke", "c_abi_compat_demo_smoke", "installed_c_consumer_smoke"],
+      "sources": ["include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/c_api_smoke.c", "tests/c_api_lifecycle_stress.cpp", "tests/c_api_abi1_symbols.txt", "tests/validate_shared_library_abi.cmake", "tests/embedding_unload_stress.cpp", "tests/c_api_v1_compat_smoke.c", "tests/c_api_v1_snapshot.h", "samples/c_abi_compat_demo.c", "tests/installed_c_consumer/main.c", "cmake/MParserConfig.cmake.in", ".github/workflows/ci.yml", "docs/c-abi-compatibility.md", "docs/embedding-c-api.md", "docs/v0.87.md", "docs/v0.89.md"],
+      "limits": "ABI major 1 revision 1 supports append-only root records from revision 1 onward and preserves v0.86 binaries through frozen legacy initializer writes. Source-unit and other array/view records are sealed. Shared-library implementation version 1.1.0 uses SOVERSION/install-name major 1 and an exact 90-symbol manifest. The combined v1.0 compatibility freeze remains open."
     },
     {
       "id": "EMBED-010",
@@ -406,9 +406,20 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["cpp_api_smoke", "cpp_embedding_demo_smoke", "installed_cpp_consumer_smoke"],
-      "sources": ["include/mparser/cpp_api.hpp", "tests/cpp_api_smoke.cpp", "tests/installed_cpp_consumer/CMakeLists.txt", "tests/installed_cpp_consumer/main.cpp", "tests/run_installed_c_consumer.cmake", "samples/cpp_embedding_demo.cpp", "CMakeLists.txt", "cmake/MParserConfig.cmake.in", ".github/workflows/ci.yml", "docs/embedding-cpp-api.md", "docs/v0.88.md"],
-      "limits": "The facade covers compile/load/invoke-many, RAII ownership, all current transport values, diagnostics, sessions, cancellation, and resource summaries without exposing internal C++ layouts. It is a v0.90 source-API candidate; stress, macOS consumers, external-adapter and optional array-view decisions, and final freeze remain open."
+      "evidence": ["cpp_api_smoke", "cpp_api_concurrency_stress", "cpp_embedding_demo_smoke", "installed_cpp_consumer_smoke"],
+      "sources": ["include/mparser/cpp_api.hpp", "tests/cpp_api_smoke.cpp", "tests/cpp_api_concurrency_stress.cpp", "tests/installed_cpp_consumer/CMakeLists.txt", "tests/installed_cpp_consumer/main.cpp", "tests/run_installed_c_consumer.cmake", "samples/cpp_embedding_demo.cpp", "CMakeLists.txt", "cmake/MParserConfig.cmake.in", ".github/workflows/ci.yml", "docs/embedding-cpp-api.md", "docs/v0.88.md", "docs/v0.89.md"],
+      "limits": "The facade covers compile/load/invoke-many, RAII ownership, all current transport values, diagnostics, sessions, cancellation, resource summaries, and documented concurrency without exposing internal C++ layouts. It is a header-only v0.90 source-API candidate backed by relocated consumers on Windows, Linux, macOS, and focused Linux AArch64 paths; final compatibility freeze remains open."
+    },
+    {
+      "id": "EMBED-011",
+      "area": "embedding",
+      "feature": "Concurrent embedding lifecycle, module-bound mutable-graph synchronization, exact shared-library exports, and release-platform consumers",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["c_api_lifecycle_stress", "cpp_api_concurrency_stress", "embedding_unload_stress", "c_api_shared_library_abi", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
+      "sources": ["src/mparser/c_api.cpp", "include/mparser/c_api.h", "include/mparser/cpp_api.hpp", "tests/c_api_lifecycle_stress.cpp", "tests/cpp_api_concurrency_stress.cpp", "tests/embedding_unload_stress.cpp", "tests/c_api_abi1_symbols.txt", "tests/validate_shared_library_abi.cmake", "CMakeLists.txt", ".github/workflows/ci.yml", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/v0.89.md"],
+      "limits": "Pure stateless calls remain concurrent. Requests carrying module-bound graphs serialize per owner, and every session operation from one module conservatively takes the same graph lock before its own session lock. Queue wait is outside runtime wall-time accounting. Host-created arrays remain copy-in with readonly value-owned output spans; external native callback tables and borrowed input buffers are Post-v1.0."
     },
     {
       "id": "EMBED-002",
@@ -417,20 +428,20 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "partial", "production": "partial", "typed": "partial", "native": "partial"},
-      "evidence": ["module_execution_smoke", "machine_protocol_smoke", "machine_protocol_cli_smoke", "c_api_smoke", "cpp_api_smoke", "c_api_v1_compat_smoke", "c_abi_compat_demo_smoke", "c_embedding_demo_smoke", "cpp_embedding_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
-      "sources": ["docs/roadmap-v1.0.md", "src/mparser/compiled_module.h", "src/mparser/source_loader.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "include/mparser/c_api.h", "include/mparser/cpp_api.hpp", "src/mparser/c_api.cpp", "cmake/MParserConfig.cmake.in", "tests/machine_protocol_smoke.cpp", "tests/cpp_api_smoke.cpp", "tests/c_api_v1_compat_smoke.c", "tests/installed_c_consumer/main.c", "tests/installed_cpp_consumer/main.cpp", "docs/machine-result-protocol.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/v0.84.md", "docs/v0.85.md", "docs/v0.86.md", "docs/v0.87.md", "docs/v0.88.md"],
-      "limits": "The public C++20 facade and narrow C ABI candidate include multi-source and filesystem loading; the C ABI has executable revision-1 evolution rules, both SDKs have relocatable installed consumers, and protocol major 1 defines the one-shot CLI result. Final SOVERSION/ABI freeze, macOS evidence, stress, and release compatibility review remain v0.89-v0.90 work."
+      "evidence": ["module_execution_smoke", "machine_protocol_smoke", "machine_protocol_cli_smoke", "c_api_smoke", "c_api_lifecycle_stress", "c_api_shared_library_abi", "embedding_unload_stress", "cpp_api_smoke", "cpp_api_concurrency_stress", "c_api_v1_compat_smoke", "c_abi_compat_demo_smoke", "c_embedding_demo_smoke", "cpp_embedding_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
+      "sources": ["docs/roadmap-v1.0.md", "src/mparser/compiled_module.h", "src/mparser/source_loader.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "include/mparser/c_api.h", "include/mparser/cpp_api.hpp", "src/mparser/c_api.cpp", "cmake/MParserConfig.cmake.in", "tests/machine_protocol_smoke.cpp", "tests/c_api_lifecycle_stress.cpp", "tests/c_api_abi1_symbols.txt", "tests/cpp_api_smoke.cpp", "tests/cpp_api_concurrency_stress.cpp", "tests/embedding_unload_stress.cpp", "tests/c_api_v1_compat_smoke.c", "tests/installed_c_consumer/main.c", "tests/installed_cpp_consumer/main.cpp", "docs/machine-result-protocol.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/v0.84.md", "docs/v0.85.md", "docs/v0.86.md", "docs/v0.87.md", "docs/v0.88.md", "docs/v0.89.md"],
+      "limits": "The public C++20 facade and narrow C ABI candidate include source-graph loading, executable ABI evolution, SOVERSION/install-name major 1, exact exports, documented concurrency, full release-platform consumers, and protocol major 1. Final combined compatibility review and v1.0 freeze remain v0.90 work."
     },
     {
       "id": "PLATFORM-001",
       "area": "platform",
       "feature": "Windows x64, Linux x64, and Linux AArch64 configure/build/test paths",
-      "status": "partial",
+      "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["parser_smoke", "production_run_cli_smoke", "native_scalar_jit_cache_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
-      "sources": [".github/workflows/ci.yml", "CMakeLists.txt"],
-      "limits": "macOS x64/ARM64 is a v1.0 Must-have but is not yet present in continuous integration."
+      "evidence": ["parser_smoke", "production_run_cli_smoke", "native_scalar_jit_cache_smoke", "c_api_shared_library_abi", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
+      "sources": [".github/workflows/ci.yml", "CMakeLists.txt", "tests/validate_shared_library_abi.cmake"],
+      "limits": "CI covers Windows x64, Linux x64, macOS x64, macOS ARM64, and Linux AArch64 native-JIT plus portable fallback. Linux AArch64 remains cross-built and executed under QEMU rather than native hardware."
     },
     {
       "id": "TEST-001",
@@ -575,7 +586,7 @@
       "target": "v0.90",
       "framework_impact": "contract-extension",
       "requirement": "Freeze compile/load/invoke-many C++ API, narrow C ABI, value ownership, diagnostics, lifecycle, and versioned machine protocol.",
-      "exit_evidence": "v0.88 provides a pure C shared-library candidate plus a header-only C++20 RAII facade, C/C++ ownership/value/resource/source-graph tests, caller-sized ABI roots, a frozen v0.86-header consumer, explicit multi-source compilation, shared UTF-8 filesystem loading, relocatable installed C and C++ SDKs consumed on x64 plus native/portable AArch64 paths, and protocol-major-1 golden plus end-to-end CLI evidence. Closure still requires final SOVERSION/ABI review, macOS consumers, stress evidence, and final compatibility review."
+      "exit_evidence": "v0.89 provides a pure C shared-library candidate plus a header-only C++20 RAII facade, C/C++ ownership/value/resource/source-graph tests, caller-sized ABI roots, a frozen v0.86-header consumer, explicit source-graph loading, SOVERSION/install-name major 1, an exact export manifest, concurrency/lifecycle/unload stress, relocatable installed C and C++ SDKs on the complete platform matrix, and protocol-major-1 golden plus end-to-end CLI evidence. Closure requires the final combined compatibility review."
     },
     {
       "id": "G-EMBED-SOURCE-001",
@@ -641,11 +652,31 @@
       "id": "G-PLATFORM-001",
       "area": "platform",
       "priority": "must-have",
+      "state": "closed",
+      "target": "v0.89",
+      "framework_impact": "none",
+      "requirement": "Add macOS x64/ARM64 build, test, install, and consumer evidence to the release platform matrix.",
+      "exit_evidence": "The macos-15-intel x64 and macos-15 ARM64 jobs build and run the full native-SLJIT suite, create and relocate BUILD_TESTING=OFF installs, configure independent C11 and C++20 consumers, execute both SDKs, and check installed binary architecture and version. Windows x64, Linux x64, and Linux AArch64 native/portable jobs remain in the same matrix."
+    },
+    {
+      "id": "G-EMBED-STRESS-001",
+      "area": "embedding",
+      "priority": "must-have",
+      "state": "closed",
+      "target": "v0.89",
+      "framework_impact": "contract-extension",
+      "requirement": "Define and prove public embedding concurrency, handle lifetime, repeated load/unload, and shared-library export/version boundaries.",
+      "exit_evidence": "docs/v0.89.md and both embedding guides define the contract. c_api_lifecycle_stress performs concurrent retain/release and retained-owner probes; cpp_api_concurrency_stress covers pure calls, exact shared-handle mutation, sessions, cancellation, and isolated budgets; embedding_unload_stress performs 256 load/query/unload cycles; c_api_shared_library_abi checks the exact 90-symbol manifest and SOVERSION/install-name major 1."
+    },
+    {
+      "id": "G-RELEASE-LICENSE-001",
+      "area": "release",
+      "priority": "must-have",
       "state": "open",
       "target": "v0.90",
       "framework_impact": "none",
-      "requirement": "Add macOS x64/ARM64 build, test, install, and consumer evidence to the release platform matrix.",
-      "exit_evidence": "Green macOS jobs and install-package consumer smoke artifacts."
+      "requirement": "Select and add an explicit project distribution license before publishing release archives or v1.0.",
+      "exit_evidence": "A project-owner-approved LICENSE file, matching package metadata, and reviewed third-party notices."
     },
     {
       "id": "G-JIT-001",
