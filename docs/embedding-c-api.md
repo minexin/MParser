@@ -4,7 +4,9 @@ MParser v0.83 introduced a narrow, pure C embedding boundary in
 `include/mparser/c_api.h`. It is implemented by the `mparser_c_api` CMake
 shared-library target, whose output name is `mparser_c`. v0.84 extends that
 same boundary with explicit multi-source compilation and UTF-8 filesystem
-source-graph loading. v0.85 installs it as a relocatable CMake package.
+source-graph loading. v0.85 installs it as a relocatable CMake package. v0.86
+adds a separate machine-readable CLI result protocol over the same
+engine-neutral invocation result; it does not change C handle ownership.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
@@ -45,7 +47,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 An independent CMake project can then use:
 
 ```cmake
-find_package(MParser 0.85.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 0.86.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
@@ -172,7 +174,7 @@ Unicode code units represented by `uint16_t`.
 All external array payloads and linear element indexes use MATLAB column-major
 order. MParser converts to and from its internal storage without exposing that
 storage layout. Accessor pointers are immutable and owned by the value handle.
-There is no zero-copy external buffer or mutable view in v0.85.
+There is no zero-copy external buffer or mutable view in v0.86.
 
 Cell and structure constructors copy the represented runtime values. Releasing
 the child handles after construction is valid. A scalar structure is created
@@ -259,9 +261,13 @@ the installed consumer and CLI under QEMU.
 The v0.90 embedding gate still requires:
 
 1. the public C++ SDK/export decision and external C++ consumer;
-2. the versioned machine-readable CLI/result protocol;
-3. explicit forward-compatible structure and symbol-version policy;
-4. external adapter and optional array-view validation;
-5. repeated library load/unload, stress, sanitizer, and allocation-failure
+2. explicit forward-compatible structure and symbol-version policy;
+3. external adapter and optional array-view validation;
+4. repeated library load/unload, stress, sanitizer, and allocation-failure
    evidence;
-6. macOS x64/ARM64 consumers and final release-package review.
+5. macOS x64/ARM64 consumers and final release-package review;
+6. final compatibility review of protocol major 1 alongside the C/C++
+   candidates.
+
+The CLI schema and exit/channel contract are defined separately in
+[machine-result-protocol.md](machine-result-protocol.md).

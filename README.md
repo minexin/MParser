@@ -1,12 +1,16 @@
 # MParser
 
-Current milestone: v0.85.0. See [docs/v0.85.md](docs/v0.85.md) for the
+Current milestone: v0.86.0. See [docs/v0.86.md](docs/v0.86.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
-iteration plan, [docs/embedding-c-api.md](docs/embedding-c-api.md) for the
-narrow pure C embedding contract, and
+iteration plan,
+[docs/machine-result-protocol.md](docs/machine-result-protocol.md) for the
+versioned CLI automation contract,
+[docs/embedding-c-api.md](docs/embedding-c-api.md) for the narrow pure C
+embedding contract, and
 [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.84.md](docs/v0.84.md),
+kept in [docs/v0.85.md](docs/v0.85.md),
+[docs/v0.84.md](docs/v0.84.md),
 [docs/v0.83.md](docs/v0.83.md),
 [docs/v0.82.md](docs/v0.82.md),
 [docs/v0.81.md](docs/v0.81.md),
@@ -893,6 +897,16 @@ Linux AArch64 paths validate the installed package. This is still C ABI
 candidate 1: public C++ packaging, machine protocol, final compatibility
 policy, macOS evidence, and release archives remain v0.90 work.
 
+v0.86 adds a versioned machine result protocol to production `--run`.
+`--result-format=json-v1` routes the normal engine-neutral invocation result
+to one UTF-8 JSON document containing status, outputs, workspace, staged
+diagnostics, and execution summary. Every current runtime value has a stable
+shape-aware encoding; array payloads use MATLAB column-major order, function
+handles expose descriptors without captures, and objects remain explicit
+opaque values. Success and every failure stage use documented process exit
+codes while keeping stderr empty. A complete golden fixture and parsed CLI
+regressions lock the protocol independently from human display output.
+
 Install and consume the C SDK:
 
 ```powershell
@@ -902,7 +916,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 0.85.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 0.86.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
@@ -1087,6 +1101,21 @@ build\mparser.exe --run --jit=off samples\production_run_demo.m
 build\mparser.exe --run --jit=portable samples\production_run_demo.m
 build\mparser.exe --run --jit=native samples\production_run_demo.m
 ```
+
+For automation, request protocol v1 instead of parsing the human variable
+display:
+
+```powershell
+build\mparser.exe --run --result-format=json-v1 `
+  samples\machine_protocol_demo.m
+```
+
+The command writes exactly one JSON document to stdout for success,
+compilation failure, request rejection, or runtime failure. Arrays are
+column-major at this boundary. Exit codes are respectively `0`, `1`, `2`, and
+`3`; see
+[docs/machine-result-protocol.md](docs/machine-result-protocol.md) for the
+complete schema and compatibility rules.
 
 The public and diagnostic execution modes have separate contracts:
 

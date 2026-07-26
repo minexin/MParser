@@ -6,6 +6,7 @@
 #include "mparser/compiled_module.h"
 #include "mparser/interpreter.h"
 #include "mparser/lexer.h"
+#include "mparser/machine_protocol.h"
 #include "mparser/native_scalar_jit.h"
 #include "mparser/optimization_plan.h"
 #include "mparser/parser.h"
@@ -47,7 +48,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.71.0"
+#define MPARSER_VERSION "0.86.0"
 #endif
 
 namespace {
@@ -83,6 +84,7 @@ void printUsage(std::ostream& output = std::cerr) {
                  "--run-module-runtime | "
                  "--benchmark-runtime] "
                  "[--jit=auto|off|portable|native] "
+                 "[--result-format=json-v1] "
                  "[--benchmark-warmup=N] [--benchmark-iterations=N] "
                  "[--typed-backend=auto|portable|native] "
                  "[--native-cache-entries=N] [--native-cache-bytes=N] "
@@ -120,6 +122,8 @@ void printHelp() {
         << "  --jit=off              Disable typed/JIT execution.\n"
         << "  --jit=portable         Use the portable typed kernel.\n"
         << "  --jit=native           Request the SLJIT native backend.\n"
+        << "  --result-format=json-v1  Emit one versioned JSON result document "
+           "for --run.\n"
         << "\nInspection modes:\n"
         << "  --tokens               Print lossless lexer tokens.\n"
         << "  --hir                  Print semantic HIR.\n"
@@ -165,6 +169,59 @@ ProductionJitOption parseProductionJitOption(
     }
     throw std::invalid_argument(
         "JIT mode must be auto, off, portable, or native");
+}
+
+bool machineResultWasRequested(int argc, char** argv) {
+    for (int index = 1; index < argc; ++index) {
+        const std::string_view argument = argv[index];
+        if (argument == "--") {
+            return false;
+        }
+        if (argument == "--result-format=json-v1") {
+            return true;
+        }
+    }
+    return false;
+}
+
+mparser::ModuleExecutionBackend productionModuleBackend(
+    bool enabled, mparser::TypedRegionBackend backend) {
+    if (!enabled) {
+        return mparser::ModuleExecutionBackend::Bytecode;
+    }
+    switch (backend) {
+    case mparser::TypedRegionBackend::Auto:
+        return mparser::ModuleExecutionBackend::Automatic;
+    case mparser::TypedRegionBackend::Portable:
+        return mparser::ModuleExecutionBackend::Portable;
+    case mparser::TypedRegionBackend::Native:
+        return mparser::ModuleExecutionBackend::Native;
+    }
+    return mparser::ModuleExecutionBackend::Automatic;
+}
+
+mparser::ModuleInvocationResult machineFailure(
+    mparser::ModuleInvocationStatus status,
+    mparser::ModuleDiagnosticPhase phase, std::string identifier,
+    std::string message,
+    mparser::ModuleExecutionBackend backend =
+        mparser::ModuleExecutionBackend::Automatic,
+    std::string entryFunction = {},
+    std::optional<size_t> requestedOutputCount = std::nullopt) {
+    mparser::ModuleInvocationResult result;
+    result.status = status;
+    result.entryFunction = std::move(entryFunction);
+    result.requestedOutputCount =
+        requestedOutputCount.value_or(0);
+    result.execution.requestedBackend = backend;
+    mparser::ModuleDiagnostic diagnostic;
+    diagnostic.phase = phase;
+    diagnostic.severity =
+        mparser::ModuleDiagnosticSeverity::Error;
+    diagnostic.identifier = std::move(identifier);
+    diagnostic.message = std::move(message);
+    result.diagnostics.push_back(std::move(diagnostic));
+    return result;
 }
 
 void printDiagnosticCause(const mparser::DiagnosticCause& cause,
@@ -1183,6 +1240,8 @@ struct NativeCacheStatisticsReporter {
 
 int main(int argc, char** argv) {
     configureProcessErrorMode();
+    const bool machineResultRequested =
+        machineResultWasRequested(argc, argv);
     NativeCacheStatisticsReporter nativeCacheReporter;
     try {
         bool printTokens = false;
@@ -1210,6 +1269,7 @@ int main(int argc, char** argv) {
             mparser::TypedRegionBackend::Auto;
         ProductionJitOption productionJit;
         bool productionJitSpecified = false;
+        bool machineResultJsonV1 = false;
         bool typedBackendSpecified = false;
         mparser::NativeScalarJitCacheLimits nativeCacheLimits;
         bool adaptivePersistWorkspace = false;
@@ -1286,6 +1346,11 @@ int main(int argc, char** argv) {
             } else if (arg.starts_with("--jit=")) {
                 productionJit = parseProductionJitOption(arg);
                 productionJitSpecified = true;
+            } else if (arg == "--result-format=json-v1") {
+                machineResultJsonV1 = true;
+            } else if (arg.starts_with("--result-format=")) {
+                throw std::invalid_argument(
+                    "result format must be json-v1");
             } else if (arg.starts_with("--native-cache-entries=")) {
                 nativeCacheLimits.maxEntries = parseCountOption(
                     arg, "--native-cache-entries=", true);
@@ -1293,6 +1358,11 @@ int main(int argc, char** argv) {
                 nativeCacheLimits.maxCodeBytes = parseCountOption(
                     arg, "--native-cache-bytes=", true);
             } else if (arg == "--native-cache-stats") {
+                if (machineResultRequested) {
+                    throw std::invalid_argument(
+                        "--native-cache-stats cannot be combined with "
+                        "--result-format=json-v1");
+                }
                 nativeCacheReporter.enabled = true;
             } else if (arg.starts_with("--adaptive-runs=")) {
                 adaptiveRuns = parseCountOption(
@@ -1371,6 +1441,11 @@ int main(int argc, char** argv) {
             throw std::invalid_argument(
                 "--jit is only valid with the production --run mode");
         }
+        if (machineResultJsonV1 && !runProduction) {
+            throw std::invalid_argument(
+                "--result-format=json-v1 is only valid with the "
+                "production --run mode");
+        }
         if (productionJitSpecified && typedBackendSpecified) {
             throw std::invalid_argument(
                 "--jit and --typed-backend cannot be combined");
@@ -1382,6 +1457,10 @@ int main(int argc, char** argv) {
         mparser::configureNativeScalarJitCache(nativeCacheLimits);
 
         if (path.empty()) {
+            if (machineResultJsonV1) {
+                throw std::invalid_argument(
+                    "an input file is required for machine-result mode");
+            }
             const bool hasAction =
                 printTokens || printHir || printBytecode ||
                 printModuleInfo || runProduction || runHir || runBytecode ||
@@ -1404,6 +1483,40 @@ int main(int argc, char** argv) {
             return mparser::CompiledModule::compile(
                 std::move(loaded.sources));
         };
+
+        if (runProduction && machineResultJsonV1) {
+            mparser::ModuleInvocationRequest request;
+            request.entryFunction = entryFunction;
+            request.arguments = entryArguments;
+            request.requestedOutputCount = requestedOutputCount;
+            request.backend = productionModuleBackend(
+                productionJit.enabled, typedRegionBackend);
+
+            mparser::ModuleInvocationResult result;
+            try {
+                const auto module = compileSourceGraph();
+                result = module.execute(request);
+            } catch (const std::exception& exception) {
+                result = machineFailure(
+                    mparser::ModuleInvocationStatus::RequestRejected,
+                    mparser::ModuleDiagnosticPhase::Validation,
+                    "MParser:SourceLoadFailed", exception.what(),
+                    request.backend, request.entryFunction,
+                    request.requestedOutputCount);
+            } catch (...) {
+                result = machineFailure(
+                    mparser::ModuleInvocationStatus::RequestRejected,
+                    mparser::ModuleDiagnosticPhase::Validation,
+                    "MParser:SourceLoadFailed",
+                    "unknown host failure while loading the source graph",
+                    request.backend, request.entryFunction,
+                    request.requestedOutputCount);
+            }
+            std::cout << mparser::serializeMachineResultJsonV1(
+                             result, MPARSER_VERSION)
+                      << "\n";
+            return mparser::machineResultExitCode(result.status);
+        }
 
         if (printModuleInfo) {
             const auto module = compileSourceGraph();
@@ -1742,7 +1855,32 @@ int main(int argc, char** argv) {
 
         return 0;
     } catch (const std::exception& ex) {
+        if (machineResultRequested) {
+            nativeCacheReporter.enabled = false;
+            const auto result = machineFailure(
+                mparser::ModuleInvocationStatus::RequestRejected,
+                mparser::ModuleDiagnosticPhase::Validation,
+                "MParser:CliError", ex.what());
+            std::cout << mparser::serializeMachineResultJsonV1(
+                             result, MPARSER_VERSION)
+                      << "\n";
+            return mparser::machineResultExitCode(result.status);
+        }
         std::cerr << "error: " << ex.what() << "\n";
+        return 1;
+    } catch (...) {
+        if (machineResultRequested) {
+            nativeCacheReporter.enabled = false;
+            const auto result = machineFailure(
+                mparser::ModuleInvocationStatus::RequestRejected,
+                mparser::ModuleDiagnosticPhase::Validation,
+                "MParser:CliError", "unknown host failure");
+            std::cout << mparser::serializeMachineResultJsonV1(
+                             result, MPARSER_VERSION)
+                      << "\n";
+            return mparser::machineResultExitCode(result.status);
+        }
+        std::cerr << "error: unknown host failure\n";
         return 1;
     }
 }

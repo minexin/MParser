@@ -1327,9 +1327,9 @@ share one request/result contract.
 `ModuleExecutionSummary` folds engine details into requested and effective
 tiers, instruction count, typed attempts/executions/fallbacks, and native
 compile/cache-hit counts. The low-level `invoke(BytecodeVmOptions)` APIs remain
-for profiling tools and source compatibility. The external value ownership
-model, serialization, narrow C ABI, symbol visibility, and binary compatibility
-remain v0.90 gates.
+for profiling tools and source compatibility. v0.86 projects this result into
+the CLI machine protocol. Public C++ packaging, final C ABI policy, symbol
+visibility, and binary compatibility remain v0.90 gates.
 
 v0.82 attaches one `RuntimeExecutionControl` to each engine-neutral
 invocation. `RuntimeExecutionLimits` defines zero-as-unlimited instruction,
@@ -1388,9 +1388,9 @@ result status, and all C++ exceptions are contained; allocation failure maps to
 an explicit C status.
 
 ABI candidate 1 requires initialized full-size options/summary structures.
-Final tail-extension rules, symbol/version policy, machine serialization,
-install/export consumers, optional buffer views, and supported-platform binary
-evidence remain v0.90 gates. See
+Final tail-extension rules, symbol/version policy, optional C-side
+serialization or buffer views, and supported-platform binary evidence remain
+v0.90 gates. See
 [embedding-c-api.md](embedding-c-api.md).
 
 v0.84 adds two C ingestion paths without creating a second execution model.
@@ -1433,6 +1433,34 @@ host-side nested CTest; the AArch64 CI explicitly installs and cross-builds
 both SLJIT-enabled and portable packages, then executes their consumers under
 QEMU. `BUILD_TESTING=OFF` leaves only the core, shared C library, and CLI
 production targets.
+
+v0.86 adds `machine_protocol.cpp` as an independent projection over
+`ModuleInvocationResult`. Production `--run --result-format=json-v1` maps the
+selected JIT policy to `ModuleExecutionBackend`, invokes
+`CompiledModule::execute()`, and serializes status, outputs, workspace,
+diagnostics, and `ModuleExecutionSummary`. It does not serialize a raw
+`BytecodeVmResult` or duplicate execution semantics in the CLI.
+
+The serializer owns a structured JSON writer with deterministic UTF-8
+escaping and no external JSON dependency. Runtime arrays are traversed by
+logical column-major index and mapped through the shared shape helpers, so
+internal row-major storage remains private. Character arrays expose UTF-16
+code units, missing strings use JSON null, and non-finite doubles use named
+string tokens. Cells, structures, comma-separated lists, and name-value
+arguments recurse under a fixed nesting guard.
+
+Function handles expose only stable callable metadata; captures, receivers,
+addresses, and process identities are omitted. Objects remain opaque class,
+shape, handle/value, and enumeration descriptors. This avoids cycles and does
+not invent an object-property ownership contract outside the C API.
+
+Compilation, validation, source-load, CLI, and execution failures all produce
+one protocol document with stable status-specific exit codes. Human output is
+unchanged. Machine mode rejects native-cache statistics, and future
+output-producing builtins must be captured or represented rather than writing
+unframed stdout. The exact producer contract is locked by a complete golden
+fixture and parsed end-to-end CLI regressions; see
+[machine-result-protocol.md](machine-result-protocol.md).
 
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,

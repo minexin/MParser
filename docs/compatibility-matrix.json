@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.85.0",
+  "version": "0.86.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -318,9 +318,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "module_resource_control_smoke", "embedding_execution_demo_smoke", "embedding_resource_control_demo_smoke", "c_api_smoke", "c_embedding_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke"],
-      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/source_loader.h", "src/mparser/source_loader.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/runtime_execution_control.h", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/module_execution_smoke.cpp", "tests/module_resource_control_smoke.cpp", "tests/c_api_smoke.c", "tests/installed_c_consumer/main.c", "samples/embedding_execution_demo.cpp", "samples/embedding_resource_control_demo.cpp", "samples/c_embedding_demo.c", "samples/c_source_graph_demo.c"],
-      "limits": "v0.85 provides engine-neutral stateless/persistent compile-once execution, guarded JIT fallback, staged diagnostics, resource controls, opaque C ownership/value handles, source-graph loading, and an installable relocatable C SDK. Final C++/C ABI policy and the versioned machine protocol remain v0.90 gates."
+      "evidence": ["compiled_module_smoke", "adaptive_module_runtime_smoke", "runtime_session_smoke", "runtime_contract_smoke", "module_execution_smoke", "module_resource_control_smoke", "machine_protocol_smoke", "machine_protocol_cli_smoke", "machine_protocol_production_cli_smoke", "embedding_execution_demo_smoke", "embedding_resource_control_demo_smoke", "c_api_smoke", "c_embedding_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke"],
+      "sources": ["src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "src/mparser/source_loader.h", "src/mparser/source_loader.cpp", "src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "src/mparser/runtime_execution_control.h", "src/mparser/runtime_session_state.h", "src/mparser/adaptive_module_runtime.cpp", "src/mparser/runtime_value.h", "include/mparser/c_api.h", "src/mparser/c_api.cpp", "tests/module_execution_smoke.cpp", "tests/module_resource_control_smoke.cpp", "tests/machine_protocol_smoke.cpp", "tests/c_api_smoke.c", "tests/installed_c_consumer/main.c", "samples/machine_protocol_demo.m", "samples/embedding_execution_demo.cpp", "samples/embedding_resource_control_demo.cpp", "samples/c_embedding_demo.c", "samples/c_source_graph_demo.c"],
+      "limits": "v0.86 provides engine-neutral stateless/persistent compile-once execution, guarded JIT fallback, staged diagnostics, resource controls, opaque C ownership/value handles, source-graph loading, an installable relocatable C SDK, and a versioned one-shot machine result protocol. Final public C++ packaging and C ABI policy remain v0.90 gates."
     },
     {
       "id": "EMBED-003",
@@ -329,9 +329,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["module_execution_smoke", "embedding_execution_demo_smoke", "runtime_session_smoke", "typed_region_executor_smoke"],
-      "sources": ["src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "tests/module_execution_smoke.cpp", "samples/embedding_execution_demo.cpp", "docs/v0.81.md"],
-      "limits": "The v0.82 names and behavior, including resource stop fields, are source-level v1.0 API candidates. Existing VM-specific invoke APIs remain available. C++ ABI layout, machine serialization, C ownership handles, and symbol/version negotiation are not frozen."
+      "evidence": ["module_execution_smoke", "machine_protocol_smoke", "machine_protocol_cli_smoke", "embedding_execution_demo_smoke", "runtime_session_smoke", "typed_region_executor_smoke"],
+      "sources": ["src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "tests/module_execution_smoke.cpp", "tests/machine_protocol_smoke.cpp", "samples/embedding_execution_demo.cpp", "docs/v0.81.md", "docs/v0.86.md"],
+      "limits": "The request/result names and behavior, including resource stop fields, are source-level v1.0 API candidates and now have a protocol-v1 CLI projection. Existing VM-specific invoke APIs remain available. Public C++ ABI layout, C ownership handles, and final symbol/version negotiation are not frozen."
     },
     {
       "id": "EMBED-004",
@@ -375,7 +375,18 @@
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["installed_c_consumer_smoke", "c_api_smoke"],
       "sources": ["CMakeLists.txt", "cmake/MParserConfig.cmake.in", "tests/run_installed_c_consumer.cmake", "tests/installed_c_consumer/CMakeLists.txt", "tests/installed_c_consumer/main.c", ".github/workflows/ci.yml", "docs/embedding-c-api.md", "docs/v0.85.md"],
-      "limits": "v0.85 installs and relocates the pure C header/shared library, CLI, metadata, examples, documentation, and notices. It does not export public C++ headers, freeze the C ABI, define the machine protocol, provide signed release archives, or settle the project distribution license."
+      "limits": "v0.85 installs and relocates the pure C header/shared library, CLI, metadata, examples, documentation, and notices. v0.86 adds the installed CLI protocol documentation and sample. The package still does not export public C++ headers, freeze the C ABI, provide signed release archives, or settle the project distribution license."
+    },
+    {
+      "id": "EMBED-008",
+      "area": "embedding",
+      "feature": "Versioned one-shot JSON result protocol over engine-neutral module execution",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["machine_protocol_smoke", "machine_protocol_cli_smoke", "machine_protocol_production_cli_smoke", "module_execution_smoke"],
+      "sources": ["src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "src/mparser/module_execution.h", "src/main.cpp", "tests/machine_protocol_smoke.cpp", "tests/golden/machine_result_v1.json", "tests/validate_machine_protocol.cmake", "samples/machine_protocol_demo.m", "docs/machine-result-protocol.md", "docs/v0.86.md"],
+      "limits": "Protocol major 1 covers one-shot production execution, every current RuntimeValue kind, staged diagnostics, complete execution summaries, source-load and CLI failures, stable exits, and an isolated stdout channel. Objects remain opaque, retained values require the C API, script output capture is not yet needed because output-producing builtins are unsupported, and this is not a persistent transport protocol."
     },
     {
       "id": "EMBED-002",
@@ -384,9 +395,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "partial", "production": "partial", "typed": "partial", "native": "partial"},
-      "evidence": ["module_execution_smoke", "c_api_smoke", "c_embedding_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke"],
-      "sources": ["docs/roadmap-v1.0.md", "src/mparser/compiled_module.h", "src/mparser/source_loader.cpp", "include/mparser/c_api.h", "src/mparser/c_api.cpp", "cmake/MParserConfig.cmake.in", "tests/installed_c_consumer/main.c", "docs/embedding-c-api.md", "docs/v0.84.md", "docs/v0.85.md"],
-      "limits": "The source-level C++ request/result API and narrow C ABI candidate include multi-source and filesystem loading; the C ABI is available through a relocatable installed package. Neither public interface is frozen. Public C++ packaging, machine protocol, compatibility policy, and final platform ABI evidence remain v0.90 work."
+      "evidence": ["module_execution_smoke", "machine_protocol_smoke", "machine_protocol_cli_smoke", "c_api_smoke", "c_embedding_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke"],
+      "sources": ["docs/roadmap-v1.0.md", "src/mparser/compiled_module.h", "src/mparser/source_loader.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "include/mparser/c_api.h", "src/mparser/c_api.cpp", "cmake/MParserConfig.cmake.in", "tests/machine_protocol_smoke.cpp", "tests/installed_c_consumer/main.c", "docs/machine-result-protocol.md", "docs/embedding-c-api.md", "docs/v0.84.md", "docs/v0.85.md", "docs/v0.86.md"],
+      "limits": "The source-level C++ request/result API and narrow C ABI candidate include multi-source and filesystem loading; the C ABI is available through a relocatable installed package, and protocol major 1 defines the one-shot CLI result. The C++ and C interfaces are not frozen. Public C++ packaging, final ABI policy, macOS evidence, and release compatibility review remain v0.90 work."
     },
     {
       "id": "PLATFORM-001",
@@ -542,7 +553,7 @@
       "target": "v0.90",
       "framework_impact": "contract-extension",
       "requirement": "Freeze compile/load/invoke-many C++ API, narrow C ABI, value ownership, diagnostics, lifecycle, and versioned machine protocol.",
-      "exit_evidence": "v0.85 provides a pure C shared-library candidate, C11 ownership/value/resource/source-graph tests, explicit multi-source compilation, shared UTF-8 filesystem loading, and a relocatable installed C SDK consumed on x64 plus native/portable AArch64 paths. Closure still requires the public C++ packaging decision, protocol golden tests, final ABI policy, macOS consumers, and final compatibility review."
+      "exit_evidence": "v0.86 provides a pure C shared-library candidate, C11 ownership/value/resource/source-graph tests, explicit multi-source compilation, shared UTF-8 filesystem loading, a relocatable installed C SDK consumed on x64 plus native/portable AArch64 paths, and protocol-major-1 golden plus end-to-end CLI evidence. Closure still requires the public C++ packaging decision, final ABI policy, macOS consumers, stress evidence, and final compatibility review."
     },
     {
       "id": "G-EMBED-SOURCE-001",
@@ -563,6 +574,16 @@
       "framework_impact": "none",
       "requirement": "Install a relocatable pure C SDK and CLI package that an isolated external C11 project can discover, link, deploy, and execute.",
       "exit_evidence": "docs/v0.85.md and docs/embedding-c-api.md define the package contract. installed_c_consumer_smoke installs, relocates, and consumes MParser through exported CMake targets on Windows x64 and Linux x64. Focused AArch64 CI independently installs, cross-builds, and runs native-JIT and portable C consumers plus installed CLIs under QEMU."
+    },
+    {
+      "id": "G-EMBED-PROTOCOL-001",
+      "area": "embedding",
+      "priority": "must-have",
+      "state": "closed",
+      "target": "v0.86",
+      "framework_impact": "contract-extension",
+      "requirement": "Define a versioned one-shot machine result protocol over the engine-neutral execution result with stable values, diagnostics, summaries, channels, and process exits.",
+      "exit_evidence": "docs/v0.86.md and docs/machine-result-protocol.md define protocol major 1. machine_protocol_smoke locks every RuntimeValue kind, column-major projection, non-finite values, UTF handling, diagnostic trees, and execution fields against a golden document. machine_protocol_cli_smoke parses success, compilation, validation, runtime, source-load, and CLI failures while asserting stdout/stderr and exit contracts; machine_protocol_production_cli_smoke supplies direct cross-emulator evidence."
     },
     {
       "id": "G-RESOURCE-001",

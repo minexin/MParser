@@ -428,10 +428,30 @@ function families, not an unbounded builtin count.
 - Keep public C++ packaging, machine protocol, final ABI policy, macOS
   consumers, distribution licensing, and release archives as later gates.
 
+### v0.86: Versioned Machine Result Protocol
+
+- Status: closed by the v0.86 protocol implementation and linked evidence in
+  `docs/v0.86.md`, `docs/machine-result-protocol.md`, and `EMBED-008`.
+- Add `--result-format=json-v1` to production `--run` as a separate automation
+  channel over `ModuleInvocationResult`, without changing human output.
+- Define stable status-specific process exits, one-document stdout, staged
+  diagnostics, complete execution summaries, and deterministic CLI/source-load
+  failure projection.
+- Serialize every current RuntimeValue kind with MATLAB column-major arrays,
+  round-trip finite doubles, valid non-finite tokens, exact UTF-16 characters,
+  missing strings, recursive composite values, stable function descriptors,
+  and opaque objects.
+- Freeze protocol major 1 spelling with an all-types golden result plus parsed
+  success, compilation, validation, runtime, source-load, and CLI regressions.
+- Include native and portable AArch64 protocol execution while leaving public
+  C++ packaging, final C ABI policy, macOS consumers, stress, and release
+  archives for later v0.90 work.
+
 ### v0.90: Embedding And Release Candidate APIs
 
 - Freeze the compile/load/invoke-many C++ and narrow C candidates, complete
-  the public C++ packaging decision, and add the versioned machine protocol.
+  the public C++ packaging decision, and perform the final versioned machine
+  protocol compatibility review.
 - Validate representative function families, persistent runtime behavior,
   resource boundaries, cross-platform consumers, and cache invalidation.
 - Freeze v1.0 API/ABI/protocol candidates and require explicit compatibility

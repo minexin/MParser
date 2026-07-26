@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.85.0 LANGUAGES C CXX)
+project(MParser VERSION 0.86.0 LANGUAGES C CXX)
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -68,6 +68,7 @@ add_library(mparser_core
     src/mparser/function_signature.cpp
     src/mparser/interpreter.cpp
     src/mparser/lexer.cpp
+    src/mparser/machine_protocol.cpp
     src/mparser/module_execution.cpp
     src/mparser/native_scalar_jit.cpp
     src/mparser/optimization_plan.cpp
@@ -1254,6 +1255,31 @@ target_link_libraries(module_resource_control_smoke_tests PRIVATE
 add_test(NAME module_resource_control_smoke
     COMMAND module_resource_control_smoke_tests)
 
+add_executable(machine_protocol_smoke_tests
+    tests/machine_protocol_smoke.cpp)
+target_link_libraries(machine_protocol_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME machine_protocol_smoke
+    COMMAND machine_protocol_smoke_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_v1.json)
+
+add_test(NAME machine_protocol_cli_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_CLI=$<TARGET_FILE:mparser>
+        "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
+        -DSUCCESS_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/machine_protocol_demo.m
+        -DCOMPILE_FAILURE_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/machine_protocol_compile_failure.m
+        -DRUNTIME_FAILURE_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/machine_protocol_runtime_failure.m
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_machine_protocol.cmake)
+
+add_test(NAME machine_protocol_production_cli_smoke
+    COMMAND mparser --run --result-format=json-v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/machine_protocol_demo.m)
+set_tests_properties(machine_protocol_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "\"status\":\"succeeded\".*\"execution\"")
+
 add_executable(mparser_embedding_execution_demo
     samples/embedding_execution_demo.cpp)
 target_link_libraries(mparser_embedding_execution_demo PRIVATE
@@ -1389,10 +1415,12 @@ install(FILES
     README.md
     THIRD_PARTY_NOTICES.md
     docs/embedding-c-api.md
+    docs/machine-result-protocol.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
     samples/c_embedding_demo.c
     samples/c_source_graph_demo.c
+    samples/machine_protocol_demo.m
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
 install(DIRECTORY samples/class_folders/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples/class_folders"
