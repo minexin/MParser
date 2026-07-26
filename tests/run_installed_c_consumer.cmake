@@ -5,6 +5,8 @@ foreach(required_variable IN ITEMS
         MPARSER_CONSUMER_SOURCE_DIR
         MPARSER_TEST_ROOT
         MPARSER_INSTALL_INCLUDEDIR
+        MPARSER_INSTALL_DATADIR
+        MPARSER_INSTALL_DOCDIR
         MPARSER_INSTALL_CMAKEDIR
         MPARSER_GENERATOR
         MPARSER_PROJECT_VERSION)
@@ -68,6 +70,8 @@ mparser_run_checked("MParser install" ${mparser_install_command})
 
 foreach(required_path IN ITEMS
         "${mparser_initial_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/c_api.h"
+        "${mparser_initial_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/c_abi_compat_demo.c"
+        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserConfig.cmake"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserTargets.cmake")
     if(NOT EXISTS "${required_path}")

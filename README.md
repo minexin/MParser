@@ -1,15 +1,18 @@
 # MParser
 
-Current milestone: v0.86.0. See [docs/v0.86.md](docs/v0.86.md) for the
+Current milestone: v0.87.0. See [docs/v0.87.md](docs/v0.87.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan,
+[docs/c-abi-compatibility.md](docs/c-abi-compatibility.md) for C ABI evolution
+and structure-versioning rules,
 [docs/machine-result-protocol.md](docs/machine-result-protocol.md) for the
 versioned CLI automation contract,
 [docs/embedding-c-api.md](docs/embedding-c-api.md) for the narrow pure C
 embedding contract, and
 [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.85.md](docs/v0.85.md),
+kept in [docs/v0.86.md](docs/v0.86.md),
+[docs/v0.85.md](docs/v0.85.md),
 [docs/v0.84.md](docs/v0.84.md),
 [docs/v0.83.md](docs/v0.83.md),
 [docs/v0.82.md](docs/v0.82.md),
@@ -907,6 +910,16 @@ opaque values. Success and every failure stage use documented process exit
 codes while keeping stderr empty. A complete golden fixture and parsed CLI
 regressions lock the protocol independently from human display output.
 
+v0.87 makes C ABI candidate major 1 safely evolvable. Caller-sized
+initializers clear and record the complete host storage for extensible request,
+summary, and source-load records; old initializer symbols now have a frozen v1
+write range, so a newer library cannot overwrite a v0.86 host object. Input
+consumers accept the known prefix and ignore future tails, while output getters
+respect caller capacity. Fixed-stride `mparser_source_unit` is explicitly
+sealed. A frozen v0.86 header consumer, future-tail execution/load/summary
+tests, an ABI compatibility sample, relocated installed consumer, and focused
+AArch64 QEMU paths enforce the policy.
+
 Install and consume the C SDK:
 
 ```powershell
@@ -916,7 +929,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 0.86.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 0.87.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
@@ -932,6 +945,13 @@ Build and run the pure C embedding example:
 ```powershell
 cmake --build build --target mparser_c_embedding_demo
 build\mparser_c_embedding_demo.exe
+```
+
+Build and run the C ABI compatibility example:
+
+```powershell
+cmake --build build --target mparser_c_abi_compat_demo
+build\mparser_c_abi_compat_demo.exe
 ```
 
 Build and run the pure C source-graph example:

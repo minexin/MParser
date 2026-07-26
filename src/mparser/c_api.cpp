@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <limits>
@@ -723,7 +724,8 @@ mparser_api_status buildRequest(
     if (!options) {
         return MPARSER_API_STATUS_OK;
     }
-    if (options->struct_size < sizeof(*options) ||
+    if (options->struct_size <
+            MPARSER_INVOCATION_OPTIONS_V1_SIZE ||
         options->abi_version != MPARSER_C_ABI_VERSION) {
         return MPARSER_API_STATUS_ABI_MISMATCH;
     }
@@ -957,6 +959,36 @@ const mparser::RuntimeWorkspace* structElement(
     return nullptr;
 }
 
+template <typename Structure>
+mparser_api_status initializeVersionedStructure(
+    void* storage, size_t storageSize, size_t minimumSize,
+    uint32_t abiVersion) noexcept {
+    if (!storage) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (abiVersion != MPARSER_C_ABI_VERSION ||
+        storageSize < minimumSize ||
+        storageSize > std::numeric_limits<uint32_t>::max()) {
+        return MPARSER_API_STATUS_ABI_MISMATCH;
+    }
+    std::memset(storage, 0, storageSize);
+    auto* structure = static_cast<Structure*>(storage);
+    *structure = {};
+    structure->struct_size = static_cast<uint32_t>(storageSize);
+    structure->abi_version = abiVersion;
+    return MPARSER_API_STATUS_OK;
+}
+
+static_assert(
+    sizeof(mparser_invocation_options) ==
+    MPARSER_INVOCATION_OPTIONS_V1_SIZE);
+static_assert(
+    sizeof(mparser_execution_summary) ==
+    MPARSER_EXECUTION_SUMMARY_V1_SIZE);
+static_assert(
+    sizeof(mparser_source_load_options) ==
+    MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE);
+
 } // namespace
 } // namespace mparser_c_detail
 
@@ -964,6 +996,10 @@ extern "C" {
 
 uint32_t mparser_c_abi_version(void) {
     return MPARSER_C_ABI_VERSION;
+}
+
+uint32_t mparser_c_abi_revision(void) {
+    return MPARSER_C_ABI_REVISION;
 }
 
 uint32_t mparser_version_major(void) {
@@ -1010,28 +1046,42 @@ mparser_api_status_name(mparser_api_status status) {
 mparser_api_status
 mparser_invocation_options_init(
     mparser_invocation_options* options) {
-    if (!options) {
-        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    return mparser_invocation_options_init_sized(
+        options, MPARSER_INVOCATION_OPTIONS_V1_SIZE,
+        MPARSER_C_ABI_VERSION);
+}
+
+mparser_api_status mparser_invocation_options_init_sized(
+    void* storage, size_t storage_size,
+    uint32_t abi_version) {
+    const auto status =
+        mparser_c_detail::initializeVersionedStructure<
+            mparser_invocation_options>(
+            storage, storage_size,
+            MPARSER_INVOCATION_OPTIONS_V1_SIZE, abi_version);
+    if (status == MPARSER_API_STATUS_OK) {
+        auto* options =
+            static_cast<mparser_invocation_options*>(storage);
+        options->backend = MPARSER_BACKEND_AUTOMATIC;
     }
-    *options = {};
-    options->struct_size =
-        static_cast<uint32_t>(sizeof(*options));
-    options->abi_version = MPARSER_C_ABI_VERSION;
-    options->backend = MPARSER_BACKEND_AUTOMATIC;
-    return MPARSER_API_STATUS_OK;
+    return status;
 }
 
 mparser_api_status
 mparser_execution_summary_init(
     mparser_execution_summary* summary) {
-    if (!summary) {
-        return MPARSER_API_STATUS_INVALID_ARGUMENT;
-    }
-    *summary = {};
-    summary->struct_size =
-        static_cast<uint32_t>(sizeof(*summary));
-    summary->abi_version = MPARSER_C_ABI_VERSION;
-    return MPARSER_API_STATUS_OK;
+    return mparser_execution_summary_init_sized(
+        summary, MPARSER_EXECUTION_SUMMARY_V1_SIZE,
+        MPARSER_C_ABI_VERSION);
+}
+
+mparser_api_status mparser_execution_summary_init_sized(
+    void* storage, size_t storage_size,
+    uint32_t abi_version) {
+    return mparser_c_detail::initializeVersionedStructure<
+        mparser_execution_summary>(
+        storage, storage_size,
+        MPARSER_EXECUTION_SUMMARY_V1_SIZE, abi_version);
 }
 
 mparser_api_status
@@ -1039,23 +1089,27 @@ mparser_source_unit_init(mparser_source_unit* source) {
     if (!source) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
+    static_assert(sizeof(*source) == MPARSER_SOURCE_UNIT_V1_SIZE);
     *source = {};
-    source->struct_size =
-        static_cast<uint32_t>(sizeof(*source));
+    source->struct_size = MPARSER_SOURCE_UNIT_V1_SIZE;
     source->abi_version = MPARSER_C_ABI_VERSION;
     return MPARSER_API_STATUS_OK;
 }
 
 mparser_api_status mparser_source_load_options_init(
     mparser_source_load_options* options) {
-    if (!options) {
-        return MPARSER_API_STATUS_INVALID_ARGUMENT;
-    }
-    *options = {};
-    options->struct_size =
-        static_cast<uint32_t>(sizeof(*options));
-    options->abi_version = MPARSER_C_ABI_VERSION;
-    return MPARSER_API_STATUS_OK;
+    return mparser_source_load_options_init_sized(
+        options, MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE,
+        MPARSER_C_ABI_VERSION);
+}
+
+mparser_api_status mparser_source_load_options_init_sized(
+    void* storage, size_t storage_size,
+    uint32_t abi_version) {
+    return mparser_c_detail::initializeVersionedStructure<
+        mparser_source_load_options>(
+        storage, storage_size,
+        MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE, abi_version);
 }
 
 mparser_api_status mparser_module_compile_utf8(
@@ -1109,7 +1163,7 @@ mparser_api_status mparser_module_compile_sources(
         copiedSources.reserve(source_count);
         for (size_t index = 0; index < source_count; ++index) {
             const auto& source = sources[index];
-            if (source.struct_size < sizeof(source) ||
+            if (source.struct_size != MPARSER_SOURCE_UNIT_V1_SIZE ||
                 source.abi_version != MPARSER_C_ABI_VERSION) {
                 return MPARSER_API_STATUS_ABI_MISMATCH;
             }
@@ -1153,7 +1207,8 @@ mparser_api_status mparser_module_load_file_utf8(
 
         mparser::SourceLoaderOptions loaderOptions;
         if (options) {
-            if (options->struct_size < sizeof(*options) ||
+            if (options->struct_size <
+                    MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ||
                 options->abi_version != MPARSER_C_ABI_VERSION) {
                 return MPARSER_API_STATUS_ABI_MISMATCH;
             }
@@ -1545,14 +1600,14 @@ mparser_result_execution_summary(
     if (!result || !out_summary) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
-    if (out_summary->struct_size < sizeof(*out_summary) ||
+    const uint32_t storageSize = out_summary->struct_size;
+    if (storageSize < MPARSER_EXECUTION_SUMMARY_V1_SIZE ||
         out_summary->abi_version != MPARSER_C_ABI_VERSION) {
         return MPARSER_API_STATUS_ABI_MISMATCH;
     }
     const auto& source = result->value.execution;
     mparser_execution_summary summary{};
-    summary.struct_size =
-        static_cast<uint32_t>(sizeof(summary));
+    summary.struct_size = storageSize;
     summary.abi_version = MPARSER_C_ABI_VERSION;
     summary.requested_backend =
         externalBackend(source.requestedBackend);
@@ -1590,7 +1645,9 @@ mparser_result_execution_summary(
         sizeToUint64(source.maximumDiagnosticCount);
     summary.elapsed_nanoseconds =
         source.elapsedNanoseconds;
-    *out_summary = summary;
+    std::memcpy(
+        out_summary, &summary,
+        std::min<size_t>(storageSize, sizeof(summary)));
     return MPARSER_API_STATUS_OK;
 }
 

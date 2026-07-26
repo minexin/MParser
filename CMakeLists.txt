@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.86.0 LANGUAGES C CXX)
+project(MParser VERSION 0.87.0 LANGUAGES C CXX)
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -1310,6 +1310,20 @@ add_test(NAME c_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/app/run_demo.m
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 
+add_executable(c_api_v1_compat_smoke_tests
+    tests/c_api_v1_compat_smoke.c)
+target_link_libraries(c_api_v1_compat_smoke_tests PRIVATE
+    mparser_c_api)
+set_target_properties(c_api_v1_compat_smoke_tests PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+add_test(NAME c_api_v1_compat_smoke
+    COMMAND c_api_v1_compat_smoke_tests)
+set_tests_properties(c_api_v1_compat_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "c api v1 compatibility = 42,abi-1")
+
 add_executable(c_api_utf8_source_graph_smoke_tests
     tests/c_api_utf8_source_graph_smoke.cpp)
 target_link_libraries(c_api_utf8_source_graph_smoke_tests PRIVATE
@@ -1330,6 +1344,20 @@ add_test(NAME c_embedding_demo_smoke
 set_tests_properties(c_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "summary = 5050,instruction-limit,42")
+
+add_executable(mparser_c_abi_compat_demo
+    samples/c_abi_compat_demo.c)
+target_link_libraries(mparser_c_abi_compat_demo PRIVATE
+    mparser_c_api)
+set_target_properties(mparser_c_abi_compat_demo PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+add_test(NAME c_abi_compat_demo_smoke
+    COMMAND mparser_c_abi_compat_demo)
+set_tests_properties(c_abi_compat_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "abi = 1.1, result = 42, request-bytes = ")
 
 add_executable(mparser_c_source_graph_demo
     samples/c_source_graph_demo.c)
@@ -1356,6 +1384,8 @@ if(NOT CMAKE_CROSSCOMPILING)
             "-DMPARSER_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_c_consumer"
             "-DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-consumer-smoke/$<CONFIG>"
             "-DMPARSER_INSTALL_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}"
+            "-DMPARSER_INSTALL_DATADIR=${CMAKE_INSTALL_DATADIR}"
+            "-DMPARSER_INSTALL_DOCDIR=${CMAKE_INSTALL_DOCDIR}"
             "-DMPARSER_INSTALL_CMAKEDIR=${MPARSER_INSTALL_CMAKEDIR}"
             "-DMPARSER_GENERATOR=${CMAKE_GENERATOR}"
             "-DMPARSER_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
@@ -1414,10 +1444,12 @@ install(FILES
 install(FILES
     README.md
     THIRD_PARTY_NOTICES.md
+    docs/c-abi-compatibility.md
     docs/embedding-c-api.md
     docs/machine-result-protocol.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
+    samples/c_abi_compat_demo.c
     samples/c_embedding_demo.c
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m

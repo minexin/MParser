@@ -447,6 +447,38 @@ function families, not an unbounded builtin count.
   C++ packaging, final C ABI policy, macOS consumers, stress, and release
   archives for later v0.90 work.
 
+### v0.87: Evolvable C ABI Candidate
+
+- Status: closed by the v0.87 ABI implementation and linked evidence in
+  `docs/v0.87.md`, `docs/c-abi-compatibility.md`, and `EMBED-009`.
+- Separate ABI major, additive revision, and engine versions without changing
+  the existing ABI-major-1 query or symbols.
+- Add caller-sized initialization for extensible request, execution-summary,
+  and source-load roots; freeze old initializer write ranges to the v1 prefix.
+- Accept known prefixes and ignore unknown input tails, bound output writes by
+  caller capacity, and seal array-strided source-unit descriptors.
+- Compile a real consumer against the frozen v0.86 header snapshot, execute
+  future-tail request/load/summary paths, and ship a runnable ABI sample.
+- Include relocated installed-consumer ABI `1.1` checks plus focused native
+  and portable AArch64 evidence.
+
+### v0.88: Installable C++ Embedding SDK
+
+- Planned: add a C++20 RAII facade over the narrow C ABI rather than exporting
+  internal Parser/HIR/Bytecode/RuntimeValue layouts.
+- Export an installed `MParser::cpp_api` target with compile/load/invoke-many,
+  sessions, values, diagnostics, cancellation, and resource summaries.
+- Prove source-tree isolation and relocation with an external C++ consumer on
+  the release platform matrix.
+
+### v0.89: Embedding Stress And Platform Evidence
+
+- Planned: add repeated load/unload, retain/release, concurrent stateless
+  invocation, serialized session, cancellation, and resource-pressure tests.
+- Add macOS x64/ARM64 build, test, install, and C/C++ consumer evidence.
+- Resolve external adapter, optional array-view, distribution-license, and
+  shared-library versioning decisions needed for the final candidate review.
+
 ### v0.90: Embedding And Release Candidate APIs
 
 - Freeze the compile/load/invoke-many C++ and narrow C candidates, complete

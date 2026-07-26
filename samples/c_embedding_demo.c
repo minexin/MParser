@@ -38,7 +38,7 @@ static int check_status(mparser_api_status status,
 
 static mparser_invocation_options options_for(const char* entry) {
     mparser_invocation_options options;
-    mparser_invocation_options_init(&options);
+    MPARSER_INVOCATION_OPTIONS_INIT(&options);
     options.entry_name = entry;
     options.entry_name_size = strlen(entry);
     options.has_requested_output_count = 1;
@@ -112,7 +112,7 @@ int main(void) {
             mparser_session_execute(session, &options, &result),
             "limited spin") ||
         !check_status(
-            mparser_execution_summary_init(&summary),
+            MPARSER_EXECUTION_SUMMARY_INIT(&summary),
             "summary init") ||
         !check_status(
             mparser_result_execution_summary(result, &summary),

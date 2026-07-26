@@ -1387,11 +1387,22 @@ state. API misuse returns fixed-width status codes, language failure remains a
 result status, and all C++ exceptions are contained; allocation failure maps to
 an explicit C status.
 
-ABI candidate 1 requires initialized full-size options/summary structures.
-Final tail-extension rules, symbol/version policy, optional C-side
-serialization or buffer views, and supported-platform binary evidence remain
-v0.90 gates. See
-[embedding-c-api.md](embedding-c-api.md).
+ABI candidate major 1 revision 1 distinguishes extensible root records from
+sealed array/view records. Request, execution-summary, and source-load roots
+carry caller capacity and are initialized through revision-1 sized exports.
+The library requires only the frozen v1 prefix, ignores unknown input tails,
+and bounds output writes by the recorded capacity. The old initializer symbols
+always write the old prefix rather than the library's current `sizeof`, which
+keeps v0.86 binaries safe when later headers append fields.
+
+`mparser_source_unit` is sealed because an array parameter makes its compiled
+size the descriptor stride. Oversized units are rejected; a future extensible
+descriptor requires a new stride-aware API. Status values and symbols are
+additive within the ABI major, while incompatible changes require a new major.
+Final shared-library version freeze, optional external buffer views, and final
+platform evidence remain v0.90 gates. See
+[embedding-c-api.md](embedding-c-api.md) and
+[c-abi-compatibility.md](c-abi-compatibility.md).
 
 v0.84 adds two C ingestion paths without creating a second execution model.
 `mparser_module_compile_sources` copies an ordered array of versioned
@@ -1427,12 +1438,20 @@ C++ SDK.
 
 The installed-consumer regression configures a separate C11 project after
 renaming the installation prefix. It links only the imported C target,
-verifies the package/header/runtime versions and C ABI candidate, invokes a
+verifies the package/header/runtime versions and C ABI `1.1`, invokes a
 two-output function, and runs the imported CLI. Cross builds do not register a
 host-side nested CTest; the AArch64 CI explicitly installs and cross-builds
 both SLJIT-enabled and portable packages, then executes their consumers under
 QEMU. `BUILD_TESTING=OFF` leaves only the core, shared C library, and CLI
 production targets.
+
+v0.87 adds two independent ABI evolution probes. `c_api_smoke` places the
+extensible prefixes inside larger host records, verifies old and sized write
+ranges, and executes invocation, source loading, and summary output through
+those records. `c_api_v1_compat_smoke` includes only the frozen v0.86 public
+header snapshot and links it against the current shared library. The
+compatibility demo and relocated consumer exercise revision-1 symbols on x64
+and focused AArch64 native/portable paths.
 
 v0.86 adds `machine_protocol.cpp` as an independent projection over
 `ModuleInvocationResult`. Production `--run --result-format=json-v1` maps the

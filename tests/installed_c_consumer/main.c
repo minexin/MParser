@@ -48,6 +48,7 @@ int main(void) {
         mparser_version_minor() != MPARSER_EXPECTED_VERSION_MINOR ||
         mparser_version_patch() != MPARSER_EXPECTED_VERSION_PATCH ||
         mparser_c_abi_version() != MPARSER_C_ABI_VERSION ||
+        mparser_c_abi_revision() != MPARSER_C_ABI_REVISION ||
         mparser_module_compile_utf8(
             k_source, strlen(k_source),
             "installed_consumer.m",
@@ -59,7 +60,7 @@ int main(void) {
         mparser_value_create_scalar(
             3.0, MPARSER_NUMERIC_DOUBLE, &right) !=
             MPARSER_API_STATUS_OK ||
-        mparser_invocation_options_init(&options) !=
+        MPARSER_INVOCATION_OPTIONS_INIT(&options) !=
             MPARSER_API_STATUS_OK) {
         goto cleanup;
     }
@@ -81,9 +82,10 @@ int main(void) {
         goto cleanup;
     }
 
-    printf("installed-consumer = %u.%u.%u,42,36,abi-%u\n",
+    printf("installed-consumer = %u.%u.%u,42,36,abi-%u.%u\n",
            mparser_version_major(), mparser_version_minor(),
-           mparser_version_patch(), mparser_c_abi_version());
+           mparser_version_patch(), mparser_c_abi_version(),
+           mparser_c_abi_revision());
     succeeded = 1;
 
 cleanup:

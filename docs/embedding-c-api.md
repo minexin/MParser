@@ -6,7 +6,8 @@ shared-library target, whose output name is `mparser_c`. v0.84 extends that
 same boundary with explicit multi-source compilation and UTF-8 filesystem
 source-graph loading. v0.85 installs it as a relocatable CMake package. v0.86
 adds a separate machine-readable CLI result protocol over the same
-engine-neutral invocation result; it does not change C handle ownership.
+engine-neutral invocation result. v0.87 adds executable ABI-major-1 evolution
+rules, sized structure initialization, and a frozen old-header consumer.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
@@ -14,10 +15,10 @@ handles, fixed-width constants, byte/code-unit views, and versioned plain C
 structures.
 
 This is ABI candidate 1, not the final v1.0 binary freeze. Until the v0.90 API
-gate, an incompatible correction may increment `MPARSER_C_ABI_VERSION`.
-Applications must query `mparser_c_abi_version()` and the three MParser
-component-version functions rather than assuming that the project version and
-C ABI version advance together.
+gate, an incompatible correction may increment the ABI major. Applications
+must query `mparser_c_abi_version()`, `mparser_c_abi_revision()`, and the three
+MParser component-version functions rather than assuming that the project,
+ABI major, and additive ABI revision advance together.
 
 ## Build
 
@@ -26,8 +27,9 @@ From the source tree:
 ```powershell
 cmake -S . -B build
 cmake --build build --target mparser_c_api mparser_c_embedding_demo `
-  mparser_c_source_graph_demo
+  mparser_c_source_graph_demo mparser_c_abi_compat_demo
 build\mparser_c_embedding_demo.exe
+build\mparser_c_abi_compat_demo.exe
 build\mparser_c_source_graph_demo.exe `
   samples\class_folders\app\run_demo.m `
   samples\class_folders\lib
@@ -47,12 +49,13 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 An independent CMake project can then use:
 
 ```cmake
-find_package(MParser 0.86.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 0.87.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
 `MParser::cli` is the imported matching CLI executable. The package also
 exports project-version components, `MParser_C_ABI_VERSION`,
+`MParser_C_ABI_REVISION`,
 `MParser_C_INCLUDE_DIR`, and `MParser_CLI_DIR`. Its paths are relative to the
 package prefix, so the installed tree may be moved as a unit before consumer
 configuration. On Windows, deploy `mparser_c.dll` beside the host executable
@@ -103,8 +106,9 @@ preserves the supplied order, and treats the first unit as the entry source.
 This route supports explicit top-level scripts, functions, and classes, but it
 does not infer package/private/class-folder identity from source names.
 
-For MATLAB filesystem semantics, initialize `mparser_source_load_options` and
-call `mparser_module_load_file_utf8` with an entry `.m` file and ordered search
+For MATLAB filesystem semantics, initialize `mparser_source_load_options`
+with `MPARSER_SOURCE_LOAD_OPTIONS_INIT(&options)` and call
+`mparser_module_load_file_utf8` with an entry `.m` file and ordered search
 paths. This invokes the same `SourceLoader` used by the CLI and supports:
 
 - entry-directory and ordered search-path precedence;
@@ -128,7 +132,8 @@ diagnostics preserve source positions. A filesystem loading failure returns
 a stable `MParser:SourceLoadFailed` compilation diagnostic. Descriptor or
 option contract errors return without creating a module.
 
-Initialize every invocation with `mparser_invocation_options_init`. The
+Initialize every current-source invocation with
+`MPARSER_INVOCATION_OPTIONS_INIT(&options)` and check its returned status. The
 request can select:
 
 - a top-level entry function, or an empty name for script execution;
@@ -174,7 +179,7 @@ Unicode code units represented by `uint16_t`.
 All external array payloads and linear element indexes use MATLAB column-major
 order. MParser converts to and from its internal storage without exposing that
 storage layout. Accessor pointers are immutable and owned by the value handle.
-There is no zero-copy external buffer or mutable view in v0.86.
+There is no zero-copy external buffer or mutable view in v0.87.
 
 Cell and structure constructors copy the represented runtime values. Releasing
 the child handles after construction is valid. A scalar structure is created
@@ -215,11 +220,19 @@ v0.82 source-level C++ contract, where `std::bad_alloc` still propagates.
 
 ## Structure Versioning
 
-`mparser_invocation_options` and `mparser_execution_summary` start with
-`struct_size` and `abi_version`. Initialize them through their API functions;
-do not use aggregate literals as a substitute. ABI candidate 1 currently
-requires the complete current structure size. A later candidate may add
-tail-compatible negotiation before the v0.90 freeze.
+`mparser_invocation_options`, `mparser_execution_summary`, and
+`mparser_source_load_options` start with `struct_size` and `abi_version`.
+Initialize current source with the uppercase `MPARSER_*_INIT` macros; do not
+use aggregate literals. The macros pass the caller's complete storage size to
+the revision-1 sized initializers. New libraries accept the frozen v1 prefix,
+ignore unknown input tails, and limit output writes to the caller's recorded
+capacity. The old initializer symbols remain available and write only the
+frozen v1 prefix for already-built consumers.
+
+`mparser_source_unit` is sealed within ABI major 1 because arrays use its
+fixed size as the descriptor stride. Oversized source-unit descriptors are
+rejected. Full structure and symbol evolution rules are in
+[c-abi-compatibility.md](c-abi-compatibility.md).
 
 The C constants are integer typedefs plus macros rather than compiler enums,
 so their width does not depend on the host compiler's enum ABI.
@@ -242,11 +255,15 @@ covers:
 - same-module closures and cross-module ownership rejection;
 - cross-module independent builtin handles;
 - resource stops, pre-cancellation, execution summaries, and session recovery;
-- retain/release and ABI-request validation.
+- retain/release and ABI-request validation;
+- old-prefix write bounds, oversized request/load/summary storage, and sealed
+  source-unit rejection.
 
 `c_api_utf8_source_graph_smoke` creates non-ASCII entry and library
 directories. `c_embedding_demo_smoke` runs the single-source C host and
-`c_source_graph_demo_smoke` loads a real `+package/@Class` graph. All are
+`c_source_graph_demo_smoke` loads a real `+package/@Class` graph.
+`c_api_v1_compat_smoke` compiles against the frozen v0.86 header snapshot, and
+`c_abi_compat_demo_smoke` executes future-tail storage. All are
 included in Linux AArch64 native-JIT and portable-only QEMU jobs in addition
 to the complete Windows x64 and Linux x64 suites.
 
@@ -261,7 +278,7 @@ the installed consumer and CLI under QEMU.
 The v0.90 embedding gate still requires:
 
 1. the public C++ SDK/export decision and external C++ consumer;
-2. explicit forward-compatible structure and symbol-version policy;
+2. final ABI symbol/layout review and shared-library version freeze;
 3. external adapter and optional array-view validation;
 4. repeated library load/unload, stress, sanitizer, and allocation-failure
    evidence;

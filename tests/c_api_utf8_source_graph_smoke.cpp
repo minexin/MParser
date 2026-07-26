@@ -123,7 +123,7 @@ int main() {
     mparser_utf8_view searchPath{
         libraryUtf8.data(), libraryUtf8.size()};
     mparser_source_load_options loadOptions{};
-    assert(mparser_source_load_options_init(&loadOptions) ==
+    assert(MPARSER_SOURCE_LOAD_OPTIONS_INIT(&loadOptions) ==
            MPARSER_API_STATUS_OK);
     loadOptions.search_paths = &searchPath;
     loadOptions.search_path_count = 1;
@@ -146,7 +146,7 @@ int main() {
            pathToUtf8(std::filesystem::weakly_canonical(entryPath)));
 
     mparser_invocation_options invocation{};
-    assert(mparser_invocation_options_init(&invocation) ==
+    assert(MPARSER_INVOCATION_OPTIONS_INIT(&invocation) ==
            MPARSER_API_STATUS_OK);
     mparser_result* result = nullptr;
     assert(mparser_module_execute(

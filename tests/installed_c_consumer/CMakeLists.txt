@@ -17,6 +17,10 @@ if(NOT MParser_C_ABI_VERSION EQUAL 1)
     message(FATAL_ERROR
         "Unexpected installed C ABI version: ${MParser_C_ABI_VERSION}")
 endif()
+if(NOT MParser_C_ABI_REVISION EQUAL 1)
+    message(FATAL_ERROR
+        "Unexpected installed C ABI revision: ${MParser_C_ABI_REVISION}")
+endif()
 
 add_executable(mparser_installed_c_consumer main.c)
 target_link_libraries(mparser_installed_c_consumer PRIVATE MParser::c_api)
@@ -41,7 +45,7 @@ add_test(NAME installed_c_api_runtime
     COMMAND mparser_installed_c_consumer)
 set_tests_properties(installed_c_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-consumer = ${MParser_VERSION},42,36,abi-1")
+        "installed-consumer = ${MParser_VERSION},42,36,abi-1.1")
 
 add_test(NAME installed_cli_version
     COMMAND MParser::cli --version)

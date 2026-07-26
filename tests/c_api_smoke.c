@@ -101,6 +101,38 @@ static const char k_inline_class_source[] =
     "    end\n"
     "end\n";
 
+typedef struct extended_invocation_options {
+    mparser_invocation_options value;
+    unsigned char future_tail[31];
+} extended_invocation_options;
+
+typedef struct extended_execution_summary {
+    mparser_execution_summary value;
+    unsigned char future_tail[29];
+} extended_execution_summary;
+
+typedef struct extended_source_load_options {
+    mparser_source_load_options value;
+    unsigned char future_tail[23];
+} extended_source_load_options;
+
+typedef struct extended_source_unit {
+    mparser_source_unit value;
+    unsigned char forbidden_tail[17];
+} extended_source_unit;
+
+static int bytes_equal(const unsigned char* bytes,
+                       size_t size,
+                       unsigned char expected) {
+    size_t index;
+    for (index = 0; index < size; ++index) {
+        if (bytes[index] != expected) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int view_equals(mparser_utf8_view view, const char* expected) {
     const size_t size = strlen(expected);
     return view.size == size &&
@@ -116,7 +148,7 @@ static int view_ends_with(mparser_utf8_view view, const char* suffix) {
 static mparser_invocation_options options_for(const char* entry) {
     mparser_invocation_options options;
     const mparser_api_status status =
-        mparser_invocation_options_init(&options);
+        MPARSER_INVOCATION_OPTIONS_INIT(&options);
     if (status != MPARSER_API_STATUS_OK) {
         memset(&options, 0, sizeof(options));
         return options;
@@ -218,8 +250,16 @@ static int run_header_and_diagnostic_smoke(void) {
     mparser_api_status status;
 
     CHECK(mparser_c_abi_version() == MPARSER_C_ABI_VERSION);
+    CHECK(mparser_c_abi_revision() == MPARSER_C_ABI_REVISION);
+    CHECK(MPARSER_C_ABI_VERSION_MAJOR == 1u);
+    CHECK(MPARSER_C_ABI_REVISION == 1u);
+    CHECK(MPARSER_INVOCATION_OPTIONS_V1_SIZE == sizeof(options));
+    CHECK(MPARSER_EXECUTION_SUMMARY_V1_SIZE == sizeof(summary));
+    CHECK(MPARSER_SOURCE_UNIT_V1_SIZE == sizeof(mparser_source_unit));
+    CHECK(MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ==
+          sizeof(mparser_source_load_options));
     CHECK(mparser_version_major() == 0);
-    CHECK(mparser_version_minor() == 86);
+    CHECK(mparser_version_minor() == 87);
     CHECK(mparser_version_patch() == 0);
     CHECK(view_equals(
         mparser_api_status_name(MPARSER_API_STATUS_OWNER_MISMATCH),
@@ -231,6 +271,16 @@ static int run_header_and_diagnostic_smoke(void) {
     CHECK(mparser_source_unit_init(NULL) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_source_load_options_init(NULL) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(mparser_invocation_options_init_sized(
+              NULL, sizeof(options), MPARSER_C_ABI_VERSION) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(mparser_execution_summary_init_sized(
+              NULL, sizeof(summary), MPARSER_C_ABI_VERSION) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(mparser_source_load_options_init_sized(
+              NULL, sizeof(mparser_source_load_options),
+              MPARSER_C_ABI_VERSION) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_invocation_options_init(&options) ==
           MPARSER_API_STATUS_OK);
@@ -267,6 +317,157 @@ static int run_header_and_diagnostic_smoke(void) {
     CHECK(begin.line >= 1);
     CHECK(mparser_module_diagnostic(invalid_module, 100) == NULL);
     mparser_module_release(invalid_module);
+    return 1;
+}
+
+static int run_versioned_structure_smoke(
+    mparser_module* module,
+    const char* entry_path,
+    const char* library_path) {
+    static const char entry[] = "sumTo";
+    static const char source[] = "value = 1;\n";
+    static const char source_name[] = "extended_source.m";
+    extended_invocation_options invocation;
+    extended_execution_summary summary;
+    extended_source_load_options load_options;
+    extended_source_unit source_unit;
+    mparser_utf8_view search_path;
+    const mparser_value* arguments[1];
+    mparser_value* argument = NULL;
+    mparser_result* result = NULL;
+    mparser_module* rejected_module = NULL;
+    mparser_module* loaded_module = NULL;
+
+    memset(&invocation, 0xa5, sizeof(invocation));
+    CHECK(mparser_invocation_options_init_sized(
+              &invocation,
+              MPARSER_INVOCATION_OPTIONS_V1_SIZE - 1u,
+              MPARSER_C_ABI_VERSION) ==
+          MPARSER_API_STATUS_ABI_MISMATCH);
+    CHECK(bytes_equal(
+        (const unsigned char*)&invocation,
+        sizeof(invocation), 0xa5));
+    CHECK(mparser_invocation_options_init_sized(
+              &invocation, sizeof(invocation),
+              MPARSER_C_ABI_VERSION + 1u) ==
+          MPARSER_API_STATUS_ABI_MISMATCH);
+    CHECK(bytes_equal(
+        (const unsigned char*)&invocation,
+        sizeof(invocation), 0xa5));
+
+    CHECK(mparser_invocation_options_init(&invocation.value) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(invocation.value.struct_size ==
+          MPARSER_INVOCATION_OPTIONS_V1_SIZE);
+    CHECK(bytes_equal(
+        invocation.future_tail,
+        sizeof(invocation.future_tail), 0xa5));
+
+    memset(&invocation, 0xa5, sizeof(invocation));
+    CHECK(mparser_invocation_options_init_sized(
+              &invocation, sizeof(invocation),
+              MPARSER_C_ABI_VERSION) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(invocation.value.struct_size == sizeof(invocation));
+    CHECK(invocation.value.backend == MPARSER_BACKEND_AUTOMATIC);
+    CHECK(bytes_equal(
+        invocation.future_tail,
+        sizeof(invocation.future_tail), 0));
+
+    CHECK(mparser_value_create_scalar(
+              3.0, MPARSER_NUMERIC_DOUBLE, &argument) ==
+          MPARSER_API_STATUS_OK);
+    arguments[0] = argument;
+    invocation.value.entry_name = entry;
+    invocation.value.entry_name_size = sizeof(entry) - 1u;
+    invocation.value.arguments = arguments;
+    invocation.value.argument_count = 1;
+    invocation.value.requested_output_count = 1;
+    invocation.value.has_requested_output_count = 1;
+    CHECK(mparser_module_execute(
+              module, &invocation.value, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(output_scalar(result, 6.0));
+
+    memset(&summary, 0xa5, sizeof(summary));
+    CHECK(mparser_execution_summary_init_sized(
+              &summary, sizeof(summary),
+              MPARSER_C_ABI_VERSION) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(summary.value.struct_size == sizeof(summary));
+    CHECK(bytes_equal(
+        summary.future_tail, sizeof(summary.future_tail), 0));
+    CHECK(mparser_result_execution_summary(
+              result, &summary.value) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(summary.value.struct_size == sizeof(summary));
+    CHECK(summary.value.executed_instruction_count > 0);
+    CHECK(bytes_equal(
+        summary.future_tail, sizeof(summary.future_tail), 0));
+
+    memset(&summary, 0xa5, sizeof(summary));
+    CHECK(mparser_execution_summary_init(&summary.value) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(summary.value.struct_size ==
+          MPARSER_EXECUTION_SUMMARY_V1_SIZE);
+    CHECK(bytes_equal(
+        summary.future_tail, sizeof(summary.future_tail), 0xa5));
+    CHECK(mparser_result_execution_summary(
+              result, &summary.value) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(bytes_equal(
+        summary.future_tail, sizeof(summary.future_tail), 0xa5));
+
+    memset(&load_options, 0xa5, sizeof(load_options));
+    CHECK(mparser_source_load_options_init(&load_options.value) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(load_options.value.struct_size ==
+          MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE);
+    CHECK(bytes_equal(
+        load_options.future_tail,
+        sizeof(load_options.future_tail), 0xa5));
+    memset(&load_options, 0xa5, sizeof(load_options));
+    CHECK(mparser_source_load_options_init_sized(
+              &load_options, sizeof(load_options),
+              MPARSER_C_ABI_VERSION) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(load_options.value.struct_size == sizeof(load_options));
+    CHECK(bytes_equal(
+        load_options.future_tail,
+        sizeof(load_options.future_tail), 0));
+    search_path.data = library_path;
+    search_path.size = strlen(library_path);
+    load_options.value.search_paths = &search_path;
+    load_options.value.search_path_count = 1;
+    CHECK(mparser_module_load_file_utf8(
+              entry_path, strlen(entry_path),
+              &load_options.value, &loaded_module) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(loaded_module != NULL);
+    CHECK(mparser_module_is_valid(loaded_module) == 1);
+    mparser_module_release(loaded_module);
+
+    memset(&source_unit, 0xa5, sizeof(source_unit));
+    CHECK(mparser_source_unit_init(&source_unit.value) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(source_unit.value.struct_size ==
+          MPARSER_SOURCE_UNIT_V1_SIZE);
+    CHECK(bytes_equal(
+        source_unit.forbidden_tail,
+        sizeof(source_unit.forbidden_tail), 0xa5));
+    source_unit.value.struct_size =
+        (uint32_t)sizeof(source_unit);
+    source_unit.value.source_name = source_name;
+    source_unit.value.source_name_size = sizeof(source_name) - 1u;
+    source_unit.value.source = source;
+    source_unit.value.source_size = sizeof(source) - 1u;
+    CHECK(mparser_module_compile_sources(
+              &source_unit.value, 1, &rejected_module) ==
+          MPARSER_API_STATUS_ABI_MISMATCH);
+    CHECK(rejected_module == NULL);
+
+    mparser_result_release(result);
+    mparser_value_release(argument);
     return 1;
 }
 
@@ -314,7 +515,7 @@ static int run_multi_source_compilation_smoke(void) {
     class_name[0] = 'x';
     entry_source[0] = '?';
     class_source[0] = '?';
-    CHECK(mparser_invocation_options_init(&options) ==
+    CHECK(MPARSER_INVOCATION_OPTIONS_INIT(&options) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_module_execute(module, &options, &result) ==
           MPARSER_API_STATUS_OK);
@@ -377,7 +578,7 @@ static int run_file_source_graph_smoke(const char* entry_path,
     const char invalid_utf8_path[] = {
         'b', 'a', 'd', '_', (char)0xc0, (char)0xaf, '.', 'm'};
 
-    CHECK(mparser_source_load_options_init(&load_options) ==
+    CHECK(MPARSER_SOURCE_LOAD_OPTIONS_INIT(&load_options) ==
           MPARSER_API_STATUS_OK);
     CHECK(load_options.struct_size == sizeof(load_options));
     CHECK(load_options.abi_version == MPARSER_C_ABI_VERSION);
@@ -395,7 +596,7 @@ static int run_file_source_graph_smoke(const char* entry_path,
         mparser_module_source_name(module, 0), "run_demo.m"));
     CHECK(mparser_module_diagnostic_count(module) == 0);
 
-    CHECK(mparser_invocation_options_init(&options) ==
+    CHECK(MPARSER_INVOCATION_OPTIONS_INIT(&options) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_module_execute(module, &options, &result) ==
           MPARSER_API_STATUS_OK);
@@ -415,7 +616,7 @@ static int run_file_source_graph_smoke(const char* entry_path,
               &load_options, &module) ==
           MPARSER_API_STATUS_ABI_MISMATCH);
     CHECK(module == NULL);
-    CHECK(mparser_source_load_options_init(&load_options) ==
+    CHECK(MPARSER_SOURCE_LOAD_OPTIONS_INIT(&load_options) ==
           MPARSER_API_STATUS_OK);
     search_path.data = NULL;
     search_path.size = 1;
@@ -435,7 +636,7 @@ static int run_file_source_graph_smoke(const char* entry_path,
               NULL, &module) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(module == NULL);
-    CHECK(mparser_source_load_options_init(&load_options) ==
+    CHECK(MPARSER_SOURCE_LOAD_OPTIONS_INIT(&load_options) ==
           MPARSER_API_STATUS_OK);
     search_path.data = invalid_utf8_path;
     search_path.size = sizeof(invalid_utf8_path);
@@ -493,7 +694,7 @@ static int run_scalar_resource_and_session_smoke(
     memset(&summary, 0, sizeof(summary));
     CHECK(mparser_result_execution_summary(result, &summary) ==
           MPARSER_API_STATUS_ABI_MISMATCH);
-    CHECK(mparser_execution_summary_init(&summary) ==
+    CHECK(MPARSER_EXECUTION_SUMMARY_INIT(&summary) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_result_execution_summary(result, &summary) ==
           MPARSER_API_STATUS_OK);
@@ -539,7 +740,7 @@ static int run_scalar_resource_and_session_smoke(
     CHECK(mparser_module_execute(module, &options, &result) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_result_succeeded(result) == 0);
-    CHECK(mparser_execution_summary_init(&summary) ==
+    CHECK(MPARSER_EXECUTION_SUMMARY_INIT(&summary) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_result_execution_summary(result, &summary) ==
           MPARSER_API_STATUS_OK);
@@ -566,7 +767,7 @@ static int run_scalar_resource_and_session_smoke(
     options.cancellation_token = cancellation;
     CHECK(mparser_module_execute(module, &options, &result) ==
           MPARSER_API_STATUS_OK);
-    CHECK(mparser_execution_summary_init(&summary) ==
+    CHECK(MPARSER_EXECUTION_SUMMARY_INIT(&summary) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_result_execution_summary(result, &summary) ==
           MPARSER_API_STATUS_OK);
@@ -921,7 +1122,7 @@ static int run_object_transport_smoke(void) {
     workspace[0].name = "use_input";
     workspace[0].name_size = strlen("use_input");
     workspace[0].value = use_input;
-    CHECK(mparser_invocation_options_init(&options) ==
+    CHECK(MPARSER_INVOCATION_OPTIONS_INIT(&options) ==
           MPARSER_API_STATUS_OK);
     options.initial_workspace = workspace;
     options.initial_workspace_count = 1;
@@ -944,7 +1145,7 @@ static int run_object_transport_smoke(void) {
     workspace[1].name = "input_meter";
     workspace[1].name_size = strlen("input_meter");
     workspace[1].value = object;
-    CHECK(mparser_invocation_options_init(&options) ==
+    CHECK(MPARSER_INVOCATION_OPTIONS_INIT(&options) ==
           MPARSER_API_STATUS_OK);
     options.initial_workspace = workspace;
     options.initial_workspace_count = 2;
@@ -1014,6 +1215,7 @@ int main(int argc, char** argv) {
     if (!run_multi_source_compilation_smoke() ||
         !run_file_source_graph_smoke(argv[1], argv[2]) ||
         !run_module_metadata_smoke(module) ||
+        !run_versioned_structure_smoke(module, argv[1], argv[2]) ||
         !run_scalar_resource_and_session_smoke(module) ||
         !run_array_text_and_composite_smoke(module) ||
         !run_function_handle_ownership_smoke(module) ||

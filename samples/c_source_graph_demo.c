@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    mparser_source_load_options_init(&load_options);
+    MPARSER_SOURCE_LOAD_OPTIONS_INIT(&load_options);
     search_path.data = argv[2];
     search_path.size = strlen(argv[2]);
     load_options.search_paths = &search_path;
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    mparser_invocation_options_init(&invocation);
+    MPARSER_INVOCATION_OPTIONS_INIT(&invocation);
     status = mparser_module_execute(
         module, &invocation, &result);
     if (status != MPARSER_API_STATUS_OK ||

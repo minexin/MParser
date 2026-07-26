@@ -1,0 +1,96 @@
+#include "mparser/c_api.h"
+
+#include <stdio.h>
+#include <string.h>
+
+typedef struct future_invocation_options {
+    mparser_invocation_options value;
+    unsigned char future_tail[16];
+} future_invocation_options;
+
+typedef struct future_execution_summary {
+    mparser_execution_summary value;
+    unsigned char future_tail[16];
+} future_execution_summary;
+
+static const char k_source[] =
+    "function out = addTwo(value)\n"
+    "out = value + 2;\n"
+    "end\n";
+
+static int tail_is_zero(const unsigned char* tail, size_t size) {
+    size_t index;
+    for (index = 0; index < size; ++index) {
+        if (tail[index] != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int main(void) {
+    mparser_module* module = NULL;
+    mparser_value* argument = NULL;
+    const mparser_value* arguments[1];
+    future_invocation_options invocation;
+    future_execution_summary summary;
+    mparser_result* result = NULL;
+    mparser_value* output = NULL;
+    const double* data = NULL;
+    size_t count = 0;
+    int succeeded = 0;
+
+    if (mparser_module_compile_utf8(
+            k_source, strlen(k_source), "c_abi_compat_demo.m",
+            strlen("c_abi_compat_demo.m"), &module) !=
+            MPARSER_API_STATUS_OK ||
+        mparser_value_create_scalar(
+            40.0, MPARSER_NUMERIC_DOUBLE, &argument) !=
+            MPARSER_API_STATUS_OK ||
+        mparser_invocation_options_init_sized(
+            &invocation, sizeof(invocation),
+            MPARSER_C_ABI_VERSION) != MPARSER_API_STATUS_OK ||
+        !tail_is_zero(
+            invocation.future_tail,
+            sizeof(invocation.future_tail))) {
+        goto cleanup;
+    }
+
+    arguments[0] = argument;
+    invocation.value.entry_name = "addTwo";
+    invocation.value.entry_name_size = strlen("addTwo");
+    invocation.value.arguments = arguments;
+    invocation.value.argument_count = 1;
+    invocation.value.requested_output_count = 1;
+    invocation.value.has_requested_output_count = 1;
+    if (mparser_module_execute(
+            module, &invocation.value, &result) !=
+            MPARSER_API_STATUS_OK ||
+        !mparser_result_succeeded(result) ||
+        mparser_result_output(result, 0, &output) !=
+            MPARSER_API_STATUS_OK ||
+        mparser_value_numeric_data(output, &data, &count) !=
+            MPARSER_API_STATUS_OK ||
+        count != 1 || data[0] != 42.0 ||
+        mparser_execution_summary_init_sized(
+            &summary, sizeof(summary),
+            MPARSER_C_ABI_VERSION) != MPARSER_API_STATUS_OK ||
+        mparser_result_execution_summary(
+            result, &summary.value) != MPARSER_API_STATUS_OK ||
+        !tail_is_zero(
+            summary.future_tail, sizeof(summary.future_tail))) {
+        goto cleanup;
+    }
+
+    printf("abi = %u.%u, result = %.0f, request-bytes = %u\n",
+           mparser_c_abi_version(), mparser_c_abi_revision(),
+           data[0], invocation.value.struct_size);
+    succeeded = 1;
+
+cleanup:
+    mparser_value_release(output);
+    mparser_result_release(result);
+    mparser_value_release(argument);
+    mparser_module_release(module);
+    return succeeded ? 0 : 1;
+}

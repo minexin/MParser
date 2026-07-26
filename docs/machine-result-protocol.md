@@ -34,7 +34,7 @@ Once `--result-format=json-v1` has been requested:
 - `--help` and `--version` remain human-only early-exit operations and should
   not be combined with a result format.
 
-Output-producing MATLAB-like builtins are not implemented in v0.86. A future
+Output-producing MATLAB-like builtins are not implemented as of v0.87. A future
 output builtin must be captured, represented by a protocol extension, or
 rejected in machine mode; it must not write unframed bytes into protocol
 stdout.
@@ -60,7 +60,7 @@ must treat JSON object member order as insignificant:
 ```json
 {
   "protocol": {"name": "mparser.result", "major": 1, "minor": 0},
-  "engine": {"name": "MParser", "version": "0.86.0"},
+  "engine": {"name": "MParser", "version": "0.87.0"},
   "status": "succeeded",
   "entry_function": "",
   "requested_output_count": 0,
