@@ -491,11 +491,15 @@ function families, not an unbounded builtin count.
   symbols, and machine-check the exact public C export manifest.
 - Freeze v1.0 array transport at copy-in plus readonly runtime-owned output
   views. Defer a versioned pure-C external callback table to Post-v1.0.
-- Keep redistribution disabled until the project owner selects an explicit
-  project license; carry that decision as a v0.90 release gate.
+- At milestone closure, redistribution remained disabled pending the
+  project-owner license decision. The following v0.90 groundwork closes that
+  gate with Apache-2.0 and `Copyright 2026 Wang Xin`.
 
 ### v0.90: Embedding And Release Candidate APIs
 
+- Status: in progress. Apache-2.0 `LICENSE`/`NOTICE`, installed attribution
+  artifacts, CMake package metadata, and relocated-consumer validation close
+  `G-RELEASE-LICENSE-001`.
 - Freeze the compile/load/invoke-many C++ and narrow C candidates, complete
   the public C++ packaging review, and perform the final versioned machine
   protocol compatibility review.

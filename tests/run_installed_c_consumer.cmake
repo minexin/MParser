@@ -71,6 +71,9 @@ mparser_run_checked("MParser install" ${mparser_install_command})
 set(mparser_required_paths
         "${mparser_initial_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/c_api.h"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/c_abi_compat_demo.c"
+        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/LICENSE"
+        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/NOTICE"
+        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/THIRD_PARTY_NOTICES.md"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserConfig.cmake"
         "${mparser_initial_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserTargets.cmake")

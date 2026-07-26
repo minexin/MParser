@@ -197,5 +197,7 @@ and an exact exported-symbol manifest; the C++ facade remains header-only and
 source-compatible rather than a C++ binary ABI.
 
 The API is not frozen until the v0.90 candidate review. Distribution
-licensing, release archive policy, final sanitizer/allocation evidence, and
-the combined C/C++/protocol compatibility review remain open.
+licensing is Apache-2.0 with `Copyright 2026 Wang Xin`, and the installed
+CMake package exposes checked license/notice paths. Release archive policy,
+final sanitizer/allocation evidence, and the combined C/C++/protocol
+compatibility review remain open.

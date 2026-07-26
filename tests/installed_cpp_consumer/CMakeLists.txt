@@ -18,6 +18,14 @@ if(NOT MParser_C_ABI_VERSION EQUAL 1 OR
     message(FATAL_ERROR
         "Unexpected installed C ABI: ${MParser_C_ABI_VERSION}.${MParser_C_ABI_REVISION}")
 endif()
+if(NOT MParser_LICENSE STREQUAL "Apache-2.0")
+    message(FATAL_ERROR
+        "Unexpected installed project license: ${MParser_LICENSE}")
+endif()
+if(NOT MParser_COPYRIGHT STREQUAL "Copyright 2026 Wang Xin")
+    message(FATAL_ERROR
+        "Unexpected installed project copyright: ${MParser_COPYRIGHT}")
+endif()
 
 add_executable(mparser_installed_cpp_consumer main.cpp)
 target_link_libraries(mparser_installed_cpp_consumer PRIVATE MParser::cpp_api)

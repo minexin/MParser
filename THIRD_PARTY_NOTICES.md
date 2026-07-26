@@ -1,5 +1,8 @@
 # Third-Party Notices
 
+MParser's first-party source and documentation are licensed under
+Apache-2.0. The following bundled component remains under its own license.
+
 ## SLJIT
 
 MParser vendors and can statically link the Stack-less Just-In-Time compiler

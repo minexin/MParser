@@ -318,6 +318,15 @@ the imported CLI on Windows x64 and Linux x64. The AArch64 job independently
 installs and cross-consumes both native-JIT and portable packages, then runs
 the installed consumer and CLI under QEMU.
 
+## Licensing
+
+MParser's first-party source and documentation are licensed under the Apache
+License, Version 2.0, with `Copyright 2026 Wang Xin`. The source tree and
+installed SDK include `LICENSE`, `NOTICE`, and `THIRD_PARTY_NOTICES.md`.
+The relocated CMake package exports `MParser_LICENSE`, `MParser_COPYRIGHT`,
+and checked paths to all three files. Vendored SLJIT remains under the
+Simplified BSD terms reproduced in the third-party notices.
+
 ## Remaining Freeze Work
 
 The v0.90 embedding gate still requires:
@@ -326,8 +335,7 @@ The v0.90 embedding gate still requires:
    API, and machine protocol major 1;
 2. sanitizer and allocation-failure evidence for the remaining resource
    boundary;
-3. release archive, signing/checksum, and installation-policy review;
-4. an explicit project distribution license selected by the project owner.
+3. release archive, signing/checksum, and installation-policy review.
 
 The v1.0 candidate deliberately excludes a stable external native callback
 ABI and zero-copy borrowed input arrays. Their future additive rules are

@@ -1888,3 +1888,13 @@ build\mparser.exe --run-hir samples\return_demo.m
 ```powershell
 build\mparser.exe --run-hir samples\try_catch_demo.m
 ```
+
+## License
+
+MParser is licensed under the
+[Apache License, Version 2.0](LICENSE).
+Copyright 2026 Wang Xin.
+
+The project attribution notice is in [NOTICE](NOTICE). Vendored components
+remain under their respective licenses and are documented in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

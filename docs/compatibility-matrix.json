@@ -374,8 +374,8 @@
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "c_api_smoke", "cpp_api_smoke"],
-      "sources": ["CMakeLists.txt", "cmake/MParserConfig.cmake.in", "tests/run_installed_c_consumer.cmake", "tests/installed_c_consumer/CMakeLists.txt", "tests/installed_c_consumer/main.c", "tests/installed_cpp_consumer/CMakeLists.txt", "tests/installed_cpp_consumer/main.cpp", ".github/workflows/ci.yml", "samples/c_abi_compat_demo.c", "samples/cpp_embedding_demo.cpp", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/v0.85.md", "docs/v0.87.md", "docs/v0.88.md"],
-      "limits": "v0.85 installs and relocates the pure C header/shared library, CLI, metadata, examples, documentation, and notices. v0.86 adds the installed CLI protocol contract; v0.87 adds ABI revision metadata and policy; v0.88 adds the header-only C++20 facade and independent relocated consumer; v0.89 adds SOVERSION 1 and macOS x64/ARM64 consumers. Signed release archives and project distribution licensing remain open."
+      "sources": ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "CMakeLists.txt", "cmake/MParserConfig.cmake.in", "tests/run_installed_c_consumer.cmake", "tests/installed_c_consumer/CMakeLists.txt", "tests/installed_c_consumer/main.c", "tests/installed_cpp_consumer/CMakeLists.txt", "tests/installed_cpp_consumer/main.cpp", ".github/workflows/ci.yml", "samples/c_abi_compat_demo.c", "samples/cpp_embedding_demo.cpp", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/v0.85.md", "docs/v0.87.md", "docs/v0.88.md", "docs/v0.89.md"],
+      "limits": "v0.85 installs and relocates the pure C header/shared library, CLI, metadata, examples, documentation, and notices. v0.86 adds the installed CLI protocol contract; v0.87 adds ABI revision metadata and policy; v0.88 adds the header-only C++20 facade and independent relocated consumer; v0.89 adds SOVERSION 1 and macOS x64/ARM64 consumers. v0.90 groundwork adds Apache-2.0 project licensing, installed attribution files, and checked CMake metadata. Signed release archives remain open."
     },
     {
       "id": "EMBED-008",
@@ -420,6 +420,17 @@
       "evidence": ["c_api_lifecycle_stress", "cpp_api_concurrency_stress", "embedding_unload_stress", "c_api_shared_library_abi", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
       "sources": ["src/mparser/c_api.cpp", "include/mparser/c_api.h", "include/mparser/cpp_api.hpp", "tests/c_api_lifecycle_stress.cpp", "tests/cpp_api_concurrency_stress.cpp", "tests/embedding_unload_stress.cpp", "tests/c_api_abi1_symbols.txt", "tests/validate_shared_library_abi.cmake", "CMakeLists.txt", ".github/workflows/ci.yml", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/v0.89.md"],
       "limits": "Pure stateless calls remain concurrent. Requests carrying module-bound graphs serialize per owner, and every session operation from one module conservatively takes the same graph lock before its own session lock. Queue wait is outside runtime wall-time accounting. Host-created arrays remain copy-in with readonly value-owned output spans; external native callback tables and borrowed input buffers are Post-v1.0."
+    },
+    {
+      "id": "EMBED-012",
+      "area": "release",
+      "feature": "Apache-2.0 project licensing, attribution, third-party notices, and installed package metadata",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["project_license_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "compatibility_matrix_smoke"],
+      "sources": ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "README.md", "CMakeLists.txt", "cmake/MParserConfig.cmake.in", "tests/validate_project_license.cmake", "tests/run_installed_c_consumer.cmake", "tests/installed_c_consumer/CMakeLists.txt", "tests/installed_cpp_consumer/CMakeLists.txt", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/roadmap-v1.0.md"],
+      "limits": "MParser first-party source and documentation are licensed under Apache-2.0 with Copyright 2026 Wang Xin. Installed SDKs carry LICENSE, NOTICE, and third-party notices and expose checked metadata paths through CMake. Vendored components retain their own terms. Signed and checksummed release archives remain a separate v0.90 gate."
     },
     {
       "id": "EMBED-002",
@@ -672,11 +683,11 @@
       "id": "G-RELEASE-LICENSE-001",
       "area": "release",
       "priority": "must-have",
-      "state": "open",
+      "state": "closed",
       "target": "v0.90",
       "framework_impact": "none",
       "requirement": "Select and add an explicit project distribution license before publishing release archives or v1.0.",
-      "exit_evidence": "A project-owner-approved LICENSE file, matching package metadata, and reviewed third-party notices."
+      "exit_evidence": "The project owner selected Apache-2.0 with Copyright 2026 Wang Xin. project_license_smoke locks the official license SHA-256 and required project/SLJIT notices. CMake exports the SPDX identifier/copyright plus checked file paths, and both relocated installed consumers require those artifacts and metadata."
     },
     {
       "id": "G-JIT-001",

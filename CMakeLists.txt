@@ -13,6 +13,8 @@ set(MPARSER_C_ABI_VERSION 1)
 set(MPARSER_C_ABI_REVISION 1)
 set(MPARSER_C_ABI_LIBRARY_VERSION
     "${MPARSER_C_ABI_VERSION}.${MPARSER_C_ABI_REVISION}.0")
+set(MPARSER_PROJECT_LICENSE "Apache-2.0")
+set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -353,6 +355,16 @@ add_test(NAME compatibility_matrix_smoke
         -DTEST_REGISTRY=${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_compatibility_matrix.cmake)
+
+add_test(NAME project_license_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DLICENSE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+        -DNOTICE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/NOTICE
+        -DTHIRD_PARTY_NOTICES_FILE=${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_project_license.cmake)
+set_tests_properties(project_license_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
 
 add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
 target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)
@@ -1563,7 +1575,10 @@ configure_package_config_file(
     cmake/MParserConfig.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/MParserConfig.cmake"
     INSTALL_DESTINATION "${MPARSER_INSTALL_CMAKEDIR}"
-    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_BINDIR)
+    PATH_VARS
+        CMAKE_INSTALL_INCLUDEDIR
+        CMAKE_INSTALL_BINDIR
+        CMAKE_INSTALL_DOCDIR)
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/MParserConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
@@ -1585,6 +1600,8 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/MParserConfigVersion.cmake"
     DESTINATION "${MPARSER_INSTALL_CMAKEDIR}")
 install(FILES
+    LICENSE
+    NOTICE
     README.md
     THIRD_PARTY_NOTICES.md
     docs/c-abi-compatibility.md
