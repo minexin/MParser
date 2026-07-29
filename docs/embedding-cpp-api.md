@@ -69,7 +69,8 @@ request.requestedOutputCount = 1;
 
 mparser::sdk::Result result = module.execute(request);
 if (result.succeeded()) {
-    double answer = result.output(0).numericData().front();
+    mparser::sdk::Value output = result.output(0);
+    double answer = output.numericData().front();
 }
 ```
 
@@ -160,8 +161,9 @@ eligible for portable or native optimization.
 Dimensions, numeric payloads, text payloads, and Cell/Struct children are
 copied on construction. Array payload and linear element order is MATLAB
 column-major. `numericData()` and `characterData()` return immutable spans
-whose lifetime is tied to that `Value`. `stringElement`, `cellElement`, and
-`structField` return copied or independently retained values.
+whose lifetime is tied to that `Value`; retain the `Value` instead of keeping
+a span returned through a temporary wrapper. `stringElement`, `cellElement`,
+and `structField` return copied or independently retained values.
 
 Structure field indexes follow the order supplied to `Value::structure`; that
 order survives a module round trip. The current public constructor creates a

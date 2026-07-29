@@ -17,7 +17,6 @@ foreach(required_variable IN ITEMS
         MPARSER_INSTALL_DATADIR
         MPARSER_INSTALL_DOCDIR
         MPARSER_INSTALL_CMAKEDIR
-        MPARSER_EXECUTABLE_SUFFIX
         MPARSER_GENERATOR
         MPARSER_PROJECT_VERSION
         MPARSER_C_CONSUMER_SOURCE_DIR
@@ -28,6 +27,10 @@ foreach(required_variable IN ITEMS
             "Missing release-archive variable: ${required_variable}")
     endif()
 endforeach()
+if(NOT DEFINED MPARSER_EXECUTABLE_SUFFIX)
+    message(FATAL_ERROR
+        "Missing release-archive variable: MPARSER_EXECUTABLE_SUFFIX")
+endif()
 if(NOT DEFINED MPARSER_TEST_CONFIG)
     set(MPARSER_TEST_CONFIG "")
 endif()

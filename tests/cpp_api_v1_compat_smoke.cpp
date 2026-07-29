@@ -24,8 +24,12 @@ end
         invocation.arguments = {mparser::sdk::Value::scalar(40)};
         invocation.requestedOutputCount = 1;
         const auto result = module.execute(invocation);
-        const auto output = result.output(0).numericData();
-        if (!result.succeeded() || output.size() != 1 ||
+        if (!result.succeeded()) {
+            throw std::runtime_error("snapshot invocation failed");
+        }
+        const auto outputValue = result.output(0);
+        const auto output = outputValue.numericData();
+        if (output.size() != 1 ||
             std::abs(output.front() - 42.0) > 1e-9) {
             throw std::runtime_error("snapshot invocation failed");
         }

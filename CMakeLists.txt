@@ -13,6 +13,8 @@ set(MPARSER_C_ABI_VERSION 1)
 set(MPARSER_C_ABI_REVISION 1)
 set(MPARSER_C_ABI_LIBRARY_VERSION
     "${MPARSER_C_ABI_VERSION}.${MPARSER_C_ABI_REVISION}.0")
+set(MPARSER_C_ABI_SYMBOL_LIST
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_abi1_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -204,6 +206,49 @@ if(MSVC)
 else()
     target_compile_options(mparser_c_api PRIVATE
         -Wall -Wextra -Wpedantic)
+endif()
+if(UNIX)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${MPARSER_C_ABI_SYMBOL_LIST}")
+    file(STRINGS "${MPARSER_C_ABI_SYMBOL_LIST}"
+        _mparser_c_abi_symbols
+        REGEX "^mparser_[A-Za-z0-9_]+$")
+    list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
+    list(LENGTH _mparser_c_abi_symbols
+        _mparser_c_abi_symbol_count)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 90)
+        message(FATAL_ERROR
+            "C ABI symbol manifest must contain exactly 90 symbols")
+    endif()
+
+    if(APPLE)
+        set(_mparser_c_api_export_file
+            "${CMAKE_CURRENT_BINARY_DIR}/mparser_c_api.exports")
+        file(WRITE "${_mparser_c_api_export_file}" "")
+        foreach(_mparser_c_abi_symbol IN LISTS
+                _mparser_c_abi_symbols)
+            file(APPEND "${_mparser_c_api_export_file}"
+                "_${_mparser_c_abi_symbol}\n")
+        endforeach()
+        target_link_options(mparser_c_api PRIVATE
+            "-Wl,-exported_symbols_list,${_mparser_c_api_export_file}")
+    else()
+        set(_mparser_c_api_export_file
+            "${CMAKE_CURRENT_BINARY_DIR}/mparser_c_api.map")
+        file(WRITE "${_mparser_c_api_export_file}"
+            "{\n  global:\n")
+        foreach(_mparser_c_abi_symbol IN LISTS
+                _mparser_c_abi_symbols)
+            file(APPEND "${_mparser_c_api_export_file}"
+                "    ${_mparser_c_abi_symbol};\n")
+        endforeach()
+        file(APPEND "${_mparser_c_api_export_file}"
+            "  local:\n    *;\n};\n")
+        target_link_options(mparser_c_api PRIVATE
+            "-Wl,--version-script=${_mparser_c_api_export_file}")
+    endif()
+    set_property(TARGET mparser_c_api APPEND PROPERTY LINK_DEPENDS
+        "${_mparser_c_api_export_file}")
 endif()
 
 add_library(mparser_cpp_api INTERFACE)
@@ -1506,7 +1551,7 @@ set_tests_properties(embedding_unload_stress PROPERTIES
 add_test(NAME c_api_shared_library_abi
     COMMAND "${CMAKE_COMMAND}"
         "-DMPARSER_SHARED_LIBRARY=$<TARGET_FILE:mparser_c_api>"
-        "-DMPARSER_SYMBOL_LIST=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_abi1_symbols.txt"
+        "-DMPARSER_SYMBOL_LIST=${MPARSER_C_ABI_SYMBOL_LIST}"
         "-DMPARSER_ABI_SOVERSION=${MPARSER_C_ABI_VERSION}"
         "-DMPARSER_LINKER=${CMAKE_LINKER}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")

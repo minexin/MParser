@@ -70,7 +70,9 @@ jobs:
       ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1:check_initialization_order=1
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
       CFLAGS: -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-sanitize-recover=all
-      CXXFLAGS: -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-sanitize-recover=all
+      # vptr requires the C++ UBSan runtime in every final executable, including
+      # the intentionally pure-C ABI consumers. Keep the remaining UBSan set.
+      CXXFLAGS: -O1 -g -fsanitize=address,undefined -fno-sanitize=vptr -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-sanitize-recover=all
     steps:
       - uses: actions/checkout@v6
       - name: Configure
