@@ -1,5 +1,7 @@
 #include "mparser/cpp_api.hpp"
 
+#include "consumer_module.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -38,10 +40,20 @@ bool hasDiagnostic(
 int main() {
     try {
         const auto version = mparser::sdk::runtimeVersion();
+        const auto sourceApiVersion =
+            mparser::sdk::sourceApiVersion();
         require(version.major == MPARSER_EXPECTED_VERSION_MAJOR &&
                     version.minor == MPARSER_EXPECTED_VERSION_MINOR &&
                     version.patch == MPARSER_EXPECTED_VERSION_PATCH,
                 "installed header and runtime versions differ");
+        require(sourceApiVersion.major ==
+                    MPARSER_EXPECTED_CPP_API_VERSION_MAJOR &&
+                    sourceApiVersion.minor ==
+                    MPARSER_EXPECTED_CPP_API_VERSION_MINOR &&
+                    mparserInstalledCppApiVersionToken() ==
+                        sourceApiVersion.major * 100u +
+                            sourceApiVersion.minor,
+                "installed C++ source API versions differ across translation units");
 
         const auto module = mparser::sdk::Module::compile(R"(
 function [total, last] = accumulate(limit)
@@ -130,7 +142,9 @@ end
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','
                   << counterValue << ",abi-" << mparser::sdk::abiMajor()
-                  << '.' << mparser::sdk::abiRevision() << '\n';
+                  << '.' << mparser::sdk::abiRevision()
+                  << ",cpp-" << sourceApiVersion.major << '.'
+                  << sourceApiVersion.minor << '\n';
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

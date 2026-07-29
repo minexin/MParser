@@ -135,9 +135,10 @@ function families, not an unbounded builtin count.
 
 - Provide a validated external adapter prototype without promising a fully
   open plugin ABI until ownership, exception, and version rules are proven.
-- Add an adaptive/native disk cache only if it has atomic storage, bounded
-  resources, corruption recovery, and complete source/architecture/ABI/version
-  invalidation. Otherwise keep the v1.0 cache process-local and document it.
+- Keep the v1.0 adaptive/native cache bounded and process-local. A future disk
+  cache is additive and may ship only with atomic storage, bounded resources,
+  corruption recovery, and complete source/architecture/ABI/compiler/options/
+  version invalidation.
 - Offer zero-copy or view-based arrays where lifetime and mutability can be
   expressed safely; copying remains the compatibility fallback.
 
@@ -497,16 +498,26 @@ function families, not an unbounded builtin count.
 
 ### v0.90: Embedding And Release Candidate APIs
 
-- Status: in progress. Apache-2.0 `LICENSE`/`NOTICE`, installed attribution
-  artifacts, CMake package metadata, and relocated-consumer validation close
-  `G-RELEASE-LICENSE-001`.
-- Freeze the compile/load/invoke-many C++ and narrow C candidates, complete
-  the public C++ packaging review, and perform the final versioned machine
-  protocol compatibility review.
-- Validate representative function families, persistent runtime behavior,
-  resource boundaries, cross-platform consumers, and cache invalidation.
-- Freeze v1.0 API/ABI/protocol candidates and require explicit compatibility
-  review for every later change.
+- Status: implementation complete. A v0.90 commit is closed only when its
+  corresponding cross-platform Actions run satisfies every release lane.
+- Freeze C ABI 1.1, C++ source API 1.0, and machine protocol 1.0 through one
+  machine-readable public-contract manifest, immutable snapshots, normalized
+  hashes, old-client consumers, layout checks, and an explicit change-review
+  policy.
+- Publish the protocol JSON Schema, exact stdout/stderr/newline framing,
+  unsigned-64-bit integer policy, human-option rejection, and allocation-free
+  emergency exit-4 result.
+- Prove allocation/internal-failure containment, pre/post-execution commit
+  boundaries, concurrent session mutation/clearing, and bounded native-cache
+  churn. Keep the v1.0 native cache process-local.
+- Produce checksummed platform/architecture archives, reproduce an archive
+  from one fixed payload, unpack it, and consume only its C11, multi-TU C++20,
+  and machine-protocol SDK surface.
+- Run Linux Clang ASan/UBSan and upload release packages for Windows x64,
+  Linux x64/AArch64, and macOS x64/ARM64.
+- Require an explicit compatibility review for every later candidate change;
+  v1.0 still owns final CLI/API policy, support/manual closure, fuzz/performance
+  characterization, provenance, and publication.
 
 ### v1.0: Contract Freeze And Release
 

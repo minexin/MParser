@@ -69,19 +69,30 @@ string(REPLACE "\r\n" "\n" tool_output "${tool_output}")
 string(REPLACE "\n" ";" tool_lines "${tool_output}")
 set(leaked_internal_symbols)
 foreach(line IN LISTS tool_lines)
+    set(external_symbol "")
     if(WIN32 AND
-       line MATCHES "[ \t](mparser_[A-Za-z0-9_]+)[ \t]*$")
-        list(APPEND actual_symbols "${CMAKE_MATCH_1}")
+       line MATCHES
+       "^[ \t]*[0-9]+[ \t]+[0-9A-Fa-f]+[ \t]+[0-9A-Fa-f]+[ \t]+([^ \t=]+)")
+        set(external_symbol "${CMAKE_MATCH_1}")
     elseif(APPLE AND
-           line MATCHES "[ \t]_?(mparser_[A-Za-z0-9_]+)[ \t]*$")
-        list(APPEND actual_symbols "${CMAKE_MATCH_1}")
+           line MATCHES
+           "^[0-9A-Fa-f]+[ \t]+[A-Za-z][ \t]+([^ \t]+)[ \t]*$")
+        set(external_symbol "${CMAKE_MATCH_1}")
+        string(REGEX REPLACE "^_" "" external_symbol
+            "${external_symbol}")
     elseif(UNIX AND
-           line MATCHES "[ \t](mparser_[A-Za-z0-9_]+)[ \t]*$")
-        list(APPEND actual_symbols "${CMAKE_MATCH_1}")
+           line MATCHES
+           "^[ \t]*[0-9]+:[ \t]+[0-9A-Fa-f]+[ \t]+[0-9]+[ \t]+(FUNC|OBJECT|NOTYPE)[ \t]+(GLOBAL|WEAK)[ \t]+(DEFAULT|PROTECTED)[ \t]+([^ \t]+)[ \t]+([^ \t]+)[ \t]*$")
+        if(NOT CMAKE_MATCH_4 STREQUAL "UND")
+            set(external_symbol "${CMAKE_MATCH_5}")
+        endif()
     endif()
-    if(line MATCHES
-       "[ \t](_?sljit_[A-Za-z0-9_]+|_*ZNK?7mparser[A-Za-z0-9_]+)[ \t]*$")
-        list(APPEND leaked_internal_symbols "${CMAKE_MATCH_1}")
+    if(NOT external_symbol STREQUAL "")
+        list(APPEND actual_symbols "${external_symbol}")
+    endif()
+    if(external_symbol MATCHES
+       "^(_?sljit_|_*ZNK?7mparser)")
+        list(APPEND leaked_internal_symbols "${external_symbol}")
     endif()
 endforeach()
 list(REMOVE_DUPLICATES actual_symbols)

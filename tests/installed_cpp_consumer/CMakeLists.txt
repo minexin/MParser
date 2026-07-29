@@ -18,6 +18,17 @@ if(NOT MParser_C_ABI_VERSION EQUAL 1 OR
     message(FATAL_ERROR
         "Unexpected installed C ABI: ${MParser_C_ABI_VERSION}.${MParser_C_ABI_REVISION}")
 endif()
+if(NOT MParser_CPP_API_VERSION_MAJOR EQUAL 1 OR
+   NOT MParser_CPP_API_VERSION_MINOR EQUAL 0)
+    message(FATAL_ERROR
+        "Unexpected C++ source API: ${MParser_CPP_API_VERSION_MAJOR}.${MParser_CPP_API_VERSION_MINOR}")
+endif()
+if(NOT MParser_MACHINE_PROTOCOL_NAME STREQUAL "mparser.result" OR
+   NOT MParser_MACHINE_PROTOCOL_MAJOR EQUAL 1 OR
+   NOT MParser_MACHINE_PROTOCOL_MINOR EQUAL 0)
+    message(FATAL_ERROR
+        "Unexpected machine protocol: ${MParser_MACHINE_PROTOCOL_NAME} ${MParser_MACHINE_PROTOCOL_MAJOR}.${MParser_MACHINE_PROTOCOL_MINOR}")
+endif()
 if(NOT MParser_LICENSE STREQUAL "Apache-2.0")
     message(FATAL_ERROR
         "Unexpected installed project license: ${MParser_LICENSE}")
@@ -27,13 +38,17 @@ if(NOT MParser_COPYRIGHT STREQUAL "Copyright 2026 Wang Xin")
         "Unexpected installed project copyright: ${MParser_COPYRIGHT}")
 endif()
 
-add_executable(mparser_installed_cpp_consumer main.cpp)
+add_executable(mparser_installed_cpp_consumer
+    main.cpp
+    consumer_module.cpp)
 target_link_libraries(mparser_installed_cpp_consumer PRIVATE MParser::cpp_api)
 target_compile_features(mparser_installed_cpp_consumer PRIVATE cxx_std_20)
 target_compile_definitions(mparser_installed_cpp_consumer PRIVATE
     MPARSER_EXPECTED_VERSION_MAJOR=${MParser_VERSION_MAJOR}
     MPARSER_EXPECTED_VERSION_MINOR=${MParser_VERSION_MINOR}
-    MPARSER_EXPECTED_VERSION_PATCH=${MParser_VERSION_PATCH})
+    MPARSER_EXPECTED_VERSION_PATCH=${MParser_VERSION_PATCH}
+    MPARSER_EXPECTED_CPP_API_VERSION_MAJOR=${MParser_CPP_API_VERSION_MAJOR}
+    MPARSER_EXPECTED_CPP_API_VERSION_MINOR=${MParser_CPP_API_VERSION_MINOR})
 
 if(WIN32)
     add_custom_command(TARGET mparser_installed_cpp_consumer POST_BUILD
@@ -47,7 +62,7 @@ add_test(NAME installed_cpp_api_runtime
     COMMAND mparser_installed_cpp_consumer)
 set_tests_properties(installed_cpp_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-1.1")
+        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-1.1,cpp-1.0")
 
 add_test(NAME installed_cpp_cli_version
     COMMAND MParser::cli --version)

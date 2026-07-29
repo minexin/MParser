@@ -2,6 +2,7 @@
 
 #include "mparser/module_execution.h"
 
+#include <cstdio>
 #include <string>
 #include <string_view>
 
@@ -13,6 +14,16 @@ inline constexpr unsigned kMachineResultProtocolMinor = 0;
 std::string serializeMachineResultJsonV1(
     const ModuleInvocationResult& result,
     std::string_view engineVersion);
+
+std::string_view machineProtocolEmergencyJsonV1() noexcept;
+
+int writeMachineProtocolEmergencyJsonV1(
+    std::FILE* output) noexcept;
+
+int writeMachineResultJsonV1(
+    std::FILE* output,
+    const ModuleInvocationResult& result,
+    std::string_view engineVersion) noexcept;
 
 int machineResultExitCode(ModuleInvocationStatus status) noexcept;
 

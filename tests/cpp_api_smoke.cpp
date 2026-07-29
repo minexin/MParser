@@ -319,12 +319,18 @@ void runModuleSmoke(
 
 int main(int argc, char** argv) {
     assert(argc == 3);
+    constexpr auto sourceApiVersion =
+        mparser::sdk::sourceApiVersion();
+    static_assert(sourceApiVersion.major == 1);
+    static_assert(sourceApiVersion.minor == 0);
     assert(mparser::sdk::abiMajor() == 1);
     assert(mparser::sdk::abiRevision() >= 1);
     runValueSmoke();
     runModuleSmoke(argv[1], argv[2]);
     std::cout << "cpp api smoke = 5050,42,21,abi-"
               << mparser::sdk::abiMajor() << '.'
-              << mparser::sdk::abiRevision() << '\n';
+              << mparser::sdk::abiRevision() << ",cpp-"
+              << sourceApiVersion.major << '.'
+              << sourceApiVersion.minor << '\n';
     return 0;
 }

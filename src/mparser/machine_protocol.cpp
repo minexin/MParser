@@ -16,10 +16,58 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 namespace mparser {
 namespace {
 
 constexpr size_t kMaximumProtocolNestingDepth = 128;
+constexpr std::string_view kEmergencyMachineResultJsonV1 =
+    "{\"protocol\":{\"name\":\"mparser.result\",\"major\":1,\"minor\":0},"
+    "\"engine\":{\"name\":\"MParser\",\"version\":\"unknown\"},"
+    "\"status\":\"request-rejected\",\"entry_function\":\"\","
+    "\"requested_output_count\":0,\"outputs\":[],\"workspace\":[],"
+    "\"diagnostics\":[{\"phase\":\"validation\",\"severity\":\"error\","
+    "\"identifier\":\"MParser:ProtocolFailure\","
+    "\"message\":\"host failure while producing machine result\","
+    "\"source\":null,\"stack\":[],\"causes\":[]}],"
+    "\"execution\":{\"requested_backend\":\"automatic\","
+    "\"effective_tier\":\"bytecode\",\"profiling_collected\":false,"
+    "\"fallback_occurred\":false,\"resource_controls_active\":false,"
+    "\"optimized_execution_suppressed\":false,\"stop_reason\":\"none\","
+    "\"executed_instruction_count\":0,\"typed_region_count\":0,"
+    "\"typed_region_attempt_count\":0,"
+    "\"typed_region_execution_count\":0,"
+    "\"typed_region_fallback_count\":0,\"native_compilation_count\":0,"
+    "\"native_cache_hit_count\":0,\"maximum_call_depth\":0,"
+    "\"maximum_array_bytes\":0,\"maximum_diagnostic_count\":0,"
+    "\"elapsed_nanoseconds\":0}}";
+
+bool writeMachineDocument(
+    std::FILE* output, std::string_view document) noexcept {
+    if (!output) {
+        return false;
+    }
+#if defined(_WIN32)
+    if (::_setmode(::_fileno(output), _O_BINARY) == -1) {
+        return false;
+    }
+#endif
+    if (!document.empty() &&
+        std::fwrite(
+            document.data(), 1, document.size(), output) !=
+            document.size()) {
+        return false;
+    }
+    constexpr char terminalLf = '\n';
+    if (std::fwrite(&terminalLf, 1, 1, output) != 1) {
+        return false;
+    }
+    return std::fflush(output) == 0;
+}
 
 class JsonWriter {
 public:
@@ -828,6 +876,33 @@ std::string serializeMachineResultJsonV1(
     writeExecutionSummary(writer, result.execution);
     writer.endObject();
     return writer.finish();
+}
+
+std::string_view machineProtocolEmergencyJsonV1() noexcept {
+    return kEmergencyMachineResultJsonV1;
+}
+
+int writeMachineProtocolEmergencyJsonV1(
+    std::FILE* output) noexcept {
+    (void)writeMachineDocument(
+        output, kEmergencyMachineResultJsonV1);
+    return 4;
+}
+
+int writeMachineResultJsonV1(
+    std::FILE* output,
+    const ModuleInvocationResult& result,
+    std::string_view engineVersion) noexcept {
+    try {
+        const auto document =
+            serializeMachineResultJsonV1(result, engineVersion);
+        if (!writeMachineDocument(output, document)) {
+            return 4;
+        }
+        return machineResultExitCode(result.status);
+    } catch (...) {
+        return writeMachineProtocolEmergencyJsonV1(output);
+    }
 }
 
 int machineResultExitCode(ModuleInvocationStatus status) noexcept {

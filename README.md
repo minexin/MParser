@@ -1,8 +1,10 @@
 # MParser
 
-Current milestone: v0.89.0. See [docs/v0.89.md](docs/v0.89.md) for the
+Current milestone: v0.90.0. See [docs/v0.90.md](docs/v0.90.md) for the
 current bytecode VM scope, supported subset, validation commands, and next
 iteration plan,
+[docs/public-contract-v1.json](docs/public-contract-v1.json) for the
+machine-validated C/C++/protocol candidate freeze,
 [docs/embedding-cpp-api.md](docs/embedding-cpp-api.md) for the public C++20
 RAII embedding SDK,
 [docs/c-abi-compatibility.md](docs/c-abi-compatibility.md) for C ABI evolution
@@ -13,7 +15,8 @@ versioned CLI automation contract,
 embedding contract, and
 [docs/extending-builtins.md](docs/extending-builtins.md)
 for the source-level C++ builtin extension contract. Previous boundaries are
-kept in [docs/v0.88.md](docs/v0.88.md),
+kept in [docs/v0.89.md](docs/v0.89.md),
+[docs/v0.88.md](docs/v0.88.md),
 [docs/v0.87.md](docs/v0.87.md),
 [docs/v0.86.md](docs/v0.86.md),
 [docs/v0.85.md](docs/v0.85.md),
@@ -945,6 +948,27 @@ install, and consume both public C and C++ SDKs. The v1.0 transport candidate
 uses copy-in arrays plus readonly output spans; a stable external native
 callback table is explicitly Post-v1.0.
 
+v0.90 freezes the combined embedding and automation boundary as a
+machine-checkable v1 candidate. The public contract manifest locks C ABI
+`1.1`, the 90-symbol export set, 64-bit public record layouts, C++ source API
+`1.0`, machine result protocol `1.0`, their immutable snapshots, and the
+review policy for later changes. The C++ facade remains header-only and has no
+C++ binary ABI. Machine mode now publishes a JSON Schema, exact single-line
+framing, structured rejection of human-only options, exact unsigned 64-bit
+counters, and an allocation-free exit-4 emergency document.
+
+The same milestone adds deterministic C-boundary allocation/internal-failure
+injection, pre/post-execution commit tests, concurrent native-cache churn, and
+a Linux Clang ASan/UBSan CI lane. The v1.0 native cache is explicitly bounded
+and process-local; a disk cache remains deferred until atomic persistence,
+corruption recovery, bounds, and complete invalidation keys exist.
+Platform/architecture-named ZIP or TGZ release archives carry Apache-2.0,
+`Copyright 2026 Wang Xin`, checksums, installed public contracts, and the
+relocatable SDK. Their smoke test packages a fixed payload twice, unpacks it,
+builds independent C11 and multi-translation-unit C++20 consumers, and runs
+the installed CLI protocol. Checksums prove integrity, not publisher identity;
+signing or provenance attestation remains a v1.0 release operation.
+
 Install and consume the C SDK:
 
 ```powershell
@@ -954,8 +978,17 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 0.89.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 0.90.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
+```
+
+Create a checksummed release archive:
+
+```powershell
+cmake -S . -B build-package `
+  -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+cmake --build build-package --config Release `
+  --target mparser_release_package
 ```
 
 Build and run the resource-control embedding example:
@@ -1163,9 +1196,10 @@ build\mparser.exe --run --result-format=json-v1 `
 ```
 
 The command writes exactly one JSON document to stdout for success,
-compilation failure, request rejection, or runtime failure. Arrays are
-column-major at this boundary. Exit codes are respectively `0`, `1`, `2`, and
-`3`; see
+compilation failure, request rejection, runtime failure, and serialization
+emergencies while stdout remains writable. Arrays are column-major at this
+boundary. Exit codes are respectively `0`, `1`, `2`, `3`, and `4`; an output
+transport failure can make exit-4 stdout incomplete. See
 [docs/machine-result-protocol.md](docs/machine-result-protocol.md) for the
 complete schema and compatibility rules.
 

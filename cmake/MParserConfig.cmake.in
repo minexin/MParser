@@ -8,6 +8,11 @@ set(MParser_VERSION_MINOR "@PROJECT_VERSION_MINOR@")
 set(MParser_VERSION_PATCH "@PROJECT_VERSION_PATCH@")
 set(MParser_C_ABI_VERSION "@MPARSER_C_ABI_VERSION@")
 set(MParser_C_ABI_REVISION "@MPARSER_C_ABI_REVISION@")
+set(MParser_CPP_API_VERSION_MAJOR "1")
+set(MParser_CPP_API_VERSION_MINOR "0")
+set(MParser_MACHINE_PROTOCOL_NAME "mparser.result")
+set(MParser_MACHINE_PROTOCOL_MAJOR "1")
+set(MParser_MACHINE_PROTOCOL_MINOR "0")
 set(MParser_LICENSE "@MPARSER_PROJECT_LICENSE@")
 set(MParser_COPYRIGHT "@MPARSER_PROJECT_COPYRIGHT@")
 set(MParser_C_FOUND TRUE)
@@ -29,5 +34,11 @@ set_and_check(
 set_and_check(
     MParser_THIRD_PARTY_NOTICES_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/THIRD_PARTY_NOTICES.md")
+set_and_check(
+    MParser_PUBLIC_CONTRACT_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/public-contract-v1.json")
+set_and_check(
+    MParser_MACHINE_PROTOCOL_SCHEMA_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/machine-result-v1.schema.json")
 
 check_required_components(MParser)

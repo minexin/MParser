@@ -1,5 +1,6 @@
 #include "mparser/c_api.h"
 
+#include "mparser/c_api_test_hooks.h"
 #include "mparser/compiled_module.h"
 #include "mparser/filesystem_utf8.h"
 #include "mparser/runtime_shape.h"
@@ -26,6 +27,54 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+namespace mparser::c_api_test {
+
+#if defined(MPARSER_C_API_TEST_FAULTS)
+namespace {
+
+struct UnknownFault final {};
+
+struct FaultState {
+    FaultPoint point = FaultPoint::None;
+    ExceptionKind kind = ExceptionKind::BadAllocation;
+    std::size_t matchingCallsBeforeFailure = 0;
+};
+
+thread_local FaultState faultState;
+
+} // namespace
+
+void arm(FaultPoint point, ExceptionKind kind,
+         std::size_t matchingCallsBeforeFailure) noexcept {
+    faultState = FaultState{
+        point, kind, matchingCallsBeforeFailure};
+}
+
+void clear() noexcept {
+    faultState = {};
+}
+
+void inject(FaultPoint point) {
+    if (faultState.point != point) {
+        return;
+    }
+    if (faultState.matchingCallsBeforeFailure != 0) {
+        --faultState.matchingCallsBeforeFailure;
+        return;
+    }
+    const auto kind = faultState.kind;
+    clear();
+    if (kind == ExceptionKind::BadAllocation) {
+        throw std::bad_alloc();
+    }
+    throw UnknownFault{};
+}
+#else
+void inject(FaultPoint) {}
+#endif
+
+} // namespace mparser::c_api_test
 
 #ifndef MPARSER_VERSION_MAJOR
 #define MPARSER_VERSION_MAJOR 0
@@ -316,6 +365,8 @@ bool validPathText(std::string_view value) noexcept {
 mparser_api_status publishCompiledModule(
     mparser::CompiledModule compiled,
     mparser_module** out_module) {
+    mparser::c_api_test::inject(
+        mparser::c_api_test::FaultPoint::ModulePublish);
     auto state =
         std::make_shared<ModuleState>(std::move(compiled));
     state->diagnostics.reserve(
@@ -617,6 +668,8 @@ mparser_api_status makeValueHandle(
     }
     *outValue = nullptr;
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ValuePublish);
         std::unique_lock<std::recursive_mutex> sharedGraphLock;
         const bool requiresModule =
             owner && runtimeValueRequiresModule(value);
@@ -639,6 +692,8 @@ mparser_api_status makeValueHandle(
         if (requiresModule) {
             state->owner = std::move(owner);
         }
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExternalValueCaches);
         if (!buildExternalCaches(*state)) {
             return MPARSER_API_STATUS_INTERNAL_ERROR;
         }
@@ -849,9 +904,13 @@ mparser_api_status makeResultHandle(
     }
     *outResult = nullptr;
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ResultPublish);
         auto handle = std::make_unique<mparser_result>();
         handle->value = std::move(result);
         handle->owner = std::move(owner);
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::DiagnosticCopy);
         handle->diagnostics.reserve(
             handle->value.diagnostics.size());
         for (const auto& diagnostic :
@@ -1147,6 +1206,8 @@ mparser_api_status mparser_module_compile_utf8(
     }
     *out_module = nullptr;
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::SourceCopy);
         const auto sourceText =
             copyBytes(source, source_size);
         const auto sourceName =
@@ -1182,6 +1243,8 @@ mparser_api_status mparser_module_compile_sources(
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::SourceCopy);
         std::vector<mparser::SourceUnit> copiedSources;
         copiedSources.reserve(source_count);
         for (size_t index = 0; index < source_count; ++index) {
@@ -1222,6 +1285,8 @@ mparser_api_status mparser_module_load_file_utf8(
     }
     *out_module = nullptr;
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::SourceCopy);
         const auto entryText =
             copyBytes(entry_path, entry_path_size);
         if (!entryText || !validPathText(*entryText)) {
@@ -1374,9 +1439,13 @@ mparser_api_status mparser_module_execute(
                 std::unique_lock<std::recursive_mutex>(
                     module->state->sharedGraphMutex);
         }
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExecuteBeforeCore);
+        auto result = module->state->module.execute(request);
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExecuteAfterCore);
         return makeResultHandle(
-            module->state->module.execute(request),
-            module->state, out_result);
+            std::move(result), module->state, out_result);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {
@@ -1399,6 +1468,8 @@ mparser_api_status mparser_module_create_session(
         return MPARSER_API_STATUS_COMPILATION_FAILED;
     }
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::SessionCreate);
         auto state = std::make_shared<SessionState>(
             module->state,
             module->state->module.createSession());
@@ -1446,8 +1517,13 @@ mparser_api_status mparser_session_execute(
         std::lock_guard sharedGraphLock(
             session->state->module->sharedGraphMutex);
         std::lock_guard lock(session->state->mutex);
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExecuteBeforeCore);
+        auto result = session->state->session.execute(request);
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExecuteAfterCore);
         return makeResultHandle(
-            session->state->session.execute(request),
+            std::move(result),
             session->state->module, out_result);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
@@ -2030,6 +2106,8 @@ mparser_api_status mparser_value_create_cell(
     }
     *out_value = nullptr;
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::CellCompose);
         std::vector<size_t> shape;
         const auto shapeStatus = copyDimensions(
             dimensions, rank, element_count, shape);
@@ -2080,6 +2158,8 @@ mparser_api_status mparser_value_create_struct(
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::StructCompose);
         mparser::RuntimeWorkspace runtimeFields;
         std::vector<std::string> fieldOrder;
         fieldOrder.reserve(field_count);
@@ -2391,6 +2471,8 @@ mparser_cancel_token_create(
     }
     *out_token = nullptr;
     try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::CancelTokenCreate);
         *out_token = new mparser_cancel_token;
         return MPARSER_API_STATUS_OK;
     } catch (const std::bad_alloc&) {

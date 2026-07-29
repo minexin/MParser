@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.89.0 LANGUAGES C CXX)
+project(MParser VERSION 0.90.0 LANGUAGES C CXX)
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -22,8 +22,49 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(MPARSER_ENABLE_NATIVE_JIT
     "Build the optional SLJIT native scalar-loop backend" ON)
+option(MPARSER_ENABLE_RELEASE_PACKAGING
+    "Enable reproducible-payload release archives and package validation" OFF)
+set(MPARSER_RELEASE_SOURCE_DATE_EPOCH "1767225600" CACHE STRING
+    "UTC epoch used to normalize release archive metadata")
 set(MPARSER_SLJIT_SOURCE_DIR "" CACHE PATH
     "SLJIT source override; empty uses third_party/sljit")
+
+if(MPARSER_ENABLE_RELEASE_PACKAGING)
+    string(TOLOWER
+        "${CMAKE_SYSTEM_PROCESSOR}" _mparser_release_processor)
+    if(_mparser_release_processor MATCHES
+       "^(amd64|x86_64|x64)$")
+        set(MPARSER_RELEASE_ARCHITECTURE "x86_64")
+    elseif(_mparser_release_processor STREQUAL "aarch64")
+        set(MPARSER_RELEASE_ARCHITECTURE "aarch64")
+    elseif(_mparser_release_processor STREQUAL "arm64")
+        set(MPARSER_RELEASE_ARCHITECTURE "arm64")
+    else()
+        message(FATAL_ERROR
+            "Release packaging does not recognize architecture: "
+            "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    if(WIN32)
+        set(MPARSER_RELEASE_PLATFORM "windows")
+        set(MPARSER_RELEASE_PACKAGE_EXTENSION ".zip")
+    elseif(APPLE)
+        set(MPARSER_RELEASE_PLATFORM "macos")
+        set(MPARSER_RELEASE_PACKAGE_EXTENSION ".tar.gz")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(MPARSER_RELEASE_PLATFORM "linux")
+        set(MPARSER_RELEASE_PACKAGE_EXTENSION ".tar.gz")
+    else()
+        message(FATAL_ERROR
+            "Release packaging does not recognize platform: "
+            "${CMAKE_SYSTEM_NAME}")
+    endif()
+    set(MPARSER_RELEASE_PACKAGE_BASENAME
+        "mparser-${PROJECT_VERSION}-${MPARSER_RELEASE_PLATFORM}-${MPARSER_RELEASE_ARCHITECTURE}")
+    if(MSVC)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
 
 if(MPARSER_ENABLE_NATIVE_JIT)
     if(MPARSER_SLJIT_SOURCE_DIR)
@@ -61,7 +102,7 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     endif()
 endif()
 
-add_library(mparser_core
+add_library(mparser_core STATIC
     src/mparser/adaptive_module_runtime.cpp
     src/mparser/adaptive_bytecode_vm.cpp
     src/mparser/argument_contract.cpp
@@ -362,6 +403,21 @@ add_test(NAME project_license_smoke
         -DNOTICE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/NOTICE
         -DTHIRD_PARTY_NOTICES_FILE=${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_project_license.cmake)
+
+add_test(NAME public_contract_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DCONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.json
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_C_ABI_MAJOR=${MPARSER_C_ABI_VERSION}
+        -DEXPECTED_C_ABI_REVISION=${MPARSER_C_ABI_REVISION}
+        -DEXPECTED_C_SYMBOL_COUNT=90
+        -DEXPECTED_PROTOCOL_MAJOR=1
+        -DEXPECTED_PROTOCOL_MINOR=0
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_public_contract.cmake)
+set_tests_properties(public_contract_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "MParser public contract validated: C ABI 1.1, 90 symbols, C\\+\\+20 source API, mparser.result 1.0")
 set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
@@ -1295,7 +1351,19 @@ target_link_libraries(machine_protocol_smoke_tests PRIVATE
     mparser_core)
 add_test(NAME machine_protocol_smoke
     COMMAND machine_protocol_smoke_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_v1.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_v1.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_emergency_v1.json)
+
+add_test(NAME machine_protocol_contract_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DSCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/machine-result-v1.schema.json
+        -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_v1.json
+        -DEMERGENCY=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_emergency_v1.json
+        -DSNAPSHOT=${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/protocol/1.0/machine_result_1_0.json
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_machine_protocol_contract.cmake)
+set_tests_properties(machine_protocol_contract_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "MParser machine protocol contract validated: schema 1, exact uint64, emergency, additive minor, five negative cases")
 
 add_test(NAME machine_protocol_cli_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -1343,6 +1411,59 @@ add_test(NAME c_api_smoke
     COMMAND c_api_smoke_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/app/run_demo.m
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
+
+add_executable(c_api_allocation_failure_tests
+    tests/c_api_allocation_failure.cpp
+    src/mparser/c_api.cpp)
+target_include_directories(c_api_allocation_failure_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(c_api_allocation_failure_tests PRIVATE
+    mparser_core)
+target_compile_definitions(c_api_allocation_failure_tests PRIVATE
+    MPARSER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    MPARSER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+    MPARSER_C_ABI_VERSION_EXPECTED=${MPARSER_C_ABI_VERSION}
+    MPARSER_C_ABI_REVISION_EXPECTED=${MPARSER_C_ABI_REVISION})
+if(MSVC)
+    target_compile_options(c_api_allocation_failure_tests PRIVATE
+        /W4 /permissive-)
+else()
+    target_compile_options(c_api_allocation_failure_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME c_api_allocation_failure
+    COMMAND c_api_allocation_failure_tests)
+set_tests_properties(c_api_allocation_failure PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "c api allocation failure = protocol,compile,value,token,session,execute,output")
+
+add_executable(c_api_named_fault_smoke_tests
+    tests/c_api_named_fault_smoke.cpp
+    src/mparser/c_api.cpp)
+target_include_directories(c_api_named_fault_smoke_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(c_api_named_fault_smoke_tests PRIVATE
+    mparser_core Threads::Threads)
+target_compile_definitions(c_api_named_fault_smoke_tests PRIVATE
+    MPARSER_C_API_TEST_FAULTS=1
+    MPARSER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    MPARSER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+    MPARSER_C_ABI_VERSION_EXPECTED=${MPARSER_C_ABI_VERSION}
+    MPARSER_C_ABI_REVISION_EXPECTED=${MPARSER_C_ABI_REVISION})
+if(MSVC)
+    target_compile_options(c_api_named_fault_smoke_tests PRIVATE
+        /W4 /permissive-)
+else()
+    target_compile_options(c_api_named_fault_smoke_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME c_api_named_fault_smoke
+    COMMAND c_api_named_fault_smoke_tests)
+set_tests_properties(c_api_named_fault_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "c api named faults = allocation,internal,thread-local,nontransactional")
 
 add_executable(c_api_lifecycle_stress_tests
     tests/c_api_lifecycle_stress.cpp)
@@ -1403,7 +1524,7 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-1.1")
+        "cpp api smoke = 5050,42,21,abi-1.1,cpp-1.0")
 
 add_executable(cpp_api_concurrency_stress_tests
     tests/cpp_api_concurrency_stress.cpp)
@@ -1413,7 +1534,7 @@ add_test(NAME cpp_api_concurrency_stress
     COMMAND cpp_api_concurrency_stress_tests)
 set_tests_properties(cpp_api_concurrency_stress PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api concurrency stress = 800,800,200,50,cancelled-8,limited-8"
+        "cpp api concurrency stress = 800,800,200,50,mutated-400,cancelled-8,limited-8"
     TIMEOUT 120)
 
 add_executable(mparser_cpp_embedding_demo
@@ -1436,7 +1557,7 @@ endif()
 add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "cpp sdk = 5050,5,abi-1.1")
+    PASS_REGULAR_EXPRESSION "cpp sdk = 5050,5,abi-1.1,cpp-1.0")
 
 add_executable(c_api_v1_compat_smoke_tests
     tests/c_api_v1_compat_smoke.c)
@@ -1451,6 +1572,46 @@ add_test(NAME c_api_v1_compat_smoke
 set_tests_properties(c_api_v1_compat_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "c api v1 compatibility = 42,abi-1")
+
+add_executable(c_api_v1_1_compat_smoke_tests
+    tests/c_api_v1_1_compat_smoke.c)
+target_link_libraries(c_api_v1_1_compat_smoke_tests PRIVATE
+    mparser_c_api)
+set_target_properties(c_api_v1_1_compat_smoke_tests PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+add_test(NAME c_api_v1_1_compat_smoke
+    COMMAND c_api_v1_1_compat_smoke_tests)
+set_tests_properties(c_api_v1_1_compat_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "c api 1.1 snapshot compatibility = 42,abi-1.1")
+
+add_executable(c_api_layout_contract_tests
+    tests/c_api_layout_contract.c)
+set_target_properties(c_api_layout_contract_tests PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+add_test(NAME c_api_layout_contract
+    COMMAND c_api_layout_contract_tests)
+set_tests_properties(c_api_layout_contract PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "c api layout contract = abi-1.1,64-bit")
+
+add_executable(cpp_api_v1_compat_smoke_tests
+    tests/cpp_api_v1_compat_smoke.cpp)
+target_include_directories(cpp_api_v1_compat_smoke_tests BEFORE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/cpp_api/1.0)
+target_link_libraries(cpp_api_v1_compat_smoke_tests PRIVATE
+    mparser_c_api)
+target_compile_features(cpp_api_v1_compat_smoke_tests PRIVATE
+    cxx_std_20)
+add_test(NAME cpp_api_v1_compat_smoke
+    COMMAND cpp_api_v1_compat_smoke_tests)
+set_tests_properties(cpp_api_v1_compat_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "cpp api 1.0 snapshot compatibility = 42,abi-1.1")
 
 add_executable(c_api_utf8_source_graph_smoke_tests
     tests/c_api_utf8_source_graph_smoke.cpp)
@@ -1555,6 +1716,46 @@ if(NOT CMAKE_CROSSCOMPILING)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_installed_c_consumer.cmake")
     set_tests_properties(installed_cpp_consumer_smoke PROPERTIES
         TIMEOUT 180)
+
+    if(MPARSER_ENABLE_RELEASE_PACKAGING)
+        add_test(NAME release_archive_smoke
+            COMMAND "${CMAKE_COMMAND}"
+                "-DMPARSER_CMAKE_COMMAND=${CMAKE_COMMAND}"
+                "-DMPARSER_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}"
+                "-DMPARSER_CPACK_COMMAND=${CMAKE_CPACK_COMMAND}"
+                "-DMPARSER_CPACK_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/CPackConfig.cmake"
+                "-DMPARSER_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                "-DMPARSER_PROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+                "-DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/release-archive-smoke/$<CONFIG>"
+                "-DMPARSER_PACKAGE_BASENAME=${MPARSER_RELEASE_PACKAGE_BASENAME}"
+                "-DMPARSER_PACKAGE_EXTENSION=${MPARSER_RELEASE_PACKAGE_EXTENSION}"
+                "-DMPARSER_SOURCE_DATE_EPOCH=${MPARSER_RELEASE_SOURCE_DATE_EPOCH}"
+                "-DMPARSER_INSTALL_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}"
+                "-DMPARSER_INSTALL_BINDIR=${CMAKE_INSTALL_BINDIR}"
+                "-DMPARSER_INSTALL_LIBDIR=${CMAKE_INSTALL_LIBDIR}"
+                "-DMPARSER_INSTALL_DATADIR=${CMAKE_INSTALL_DATADIR}"
+                "-DMPARSER_INSTALL_DOCDIR=${CMAKE_INSTALL_DOCDIR}"
+                "-DMPARSER_INSTALL_CMAKEDIR=${MPARSER_INSTALL_CMAKEDIR}"
+                "-DMPARSER_GENERATOR=${CMAKE_GENERATOR}"
+                "-DMPARSER_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+                "-DMPARSER_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+                "-DMPARSER_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                "-DMPARSER_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DMPARSER_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-DMPARSER_RC_COMPILER=${CMAKE_RC_COMPILER}"
+                "-DMPARSER_MT=${CMAKE_MT}"
+                "-DMPARSER_TEST_CONFIG=$<CONFIG>"
+                "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+                "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+                "-DMPARSER_EXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}"
+                "-DMPARSER_C_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_c_consumer"
+                "-DMPARSER_CPP_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_cpp_consumer"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_archive.cmake")
+        set_tests_properties(release_archive_smoke PROPERTIES
+            PASS_REGULAR_EXPRESSION
+                "MParser release archive validated: ${MPARSER_RELEASE_PACKAGE_BASENAME}${MPARSER_RELEASE_PACKAGE_EXTENSION}"
+            TIMEOUT 300)
+    endif()
 endif()
 
 # The smoke executables use standard assert as a lightweight test primitive.
@@ -1604,9 +1805,16 @@ install(FILES
     NOTICE
     README.md
     THIRD_PARTY_NOTICES.md
+    docs/public-contract-v1.json
+    docs/machine-result-v1.schema.json
+    docs/compatibility-matrix.json
+    docs/roadmap-v1.0.md
+    docs/v0.90.md
+    docs/architecture.md
     docs/c-abi-compatibility.md
     docs/embedding-c-api.md
     docs/embedding-cpp-api.md
+    docs/extending-builtins.md
     docs/machine-result-protocol.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
@@ -1619,3 +1827,50 @@ install(FILES
 install(DIRECTORY samples/class_folders/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples/class_folders"
     FILES_MATCHING PATTERN "*.m")
+
+if(MPARSER_ENABLE_RELEASE_PACKAGING)
+    set(CPACK_PACKAGE_NAME "mparser")
+    set(CPACK_PACKAGE_VENDOR "Wang Xin")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+        "Embeddable MATLAB-like subset runtime")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_FILE_NAME
+        "${MPARSER_RELEASE_PACKAGE_BASENAME}")
+    set(CPACK_PACKAGE_DIRECTORY
+        "${CMAKE_CURRENT_BINARY_DIR}/packages")
+    set(CPACK_RESOURCE_FILE_LICENSE
+        "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+    set(CPACK_RESOURCE_FILE_README
+        "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+    set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
+    set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+    set(CPACK_MONOLITHIC_INSTALL ON)
+    set(CPACK_PACKAGE_CHECKSUM SHA256)
+    set(CPACK_THREADS 1)
+    if(WIN32)
+        set(CPACK_GENERATOR ZIP)
+    else()
+        set(CPACK_GENERATOR TGZ)
+    endif()
+    if(POLICY CMP0206)
+        cmake_policy(SET CMP0206 NEW)
+        set(CPACK_ARCHIVE_UID 0)
+        set(CPACK_ARCHIVE_GID 0)
+    endif()
+    include(CPack)
+
+    add_custom_target(mparser_release_package
+        COMMAND "${CMAKE_COMMAND}"
+            "-DMPARSER_CMAKE_COMMAND=${CMAKE_COMMAND}"
+            "-DMPARSER_CPACK_COMMAND=${CMAKE_CPACK_COMMAND}"
+            "-DMPARSER_CPACK_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/CPackConfig.cmake"
+            "-DMPARSER_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            "-DMPARSER_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/packages"
+            "-DMPARSER_PACKAGE_BASENAME=${MPARSER_RELEASE_PACKAGE_BASENAME}"
+            "-DMPARSER_PACKAGE_EXTENSION=${MPARSER_RELEASE_PACKAGE_EXTENSION}"
+            "-DMPARSER_SOURCE_DATE_EPOCH=${MPARSER_RELEASE_SOURCE_DATE_EPOCH}"
+            "-DMPARSER_CONFIG=$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/create_release_package.cmake"
+        DEPENDS mparser mparser_c_api
+        USES_TERMINAL)
+endif()

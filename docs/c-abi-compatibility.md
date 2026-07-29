@@ -1,14 +1,16 @@
 # MParser C ABI Compatibility
 
-MParser v0.89 enforces the evolution rules for C ABI candidate major 1. The
-candidate is still pre-v1.0, but its compatibility behavior is executable and
-must be reviewed before any public layout or symbol changes.
+MParser v0.90 freezes the v1 candidate for C ABI major 1 revision 1. It remains
+a pre-v1.0 candidate rather than a final release promise, but its symbols,
+records, constants, ownership, and evolution rules are now machine-checked.
+Every public layout or symbol change requires the review recorded in
+`public-contract-v1.json`.
 
 The current tuple is:
 
 - ABI major: `MPARSER_C_ABI_VERSION_MAJOR == 1`;
 - ABI revision: `MPARSER_C_ABI_REVISION == 1`;
-- engine release: `0.89.0`.
+- engine release: `0.90.0`.
 
 `mparser_c_abi_version()` returns the ABI major.
 `mparser_c_abi_revision()` returns the additive feature revision. The engine
@@ -34,8 +36,9 @@ Within one ABI major, MParser must not:
 - expose a formerly opaque handle layout;
 - append fields to a sealed structure used in an array.
 
-An incompatible correction requires a new ABI major and, once the v1.0
-binary boundary is frozen, a matching shared-library ABI name.
+An incompatible correction requires a new ABI major and a matching
+shared-library ABI name. An additive change requires an ABI revision increase,
+an updated snapshot, and an old-client compatibility test before release.
 
 The current shared-library implementation version is `1.1.0`, with ABI-major
 SONAME/install name 1:
@@ -154,10 +157,10 @@ borrowed-view rules remain those in `embedding-c-api.md`.
 
 | Host binary | Runtime library | Contract |
 | --- | --- | --- |
-| v0.86 ABI-major-1 header | v0.89 | Supported through frozen old symbols and prefixes |
-| v0.89 current header | v0.89 | Supported, including sized initialization |
-| Future ABI-major-1 header | v0.89 | Supported for known prefix fields when revision-1 symbols are available |
-| v0.89 code using revision-1 symbols | v0.86 | Not load-compatible because those additive symbols do not exist |
+| v0.86 ABI-major-1 header | v0.90 | Supported through frozen old symbols and prefixes |
+| v0.90 ABI 1.1 header | v0.90 | Supported, including sized initialization |
+| Future ABI-major-1 header | v0.90 | Supported for known prefix fields when revision-1 symbols are available |
+| v0.90 code using revision-1 symbols | v0.86 | Not load-compatible because those additive symbols do not exist |
 | Different ABI major | Any | Rejected or requires a separately named ABI/library |
 
 Use package-version constraints when deploying code that depends on a newer
@@ -174,6 +177,15 @@ oversized summary output, and sealed source descriptors.
 snapshot. It links the current library, compiles a two-source graph, executes
 it, and reads an execution summary without any revision-1 declarations.
 
+`c_api_v1_1_compat_smoke` is compiled against the exact v0.90 ABI 1.1
+snapshot under `tests/public_contract/c_abi/1.1`. It exercises the current
+sized request/result boundary while linking only to the live shared library.
+
+`c_api_layout_contract` freezes the 64-bit sizes and offsets of every public C
+record together with status and enum-like values. The release platform matrix
+is 64-bit only; adding a 32-bit platform requires a separately reviewed layout
+profile rather than silently reusing these assertions.
+
 `c_abi_compat_demo_smoke` runs `samples/c_abi_compat_demo.c`, which demonstrates
 future-tail request and summary storage. The installed consumer checks ABI
 `1.1` after package relocation. Focused Linux AArch64 native and portable jobs
@@ -181,10 +193,16 @@ run the same evidence under QEMU.
 
 `c_api_shared_library_abi` inspects the built dynamic library with
 `dumpbin`, `nm`, `readelf`, or `otool` as appropriate. It rejects missing or
-unexpected `mparser_*` exports and rejects an ELF SONAME or macOS install name
-whose major differs from ABI major 1.
+unexpected externally defined exports, including accidental non-`mparser_*`
+symbols, and rejects an ELF SONAME or macOS install name whose major differs
+from ABI major 1.
 
-SOVERSION 1 names the current ABI-major candidate but does not declare the
-v1.0 freeze early. The v0.90 review may still require a new ABI major for an
-incompatible correction; after v1.0, such a change requires the documented
-major-version transition.
+`public_contract_smoke` verifies the normalized header and export-manifest
+SHA-256 values against `docs/public-contract-v1.json`. Updating those hashes
+without the required revision/major classification and compatibility evidence
+does not satisfy the review policy.
+
+SOVERSION 1 names the frozen v1 candidate. v1.0 will convert the candidate
+into the release compatibility promise; any breaking correction discovered
+before then still changes the ABI major explicitly rather than rewriting
+major 1 in place.

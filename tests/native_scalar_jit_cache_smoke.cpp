@@ -1,5 +1,6 @@
 #include "mparser/native_scalar_jit.h"
 
+#include <atomic>
 #include <barrier>
 #include <cstddef>
 #include <cmath>
@@ -245,6 +246,97 @@ void runConcurrentLookupSmoke() {
     assert(statistics.evictionCount == 0);
 }
 
+void runConcurrentCacheChurnSmoke() {
+    resetCache({16, kUnlimited});
+    constexpr size_t workerCount = 8;
+    constexpr size_t workerIterations = 64;
+    constexpr size_t controllerIterations = 192;
+    std::barrier start(
+        static_cast<std::ptrdiff_t>(workerCount + 1));
+    std::vector<std::exception_ptr> failures(workerCount + 1);
+    std::vector<std::thread> threads;
+    threads.reserve(workerCount + 1);
+
+    for (size_t worker = 0; worker < workerCount; ++worker) {
+        threads.emplace_back([&, worker]() {
+            try {
+                start.arrive_and_wait();
+                for (size_t iteration = 0;
+                     iteration < workerIterations; ++iteration) {
+                    const double increment =
+                        1.0 + static_cast<double>(
+                                  (worker * workerIterations +
+                                   iteration) %
+                                  31);
+                    (void)executeKernel(increment);
+                    const auto statistics =
+                        mparser::nativeScalarJitCacheStatistics();
+                    assert(statistics.entryCount <=
+                           statistics.limits.maxEntries);
+                    assert(statistics.codeBytes <=
+                           statistics.limits.maxCodeBytes);
+                }
+            } catch (...) {
+                failures[worker] = std::current_exception();
+            }
+        });
+    }
+
+    threads.emplace_back([&]() {
+        try {
+            start.arrive_and_wait();
+            for (size_t iteration = 0;
+                 iteration < controllerIterations; ++iteration) {
+                switch (iteration % 4) {
+                case 0:
+                    mparser::configureNativeScalarJitCache({0, 0});
+                    break;
+                case 1:
+                    mparser::configureNativeScalarJitCache(
+                        {1, kUnlimited});
+                    break;
+                case 2:
+                    mparser::configureNativeScalarJitCache(
+                        {4, kUnlimited});
+                    break;
+                default:
+                    mparser::configureNativeScalarJitCache(
+                        {16, kUnlimited});
+                    break;
+                }
+                if (iteration % 5 == 0) {
+                    mparser::clearNativeScalarJitCache();
+                }
+                const auto statistics =
+                    mparser::nativeScalarJitCacheStatistics();
+                assert(statistics.entryCount <=
+                       statistics.limits.maxEntries);
+                assert(statistics.codeBytes <=
+                       statistics.limits.maxCodeBytes);
+            }
+        } catch (...) {
+            failures[workerCount] = std::current_exception();
+        }
+    });
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    for (const auto& failure : failures) {
+        if (failure) {
+            std::rethrow_exception(failure);
+        }
+    }
+
+    mparser::configureNativeScalarJitCache({8, kUnlimited});
+    const auto statistics =
+        mparser::nativeScalarJitCacheStatistics();
+    assert(statistics.entryCount <= statistics.limits.maxEntries);
+    assert(statistics.codeBytes <= statistics.limits.maxCodeBytes);
+    assert(statistics.lookupCount == workerCount * workerIterations);
+    assert(statistics.clearCount > 0);
+}
+
 } // namespace
 
 int main() {
@@ -263,6 +355,7 @@ int main() {
         runZeroRetentionSmoke();
         runDynamicShrinkAndClearSmoke();
         runConcurrentLookupSmoke();
+        runConcurrentCacheChurnSmoke();
         std::cout << "native scalar JIT cache smoke tests passed\n";
         return 0;
     } catch (const std::exception& exception) {

@@ -18,6 +18,10 @@ double scalar(const mparser::sdk::Value& value) {
 
 int main() {
     try {
+        constexpr auto sourceApiVersion =
+            mparser::sdk::sourceApiVersion();
+        static_assert(sourceApiVersion.major == 1);
+        static_assert(sourceApiVersion.minor == 0);
         const auto module = mparser::sdk::Module::compile(R"(
 function total = sumTo(limit)
 total = 0;
@@ -66,7 +70,9 @@ end
         std::cout << "cpp sdk = " << scalar(sumResult.output(0)) << ','
                   << scalar(counterResult.output(0)) << ",abi-"
                   << mparser::sdk::abiMajor() << '.'
-                  << mparser::sdk::abiRevision() << '\n';
+                  << mparser::sdk::abiRevision() << ",cpp-"
+                  << sourceApiVersion.major << '.'
+                  << sourceApiVersion.minor << '\n';
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -206,7 +206,8 @@ mparser::ModuleInvocationResult makeResult() {
     execution.optimizedExecutionSuppressed = true;
     execution.stopReason =
         mparser::RuntimeExecutionStopReason::WallTimeLimit;
-    execution.executedInstructionCount = 1;
+    execution.executedInstructionCount =
+        std::numeric_limits<std::uint64_t>::max();
     execution.typedRegionCount = 2;
     execution.typedRegionAttemptCount = 3;
     execution.typedRegionExecutionCount = 4;
@@ -224,8 +225,9 @@ mparser::ModuleInvocationResult makeResult() {
 
 int main(int argc, char** argv) {
     try {
-        require(argc == 2,
-                "machine_protocol_smoke expects a golden-file path");
+        require(argc == 3,
+                "machine_protocol_smoke expects normal and emergency "
+                "golden-file paths");
         const auto result = makeResult();
         const std::string actual =
             mparser::serializeMachineResultJsonV1(
@@ -242,6 +244,12 @@ int main(int argc, char** argv) {
                       << actual << "\n";
             return EXIT_FAILURE;
         }
+        const std::string emergencyExpected = readGolden(argv[2]);
+        const std::string emergencyActual(
+            mparser::machineProtocolEmergencyJsonV1());
+        require(
+            emergencyActual == emergencyExpected,
+            "machine protocol emergency golden mismatch");
 
         require(
             mparser::machineResultExitCode(

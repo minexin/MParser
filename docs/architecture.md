@@ -1328,8 +1328,9 @@ share one request/result contract.
 tiers, instruction count, typed attempts/executions/fallbacks, and native
 compile/cache-hit counts. The low-level `invoke(BytecodeVmOptions)` APIs remain
 for profiling tools and source compatibility. v0.86 projects this result into
-the CLI machine protocol. v0.88 packages the header-only C++ facade; final
-C/C++/protocol compatibility review remains a v0.90 gate.
+the CLI machine protocol. v0.88 packages the header-only C++ facade. v0.90
+freezes C ABI 1.1, C++ source API 1.0, and machine protocol 1.0 as one
+machine-validated v1 candidate without exposing internal engine layouts.
 
 v0.82 attaches one `RuntimeExecutionControl` to each engine-neutral
 invocation. `RuntimeExecutionLimits` defines zero-as-unlimited instruction,
@@ -1358,9 +1359,11 @@ correctness additive: the guarded VM remains the semantic authority.
 captures. It is not an aggregate process-heap meter. Host inputs are rejected
 before entry and live VM values are observed at checkpoints; allocation-heavy
 context builtins declare `ExecutionControl` permission and must preflight or
-checkpoint their own host work. Ordinary host exceptions remain contained,
-while `std::bad_alloc` propagates until an allocation-safe reporting reserve is
-defined.
+checkpoint their own host work. Ordinary host exceptions remain contained.
+The internal source-level C++ execution API can still propagate
+`std::bad_alloc`; the public C boundary maps it to
+`MPARSER_API_STATUS_ALLOCATION_FAILED`, and machine output has a static
+allocation-free exit-4 result when ordinary serialization cannot complete.
 
 v0.83 adds a narrow C projection in `include/mparser/c_api.h` and
 `src/mparser/c_api.cpp`. `mparser_c_api` is a shared library; the static core
@@ -1399,7 +1402,9 @@ keeps v0.86 binaries safe when later headers append fields.
 size the descriptor stride. Oversized units are rejected; a future extensible
 descriptor requires a new stride-aware API. Status values and symbols are
 additive within the ABI major, while incompatible changes require a new major.
-Final compatibility review and release packaging remain v0.90 gates. See
+The v0.90 compatibility review freezes this behavior through the public
+contract manifest, exact header/export snapshots, and 64-bit record-layout
+tests. See
 [embedding-c-api.md](embedding-c-api.md) and
 [c-abi-compatibility.md](c-abi-compatibility.md).
 
@@ -1479,6 +1484,21 @@ to one retained value handle. A stable external native callback interface is
 Post-v1.0 and must be a new versioned pure-C function table; it will not
 expose the source-level registry or C++ runtime layout.
 
+v0.90 adds deterministic named C-boundary faults at source, module, session,
+execution, result, diagnostic, value, Cell/Struct, and cancellation-token
+publication points. Failures never publish partial handles. Execution is not
+globally transactional: a failure before core entry does not commit, while a
+failure after the runtime returns may leave session/object effects committed.
+This boundary is tested explicitly so host retry policy does not depend on an
+unstated rollback assumption.
+
+The same milestone freezes the generated-code cache as bounded and
+process-local for v1.0. Concurrent compilation, lookup, limit changes, and
+clears share the existing mutex/lifetime contract and are stress-tested. Disk
+persistence remains additive until atomic writes, bounds, corruption recovery,
+and source/architecture/C ABI/compiler/options/version invalidation are all
+defined.
+
 v0.87 adds two independent ABI evolution probes. `c_api_smoke` places the
 extensible prefixes inside larger host records, verifies old and sized write
 ranges, and executes invocation, source loading, and summary output through
@@ -1511,9 +1531,21 @@ Compilation, validation, source-load, CLI, and execution failures all produce
 one protocol document with stable status-specific exit codes. Human output is
 unchanged. Machine mode rejects native-cache statistics, and future
 output-producing builtins must be captured or represented rather than writing
-unframed stdout. The exact producer contract is locked by a complete golden
-fixture and parsed end-to-end CLI regressions; see
+unframed stdout. Combining machine mode with `--help` or `--version` produces
+a structured request rejection in either argument order. The exact producer
+contract is locked by a complete golden fixture, a recursive JSON Schema, an
+immutable 1.0 snapshot, exact unsigned-64-bit fixtures, a reference-consumer
+contract test, and parsed end-to-end CLI regressions; see
 [machine-result-protocol.md](machine-result-protocol.md).
+
+Release packaging uses the ordinary install graph through CPack and emits one
+platform/architecture archive with SHA-256 sidecars. A fixed
+`SOURCE_DATE_EPOCH` and single-thread archive pass make the same built payload
+reproducible. The release smoke test packages twice, checks paths and hashes,
+unpacks the SDK, builds independent C11 and multi-translation-unit C++20
+consumers, and runs the installed machine protocol without source-tree or
+loader-path access. This does not claim reproducible compilation or publisher
+identity; signing/provenance remains a release operation.
 
 The next steps include richer typed values and regions, direct inlined bounds
 checks and SIMD/vector kernels,

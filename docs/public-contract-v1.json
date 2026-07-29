@@ -1,0 +1,93 @@
+{
+  "schema": {
+    "name": "mparser.public-contract",
+    "major": 1,
+    "minor": 0
+  },
+  "candidate": {
+    "engine_version": "0.90.0",
+    "milestone": "v0.90",
+    "state": "frozen-v1-candidate"
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "copyright": "Copyright 2026 Wang Xin"
+  },
+  "c_abi": {
+    "major": 1,
+    "revision": 1,
+    "library_version": "1.1.0",
+    "soversion": 1,
+    "symbol_count": 90,
+    "header": {
+      "path": "include/mparser/c_api.h",
+      "sha256_lf": "d18a953d98cc8c17d86acf3748d757e196c21c894a079db17adaa6f54525532d"
+    },
+    "snapshot": {
+      "path": "tests/public_contract/c_abi/1.1/c_api_snapshot.h",
+      "sha256_lf": "d18a953d98cc8c17d86acf3748d757e196c21c894a079db17adaa6f54525532d"
+    },
+    "symbols": {
+      "path": "tests/c_api_abi1_symbols.txt",
+      "sha256_lf": "16f62cc898de8cc7f1aa42480cb9097dd57c0d53b8a64c0742c2d19c016f92f7"
+    },
+    "compatibility": "ABI-major-1 symbols and sealed records are immutable; extensible root records grow only by tail fields and sized initializers."
+  },
+  "cpp_api": {
+    "major": 1,
+    "minor": 0,
+    "language": "C++20",
+    "delivery": "header-only facade over the C ABI",
+    "binary_abi": "none",
+    "header": {
+      "path": "include/mparser/cpp_api.hpp",
+      "sha256_lf": "4b1605355ed4d8e90c71d498e0a042527dceadf4db842a2adae7ca4fb1d3d775"
+    },
+    "snapshot_header": {
+      "path": "tests/public_contract/cpp_api/1.0/mparser/cpp_api.hpp",
+      "sha256_lf": "4b1605355ed4d8e90c71d498e0a042527dceadf4db842a2adae7ca4fb1d3d775"
+    },
+    "snapshot_c_header": {
+      "path": "tests/public_contract/cpp_api/1.0/mparser/c_api.h",
+      "sha256_lf": "d18a953d98cc8c17d86acf3748d757e196c21c894a079db17adaa6f54525532d"
+    },
+    "compatibility": "Source compatibility is preserved within the v1 candidate; hosts link only to the narrow C shared library."
+  },
+  "machine_result_protocol": {
+    "name": "mparser.result",
+    "major": 1,
+    "minor": 0,
+    "cli_format": "json-v1",
+    "golden": {
+      "path": "tests/golden/machine_result_v1.json",
+      "sha256_lf": "2cfa8be9c10c9b04a3f806e1b1901e30191800f2978ecf7f3cab04454d758300"
+    },
+    "emergency": {
+      "path": "tests/golden/machine_result_emergency_v1.json",
+      "sha256_lf": "aabc10cb0f7faffac12e66c5f954f99b434c8972caf1e406cd3156c0be2c0fe0"
+    },
+    "snapshot": {
+      "path": "tests/public_contract/protocol/1.0/machine_result_1_0.json",
+      "sha256_lf": "2cfa8be9c10c9b04a3f806e1b1901e30191800f2978ecf7f3cab04454d758300"
+    },
+    "schema": {
+      "path": "docs/machine-result-v1.schema.json",
+      "sha256_lf": "5d0a7d51706d582b4756db99756a2617008084bf1d4e60b69af60e9420cbbcd4"
+    },
+    "compatibility": "Major 1 preserves existing field meaning and spelling; additive optional fields require a minor revision."
+  },
+  "review_policy": {
+    "required_for": [
+      "public C symbol or record changes",
+      "public C++ declaration or behavior changes",
+      "machine protocol field or exit-channel changes",
+      "ownership, lifetime, concurrency, diagnostic, or error-contract changes"
+    ],
+    "rules": [
+      "Classify the change as compatible, additive, deprecated, or breaking.",
+      "Add old-client or protocol-golden evidence before updating a frozen hash.",
+      "Increment the applicable revision, minor, or major before shipping changed semantics.",
+      "Do not remove a v1 candidate contract before the documented deprecation window."
+    ]
+  }
+}

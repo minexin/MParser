@@ -48,7 +48,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "0.89.0"
+#define MPARSER_VERSION "0.90.0"
 #endif
 
 namespace {
@@ -222,6 +222,19 @@ mparser::ModuleInvocationResult machineFailure(
     diagnostic.message = std::move(message);
     result.diagnostics.push_back(std::move(diagnostic));
     return result;
+}
+
+int writeCliMachineFailure(std::string_view message) noexcept {
+    try {
+        const auto result = machineFailure(
+            mparser::ModuleInvocationStatus::RequestRejected,
+            mparser::ModuleDiagnosticPhase::Validation,
+            "MParser:CliError", std::string(message));
+        return mparser::writeMachineResultJsonV1(
+            stdout, result, MPARSER_VERSION);
+    } catch (...) {
+        return mparser::writeMachineProtocolEmergencyJsonV1(stdout);
+    }
 }
 
 void printDiagnosticCause(const mparser::DiagnosticCause& cause,
@@ -1295,9 +1308,19 @@ int main(int argc, char** argv) {
             if (arg == "--") {
                 optionsEnded = true;
             } else if (arg == "--help" || arg == "-h") {
+                if (machineResultRequested) {
+                    throw std::invalid_argument(
+                        "--help cannot be combined with "
+                        "--result-format=json-v1");
+                }
                 printHelp();
                 return 0;
             } else if (arg == "--version") {
+                if (machineResultRequested) {
+                    throw std::invalid_argument(
+                        "--version cannot be combined with "
+                        "--result-format=json-v1");
+                }
                 std::cout << "MParser " << MPARSER_VERSION << "\n";
                 return 0;
             } else if (arg == "--tokens") {
@@ -1512,10 +1535,8 @@ int main(int argc, char** argv) {
                     request.backend, request.entryFunction,
                     request.requestedOutputCount);
             }
-            std::cout << mparser::serializeMachineResultJsonV1(
-                             result, MPARSER_VERSION)
-                      << "\n";
-            return mparser::machineResultExitCode(result.status);
+            return mparser::writeMachineResultJsonV1(
+                stdout, result, MPARSER_VERSION);
         }
 
         if (printModuleInfo) {
@@ -1857,28 +1878,14 @@ int main(int argc, char** argv) {
     } catch (const std::exception& ex) {
         if (machineResultRequested) {
             nativeCacheReporter.enabled = false;
-            const auto result = machineFailure(
-                mparser::ModuleInvocationStatus::RequestRejected,
-                mparser::ModuleDiagnosticPhase::Validation,
-                "MParser:CliError", ex.what());
-            std::cout << mparser::serializeMachineResultJsonV1(
-                             result, MPARSER_VERSION)
-                      << "\n";
-            return mparser::machineResultExitCode(result.status);
+            return writeCliMachineFailure(ex.what());
         }
         std::cerr << "error: " << ex.what() << "\n";
         return 1;
     } catch (...) {
         if (machineResultRequested) {
             nativeCacheReporter.enabled = false;
-            const auto result = machineFailure(
-                mparser::ModuleInvocationStatus::RequestRejected,
-                mparser::ModuleDiagnosticPhase::Validation,
-                "MParser:CliError", "unknown host failure");
-            std::cout << mparser::serializeMachineResultJsonV1(
-                             result, MPARSER_VERSION)
-                      << "\n";
-            return mparser::machineResultExitCode(result.status);
+            return writeCliMachineFailure("unknown host failure");
         }
         std::cerr << "error: unknown host failure\n";
         return 1;

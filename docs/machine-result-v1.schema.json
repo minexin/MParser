@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mparser.dev/schema/machine-result-v1.json",
+  "title": "MParser machine result protocol major 1",
+  "type": "object",
+  "required": [
+    "protocol",
+    "engine",
+    "status",
+    "entry_function",
+    "requested_output_count",
+    "outputs",
+    "workspace",
+    "diagnostics",
+    "execution"
+  ],
+  "properties": {
+    "protocol": {
+      "type": "object",
+      "required": ["name", "major", "minor"],
+      "properties": {
+        "name": {"const": "mparser.result"},
+        "major": {"const": 1},
+        "minor": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "engine": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "MParser"},
+        "version": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "status": {
+      "enum": [
+        "succeeded",
+        "compilation-failed",
+        "request-rejected",
+        "runtime-failed"
+      ]
+    },
+    "entry_function": {"type": "string"},
+    "requested_output_count": {"$ref": "#/$defs/uint64"},
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "value"],
+        "properties": {
+          "name": {"type": ["string", "null"]},
+          "value": {"$ref": "#/$defs/runtimeValue"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "workspace": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "value"],
+        "properties": {
+          "name": {"type": "string"},
+          "value": {"$ref": "#/$defs/runtimeValue"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/diagnostic"}
+    },
+    "execution": {"$ref": "#/$defs/execution"}
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "uint64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"$ref": "#/$defs/uint64"}
+    },
+    "runtimeValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {"kind": {"const": "missing"}},
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "class", "dimensions", "data"],
+          "properties": {
+            "kind": {"const": "numeric"},
+            "class": {"enum": ["double", "logical"]},
+            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "data": {
+              "type": "array",
+              "items": {
+                "type": ["number", "boolean", "string"]
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "dimensions", "utf16"],
+          "properties": {
+            "kind": {"const": "character"},
+            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "utf16": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "dimensions", "data"],
+          "properties": {
+            "kind": {"const": "string"},
+            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "data": {
+              "type": "array",
+              "items": {"type": ["string", "null"]}
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "dimensions", "data"],
+          "properties": {
+            "kind": {"const": "cell"},
+            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "data": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/runtimeValue"}
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "dimensions", "fields", "data"],
+          "properties": {
+            "kind": {"const": "struct"},
+            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "fields": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "data": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/runtimeValue"
+                }
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "class",
+            "dimensions",
+            "handle",
+            "representation"
+          ],
+          "properties": {
+            "kind": {"const": "object"},
+            "class": {"type": "string"},
+            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "handle": {"type": "boolean"},
+            "enumeration_member": {"type": ["string", "null"]},
+            "representation": {"const": "opaque"}
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "dimensions",
+            "handle_kind",
+            "backend",
+            "display",
+            "target_name",
+            "module_bound"
+          ],
+          "properties": {
+            "kind": {"const": "function-handle"},
+            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "handle_kind": {"type": "string"},
+            "backend": {"type": "string"},
+            "display": {"type": "string"},
+            "target_name": {"type": "string"},
+            "class_name": {"type": ["string", "null"]},
+            "method_name": {"type": ["string", "null"]},
+            "declaring_class": {"type": ["string", "null"]},
+            "module_bound": {"type": "boolean"}
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "dimensions", "data"],
+          "properties": {
+            "kind": {"const": "comma-separated-list"},
+            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "data": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/runtimeValue"}
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "name", "value"],
+          "properties": {
+            "kind": {"const": "name-value-argument"},
+            "name": {"type": "string"},
+            "value": {"$ref": "#/$defs/runtimeValue"}
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "position": {
+      "type": "object",
+      "required": ["offset", "line", "column"],
+      "properties": {
+        "offset": {"$ref": "#/$defs/uint64"},
+        "line": {"type": "integer"},
+        "column": {"type": "integer"}
+      },
+      "additionalProperties": true
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": [
+        "phase",
+        "severity",
+        "identifier",
+        "message",
+        "source",
+        "stack",
+        "causes"
+      ],
+      "properties": {
+        "phase": {
+          "enum": ["compilation", "validation", "execution"]
+        },
+        "severity": {"enum": ["error", "warning"]},
+        "identifier": {"type": "string"},
+        "message": {"type": "string"},
+        "source": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["name", "begin", "end"],
+              "properties": {
+                "name": {"type": "string"},
+                "begin": {"$ref": "#/$defs/position"},
+                "end": {"$ref": "#/$defs/position"}
+              },
+              "additionalProperties": true
+            }
+          ]
+        },
+        "stack": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "function", "line"],
+            "properties": {
+              "source": {"type": "string"},
+              "function": {"type": "string"},
+              "line": {"type": "integer"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "causes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/diagnostic"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "requested_backend",
+        "effective_tier",
+        "profiling_collected",
+        "fallback_occurred",
+        "resource_controls_active",
+        "optimized_execution_suppressed",
+        "stop_reason",
+        "executed_instruction_count",
+        "typed_region_count",
+        "typed_region_attempt_count",
+        "typed_region_execution_count",
+        "typed_region_fallback_count",
+        "native_compilation_count",
+        "native_cache_hit_count",
+        "maximum_call_depth",
+        "maximum_array_bytes",
+        "maximum_diagnostic_count",
+        "elapsed_nanoseconds"
+      ],
+      "properties": {
+        "requested_backend": {
+          "enum": ["automatic", "bytecode", "portable", "native"]
+        },
+        "effective_tier": {
+          "enum": ["bytecode", "portable", "native", "mixed"]
+        },
+        "profiling_collected": {"type": "boolean"},
+        "fallback_occurred": {"type": "boolean"},
+        "resource_controls_active": {"type": "boolean"},
+        "optimized_execution_suppressed": {"type": "boolean"},
+        "stop_reason": {
+          "enum": [
+            "none",
+            "cancelled",
+            "instruction-limit",
+            "wall-time-limit",
+            "call-depth-limit",
+            "array-byte-limit",
+            "diagnostic-limit"
+          ]
+        },
+        "executed_instruction_count": {"$ref": "#/$defs/uint64"},
+        "typed_region_count": {"$ref": "#/$defs/uint64"},
+        "typed_region_attempt_count": {"$ref": "#/$defs/uint64"},
+        "typed_region_execution_count": {"$ref": "#/$defs/uint64"},
+        "typed_region_fallback_count": {"$ref": "#/$defs/uint64"},
+        "native_compilation_count": {"$ref": "#/$defs/uint64"},
+        "native_cache_hit_count": {"$ref": "#/$defs/uint64"},
+        "maximum_call_depth": {"$ref": "#/$defs/uint64"},
+        "maximum_array_bytes": {"$ref": "#/$defs/uint64"},
+        "maximum_diagnostic_count": {"$ref": "#/$defs/uint64"},
+        "elapsed_nanoseconds": {"$ref": "#/$defs/uint64"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

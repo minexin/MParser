@@ -50,6 +50,15 @@ global sharedCounter
 out = sharedCounter.next();
 end
 
+function out = bumpGlobal()
+global sharedValue
+if isempty(sharedValue)
+    sharedValue = 0;
+end
+sharedValue = sharedValue + 1;
+out = sharedValue;
+end
+
 function out = ticket()
 persistent count
 if isempty(count)
@@ -387,6 +396,85 @@ void runIndependentSessionStress(const Module& module) {
     }
 }
 
+void runSessionMutationStress(const Module& module) {
+    constexpr std::size_t kWorkerCount = 4;
+    constexpr std::size_t kWorkerIterations = 100;
+    constexpr std::size_t kMutationIterations = 200;
+    auto session = module.createSession();
+    std::atomic<bool> start{false};
+    std::atomic<bool> failed{false};
+    std::vector<std::thread> threads;
+    threads.reserve(kWorkerCount + 1);
+
+    for (std::size_t worker = 0; worker < kWorkerCount; ++worker) {
+        auto localSession = session;
+        threads.emplace_back(
+            [&, worker,
+             localSession = std::move(localSession)]() mutable {
+                try {
+                    waitForStart(start);
+                    for (std::size_t iteration = 0;
+                         iteration < kWorkerIterations; ++iteration) {
+                        const char* entry =
+                            (worker + iteration) % 2 == 0
+                                ? "ticket"
+                                : "bumpGlobal";
+                        const auto result = execute(
+                            localSession, entry);
+                        if (!result.succeeded() ||
+                            scalar(result.output(0)) < 1.0) {
+                            failed.store(
+                                true, std::memory_order_relaxed);
+                            return;
+                        }
+                    }
+                } catch (...) {
+                    failed.store(true, std::memory_order_relaxed);
+                }
+            });
+    }
+
+    auto mutatingSession = session;
+    threads.emplace_back(
+        [&, mutatingSession = std::move(mutatingSession)]() mutable {
+            try {
+                waitForStart(start);
+                for (std::size_t iteration = 0;
+                     iteration < kMutationIterations; ++iteration) {
+                    switch (iteration % 3) {
+                    case 0:
+                        try {
+                            mutatingSession.clearGlobal("sharedValue");
+                        } catch (const mparser::sdk::ApiError& error) {
+                            if (error.status() !=
+                                MPARSER_API_STATUS_OUT_OF_RANGE) {
+                                throw;
+                            }
+                        }
+                        break;
+                    case 1:
+                        mutatingSession.clearGlobals();
+                        break;
+                    default:
+                        mutatingSession.reset();
+                        break;
+                    }
+                }
+            } catch (...) {
+                failed.store(true, std::memory_order_relaxed);
+            }
+        });
+
+    start.store(true, std::memory_order_release);
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    assert(!failed.load(std::memory_order_relaxed));
+    const auto finalResult = execute(session, "ticket");
+    assert(finalResult.succeeded());
+    assert(scalar(finalResult.output(0)) >= 1.0);
+}
+
 void runCancellationStress(const Module& module) {
     CancellationToken token;
     std::atomic<bool> start{false};
@@ -483,12 +571,13 @@ int main() {
     runSharedSessionStress(module);
     runSharedSessionGraphStress(module);
     runIndependentSessionStress(module);
+    runSessionMutationStress(module);
     runCancellationStress(module);
     runResourceIsolationStress(module);
 
     std::cout << "cpp api concurrency stress = "
               << kThreadCount * kIterations << ','
               << kThreadCount * kIterations
-              << ",200,50,cancelled-8,limited-8\n";
+              << ",200,50,mutated-400,cancelled-8,limited-8\n";
     return 0;
 }

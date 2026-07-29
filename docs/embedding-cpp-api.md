@@ -1,14 +1,15 @@
 # MParser C++ Embedding SDK
 
-MParser v0.89 provides a public C++20 facade in
+MParser v0.90 provides public C++ source API 1.0 in
 `include/mparser/cpp_api.hpp`. The facade is header-only and delegates to the
 narrow C ABI shared library. It does not expose Parser, HIR, Bytecode,
 `RuntimeValue`, VM, SLJIT, or C++ standard-library layouts from the shared
 library.
 
-The facade is a source-level API candidate for the v0.90 freeze. Its binary
-boundary remains C ABI major 1 revision 1, so no C++ exception or standard
-library object crosses the shared-library boundary.
+The facade is the frozen v1 source-API candidate. Its binary boundary remains
+C ABI major 1 revision 1, so no C++ exception or standard-library object
+crosses the shared-library boundary. MParser does not promise a C++ binary
+ABI; hosts recompile the header facade and link only to the narrow C library.
 
 ## Install And Link
 
@@ -23,7 +24,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 Consume it from a C++20 CMake project:
 
 ```cmake
-find_package(MParser 0.89.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 0.90.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 
@@ -31,8 +32,18 @@ target_link_libraries(host PRIVATE MParser::cpp_api)
 transitive link to `MParser::c_api`. `MParser::cli` is the matching imported
 executable. The package exports `MParser_CPP_FOUND`,
 `MParser_CPP_INCLUDE_DIR`, engine version components, and C ABI major/revision
-metadata. On Windows, deploy `mparser_c.dll` beside the host executable or add
-the installed `bin` directory to the runtime loader path.
+metadata. It also exports C++ source API `1.0`, machine result protocol `1.0`,
+and checked paths to the public contract and protocol schema. On Windows,
+deploy `mparser_c.dll` beside the host executable or add the installed `bin`
+directory to the runtime loader path.
+
+Hosts can query the header declaration directly:
+
+```cpp
+static_assert(mparser::sdk::kSourceApiVersionMajor == 1);
+static_assert(mparser::sdk::kSourceApiVersionMinor == 0);
+const auto version = mparser::sdk::sourceApiVersion();
+```
 
 ## Minimal Host
 
@@ -180,9 +191,17 @@ Applications should catch `ApiError` for boundary failures and inspect
 `std::bad_alloc` remains the host's responsibility when the facade allocates
 copied strings, vectors, or diagnostics.
 
+A boundary failure never returns a partially initialized wrapper. It does not
+make invocation globally transactional: a publication/allocation failure
+after runtime execution can leave session or object side effects committed.
+Do not blindly retry such a call unless the invoked operation is idempotent.
+`Invocation::maxArrayBytes` limits one recursively measured runtime value, not
+aggregate heap or RSS. Wall-time starts after module/session lock admission,
+so queue deadlines remain a host responsibility.
+
 ## Current Boundary
 
-v0.89 validates this SDK on Windows x64, Linux x64, macOS x64/ARM64, and
+v0.90 validates this SDK on Windows x64, Linux x64, macOS x64/ARM64, and
 native-JIT plus portable Linux AArch64 builds. Source-tree and relocated
 installed consumers
 exercise compile-once invocation, multi-output results, composite values,
@@ -196,8 +215,15 @@ library carries ABI-major version 1
 and an exact exported-symbol manifest; the C++ facade remains header-only and
 source-compatible rather than a C++ binary ABI.
 
-The API is not frozen until the v0.90 candidate review. Distribution
-licensing is Apache-2.0 with `Copyright 2026 Wang Xin`, and the installed
-CMake package exposes checked license/notice paths. Release archive policy,
-final sanitizer/allocation evidence, and the combined C/C++/protocol
-compatibility review remain open.
+An exact API 1.0 header snapshot is compiled by
+`cpp_api_v1_compat_smoke`. The installed reference consumer spans multiple
+translation units and checks the source API and protocol metadata after
+relocation. `public_contract_smoke` locks the normalized public-header hash,
+while deterministic C-boundary fault tests and Linux ASan/UBSan CI cover
+allocation and undefined-behavior edges.
+
+Distribution licensing is Apache-2.0 with `Copyright 2026 Wang Xin`.
+Checksummed release archives include the public contract and schema and are
+validated only through their unpacked C/C++ SDK. This is the v1 candidate
+freeze; final v1.0 versioning/deprecation policy and release provenance remain
+the release gate.

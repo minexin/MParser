@@ -23,10 +23,19 @@ jobs:
         run: >-
           cmake -S . -B build-ci -A x64
           -DMPARSER_ENABLE_NATIVE_JIT=ON
+          -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
       - name: Build
         run: cmake --build build-ci --config Release --parallel
       - name: Test
         run: ctest --test-dir build-ci -C Release --output-on-failure
+      - name: Build release archive and checksums
+        run: cmake --build build-ci --config Release --target mparser_release_package
+      - name: Upload Windows release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: mparser-0.90.0-windows-x86_64
+          path: build-ci/packages/*
+          if-no-files-found: error
 
   linux-x64:
     name: Linux x64 / GCC / SLJIT
@@ -39,10 +48,44 @@ jobs:
           cmake -S . -B build-ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DMPARSER_ENABLE_NATIVE_JIT=ON
+          -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
       - name: Build
         run: cmake --build build-ci --parallel
       - name: Test
         run: ctest --test-dir build-ci --output-on-failure
+      - name: Build release archive and checksums
+        run: cmake --build build-ci --target mparser_release_package
+      - name: Upload Linux x64 release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: mparser-0.90.0-linux-x86_64
+          path: build-ci/packages/*
+          if-no-files-found: error
+
+  linux-sanitizers:
+    name: Linux x64 / Clang / ASan + UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1:check_initialization_order=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      CFLAGS: -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-sanitize-recover=all
+      CXXFLAGS: -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-sanitize-recover=all
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure
+        run: >-
+          cmake -S . -B build-sanitizers -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DMPARSER_ENABLE_NATIVE_JIT=OFF
+      - name: Build
+        run: cmake --build build-sanitizers --parallel
+      - name: Test
+        run: >-
+          ctest --test-dir build-sanitizers --output-on-failure
+          --parallel 2 --timeout 240
 
   macos:
     name: macOS ${{ matrix.arch }} / Apple Clang / SLJIT
@@ -65,6 +108,7 @@ jobs:
           cmake -S . -B build-ci
           -DCMAKE_BUILD_TYPE=Release
           -DMPARSER_ENABLE_NATIVE_JIT=ON
+          -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
       - name: Build
         run: cmake --build build-ci --parallel
       - name: Test
@@ -84,14 +128,14 @@ jobs:
           cmake -S tests/installed_c_consumer -B build-c-consumer \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$PWD/relocated-sdk" \
-            -DMPARSER_REQUIRED_VERSION=0.89.0
+            -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-c-consumer --parallel
           DYLD_LIBRARY_PATH="$PWD/relocated-sdk/lib" \
             ctest --test-dir build-c-consumer --output-on-failure
           cmake -S tests/installed_cpp_consumer -B build-cpp-consumer \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$PWD/relocated-sdk" \
-            -DMPARSER_REQUIRED_VERSION=0.89.0
+            -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-cpp-consumer --parallel
           DYLD_LIBRARY_PATH="$PWD/relocated-sdk/lib" \
             ctest --test-dir build-cpp-consumer --output-on-failure
@@ -100,7 +144,15 @@ jobs:
           file relocated-sdk/bin/mparser | grep -F "${{ matrix.arch }}"
           file relocated-sdk/lib/libmparser_c.1.1.0.dylib | grep -F "${{ matrix.arch }}"
           relocated-sdk/bin/mparser --version | tee macos-sdk-version.txt
-          grep -F "MParser 0.89.0" macos-sdk-version.txt
+          grep -F "MParser 0.90.0" macos-sdk-version.txt
+      - name: Build release archive and checksums
+        run: cmake --build build-ci --target mparser_release_package
+      - name: Upload macOS release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: mparser-0.90.0-macos-${{ matrix.arch }}
+          path: build-ci/packages/*
+          if-no-files-found: error
 
   linux-aarch64:
     name: Linux AArch64 / GCC cross / QEMU
@@ -119,12 +171,13 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-aarch64.cmake
           -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu"
           -DMPARSER_ENABLE_NATIVE_JIT=ON
+          -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
       - name: Build native JIT targets
         run: cmake --build build-arm64-jit --parallel
       - name: Run native JIT smokes under QEMU
         run: >-
           ctest --test-dir build-arm64-jit --output-on-failure
-          -R "^(native_scalar_jit_cache_smoke|bytecode_region_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|native_linear_array_kernel_cli_smoke|production_run_native_jit_cli_smoke|native_jit_benchmark_native_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|c_api_lifecycle_stress|c_api_shared_library_abi|cpp_api_smoke|cpp_api_concurrency_stress|cpp_embedding_demo_smoke|c_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|compatibility_matrix_smoke)$"
+          -R "^(native_scalar_jit_cache_smoke|bytecode_region_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|native_linear_array_kernel_cli_smoke|production_run_native_jit_cli_smoke|native_jit_benchmark_native_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_contract_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|c_api_allocation_failure|c_api_named_fault_smoke|c_api_lifecycle_stress|c_api_shared_library_abi|cpp_api_smoke|cpp_api_concurrency_stress|cpp_embedding_demo_smoke|c_api_v1_compat_smoke|c_api_v1_1_compat_smoke|c_api_layout_contract|cpp_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|project_license_smoke|public_contract_smoke|compatibility_matrix_smoke)$"
       - name: Validate installed native JIT C and C++ SDKs under QEMU
         shell: bash
         run: |
@@ -134,7 +187,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/install-arm64-jit" \
-            -DMPARSER_REQUIRED_VERSION=0.89.0
+            -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-arm64-jit-consumer --parallel
           LD_LIBRARY_PATH="$PWD/install-arm64-jit/lib" \
             ctest --test-dir build-arm64-jit-consumer --output-on-failure \
@@ -144,14 +197,52 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/install-arm64-jit" \
-            -DMPARSER_REQUIRED_VERSION=0.89.0
+            -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-arm64-jit-cpp-consumer --parallel
           LD_LIBRARY_PATH="$PWD/install-arm64-jit/lib" \
             ctest --test-dir build-arm64-jit-cpp-consumer --output-on-failure \
               -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./install-arm64-jit/bin/mparser --version | tee arm64-jit-sdk-version.txt
-          grep --fixed-strings "MParser 0.89.0" arm64-jit-sdk-version.txt
+          grep --fixed-strings "MParser 0.90.0" arm64-jit-sdk-version.txt
+      - name: Build AArch64 release archive and checksums
+        run: cmake --build build-arm64-jit --target mparser_release_package
+      - name: Validate unpacked AArch64 release archive under QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_dir="$PWD/build-arm64-jit/packages"
+          package_name="mparser-0.90.0-linux-aarch64"
+          archive="$package_dir/$package_name.tar.gz"
+          (cd "$package_dir" && sha256sum --check "$package_name.tar.gz.sha256")
+          unpack_root="$RUNNER_TEMP/mparser-arm64-release"
+          rm -rf "$unpack_root"
+          mkdir -p "$unpack_root"
+          tar -xzf "$archive" -C "$unpack_root"
+          sdk="$unpack_root/$package_name"
+          test -f "$sdk/include/mparser/c_api.h"
+          test -f "$sdk/include/mparser/cpp_api.hpp"
+          test -f "$sdk/share/doc/MParser/LICENSE"
+          test -f "$sdk/share/doc/MParser/NOTICE"
+          test -f "$sdk/share/doc/MParser/THIRD_PARTY_NOTICES.md"
+          test -f "$sdk/share/doc/MParser/public-contract-v1.json"
+          test -f "$sdk/share/doc/MParser/machine-result-v1.schema.json"
+          LD_LIBRARY_PATH="$sdk/lib" qemu-aarch64 -L /usr/aarch64-linux-gnu \
+            "$sdk/bin/mparser" --run --jit=off --result-format=json-v1 \
+            "$sdk/share/mparser/examples/machine_protocol_demo.m" \
+            > "$RUNNER_TEMP/mparser-arm64-result.json"
+          test "$(tail -c 1 "$RUNNER_TEMP/mparser-arm64-result.json" |
+            od -An -t x1 | tr -d ' \n')" = "0a"
+          ! LC_ALL=C grep -q $'\r' "$RUNNER_TEMP/mparser-arm64-result.json"
+          grep --fixed-strings \
+            '"protocol":{"name":"mparser.result","major":1,"minor":0}' \
+            "$RUNNER_TEMP/mparser-arm64-result.json"
+      - name: Upload Linux AArch64 release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: mparser-0.90.0-linux-aarch64
+          path: build-arm64-jit/packages/*
+          if-no-files-found: error
       - name: Configure portable fallback build
         run: >-
           cmake -S . -B build-arm64-portable -G Ninja
@@ -164,7 +255,7 @@ jobs:
       - name: Run portable runtime smokes under QEMU
         run: >-
           ctest --test-dir build-arm64-portable --output-on-failure
-          -R "^(bytecode_region_smoke|native_scalar_jit_cache_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|linear_array_kernel_cli_smoke|cli_help_smoke|production_run_cli_smoke|production_run_portable_jit_cli_smoke|production_run_jit_off_cli_smoke|production_run_cli_contract_smoke|native_jit_benchmark_portable_cli_smoke|class_metadata_smoke|class_metadata_bytecode_cli_smoke|dynamic_property_smoke|dynamic_property_bytecode_cli_smoke|property_listener_smoke|property_listener_bytecode_cli_smoke|handle_lifecycle_smoke|handle_lifecycle_bytecode_cli_smoke|function_metadata_smoke|function_metadata_bytecode_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|c_api_lifecycle_stress|c_api_shared_library_abi|cpp_api_smoke|cpp_api_concurrency_stress|cpp_embedding_demo_smoke|c_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|compatibility_matrix_smoke)$"
+          -R "^(bytecode_region_smoke|native_scalar_jit_cache_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|linear_array_kernel_cli_smoke|cli_help_smoke|production_run_cli_smoke|production_run_portable_jit_cli_smoke|production_run_jit_off_cli_smoke|production_run_cli_contract_smoke|native_jit_benchmark_portable_cli_smoke|class_metadata_smoke|class_metadata_bytecode_cli_smoke|dynamic_property_smoke|dynamic_property_bytecode_cli_smoke|property_listener_smoke|property_listener_bytecode_cli_smoke|handle_lifecycle_smoke|handle_lifecycle_bytecode_cli_smoke|function_metadata_smoke|function_metadata_bytecode_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_contract_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|c_api_allocation_failure|c_api_named_fault_smoke|c_api_lifecycle_stress|c_api_shared_library_abi|cpp_api_smoke|cpp_api_concurrency_stress|cpp_embedding_demo_smoke|c_api_v1_compat_smoke|c_api_v1_1_compat_smoke|c_api_layout_contract|cpp_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|project_license_smoke|public_contract_smoke|compatibility_matrix_smoke)$"
       - name: Validate installed portable C and C++ SDKs under QEMU
         shell: bash
         run: |
@@ -174,7 +265,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/install-arm64-portable" \
-            -DMPARSER_REQUIRED_VERSION=0.89.0
+            -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-arm64-portable-consumer --parallel
           LD_LIBRARY_PATH="$PWD/install-arm64-portable/lib" \
             ctest --test-dir build-arm64-portable-consumer --output-on-failure \
@@ -184,14 +275,14 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/install-arm64-portable" \
-            -DMPARSER_REQUIRED_VERSION=0.89.0
+            -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-arm64-portable-cpp-consumer --parallel
           LD_LIBRARY_PATH="$PWD/install-arm64-portable/lib" \
             ctest --test-dir build-arm64-portable-cpp-consumer --output-on-failure \
               -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./install-arm64-portable/bin/mparser --version | tee arm64-portable-sdk-version.txt
-          grep --fixed-strings "MParser 0.89.0" arm64-portable-sdk-version.txt
+          grep --fixed-strings "MParser 0.90.0" arm64-portable-sdk-version.txt
       - name: Run portable branch sample under QEMU
         shell: bash
         run: |

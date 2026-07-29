@@ -12,17 +12,21 @@ v0.88 adds a separate public C++20 RAII facade over this same boundary; see
 `embedding-cpp-api.md`. v0.89 adds the shared-object concurrency boundary,
 ABI-major shared-library naming, an exact public symbol manifest, repeated
 lifecycle/unload stress, and macOS package consumers.
+v0.90 freezes ABI candidate 1.1 through exact header/layout/export snapshots,
+adds deterministic allocation/internal-failure containment tests, publishes
+the combined public contract, and validates unpacked checksummed SDK archives.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
 handles, fixed-width constants, byte/code-unit views, and versioned plain C
 structures.
 
-This is ABI candidate 1, not the final v1.0 binary freeze. Until the v0.90 API
-gate, an incompatible correction may increment the ABI major. Applications
-must query `mparser_c_abi_version()`, `mparser_c_abi_revision()`, and the three
-MParser component-version functions rather than assuming that the project,
-ABI major, and additive ABI revision advance together.
+This is the frozen v1 candidate for ABI major 1 revision 1, not the final v1.0
+release promise. An incompatible correction changes the ABI major rather than
+rewriting candidate major 1 in place. Applications must query
+`mparser_c_abi_version()`, `mparser_c_abi_revision()`, and the three MParser
+component-version functions rather than assuming that the project, ABI major,
+and additive ABI revision advance together.
 
 ## Build
 
@@ -56,21 +60,23 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 An independent CMake project can then use:
 
 ```cmake
-find_package(MParser 0.89.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 0.90.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
 `MParser::cli` is the imported matching CLI executable. The package also
 exports project-version components, `MParser_C_ABI_VERSION`,
 `MParser_C_ABI_REVISION`,
-`MParser_C_INCLUDE_DIR`, and `MParser_CLI_DIR`. Its paths are relative to the
-package prefix, so the installed tree may be moved as a unit before consumer
-configuration. On Windows, deploy `mparser_c.dll` beside the host executable
-or expose the SDK `bin` directory to the runtime loader.
+`MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.0`, machine
+protocol `1.0`, and checked paths to the license, notices, public contract, and
+protocol schema. Its paths are relative to the package prefix, so the installed
+tree may be moved as a unit before consumer configuration. On Windows, deploy
+`mparser_c.dll` beside the host executable or expose the SDK `bin` directory
+to the runtime loader.
 
 The C package remains independently consumable. v0.88 also exports
-`MParser::cpp_api`, but neither source API nor the binary boundary reaches its
-final freeze before the v0.90 review.
+`MParser::cpp_api`; v0.90 records C ABI 1.1 and C++ source API 1.0 as the
+combined v1 candidates.
 
 ## Handles And Ownership
 
@@ -248,6 +254,21 @@ No C++ exception crosses the C boundary. Ordinary internal exceptions become
 `MPARSER_API_STATUS_ALLOCATION_FAILED`. This differs deliberately from the
 v0.82 source-level C++ contract, where `std::bad_alloc` still propagates.
 
+Failure after a C constructor starts never publishes a partial output handle.
+Existing module, session, result, value, and cancellation handles remain
+valid. Execution itself is not globally transactional: a failure before the
+runtime core starts does not commit session state, while allocation or
+publication failure after the runtime returns may leave language-visible
+side effects committed. Do not blindly retry an invocation that returned a C
+boundary error after execution may have begun unless that operation is
+idempotent.
+
+`max_array_bytes` is a per-`RuntimeValue` recursive payload limit observed at
+runtime checkpoints. It is not a process RSS, aggregate heap, or allocator
+quota. Wall-time accounting starts after module/session lock admission; hosts
+that need queue deadlines or concurrency admission limits must enforce them
+outside MParser.
+
 ## Structure Versioning
 
 `mparser_invocation_options`, `mparser_execution_summary`, and
@@ -297,6 +318,14 @@ directories. `c_embedding_demo_smoke` runs the single-source C host and
 included in Linux AArch64 native-JIT and portable-only QEMU jobs in addition
 to the complete Windows x64 and Linux x64 suites.
 
+`c_api_v1_1_compat_smoke` compiles against the exact ABI 1.1 snapshot.
+`c_api_layout_contract` freezes the 64-bit public record layout and constant
+ranges. `c_api_allocation_failure` intercepts global allocation across
+protocol serialization and representative C API construction/execution
+routes. `c_api_named_fault_smoke` injects deterministic bad-allocation and
+internal faults at publication boundaries, proves thread-local isolation, and
+checks the pre/post-execution commit contract.
+
 `c_api_lifecycle_stress` performs concurrent retain/release cycles for every
 public handle family and proves retained sessions and module-bound values
 outlive their original module/result handles. `cpp_api_concurrency_stress`
@@ -317,6 +346,14 @@ separate C11 project through `find_package`, and verifies C ABI execution plus
 the imported CLI on Windows x64 and Linux x64. The AArch64 job independently
 installs and cross-consumes both native-JIT and portable packages, then runs
 the installed consumer and CLI under QEMU.
+
+With `MPARSER_ENABLE_RELEASE_PACKAGING=ON`,
+`mparser_release_package` creates a platform/architecture-named ZIP or TGZ
+plus SHA-256 sidecars. `release_archive_smoke` packages one built payload
+twice with a fixed timestamp, verifies the archive paths and checksum, unpacks
+it, and consumes only that SDK from independent C11 and C++20 projects. The
+checksum proves integrity, not publisher identity; package signing remains a
+release operation.
 
 ## Licensing
 

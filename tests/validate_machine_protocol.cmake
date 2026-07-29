@@ -12,6 +12,40 @@ if(DEFINED MPARSER_EMULATOR AND NOT MPARSER_EMULATOR STREQUAL "")
 endif()
 list(APPEND mparser_command "${MPARSER_CLI}")
 
+function(require_machine_document name raw_output out_variable)
+    set(output "${raw_output}")
+    string(LENGTH "${output}" output_length)
+    if(output_length LESS 3)
+        message(FATAL_ERROR
+            "${name}: machine stdout is too short: '${output}'")
+    endif()
+    math(EXPR terminal_index "${output_length} - 1")
+    string(SUBSTRING "${output}" ${terminal_index} 1 terminal)
+    if(NOT terminal STREQUAL "\n")
+        message(FATAL_ERROR
+            "${name}: machine stdout must end in exactly one newline")
+    endif()
+    string(SUBSTRING "${output}" 0 ${terminal_index} document)
+    if(document MATCHES "[\r\n]")
+        message(FATAL_ERROR
+            "${name}: machine stdout must contain one single-line "
+            "document followed by one LF byte")
+    endif()
+    string(STRIP "${document}" stripped_document)
+    if(NOT document STREQUAL stripped_document)
+        message(FATAL_ERROR
+            "${name}: machine stdout has leading or trailing whitespace")
+    endif()
+    string(JSON protocol_name ERROR_VARIABLE json_error
+        GET "${document}" protocol name)
+    if(json_error OR NOT protocol_name STREQUAL "mparser.result")
+        message(FATAL_ERROR
+            "${name}: stdout is not a v1 result document: ${document}\n"
+            "${json_error}")
+    endif()
+    set("${out_variable}" "${document}" PARENT_SCOPE)
+endfunction()
+
 function(run_machine_case name expected_exit source)
     execute_process(
         COMMAND ${mparser_command} --run --jit=off
@@ -28,15 +62,8 @@ function(run_machine_case name expected_exit source)
         message(FATAL_ERROR
             "${name}: machine mode wrote to stderr: ${error_output}")
     endif()
-    string(STRIP "${output}" output)
-    string(JSON protocol_name ERROR_VARIABLE json_error
-        GET "${output}" protocol name)
-    if(json_error OR NOT protocol_name STREQUAL "mparser.result")
-        message(FATAL_ERROR
-            "${name}: stdout is not a v1 result document: ${output}\n"
-            "${json_error}")
-    endif()
-    set("${name}_JSON" "${output}" PARENT_SCOPE)
+    require_machine_document("${name}" "${output}" document)
+    set("${name}_JSON" "${document}" PARENT_SCOPE)
 endfunction()
 
 function(require_json_equal name json expected)
@@ -45,6 +72,26 @@ function(require_json_equal name json expected)
         message(FATAL_ERROR
             "${name}: expected '${expected}', got '${actual}': ${json_error}")
     endif()
+endfunction()
+
+function(run_cli_machine_rejection name)
+    execute_process(
+        COMMAND ${mparser_command} ${ARGN}
+        RESULT_VARIABLE actual_exit
+        OUTPUT_VARIABLE output
+        ERROR_VARIABLE error_output)
+    if(NOT "${actual_exit}" STREQUAL "2" OR
+       NOT error_output STREQUAL "")
+        message(FATAL_ERROR
+            "${name}: CLI rejection corrupted the machine channel\n"
+            "exit: ${actual_exit}\nstdout: ${output}\n"
+            "stderr: ${error_output}")
+    endif()
+    require_machine_document("${name}" "${output}" document)
+    require_json_equal("${name}_status" "${document}"
+        request-rejected status)
+    require_json_equal("${name}_identifier" "${document}"
+        MParser:CliError diagnostics 0 identifier)
 endfunction()
 
 run_machine_case(success 0 "${SUCCESS_SOURCE}")
@@ -134,8 +181,8 @@ if(NOT "${cli_exit}" STREQUAL "2" OR NOT cli_error STREQUAL "")
     message(FATAL_ERROR
         "CLI failure did not preserve the machine channel contract")
 endif()
-string(STRIP "${cli_output}" cli_output)
-require_json_equal(cli_error_identifier "${cli_output}"
+require_machine_document("missing_input" "${cli_output}" cli_document)
+require_json_equal(cli_error_identifier "${cli_document}"
     MParser:CliError diagnostics 0 identifier)
 
 execute_process(
@@ -148,6 +195,16 @@ if(NOT "${stats_exit}" STREQUAL "2" OR NOT stats_error STREQUAL "")
     message(FATAL_ERROR
         "native-cache rejection corrupted the machine output channel")
 endif()
-string(STRIP "${stats_output}" stats_output)
-require_json_equal(stats_error_identifier "${stats_output}"
+require_machine_document("native_cache_stats" "${stats_output}"
+    stats_document)
+require_json_equal(stats_error_identifier "${stats_document}"
     MParser:CliError diagnostics 0 identifier)
+
+run_cli_machine_rejection(
+    help_before_format --help --result-format=json-v1)
+run_cli_machine_rejection(
+    format_before_help --result-format=json-v1 --help)
+run_cli_machine_rejection(
+    version_before_format --version --result-format=json-v1)
+run_cli_machine_rejection(
+    format_before_version --result-format=json-v1 --version)

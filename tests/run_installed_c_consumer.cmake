@@ -38,8 +38,6 @@ file(MAKE_DIRECTORY "${mparser_test_root}")
 set(mparser_initial_prefix "${mparser_test_root}/initial-prefix")
 set(mparser_relocated_prefix "${mparser_test_root}/relocated-prefix")
 set(mparser_consumer_build "${mparser_test_root}/consumer-build")
-set(mparser_package_dir
-    "${mparser_relocated_prefix}/${MPARSER_INSTALL_CMAKEDIR}")
 
 function(mparser_run_checked description)
     execute_process(
@@ -59,29 +57,52 @@ function(mparser_run_checked description)
     endif()
 endfunction()
 
-set(mparser_install_command
-    "${MPARSER_CMAKE_COMMAND}" --install "${mparser_build_dir}"
-    --prefix "${mparser_initial_prefix}")
-if(NOT MPARSER_TEST_CONFIG STREQUAL "")
-    list(APPEND mparser_install_command
-        --config "${MPARSER_TEST_CONFIG}")
+if(DEFINED MPARSER_EXISTING_PREFIX AND
+   NOT MPARSER_EXISTING_PREFIX STREQUAL "")
+    get_filename_component(
+        mparser_relocated_prefix
+        "${MPARSER_EXISTING_PREFIX}" ABSOLUTE)
+    if(NOT IS_DIRECTORY "${mparser_relocated_prefix}")
+        message(FATAL_ERROR
+            "Existing SDK prefix does not exist: "
+            "${mparser_relocated_prefix}")
+    endif()
+    set(mparser_artifact_prefix "${mparser_relocated_prefix}")
+else()
+    set(mparser_install_command
+        "${MPARSER_CMAKE_COMMAND}" --install "${mparser_build_dir}"
+        --prefix "${mparser_initial_prefix}")
+    if(NOT MPARSER_TEST_CONFIG STREQUAL "")
+        list(APPEND mparser_install_command
+            --config "${MPARSER_TEST_CONFIG}")
+    endif()
+    mparser_run_checked("MParser install" ${mparser_install_command})
+    set(mparser_artifact_prefix "${mparser_initial_prefix}")
 endif()
-mparser_run_checked("MParser install" ${mparser_install_command})
 
 set(mparser_required_paths
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/c_api.h"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/c_abi_compat_demo.c"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/LICENSE"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/NOTICE"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/THIRD_PARTY_NOTICES.md"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserConfig.cmake"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserTargets.cmake")
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/c_api.h"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/c_abi_compat_demo.c"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/machine_protocol_demo.m"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/LICENSE"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/NOTICE"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/THIRD_PARTY_NOTICES.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-protocol.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-v1.schema.json"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/compatibility-matrix.json"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.0.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v0.90.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/architecture.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/extending-builtins.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserConfig.cmake"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserTargets.cmake")
 if(DEFINED MPARSER_REQUIRE_CPP_SDK AND MPARSER_REQUIRE_CPP_SDK)
     list(APPEND mparser_required_paths
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/cpp_api.hpp"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/cpp_embedding_demo.cpp"
-        "${mparser_initial_prefix}/${MPARSER_INSTALL_DOCDIR}/embedding-cpp-api.md")
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/cpp_api.hpp"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/cpp_embedding_demo.cpp"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/embedding-cpp-api.md")
 endif()
 foreach(required_path IN LISTS mparser_required_paths)
     if(NOT EXISTS "${required_path}")
@@ -90,9 +111,14 @@ foreach(required_path IN LISTS mparser_required_paths)
     endif()
 endforeach()
 
-file(RENAME
-    "${mparser_initial_prefix}" "${mparser_relocated_prefix}")
+if(NOT DEFINED MPARSER_EXISTING_PREFIX OR
+   MPARSER_EXISTING_PREFIX STREQUAL "")
+    file(RENAME
+        "${mparser_initial_prefix}" "${mparser_relocated_prefix}")
+endif()
 
+set(mparser_package_dir
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_CMAKEDIR}")
 set(mparser_configure_command
     "${MPARSER_CMAKE_COMMAND}"
     -S "${MPARSER_CONSUMER_SOURCE_DIR}"
