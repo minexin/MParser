@@ -440,7 +440,10 @@ Function handles are first-class runtime values backed by shared
 Each descriptor has an immutable identity, callable kind, backend kind,
 display name, source data, and an optional `RuntimeCallableContext`. Anonymous
 handles retain an explicit parameter vector, the HIR or half-open bytecode body
-range, lexical class identity, and a value snapshot of the defining frame.
+range, lexical class identity, and a value snapshot of only the free variables
+referenced by the body. Nested anonymous bodies contribute their external free
+variables, while parameters at either level remain local. HIR and bytecode use
+the same semantic capture analysis.
 Named handles resolve once at creation to a builtin, ordinary function,
 package function, static method, or bound object method. Builtin descriptors
 are backend-independent; source-backed descriptors remain tied to the engine
@@ -472,14 +475,15 @@ method-handle execution remain explicit unsupported boundaries.
 Event declarations use their own HIR and binding kind but emit no top-level
 runtime instruction. Instead, class loading builds inherited event tables with
 stable declaration order, access policies, and hidden flags. Listener records
-hold weak links to source and listener field storage. `addlistener` also stores
-the listener on the source object, while `listener` relies on the caller to
-retain its result. `notify` snapshots matching listener identities, then invokes
-each enabled callback synchronously with the source and an `event.EventData`
-object. Per-listener active state suppresses recursive delivery unless
-`Recursive` is enabled. Custom event-data subclasses reuse normal class
-construction and receive the built-in `Source` and `EventName` fields at
-notification time.
+hold weak links to source and listener field storage. The active VM registry
+strongly retains `addlistener` results for source-coupled lifetime without
+placing a listener back-edge in source fields; `listener` relies on the caller
+to retain its result. `notify` snapshots matching listener identities, then
+invokes each enabled callback synchronously with the source and an
+`event.EventData` object. Per-listener active state suppresses recursive
+delivery unless `Recursive` is enabled. Custom event-data subclasses reuse
+normal class construction and receive the built-in `Source` and `EventName`
+fields at notification time.
 
 `runtime_metadata` gives metadata values a runtime representation that does not
 hold pointers into VM-private class tables. A scalar descriptor stores a

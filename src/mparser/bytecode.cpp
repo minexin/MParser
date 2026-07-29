@@ -66,7 +66,7 @@ private:
     size_t emit(BytecodeOp op, const HirNode& node, int operandCount = 0,
                 int target = -1, int resultCount = 1) {
         program_.instructions.push_back(BytecodeInstruction{
-            op, node.label.empty() ? node.raw : node.label, {}, {},
+            op, node.label.empty() ? node.raw : node.label, {}, {}, {},
             node.binding, {}, node.span, operandCount, target,
             resultCount});
         return program_.instructions.size() - 1;
@@ -241,6 +241,7 @@ private:
             instruction.parameters =
                 parameterNames(node.children.front()->raw);
         }
+        instruction.captureNames = anonymousFunctionCaptureNames(node);
         if (node.children.size() >= 2) {
             lowerExpression(*node.children[1]);
         }

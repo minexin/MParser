@@ -122,6 +122,32 @@ void checkDynamicScriptResult(const auto& result, std::string_view engine) {
     checkNumber(result, "named_builtin_value", 0.0);
     checkNumber(result, "text_builtin_value", 0.0);
     checkNumber(result, "captured_factor", 3.0);
+    checkNumber(result, "nested_value", 12.0);
+    const auto* anonymous = findVariable(result, "anonymous");
+    check(anonymous &&
+              anonymous->kind ==
+                  mparser::RuntimeValueKind::FunctionHandle &&
+              anonymous->functionHandle,
+          std::string(engine) +
+              " did not retain the anonymous handle descriptor");
+    const auto& captures =
+        anonymous->functionHandle->capturedVariables;
+    check(captures.size() == 1 && captures.contains("factor"),
+          std::string(engine) +
+              " did not retain the exact anonymous free-variable set");
+    const auto* factory = findVariable(result, "factory");
+    const auto* inner = findVariable(result, "inner");
+    check(factory && factory->functionHandle &&
+              factory->functionHandle->capturedVariables.size() == 1 &&
+              factory->functionHandle->capturedVariables.contains("offset"),
+          std::string(engine) +
+              " did not retain the exact outer free-variable set");
+    check(inner && inner->functionHandle &&
+              inner->functionHandle->capturedVariables.size() == 2 &&
+              inner->functionHandle->capturedVariables.contains("x") &&
+              inner->functionHandle->capturedVariables.contains("offset"),
+          std::string(engine) +
+              " did not propagate nested anonymous free variables");
     checkString(result, "anonymous_name", "@(x)x * factor");
     checkString(result, "named_name", "pair");
     std::string variableNames;
@@ -136,7 +162,8 @@ void checkDynamicScriptResult(const auto& result, std::string_view engine) {
 }
 
 void runInterpreterAndVmParitySmoke() {
-    constexpr std::string_view source = R"(factor = 3;
+    constexpr std::string_view source = R"(unrelated = 99;
+factor = 3;
 anonymous = @(x)x * factor;
 factor = 10;
 anonymous_value = anonymous(4);
@@ -168,6 +195,12 @@ detail = functions(anonymous);
 detail_function = detail.function;
 detail_type = detail.type;
 captured_factor = detail.workspace{1}.factor;
+
+unused_nested = 88;
+offset = 5;
+factory = @(x) @(y)x + y + offset;
+inner = factory(3);
+nested_value = inner(4);
 
 function [first, second] = pair(value)
 first = value;

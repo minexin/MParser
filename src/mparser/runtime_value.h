@@ -147,6 +147,9 @@ RuntimeValue makeRuntimeNameValueArgument(std::string name,
                                           RuntimeValue value);
 std::shared_ptr<RuntimeCallableContext> makeRuntimeCallableContext();
 RuntimeValue makeRuntimeFunctionHandleValue(RuntimeFunctionHandle handle);
+RuntimeWorkspace captureRuntimeWorkspace(
+    const RuntimeWorkspace& workspace,
+    const std::vector<std::string>& captureNames);
 
 std::string_view runtimeValueKindName(RuntimeValueKind kind);
 std::string_view runtimeValueOwnershipName(

@@ -111,8 +111,6 @@ constexpr std::string_view kHeterogeneousClassName =
 constexpr std::string_view kHandleValidityField =
     "__mparser_handle_valid";
 constexpr std::string_view kListenerValidityField = "__mparser_valid";
-constexpr std::string_view kCoupledListenersField =
-    "__mparser_coupled_listeners";
 constexpr std::string_view kObjectBeingDestroyedEventName =
     "ObjectBeingDestroyed";
 constexpr std::string_view kDynamicPropertyDescriptorPrefix =
@@ -992,6 +990,8 @@ struct EventListenerRecord {
     size_t id = 0;
     std::weak_ptr<std::map<std::string, RuntimeValue>> sourceFields;
     std::weak_ptr<std::map<std::string, RuntimeValue>> listenerFields;
+    std::shared_ptr<std::map<std::string, RuntimeValue>>
+        retainedListenerFields;
     std::string sourceClass;
     std::string eventName;
     std::string propertyStorageKey;
@@ -5146,7 +5146,8 @@ private:
             info.backend = RuntimeFunctionHandleBackend::Bytecode;
             info.context = callableContext_;
             info.parameters = instruction.parameters;
-            info.capturedVariables = currentFrame();
+            info.capturedVariables = captureRuntimeWorkspace(
+                currentFrame(), instruction.captureNames);
             info.entry = currentPc_ + 1;
             info.end = *continuation;
             info.display = instruction.calleeName;
@@ -10238,22 +10239,6 @@ private:
         return std::nullopt;
     }
 
-    void retainCoupledListener(const RuntimeValue& source,
-                               const RuntimeValue& listener) {
-        auto& sourceFields = *source.sharedFields;
-        auto coupledListeners =
-            sourceFields.find(std::string(kCoupledListenersField));
-        if (coupledListeners == sourceFields.end() ||
-            !isCell(coupledListeners->second)) {
-            sourceFields[std::string(kCoupledListenersField)] =
-                cellValue({listener});
-            return;
-        }
-        coupledListeners->second.cells.push_back(listener);
-        setRuntimeDimensions(coupledListeners->second,
-                             {1, coupledListeners->second.cells.size()});
-    }
-
     RuntimeValue createEventListener(
         const BytecodeInstruction& instruction,
         const std::vector<RuntimeValue>& arguments, bool coupled) {
@@ -10306,14 +10291,13 @@ private:
         record.id = id;
         record.sourceFields = source.sharedFields;
         record.listenerFields = listener.sharedFields;
+        if (coupled) {
+            record.retainedListenerFields = listener.sharedFields;
+        }
         record.sourceClass = source.className;
         record.eventName = eventName;
         record.coupled = coupled;
         eventListeners_[id] = std::move(record);
-
-        if (coupled) {
-            retainCoupledListener(source, listener);
-        }
         return listener;
     }
 
@@ -10382,6 +10366,9 @@ private:
         record.id = id;
         record.sourceFields = source.sharedFields;
         record.listenerFields = listener.sharedFields;
+        if (coupled) {
+            record.retainedListenerFields = listener.sharedFields;
+        }
         record.sourceClass = source.className;
         record.eventName = eventName;
         record.propertyStorageKey = target->storageKey;
@@ -10389,10 +10376,6 @@ private:
         record.propertyListener = true;
         record.coupled = coupled;
         eventListeners_[id] = std::move(record);
-
-        if (coupled) {
-            retainCoupledListener(source, listener);
-        }
         return listener;
     }
 
@@ -11290,9 +11273,8 @@ private:
                 (*fields)[std::string(kListenerValidityField)] =
                     logicalValue(false);
             }
+            listener.retainedListenerFields.reset();
         }
-        source.sharedFields->erase(
-            std::string(kCoupledListenersField));
     }
 
     void destroyHandleObject(const BytecodeInstruction& instruction,
@@ -11451,6 +11433,11 @@ private:
         }
         (*arguments[0].sharedFields)[std::string(kListenerValidityField)] =
             numberValue(0.0);
+        if (const auto listener =
+                eventListeners_.find(arguments[0].opaqueId);
+            listener != eventListeners_.end()) {
+            listener->second.retainedListenerFields.reset();
+        }
     }
 
     void notifyEvent(const BytecodeInstruction& instruction,

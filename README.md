@@ -400,11 +400,12 @@ which support brace indexing and general `length`, `numel`, `size`, and
 `isempty` queries.
 v0.41 makes function handles and class events executable in the bytecode VM.
 Anonymous handles retain their parameter list, bytecode body range, lexical
-class privilege, and a value snapshot of the defining frame. Named handles can
-target builtins, local/path/package functions, static methods, and bound object
-methods, and may be called through the same neutral call/index operation as an
-ordinary function. Event declarations now have distinct symbols, bindings, HIR
-nodes, inherited runtime metadata, and executable `ListenAccess`,
+class privilege, and a value snapshot of referenced free variables. Named
+handles can target builtins, local/path/package functions, static methods, and
+bound object methods, and may be called through the same neutral call/index
+operation as an ordinary function. Event declarations now have distinct
+symbols, bindings, HIR nodes, inherited runtime metadata, and executable
+`ListenAccess`,
 `NotifyAccess`, and `Hidden` policies. `addlistener` creates a listener coupled
 to its source, while `listener` creates an independently retained listener;
 `notify` invokes callbacks synchronously with source and `event.EventData`
@@ -962,6 +963,10 @@ injection, pre/post-execution commit tests, concurrent native-cache churn, and
 a Linux Clang ASan/UBSan CI lane. The v1.0 native cache is explicitly bounded
 and process-local; a disk cache remains deferred until atomic persistence,
 corruption recovery, bounds, and complete invalidation keys exist.
+Anonymous closures now retain only semantic free variables in both baseline
+engines. Source-coupled listeners are kept alive by the active VM registry
+without a source-to-listener ownership back-edge, and cross-platform lifetime
+regressions keep Linux LeakSanitizer enabled for the full suite.
 Platform/architecture-named ZIP or TGZ release archives carry Apache-2.0,
 `Copyright 2026 Wang Xin`, checksums, installed public contracts, and the
 relocatable SDK. Their smoke test packages a fixed payload twice, unpacks it,

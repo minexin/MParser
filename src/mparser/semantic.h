@@ -161,5 +161,7 @@ const char* bindingKindName(BindingKind kind);
 const char* symbolKindName(SymbolKind kind);
 const char* scopeKindName(ScopeKind kind);
 bool isKnownBuiltinName(std::string_view name);
+std::vector<std::string> anonymousFunctionCaptureNames(
+    const HirNode& functionHandle);
 
 } // namespace mparser

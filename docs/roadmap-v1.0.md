@@ -521,13 +521,66 @@ function families, not an unbounded builtin count.
 
 ### v1.0: Contract Freeze And Release
 
-- Satisfy every Must-have item with linked tests, artifacts, and documentation.
-- Publish the final support matrix, packages, manuals, extension guide, and
-  performance/resource characterization.
-- Freeze public CLI/API/extension contracts under a documented versioning and
-  deprecation policy.
-- Move unbounded long-tail function growth and explicit Post-v1.0 items into
-  the v1.x roadmap without blocking the v1.0 release.
+The following sequence starts only after the v0.90 sanitizer and platform gate
+is green. It refines, rather than replaces, the four work areas above.
+
+1. **Must-have: close v0.90 ownership and sanitizer evidence.** Anonymous
+   functions capture the exact semantic free-variable set by value; listener
+   ownership has no source/listener/callback reference cycle; HIR and bytecode
+   behavior is equivalent. Require focused lifecycle tests, native and clean
+   no-JIT full regression, unpacked release-package validation, Linux Clang
+   ASan/UBSan, and every existing cross-platform CI lane before advancing.
+2. **Must-have: freeze the final public contracts.** Freeze production
+   `--run`, `--jit`, machine mode, and the stability/deprecation boundary of
+   historical `--run-*` modes; C ABI 1.1; header-only C++ API 1.0; machine
+   result protocol 1.0; and the `BuiltinRegistry`/`BuiltinDescriptor`
+   extension contract. Publish one versioning and deprecation policy for all
+   of them.
+3. **Must-have: close reliability evidence.** Exercise parser/semantic fuzz,
+   malformed bytecode, compile-once/invoke-many, long-running execution,
+   module/session load-unload, handle/listener lifetimes, cancellation and
+   resource limits, native-cache churn, allocation failure, and concurrent
+   pressure. Every discovered defect is fixed without weakening an existing
+   diagnostic, fallback, sanitizer, or lifecycle gate.
+4. **Must-have: establish performance and resource baselines.** Measure parse
+   and compile time, cold start, bytecode, portable typed execution, native
+   cold/warm execution, peak memory, allocations, binary size, and cache
+   boundaries. Every result records hardware, OS, compiler, build type,
+   backend, workload, and the exact timing boundary.
+5. **Must-have: close release documentation.** Publish the user manual,
+   install/build guide, support matrix, CLI/API references, JIT/fallback
+   behavior, C/C++ embedding guides, machine protocol, builtin author guide,
+   diagnostics/resource/concurrency/lifecycle rules, the v0.x-to-v1.0
+   migration policy, and explicit unsupported/Post-v1.0 lists.
+6. **Should-have: evaluate specialized sanitizer CI.** Prefer Linux Clang
+   TSan, then Windows MSVC ASan no-JIT, then macOS ARM64 Apple Clang
+   ASan+UBSan no-JIT. A toolchain may be deferred only with a recorded
+   stability rationale and compensating evidence; this work must never weaken
+   Linux ASan/UBSan or the core lifecycle gates.
+7. **Must-have: publish 1.0.0.** Freeze the compatibility matrix, public
+   contract manifest, snapshots, and version metadata; generate Windows,
+   Linux, and macOS x64/ARM64 archives with SHA-256 checksums; build and run
+   independent C11 and C++20 consumers plus the CLI machine protocol from each
+   unpacked SDK; complete final cross-platform CI, signing or provenance
+   attestation, release notes, and the v1.x roadmap.
+
+### v1.0 Scope Controls
+
+- Foundational compatibility-matrix Must-have gaps are closed at the v0.90
+  boundary. From this point, Parser, HIR, Bytecode, `RuntimeValue`, and
+  embedding framework redesign is out of scope unless release evidence finds
+  a correctness or public-contract defect that cannot be fixed locally.
+- `G-JIT-001` remains **Should-have**. Select only a small number of
+  high-value straight-line, matrix, builtin, or function specializations when
+  the v1.0 performance baseline proves they are necessary. Every addition
+  retains guarded fallback and bytecode/portable/native equivalence, and
+  optimization coverage cannot block correct VM execution.
+- `G-LONGTAIL-001` and `G-MATLAB-001` remain **Post-v1.0**. Unbounded builtin,
+  toolbox, and complete MATLAB compatibility work moves to the v1.x roadmap
+  and does not block v1.0.
+- Each sequence item follows the milestone evidence rule below: implementation,
+  focused tests, broad regression, a runnable sample, README/architecture/
+  milestone documentation, and applicable platform CI.
 
 ## Gate Evidence
 

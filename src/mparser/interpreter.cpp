@@ -2818,7 +2818,8 @@ private:
             info.context = callableContext_;
             info.parameters =
                 anonymousParameterNames(node.children.front()->raw);
-            info.capturedVariables = currentFrame();
+            info.capturedVariables = captureRuntimeWorkspace(
+                currentFrame(), anonymousFunctionCaptureNames(node));
             info.hirBody = node.children[1].get();
             return makeRuntimeFunctionHandleValue(std::move(info));
         }

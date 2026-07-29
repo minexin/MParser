@@ -498,6 +498,19 @@ RuntimeValue makeRuntimeFunctionHandleValue(
     return result;
 }
 
+RuntimeWorkspace captureRuntimeWorkspace(
+    const RuntimeWorkspace& workspace,
+    const std::vector<std::string>& captureNames) {
+    RuntimeWorkspace captured;
+    for (const auto& name : captureNames) {
+        const auto value = workspace.find(name);
+        if (value != workspace.end()) {
+            captured.emplace(name, value->second);
+        }
+    }
+    return captured;
+}
+
 std::string_view runtimeValueKindName(RuntimeValueKind kind) {
     switch (kind) {
     case RuntimeValueKind::Missing:

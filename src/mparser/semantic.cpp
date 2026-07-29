@@ -2411,10 +2411,102 @@ private:
     std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
 };
 
+bool isAnonymousCaptureBinding(BindingKind kind) {
+    switch (kind) {
+    case BindingKind::Unresolved:
+    case BindingKind::LocalVariable:
+    case BindingKind::FunctionParameter:
+    case BindingKind::FunctionOutput:
+    case BindingKind::GlobalVariable:
+    case BindingKind::PersistentVariable:
+        return true;
+    case BindingKind::Function:
+    case BindingKind::Method:
+    case BindingKind::Property:
+    case BindingKind::Event:
+    case BindingKind::EnumerationMember:
+    case BindingKind::Class:
+    case BindingKind::Builtin:
+        return false;
+    }
+    return false;
+}
+
+class AnonymousCaptureCollector {
+public:
+    std::vector<std::string> collect(const HirNode& functionHandle) {
+        if (functionHandle.kind != HirKind::FunctionHandle ||
+            functionHandle.label != "@()" ||
+            functionHandle.children.size() < 2) {
+            return {};
+        }
+
+        pushParameters(*functionHandle.children.front());
+        collectNode(*functionHandle.children[1]);
+        popParameters(*functionHandle.children.front());
+        return std::move(captures_);
+    }
+
+private:
+    void pushParameters(const HirNode& parameterList) {
+        for (const auto& parameter : splitCommaList(parameterList.raw)) {
+            if (!parameter.empty() && parameter != "~") {
+                ++boundNames_[parameter];
+            }
+        }
+    }
+
+    void popParameters(const HirNode& parameterList) {
+        for (const auto& parameter : splitCommaList(parameterList.raw)) {
+            const auto found = boundNames_.find(parameter);
+            if (found == boundNames_.end()) {
+                continue;
+            }
+            if (found->second == 1) {
+                boundNames_.erase(found);
+            } else {
+                --found->second;
+            }
+        }
+    }
+
+    void collectNode(const HirNode& node) {
+        if (node.kind == HirKind::NameRef &&
+            isAnonymousCaptureBinding(node.binding.kind) &&
+            !boundNames_.contains(node.label) &&
+            capturedNames_.insert(node.label).second) {
+            captures_.push_back(node.label);
+        }
+
+        if (node.kind == HirKind::FunctionHandle && node.label == "@()") {
+            if (node.children.size() < 2) {
+                return;
+            }
+            pushParameters(*node.children.front());
+            collectNode(*node.children[1]);
+            popParameters(*node.children.front());
+            return;
+        }
+
+        for (const auto& child : node.children) {
+            collectNode(*child);
+        }
+    }
+
+    std::unordered_map<std::string, size_t> boundNames_;
+    std::unordered_set<std::string> capturedNames_;
+    std::vector<std::string> captures_;
+};
+
 } // namespace
 
 bool isKnownBuiltinName(std::string_view name) {
     return defaultBuiltinRegistry()->contains(name);
+}
+
+std::vector<std::string> anonymousFunctionCaptureNames(
+    const HirNode& functionHandle) {
+    return AnonymousCaptureCollector{}.collect(functionHandle);
 }
 
 SemanticAnalyzer::SemanticAnalyzer()

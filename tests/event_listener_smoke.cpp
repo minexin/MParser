@@ -8,6 +8,8 @@
 
 #include <cmath>
 #include <iostream>
+#include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -399,6 +401,55 @@ custom_data_isa = isa(data, 'event.EventData');
     checkNumber(result, "custom_data_isa", 1.0);
 }
 
+void runListenerOwnershipReleaseSmoke() {
+    std::weak_ptr<std::map<std::string, mparser::RuntimeValue>>
+        sourceFields;
+    std::weak_ptr<std::map<std::string, mparser::RuntimeValue>>
+        listenerFields;
+    std::weak_ptr<mparser::RuntimeFunctionHandle> callbackDescriptor;
+
+    {
+        const auto result =
+            run(std::string(kPulseClass) + R"(
+pulse = Pulse();
+listenerHandle = addlistener(pulse, 'Tick', ...
+    @(src, evt) pulse.record(evt.EventName));
+pulse.fire(0);
+callback_count = pulse.CallbackCount;
+)");
+        check(result.diagnostics.empty(),
+              "listener ownership diagnostics:\n" +
+                  diagnosticsText(result.diagnostics));
+        checkNumber(result, "callback_count", 1.0);
+        const auto* pulse = findVariable(result, "pulse");
+        const auto* listener = findVariable(result, "listenerHandle");
+        check(pulse && pulse->sharedFields,
+              "ownership source fields are unavailable");
+        check(listener && listener->sharedFields,
+              "ownership listener fields are unavailable");
+        sourceFields = pulse->sharedFields;
+        listenerFields = listener->sharedFields;
+
+        const auto callback = listener->sharedFields->find("Callback");
+        check(callback != listener->sharedFields->end() &&
+                  callback->second.functionHandle,
+              "ownership callback descriptor is unavailable");
+        callbackDescriptor = callback->second.functionHandle;
+        check(callback->second.functionHandle->capturedVariables.size() ==
+                      1 &&
+                  callback->second.functionHandle->capturedVariables
+                      .contains("pulse"),
+              "listener callback did not retain its exact free variable");
+    }
+
+    check(sourceFields.expired(),
+          "source/listener ownership formed a retained source cycle");
+    check(listenerFields.expired(),
+          "source/listener ownership formed a retained listener cycle");
+    check(callbackDescriptor.expired(),
+          "source/listener ownership formed a retained callback cycle");
+}
+
 void runInheritanceAndDiagnosticsSmoke() {
     const auto inherited = run(R"(classdef BaseSource < handle
     events
@@ -525,6 +576,7 @@ int main() {
         runFrontendAndBytecodeSmoke();
         runFunctionHandleSmoke();
         runEventLifecycleSmoke();
+        runListenerOwnershipReleaseSmoke();
         runInheritanceAndDiagnosticsSmoke();
         std::cout << "event listener smoke tests passed\n";
         return 0;

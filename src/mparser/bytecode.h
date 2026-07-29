@@ -79,6 +79,7 @@ struct BytecodeInstruction {
     std::string operand;
     std::string receiverName;
     std::vector<std::string> parameters;
+    std::vector<std::string> captureNames;
     BindingRef binding;
     BindingRef receiverBinding;
     SourceSpan span;
