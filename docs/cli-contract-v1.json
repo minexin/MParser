@@ -1,0 +1,122 @@
+{
+  "schema": {
+    "name": "mparser.cli-contract",
+    "major": 1,
+    "minor": 0
+  },
+  "production": {
+    "mode": "--run",
+    "default_jit": "auto",
+    "jit_option": "--jit={auto|off|portable|native}",
+    "machine_option": "--result-format=json-v1",
+    "input": "exactly one source path",
+    "source_separator": "--",
+    "stable_options": [
+      "--entry-function=<name>",
+      "--argument=<value>",
+      "--outputs=<count>",
+      "--path=<directory>",
+      "--class-path=<directory>",
+      "--native-cache-entries=<count>",
+      "--native-cache-bytes=<count>",
+      "--native-cache-stats"
+    ]
+  },
+  "diagnostic_modes": {
+    "stability": "mode names remain accepted throughout v1.x; human-readable output is not a machine contract",
+    "modes": [
+      "--tokens",
+      "--hir",
+      "--bytecode",
+      "--module-info",
+      "--run-hir",
+      "--run-bytecode",
+      "--profile-bytecode",
+      "--plan-bytecode",
+      "--typed-ir-bytecode",
+      "--check-typed-ir-bytecode",
+      "--run-jit",
+      "--run-typed-bytecode",
+      "--run-adaptive-bytecode",
+      "--run-module-runtime",
+      "--benchmark-runtime"
+    ],
+    "backend_option_modes": [
+      "--run-jit",
+      "--run-typed-bytecode",
+      "--run-adaptive-bytecode",
+      "--run-module-runtime",
+      "--benchmark-runtime"
+    ],
+    "backend_option": "--typed-backend={auto|portable|native}"
+  },
+  "option_rules": {
+    "one_mode_maximum": true,
+    "single_occurrence": [
+      "every execution or inspection mode",
+      "--jit",
+      "--typed-backend",
+      "--result-format",
+      "--benchmark-warmup",
+      "--benchmark-iterations",
+      "--native-cache-entries",
+      "--native-cache-bytes",
+      "--native-cache-stats",
+      "--adaptive-runs",
+      "--adaptive-hot-loop",
+      "--adaptive-fallback-limit",
+      "--adaptive-persist-workspace",
+      "--entry-function",
+      "--outputs"
+    ],
+    "repeatable": [
+      "--argument",
+      "--module-call",
+      "--path",
+      "--class-path",
+      "--adaptive-workspace"
+    ],
+    "invalid_context": "rejected with a CLI usage error instead of being ignored",
+    "production_backend_rule": "--run accepts --jit and rejects --typed-backend",
+    "machine_rule": "--result-format=json-v1 is accepted only with --run"
+  },
+  "channels": {
+    "human": {
+      "stdout": "results or requested human-readable inspection output",
+      "stderr": "CLI, source, compilation, or runtime diagnostics",
+      "exit_codes": {
+        "0": "success",
+        "1": "source, compilation, execution, or requested diagnostic failure",
+        "2": "CLI usage error"
+      }
+    },
+    "json-v1": {
+      "stdout": "one mparser.result 1.x JSON document followed by one LF byte",
+      "stderr": "empty",
+      "exit_codes": {
+        "0": "succeeded",
+        "1": "compilation-failed",
+        "2": "request-rejected",
+        "3": "runtime-failed",
+        "4": "emergency serialization or output-transport failure"
+      }
+    }
+  },
+  "utility_commands": {
+    "--help": "stable command name; human text layout is not frozen",
+    "--version": "stable command name and MParser <semver> line shape"
+  },
+  "removed_before_v1": [
+    {
+      "name": "--run-interpreter",
+      "replacement": "--run-hir",
+      "reason": "undocumented pre-v1 alias removed before the v1 contract freeze"
+    }
+  ],
+  "compatibility": {
+    "production": "existing v1 production mode and option meanings are not removed or reinterpreted before v2",
+    "diagnostic": "diagnostic mode names remain available in v1.x, but their human text may gain fields or formatting changes",
+    "machine": "machine behavior is governed by mparser.result protocol 1.x, not human CLI formatting",
+    "policy": "versioning-and-deprecation.md"
+  }
+}

@@ -43,7 +43,13 @@ file(READ "${THIRD_PARTY_NOTICES_FILE}" third_party_notices)
 foreach(required_notice IN ITEMS
         "SLJIT"
         "Simplified BSD"
-        "Copyright Zoltan Herczeg")
+        "Copyright Zoltan Herczeg"
+        "JSON for Modern C++"
+        "Version: `3.12.0`"
+        "Copyright (c) 2013-2025 Niels Lohmann"
+        "Modern C++ JSON Schema Validator"
+        "Version: `2.4.0`"
+        "Copyright (c) 2016 Patrick Boettcher")
     string(FIND
         "${third_party_notices}" "${required_notice}" found_at)
     if(found_at EQUAL -1)

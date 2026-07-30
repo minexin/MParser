@@ -135,11 +135,30 @@ void printHelp() {
         << "  --typed-ir-bytecode    Print profile-guided typed IR.\n"
         << "  --check-typed-ir-bytecode  Evaluate typed guards against runtime "
            "values.\n"
-        << "\nUse --entry-function, --argument, and --outputs for function entry "
-           "calls.\n"
-        << "Use repeatable --path or --class-path options to load external "
-           "sources.\n"
+        << "\nUse --entry-function, --argument, and --outputs with production "
+           "or VM/JIT function-invocation modes.\n"
+        << "Use repeatable --path or --class-path options with source-graph "
+           "modes to load external sources.\n"
         << "Use -- before a source path that starts with '-'.\n";
+}
+
+void markSingleOption(bool& specified, std::string_view option) {
+    if (specified) {
+        throw std::invalid_argument(
+            "option may be specified only once: " +
+            std::string(option));
+    }
+    specified = true;
+}
+
+void requireOptionContext(bool specified, bool allowed,
+                          std::string_view option,
+                          std::string_view context) {
+    if (specified && !allowed) {
+        throw std::invalid_argument(
+            std::string(option) + " is only valid with " +
+            std::string(context));
+    }
 }
 
 struct ProductionJitOption {
@@ -1255,6 +1274,7 @@ int main(int argc, char** argv) {
     configureProcessErrorMode();
     const bool machineResultRequested =
         machineResultWasRequested(argc, argv);
+    bool cliValidationActive = true;
     NativeCacheStatisticsReporter nativeCacheReporter;
     try {
         bool printTokens = false;
@@ -1273,6 +1293,7 @@ int main(int argc, char** argv) {
         bool runAdaptiveBytecode = false;
         bool runModuleRuntime = false;
         bool benchmarkRuntime = false;
+        size_t actionOptionCount = 0;
         size_t benchmarkWarmup = 3;
         size_t benchmarkIterations = 20;
         size_t adaptiveRuns = 3;
@@ -1284,6 +1305,21 @@ int main(int argc, char** argv) {
         bool productionJitSpecified = false;
         bool machineResultJsonV1 = false;
         bool typedBackendSpecified = false;
+        bool benchmarkWarmupSpecified = false;
+        bool benchmarkIterationsSpecified = false;
+        bool nativeCacheEntriesSpecified = false;
+        bool nativeCacheBytesSpecified = false;
+        bool nativeCacheStatsSpecified = false;
+        bool adaptiveRunsSpecified = false;
+        bool adaptiveHotLoopSpecified = false;
+        bool adaptiveFallbackLimitSpecified = false;
+        bool adaptivePersistWorkspaceSpecified = false;
+        bool adaptiveWorkspaceSpecified = false;
+        bool entryFunctionSpecified = false;
+        bool entryArgumentSpecified = false;
+        bool outputCountSpecified = false;
+        bool moduleCallSpecified = false;
+        bool searchPathSpecified = false;
         mparser::NativeScalarJitCacheLimits nativeCacheLimits;
         bool adaptivePersistWorkspace = false;
         std::vector<mparser::RuntimeVariable> adaptiveInitialWorkspace;
@@ -1324,63 +1360,96 @@ int main(int argc, char** argv) {
                 std::cout << "MParser " << MPARSER_VERSION << "\n";
                 return 0;
             } else if (arg == "--tokens") {
-                printTokens = true;
+                markSingleOption(printTokens, "--tokens");
+                ++actionOptionCount;
             } else if (arg == "--hir") {
-                printHir = true;
+                markSingleOption(printHir, "--hir");
+                ++actionOptionCount;
             } else if (arg == "--bytecode") {
-                printBytecode = true;
+                markSingleOption(printBytecode, "--bytecode");
+                ++actionOptionCount;
             } else if (arg == "--module-info") {
-                printModuleInfo = true;
+                markSingleOption(printModuleInfo, "--module-info");
+                ++actionOptionCount;
             } else if (arg == "--run") {
-                runProduction = true;
-            } else if (arg == "--run-hir" ||
-                       arg == "--run-interpreter") {
-                runHir = true;
+                markSingleOption(runProduction, "--run");
+                ++actionOptionCount;
+            } else if (arg == "--run-hir") {
+                markSingleOption(runHir, "--run-hir");
+                ++actionOptionCount;
             } else if (arg == "--run-bytecode") {
-                runBytecode = true;
+                markSingleOption(runBytecode, "--run-bytecode");
+                ++actionOptionCount;
             } else if (arg == "--profile-bytecode") {
-                profileBytecode = true;
+                markSingleOption(profileBytecode, "--profile-bytecode");
+                ++actionOptionCount;
             } else if (arg == "--plan-bytecode") {
-                planBytecode = true;
+                markSingleOption(planBytecode, "--plan-bytecode");
+                ++actionOptionCount;
             } else if (arg == "--typed-ir-bytecode") {
-                typedIrBytecode = true;
+                markSingleOption(typedIrBytecode,
+                                 "--typed-ir-bytecode");
+                ++actionOptionCount;
             } else if (arg == "--check-typed-ir-bytecode") {
-                checkTypedIrBytecode = true;
+                markSingleOption(checkTypedIrBytecode,
+                                 "--check-typed-ir-bytecode");
+                ++actionOptionCount;
             } else if (arg == "--run-jit") {
-                runJit = true;
+                markSingleOption(runJit, "--run-jit");
+                ++actionOptionCount;
             } else if (arg == "--run-typed-bytecode") {
-                runTypedBytecode = true;
+                markSingleOption(runTypedBytecode,
+                                 "--run-typed-bytecode");
+                ++actionOptionCount;
             } else if (arg == "--run-adaptive-bytecode") {
-                runAdaptiveBytecode = true;
+                markSingleOption(runAdaptiveBytecode,
+                                 "--run-adaptive-bytecode");
+                ++actionOptionCount;
             } else if (arg == "--run-module-runtime") {
-                runModuleRuntime = true;
+                markSingleOption(runModuleRuntime,
+                                 "--run-module-runtime");
+                ++actionOptionCount;
             } else if (arg == "--benchmark-runtime") {
-                benchmarkRuntime = true;
+                markSingleOption(benchmarkRuntime,
+                                 "--benchmark-runtime");
+                ++actionOptionCount;
             } else if (arg.starts_with("--benchmark-warmup=")) {
+                markSingleOption(benchmarkWarmupSpecified,
+                                 "--benchmark-warmup");
                 benchmarkWarmup = parseCountOption(
                     arg, "--benchmark-warmup=", true);
             } else if (arg.starts_with("--benchmark-iterations=")) {
+                markSingleOption(benchmarkIterationsSpecified,
+                                 "--benchmark-iterations");
                 benchmarkIterations = parseCountOption(
                     arg, "--benchmark-iterations=", false);
             } else if (arg.starts_with("--typed-backend=")) {
+                markSingleOption(typedBackendSpecified,
+                                 "--typed-backend");
                 typedRegionBackend =
                     parseTypedRegionBackendOption(arg);
-                typedBackendSpecified = true;
             } else if (arg.starts_with("--jit=")) {
+                markSingleOption(productionJitSpecified, "--jit");
                 productionJit = parseProductionJitOption(arg);
-                productionJitSpecified = true;
             } else if (arg == "--result-format=json-v1") {
-                machineResultJsonV1 = true;
+                markSingleOption(machineResultJsonV1,
+                                 "--result-format");
             } else if (arg.starts_with("--result-format=")) {
                 throw std::invalid_argument(
                     "result format must be json-v1");
             } else if (arg.starts_with("--native-cache-entries=")) {
+                markSingleOption(nativeCacheEntriesSpecified,
+                                 "--native-cache-entries");
                 nativeCacheLimits.maxEntries = parseCountOption(
                     arg, "--native-cache-entries=", true);
             } else if (arg.starts_with("--native-cache-bytes=")) {
+                markSingleOption(nativeCacheBytesSpecified,
+                                 "--native-cache-bytes");
                 nativeCacheLimits.maxCodeBytes = parseCountOption(
                     arg, "--native-cache-bytes=", true);
             } else if (arg == "--native-cache-stats") {
+                markSingleOption(nativeCacheStatsSpecified,
+                                 "--native-cache-stats");
                 if (machineResultRequested) {
                     throw std::invalid_argument(
                         "--native-cache-stats cannot be combined with "
@@ -1388,21 +1457,32 @@ int main(int argc, char** argv) {
                 }
                 nativeCacheReporter.enabled = true;
             } else if (arg.starts_with("--adaptive-runs=")) {
+                markSingleOption(adaptiveRunsSpecified,
+                                 "--adaptive-runs");
                 adaptiveRuns = parseCountOption(
                     arg, "--adaptive-runs=", false);
             } else if (arg.starts_with("--adaptive-hot-loop=")) {
+                markSingleOption(adaptiveHotLoopSpecified,
+                                 "--adaptive-hot-loop");
                 adaptiveHotLoopThreshold = parseCountOption(
                     arg, "--adaptive-hot-loop=", false);
             } else if (arg.starts_with("--adaptive-fallback-limit=")) {
+                markSingleOption(adaptiveFallbackLimitSpecified,
+                                 "--adaptive-fallback-limit");
                 adaptiveFallbackLimit = parseCountOption(
                     arg, "--adaptive-fallback-limit=", false);
             } else if (arg == "--adaptive-persist-workspace") {
+                markSingleOption(adaptivePersistWorkspaceSpecified,
+                                 "--adaptive-persist-workspace");
                 adaptivePersistWorkspace = true;
             } else if (arg.starts_with("--adaptive-workspace=")) {
+                adaptiveWorkspaceSpecified = true;
                 upsertWorkspaceVariable(
                     adaptiveInitialWorkspace,
                     parseWorkspaceOption(arg, "--adaptive-workspace="));
             } else if (arg.starts_with("--entry-function=")) {
+                markSingleOption(entryFunctionSpecified,
+                                 "--entry-function");
                 entryFunction =
                     arg.substr(std::string("--entry-function=").size());
                 if (entryFunction.empty()) {
@@ -1410,15 +1490,19 @@ int main(int argc, char** argv) {
                         "entry function name cannot be empty");
                 }
             } else if (arg.starts_with("--argument=")) {
+                entryArgumentSpecified = true;
                 entryArguments.push_back(parseInvocationArgument(
                     arg.substr(std::string("--argument=").size())));
             } else if (arg.starts_with("--outputs=")) {
+                markSingleOption(outputCountSpecified, "--outputs");
                 requestedOutputCount =
                     parseCountOption(arg, "--outputs=", true);
             } else if (arg.starts_with("--module-call=")) {
+                moduleCallSpecified = true;
                 moduleCalls.push_back(parseModuleCallOption(arg));
             } else if (arg.starts_with("--path=") ||
                        arg.starts_with("--class-path=")) {
+                searchPathSpecified = true;
                 const size_t prefixLength =
                     arg.starts_with("--path=")
                         ? std::string("--path=").size()
@@ -1439,24 +1523,7 @@ int main(int argc, char** argv) {
             }
         }
 
-        const size_t actionCount =
-            static_cast<size_t>(printTokens) +
-            static_cast<size_t>(printHir) +
-            static_cast<size_t>(printBytecode) +
-            static_cast<size_t>(printModuleInfo) +
-            static_cast<size_t>(runProduction) +
-            static_cast<size_t>(runHir) +
-            static_cast<size_t>(runBytecode) +
-            static_cast<size_t>(profileBytecode) +
-            static_cast<size_t>(planBytecode) +
-            static_cast<size_t>(typedIrBytecode) +
-            static_cast<size_t>(checkTypedIrBytecode) +
-            static_cast<size_t>(runJit) +
-            static_cast<size_t>(runTypedBytecode) +
-            static_cast<size_t>(runAdaptiveBytecode) +
-            static_cast<size_t>(runModuleRuntime) +
-            static_cast<size_t>(benchmarkRuntime);
-        if (actionCount > 1) {
+        if (actionOptionCount > 1) {
             throw std::invalid_argument(
                 "choose only one execution or inspection mode");
         }
@@ -1473,6 +1540,100 @@ int main(int argc, char** argv) {
             throw std::invalid_argument(
                 "--jit and --typed-backend cannot be combined");
         }
+
+        const bool typedBackendAllowed =
+            runJit || runTypedBytecode || runAdaptiveBytecode ||
+            runModuleRuntime || benchmarkRuntime;
+        requireOptionContext(
+            typedBackendSpecified, typedBackendAllowed,
+            "--typed-backend",
+            "--run-jit, --run-typed-bytecode, "
+            "--run-adaptive-bytecode, --run-module-runtime, or "
+            "--benchmark-runtime");
+
+        const bool invocationOptionsAllowed =
+            runProduction || printModuleInfo || runBytecode ||
+            profileBytecode || planBytecode || typedIrBytecode ||
+            checkTypedIrBytecode || runJit || runTypedBytecode ||
+            runAdaptiveBytecode;
+        requireOptionContext(
+            entryFunctionSpecified, invocationOptionsAllowed,
+            "--entry-function", "a function invocation mode");
+        requireOptionContext(
+            entryArgumentSpecified, invocationOptionsAllowed,
+            "--argument", "a function invocation mode");
+        requireOptionContext(
+            outputCountSpecified,
+            invocationOptionsAllowed || runModuleRuntime,
+            "--outputs",
+            "a function invocation mode or --run-module-runtime");
+
+        requireOptionContext(
+            benchmarkWarmupSpecified, benchmarkRuntime,
+            "--benchmark-warmup", "--benchmark-runtime");
+        requireOptionContext(
+            benchmarkIterationsSpecified, benchmarkRuntime,
+            "--benchmark-iterations", "--benchmark-runtime");
+
+        requireOptionContext(
+            adaptiveRunsSpecified, runAdaptiveBytecode,
+            "--adaptive-runs", "--run-adaptive-bytecode");
+        const bool adaptiveRuntimeOptionsAllowed =
+            runAdaptiveBytecode || runModuleRuntime;
+        requireOptionContext(
+            adaptiveHotLoopSpecified, adaptiveRuntimeOptionsAllowed,
+            "--adaptive-hot-loop",
+            "--run-adaptive-bytecode or --run-module-runtime");
+        requireOptionContext(
+            adaptiveFallbackLimitSpecified,
+            adaptiveRuntimeOptionsAllowed,
+            "--adaptive-fallback-limit",
+            "--run-adaptive-bytecode or --run-module-runtime");
+        requireOptionContext(
+            adaptivePersistWorkspaceSpecified,
+            adaptiveRuntimeOptionsAllowed,
+            "--adaptive-persist-workspace",
+            "--run-adaptive-bytecode or --run-module-runtime");
+        requireOptionContext(
+            adaptiveWorkspaceSpecified, adaptiveRuntimeOptionsAllowed,
+            "--adaptive-workspace",
+            "--run-adaptive-bytecode or --run-module-runtime");
+
+        requireOptionContext(
+            moduleCallSpecified, runModuleRuntime,
+            "--module-call", "--run-module-runtime");
+        if (runModuleRuntime && !moduleCallSpecified) {
+            throw std::invalid_argument(
+                "--run-module-runtime requires at least one "
+                "--module-call");
+        }
+
+        const bool sourceGraphOptionsAllowed =
+            printHir || printBytecode || printModuleInfo ||
+            runProduction || runHir || runBytecode ||
+            profileBytecode || planBytecode || typedIrBytecode ||
+            checkTypedIrBytecode || runJit || runTypedBytecode ||
+            runAdaptiveBytecode || runModuleRuntime ||
+            benchmarkRuntime;
+        requireOptionContext(
+            searchPathSpecified, sourceGraphOptionsAllowed,
+            "--path/--class-path",
+            "a source-graph compilation mode");
+
+        const bool nativeCacheOptionsAllowed =
+            runProduction || runBytecode || runJit ||
+            runTypedBytecode || runAdaptiveBytecode ||
+            runModuleRuntime || benchmarkRuntime;
+        requireOptionContext(
+            nativeCacheEntriesSpecified, nativeCacheOptionsAllowed,
+            "--native-cache-entries", "an execution mode");
+        requireOptionContext(
+            nativeCacheBytesSpecified, nativeCacheOptionsAllowed,
+            "--native-cache-bytes", "an execution mode");
+        requireOptionContext(
+            nativeCacheStatsSpecified, nativeCacheOptionsAllowed,
+            "--native-cache-stats", "an execution mode");
+
         if (productionJitSpecified) {
             typedRegionBackend = productionJit.backend;
         }
@@ -1484,20 +1645,11 @@ int main(int argc, char** argv) {
                 throw std::invalid_argument(
                     "an input file is required for machine-result mode");
             }
-            const bool hasAction =
-                printTokens || printHir || printBytecode ||
-                printModuleInfo || runProduction || runHir || runBytecode ||
-                profileBytecode || planBytecode || typedIrBytecode ||
-                checkTypedIrBytecode || runJit || runTypedBytecode ||
-                runAdaptiveBytecode || runModuleRuntime ||
-                benchmarkRuntime;
-            if (nativeCacheReporter.enabled && !hasAction) {
-                return 0;
-            }
             printUsage();
             return 2;
         }
 
+        cliValidationActive = false;
         const auto compileSourceGraph = [&]() {
             mparser::SourceLoaderOptions loaderOptions;
             loaderOptions.searchPaths = searchPaths;
@@ -1574,12 +1726,6 @@ int main(int argc, char** argv) {
                                  module.diagnostics(), &module, path);
                 return 1;
             }
-            if (moduleCalls.empty()) {
-                throw std::invalid_argument(
-                    "--run-module-runtime requires at least one "
-                    "--module-call");
-            }
-
             mparser::AdaptiveModuleRuntimeOptions runtimeOptions;
             runtimeOptions.hotLoopThreshold = adaptiveHotLoopThreshold;
             runtimeOptions.fallbackInvalidationThreshold =
@@ -1875,6 +2021,13 @@ int main(int argc, char** argv) {
         }
 
         return 0;
+    } catch (const std::invalid_argument& ex) {
+        if (machineResultRequested) {
+            nativeCacheReporter.enabled = false;
+            return writeCliMachineFailure(ex.what());
+        }
+        std::cerr << "error: " << ex.what() << "\n";
+        return cliValidationActive ? 2 : 1;
     } catch (const std::exception& ex) {
         if (machineResultRequested) {
             nativeCacheReporter.enabled = false;

@@ -116,13 +116,18 @@ endfunction()
 file(READ "${SCHEMA}" schema_json)
 string(JSON schema_id ERROR_VARIABLE schema_error
     GET "${schema_json}" "$id")
+string(JSON schema_draft ERROR_VARIABLE schema_draft_error
+    GET "${schema_json}" "$schema")
 string(JSON schema_major ERROR_VARIABLE schema_major_error
     GET "${schema_json}" properties protocol properties major const)
 string(JSON schema_uint64_max ERROR_VARIABLE schema_uint64_error
-    GET "${schema_json}" "$defs" uint64 maximum)
-if(schema_error OR schema_major_error OR schema_uint64_error OR
+    GET "${schema_json}" definitions uint64 x-mparser-maximum)
+if(schema_error OR schema_draft_error OR schema_major_error OR
+   schema_uint64_error OR
    NOT schema_id STREQUAL
        "https://mparser.dev/schema/machine-result-v1.json" OR
+   NOT schema_draft STREQUAL
+       "http://json-schema.org/draft-07/schema#" OR
    NOT schema_major STREQUAL "1" OR
    NOT schema_uint64_max STREQUAL "18446744073709551615")
     message(FATAL_ERROR

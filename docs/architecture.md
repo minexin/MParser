@@ -1031,6 +1031,14 @@ reference HIR interpreter is exposed as `--run-hir`; `--run-bytecode`,
 explicit diagnostic interfaces. This separation lets editors and embedders
 depend on `--run` while optimization strategy evolves behind it.
 
+CLI contract 1.0 makes this separation machine-checkable. Every execution or
+inspection mode and every scalar option is accepted at most once; options used
+outside the modes that consume them are rejected instead of silently ignored.
+Production `--run` accepts `--jit` and rejects the diagnostic
+`--typed-backend` selector. The undocumented pre-v1 `--run-interpreter` alias
+is removed. Human usage errors return 2, while automation uses the independent
+`mparser.result` exit mapping and an empty stderr channel.
+
 v0.68 adds explicit lifecycle state to scalar handle-object storage. A valid
 destructor is a non-static, non-abstract, non-sealed `delete` method with one
 ordinary object parameter, no outputs, no variadic parameters, and no
@@ -1286,13 +1294,14 @@ copy with defaults, add descriptors, freeze it, and supply it through
 `CompiledModuleCompileOptions`.
 
 Each `BuiltinDescriptor` owns canonical and alias names, input/output arity,
-argument value/shape constraints, implementation kind, purity, determinism,
-thread-safety, side-effect and context flags, diagnostic identity, and optional
-typed lowering. `BuiltinCall` borrows arguments and invocation context;
+positional input and output value/shape constraints, implementation kind,
+purity, determinism, thread-safety, side-effect and context flags, diagnostic
+identity, and optional typed lowering. `BuiltinCall` borrows arguments and
+invocation context;
 `BuiltinResult` returns exact requested outputs plus diagnostics. The registry
 validates required context, converts host exceptions, rejects transient or
-malformed output values, and enforces the same arity contract before either
-baseline engine observes the result.
+malformed output values, checks declared output constraints, and enforces the
+same arity contract before either baseline engine observes the result.
 
 Shared and context handlers run identically from HIR and bytecode. Intrinsics
 remain explicit engine operations, and unsupported catalog entries produce a
@@ -1310,6 +1319,14 @@ legal but unoptimized target-subset code must remain correct. Extension levels,
 ownership rules, diagnostics, threading, conformance tests, and the future C
 adapter boundary are specified in
 [extending-builtins.md](extending-builtins.md).
+
+The semantic source-integration boundary is versioned independently as builtin
+source contract 1.0. A normalized snapshot records all 118 default descriptors
+and every compatibility-relevant metadata field. A generator-backed smoke
+test compares the live registry to that snapshot; it does not serialize
+handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
+values and diagnostics across HIR and bytecode rather than comparing display
+strings.
 
 v0.81 adds an engine-neutral host boundary above the bytecode VM.
 `ModuleInvocationRequest` contains entry selection, arguments, output arity,
@@ -1411,6 +1428,11 @@ contract manifest, exact header/export snapshots, and 64-bit record-layout
 tests. See
 [embedding-c-api.md](embedding-c-api.md) and
 [c-abi-compatibility.md](c-abi-compatibility.md).
+
+Sized initializers clear only the caller-provided byte range and then populate
+the frozen prefix. They do not assign a current-library C++ aggregate over
+caller storage, so a future larger library record cannot overwrite an older
+or deliberately smaller host prefix.
 
 v0.84 adds two C ingestion paths without creating a second execution model.
 `mparser_module_compile_sources` copies an ordered array of versioned
@@ -1542,6 +1564,13 @@ immutable 1.0 snapshot, exact unsigned-64-bit fixtures, a reference-consumer
 contract test, and parsed end-to-end CLI regressions; see
 [machine-result-protocol.md](machine-result-protocol.md).
 
+The published schema is a tolerant Draft-7 major-1 consumer profile, while the
+golden fixture and snapshot freeze exact producer 1.0. Test-only vendored JSON
+and JSON Schema libraries validate the golden, emergency, snapshot, negative,
+and every dynamically emitted CLI document. A supplemental semantic pass
+checks exact unsigned 64-bit bounds that common signed-number Draft-7
+implementations cannot represent directly.
+
 Release packaging uses the ordinary install graph through CPack and emits one
 platform/architecture archive with SHA-256 sidecars. A fixed
 `SOURCE_DATE_EPOCH` and single-thread archive pass make the same built payload
@@ -1551,15 +1580,14 @@ consumers, and runs the installed machine protocol without source-tree or
 loader-path access. This does not claim reproducible compilation or publisher
 identity; signing/provenance remains a release operation.
 
-The next steps include richer typed values and regions, direct inlined bounds
-checks and SIMD/vector kernels,
-optional LLVM ORC lowering behind the same backend contract, persistent
-cross-process code caches, moving-window array operations, automatic handle
-destruction and cycle-aware ownership, nonscalar event registration and custom
-object indexing/concatenation overrides, a built-in function signature catalog,
-reference-interpreter class execution, comma-separated-list Cell semantics,
-and eventual on-stack replacement while preserving the same commit/fallback
-contract.
+After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
+embedding-framework redesign unless release evidence proves a correctness
+defect. Work now concentrates on contract freeze, reliability and sanitizer
+evidence, performance/resource baselines, documentation, packaging, and
+publication provenance. Broader typed specialization is Should-have only when
+the measured baseline justifies it. Long-tail functions, toolboxes, disk
+caches, external callback ABIs, zero-copy borrowed arrays, LLVM/OSR, and full
+MATLAB compatibility remain v1.x or Post-v1.0 work.
 
 The release gates, compatibility-matrix requirement, builtin-extension
 architecture, embedding boundary, platform matrix, and explicit v1.0

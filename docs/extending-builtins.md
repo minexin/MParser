@@ -63,6 +63,10 @@ twice.argumentConstraints = {{
     mparser::BuiltinValueConstraint::ScalarNumeric,
     mparser::BuiltinShapeConstraint::Scalar,
 }};
+twice.outputConstraints = {{
+    mparser::BuiltinValueConstraint::ScalarNumeric,
+    mparser::BuiltinShapeConstraint::Scalar,
+}};
 twice.implementation = mparser::BuiltinImplementationKind::Shared;
 twice.purity = mparser::BuiltinPurity::Pure;
 twice.determinism = mparser::BuiltinDeterminism::Deterministic;
@@ -119,6 +123,13 @@ positions mean `Any`. Declare only constraints guaranteed for all accepted
 calls. More detailed family-specific validation may remain in a shared runtime
 helper and should return one stable diagnostic identifier.
 
+`outputConstraints` are checked after the handler returns and after the
+generic `RuntimeValue` ownership/shape contract. Omitted positions mean
+`Any`. A mismatch is an extension bug and becomes
+`MParser:BuiltinContractViolation`; it is not reported as an ordinary caller
+argument error. Typed lowerings require an explicit numeric first input and
+first output constraint.
+
 `implementation` selects the ownership boundary:
 
 - `Shared` is a context-free handler shared by HIR and VM.
@@ -153,6 +164,7 @@ Every successful output must:
 - be an ordinary storable runtime value rather than Missing,
   comma-separated-list, or name-value transport state;
 - satisfy `validateRuntimeValueContract`, including shape and payload size;
+- satisfy its positional `outputConstraints` entry when one is declared;
 - follow the descriptor's exact requested-output convention;
 - avoid pointers to stack data or unowned external buffers.
 
@@ -217,6 +229,10 @@ compare every observable output. At minimum, test:
 - portable typed execution when a typed lowering is declared;
 - native execution when SLJIT is available, plus portable-only fallback.
 
+The conformance helper compares recursive `RuntimeValue` structure rather than
+display strings, including array shape/class, cell and struct contents,
+object graphs, function-handle captures, and diagnostics.
+
 Add one runnable `.m` sample and register it in CTest for `--run-hir`,
 `--run-bytecode`, and `--run`. Update the compatibility matrix and milestone
 document with those exact test names. A builtin change is not complete when
@@ -237,3 +253,24 @@ Long-tail function additions should normally touch the helper, descriptor,
 tests, sample, and documentation only. A change that requires Parser, HIR,
 Bytecode, or VM representation work should be treated as a language/runtime
 contract change and reviewed against the v1.0 roadmap before implementation.
+
+## Source Contract Version
+
+`kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
+identify source contract 1.0. This version covers registration/freeze rules,
+descriptor meaning, call/result behavior, ownership, diagnostics, context,
+threading, resource cooperation, and typed-lowering eligibility. It does not
+promise a C++ binary ABI or stable class layout.
+
+`tests/public_contract/builtin/1.0/default_catalog.json` is the normalized
+default descriptor snapshot. `builtin_catalog_snapshot_smoke` regenerates the
+catalog in memory and compares every name, alias, arity, input/output
+constraint, behavioral classification, context permission, error identifier,
+and typed lowering. Review a catalog difference rather than refreshing the
+snapshot reflexively.
+
+Compatible additive source-contract changes increment the minor version and
+provide defaults that preserve existing descriptors. Removing a field or
+changing an existing semantic rule requires a new major version. The common
+deprecation window and future external-adapter boundary are defined in
+`versioning-and-deprecation.md`.

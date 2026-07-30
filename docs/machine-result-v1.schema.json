@@ -1,7 +1,8 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://mparser.dev/schema/machine-result-v1.json",
-  "title": "MParser machine result protocol major 1",
+  "title": "MParser machine result protocol major-1 consumer profile",
+  "description": "Tolerant major-1 consumer schema. Exact producer 1.0 output is frozen by the protocol snapshot and golden fixtures.",
   "type": "object",
   "required": [
     "protocol",
@@ -43,7 +44,7 @@
       ]
     },
     "entry_function": {"type": "string"},
-    "requested_output_count": {"$ref": "#/$defs/uint64"},
+    "requested_output_count": {"$ref": "#/definitions/uint64"},
     "outputs": {
       "type": "array",
       "items": {
@@ -51,7 +52,7 @@
         "required": ["name", "value"],
         "properties": {
           "name": {"type": ["string", "null"]},
-          "value": {"$ref": "#/$defs/runtimeValue"}
+          "value": {"$ref": "#/definitions/runtimeValue"}
         },
         "additionalProperties": true
       }
@@ -63,28 +64,29 @@
         "required": ["name", "value"],
         "properties": {
           "name": {"type": "string"},
-          "value": {"$ref": "#/$defs/runtimeValue"}
+          "value": {"$ref": "#/definitions/runtimeValue"}
         },
         "additionalProperties": true
       }
     },
     "diagnostics": {
       "type": "array",
-      "items": {"$ref": "#/$defs/diagnostic"}
+      "items": {"$ref": "#/definitions/diagnostic"}
     },
-    "execution": {"$ref": "#/$defs/execution"}
+    "execution": {"$ref": "#/definitions/execution"}
   },
   "additionalProperties": true,
-  "$defs": {
+  "definitions": {
     "uint64": {
       "type": "integer",
-      "minimum": 0,
-      "maximum": 18446744073709551615
+      "x-mparser-minimum": "0",
+      "x-mparser-maximum": "18446744073709551615",
+      "description": "Unsigned 64-bit integer. Exact bounds are represented as decimal extensions and enforced by the protocol semantic validator because common Draft-7 validators use signed numeric limits."
     },
     "dimensions": {
       "type": "array",
       "minItems": 2,
-      "items": {"$ref": "#/$defs/uint64"}
+      "items": {"$ref": "#/definitions/uint64"}
     },
     "runtimeValue": {
       "oneOf": [
@@ -100,14 +102,34 @@
           "properties": {
             "kind": {"const": "numeric"},
             "class": {"enum": ["double", "logical"]},
-            "dimensions": {"$ref": "#/$defs/dimensions"},
-            "data": {
-              "type": "array",
-              "items": {
-                "type": ["number", "boolean", "string"]
+            "dimensions": {"$ref": "#/definitions/dimensions"},
+            "data": {"type": "array"}
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "class": {"const": "double"},
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {"type": "number"},
+                      {"enum": ["NaN", "Infinity", "-Infinity"]}
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "class": {"const": "logical"},
+                "data": {
+                  "type": "array",
+                  "items": {"type": "boolean"}
+                }
               }
             }
-          },
+          ],
           "additionalProperties": true
         },
         {
@@ -115,7 +137,7 @@
           "required": ["kind", "dimensions", "utf16"],
           "properties": {
             "kind": {"const": "character"},
-            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "dimensions": {"$ref": "#/definitions/dimensions"},
             "utf16": {
               "type": "array",
               "items": {
@@ -132,7 +154,7 @@
           "required": ["kind", "dimensions", "data"],
           "properties": {
             "kind": {"const": "string"},
-            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "dimensions": {"$ref": "#/definitions/dimensions"},
             "data": {
               "type": "array",
               "items": {"type": ["string", "null"]}
@@ -145,10 +167,10 @@
           "required": ["kind", "dimensions", "data"],
           "properties": {
             "kind": {"const": "cell"},
-            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "dimensions": {"$ref": "#/definitions/dimensions"},
             "data": {
               "type": "array",
-              "items": {"$ref": "#/$defs/runtimeValue"}
+              "items": {"$ref": "#/definitions/runtimeValue"}
             }
           },
           "additionalProperties": true
@@ -158,7 +180,7 @@
           "required": ["kind", "dimensions", "fields", "data"],
           "properties": {
             "kind": {"const": "struct"},
-            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "dimensions": {"$ref": "#/definitions/dimensions"},
             "fields": {
               "type": "array",
               "items": {"type": "string"}
@@ -168,7 +190,7 @@
               "items": {
                 "type": "object",
                 "additionalProperties": {
-                  "$ref": "#/$defs/runtimeValue"
+                  "$ref": "#/definitions/runtimeValue"
                 }
               }
             }
@@ -187,7 +209,7 @@
           "properties": {
             "kind": {"const": "object"},
             "class": {"type": "string"},
-            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "dimensions": {"$ref": "#/definitions/dimensions"},
             "handle": {"type": "boolean"},
             "enumeration_member": {"type": ["string", "null"]},
             "representation": {"const": "opaque"}
@@ -207,7 +229,7 @@
           ],
           "properties": {
             "kind": {"const": "function-handle"},
-            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "dimensions": {"$ref": "#/definitions/dimensions"},
             "handle_kind": {"type": "string"},
             "backend": {"type": "string"},
             "display": {"type": "string"},
@@ -224,10 +246,10 @@
           "required": ["kind", "dimensions", "data"],
           "properties": {
             "kind": {"const": "comma-separated-list"},
-            "dimensions": {"$ref": "#/$defs/dimensions"},
+            "dimensions": {"$ref": "#/definitions/dimensions"},
             "data": {
               "type": "array",
-              "items": {"$ref": "#/$defs/runtimeValue"}
+              "items": {"$ref": "#/definitions/runtimeValue"}
             }
           },
           "additionalProperties": true
@@ -238,7 +260,7 @@
           "properties": {
             "kind": {"const": "name-value-argument"},
             "name": {"type": "string"},
-            "value": {"$ref": "#/$defs/runtimeValue"}
+            "value": {"$ref": "#/definitions/runtimeValue"}
           },
           "additionalProperties": true
         }
@@ -248,7 +270,7 @@
       "type": "object",
       "required": ["offset", "line", "column"],
       "properties": {
-        "offset": {"$ref": "#/$defs/uint64"},
+        "offset": {"$ref": "#/definitions/uint64"},
         "line": {"type": "integer"},
         "column": {"type": "integer"}
       },
@@ -280,8 +302,8 @@
               "required": ["name", "begin", "end"],
               "properties": {
                 "name": {"type": "string"},
-                "begin": {"$ref": "#/$defs/position"},
-                "end": {"$ref": "#/$defs/position"}
+                "begin": {"$ref": "#/definitions/position"},
+                "end": {"$ref": "#/definitions/position"}
               },
               "additionalProperties": true
             }
@@ -302,7 +324,33 @@
         },
         "causes": {
           "type": "array",
-          "items": {"$ref": "#/$defs/diagnostic"}
+          "items": {"$ref": "#/definitions/cause"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "cause": {
+      "type": "object",
+      "required": ["identifier", "message", "stack", "causes"],
+      "properties": {
+        "identifier": {"type": "string"},
+        "message": {"type": "string"},
+        "stack": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "function", "line"],
+            "properties": {
+              "source": {"type": "string"},
+              "function": {"type": "string"},
+              "line": {"type": "integer"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "causes": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/cause"}
         }
       },
       "additionalProperties": true
@@ -351,17 +399,17 @@
             "diagnostic-limit"
           ]
         },
-        "executed_instruction_count": {"$ref": "#/$defs/uint64"},
-        "typed_region_count": {"$ref": "#/$defs/uint64"},
-        "typed_region_attempt_count": {"$ref": "#/$defs/uint64"},
-        "typed_region_execution_count": {"$ref": "#/$defs/uint64"},
-        "typed_region_fallback_count": {"$ref": "#/$defs/uint64"},
-        "native_compilation_count": {"$ref": "#/$defs/uint64"},
-        "native_cache_hit_count": {"$ref": "#/$defs/uint64"},
-        "maximum_call_depth": {"$ref": "#/$defs/uint64"},
-        "maximum_array_bytes": {"$ref": "#/$defs/uint64"},
-        "maximum_diagnostic_count": {"$ref": "#/$defs/uint64"},
-        "elapsed_nanoseconds": {"$ref": "#/$defs/uint64"}
+        "executed_instruction_count": {"$ref": "#/definitions/uint64"},
+        "typed_region_count": {"$ref": "#/definitions/uint64"},
+        "typed_region_attempt_count": {"$ref": "#/definitions/uint64"},
+        "typed_region_execution_count": {"$ref": "#/definitions/uint64"},
+        "typed_region_fallback_count": {"$ref": "#/definitions/uint64"},
+        "native_compilation_count": {"$ref": "#/definitions/uint64"},
+        "native_cache_hit_count": {"$ref": "#/definitions/uint64"},
+        "maximum_call_depth": {"$ref": "#/definitions/uint64"},
+        "maximum_array_bytes": {"$ref": "#/definitions/uint64"},
+        "maximum_diagnostic_count": {"$ref": "#/definitions/uint64"},
+        "elapsed_nanoseconds": {"$ref": "#/definitions/uint64"}
       },
       "additionalProperties": true
     }

@@ -203,6 +203,10 @@ BuiltinDescriptor mathDescriptor(std::string_view name) {
         BuiltinValueConstraint::Numeric,
         BuiltinShapeConstraint::Any,
     }};
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Any,
+    }};
     descriptor.implementation = BuiltinImplementationKind::Shared;
     descriptor.purity = BuiltinPurity::Pure;
     descriptor.determinism = BuiltinDeterminism::Deterministic;
@@ -238,6 +242,11 @@ BuiltinDescriptor reductionDescriptor(std::string_view name) {
         BuiltinValueConstraint::Numeric,
         BuiltinShapeConstraint::Any,
     }};
+    descriptor.outputConstraints.assign(
+        *descriptor.outputs.maximum,
+        BuiltinOutputConstraint{
+            BuiltinValueConstraint::Numeric,
+            BuiltinShapeConstraint::Any});
     descriptor.implementation = BuiltinImplementationKind::Shared;
     descriptor.purity = BuiltinPurity::Pure;
     descriptor.determinism = BuiltinDeterminism::Deterministic;
@@ -263,6 +272,10 @@ BuiltinDescriptor scanDescriptor(std::string_view name) {
     descriptor.inputs = BuiltinArity::variadic(1);
     descriptor.outputs = BuiltinArity::range(0, 1);
     descriptor.argumentConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.outputConstraints = {{
         BuiltinValueConstraint::Numeric,
         BuiltinShapeConstraint::Any,
     }};
@@ -299,6 +312,10 @@ BuiltinDescriptor arrayDescriptor(std::string_view name) {
         descriptor.inputs = BuiltinArity::variadic();
     }
     descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
     descriptor.implementation = BuiltinImplementationKind::Context;
     descriptor.purity = BuiltinPurity::Pure;
     descriptor.determinism = BuiltinDeterminism::Deterministic;
@@ -334,6 +351,11 @@ BuiltinDescriptor warningDescriptor(std::string_view name) {
     descriptor.inputs = BuiltinArity::variadic();
     descriptor.outputs = BuiltinArity::range(
         0, name == "lastwarn" ? 2 : 1);
+    descriptor.outputConstraints.assign(
+        *descriptor.outputs.maximum,
+        BuiltinOutputConstraint{
+            BuiltinValueConstraint::Any,
+            BuiltinShapeConstraint::Any});
     descriptor.implementation = BuiltinImplementationKind::Context;
     descriptor.purity = BuiltinPurity::Impure;
     descriptor.determinism =
@@ -394,10 +416,12 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
 
     BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.sideEffects = BuiltinSideEffect::External;
     if (matches(name, {"disp", "empty", "fprintf", "plot",
                        "rand", "randn", "single", "table"})) {
         descriptor.implementation =
             BuiltinImplementationKind::Unsupported;
+        descriptor.sideEffects = BuiltinSideEffect::None;
         descriptor.errorIdentifier = "MParser:UnsupportedBuiltin";
         descriptor.summary =
             "Recognized compatibility name without a v0.80 implementation.";
@@ -602,6 +626,13 @@ BuiltinRegistrationResult BuiltinRegistry::registerBuiltin(
         return {false, "builtin has constraints for impossible inputs: " +
                            descriptor.name};
     }
+    if (descriptor.outputs.maximum &&
+        descriptor.outputConstraints.size() >
+            *descriptor.outputs.maximum) {
+        return {false,
+                "builtin has constraints for impossible outputs: " +
+                    descriptor.name};
+    }
     if (descriptor.errorIdentifier.empty()) {
         return {false, "builtin error identifier cannot be empty: " +
                            descriptor.name};
@@ -653,6 +684,12 @@ BuiltinRegistrationResult BuiltinRegistry::registerBuiltin(
                  BuiltinValueConstraint::Numeric ||
              descriptor.argumentConstraints.front().value ==
                  BuiltinValueConstraint::ScalarNumeric);
+        const bool numericFirstOutput =
+            !descriptor.outputConstraints.empty() &&
+            (descriptor.outputConstraints.front().value ==
+                 BuiltinValueConstraint::Numeric ||
+             descriptor.outputConstraints.front().value ==
+                 BuiltinValueConstraint::ScalarNumeric);
         if (descriptor.implementation !=
                 BuiltinImplementationKind::Shared ||
             descriptor.purity != BuiltinPurity::Pure ||
@@ -665,7 +702,7 @@ BuiltinRegistrationResult BuiltinRegistry::registerBuiltin(
                 BuiltinContextPermission::None ||
             !descriptor.inputs.accepts(1) ||
             !descriptor.outputs.accepts(1) ||
-            !numericFirstArgument) {
+            !numericFirstArgument || !numericFirstOutput) {
             return {false, "typed builtin metadata is not safely lowerable: " +
                                descriptor.name};
         }
@@ -918,6 +955,18 @@ BuiltinResult BuiltinRegistry::invoke(
                         std::to_string(index + 1) +
                         " violates RuntimeValue at " +
                         contract.path + ": " + contract.error)}};
+        }
+        if (index < descriptor->outputConstraints.size() &&
+            !matchesConstraint(
+                result.outputs[index],
+                descriptor->outputConstraints[index])) {
+            return BuiltinResult{
+                false, {},
+                {contractDiagnostic(
+                    call.span,
+                    std::string(name) + " output " +
+                        std::to_string(index + 1) +
+                        " does not satisfy its value/shape constraint")}};
         }
     }
     return result;

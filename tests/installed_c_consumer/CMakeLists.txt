@@ -21,6 +21,16 @@ if(NOT MParser_C_ABI_REVISION EQUAL 1)
     message(FATAL_ERROR
         "Unexpected installed C ABI revision: ${MParser_C_ABI_REVISION}")
 endif()
+if(NOT MParser_CLI_CONTRACT_MAJOR EQUAL 1 OR
+   NOT MParser_CLI_CONTRACT_MINOR EQUAL 0)
+    message(FATAL_ERROR
+        "Unexpected CLI contract: ${MParser_CLI_CONTRACT_MAJOR}.${MParser_CLI_CONTRACT_MINOR}")
+endif()
+if(NOT MParser_BUILTIN_SOURCE_CONTRACT_MAJOR EQUAL 1 OR
+   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 0)
+    message(FATAL_ERROR
+        "Unexpected builtin source contract: ${MParser_BUILTIN_SOURCE_CONTRACT_MAJOR}.${MParser_BUILTIN_SOURCE_CONTRACT_MINOR}")
+endif()
 if(NOT MParser_LICENSE STREQUAL "Apache-2.0")
     message(FATAL_ERROR
         "Unexpected installed project license: ${MParser_LICENSE}")

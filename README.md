@@ -1,10 +1,15 @@
 # MParser
 
-Current milestone: v0.90.0. See [docs/v0.90.md](docs/v0.90.md) for the
-current bytecode VM scope, supported subset, validation commands, and next
-iteration plan,
+Current release candidate: v0.90.0; active work is the v1.0 contract-freeze
+gate. See [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
+[docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the active
+contract milestone,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
-machine-validated C/C++/protocol candidate freeze,
+machine-validated combined candidate freeze,
+[docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and
+diagnostic CLI stability,
+[docs/versioning-and-deprecation.md](docs/versioning-and-deprecation.md) for
+the common v1 compatibility policy,
 [docs/embedding-cpp-api.md](docs/embedding-cpp-api.md) for the public C++20
 RAII embedding SDK,
 [docs/c-abi-compatibility.md](docs/c-abi-compatibility.md) for C ABI evolution
@@ -974,6 +979,15 @@ builds independent C11 and multi-translation-unit C++20 consumers, and runs
 the installed CLI protocol. Checksums prove integrity, not publisher identity;
 signing or provenance attestation remains a v1.0 release operation.
 
+The post-v0.90 contract gate adds CLI 1.0 and builtin source contract 1.0 to
+that manifest. Command-line modes and scalar options are now single-occurrence,
+options in an inapplicable mode are rejected instead of ignored, and human
+usage errors return 2. The hidden pre-v1 `--run-interpreter` alias is removed
+in favor of `--run-hir`. A real Draft-7 validator checks every machine result,
+and the default 118-descriptor builtin catalog is frozen by a generated
+metadata snapshot with enforced output constraints. One shared versioning and
+deprecation policy now covers all public boundaries.
+
 Install and consume the C SDK:
 
 ```powershell
@@ -1221,7 +1235,12 @@ The public and diagnostic execution modes have separate contracts:
 
 Unlike `--run-typed-bytecode`, production `--run` does not execute a profiling
 baseline first, so script side effects occur once. Use `--help` for the full
-CLI and place `--` before a source path that begins with a hyphen.
+CLI and place `--` before a source path that begins with a hyphen. Repeating a
+single-value option, selecting more than one mode, or supplying an option to a
+mode that does not consume it is a usage error with exit code 2. Production
+`--run` uses `--jit`; `--typed-backend` is reserved for the listed diagnostic
+typed modes. The complete frozen boundary is
+[docs/cli-contract-v1.json](docs/cli-contract-v1.json).
 
 With the VS Code CMake Tools extension, a cross-platform task can resolve the
 selected `mparser` launch target and run the active MATLAB file:

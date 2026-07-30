@@ -1,0 +1,3 @@
+version: 2.4.0
+commit: c780404a84dd9ba978ba26bc58d17cb43fa7bc80
+upstream: https://github.com/pboettch/json-schema-validator

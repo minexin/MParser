@@ -13,6 +13,17 @@
     "spdx": "Apache-2.0",
     "copyright": "Copyright 2026 Wang Xin"
   },
+  "cli": {
+    "major": 1,
+    "minor": 0,
+    "production_mode": "--run",
+    "machine_format": "json-v1",
+    "contract": {
+      "path": "docs/cli-contract-v1.json",
+      "sha256_lf": "c22a28d28d491e59011f9b82726720ce5102728f768948eb7149c76608cb0f35"
+    },
+    "compatibility": "Production mode, option meaning, channel behavior, and exit-code classes are stable in v1; diagnostic mode names remain available while their human-readable formatting is not frozen."
+  },
   "c_abi": {
     "major": 1,
     "revision": 1,
@@ -26,6 +37,10 @@
     "snapshot": {
       "path": "tests/public_contract/c_abi/1.1/c_api_snapshot.h",
       "sha256_lf": "d18a953d98cc8c17d86acf3748d757e196c21c894a079db17adaa6f54525532d"
+    },
+    "legacy_1_0_snapshot": {
+      "path": "tests/c_api_v1_snapshot.h",
+      "sha256_lf": "002250fc0ac65f5a08a92ccc1f76890e745eab083745e53dfb3326b5a4540903"
     },
     "symbols": {
       "path": "tests/c_api_abi1_symbols.txt",
@@ -72,15 +87,50 @@
     },
     "schema": {
       "path": "docs/machine-result-v1.schema.json",
-      "sha256_lf": "5d0a7d51706d582b4756db99756a2617008084bf1d4e60b69af60e9420cbbcd4"
+      "sha256_lf": "013aa99461223287723ce4819b4cec749a719d57d53079742c56b4675c1dd8c2"
     },
     "compatibility": "Major 1 preserves existing field meaning and spelling; additive optional fields require a minor revision."
   },
+  "builtin_source_contract": {
+    "major": 1,
+    "minor": 0,
+    "binary_abi": "none",
+    "integration": "compiled together with the engine",
+    "header": {
+      "path": "src/mparser/builtin_registry.h",
+      "sha256_lf": "8f35031ffa98f56673806c520ae3f8277db5f3395beb236b9532c749c43aede2"
+    },
+    "default_catalog": {
+      "path": "tests/public_contract/builtin/1.0/default_catalog.json",
+      "sha256_lf": "3f8a0f6b1ce60e68962b8241abe90652c615bb45f88de426b4a9ad80505d640e"
+    },
+    "author_guide": {
+      "path": "docs/extending-builtins.md",
+      "sha256_lf": "8a45e1f13af6c055d1dda842b85fbd139ecac8988fb53a99434ff049900c0613"
+    },
+    "compatibility": "Major 1 freezes descriptor and call/result semantics as a source-integration contract, not C++ object layout or an external plugin ABI."
+  },
+  "versioning_and_deprecation": {
+    "path": "docs/versioning-and-deprecation.md",
+    "sha256_lf": "da9d9a89b7b0ee27afdf499b374420c149d06df1a0656816b6e58ef19cfa8eac",
+    "compatibility": "Stable v1 elements remain supported throughout v1.x; deprecations document a replacement and remain until the next major release."
+  },
+  "cmake_package": {
+    "config_template": {
+      "path": "cmake/MParserConfig.cmake.in",
+      "sha256_lf": "fb6eaa4d5200a5f04c5dfa9e254cb17f5c010960c84eaab738b606798bf56b38"
+    },
+    "pre_v1_find_compatibility": "SameMinorVersion",
+    "v1_find_compatibility": "SameMajorVersion",
+    "metadata": "Engine, C ABI, C++ source API, CLI, machine protocol, builtin source contract, license, and installed contract-document locations."
+  },
   "review_policy": {
     "required_for": [
+      "production or diagnostic CLI mode and option changes",
       "public C symbol or record changes",
       "public C++ declaration or behavior changes",
       "machine protocol field or exit-channel changes",
+      "builtin source-contract or default-catalog changes",
       "ownership, lifetime, concurrency, diagnostic, or error-contract changes"
     ],
     "rules": [

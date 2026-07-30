@@ -276,6 +276,8 @@ add_executable(MParser::cli ALIAS mparser)
 include(CTest)
 if(BUILD_TESTING)
 
+add_subdirectory(third_party/json-schema-validator)
+
 add_executable(mparser_smoke_tests tests/parser_smoke.cpp)
 target_link_libraries(mparser_smoke_tests PRIVATE mparser_core)
 add_test(NAME parser_smoke COMMAND mparser_smoke_tests)
@@ -462,7 +464,7 @@ add_test(NAME public_contract_smoke
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_public_contract.cmake)
 set_tests_properties(public_contract_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser public contract validated: C ABI 1.1, 90 symbols, C\\+\\+20 source API, mparser.result 1.0")
+        "MParser public contract validated: CLI 1.0, C ABI 1.1, 90 symbols, C\\+\\+20 source API, mparser.result 1.0, builtin source contract 1.0")
 set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
@@ -1358,6 +1360,19 @@ target_link_libraries(builtin_registry_smoke_tests PRIVATE
 add_test(NAME builtin_registry_smoke
     COMMAND builtin_registry_smoke_tests)
 
+add_executable(builtin_catalog_snapshot_tests
+    tests/builtin_catalog_snapshot.cpp)
+target_link_libraries(builtin_catalog_snapshot_tests PRIVATE
+    mparser_core)
+target_include_directories(builtin_catalog_snapshot_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
+add_test(NAME builtin_catalog_snapshot_smoke
+    COMMAND builtin_catalog_snapshot_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.0/default_catalog.json)
+set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "builtin source contract 1.0 catalog validated: 118 descriptors")
+
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/builtin_registry_demo.m)
@@ -1410,9 +1425,24 @@ set_tests_properties(machine_protocol_contract_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser machine protocol contract validated: schema 1, exact uint64, emergency, additive minor, five negative cases")
 
+add_executable(machine_protocol_schema_smoke_tests
+    tests/machine_protocol_schema_smoke.cpp)
+target_link_libraries(machine_protocol_schema_smoke_tests PRIVATE
+    mparser_json_schema_validator)
+add_test(NAME machine_protocol_schema_smoke
+    COMMAND machine_protocol_schema_smoke_tests
+        --contract-cases
+        ${CMAKE_CURRENT_SOURCE_DIR}/docs/machine-result-v1.schema.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_v1.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_emergency_v1.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/protocol/1.0/machine_result_1_0.json)
+
 add_test(NAME machine_protocol_cli_smoke
     COMMAND ${CMAKE_COMMAND}
         -DMPARSER_CLI=$<TARGET_FILE:mparser>
+        -DSCHEMA_VALIDATOR=$<TARGET_FILE:machine_protocol_schema_smoke_tests>
+        -DSCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/machine-result-v1.schema.json
+        -DSCHEMA_VALIDATION_DIR=${CMAKE_CURRENT_BINARY_DIR}/machine-protocol-schema
         "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
         -DSUCCESS_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/machine_protocol_demo.m
         -DCOMPILE_FAILURE_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/machine_protocol_compile_failure.m
@@ -1851,16 +1881,20 @@ install(FILES
     README.md
     THIRD_PARTY_NOTICES.md
     docs/public-contract-v1.json
+    docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
     docs/compatibility-matrix.json
     docs/roadmap-v1.0.md
     docs/v0.90.md
+    docs/v1.0-contract-freeze.md
     docs/architecture.md
     docs/c-abi-compatibility.md
     docs/embedding-c-api.md
     docs/embedding-cpp-api.md
     docs/extending-builtins.md
     docs/machine-result-protocol.md
+    docs/versioning-and-deprecation.md
+    tests/public_contract/builtin/1.0/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
     samples/c_abi_compat_demo.c

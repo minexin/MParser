@@ -15,6 +15,9 @@
 
 namespace mparser {
 
+inline constexpr std::uint32_t kBuiltinSourceContractMajor = 1;
+inline constexpr std::uint32_t kBuiltinSourceContractMinor = 0;
+
 struct RuntimeObjectArrayPolicy;
 class RuntimeExecutionControl;
 struct RuntimeWarningState;
@@ -75,6 +78,8 @@ struct BuiltinArgumentConstraint {
     BuiltinValueConstraint value = BuiltinValueConstraint::Any;
     BuiltinShapeConstraint shape = BuiltinShapeConstraint::Any;
 };
+
+using BuiltinOutputConstraint = BuiltinArgumentConstraint;
 
 enum class BuiltinSideEffect : std::uint32_t {
     None = 0,
@@ -159,6 +164,7 @@ struct BuiltinDescriptor {
     BuiltinArity inputs = BuiltinArity::variadic();
     BuiltinArity outputs = BuiltinArity::variadic();
     std::vector<BuiltinArgumentConstraint> argumentConstraints;
+    std::vector<BuiltinOutputConstraint> outputConstraints;
     BuiltinImplementationKind implementation =
         BuiltinImplementationKind::Intrinsic;
     BuiltinPurity purity = BuiltinPurity::Contextual;

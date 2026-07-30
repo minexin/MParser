@@ -40,6 +40,10 @@ mparser::BuiltinDescriptor customAbsoluteDescriptor() {
         mparser::BuiltinValueConstraint::Numeric,
         mparser::BuiltinShapeConstraint::Any,
     }};
+    descriptor.outputConstraints = {{
+        mparser::BuiltinValueConstraint::Numeric,
+        mparser::BuiltinShapeConstraint::Any,
+    }};
     descriptor.implementation =
         mparser::BuiltinImplementationKind::Shared;
     descriptor.purity = mparser::BuiltinPurity::Pure;
@@ -154,6 +158,9 @@ std::shared_ptr<mparser::BuiltinRegistry> makeCustomRegistry() {
 void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
+    require(mparser::kBuiltinSourceContractMajor == 1 &&
+                mparser::kBuiltinSourceContractMinor == 0,
+            "builtin source contract version changed");
     require(registry->names().size() == 118,
             "default builtin name catalog changed unexpectedly");
 
@@ -221,6 +228,31 @@ void runRegistryBoundarySmoke() {
                 result.diagnostics.front().identifier ==
                     "MParser:BuiltinContractViolation",
             "malformed output count was accepted");
+
+    mparser::BuiltinDescriptor wrongOutput;
+    wrongOutput.name = "custom_wrong_output";
+    wrongOutput.inputs = mparser::BuiltinArity::fixed(0);
+    wrongOutput.outputs = mparser::BuiltinArity::fixed(1);
+    wrongOutput.outputConstraints = {{
+        mparser::BuiltinValueConstraint::Text,
+        mparser::BuiltinShapeConstraint::Any,
+    }};
+    wrongOutput.implementation =
+        mparser::BuiltinImplementationKind::Shared;
+    wrongOutput.handler = [](const mparser::BuiltinCall&) {
+        return mparser::BuiltinResult::success(
+            {mparser::makeRuntimeNumberValue(1.0)});
+    };
+    auto registration =
+        registry->registerBuiltin(std::move(wrongOutput));
+    require(registration.succeeded, registration.error);
+    result = registry->invoke(
+        "custom_wrong_output",
+        mparser::BuiltinCall{empty, 1, {}, nullptr});
+    require(!result.succeeded &&
+                result.diagnostics.front().identifier ==
+                    "MParser:BuiltinContractViolation",
+            "builtin output constraint was not enforced");
 
     result = registry->invoke(
         "custom_workspace",

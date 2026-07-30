@@ -1,4 +1,7 @@
 if(NOT DEFINED MPARSER_CLI OR
+   NOT DEFINED SCHEMA_VALIDATOR OR
+   NOT DEFINED SCHEMA OR
+   NOT DEFINED SCHEMA_VALIDATION_DIR OR
    NOT DEFINED SUCCESS_SOURCE OR
    NOT DEFINED COMPILE_FAILURE_SOURCE OR
    NOT DEFINED RUNTIME_FAILURE_SOURCE OR
@@ -11,6 +14,30 @@ if(DEFINED MPARSER_EMULATOR AND NOT MPARSER_EMULATOR STREQUAL "")
     list(APPEND mparser_command ${MPARSER_EMULATOR})
 endif()
 list(APPEND mparser_command "${MPARSER_CLI}")
+
+set(schema_validator_command)
+if(DEFINED MPARSER_EMULATOR AND NOT MPARSER_EMULATOR STREQUAL "")
+    list(APPEND schema_validator_command ${MPARSER_EMULATOR})
+endif()
+list(APPEND schema_validator_command "${SCHEMA_VALIDATOR}")
+file(MAKE_DIRECTORY "${SCHEMA_VALIDATION_DIR}")
+
+function(validate_machine_schema name document)
+    set(document_path
+        "${SCHEMA_VALIDATION_DIR}/${name}.json")
+    file(WRITE "${document_path}" "${document}")
+    execute_process(
+        COMMAND ${schema_validator_command}
+            "${SCHEMA}" "${document_path}"
+        RESULT_VARIABLE validation_exit
+        OUTPUT_VARIABLE validation_output
+        ERROR_VARIABLE validation_error)
+    if(NOT validation_exit EQUAL 0)
+        message(FATAL_ERROR
+            "${name}: machine result failed JSON Schema validation\n"
+            "${validation_output}${validation_error}")
+    endif()
+endfunction()
 
 function(require_machine_document name raw_output out_variable)
     set(output "${raw_output}")
@@ -63,6 +90,7 @@ function(run_machine_case name expected_exit source)
             "${name}: machine mode wrote to stderr: ${error_output}")
     endif()
     require_machine_document("${name}" "${output}" document)
+    validate_machine_schema("${name}" "${document}")
     set("${name}_JSON" "${document}" PARENT_SCOPE)
 endfunction()
 
@@ -72,6 +100,27 @@ function(require_json_equal name json expected)
         message(FATAL_ERROR
             "${name}: expected '${expected}', got '${actual}': ${json_error}")
     endif()
+endfunction()
+
+function(run_backend_case name jit_mode expected_backend)
+    execute_process(
+        COMMAND ${mparser_command} --run "--jit=${jit_mode}"
+            --result-format=json-v1 "${SUCCESS_SOURCE}"
+        RESULT_VARIABLE actual_exit
+        OUTPUT_VARIABLE output
+        ERROR_VARIABLE error_output)
+    if(NOT "${actual_exit}" STREQUAL "0" OR
+       NOT error_output STREQUAL "")
+        message(FATAL_ERROR
+            "${name}: backend case failed\nexit: ${actual_exit}\n"
+            "stdout: ${output}\nstderr: ${error_output}")
+    endif()
+    require_machine_document("${name}" "${output}" document)
+    validate_machine_schema("${name}" "${document}")
+    require_json_equal("${name}_status" "${document}"
+        succeeded status)
+    require_json_equal("${name}_backend" "${document}"
+        "${expected_backend}" execution requested_backend)
 endfunction()
 
 function(run_cli_machine_rejection name)
@@ -88,6 +137,7 @@ function(run_cli_machine_rejection name)
             "stderr: ${error_output}")
     endif()
     require_machine_document("${name}" "${output}" document)
+    validate_machine_schema("${name}" "${document}")
     require_json_equal("${name}_status" "${document}"
         request-rejected status)
     require_json_equal("${name}_identifier" "${document}"
@@ -104,6 +154,11 @@ require_json_equal(success_backend "${success_JSON}" bytecode
     execution requested_backend)
 require_json_equal(success_tier "${success_JSON}" bytecode
     execution effective_tier)
+
+run_backend_case(backend_auto auto automatic)
+run_backend_case(backend_off off bytecode)
+run_backend_case(backend_portable portable portable)
+run_backend_case(backend_native native native)
 
 string(JSON workspace_length ERROR_VARIABLE json_error
     LENGTH "${success_JSON}" workspace)
@@ -182,6 +237,7 @@ if(NOT "${cli_exit}" STREQUAL "2" OR NOT cli_error STREQUAL "")
         "CLI failure did not preserve the machine channel contract")
 endif()
 require_machine_document("missing_input" "${cli_output}" cli_document)
+validate_machine_schema("missing_input" "${cli_document}")
 require_json_equal(cli_error_identifier "${cli_document}"
     MParser:CliError diagnostics 0 identifier)
 
@@ -197,6 +253,7 @@ if(NOT "${stats_exit}" STREQUAL "2" OR NOT stats_error STREQUAL "")
 endif()
 require_machine_document("native_cache_stats" "${stats_output}"
     stats_document)
+validate_machine_schema("native_cache_stats" "${stats_document}")
 require_json_equal(stats_error_identifier "${stats_document}"
     MParser:CliError diagnostics 0 identifier)
 
@@ -208,3 +265,9 @@ run_cli_machine_rejection(
     version_before_format --version --result-format=json-v1)
 run_cli_machine_rejection(
     format_before_version --result-format=json-v1 --version)
+run_cli_machine_rejection(
+    duplicate_format --run --result-format=json-v1
+    --result-format=json-v1 "${SUCCESS_SOURCE}")
+run_cli_machine_rejection(
+    production_typed_selector --run --typed-backend=portable
+    --result-format=json-v1 "${SUCCESS_SOURCE}")

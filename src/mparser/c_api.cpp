@@ -1055,20 +1055,19 @@ mparser_api_status initializeVersionedStructure(
     }
     std::memset(storage, 0, storageSize);
     auto* structure = static_cast<Structure*>(storage);
-    *structure = {};
     structure->struct_size = static_cast<uint32_t>(storageSize);
     structure->abi_version = abiVersion;
     return MPARSER_API_STATUS_OK;
 }
 
 static_assert(
-    sizeof(mparser_invocation_options) ==
+    sizeof(mparser_invocation_options) >=
     MPARSER_INVOCATION_OPTIONS_V1_SIZE);
 static_assert(
-    sizeof(mparser_execution_summary) ==
+    sizeof(mparser_execution_summary) >=
     MPARSER_EXECUTION_SUMMARY_V1_SIZE);
 static_assert(
-    sizeof(mparser_source_load_options) ==
+    sizeof(mparser_source_load_options) >=
     MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE);
 
 } // namespace

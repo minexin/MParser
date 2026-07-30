@@ -68,11 +68,12 @@ target_link_libraries(host PRIVATE MParser::c_api)
 exports project-version components, `MParser_C_ABI_VERSION`,
 `MParser_C_ABI_REVISION`,
 `MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.0`, machine
-protocol `1.0`, and checked paths to the license, notices, public contract, and
-protocol schema. Its paths are relative to the package prefix, so the installed
-tree may be moved as a unit before consumer configuration. On Windows, deploy
-`mparser_c.dll` beside the host executable or expose the SDK `bin` directory
-to the runtime loader.
+protocol `1.0`, CLI contract `1.0`, builtin source contract `1.0`, and checked
+paths to the license, notices, public/CLI contracts, protocol schema, builtin
+catalog/author guide, and versioning policy. Its paths are relative to the
+package prefix, so the installed tree may be moved as a unit before consumer
+configuration. On Windows, deploy `mparser_c.dll` beside the host executable
+or expose the SDK `bin` directory to the runtime loader.
 
 The C package remains independently consumable. v0.88 also exports
 `MParser::cpp_api`; v0.90 records C ABI 1.1 and C++ source API 1.0 as the
@@ -364,15 +365,19 @@ The relocated CMake package exports `MParser_LICENSE`, `MParser_COPYRIGHT`,
 and checked paths to all three files. Vendored SLJIT remains under the
 Simplified BSD terms reproduced in the third-party notices.
 
-## Remaining Freeze Work
+## Frozen Boundary
 
-The v0.90 embedding gate still requires:
+The v0.90 embedding gate is closed: C ABI 1.1, header-only C++ source API 1.0,
+machine protocol 1.0, allocation/internal-failure containment, sanitizer
+coverage, and checksummed unpacked-SDK validation are all active regression
+gates. `docs/public-contract-v1.json` also hashes the legacy C ABI 1.0 header
+snapshot, and sized initializers preserve a caller-provided prefix without
+writing a future library `sizeof` over it.
 
-1. final compatibility review of C ABI major 1, the header-only C++ source
-   API, and machine protocol major 1;
-2. sanitizer and allocation-failure evidence for the remaining resource
-   boundary;
-3. release archive, signing/checksum, and installation-policy review.
+`docs/versioning-and-deprecation.md` now defines the common v1 evolution
+policy. Remaining v1.0 work concerns broader reliability evidence,
+performance/resource baselines, documentation, provenance, and final release
+packaging rather than redesigning this ABI.
 
 The v1.0 candidate deliberately excludes a stable external native callback
 ABI and zero-copy borrowed input arrays. Their future additive rules are

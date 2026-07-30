@@ -29,6 +29,16 @@ if(NOT MParser_MACHINE_PROTOCOL_NAME STREQUAL "mparser.result" OR
     message(FATAL_ERROR
         "Unexpected machine protocol: ${MParser_MACHINE_PROTOCOL_NAME} ${MParser_MACHINE_PROTOCOL_MAJOR}.${MParser_MACHINE_PROTOCOL_MINOR}")
 endif()
+if(NOT MParser_CLI_CONTRACT_MAJOR EQUAL 1 OR
+   NOT MParser_CLI_CONTRACT_MINOR EQUAL 0)
+    message(FATAL_ERROR
+        "Unexpected CLI contract: ${MParser_CLI_CONTRACT_MAJOR}.${MParser_CLI_CONTRACT_MINOR}")
+endif()
+if(NOT MParser_BUILTIN_SOURCE_CONTRACT_MAJOR EQUAL 1 OR
+   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 0)
+    message(FATAL_ERROR
+        "Unexpected builtin source contract: ${MParser_BUILTIN_SOURCE_CONTRACT_MAJOR}.${MParser_BUILTIN_SOURCE_CONTRACT_MINOR}")
+endif()
 if(NOT MParser_LICENSE STREQUAL "Apache-2.0")
     message(FATAL_ERROR
         "Unexpected installed project license: ${MParser_LICENSE}")

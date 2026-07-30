@@ -33,9 +33,10 @@ transitive link to `MParser::c_api`. `MParser::cli` is the matching imported
 executable. The package exports `MParser_CPP_FOUND`,
 `MParser_CPP_INCLUDE_DIR`, engine version components, and C ABI major/revision
 metadata. It also exports C++ source API `1.0`, machine result protocol `1.0`,
-and checked paths to the public contract and protocol schema. On Windows,
-deploy `mparser_c.dll` beside the host executable or add the installed `bin`
-directory to the runtime loader path.
+CLI contract `1.0`, builtin source contract `1.0`, and checked paths to the
+public/CLI contracts, protocol schema, builtin catalog/author guide, and
+versioning policy. On Windows, deploy `mparser_c.dll` beside the host
+executable or add the installed `bin` directory to the runtime loader path.
 
 Hosts can query the header declaration directly:
 
@@ -197,9 +198,9 @@ A boundary failure never returns a partially initialized wrapper. It does not
 make invocation globally transactional: a publication/allocation failure
 after runtime execution can leave session or object side effects committed.
 Do not blindly retry such a call unless the invoked operation is idempotent.
-`Invocation::maxArrayBytes` limits one recursively measured runtime value, not
-aggregate heap or RSS. Wall-time starts after module/session lock admission,
-so queue deadlines remain a host responsibility.
+`Invocation::limits.maximumArrayBytes` limits one recursively measured runtime
+value, not aggregate heap or RSS. Wall-time starts after module/session lock
+admission, so queue deadlines remain a host responsibility.
 
 ## Current Boundary
 
@@ -227,5 +228,6 @@ allocation and undefined-behavior edges.
 Distribution licensing is Apache-2.0 with `Copyright 2026 Wang Xin`.
 Checksummed release archives include the public contract and schema and are
 validated only through their unpacked C/C++ SDK. This is the v1 candidate
-freeze; final v1.0 versioning/deprecation policy and release provenance remain
-the release gate.
+freeze; the common versioning/deprecation policy is now frozen in
+`docs/versioning-and-deprecation.md`, while release provenance and the final
+1.0.0 publication gate remain open.

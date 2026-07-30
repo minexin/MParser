@@ -230,11 +230,12 @@ Consumers select the protocol explicitly with `json-v1` and verify
 
 The normative machine-readable shape is
 [`machine-result-v1.schema.json`](machine-result-v1.schema.json). This file
-describes the exact protocol-1.0 producer shape. It permits additive object
+is the tolerant Draft-7 major-1 consumer profile. It permits additive object
 members while preserving all current required members, field types, and
-recursive value/diagnostic shapes. A future minor that adds enum values or
-value kinds must publish a revised major-1 schema; consumers apply a schema
-only up to the minor they support.
+recursive value/diagnostic shapes. Exact protocol-1.0 producer shape is frozen
+by the golden and immutable public snapshots. A future minor that adds enum
+values or value kinds must publish a revised major-1 schema; consumers apply a
+schema only up to the minor they support.
 
 - A minor revision may add optional object members or new enum values.
 - Consumers must ignore unknown members and preserve unknown enum values as
@@ -257,3 +258,9 @@ major, required-field, current-minor enum, and type cases. CLI integration
 tests independently parse success, compilation, validation, source-load, CLI,
 runtime-failure,
 human-option rejection, and emergency-framing documents.
+
+`machine_protocol_schema_smoke` uses vendored test-only JSON and Draft-7
+libraries to validate the golden, emergency, snapshot, negative, and dynamic
+CLI documents. A supplemental semantic pass checks exact unsigned 64-bit
+bounds because the validator represents JSON numeric limits with signed host
+integers. Runtime protocol generation does not link either test dependency.
