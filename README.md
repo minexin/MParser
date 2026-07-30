@@ -1,9 +1,9 @@
 # MParser
 
 Current release candidate: v0.90.0. The v1 public-contract candidate is
-locally frozen; reliability hardening is locally closed and active work is the
-v1.0 performance/resource baseline, while candidate cross-platform
-confirmation is deferred until CI capacity is restored. See
+locally frozen; reliability and performance/resource hardening are locally
+closed and active work is the v1.0 release-documentation gate, while candidate
+cross-platform confirmation is deferred until CI capacity is restored. See
 [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
 [docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the contract
 candidate,
@@ -1033,7 +1033,9 @@ build\windows-msvc-release\mparser_performance_baseline.exe `
 Reports run under QEMU are functional contract evidence only; performance
 claims require native hardware. See
 [docs/v1.0-performance-baseline.md](docs/v1.0-performance-baseline.md) for
-the exact boundaries and comparison rules.
+the exact boundaries and comparison rules. Source-only host reports and their
+local validation evidence are indexed in
+[docs/baselines/v1.0/README.md](docs/baselines/v1.0/README.md).
 
 Install and consume the C SDK:
 

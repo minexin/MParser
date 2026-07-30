@@ -495,8 +495,8 @@
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["performance_baseline_smoke"],
-      "sources": ["tools/performance_baseline.cpp", "tests/performance_baseline_schema_smoke.cpp", "tests/validate_performance_baseline.cmake", "tests/fixtures/performance_baseline_quick.m", "samples/performance_scalar_loop.m", "samples/performance_array_workload.m", "docs/performance-baseline-v1.schema.json", "docs/v1.0-performance-baseline.md", "CMakeLists.txt"],
-      "limits": "The non-installed engineering collector emits protocol-1.0 raw timing/allocation samples, source/binary SHA-256 identities, and exact boundaries without machine-specific pass/fail thresholds. Allocation activity is not live heap, peak RSS is process-wide, process-cold is not filesystem-cache-cold, and emulated reports are functional evidence only. Windows native/no-JIT and package closure is local; shared cross-platform and physical-ARM performance evidence remains pending."
+      "sources": ["tools/performance_baseline.cpp", "tests/performance_baseline_schema_smoke.cpp", "tests/validate_performance_baseline.cmake", "tests/fixtures/performance_baseline_quick.m", "samples/performance_scalar_loop.m", "samples/performance_array_workload.m", "docs/performance-baseline-v1.schema.json", "docs/v1.0-performance-baseline.md", "docs/baselines/v1.0/README.md", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json", "CMakeLists.txt"],
+      "limits": "The non-installed engineering collector emits protocol-1.0 raw timing/allocation samples, source/binary SHA-256 identities, and exact boundaries without machine-specific pass/fail thresholds. Allocation activity is not live heap, peak RSS is process-wide, process-cold is not filesystem-cache-cold, and emulated reports are functional evidence only. Windows native/no-JIT and package evidence passed locally; shared cross-platform and physical-ARM performance evidence remains pending."
     },
     {
       "id": "MATRIX-001",
@@ -750,7 +750,7 @@
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Establish reproducible, hardware-labelled parse, compile, process-cold, bytecode, portable, native cold/warm, allocation, peak-memory, binary-size, and cache-boundary evidence without machine-specific thresholds.",
-      "exit_evidence": "The protocol-1.0 collector, Draft-7 schema, semantic statistics/cache/correctness validator, quick eligible contract workload, and representative scalar/array samples are implemented. Local Windows native/no-JIT full regression, release-package validation, committed host reports, and later shared cross-platform/native-ARM reports complete the evidence set."
+      "exit_evidence": "The protocol-1.0 collector, Draft-7 schema, semantic statistics/cache/correctness validator, quick eligible contract workload, and representative scalar/array samples are implemented. Three reports under docs/baselines/v1.0 bind implementation da4b010 to exact source/binary hashes; Windows native 201/201, no-JIT 195/195, testing-disabled SDK, and package validation passed. Shared cross-platform and native-ARM reports remain required for final closure."
     },
     {
       "id": "G-JIT-001",

@@ -559,14 +559,16 @@ is green. It refines, rather than replaces, the four work areas above.
    cold/warm execution, peak memory, allocations, binary size, and cache
    boundaries. Every result records hardware, OS, compiler, build type,
    backend, workload, and the exact timing boundary.
-   **Status: source contract implemented; local closure in progress.** The
+   **Status: local candidate complete for implementation commit `da4b010`.**
+   The
    non-installed collector, protocol-1.0 Draft-7 schema, semantic validator,
    quick eligible contract workload, and representative scalar/array
    workloads are defined in
-   [v1.0-performance-baseline.md](v1.0-performance-baseline.md). Windows
-   native/no-JIT full regression, package evidence, and committed host reports
-   close the local candidate; cross-platform and physical-ARM measurements
-   remain deferred.
+   [v1.0-performance-baseline.md](v1.0-performance-baseline.md). Three
+   SHA-256-bound Windows x86-64 reports, native 201/201 and no-JIT 195/195
+   regression, a testing-disabled SDK build, and unpacked package validation
+   are indexed under `docs/baselines/v1.0`. Cross-platform and physical-ARM
+   measurements remain deferred.
 5. **Must-have: close release documentation.** Publish the user manual,
    install/build guide, support matrix, CLI/API references, JIT/fallback
    behavior, C/C++ embedding guides, machine protocol, builtin author guide,
