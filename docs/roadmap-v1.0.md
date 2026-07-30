@@ -574,6 +574,14 @@ is green. It refines, rather than replaces, the four work areas above.
    behavior, C/C++ embedding guides, machine protocol, builtin author guide,
    diagnostics/resource/concurrency/lifecycle rules, the v0.x-to-v1.0
    migration policy, and explicit unsupported/Post-v1.0 lists.
+   **Status: local candidate complete.** The task-oriented documentation
+   index, user/build/support/CLI/JIT/runtime/migration guides, executable
+   CLI-contract-to-help/reference validation, documented human and machine
+   samples, and installed/archive required-file gates are present. Windows
+   native 202/202, no-JIT 196/196, and reproducible relocated package
+   validation passed; evidence is recorded in
+   [v1.0-documentation.md](v1.0-documentation.md). Shared cross-platform
+   package confirmation remains deferred to the final validation window.
 6. **Should-have: evaluate specialized sanitizer CI.** Prefer Linux Clang
    TSan, then Windows MSVC ASan no-JIT, then macOS ARM64 Apple Clang
    ASan+UBSan no-JIT. A toolchain may be deferred only with a recorded

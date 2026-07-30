@@ -1,9 +1,15 @@
 # MParser
 
 Current release candidate: v0.90.0. The v1 public-contract candidate is
-locally frozen; reliability and performance/resource hardening are locally
-closed and active work is the v1.0 release-documentation gate, while candidate
-cross-platform confirmation is deferred until CI capacity is restored. See
+locally frozen; reliability, performance/resource, and release-documentation
+hardening are locally closed. Active work is specialist sanitizer evaluation
+and final-release preparation, while candidate cross-platform confirmation is
+deferred until the shared validation window.
+Release documentation starts at
+[docs/README.md](docs/README.md), with the
+[user manual](docs/user-manual.md),
+[support matrix](docs/support-matrix.md), and
+[v0.x-to-v1.0 migration guide](docs/migration-v1.0.md). See
 [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
 [docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the contract
 candidate,
@@ -11,6 +17,8 @@ candidate,
 evidence,
 [docs/v1.0-performance-baseline.md](docs/v1.0-performance-baseline.md) for
 the versioned timing, allocation, memory, binary-size, and cache evidence,
+[docs/v1.0-documentation.md](docs/v1.0-documentation.md) for the release
+manual and package evidence,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
 machine-validated combined candidate freeze,
 [docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and
@@ -1142,6 +1150,10 @@ matrix.
 
 ## Build
 
+The complete release-target prerequisites, native/no-JIT configurations,
+install layout, CMake consumer targets, packaging flow, and troubleshooting
+are in [docs/build-and-install.md](docs/build-and-install.md).
+
 ```powershell
 cmake -S . -B build
 cmake --build build
@@ -1232,6 +1244,12 @@ build\mparser.exe --run-module-runtime --adaptive-hot-loop=5 `
 ```
 
 ## Run scripts
+
+For the task-oriented workflow, language/runtime overview, and explicit
+unsupported boundaries, start with
+[docs/user-manual.md](docs/user-manual.md). The exact CLI 1.0 mode, option,
+channel, and exit contracts are in
+[docs/cli-reference.md](docs/cli-reference.md).
 
 `--run` is the stable one-shot interface for applications, terminals, and
 editor Run buttons. It compiles the source graph, executes the full bytecode

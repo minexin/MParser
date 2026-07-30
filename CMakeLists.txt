@@ -513,6 +513,19 @@ set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
 
+add_test(NAME release_documentation_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DCLI_CONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/cli-contract-v1.json
+        -DMPARSER_EXECUTABLE=$<TARGET_FILE:mparser>
+        "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
+        -DENTRY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_documentation.cmake)
+set_tests_properties(release_documentation_smoke PROPERTIES
+    LABELS "documentation;release"
+    PASS_REGULAR_EXPRESSION
+        "MParser release documentation validated: CLI 1.0, manuals, production sample, and mparser.result 1.x")
+
 add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
 target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)
 add_test(NAME nd_array_smoke COMMAND nd_array_smoke_tests)
@@ -1960,6 +1973,13 @@ install(FILES
     NOTICE
     README.md
     THIRD_PARTY_NOTICES.md
+    docs/user-manual.md
+    docs/build-and-install.md
+    docs/support-matrix.md
+    docs/cli-reference.md
+    docs/jit-and-fallback.md
+    docs/runtime-boundaries.md
+    docs/migration-v1.0.md
     docs/public-contract-v1.json
     docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
@@ -1970,6 +1990,7 @@ install(FILES
     docs/v1.0-contract-freeze.md
     docs/v1.0-reliability.md
     docs/v1.0-performance-baseline.md
+    docs/v1.0-documentation.md
     docs/architecture.md
     docs/c-abi-compatibility.md
     docs/embedding-c-api.md
@@ -1979,6 +2000,9 @@ install(FILES
     docs/versioning-and-deprecation.md
     tests/public_contract/builtin/1.0/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
+install(FILES docs/README.md
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}"
+    RENAME documentation-index.md)
 install(FILES
     samples/c_abi_compat_demo.c
     samples/c_embedding_demo.c

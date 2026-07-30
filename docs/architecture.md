@@ -1642,6 +1642,17 @@ non-goals are defined in [roadmap-v1.0.md](roadmap-v1.0.md). That roadmap is
 the authority for milestone selection; this document remains the detailed
 description of the architecture already implemented.
 
+The release-documentation layer is intentionally derived from those
+versioned contracts rather than becoming another semantic authority.
+[README.md](README.md) routes users to the manual, build/install guide,
+human-readable support matrix, CLI reference, JIT/fallback guide, runtime
+boundaries, embedding/API references, builtin author guide, and migration
+policy. `release_documentation_smoke` reads `cli-contract-v1.json`, requires
+every frozen production option and diagnostic mode in the CLI reference and
+live `--help`, then runs both the documented human production sample and the
+`mparser.result` machine sample. Installed-consumer and release-archive gates
+require the same manual set from a relocated SDK.
+
 When dynamic features invalidate assumptions, execution should deopt back to
 the baseline bytecode VM. This preserves the declared MATLAB-like subset
 semantics while allowing guarded optimization.

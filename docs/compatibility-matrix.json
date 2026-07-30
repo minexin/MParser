@@ -499,6 +499,17 @@
       "limits": "The non-installed engineering collector emits protocol-1.0 raw timing/allocation samples, source/binary SHA-256 identities, and exact boundaries without machine-specific pass/fail thresholds. Allocation activity is not live heap, peak RSS is process-wide, process-cold is not filesystem-cache-cold, and emulated reports are functional evidence only. Windows native/no-JIT and package evidence passed locally; shared cross-platform and physical-ARM performance evidence remains pending."
     },
     {
+      "id": "DOC-001",
+      "area": "release",
+      "feature": "Task-oriented v1 manuals, human support summary, migration policy, and executable CLI documentation consistency",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
+      "evidence": ["release_documentation_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "release_archive_smoke"],
+      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/v1.0-documentation.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
+      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. Final candidate package confirmation on non-Windows release targets remains part of the shared cross-platform validation window."
+    },
+    {
       "id": "MATRIX-001",
       "area": "engineering",
       "feature": "Machine-validated compatibility claims with executable evidence and explicit gap ownership",
@@ -751,6 +762,16 @@
       "framework_impact": "none",
       "requirement": "Establish reproducible, hardware-labelled parse, compile, process-cold, bytecode, portable, native cold/warm, allocation, peak-memory, binary-size, and cache-boundary evidence without machine-specific thresholds.",
       "exit_evidence": "The protocol-1.0 collector, Draft-7 schema, semantic statistics/cache/correctness validator, quick eligible contract workload, and representative scalar/array samples are implemented. Three reports under docs/baselines/v1.0 bind implementation da4b010 to exact source/binary hashes; Windows native 201/201, no-JIT 195/195, testing-disabled SDK, and package validation passed. Shared cross-platform and native-ARM reports remain required for final closure."
+    },
+    {
+      "id": "G-DOCUMENTATION-001",
+      "area": "release",
+      "priority": "must-have",
+      "state": "in-progress",
+      "target": "v1.0",
+      "framework_impact": "none",
+      "requirement": "Publish a coherent user, build/install, support, CLI/API, JIT/fallback, runtime-boundary, extension-author, and pre-v1 migration manual set and prevent it from drifting from frozen contracts or package contents.",
+      "exit_evidence": "The documentation set, contract-derived smoke validator, production/machine samples, and installed/archive required-file lists are implemented locally. Windows native 202/202, no-JIT 196/196, and reproducible relocated package validation passed and are recorded in docs/v1.0-documentation.md. Final release-platform package confirmation is required to close the gap."
     },
     {
       "id": "G-JIT-001",
