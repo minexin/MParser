@@ -1,0 +1,464 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mparser.dev/schema/performance-baseline-v1.json",
+  "title": "MParser performance baseline protocol major-1 consumer profile",
+  "description": "Machine-readable performance and resource evidence. Consumers accept additive fields within major version 1; semantic invariants are validated separately.",
+  "type": "object",
+  "required": [
+    "protocol",
+    "generated_at_utc",
+    "revision",
+    "environment",
+    "build",
+    "workload",
+    "settings",
+    "measurements",
+    "resources",
+    "correctness"
+  ],
+  "properties": {
+    "protocol": {
+      "type": "object",
+      "required": ["name", "major", "minor"],
+      "properties": {
+        "name": {"const": "mparser.performance-baseline"},
+        "major": {"const": 1},
+        "minor": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "revision": {"type": "string", "minLength": 1},
+    "environment": {
+      "type": "object",
+      "required": [
+        "os",
+        "os_version",
+        "architecture",
+        "cpu_model",
+        "logical_cpu_count",
+        "physical_memory_bytes",
+        "emulated"
+      ],
+      "properties": {
+        "os": {"type": "string", "minLength": 1},
+        "os_version": {"type": "string"},
+        "architecture": {
+          "enum": ["x86_64", "aarch64", "x86", "arm", "unknown"]
+        },
+        "cpu_model": {"type": "string", "minLength": 1},
+        "logical_cpu_count": {"$ref": "#/definitions/uint64"},
+        "physical_memory_bytes": {"$ref": "#/definitions/uint64"},
+        "emulated": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "build": {
+      "type": "object",
+      "required": [
+        "project_version",
+        "build_type",
+        "compiler_id",
+        "compiler_version",
+        "native_jit_available",
+        "native_jit_platform"
+      ],
+      "properties": {
+        "project_version": {"type": "string", "minLength": 1},
+        "build_type": {"type": "string", "minLength": 1},
+        "compiler_id": {"type": "string", "minLength": 1},
+        "compiler_version": {"type": "string", "minLength": 1},
+        "native_jit_available": {"type": "boolean"},
+        "native_jit_platform": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "workload": {
+      "type": "object",
+      "required": [
+        "id",
+        "source_path",
+        "source_sha256",
+        "source_bytes",
+        "source_lines",
+        "result_variable"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "source_path": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/definitions/sha256"},
+        "source_bytes": {"$ref": "#/definitions/positiveUint64"},
+        "source_lines": {"$ref": "#/definitions/positiveUint64"},
+        "result_variable": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "parse_warmup",
+        "parse_iterations",
+        "compile_warmup",
+        "compile_iterations",
+        "runtime_warmup",
+        "runtime_iterations",
+        "process_iterations"
+      ],
+      "properties": {
+        "parse_warmup": {"$ref": "#/definitions/uint64"},
+        "parse_iterations": {"$ref": "#/definitions/positiveUint64"},
+        "compile_warmup": {"$ref": "#/definitions/uint64"},
+        "compile_iterations": {"$ref": "#/definitions/positiveUint64"},
+        "runtime_warmup": {"$ref": "#/definitions/uint64"},
+        "runtime_iterations": {"$ref": "#/definitions/positiveUint64"},
+        "process_iterations": {"$ref": "#/definitions/positiveUint64"}
+      },
+      "additionalProperties": true
+    },
+    "measurements": {
+      "type": "object",
+      "required": [
+        "parse",
+        "compile",
+        "process_cold_start",
+        "bytecode",
+        "portable",
+        "native_cold",
+        "native_warm"
+      ],
+      "properties": {
+        "parse": {"$ref": "#/definitions/measurement"},
+        "compile": {"$ref": "#/definitions/measurement"},
+        "process_cold_start": {"$ref": "#/definitions/measurement"},
+        "bytecode": {"$ref": "#/definitions/measurement"},
+        "portable": {"$ref": "#/definitions/measurement"},
+        "native_cold": {"$ref": "#/definitions/measurement"},
+        "native_warm": {"$ref": "#/definitions/measurement"}
+      },
+      "additionalProperties": true
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "peak_resident_bytes",
+        "binary_artifacts",
+        "native_cache"
+      ],
+      "properties": {
+        "peak_resident_bytes": {"$ref": "#/definitions/uint64"},
+        "binary_artifacts": {
+          "type": "object",
+          "required": [
+            "baseline_tool",
+            "mparser_cli",
+            "mparser_c_api"
+          ],
+          "properties": {
+            "baseline_tool": {"$ref": "#/definitions/binaryArtifact"},
+            "mparser_cli": {"$ref": "#/definitions/binaryArtifact"},
+            "mparser_c_api": {"$ref": "#/definitions/binaryArtifact"}
+          },
+          "additionalProperties": true
+        },
+        "native_cache": {
+          "type": "object",
+          "required": ["before", "after_cold", "after_warm"],
+          "properties": {
+            "before": {"$ref": "#/definitions/cacheStatistics"},
+            "after_cold": {"$ref": "#/definitions/cacheStatistics"},
+            "after_warm": {"$ref": "#/definitions/cacheStatistics"}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "correctness": {
+      "type": "object",
+      "required": [
+        "result_variable",
+        "reference_value",
+        "bytecode_matches",
+        "portable_matches",
+        "native_matches",
+        "process_exit_success_count",
+        "all_runtime_results_match"
+      ],
+      "properties": {
+        "result_variable": {"type": "string", "minLength": 1},
+        "reference_value": {"type": "number"},
+        "bytecode_matches": {"type": "boolean"},
+        "portable_matches": {"type": "boolean"},
+        "native_matches": {"type": "boolean"},
+        "process_exit_success_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "all_runtime_results_match": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "uint64": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "positiveUint64": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "binaryArtifact": {
+      "type": "object",
+      "required": ["path", "size_bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "size_bytes": {"$ref": "#/definitions/positiveUint64"},
+        "sha256": {"$ref": "#/definitions/sha256"}
+      },
+      "additionalProperties": true
+    },
+    "timing": {
+      "type": "object",
+      "required": [
+        "unit",
+        "samples_ns",
+        "total_ns",
+        "mean_ns",
+        "median_ns",
+        "minimum_ns",
+        "p95_ns",
+        "maximum_ns"
+      ],
+      "properties": {
+        "unit": {"const": "nanoseconds"},
+        "samples_ns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/definitions/uint64"}
+        },
+        "total_ns": {"$ref": "#/definitions/uint64"},
+        "mean_ns": {"type": "number", "minimum": 0},
+        "median_ns": {"type": "number", "minimum": 0},
+        "minimum_ns": {"$ref": "#/definitions/uint64"},
+        "p95_ns": {"$ref": "#/definitions/uint64"},
+        "maximum_ns": {"$ref": "#/definitions/uint64"}
+      },
+      "additionalProperties": true
+    },
+    "allocationActivity": {
+      "type": "object",
+      "required": [
+        "aggregation",
+        "successful_request_count",
+        "requested_bytes",
+        "successful_request_samples",
+        "requested_byte_samples",
+        "boundary"
+      ],
+      "properties": {
+        "aggregation": {
+          "const": "sum-across-measured-iterations"
+        },
+        "successful_request_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "requested_bytes": {"$ref": "#/definitions/uint64"},
+        "successful_request_samples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/definitions/uint64"}
+        },
+        "requested_byte_samples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/definitions/uint64"}
+        },
+        "boundary": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "executionSummary": {
+      "type": "object",
+      "required": [
+        "effective_tiers",
+        "fallback_iterations",
+        "executed_instruction_count",
+        "typed_region_count",
+        "typed_region_attempt_count",
+        "typed_region_execution_count",
+        "typed_region_fallback_count",
+        "native_compilation_count",
+        "native_cache_hit_count",
+        "maximum_call_depth",
+        "maximum_array_bytes",
+        "maximum_diagnostic_count"
+      ],
+      "properties": {
+        "effective_tiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "fallback_iterations": {"$ref": "#/definitions/uint64"},
+        "executed_instruction_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "typed_region_count": {"$ref": "#/definitions/uint64"},
+        "typed_region_attempt_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "typed_region_execution_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "typed_region_fallback_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "native_compilation_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "native_cache_hit_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "maximum_call_depth": {"$ref": "#/definitions/uint64"},
+        "maximum_array_bytes": {"$ref": "#/definitions/uint64"},
+        "maximum_diagnostic_count": {
+          "$ref": "#/definitions/uint64"
+        }
+      },
+      "additionalProperties": true
+    },
+    "measurement": {
+      "type": "object",
+      "required": [
+        "status",
+        "reason",
+        "boundary",
+        "warmup_iterations",
+        "measured_iterations",
+        "host_wall",
+        "engine_elapsed",
+        "allocation_activity",
+        "execution_summary"
+      ],
+      "properties": {
+        "status": {"enum": ["measured", "unavailable"]},
+        "reason": {"type": "string"},
+        "boundary": {"type": "string", "minLength": 1},
+        "warmup_iterations": {"$ref": "#/definitions/uint64"},
+        "measured_iterations": {"$ref": "#/definitions/uint64"},
+        "host_wall": {
+          "oneOf": [
+            {"$ref": "#/definitions/timing"},
+            {"type": "null"}
+          ]
+        },
+        "engine_elapsed": {
+          "oneOf": [
+            {"$ref": "#/definitions/timing"},
+            {"type": "null"}
+          ]
+        },
+        "allocation_activity": {
+          "oneOf": [
+            {"$ref": "#/definitions/allocationActivity"},
+            {"type": "null"}
+          ]
+        },
+        "execution_summary": {
+          "oneOf": [
+            {"$ref": "#/definitions/executionSummary"},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"status": {"const": "measured"}}
+          },
+          "then": {
+            "properties": {
+              "reason": {"const": ""},
+              "measured_iterations": {"minimum": 1},
+              "host_wall": {"$ref": "#/definitions/timing"}
+            }
+          },
+          "else": {
+            "properties": {
+              "reason": {"type": "string", "minLength": 1},
+              "warmup_iterations": {"const": 0},
+              "measured_iterations": {"const": 0},
+              "host_wall": {"type": "null"},
+              "engine_elapsed": {"type": "null"},
+              "allocation_activity": {"type": "null"},
+              "execution_summary": {"type": "null"}
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "cacheLimits": {
+      "type": "object",
+      "required": ["max_entries", "max_code_bytes"],
+      "properties": {
+        "max_entries": {"$ref": "#/definitions/uint64"},
+        "max_code_bytes": {"$ref": "#/definitions/uint64"}
+      },
+      "additionalProperties": true
+    },
+    "cacheStatistics": {
+      "type": "object",
+      "required": [
+        "limits",
+        "entry_count",
+        "code_bytes",
+        "lookup_count",
+        "hit_count",
+        "miss_count",
+        "compilation_count",
+        "compilation_failure_count",
+        "insertion_count",
+        "duplicate_compilation_count",
+        "bypass_count",
+        "eviction_count",
+        "evicted_code_bytes",
+        "clear_count",
+        "cleared_entry_count",
+        "cleared_code_bytes"
+      ],
+      "properties": {
+        "limits": {"$ref": "#/definitions/cacheLimits"},
+        "entry_count": {"$ref": "#/definitions/uint64"},
+        "code_bytes": {"$ref": "#/definitions/uint64"},
+        "lookup_count": {"$ref": "#/definitions/uint64"},
+        "hit_count": {"$ref": "#/definitions/uint64"},
+        "miss_count": {"$ref": "#/definitions/uint64"},
+        "compilation_count": {"$ref": "#/definitions/uint64"},
+        "compilation_failure_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "insertion_count": {"$ref": "#/definitions/uint64"},
+        "duplicate_compilation_count": {
+          "$ref": "#/definitions/uint64"
+        },
+        "bypass_count": {"$ref": "#/definitions/uint64"},
+        "eviction_count": {"$ref": "#/definitions/uint64"},
+        "evicted_code_bytes": {"$ref": "#/definitions/uint64"},
+        "clear_count": {"$ref": "#/definitions/uint64"},
+        "cleared_entry_count": {"$ref": "#/definitions/uint64"},
+        "cleared_code_bytes": {"$ref": "#/definitions/uint64"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

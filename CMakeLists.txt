@@ -279,6 +279,31 @@ if(BUILD_TESTING)
 
 add_subdirectory(third_party/json-schema-validator)
 
+add_executable(mparser_performance_baseline
+    tools/performance_baseline.cpp)
+target_link_libraries(mparser_performance_baseline PRIVATE
+    mparser_core)
+target_include_directories(mparser_performance_baseline PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
+target_compile_definitions(mparser_performance_baseline PRIVATE
+    MPARSER_BASELINE_PROJECT_VERSION="${PROJECT_VERSION}"
+    MPARSER_BASELINE_BUILD_TYPE="$<CONFIG>"
+    MPARSER_BASELINE_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
+    MPARSER_BASELINE_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+    MPARSER_BASELINE_SYSTEM_NAME="${CMAKE_SYSTEM_NAME}"
+    MPARSER_BASELINE_SYSTEM_VERSION="${CMAKE_SYSTEM_VERSION}")
+if(MSVC)
+    target_compile_options(mparser_performance_baseline PRIVATE
+        /W4 /permissive-)
+else()
+    target_compile_options(mparser_performance_baseline PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+if(WIN32)
+    target_link_libraries(mparser_performance_baseline PRIVATE
+        Psapi)
+endif()
+
 add_executable(mparser_smoke_tests tests/parser_smoke.cpp)
 target_link_libraries(mparser_smoke_tests PRIVATE mparser_core)
 add_test(NAME parser_smoke COMMAND mparser_smoke_tests)
@@ -1491,6 +1516,27 @@ set_tests_properties(machine_protocol_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "\"status\":\"succeeded\".*\"execution\"")
 
+add_executable(performance_baseline_schema_smoke_tests
+    tests/performance_baseline_schema_smoke.cpp)
+target_link_libraries(performance_baseline_schema_smoke_tests PRIVATE
+    mparser_json_schema_validator)
+add_test(NAME performance_baseline_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_BASELINE_TOOL=$<TARGET_FILE:mparser_performance_baseline>
+        -DMPARSER_CLI=$<TARGET_FILE:mparser>
+        -DMPARSER_C_API_LIBRARY=$<TARGET_FILE:mparser_c_api>
+        -DMPARSER_SCHEMA_VALIDATOR=$<TARGET_FILE:performance_baseline_schema_smoke_tests>
+        -DMPARSER_SCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/performance-baseline-v1.schema.json
+        -DMPARSER_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/performance_baseline_quick.m
+        -DMPARSER_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/performance-baseline
+        "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_performance_baseline.cmake)
+set_tests_properties(performance_baseline_smoke PROPERTIES
+    LABELS performance
+    PASS_REGULAR_EXPRESSION
+        "performance baseline protocol 1.0 validated"
+    TIMEOUT 180)
+
 add_executable(mparser_embedding_execution_demo
     samples/embedding_execution_demo.cpp)
 target_link_libraries(mparser_embedding_execution_demo PRIVATE
@@ -1917,11 +1963,13 @@ install(FILES
     docs/public-contract-v1.json
     docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
+    docs/performance-baseline-v1.schema.json
     docs/compatibility-matrix.json
     docs/roadmap-v1.0.md
     docs/v0.90.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-reliability.md
+    docs/v1.0-performance-baseline.md
     docs/architecture.md
     docs/c-abi-compatibility.md
     docs/embedding-c-api.md
@@ -1937,6 +1985,8 @@ install(FILES
     samples/cpp_embedding_demo.cpp
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m
+    samples/performance_scalar_loop.m
+    samples/performance_array_workload.m
     samples/reliability_boundary_demo.m
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
 install(DIRECTORY samples/class_folders/

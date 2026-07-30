@@ -210,6 +210,8 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/cli-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-v1.schema.json"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/performance-baseline-v1.schema.json"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-performance-baseline.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/versioning-and-deprecation.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/default_catalog.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/compatibility-matrix.json"
@@ -219,7 +221,9 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/architecture.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/extending-builtins.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserConfig.cmake"
-    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/machine_protocol_demo.m")
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/machine_protocol_demo.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/performance_scalar_loop.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/performance_array_workload.m")
 foreach(path IN LISTS required_paths)
     if(NOT EXISTS "${path}")
         message(FATAL_ERROR

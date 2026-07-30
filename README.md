@@ -1,13 +1,16 @@
 # MParser
 
 Current release candidate: v0.90.0. The v1 public-contract candidate is
-locally frozen; active work is the v1.0 reliability gate, while candidate
-cross-platform confirmation is deferred until CI capacity is restored. See
+locally frozen; reliability hardening is locally closed and active work is the
+v1.0 performance/resource baseline, while candidate cross-platform
+confirmation is deferred until CI capacity is restored. See
 [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
 [docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the contract
 candidate,
-[docs/v1.0-reliability.md](docs/v1.0-reliability.md) for the active
-reliability evidence,
+[docs/v1.0-reliability.md](docs/v1.0-reliability.md) for the reliability
+evidence,
+[docs/v1.0-performance-baseline.md](docs/v1.0-performance-baseline.md) for
+the versioned timing, allocation, memory, binary-size, and cache evidence,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
 machine-validated combined candidate freeze,
 [docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and
@@ -1009,6 +1012,28 @@ ctest --test-dir build/windows-msvc-release `
 build\windows-msvc-release\mparser.exe --run --jit=off `
   samples\reliability_boundary_demo.m
 ```
+
+The v1.0 performance gate adds a non-installed engineering collector with a
+Draft-7 report schema and semantic validator. It measures parse, compile,
+fresh-process startup, bytecode, portable typed, native cold/warm, allocation
+activity, peak resident memory, binary size, cache transitions, and exact
+runtime-result parity without adding machine-specific timing thresholds:
+
+```powershell
+ctest --test-dir build/windows-msvc-release `
+  -R "^performance_baseline_smoke$" --output-on-failure
+build\windows-msvc-release\mparser_performance_baseline.exe `
+  --cli=build/windows-msvc-release/mparser.exe `
+  --library=build/windows-msvc-release/mparser_c.dll `
+  --source=samples/performance_scalar_loop.m `
+  --output=build/windows-msvc-release/performance-scalar.json `
+  --workload-id=scalar-loop-v1 --revision=<git-commit>
+```
+
+Reports run under QEMU are functional contract evidence only; performance
+claims require native hardware. See
+[docs/v1.0-performance-baseline.md](docs/v1.0-performance-baseline.md) for
+the exact boundaries and comparison rules.
 
 Install and consume the C SDK:
 

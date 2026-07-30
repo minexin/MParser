@@ -1611,6 +1611,22 @@ consumers, and runs the installed machine protocol without source-tree or
 loader-path access. This does not claim reproducible compilation or publisher
 identity; signing/provenance remains a release operation.
 
+The v1.0 performance gate is implemented as a non-installed engineering
+executable rather than another public runtime mode. It calls `Parser`,
+`CompiledModule`, forced bytecode/portable/native backends, and the bounded
+native-cache API directly, then emits versioned
+`mparser.performance-baseline` JSON. This preserves the frozen CLI and
+embedding contracts while making parse, compile, process-cold, runtime,
+allocation, peak-resident-memory, binary-size, and cache boundaries explicit.
+Raw timing and allocation samples remain in every report; source and binary
+SHA-256 values bind evidence to exact inputs. A Draft-7 schema plus semantic
+validator recomputes statistics and checks backend/result/cache invariants,
+while CMake independently recomputes the hashes, all without freezing
+host-specific timing thresholds. Cross-compilation emulator prefixes are
+propagated to fresh CLI children, and emulated reports are marked as functional
+evidence rather than native performance evidence. See
+[v1.0-performance-baseline.md](v1.0-performance-baseline.md).
+
 After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
 embedding-framework redesign unless release evidence proves a correctness
 defect. Work now concentrates on contract freeze, reliability and sanitizer

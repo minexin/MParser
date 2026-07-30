@@ -547,16 +547,26 @@ is green. It refines, rather than replaces, the four work areas above.
    resource limits, native-cache churn, allocation failure, and concurrent
    pressure. Every discovered defect is fixed without weakening an existing
    diagnostic, fallback, sanitizer, or lifecycle gate.
-   **Status: in progress.** Deterministic frontend fuzz, malformed-bytecode
-   verification, and the named runtime soak are tracked in
-   [v1.0-reliability.md](v1.0-reliability.md), alongside the existing
-   lifecycle, resource, cache, allocation, load/unload, and concurrency
-   evidence.
+   **Status: implementation and Windows evidence complete at `f8f85f9`.**
+   Deterministic frontend fuzz, mandatory malformed-bytecode verification,
+   the named 8,012-invocation soak, lifecycle/resource/cache/allocation/
+   load-unload/concurrency gates, native and no-JIT full regression, and
+   unpacked package validation are tracked in
+   [v1.0-reliability.md](v1.0-reliability.md). Candidate cross-platform
+   confirmation remains deferred until the shared validation window returns.
 4. **Must-have: establish performance and resource baselines.** Measure parse
    and compile time, cold start, bytecode, portable typed execution, native
    cold/warm execution, peak memory, allocations, binary size, and cache
    boundaries. Every result records hardware, OS, compiler, build type,
    backend, workload, and the exact timing boundary.
+   **Status: source contract implemented; local closure in progress.** The
+   non-installed collector, protocol-1.0 Draft-7 schema, semantic validator,
+   quick eligible contract workload, and representative scalar/array
+   workloads are defined in
+   [v1.0-performance-baseline.md](v1.0-performance-baseline.md). Windows
+   native/no-JIT full regression, package evidence, and committed host reports
+   close the local candidate; cross-platform and physical-ARM measurements
+   remain deferred.
 5. **Must-have: close release documentation.** Publish the user manual,
    install/build guide, support matrix, CLI/API references, JIT/fallback
    behavior, C/C++ embedding guides, machine protocol, builtin author guide,
