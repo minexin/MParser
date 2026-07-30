@@ -530,18 +530,28 @@ is green. It refines, rather than replaces, the four work areas above.
    behavior is equivalent. Require focused lifecycle tests, native and clean
    no-JIT full regression, unpacked release-package validation, Linux Clang
    ASan/UBSan, and every existing cross-platform CI lane before advancing.
+   **Status: complete.** Commit `d658002` passed all six release lanes in
+   Actions run `30423248652`.
 2. **Must-have: freeze the final public contracts.** Freeze production
    `--run`, `--jit`, machine mode, and the stability/deprecation boundary of
    historical `--run-*` modes; C ABI 1.1; header-only C++ API 1.0; machine
    result protocol 1.0; and the `BuiltinRegistry`/`BuiltinDescriptor`
    extension contract. Publish one versioning and deprecation policy for all
    of them.
+   **Status: candidate implemented and Windows-validated at `cfd59b7`.**
+   Candidate cross-platform confirmation is deferred until CI capacity is
+   restored, so this is not yet the final v1.0 publication freeze.
 3. **Must-have: close reliability evidence.** Exercise parser/semantic fuzz,
    malformed bytecode, compile-once/invoke-many, long-running execution,
    module/session load-unload, handle/listener lifetimes, cancellation and
    resource limits, native-cache churn, allocation failure, and concurrent
    pressure. Every discovered defect is fixed without weakening an existing
    diagnostic, fallback, sanitizer, or lifecycle gate.
+   **Status: in progress.** Deterministic frontend fuzz, malformed-bytecode
+   verification, and the named runtime soak are tracked in
+   [v1.0-reliability.md](v1.0-reliability.md), alongside the existing
+   lifecycle, resource, cache, allocation, load/unload, and concurrency
+   evidence.
 4. **Must-have: establish performance and resource baselines.** Measure parse
    and compile time, cold start, bytecode, portable typed execution, native
    cold/warm execution, peak memory, allocations, binary size, and cache

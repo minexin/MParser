@@ -77,6 +77,9 @@ BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
                                       builtinRegistry) const {
     BytecodeOptimizationPlan result;
     result.hotLoopThreshold = profile.hotLoopThreshold;
+    if (!validateBytecodeProgram(program).succeeded) {
+        return result;
+    }
     const auto hotLoops = hotLoopMap(profile);
 
     for (const auto& loop : profile.loops) {
@@ -151,7 +154,7 @@ BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
     BytecodeRegionAnalyzer regionAnalyzer(
         std::move(builtinRegistry));
     for (auto& candidate : result.candidates) {
-        candidate.region = regionAnalyzer.analyze(
+        candidate.region = regionAnalyzer.analyzeValidated(
             program, candidate.kind, candidate.pc, candidate.target);
     }
 
@@ -168,6 +171,9 @@ BytecodeOptimizationPlan BytecodeOptimizationPlanner::planStaticLoops(
     const BytecodeProgram& program,
     std::shared_ptr<const BuiltinRegistry> builtinRegistry) const {
     BytecodeOptimizationPlan result;
+    if (!validateBytecodeProgram(program).succeeded) {
+        return result;
+    }
     BytecodeRegionAnalyzer regionAnalyzer(
         std::move(builtinRegistry));
 
@@ -178,7 +184,7 @@ BytecodeOptimizationPlan BytecodeOptimizationPlanner::planStaticLoops(
             continue;
         }
 
-        auto region = regionAnalyzer.analyze(
+        auto region = regionAnalyzer.analyzeValidated(
             program, "hot-loop", pc, instruction.operand);
         if (!region.eligibleForTypedExecution) {
             continue;

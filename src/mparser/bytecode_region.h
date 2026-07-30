@@ -12,6 +12,8 @@
 namespace mparser {
 
 class BuiltinRegistry;
+class BytecodeOptimizationPlanner;
+class BytecodeVmTrustedAccess;
 
 struct BytecodeRegionContract {
     bool available = false;
@@ -42,6 +44,10 @@ struct BytecodeRegionContract {
     std::string reason;
 };
 
+bool bytecodeRegionContractsEquivalent(
+    const BytecodeRegionContract& left,
+    const BytecodeRegionContract& right);
+
 class BytecodeRegionAnalyzer {
 public:
     BytecodeRegionAnalyzer();
@@ -53,6 +59,13 @@ public:
         size_t sourcePc, std::string_view target) const;
 
 private:
+    friend class BytecodeOptimizationPlanner;
+    friend class BytecodeVmTrustedAccess;
+
+    BytecodeRegionContract analyzeValidated(
+        const BytecodeProgram& program, std::string_view candidateKind,
+        size_t sourcePc, std::string_view target) const;
+
     std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
 };
 

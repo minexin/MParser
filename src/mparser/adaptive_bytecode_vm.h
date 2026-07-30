@@ -113,12 +113,13 @@ private:
                      RuntimeFallbackKind nativeFallbackKind =
                          RuntimeFallbackKind::None);
 
-    const BytecodeProgram* program_ = nullptr;
-    const SemanticResult* semantic_ = nullptr;
+    BytecodeProgram program_;
+    SemanticResult semantic_;
     AdaptiveBytecodeVmOptions options_;
     size_t invocationCount_ = 0;
     BytecodeVmProfile accumulatedProfile_;
     BytecodeTypedIrModule typedModule_;
+    bool bytecodeValidated_ = false;
     bool hasTypedModule_ = false;
     size_t promotionCount_ = 0;
     size_t invalidationCount_ = 0;

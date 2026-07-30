@@ -723,6 +723,13 @@ CompiledModule CompiledModule::compile(
     if (!module.data_->bytecode.diagnostics.empty()) {
         return module;
     }
+    auto bytecodeValidation = validateBytecodeProgram(
+        module.data_->bytecode, &module.data_->semantic);
+    appendDiagnostics(module.data_->diagnostics,
+                      bytecodeValidation.diagnostics);
+    if (!bytecodeValidation.succeeded) {
+        return module;
+    }
 
     BytecodeOptimizationPlanner planner;
     BytecodeTypedIrBuilder builder;
@@ -892,8 +899,8 @@ BytecodeVmResult CompiledModule::invoke(
     BytecodeVm vm;
     BytecodeVmOptions runtimeOptions = options;
     runtimeOptions.callableContext = callableContext_;
-    return vm.run(data_->bytecode, data_->semantic,
-                  runtimeOptions);
+    return vm.runValidated(data_->bytecode, data_->semantic,
+                           runtimeOptions);
 }
 
 ModuleInvocationResult CompiledModule::execute(
@@ -955,10 +962,10 @@ ModuleInvocationResult CompiledModule::execute(
         BytecodeVm vm;
         if (request.backend ==
             ModuleExecutionBackend::Bytecode) {
-            runtime = vm.run(data_->bytecode, data_->semantic,
-                             runtimeOptions);
+            runtime = vm.runValidated(
+                data_->bytecode, data_->semantic, runtimeOptions);
         } else {
-            runtime = vm.run(
+            runtime = vm.runValidated(
                 data_->bytecode, data_->semantic,
                 data_->staticTypedModule, runtimeOptions);
         }

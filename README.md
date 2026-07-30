@@ -1,9 +1,13 @@
 # MParser
 
-Current release candidate: v0.90.0; active work is the v1.0 contract-freeze
-gate. See [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
-[docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the active
-contract milestone,
+Current release candidate: v0.90.0. The v1 public-contract candidate is
+locally frozen; active work is the v1.0 reliability gate, while candidate
+cross-platform confirmation is deferred until CI capacity is restored. See
+[docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
+[docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the contract
+candidate,
+[docs/v1.0-reliability.md](docs/v1.0-reliability.md) for the active
+reliability evidence,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
 machine-validated combined candidate freeze,
 [docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and
@@ -988,6 +992,24 @@ and the default 118-descriptor builtin catalog is frozen by a generated
 metadata snapshot with enforced output constraints. One shared versioning and
 deprecation policy now covers all public boundaries.
 
+The v1.0 reliability gate adds a fixed-seed Parser/Semantic regression fuzz
+harness and a mandatory `BytecodeProgram` verifier. Direct VM, optimization,
+and typed-executor entry points reject malformed metadata, executable-owner
+escapes, structured control/index/lvalue state, stack underflow, invalid range
+exit depths, and forged typed-region contracts with
+`MParser:Bytecode:InvalidProgram` before execution. Compiled modules and
+adaptive sessions validate immutable owned snapshots once, preserving
+invoke-many and typed-loop hot paths. Legal outward control transfers unwind
+exited runtime contexts consistently with the verifier. Run the focused gates
+with:
+
+```powershell
+ctest --test-dir build/windows-msvc-release `
+  -R "parser_semantic_fuzz|bytecode_verifier_smoke|runtime_soak_smoke"
+build\windows-msvc-release\mparser.exe --run --jit=off `
+  samples\reliability_boundary_demo.m
+```
+
 Install and consume the C SDK:
 
 ```powershell
@@ -1082,11 +1104,14 @@ N-dimensional Cells with parenthesis indexing/mutation and brace
 indexing/mutation, and ordered scalar or array structures with static/dynamic
 member access, parenthesis indexing, whole-element assignment, field queries,
 comma-separated field results, and transactional nested path copy-back. It is
-intentionally not a full MATLAB runtime yet: classes,
+intentionally not a full MATLAB runtime yet. On this reference HIR path,
+classes,
 method handles, other builtin multi-output conventions beyond the
 implemented `size`/`min`/`max`/`find` subset, complex numbers, sparse arrays,
 class reflection, and object dispatch
-still report runtime diagnostics instead of guessing.
+still report runtime diagnostics instead of guessing; the production
+bytecode VM has the separate classdef support recorded in the compatibility
+matrix.
 
 ## Build
 

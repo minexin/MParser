@@ -189,14 +189,41 @@ private:
         case HirKind::OutputList:
         case HirKind::ParameterList:
         case HirKind::MethodPrototype:
+            lowerChildren(node);
+            break;
         case HirKind::Statement:
             if (lowerControlStatement(node)) {
                 break;
             }
-            if (node.children.size() == 1 &&
-                (node.children.front()->kind == HirKind::CallOrIndex ||
-                 node.children.front()->kind == HirKind::SuperclassCall)) {
-                lowerExpression(*node.children.front(), 0);
+            if (node.raw.empty()) {
+                lowerChildren(node);
+                break;
+            }
+            if (node.children.size() == 1) {
+                const auto& expression = *node.children.front();
+                if (expression.kind == HirKind::CallOrIndex ||
+                    expression.kind == HirKind::SuperclassCall ||
+                    expression.kind == HirKind::MemberAccess) {
+                    lowerExpression(expression, 0);
+                } else if (
+                    expression.kind == HirKind::NameRef ||
+                    expression.kind == HirKind::Literal ||
+                    expression.kind == HirKind::Unary ||
+                    expression.kind == HirKind::Binary ||
+                    expression.kind == HirKind::Postfix ||
+                    expression.kind == HirKind::Matrix ||
+                    expression.kind == HirKind::MatrixRow ||
+                    expression.kind == HirKind::Cell ||
+                    expression.kind == HirKind::NameValueArgument ||
+                    expression.kind == HirKind::BraceIndex ||
+                    expression.kind == HirKind::FunctionHandle ||
+                    expression.kind == HirKind::MetaClass ||
+                    expression.kind == HirKind::Statement) {
+                    lowerExpression(expression);
+                    emit(BytecodeOp::Pop, node);
+                } else {
+                    lowerNode(expression);
+                }
                 break;
             }
             lowerChildren(node);

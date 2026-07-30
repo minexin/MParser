@@ -297,9 +297,20 @@ RuntimeBenchmarkResult RuntimeBenchmarkRunner::run(
     RuntimeBenchmarkResult result;
     result.options = options;
 
+    auto validation =
+        validateBytecodeProgram(bytecode, &semantic);
+    if (!validation.succeeded) {
+        result.lastProfiledBytecodeVmResult.diagnostics =
+            std::move(validation.diagnostics);
+        result.comparisonMessage =
+            "benchmark bytecode validation failed";
+        return result;
+    }
+
     BytecodeVm profilingVm;
     result.lastProfiledBytecodeVmResult =
-        profilingVm.run(bytecode, semantic);
+        profilingVm.runValidated(
+            bytecode, semantic, BytecodeVmOptions{});
     if (hasDiagnostics(result.lastProfiledBytecodeVmResult)) {
         result.comparisonMessage =
             "benchmark profiling run reported diagnostics";
@@ -322,13 +333,16 @@ RuntimeBenchmarkResult RuntimeBenchmarkRunner::run(
         result.lastInterpreterResult = interpreter.run(semantic);
         BytecodeVm profiledVm;
         result.lastProfiledBytecodeVmResult =
-            profiledVm.run(bytecode, semantic);
+            profiledVm.runValidated(
+                bytecode, semantic, BytecodeVmOptions{});
         BytecodeVm steadyVm;
         result.lastBytecodeVmResult =
-            steadyVm.run(bytecode, semantic, steadyOptions);
+            steadyVm.runValidated(
+                bytecode, semantic, steadyOptions);
         BytecodeVm typedVm;
         result.lastTypedBytecodeVmResult =
-            typedVm.run(bytecode, semantic, typedIr, steadyOptions);
+            typedVm.runValidated(
+                bytecode, semantic, typedIr, steadyOptions);
         if (hasDiagnostics(result.lastInterpreterResult) ||
             hasDiagnostics(result.lastProfiledBytecodeVmResult) ||
             hasDiagnostics(result.lastBytecodeVmResult) ||
@@ -361,7 +375,9 @@ RuntimeBenchmarkResult RuntimeBenchmarkRunner::run(
     const auto runProfiledBytecodeVm = [&]() {
         BytecodeVm vm;
         const auto begin = Clock::now();
-        result.lastProfiledBytecodeVmResult = vm.run(bytecode, semantic);
+        result.lastProfiledBytecodeVmResult =
+            vm.runValidated(
+                bytecode, semantic, BytecodeVmOptions{});
         const auto end = Clock::now();
         profiledBytecodeSamples.push_back(
             elapsedMicroseconds(begin, end));
@@ -372,7 +388,7 @@ RuntimeBenchmarkResult RuntimeBenchmarkRunner::run(
         BytecodeVm vm;
         const auto begin = Clock::now();
         result.lastBytecodeVmResult =
-            vm.run(bytecode, semantic, steadyOptions);
+            vm.runValidated(bytecode, semantic, steadyOptions);
         const auto end = Clock::now();
         bytecodeSamples.push_back(elapsedMicroseconds(begin, end));
         bytecodeTotals.executedInstructionCount +=
@@ -382,7 +398,8 @@ RuntimeBenchmarkResult RuntimeBenchmarkRunner::run(
         BytecodeVm vm;
         const auto begin = Clock::now();
         result.lastTypedBytecodeVmResult =
-            vm.run(bytecode, semantic, typedIr, steadyOptions);
+            vm.runValidated(
+                bytecode, semantic, typedIr, steadyOptions);
         const auto end = Clock::now();
         typedBytecodeSamples.push_back(elapsedMicroseconds(begin, end));
         accumulateTypedExecutions(typedBytecodeTotals,

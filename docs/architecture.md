@@ -238,10 +238,19 @@ Dynamic MATLAB constructs intentionally remain delayed. `CallOrIndex`,
 carry unresolved bindings until a later name-resolution pass has path, package,
 class, overload, and runtime workspace context.
 
+The deterministic frontend fuzz regression feeds bounded curated and mutated
+sources through Lexer and Parser twice, fingerprints the complete token/tree
+and diagnostic results, and runs Semantic twice only when Parser diagnostics
+are empty. It then fingerprints HIR, scopes, symbols, and diagnostics. The
+fixed seed and complete failing source make every regression reproducible;
+this is a CI regression harness rather than a claim of coverage-guided fuzz
+saturation.
+
 ## Reference interpreter
 
-The current executable runtime is a small HIR interpreter. Its purpose is to
-define and test execution semantics before the bytecode VM and JIT harden. It
+The secondary reference engine is a small HIR interpreter. Its purpose is to
+define and differentially test execution semantics alongside the production
+bytecode VM and JIT. It
 supports scalar double values, N-dimensional numeric arrays, N-dimensional
 Cells, string literals, variable assignment, local function calls
 with isolated stack frames, namespace, ordinary path, and private function calls,
@@ -285,6 +294,24 @@ source spans and semantic bindings. Function, class, and module nodes remain
 boundary instructions; expressions become load/operator/call instructions;
 assignments lower right-hand values before explicit store instructions; and
 core control flow lowers to jump-target instructions.
+
+Before any untrusted `BytecodeProgram` reaches VM metadata collection,
+optimization planning, region analysis, or typed execution, the verifier
+checks opcode/metadata contracts, nested execution ownership (including
+anonymous bodies), jump confinement, `for`/`switch`/`try` structure, index and
+transactional-lvalue contexts, and reachable stack depth. Every branch merge
+and cycle must preserve the complete operand and structured-context state;
+every executable range must leave or return with its declared result depth.
+Typed modules are accepted only when their source/header/target identity and
+complete region contract equal a contract re-derived from the validated
+bytecode. Rejection uses
+`MParser:Bytecode:InvalidProgram`, is capped at 64 deterministic diagnostics,
+and has no execution side effects. Compiled modules, adaptive sessions, and
+benchmarks validate owned immutable snapshots once and then use explicit
+trusted internal entry points; typed loop entries do not repeat a
+whole-program scan. Legal jumps out of `switch` or `try` scopes unwind those
+runtime contexts before execution resumes. Bytecode remains an internal
+representation, not a serialized public ABI.
 
 v0.54 has an executable bytecode VM for scalar doubles, logical values, strings,
 N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
@@ -532,14 +559,18 @@ function allowlist or numerical implementation. Profile-off execution also
 skips reconstruction of per-iteration loop observations; aggregate source and
 kernel work remains available in the typed execution summary.
 
-`AdaptiveBytecodeVmSession` owns a longer-lived tiering state. Before promotion,
-it merges instruction, function, loop, call-site, assignment, kind, and shape
+`AdaptiveBytecodeVmSession` owns immutable bytecode and semantic snapshots
+alongside its longer-lived tiering state, so caller mutation after construction
+cannot invalidate its one-time verification. Before promotion, it merges
+instruction, function, loop, call-site, assignment, kind, and shape
 observations across complete VM invocations. When cumulative loop heat reaches
 the configured threshold, the session builds and installs a typed module. The
-next invocation runs that module with full profiling disabled. Installation is
-restricted to modules containing at least one executable scalar loop; hot but
-ineligible call-heavy loops stay in the profiling tier. This is
-invocation-boundary tiering, not loop-midpoint on-stack replacement.
+VM re-derives each typed-region contract from the validated bytecode before
+installation. The next invocation runs that module with full profiling
+disabled. Installation is restricted to modules containing at least one
+executable scalar loop; hot but ineligible call-heavy loops stay in the
+profiling tier. This is invocation-boundary tiering, not loop-midpoint on-stack
+replacement.
 
 Typed executions feed a deterministic tiering policy. Successful regions reset
 their consecutive fallback count. Repeated fallback can invalidate the complete
@@ -1596,5 +1627,5 @@ the authority for milestone selection; this document remains the detailed
 description of the architecture already implemented.
 
 When dynamic features invalidate assumptions, execution should deopt back to
-the baseline bytecode VM. This is the path that keeps full MATLAB semantics
-compatible with aggressive optimization.
+the baseline bytecode VM. This preserves the declared MATLAB-like subset
+semantics while allowing guarded optimization.

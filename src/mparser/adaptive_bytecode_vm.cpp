@@ -8,6 +8,39 @@
 namespace mparser {
 namespace {
 
+std::unique_ptr<HirNode> cloneHirNode(const HirNode& source) {
+    auto result = std::make_unique<HirNode>(source.kind);
+    result->label = source.label;
+    result->raw = source.raw;
+    result->lexicalClassName = source.lexicalClassName;
+    result->span = source.span;
+    result->binding = source.binding;
+    result->attributes = source.attributes;
+    result->argumentBlock = source.argumentBlock;
+    result->nameValueSourceClass = source.nameValueSourceClass;
+    result->nameValueSourceSpan = source.nameValueSourceSpan;
+    result->superclasses = source.superclasses;
+    result->property = source.property;
+    result->children.reserve(source.children.size());
+    for (const auto& child : source.children) {
+        result->children.push_back(
+            child ? cloneHirNode(*child) : nullptr);
+    }
+    return result;
+}
+
+SemanticResult cloneSemanticResult(const SemanticResult& source) {
+    SemanticResult result;
+    result.root =
+        source.root ? cloneHirNode(*source.root) : nullptr;
+    result.scopes = source.scopes;
+    result.symbols = source.symbols;
+    result.sources = source.sources;
+    result.diagnostics = source.diagnostics;
+    result.builtinRegistry = source.builtinRegistry;
+    return result;
+}
+
 void mergeObservation(BytecodeValueObservation& destination,
                       const BytecodeValueObservation& source) {
     if (source.observationCount == 0) {
@@ -111,7 +144,8 @@ std::string_view adaptiveBytecodeEventKindName(
 AdaptiveBytecodeVmSession::AdaptiveBytecodeVmSession(
     const BytecodeProgram& program, const SemanticResult& semantic,
     const AdaptiveBytecodeVmOptions& options)
-    : program_(&program), semantic_(&semantic), options_(options) {
+    : program_(program), semantic_(cloneSemanticResult(semantic)),
+      options_(options) {
     options_.hotLoopThreshold =
         std::max<size_t>(1, options_.hotLoopThreshold);
     options_.fallbackInvalidationThreshold =
@@ -123,6 +157,8 @@ AdaptiveBytecodeVmSession::AdaptiveBytecodeVmSession(
         options_.sessionState =
             std::make_shared<RuntimeSessionState>();
     }
+    bytecodeValidated_ =
+        validateBytecodeProgram(program_, &semantic_).succeeded;
     reset();
 }
 
@@ -142,8 +178,12 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
         vmOptions.arguments = arguments_;
         vmOptions.requestedOutputCount = options_.requestedOutputCount;
         vmOptions.typedRegionBackend = options_.typedRegionBackend;
-        result.runtime =
-            vm.run(*program_, *semantic_, typedModule_, vmOptions);
+        result.runtime = bytecodeValidated_
+                             ? vm.runValidated(
+                                   program_, semantic_,
+                                   typedModule_, vmOptions)
+                             : vm.run(program_, semantic_,
+                                      typedModule_, vmOptions);
         if (options_.preserveWorkspace &&
             !hasErrorDiagnostics(result.runtime.diagnostics)) {
             workspace_ = result.runtime.variables;
@@ -165,7 +205,10 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
     vmOptions.arguments = arguments_;
     vmOptions.requestedOutputCount = options_.requestedOutputCount;
     vmOptions.typedRegionBackend = options_.typedRegionBackend;
-    result.runtime = vm.run(*program_, *semantic_, vmOptions);
+    result.runtime =
+        bytecodeValidated_
+            ? vm.runValidated(program_, semantic_, vmOptions)
+            : vm.run(program_, semantic_, vmOptions);
     if (hasErrorDiagnostics(result.runtime.diagnostics)) {
         populateSessionState(result);
         return result;
@@ -179,8 +222,8 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
     BytecodeOptimizationPlanner planner;
     BytecodeTypedIrBuilder builder;
     auto candidateModule = builder.build(planner.plan(
-        accumulatedProfile_, *program_,
-        semantic_->builtinRegistry));
+        accumulatedProfile_, program_,
+        semantic_.builtinRegistry));
     applyRetrainingRequirements(candidateModule);
     const size_t executableCount =
         executableRegionCount(candidateModule);

@@ -112,6 +112,7 @@ add_library(mparser_core STATIC
     src/mparser/bytecode.cpp
     src/mparser/bytecode_dump.cpp
     src/mparser/bytecode_region.cpp
+    src/mparser/bytecode_verifier.cpp
     src/mparser/bytecode_vm.cpp
     src/mparser/compiled_module.cpp
     src/mparser/filesystem_utf8.cpp
@@ -286,9 +287,27 @@ add_executable(semantic_smoke_tests tests/semantic_smoke.cpp)
 target_link_libraries(semantic_smoke_tests PRIVATE mparser_core)
 add_test(NAME semantic_smoke COMMAND semantic_smoke_tests)
 
+add_executable(parser_semantic_fuzz_tests
+    tests/parser_semantic_fuzz.cpp)
+target_link_libraries(parser_semantic_fuzz_tests PRIVATE mparser_core)
+add_test(NAME parser_semantic_fuzz
+    COMMAND parser_semantic_fuzz_tests)
+set_tests_properties(parser_semantic_fuzz PROPERTIES
+    LABELS reliability
+    TIMEOUT 60)
+
 add_executable(bytecode_smoke_tests tests/bytecode_smoke.cpp)
 target_link_libraries(bytecode_smoke_tests PRIVATE mparser_core)
 add_test(NAME bytecode_smoke COMMAND bytecode_smoke_tests)
+
+add_executable(bytecode_verifier_smoke_tests
+    tests/bytecode_verifier_smoke.cpp)
+target_link_libraries(bytecode_verifier_smoke_tests PRIVATE mparser_core)
+add_test(NAME bytecode_verifier_smoke
+    COMMAND bytecode_verifier_smoke_tests)
+set_tests_properties(bytecode_verifier_smoke PROPERTIES
+    LABELS reliability
+    TIMEOUT 60)
 
 add_executable(bytecode_vm_smoke_tests tests/bytecode_vm_smoke.cpp)
 target_link_libraries(bytecode_vm_smoke_tests PRIVATE mparser_core)
@@ -551,6 +570,13 @@ add_test(NAME production_run_cli_smoke
 set_tests_properties(production_run_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 705")
 
+add_test(NAME reliability_boundary_cli_smoke
+    COMMAND mparser --run --jit=off
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/reliability_boundary_demo.m)
+set_tests_properties(reliability_boundary_cli_smoke PROPERTIES
+    LABELS reliability
+    PASS_REGULAR_EXPRESSION "summary = 26")
+
 add_test(NAME production_run_portable_jit_cli_smoke
     COMMAND mparser --run --jit=portable
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m)
@@ -724,6 +750,14 @@ add_executable(runtime_session_smoke_tests
     tests/runtime_session_smoke.cpp)
 target_link_libraries(runtime_session_smoke_tests PRIVATE mparser_core)
 add_test(NAME runtime_session_smoke COMMAND runtime_session_smoke_tests)
+
+add_executable(runtime_soak_smoke_tests
+    tests/runtime_soak_smoke.cpp)
+target_link_libraries(runtime_soak_smoke_tests PRIVATE mparser_core)
+add_test(NAME runtime_soak_smoke COMMAND runtime_soak_smoke_tests)
+set_tests_properties(runtime_soak_smoke PROPERTIES
+    LABELS reliability
+    TIMEOUT 60)
 
 add_executable(runtime_contract_smoke_tests
     tests/runtime_contract_smoke.cpp)
@@ -1887,6 +1921,7 @@ install(FILES
     docs/roadmap-v1.0.md
     docs/v0.90.md
     docs/v1.0-contract-freeze.md
+    docs/v1.0-reliability.md
     docs/architecture.md
     docs/c-abi-compatibility.md
     docs/embedding-c-api.md
@@ -1902,6 +1937,7 @@ install(FILES
     samples/cpp_embedding_demo.cpp
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m
+    samples/reliability_boundary_demo.m
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
 install(DIRECTORY samples/class_folders/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples/class_folders"

@@ -39,6 +39,30 @@
 #include <utility>
 
 namespace mparser {
+
+class BytecodeVmTrustedAccess {
+public:
+    static BytecodeRegionContract analyzeRegion(
+        const BytecodeRegionAnalyzer& analyzer,
+        const BytecodeProgram& program,
+        std::string_view candidateKind, size_t sourcePc,
+        std::string_view target) {
+        return analyzer.analyzeValidated(
+            program, candidateKind, sourcePc, target);
+    }
+
+    static TypedRegionExecutionResult executeRegion(
+        const ScalarTypedRegionExecutor& executor,
+        const BytecodeProgram& program,
+        const BytecodeRegionContract& region,
+        const RuntimeValue& loopRange,
+        const RuntimeWorkspace& variables,
+        TypedRegionBackend backend) {
+        return executor.executeValidated(
+            program, region, loopRange, variables, backend);
+    }
+};
+
 namespace {
 
 constexpr size_t kHotLoopThreshold = 10;
@@ -714,6 +738,8 @@ struct ActiveLvalue {
 struct SwitchContext {
     RuntimeValue selector;
     bool matched = false;
+    size_t beginPc = 0;
+    size_t endPc = 0;
 };
 
 struct TryContext {
@@ -725,6 +751,8 @@ struct TryContext {
     size_t indexContextDepth = 0;
     size_t lvalueDepth = 0;
     size_t switchContextDepth = 0;
+    size_t beginPc = 0;
+    size_t endPc = 0;
 };
 
 enum class MemberAccessLevel {
@@ -1141,7 +1169,8 @@ public:
     BytecodeVmResult run(const BytecodeProgram& program,
                          const SemanticResult& semantic,
                          const BytecodeTypedIrModule* typedIr,
-                         const BytecodeVmOptions& options) {
+                         const BytecodeVmOptions& options,
+                         bool verifyBytecode) {
         program_ = &program;
         semantic_ = &semantic;
         callableContext_ = options.callableContext
@@ -1167,6 +1196,14 @@ public:
         entryOutputs_.clear();
         entryOutputNames_.clear();
         diagnostics_ = program.diagnostics;
+        BytecodeValidationResult validation;
+        if (verifyBytecode) {
+            validation = validateBytecodeProgram(program, &semantic);
+        }
+        diagnostics_.insert(
+            diagnostics_.end(),
+            std::make_move_iterator(validation.diagnostics.begin()),
+            std::make_move_iterator(validation.diagnostics.end()));
         warnings_.clear();
         pendingException_.reset();
         executionStopDiagnosticAdded_ = false;
@@ -1188,27 +1225,31 @@ public:
         nextDynamicPropertyId_ = 1;
         resetProfiling(program.instructions.size());
         initializeWorkspace(options.initialWorkspace);
-        if (semantic.root) {
-            argumentContractCatalog_ =
-                buildArgumentContractCatalog(*semantic.root);
-        }
-        collectFunctionNodes(semantic.root.get());
-        collectFunctionRanges(program);
-        configureDeclaredClassMembers();
-        resolveClassHierarchies();
-        finalizeEnumerationSemantics();
-        validateResolvedClassMembers();
-        registerWorkspaceDynamicProperties();
-        if (typedIr && !typedIr->regions.empty() &&
-            executionControl_->
-                requiresInstructionCheckpoints()) {
-            executionControl_->
-                markOptimizedExecutionSuppressed();
-        } else {
-            collectTypedRegions(typedIr);
+        if (validation.succeeded) {
+            if (semantic.root) {
+                argumentContractCatalog_ =
+                    buildArgumentContractCatalog(*semantic.root);
+            }
+            collectFunctionNodes(semantic.root.get());
+            collectStructuredControlRanges(program);
+            collectFunctionRanges(program);
+            configureDeclaredClassMembers();
+            resolveClassHierarchies();
+            finalizeEnumerationSemantics();
+            validateResolvedClassMembers();
+            registerWorkspaceDynamicProperties();
+            if (typedIr && !typedIr->regions.empty() &&
+                executionControl_->
+                    requiresInstructionCheckpoints()) {
+                executionControl_->
+                    markOptimizedExecutionSuppressed();
+            } else {
+                collectTypedRegions(typedIr);
+            }
         }
 
-        const bool scriptMode = requestedEntryFunction_.empty() &&
+        const bool scriptMode = validation.succeeded &&
+                                requestedEntryFunction_.empty() &&
                                 hasTopLevelExecutable(program);
         if (scriptMode && !entryArguments_.empty()) {
             diagnostics_.push_back(Diagnostic{
@@ -2252,6 +2293,38 @@ private:
                 }
             }
             pc = end;
+        }
+    }
+
+    void collectStructuredControlRanges(
+        const BytecodeProgram& program) {
+        switchEndAt_.assign(program.instructions.size(), 0);
+        tryEndAt_.assign(program.instructions.size(), 0);
+        std::vector<size_t> switches;
+        std::vector<size_t> tries;
+        for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
+            switch (program.instructions[pc].op) {
+            case BytecodeOp::SwitchBegin:
+                switches.push_back(pc);
+                break;
+            case BytecodeOp::SwitchEnd:
+                if (!switches.empty()) {
+                    switchEndAt_[switches.back()] = pc;
+                    switches.pop_back();
+                }
+                break;
+            case BytecodeOp::TryBegin:
+                tries.push_back(pc);
+                break;
+            case BytecodeOp::TryEnd:
+                if (!tries.empty()) {
+                    tryEndAt_[tries.back()] = pc;
+                    tries.pop_back();
+                }
+                break;
+            default:
+                break;
+            }
         }
     }
 
@@ -4109,6 +4182,17 @@ private:
             return;
         }
 
+        std::map<size_t, size_t> idCounts;
+        std::map<size_t, size_t> loopSourceCounts;
+        for (const auto& region : typedIr->regions) {
+            ++idCounts[region.id];
+            if (region.kind == "scalar-loop") {
+                ++loopSourceCounts[region.sourcePc];
+            }
+        }
+        BytecodeRegionAnalyzer regionAnalyzer(
+            semantic_ ? semantic_->builtinRegistry : nullptr);
+
         for (const auto& region : typedIr->regions) {
             BytecodeTypedRegionExecutionProfile execution;
             execution.regionId = region.id;
@@ -4121,14 +4205,44 @@ private:
             execution.lastFallbackKind =
                 region.region.fallbackKind;
             execution.lastReason = region.region.reason;
-            typedRegionExecutions_[region.id] = execution;
 
             if (region.kind != "scalar-loop" ||
                 !region.region.eligibleForTypedExecution) {
+                typedRegionExecutions_[region.id] =
+                    std::move(execution);
                 continue;
             }
+
+            const auto expected =
+                BytecodeVmTrustedAccess::analyzeRegion(
+                    regionAnalyzer, *program_, "hot-loop",
+                    region.sourcePc, region.target);
+            const bool sourceMatches =
+                region.sourcePc < program_->instructions.size() &&
+                program_->instructions[region.sourcePc].op ==
+                    BytecodeOp::ForBegin &&
+                region.target ==
+                    program_->instructions[region.sourcePc].operand;
+            const bool unique =
+                idCounts[region.id] == 1 &&
+                loopSourceCounts[region.sourcePc] == 1;
+            if (!sourceMatches || !unique ||
+                !expected.eligibleForTypedExecution ||
+                !bytecodeRegionContractsEquivalent(
+                    region.region, expected)) {
+                execution.eligible = false;
+                execution.lastFallbackKind =
+                    RuntimeFallbackKind::InvalidContract;
+                execution.lastReason =
+                    "typed region contract does not match its bytecode "
+                    "program";
+                typedRegionExecutions_[region.id] =
+                    std::move(execution);
+                continue;
+            }
+            typedRegionExecutions_[region.id] = execution;
             typedLoopRegions_[region.sourcePc] = ActiveTypedLoopRegion{
-                region.id, region.kind, region.target, region.region};
+                region.id, region.kind, region.target, expected};
         }
     }
 
@@ -4829,8 +4943,7 @@ private:
         case BytecodeOp::Break:
             return breakLoop(instruction);
         case BytecodeOp::Continue:
-            recordContinue(instruction);
-            return checkedTarget(instruction);
+            return continueLoop(instruction);
         case BytecodeOp::Return:
             returnRequested_ = true;
             break;
@@ -5205,6 +5318,7 @@ private:
         const auto target = checkedTarget(instruction);
         if (target) {
             recordGenericBackedge(instruction, *target);
+            unwindStructuredContexts(*target);
         }
         return target;
     }
@@ -5216,7 +5330,11 @@ private:
             return std::nullopt;
         }
         if (!truthy(*condition)) {
-            return checkedTarget(instruction);
+            const auto target = checkedTarget(instruction);
+            if (target) {
+                unwindStructuredContexts(*target);
+            }
+            return target;
         }
         return std::nullopt;
     }
@@ -5280,9 +5398,9 @@ private:
 
         ScalarTypedRegionExecutor executor(
             semantic_ ? semantic_->builtinRegistry : nullptr);
-        auto result = executor.execute(
-            *program_, active->second.contract, rangeValue.value,
-            currentFrame(), typedRegionBackend_);
+        auto result = BytecodeVmTrustedAccess::executeRegion(
+            executor, *program_, active->second.contract,
+            rangeValue.value, currentFrame(), typedRegionBackend_);
         if (result.status != TypedRegionExecutionStatus::Executed) {
             ++execution.fallbackCount;
             execution.backend =
@@ -5394,9 +5512,43 @@ private:
                           "bytecode break encountered without active for loop");
             return std::nullopt;
         }
+        const auto target = checkedTarget(instruction);
+        if (!target) {
+            return std::nullopt;
+        }
         recordForBreak(forLoopStack_.back(), instruction);
         forLoopStack_.pop_back();
-        return checkedTarget(instruction);
+        unwindStructuredContexts(*target);
+        return target;
+    }
+
+    std::optional<size_t> continueLoop(
+        const BytecodeInstruction& instruction) {
+        recordContinue(instruction);
+        const auto target = checkedTarget(instruction);
+        if (target) {
+            unwindStructuredContexts(*target);
+        }
+        return target;
+    }
+
+    void unwindStructuredContexts(size_t target) {
+        while (!switchContextStack_.empty()) {
+            const auto& context = switchContextStack_.back();
+            if (target > context.beginPc &&
+                target <= context.endPc) {
+                break;
+            }
+            switchContextStack_.pop_back();
+        }
+        while (!tryContextStack_.empty()) {
+            const auto& context = tryContextStack_.back();
+            if (target > context.beginPc &&
+                target <= context.endPc) {
+                break;
+            }
+            tryContextStack_.pop_back();
+        }
     }
 
     void switchBegin(const BytecodeInstruction& instruction) {
@@ -5404,7 +5556,12 @@ private:
         if (!selector) {
             return;
         }
-        switchContextStack_.push_back(SwitchContext{*selector, false});
+        const size_t end =
+            currentPc_ < switchEndAt_.size()
+                ? switchEndAt_[currentPc_]
+                : currentPc_;
+        switchContextStack_.push_back(
+            SwitchContext{*selector, false, currentPc_, end});
     }
 
     std::optional<size_t> switchCase(
@@ -5467,7 +5624,11 @@ private:
             forLoopStack_.size(),
             indexContextStack_.size(),
             lvalueStack_.size(),
-            switchContextStack_.size()});
+            switchContextStack_.size(),
+            currentPc_,
+            currentPc_ < tryEndAt_.size()
+                ? tryEndAt_[currentPc_]
+                : currentPc_});
         return std::nullopt;
     }
 
@@ -14528,6 +14689,8 @@ private:
     std::vector<std::unique_ptr<ActiveLvalue>> lvalueStack_;
     std::vector<SwitchContext> switchContextStack_;
     std::vector<TryContext> tryContextStack_;
+    std::vector<size_t> switchEndAt_;
+    std::vector<size_t> tryEndAt_;
     std::vector<RuntimeCallFrame> frames_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
     std::shared_ptr<RuntimeExecutionControl> executionControl_;
@@ -14592,21 +14755,23 @@ private:
 BytecodeVmResult BytecodeVm::run(const BytecodeProgram& program,
                                  const SemanticResult& semantic) {
     BytecodeVmContext context;
-    return context.run(program, semantic, nullptr, BytecodeVmOptions{});
+    return context.run(program, semantic, nullptr, BytecodeVmOptions{},
+                       true);
 }
 
 BytecodeVmResult BytecodeVm::run(const BytecodeProgram& program,
                                  const SemanticResult& semantic,
                                  const BytecodeVmOptions& options) {
     BytecodeVmContext context;
-    return context.run(program, semantic, nullptr, options);
+    return context.run(program, semantic, nullptr, options, true);
 }
 
 BytecodeVmResult BytecodeVm::run(
     const BytecodeProgram& program, const SemanticResult& semantic,
     const BytecodeTypedIrModule& typedIr) {
     BytecodeVmContext context;
-    return context.run(program, semantic, &typedIr, BytecodeVmOptions{});
+    return context.run(program, semantic, &typedIr, BytecodeVmOptions{},
+                       true);
 }
 
 BytecodeVmResult BytecodeVm::run(
@@ -14614,7 +14779,22 @@ BytecodeVmResult BytecodeVm::run(
     const BytecodeTypedIrModule& typedIr,
     const BytecodeVmOptions& options) {
     BytecodeVmContext context;
-    return context.run(program, semantic, &typedIr, options);
+    return context.run(program, semantic, &typedIr, options, true);
+}
+
+BytecodeVmResult BytecodeVm::runValidated(
+    const BytecodeProgram& program, const SemanticResult& semantic,
+    const BytecodeVmOptions& options) {
+    BytecodeVmContext context;
+    return context.run(program, semantic, nullptr, options, false);
+}
+
+BytecodeVmResult BytecodeVm::runValidated(
+    const BytecodeProgram& program, const SemanticResult& semantic,
+    const BytecodeTypedIrModule& typedIr,
+    const BytecodeVmOptions& options) {
+    BytecodeVmContext context;
+    return context.run(program, semantic, &typedIr, options, false);
 }
 
 } // namespace mparser

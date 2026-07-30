@@ -630,6 +630,42 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
 
 } // namespace
 
+bool bytecodeRegionContractsEquivalent(
+    const BytecodeRegionContract& left,
+    const BytecodeRegionContract& right) {
+    return left.available == right.available &&
+           left.closed == right.closed &&
+           left.beginPc == right.beginPc &&
+           left.endPc == right.endPc &&
+           left.bodyBeginPc == right.bodyBeginPc &&
+           left.bodyEndPc == right.bodyEndPc &&
+           left.nestedLoopCount == right.nestedLoopCount &&
+           left.maxLoopDepth == right.maxLoopDepth &&
+           left.conditionalBranchCount ==
+               right.conditionalBranchCount &&
+           left.linearIndexReadCount == right.linearIndexReadCount &&
+           left.linearIndexWriteCount == right.linearIndexWriteCount &&
+           left.stackInputCount == right.stackInputCount &&
+           left.stackOutputCount == right.stackOutputCount &&
+           left.reads == right.reads &&
+           left.inputs == right.inputs &&
+           left.writes == right.writes &&
+           left.outputs == right.outputs &&
+           left.callTargets == right.callTargets &&
+           left.hasCalls == right.hasCalls &&
+           left.hasMutation == right.hasMutation &&
+           left.hasUnsupportedMutation ==
+               right.hasUnsupportedMutation &&
+           left.hasUnsupportedControlFlow ==
+               right.hasUnsupportedControlFlow &&
+           left.hasUnsupportedOperations ==
+               right.hasUnsupportedOperations &&
+           left.eligibleForTypedExecution ==
+               right.eligibleForTypedExecution &&
+           left.fallbackKind == right.fallbackKind &&
+           left.reason == right.reason;
+}
+
 BytecodeRegionAnalyzer::BytecodeRegionAnalyzer()
     : builtinRegistry_(defaultBuiltinRegistry()) {}
 
@@ -640,6 +676,21 @@ BytecodeRegionAnalyzer::BytecodeRegionAnalyzer(
                            : defaultBuiltinRegistry()) {}
 
 BytecodeRegionContract BytecodeRegionAnalyzer::analyze(
+    const BytecodeProgram& program, std::string_view candidateKind,
+    size_t sourcePc, std::string_view target) const {
+    const auto validation = validateBytecodeProgram(program);
+    if (!validation.succeeded) {
+        BytecodeRegionContract contract;
+        contract.fallbackKind = RuntimeFallbackKind::InvalidContract;
+        contract.reason = validation.diagnostics.empty()
+                              ? "bytecode program validation failed"
+                              : validation.diagnostics.front().message;
+        return contract;
+    }
+    return analyzeValidated(program, candidateKind, sourcePc, target);
+}
+
+BytecodeRegionContract BytecodeRegionAnalyzer::analyzeValidated(
     const BytecodeProgram& program, std::string_view candidateKind,
     size_t sourcePc, std::string_view target) const {
     if (candidateKind == "hot-loop") {

@@ -10,8 +10,8 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
-      "evidence": ["parser_smoke", "cli_help_smoke"],
-      "sources": ["src/mparser/lexer.cpp", "src/mparser/token.cpp", "tests/parser_smoke.cpp"],
+      "evidence": ["parser_smoke", "parser_semantic_fuzz", "cli_help_smoke"],
+      "sources": ["src/mparser/lexer.cpp", "src/mparser/token.cpp", "tests/parser_smoke.cpp", "tests/parser_semantic_fuzz.cpp"],
       "limits": "Single and double quoted literals preserve distinct character-array and string-array runtime kinds; command-form syntax is outside the target subset."
     },
     {
@@ -21,9 +21,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["parser_smoke", "semantic_smoke", "bytecode_smoke"],
-      "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "src/mparser/bytecode.cpp"],
-      "limits": "Method/object dispatch, anonymous-function text parsing, computed-string lazy source loading, and the remaining MATLAB call/index shadowing edge cases remain open."
+      "evidence": ["parser_smoke", "parser_semantic_fuzz", "semantic_smoke", "bytecode_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "src/mparser/bytecode.cpp", "tests/parser_semantic_fuzz.cpp"],
+      "limits": "Production method/object dispatch and anonymous closures are supported through the bytecode VM. Anonymous-function text parsing, computed-string lazy source loading, and the remaining MATLAB call/index shadowing edge cases remain open."
     },
     {
       "id": "SYN-002",
@@ -45,7 +45,7 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
       "evidence": ["function_call_contract_smoke", "output_argument_smoke", "name_value_argument_smoke", "repeating_argument_smoke"],
       "sources": ["src/mparser/function_signature.cpp", "src/mparser/argument_contract.cpp", "src/mparser/runtime_argument_validation.cpp"],
-      "limits": "General dynamic dispatch and a frozen external call ABI are separate v1.0 gates."
+      "limits": "The C ABI 1.1, C++ source API 1.0, machine protocol 1.0, and builtin source contract 1.0 are frozen candidates. An arbitrary external native callback or plugin ABI is Post-v1.0."
     },
     {
       "id": "SRC-001",
@@ -142,8 +142,8 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["parser_smoke", "semantic_smoke", "bytecode_smoke", "bytecode_region_smoke", "runtime_session_smoke", "workspace_session_interpreter_cli_smoke", "workspace_session_bytecode_cli_smoke", "workspace_session_production_cli_smoke"],
-      "sources": ["src/mparser/runtime_session_state.h", "src/mparser/runtime_session_state.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "src/mparser/compiled_module.cpp", "tests/runtime_session_smoke.cpp", "samples/workspace_session_demo.m"],
+      "evidence": ["parser_smoke", "semantic_smoke", "bytecode_smoke", "bytecode_region_smoke", "runtime_session_smoke", "runtime_soak_smoke", "workspace_session_interpreter_cli_smoke", "workspace_session_bytecode_cli_smoke", "workspace_session_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_session_state.h", "src/mparser/runtime_session_state.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "src/mparser/compiled_module.cpp", "tests/runtime_session_smoke.cpp", "tests/runtime_soak_smoke.cpp", "samples/workspace_session_demo.m"],
       "limits": "v0.78 requires declarations before use, initializes first declarations as 0-by-0 doubles, keys persistent variables by compiled callable identity plus canonical function identity, and routes all supported writes through RuntimeSessionState. Different modules may share globals without colliding same-named persistent functions. No-argument clear preserves shared state; MATLAB command forms for clearing names, globals, or functions remain unsupported. Individual state operations are mutex-protected, but callers must serialize compound invocation on one shared state. Typed/native regions fall back to the VM."
     },
     {
@@ -153,9 +153,20 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["runtime_contract_smoke", "bytecode_region_smoke", "typed_region_executor_smoke", "adaptive_bytecode_vm_smoke", "runtime_contract_interpreter_cli_smoke", "runtime_contract_bytecode_cli_smoke", "runtime_contract_production_cli_smoke"],
-      "sources": ["src/mparser/runtime_value.h", "src/mparser/runtime_value.cpp", "src/mparser/runtime_call_frame.h", "src/mparser/runtime_call_frame.cpp", "src/mparser/runtime_fallback.h", "src/mparser/runtime_fallback.cpp", "tests/runtime_contract_smoke.cpp", "samples/runtime_contract_demo.m"],
+      "evidence": ["runtime_contract_smoke", "runtime_soak_smoke", "bytecode_region_smoke", "typed_region_executor_smoke", "adaptive_bytecode_vm_smoke", "runtime_contract_interpreter_cli_smoke", "runtime_contract_bytecode_cli_smoke", "runtime_contract_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_value.h", "src/mparser/runtime_value.cpp", "src/mparser/runtime_call_frame.h", "src/mparser/runtime_call_frame.cpp", "src/mparser/runtime_fallback.h", "src/mparser/runtime_fallback.cpp", "tests/runtime_contract_smoke.cpp", "tests/runtime_soak_smoke.cpp", "samples/runtime_contract_demo.m"],
       "limits": "v0.79 freezes the internal source contract needed by the builtin registry: explicit ownership classes, storable transport boundaries, normalized shape/payload invariants, value-copy versus handle-alias behavior, function-handle identity/context lifetime, shared call-frame arity, and machine-readable fallback categories. v0.90 separately freezes its C ABI, C++ source API, and machine projection; internal C++ layout, garbage collection, and MATLAB type completeness are not public promises."
+    },
+    {
+      "id": "ENGINE-VERIFY-001",
+      "area": "engine",
+      "feature": "Deterministic validation of internal bytecode before VM, optimization, or typed execution",
+      "status": "supported",
+      "priority": "must-have",
+      "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
+      "evidence": ["bytecode_verifier_smoke", "reliability_boundary_cli_smoke"],
+      "sources": ["src/mparser/bytecode.h", "src/mparser/bytecode_verifier.cpp", "src/mparser/bytecode_vm.cpp", "src/mparser/bytecode_region.cpp", "src/mparser/typed_region_executor.cpp", "src/mparser/adaptive_bytecode_vm.cpp", "tests/bytecode_verifier_smoke.cpp", "samples/reliability_boundary_demo.m", "docs/v1.0-reliability.md"],
+      "limits": "BytecodeProgram is an internal in-memory representation, not a public serialization or ABI. Direct untrusted entries validate on every call; CompiledModule and AdaptiveBytecodeVmSession paths own immutable snapshots and validate once before explicit trusted internal execution. Typed modules are installed only when each contract exactly matches the contract re-derived from validated bytecode."
     },
     {
       "id": "EXC-001",
@@ -186,8 +197,8 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["parser_smoke", "semantic_smoke", "class_contract_smoke"],
-      "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "tests/class_contract_smoke.cpp"],
+      "evidence": ["parser_smoke", "parser_semantic_fuzz", "semantic_smoke", "class_contract_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "tests/parser_semantic_fuzz.cpp", "tests/class_contract_smoke.cpp"],
       "limits": "The matrix declares supported attributes explicitly; undocumented attributes and every MATLAB metaclass edge are not implied."
     },
     {
@@ -709,6 +720,16 @@
       "framework_impact": "none",
       "requirement": "Produce checksummed platform/architecture archives and prove the unpacked SDK rather than relying only on source-tree installs.",
       "exit_evidence": "mparser_release_package emits ZIP/TGZ plus SHA-256 files. release_archive_smoke packages one fixed payload twice with SOURCE_DATE_EPOCH, checks identical hashes and safe single-root paths, unpacks the archive, builds independent C11 and multi-TU C++20 consumers, and runs the installed json-v1 CLI without source-tree or loader-path access. CI uploads packages for Windows x64, Linux x64/AArch64, and macOS x64/ARM64. Signing/provenance remains a v1.0 publication operation."
+    },
+    {
+      "id": "G-RELIABILITY-001",
+      "area": "runtime-safety",
+      "priority": "must-have",
+      "state": "in-progress",
+      "target": "v1.0",
+      "framework_impact": "contract-extension",
+      "requirement": "Close deterministic frontend fuzz, malformed-bytecode, long-running invoke-many/session/adaptive, lifecycle, cancellation, resource, cache, allocation, load-unload, and concurrency evidence without weakening fallback or diagnostics.",
+      "exit_evidence": "parser_semantic_fuzz and bytecode_verifier_smoke cover the new frontend and untrusted-bytecode boundaries; runtime_soak_smoke adds a named quantified long-running gate; existing runtime, lifecycle, resource, cache, allocation, unload, and concurrency tests remain required. Windows native/no-JIT and release-package evidence plus deferred cross-platform confirmation are tracked in docs/v1.0-reliability.md."
     },
     {
       "id": "G-JIT-001",

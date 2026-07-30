@@ -5,6 +5,7 @@
 #include "mparser/source.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mparser {
@@ -97,10 +98,23 @@ struct BytecodeProgram {
     std::vector<Diagnostic> diagnostics;
 };
 
+struct BytecodeValidationResult {
+    bool succeeded = true;
+    std::vector<Diagnostic> diagnostics;
+};
+
+inline constexpr std::string_view
+    kInvalidBytecodeProgramIdentifier =
+        "MParser:Bytecode:InvalidProgram";
+
 class BytecodeLowerer {
 public:
     BytecodeProgram lower(const SemanticResult& semantic);
 };
+
+BytecodeValidationResult validateBytecodeProgram(
+    const BytecodeProgram& program,
+    const SemanticResult* semantic = nullptr);
 
 const char* bytecodeOpName(BytecodeOp op);
 

@@ -12,6 +12,9 @@
 namespace mparser {
 
 struct BytecodeTypedIrModule;
+class AdaptiveBytecodeVmSession;
+class CompiledModule;
+class RuntimeBenchmarkRunner;
 
 struct BytecodeInstructionProfile {
     size_t pc = 0;
@@ -176,6 +179,22 @@ public:
                          const SemanticResult& semantic,
                          const BytecodeTypedIrModule& typedIr,
                          const BytecodeVmOptions& options);
+
+private:
+    friend class AdaptiveBytecodeVmSession;
+    friend class CompiledModule;
+    friend class RuntimeBenchmarkRunner;
+
+    // Trusted internal path for a program already accepted by the verifier.
+    BytecodeVmResult runValidated(
+        const BytecodeProgram& program,
+        const SemanticResult& semantic,
+        const BytecodeVmOptions& options);
+    BytecodeVmResult runValidated(
+        const BytecodeProgram& program,
+        const SemanticResult& semantic,
+        const BytecodeTypedIrModule& typedIr,
+        const BytecodeVmOptions& options);
 };
 
 } // namespace mparser

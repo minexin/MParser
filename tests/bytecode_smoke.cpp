@@ -204,6 +204,26 @@ void lowerNondeterministicAssignmentSmoke() {
     assert(store->nondeterministicAssignment);
 }
 
+void lowerDiscardedExpressionSmoke() {
+    const std::string source = R"(function y = f(x)
+try
+    x;
+catch err
+end
+y = 1;
+end
+)";
+
+    mparser::SemanticResult semantic;
+    const auto program = lower(source, semantic);
+
+    assert(containsOp(program, mparser::BytecodeOp::Pop));
+    const auto validation =
+        mparser::validateBytecodeProgram(program, &semantic);
+    assert(validation.succeeded);
+    assert(validation.diagnostics.empty());
+}
+
 void lowerWorkspaceDeclarationSmoke() {
     const std::string source = R"(global shared
 shared.Value = 1;
@@ -256,6 +276,7 @@ int main() {
     lowerIndexedAssignmentSmoke();
     lowerSwitchAndTrySmoke();
     lowerNondeterministicAssignmentSmoke();
+    lowerDiscardedExpressionSmoke();
     lowerWorkspaceDeclarationSmoke();
     std::cout << "bytecode smoke tests passed\n";
     return 0;

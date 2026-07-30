@@ -12,6 +12,7 @@
 namespace mparser {
 
 class BuiltinRegistry;
+class BytecodeVmTrustedAccess;
 
 enum class TypedRegionExecutionStatus {
     Executed,
@@ -64,6 +65,15 @@ public:
         TypedRegionBackend backend = TypedRegionBackend::Auto) const;
 
 private:
+    friend class BytecodeVmTrustedAccess;
+
+    TypedRegionExecutionResult executeValidated(
+        const BytecodeProgram& program,
+        const BytecodeRegionContract& region,
+        const RuntimeValue& loopRange,
+        const RuntimeWorkspace& variables,
+        TypedRegionBackend backend = TypedRegionBackend::Auto) const;
+
     std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
 };
 

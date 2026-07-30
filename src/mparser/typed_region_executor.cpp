@@ -1318,6 +1318,33 @@ TypedRegionExecutionResult ScalarTypedRegionExecutor::execute(
     const RuntimeValue& loopRange,
     const RuntimeWorkspace& variables,
     TypedRegionBackend backend) const {
+    BytecodeRegionAnalyzer analyzer(builtinRegistry_);
+    const auto expected = analyzer.analyze(
+        program, "hot-loop", region.beginPc, {});
+    if (expected.fallbackKind ==
+            RuntimeFallbackKind::InvalidContract) {
+        return fallback(
+            RuntimeFallbackKind::InvalidContract,
+            expected.reason.empty()
+                ? "bytecode program validation failed"
+                : expected.reason);
+    }
+    if (!bytecodeRegionContractsEquivalent(region, expected)) {
+        return fallback(
+            RuntimeFallbackKind::InvalidContract,
+            "typed region contract does not match its bytecode program");
+    }
+    return executeValidated(program, expected, loopRange, variables,
+                            backend);
+}
+
+TypedRegionExecutionResult
+ScalarTypedRegionExecutor::executeValidated(
+    const BytecodeProgram& program,
+    const BytecodeRegionContract& region,
+    const RuntimeValue& loopRange,
+    const RuntimeWorkspace& variables,
+    TypedRegionBackend backend) const {
     if (!region.available || !region.closed ||
         !region.eligibleForTypedExecution) {
         return fallback(
