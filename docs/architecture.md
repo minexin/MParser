@@ -1627,6 +1627,14 @@ propagated to fresh CLI children, and emulated reports are marked as functional
 evidence rather than native performance evidence. See
 [v1.0-performance-baseline.md](v1.0-performance-baseline.md).
 
+Windows sanitizer validation is an opt-in build boundary rather than a
+runtime feature. `MPARSER_ENABLE_MSVC_ASAN` applies AddressSanitizer only to a
+no-JIT, non-packaging configuration, discovers the matching dynamic runtime
+beside the selected compiler, and stages it into local main and
+relocated-consumer output directories. The DLL is not part of the installed
+SDK. A CMake smoke test checks its hash and starts the instrumented CLI before
+the broader lifecycle, fuzz, bytecode, soak, and embedding regressions run.
+
 After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
 embedding-framework redesign unless release evidence proves a correctness
 defect. Work now concentrates on contract freeze, reliability and sanitizer

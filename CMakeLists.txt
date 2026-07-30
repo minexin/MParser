@@ -26,10 +26,55 @@ option(MPARSER_ENABLE_NATIVE_JIT
     "Build the optional SLJIT native scalar-loop backend" ON)
 option(MPARSER_ENABLE_RELEASE_PACKAGING
     "Enable reproducible-payload release archives and package validation" OFF)
+option(MPARSER_ENABLE_MSVC_ASAN
+    "Instrument a Windows MSVC no-JIT validation build with AddressSanitizer"
+    OFF)
 set(MPARSER_RELEASE_SOURCE_DATE_EPOCH "1767225600" CACHE STRING
     "UTC epoch used to normalize release archive metadata")
 set(MPARSER_SLJIT_SOURCE_DIR "" CACHE PATH
     "SLJIT source override; empty uses third_party/sljit")
+
+if(MPARSER_ENABLE_MSVC_ASAN)
+    if(NOT MSVC)
+        message(FATAL_ERROR
+            "MPARSER_ENABLE_MSVC_ASAN requires the MSVC toolchain")
+    endif()
+    if(MPARSER_ENABLE_NATIVE_JIT)
+        message(FATAL_ERROR
+            "MPARSER_ENABLE_MSVC_ASAN is a no-JIT validation mode; "
+            "set MPARSER_ENABLE_NATIVE_JIT=OFF")
+    endif()
+    if(MPARSER_ENABLE_RELEASE_PACKAGING)
+        message(FATAL_ERROR
+            "AddressSanitizer validation builds are not release packages")
+    endif()
+
+    get_filename_component(
+        _mparser_msvc_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    file(GLOB _mparser_msvc_asan_runtime_candidates
+        LIST_DIRECTORIES FALSE
+        "${_mparser_msvc_compiler_dir}/clang_rt.asan_dynamic-*.dll")
+    list(LENGTH _mparser_msvc_asan_runtime_candidates
+        _mparser_msvc_asan_runtime_count)
+    if(NOT _mparser_msvc_asan_runtime_count EQUAL 1)
+        message(FATAL_ERROR
+            "Expected exactly one MSVC AddressSanitizer runtime beside "
+            "${CMAKE_CXX_COMPILER}; found "
+            "${_mparser_msvc_asan_runtime_count}: "
+            "${_mparser_msvc_asan_runtime_candidates}")
+    endif()
+    list(GET _mparser_msvc_asan_runtime_candidates 0
+        MPARSER_MSVC_ASAN_RUNTIME_DLL)
+    get_filename_component(
+        MPARSER_MSVC_ASAN_RUNTIME_NAME
+        "${MPARSER_MSVC_ASAN_RUNTIME_DLL}" NAME)
+
+    add_compile_options(/fsanitize=address /Zi)
+    add_link_options(/fsanitize=address /INCREMENTAL:NO /DEBUG)
+    message(STATUS
+        "MParser MSVC AddressSanitizer runtime: "
+        "${MPARSER_MSVC_ASAN_RUNTIME_DLL}")
+endif()
 
 if(MPARSER_ENABLE_RELEASE_PACKAGING)
     string(TOLOWER
@@ -269,6 +314,16 @@ set_target_properties(mparser PROPERTIES EXPORT_NAME cli)
 if(WIN32)
     target_link_libraries(mparser PRIVATE Wer)
 endif()
+if(MPARSER_ENABLE_MSVC_ASAN)
+    add_custom_target(mparser_msvc_asan_runtime ALL
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${MPARSER_MSVC_ASAN_RUNTIME_DLL}"
+            "$<TARGET_FILE_DIR:mparser>"
+        DEPENDS mparser
+        COMMENT
+            "Staging ${MPARSER_MSVC_ASAN_RUNTIME_NAME} for local validation"
+        VERBATIM)
+endif()
 
 add_library(MParser::c_api ALIAS mparser_c_api)
 add_library(MParser::cpp_api ALIAS mparser_cpp_api)
@@ -276,6 +331,17 @@ add_executable(MParser::cli ALIAS mparser)
 
 include(CTest)
 if(BUILD_TESTING)
+
+if(MPARSER_ENABLE_MSVC_ASAN)
+    add_test(NAME msvc_asan_runtime_smoke
+        COMMAND "${CMAKE_COMMAND}"
+            "-DMPARSER_ASAN_RUNTIME_SOURCE=${MPARSER_MSVC_ASAN_RUNTIME_DLL}"
+            "-DMPARSER_RUNTIME_DIR=$<TARGET_FILE_DIR:mparser>"
+            "-DMPARSER_EXECUTABLE=$<TARGET_FILE:mparser>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_msvc_asan_runtime.cmake")
+    set_tests_properties(msvc_asan_runtime_smoke PROPERTIES
+        LABELS "reliability;sanitizer")
+endif()
 
 add_subdirectory(third_party/json-schema-validator)
 
@@ -1841,6 +1907,7 @@ if(NOT CMAKE_CROSSCOMPILING)
             "-DMPARSER_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_c_consumer"
             "-DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-consumer-smoke/$<CONFIG>"
             "-DMPARSER_INSTALL_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}"
+            "-DMPARSER_INSTALL_BINDIR=${CMAKE_INSTALL_BINDIR}"
             "-DMPARSER_INSTALL_DATADIR=${CMAKE_INSTALL_DATADIR}"
             "-DMPARSER_INSTALL_DOCDIR=${CMAKE_INSTALL_DOCDIR}"
             "-DMPARSER_INSTALL_CMAKEDIR=${MPARSER_INSTALL_CMAKEDIR}"
@@ -1854,6 +1921,7 @@ if(NOT CMAKE_CROSSCOMPILING)
             "-DMPARSER_TEST_CONFIG=$<CONFIG>"
             "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
             "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+            "-DMPARSER_TEST_RUNTIME_DLL=${MPARSER_MSVC_ASAN_RUNTIME_DLL}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_installed_c_consumer.cmake")
     set_tests_properties(installed_c_consumer_smoke PROPERTIES
         TIMEOUT 180)
@@ -1866,6 +1934,7 @@ if(NOT CMAKE_CROSSCOMPILING)
             "-DMPARSER_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_cpp_consumer"
             "-DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-cpp-consumer-smoke/$<CONFIG>"
             "-DMPARSER_INSTALL_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}"
+            "-DMPARSER_INSTALL_BINDIR=${CMAKE_INSTALL_BINDIR}"
             "-DMPARSER_INSTALL_DATADIR=${CMAKE_INSTALL_DATADIR}"
             "-DMPARSER_INSTALL_DOCDIR=${CMAKE_INSTALL_DOCDIR}"
             "-DMPARSER_INSTALL_CMAKEDIR=${MPARSER_INSTALL_CMAKEDIR}"
@@ -1880,6 +1949,7 @@ if(NOT CMAKE_CROSSCOMPILING)
             "-DMPARSER_TEST_CONFIG=$<CONFIG>"
             "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
             "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+            "-DMPARSER_TEST_RUNTIME_DLL=${MPARSER_MSVC_ASAN_RUNTIME_DLL}"
             -DMPARSER_REQUIRE_CPP_SDK=ON
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_installed_c_consumer.cmake")
     set_tests_properties(installed_cpp_consumer_smoke PROPERTIES

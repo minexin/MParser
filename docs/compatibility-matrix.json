@@ -774,6 +774,16 @@
       "exit_evidence": "The documentation set, contract-derived smoke validator, production/machine samples, and installed/archive required-file lists are implemented locally. Windows native 202/202, no-JIT 196/196, and reproducible relocated package validation passed and are recorded in docs/v1.0-documentation.md. Final release-platform package confirmation is required to close the gap."
     },
     {
+      "id": "G-SANITIZER-001",
+      "area": "runtime-safety",
+      "priority": "should-have",
+      "state": "in-progress",
+      "target": "v1.0",
+      "framework_impact": "none",
+      "requirement": "Evaluate stable specialist sanitizer configurations without weakening the required Linux ASan/UBSan lane or treating optimization coverage as a correctness prerequisite.",
+      "exit_evidence": "The local Windows MSVC 19.44 ASan no-JIT preset stages the compiler-matched runtime for main and relocated-consumer tests and passes 197/197 with no sanitizer report. Linux TSan, macOS ARM64 ASan/UBSan, recurring-lane suitability, and final cross-platform confirmation remain deferred to the shared validation window."
+    },
+    {
       "id": "G-JIT-001",
       "area": "jit",
       "priority": "should-have",

@@ -36,6 +36,31 @@ If an old build tree was configured with another compiler, generator, or code
 page, configure a new directory. CMake 3.24 or newer may instead use
 `cmake --fresh --preset windows-msvc-release`.
 
+### Windows MSVC AddressSanitizer
+
+The checked-in local validation preset instruments the complete no-JIT build
+with MSVC AddressSanitizer:
+
+```powershell
+cmake --preset windows-msvc-asan-nojit
+cmake --build --preset windows-msvc-asan-nojit --parallel
+ctest --preset windows-msvc-asan-nojit
+```
+
+Run all three commands from the same x64 Visual Studio developer environment.
+The final installed-consumer tests invoke CMake and the compiler again, so a
+plain PowerShell process without the Windows SDK `LIB` and `INCLUDE`
+environment is insufficient.
+
+The preset selects `RelWithDebInfo`, `MPARSER_ENABLE_NATIVE_JIT=OFF`, and
+`MPARSER_ENABLE_MSVC_ASAN=ON`. CMake adds `/fsanitize=address`, debug
+information, and `/INCREMENTAL:NO`, locates the architecture-matched
+`clang_rt.asan_dynamic-*.dll` beside the selected `cl.exe`, and stages it only
+into local test output directories. The DLL is neither vendored nor installed
+or packaged by MParser. The option rejects native-JIT and release-packaging
+configurations so this diagnostic build cannot be mistaken for a release
+artifact.
+
 ## Linux Or macOS
 
 The Linux preset uses Ninja and Release:

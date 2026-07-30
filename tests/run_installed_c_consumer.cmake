@@ -5,6 +5,7 @@ foreach(required_variable IN ITEMS
         MPARSER_CONSUMER_SOURCE_DIR
         MPARSER_TEST_ROOT
         MPARSER_INSTALL_INCLUDEDIR
+        MPARSER_INSTALL_BINDIR
         MPARSER_INSTALL_DATADIR
         MPARSER_INSTALL_DOCDIR
         MPARSER_INSTALL_CMAKEDIR
@@ -55,6 +56,21 @@ function(mparser_run_checked description)
         string(STRIP "${command_output}" command_output)
         message(STATUS "${description}:\n${command_output}")
     endif()
+endfunction()
+
+function(mparser_stage_test_runtime destination)
+    if(NOT DEFINED MPARSER_TEST_RUNTIME_DLL OR
+       MPARSER_TEST_RUNTIME_DLL STREQUAL "")
+        return()
+    endif()
+    if(NOT EXISTS "${MPARSER_TEST_RUNTIME_DLL}")
+        message(FATAL_ERROR
+            "Required test runtime is missing: "
+            "${MPARSER_TEST_RUNTIME_DLL}")
+    endif()
+    file(MAKE_DIRECTORY "${destination}")
+    file(COPY "${MPARSER_TEST_RUNTIME_DLL}"
+        DESTINATION "${destination}")
 endfunction()
 
 if(DEFINED MPARSER_EXISTING_PREFIX AND
@@ -132,6 +148,8 @@ if(NOT DEFINED MPARSER_EXISTING_PREFIX OR
     file(RENAME
         "${mparser_initial_prefix}" "${mparser_relocated_prefix}")
 endif()
+mparser_stage_test_runtime(
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_BINDIR}")
 
 set(mparser_package_dir
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_CMAKEDIR}")
@@ -195,6 +213,11 @@ if(NOT MPARSER_TEST_CONFIG STREQUAL "")
 endif()
 mparser_run_checked(
     "Installed consumer build" ${mparser_build_command})
+mparser_stage_test_runtime("${mparser_consumer_build}")
+if(NOT MPARSER_TEST_CONFIG STREQUAL "")
+    mparser_stage_test_runtime(
+        "${mparser_consumer_build}/${MPARSER_TEST_CONFIG}")
+endif()
 
 set(mparser_test_command
     "${MPARSER_CTEST_COMMAND}" --test-dir "${mparser_consumer_build}"

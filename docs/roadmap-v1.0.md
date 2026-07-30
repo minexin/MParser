@@ -587,6 +587,13 @@ is green. It refines, rather than replaces, the four work areas above.
    ASan+UBSan no-JIT. A toolchain may be deferred only with a recorded
    stability rationale and compensating evidence; this work must never weaken
    Linux ASan/UBSan or the core lifecycle gates.
+   **Status: Windows local branch complete.** The checked-in
+   `windows-msvc-asan-nojit` preset preserves normal C++ exception flags,
+   disables incremental linking, stages the compiler-matched dynamic ASan
+   runtime for main and relocated-consumer tests, and passed 197/197 with
+   MSVC 19.44. Linux TSan, macOS ARM64 sanitizer, and conversion of any
+   stable branch into recurring CI remain deferred to the shared
+   cross-platform validation window.
 7. **Must-have: publish 1.0.0.** Freeze the compatibility matrix, public
    contract manifest, snapshots, and version metadata; generate Windows,
    Linux, and macOS x64/ARM64 archives with SHA-256 checksums; build and run

@@ -78,8 +78,8 @@ documentation defect and use the versioned machine contract until corrected.
 
 - [v0.90 Milestone](v0.90.md): embedding and release-candidate API boundary.
 - [v1.0 Reliability Gate](v1.0-reliability.md): fuzz, malformed bytecode,
-  soak, lifecycle, resource, cache, allocation, unload, and concurrency
-  evidence.
+  soak, lifecycle, resource, cache, allocation, unload, concurrency, and
+  local Windows MSVC ASan evidence.
 - [v1.0 Performance Baseline](v1.0-performance-baseline.md): timing,
   allocation, peak-memory, binary-size, and cache methodology.
 - [v1.0 Release Documentation Gate](v1.0-documentation.md): manual

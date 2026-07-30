@@ -2,9 +2,10 @@
 
 Current release candidate: v0.90.0. The v1 public-contract candidate is
 locally frozen; reliability, performance/resource, and release-documentation
-hardening are locally closed. Active work is specialist sanitizer evaluation
-and final-release preparation, while candidate cross-platform confirmation is
-deferred until the shared validation window.
+hardening are locally closed, and the Windows MSVC ASan no-JIT evaluation
+passes locally. Active work is final-release preparation, while Linux TSan,
+macOS sanitizer, and candidate cross-platform confirmation are deferred until
+the shared validation window.
 Release documentation starts at
 [docs/README.md](docs/README.md), with the
 [user manual](docs/user-manual.md),
