@@ -121,32 +121,32 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DMPARSER_ENABLE_NATIVE_JIT=ON \
             -DBUILD_TESTING=OFF \
-            -DCMAKE_INSTALL_PREFIX="$PWD/install-sdk"
+            -DCMAKE_INSTALL_PREFIX="$PWD/build-sdk/install-sdk"
           cmake --build build-sdk --parallel
           cmake --install build-sdk
-          mv install-sdk relocated-sdk
+          mv build-sdk/install-sdk build-sdk/relocated-sdk
       - name: Validate relocated C and C++ consumers
         run: |
           cmake -S tests/installed_c_consumer -B build-c-consumer \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$PWD/relocated-sdk" \
+            -DCMAKE_PREFIX_PATH="$PWD/build-sdk/relocated-sdk" \
             -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-c-consumer --parallel
-          DYLD_LIBRARY_PATH="$PWD/relocated-sdk/lib" \
+          DYLD_LIBRARY_PATH="$PWD/build-sdk/relocated-sdk/lib" \
             ctest --test-dir build-c-consumer --output-on-failure
           cmake -S tests/installed_cpp_consumer -B build-cpp-consumer \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$PWD/relocated-sdk" \
+            -DCMAKE_PREFIX_PATH="$PWD/build-sdk/relocated-sdk" \
             -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-cpp-consumer --parallel
-          DYLD_LIBRARY_PATH="$PWD/relocated-sdk/lib" \
+          DYLD_LIBRARY_PATH="$PWD/build-sdk/relocated-sdk/lib" \
             ctest --test-dir build-cpp-consumer --output-on-failure
       - name: Validate production architecture and version
         run: |
-          file relocated-sdk/bin/mparser | grep -F "${{ matrix.arch }}"
-          file relocated-sdk/lib/libmparser_c.1.1.0.dylib | grep -F "${{ matrix.arch }}"
-          relocated-sdk/bin/mparser --version | tee macos-sdk-version.txt
-          grep -F "MParser 0.90.0" macos-sdk-version.txt
+          file build-sdk/relocated-sdk/bin/mparser | grep -F "${{ matrix.arch }}"
+          file build-sdk/relocated-sdk/lib/libmparser_c.1.1.0.dylib | grep -F "${{ matrix.arch }}"
+          build-sdk/relocated-sdk/bin/mparser --version | tee build-sdk/macos-sdk-version.txt
+          grep -F "MParser 0.90.0" build-sdk/macos-sdk-version.txt
       - name: Build release archive and checksums
         run: cmake --build build-ci --target mparser_release_package
       - name: Upload macOS release archive
@@ -183,30 +183,30 @@ jobs:
       - name: Validate installed native JIT C and C++ SDKs under QEMU
         shell: bash
         run: |
-          cmake --install build-arm64-jit --prefix "$PWD/install-arm64-jit"
+          cmake --install build-arm64-jit --prefix "$PWD/build-arm64-jit/install-sdk"
           cmake -S tests/installed_c_consumer -B build-arm64-jit-consumer -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
-            -DCMAKE_PREFIX_PATH="$PWD/install-arm64-jit" \
+            -DCMAKE_PREFIX_PATH="$PWD/build-arm64-jit/install-sdk" \
             -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-arm64-jit-consumer --parallel
-          LD_LIBRARY_PATH="$PWD/install-arm64-jit/lib" \
+          LD_LIBRARY_PATH="$PWD/build-arm64-jit/install-sdk/lib" \
             ctest --test-dir build-arm64-jit-consumer --output-on-failure \
               -R "^installed_c_api_runtime$"
           cmake -S tests/installed_cpp_consumer -B build-arm64-jit-cpp-consumer -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
-            -DCMAKE_PREFIX_PATH="$PWD/install-arm64-jit" \
+            -DCMAKE_PREFIX_PATH="$PWD/build-arm64-jit/install-sdk" \
             -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-arm64-jit-cpp-consumer --parallel
-          LD_LIBRARY_PATH="$PWD/install-arm64-jit/lib" \
+          LD_LIBRARY_PATH="$PWD/build-arm64-jit/install-sdk/lib" \
             ctest --test-dir build-arm64-jit-cpp-consumer --output-on-failure \
               -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
-            ./install-arm64-jit/bin/mparser --version | tee arm64-jit-sdk-version.txt
-          grep --fixed-strings "MParser 0.90.0" arm64-jit-sdk-version.txt
+            ./build-arm64-jit/install-sdk/bin/mparser --version | tee build-arm64-jit/arm64-jit-sdk-version.txt
+          grep --fixed-strings "MParser 0.90.0" build-arm64-jit/arm64-jit-sdk-version.txt
       - name: Build AArch64 release archive and checksums
         run: cmake --build build-arm64-jit --target mparser_release_package
       - name: Validate unpacked AArch64 release archive under QEMU
@@ -261,35 +261,35 @@ jobs:
       - name: Validate installed portable C and C++ SDKs under QEMU
         shell: bash
         run: |
-          cmake --install build-arm64-portable --prefix "$PWD/install-arm64-portable"
+          cmake --install build-arm64-portable --prefix "$PWD/build-arm64-portable/install-sdk"
           cmake -S tests/installed_c_consumer -B build-arm64-portable-consumer -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
-            -DCMAKE_PREFIX_PATH="$PWD/install-arm64-portable" \
+            -DCMAKE_PREFIX_PATH="$PWD/build-arm64-portable/install-sdk" \
             -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-arm64-portable-consumer --parallel
-          LD_LIBRARY_PATH="$PWD/install-arm64-portable/lib" \
+          LD_LIBRARY_PATH="$PWD/build-arm64-portable/install-sdk/lib" \
             ctest --test-dir build-arm64-portable-consumer --output-on-failure \
               -R "^installed_c_api_runtime$"
           cmake -S tests/installed_cpp_consumer -B build-arm64-portable-cpp-consumer -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
-            -DCMAKE_PREFIX_PATH="$PWD/install-arm64-portable" \
+            -DCMAKE_PREFIX_PATH="$PWD/build-arm64-portable/install-sdk" \
             -DMPARSER_REQUIRED_VERSION=0.90.0
           cmake --build build-arm64-portable-cpp-consumer --parallel
-          LD_LIBRARY_PATH="$PWD/install-arm64-portable/lib" \
+          LD_LIBRARY_PATH="$PWD/build-arm64-portable/install-sdk/lib" \
             ctest --test-dir build-arm64-portable-cpp-consumer --output-on-failure \
               -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
-            ./install-arm64-portable/bin/mparser --version | tee arm64-portable-sdk-version.txt
-          grep --fixed-strings "MParser 0.90.0" arm64-portable-sdk-version.txt
+            ./build-arm64-portable/install-sdk/bin/mparser --version | tee build-arm64-portable/arm64-portable-sdk-version.txt
+          grep --fixed-strings "MParser 0.90.0" build-arm64-portable/arm64-portable-sdk-version.txt
       - name: Run portable branch sample under QEMU
         shell: bash
         run: |
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./build-arm64-portable/mparser \
             --run-typed-bytecode --typed-backend=portable \
-            samples/branched_typed_loop_demo.m | tee arm64-branch-output.txt
-          grep --fixed-strings "summary = 23520" arm64-branch-output.txt
+            samples/branched_typed_loop_demo.m | tee build-arm64-portable/arm64-branch-output.txt
+          grep --fixed-strings "summary = 23520" build-arm64-portable/arm64-branch-output.txt

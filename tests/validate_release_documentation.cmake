@@ -60,6 +60,7 @@ file(READ "${PROJECT_ROOT}/docs/runtime-boundaries.md" runtime_guide)
 file(READ "${PROJECT_ROOT}/docs/migration-v1.0.md" migration_guide)
 file(READ "${PROJECT_ROOT}/README.md" project_readme)
 file(READ "${CLI_CONTRACT}" cli_contract)
+file(READ "${PROJECT_ROOT}/.github/workflows/ci.yml" ci_workflow)
 
 function(require_text variable needle description)
     string(FIND "${${variable}}" "${needle}" found_at)
@@ -68,6 +69,43 @@ function(require_text variable needle description)
             "${description} is missing required text: ${needle}")
     endif()
 endfunction()
+
+function(reject_text variable needle description)
+    string(FIND "${${variable}}" "${needle}" found_at)
+    if(NOT found_at EQUAL -1)
+        message(FATAL_ERROR
+            "${description} retains forbidden text: ${needle}")
+    endif()
+endfunction()
+
+foreach(required_ci_path IN ITEMS
+        "$PWD/build-sdk/install-sdk"
+        "$PWD/build-sdk/relocated-sdk"
+        "build-sdk/macos-sdk-version.txt"
+        "$PWD/build-arm64-jit/install-sdk"
+        "build-arm64-jit/arm64-jit-sdk-version.txt"
+        "$PWD/build-arm64-portable/install-sdk"
+        "build-arm64-portable/arm64-portable-sdk-version.txt"
+        "build-arm64-portable/arm64-branch-output.txt")
+    require_text(ci_workflow "${required_ci_path}"
+        "release CI build-tree artifact policy")
+endforeach()
+
+foreach(forbidden_ci_path IN ITEMS
+        "$PWD/install-sdk"
+        "$PWD/relocated-sdk"
+        "mv install-sdk relocated-sdk"
+        "$PWD/install-arm64-jit"
+        "./install-arm64-jit/bin/mparser"
+        "$PWD/install-arm64-portable"
+        "./install-arm64-portable/bin/mparser"
+        "tee macos-sdk-version.txt"
+        "tee arm64-jit-sdk-version.txt"
+        "tee arm64-portable-sdk-version.txt"
+        "tee arm64-branch-output.txt")
+    reject_text(ci_workflow "${forbidden_ci_path}"
+        "release CI source-tree cleanliness policy")
+endforeach()
 
 set(indexed_documents ${required_documents})
 list(REMOVE_ITEM indexed_documents docs/README.md)
