@@ -33,7 +33,7 @@ From a clean checkout at `revision`, initialize the platform compiler
 environment, then run:
 
 ```text
-cmake -S . -B build/release-package -G Ninja -DCMAKE_BUILD_TYPE=Release -DMPARSER_ENABLE_NATIVE_JIT=ON -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+cmake -S . -B build/release-package -G Ninja -DCMAKE_BUILD_TYPE=Release -DMPARSER_ENABLE_NATIVE_JIT=ON -DMPARSER_ENABLE_RELEASE_PACKAGING=ON -DMPARSER_WARNINGS_AS_ERRORS=ON
 cmake --build build/release-package --parallel
 cmake --build build/release-package --target mparser_release_package
 ```
@@ -48,6 +48,12 @@ archive, validates its unsigned provenance statement, and writes:
 <archive>.provenance.json
 SHA256SUMS
 ```
+
+`MPARSER_WARNINGS_AS_ERRORS=ON` is a release-validation gate for first-party
+targets, not an ABI or runtime option. Bundled SLJIT keeps its upstream warning
+policy. Release-mode tests retain active `assert` checks through a forced
+include, avoiding the noisy and compiler-specific practice of overriding
+`NDEBUG` twice on the command line.
 
 `SHA256SUMS` binds both the archive and provenance statement. The CPack
 sidecar binds the archive independently. The provenance is not placed inside

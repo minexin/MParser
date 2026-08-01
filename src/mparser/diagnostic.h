@@ -3,6 +3,7 @@
 #include "mparser/source.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mparser {
@@ -32,6 +33,21 @@ struct Diagnostic {
     DiagnosticSeverity severity = DiagnosticSeverity::Error;
     std::vector<DiagnosticFrame> stack;
     std::vector<DiagnosticCause> causes;
+
+    Diagnostic() = default;
+
+    Diagnostic(SourceSpan sourceSpan, std::string diagnosticMessage,
+               std::string diagnosticIdentifier = {},
+               DiagnosticSeverity diagnosticSeverity =
+                   DiagnosticSeverity::Error,
+               std::vector<DiagnosticFrame> diagnosticStack = {},
+               std::vector<DiagnosticCause> diagnosticCauses = {})
+        : span(std::move(sourceSpan)),
+          message(std::move(diagnosticMessage)),
+          identifier(std::move(diagnosticIdentifier)),
+          severity(diagnosticSeverity),
+          stack(std::move(diagnosticStack)),
+          causes(std::move(diagnosticCauses)) {}
 };
 
 inline bool isErrorDiagnostic(const Diagnostic& diagnostic) {

@@ -24,6 +24,7 @@ jobs:
           cmake -S . -B build-ci -A x64
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+          -DMPARSER_WARNINGS_AS_ERRORS=ON
           -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
         run: cmake --build build-ci --config Release --parallel
@@ -63,6 +64,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+          -DMPARSER_WARNINGS_AS_ERRORS=ON
           -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
         run: cmake --build build-ci --parallel
@@ -110,6 +112,7 @@ jobs:
           -DCMAKE_C_COMPILER=clang
           -DCMAKE_CXX_COMPILER=clang++
           -DMPARSER_ENABLE_NATIVE_JIT=OFF
+          -DMPARSER_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build-sanitizers --parallel
       - name: Test
@@ -139,6 +142,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+          -DMPARSER_WARNINGS_AS_ERRORS=ON
           -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
         run: cmake --build build-ci --parallel
@@ -154,6 +158,7 @@ jobs:
           cmake -S . -B build-sdk \
             -DCMAKE_BUILD_TYPE=Release \
             -DMPARSER_ENABLE_NATIVE_JIT=ON \
+            -DMPARSER_WARNINGS_AS_ERRORS=ON \
             -DBUILD_TESTING=OFF \
             -DCMAKE_INSTALL_PREFIX="$PWD/build-sdk/install-sdk"
           cmake --build build-sdk --parallel
@@ -216,6 +221,7 @@ jobs:
           -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu"
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+          -DMPARSER_WARNINGS_AS_ERRORS=ON
       - name: Build native JIT targets
         run: cmake --build build-arm64-jit --parallel
       - name: Run native JIT smokes under QEMU
@@ -294,6 +300,7 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-aarch64.cmake
           -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu"
           -DMPARSER_ENABLE_NATIVE_JIT=OFF
+          -DMPARSER_WARNINGS_AS_ERRORS=ON
       - name: Build portable fallback targets
         run: cmake --build build-arm64-portable --parallel
       - name: Run portable runtime smokes under QEMU

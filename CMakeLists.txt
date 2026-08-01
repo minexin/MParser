@@ -29,6 +29,8 @@ option(MPARSER_ENABLE_RELEASE_PACKAGING
 option(MPARSER_ENABLE_MSVC_ASAN
     "Instrument a Windows MSVC no-JIT validation build with AddressSanitizer"
     OFF)
+option(MPARSER_WARNINGS_AS_ERRORS
+    "Treat first-party compiler warnings as build errors" OFF)
 set(MPARSER_RELEASE_SOURCE_DATE_EPOCH "1767225600" CACHE STRING
     "UTC epoch used to normalize release archive metadata")
 set(MPARSER_SLJIT_SOURCE_DIR "" CACHE PATH
@@ -38,6 +40,23 @@ set(MPARSER_PERFORMANCE_EVIDENCE_REVISION "working-tree" CACHE STRING
 set(MPARSER_PERFORMANCE_EVIDENCE_OUTPUT_DIR
     "${CMAKE_BINARY_DIR}/performance-evidence" CACHE PATH
     "Output directory for native performance evidence reports")
+
+function(mparser_enable_project_warnings target)
+    if(MSVC)
+        set(warning_options
+            /W4
+            "$<$<COMPILE_LANGUAGE:CXX>:/permissive->")
+        if(MPARSER_WARNINGS_AS_ERRORS)
+            list(APPEND warning_options /WX)
+        endif()
+    else()
+        set(warning_options -Wall -Wextra -Wpedantic)
+        if(MPARSER_WARNINGS_AS_ERRORS)
+            list(APPEND warning_options -Werror)
+        endif()
+    endif()
+    target_compile_options(${target} PRIVATE ${warning_options})
+endfunction()
 
 if(MPARSER_ENABLE_MSVC_ASAN)
     if(NOT MSVC)
@@ -232,12 +251,6 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     target_compile_definitions(mparser_core PRIVATE MPARSER_HAS_SLJIT=1)
 endif()
 
-if(MSVC)
-    target_compile_options(mparser_core PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(mparser_core PRIVATE -Wall -Wextra -Wpedantic)
-endif()
-
 add_library(mparser_c_api SHARED
     src/mparser/c_api.cpp)
 target_include_directories(mparser_c_api
@@ -262,12 +275,6 @@ set_target_properties(mparser_c_api PROPERTIES
     SOVERSION ${MPARSER_C_ABI_VERSION}
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES)
-if(MSVC)
-    target_compile_options(mparser_c_api PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(mparser_c_api PRIVATE
-        -Wall -Wextra -Wpedantic)
-endif()
 if(UNIX)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${MPARSER_C_ABI_SYMBOL_LIST}")
@@ -373,13 +380,6 @@ target_compile_definitions(mparser_performance_baseline PRIVATE
     MPARSER_BASELINE_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
     MPARSER_BASELINE_SYSTEM_NAME="${CMAKE_SYSTEM_NAME}"
     MPARSER_BASELINE_SYSTEM_VERSION="${CMAKE_SYSTEM_VERSION}")
-if(MSVC)
-    target_compile_options(mparser_performance_baseline PRIVATE
-        /W4 /permissive-)
-else()
-    target_compile_options(mparser_performance_baseline PRIVATE
-        -Wall -Wextra -Wpedantic)
-endif()
 if(WIN32)
     target_link_libraries(mparser_performance_baseline PRIVATE
         Psapi)
@@ -1788,13 +1788,6 @@ target_compile_definitions(c_api_allocation_failure_tests PRIVATE
     MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
     MPARSER_C_ABI_VERSION_EXPECTED=${MPARSER_C_ABI_VERSION}
     MPARSER_C_ABI_REVISION_EXPECTED=${MPARSER_C_ABI_REVISION})
-if(MSVC)
-    target_compile_options(c_api_allocation_failure_tests PRIVATE
-        /W4 /permissive-)
-else()
-    target_compile_options(c_api_allocation_failure_tests PRIVATE
-        -Wall -Wextra -Wpedantic)
-endif()
 add_test(NAME c_api_allocation_failure
     COMMAND c_api_allocation_failure_tests)
 set_tests_properties(c_api_allocation_failure PROPERTIES
@@ -1815,13 +1808,6 @@ target_compile_definitions(c_api_named_fault_smoke_tests PRIVATE
     MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
     MPARSER_C_ABI_VERSION_EXPECTED=${MPARSER_C_ABI_VERSION}
     MPARSER_C_ABI_REVISION_EXPECTED=${MPARSER_C_ABI_REVISION})
-if(MSVC)
-    target_compile_options(c_api_named_fault_smoke_tests PRIVATE
-        /W4 /permissive-)
-else()
-    target_compile_options(c_api_named_fault_smoke_tests PRIVATE
-        -Wall -Wextra -Wpedantic)
-endif()
 add_test(NAME c_api_named_fault_smoke
     COMMAND c_api_named_fault_smoke_tests)
 set_tests_properties(c_api_named_fault_smoke PROPERTIES
@@ -1832,13 +1818,6 @@ add_executable(c_api_lifecycle_stress_tests
     tests/c_api_lifecycle_stress.cpp)
 target_link_libraries(c_api_lifecycle_stress_tests PRIVATE
     mparser_c_api Threads::Threads)
-if(MSVC)
-    target_compile_options(c_api_lifecycle_stress_tests PRIVATE
-        /W4 /permissive-)
-else()
-    target_compile_options(c_api_lifecycle_stress_tests PRIVATE
-        -Wall -Wextra -Wpedantic)
-endif()
 add_test(NAME c_api_lifecycle_stress
     COMMAND c_api_lifecycle_stress_tests)
 set_tests_properties(c_api_lifecycle_stress PROPERTIES
@@ -1851,13 +1830,6 @@ add_executable(embedding_unload_stress_tests
 add_dependencies(embedding_unload_stress_tests mparser_c_api)
 target_link_libraries(embedding_unload_stress_tests PRIVATE
     ${CMAKE_DL_LIBS})
-if(MSVC)
-    target_compile_options(embedding_unload_stress_tests PRIVATE
-        /W4 /permissive-)
-else()
-    target_compile_options(embedding_unload_stress_tests PRIVATE
-        -Wall -Wextra -Wpedantic)
-endif()
 add_test(NAME embedding_unload_stress
     COMMAND embedding_unload_stress_tests
         $<TARGET_FILE:mparser_c_api>)
@@ -1904,19 +1876,6 @@ add_executable(mparser_cpp_embedding_demo
     samples/cpp_embedding_demo.cpp)
 target_link_libraries(mparser_cpp_embedding_demo PRIVATE
     mparser_cpp_api)
-if(MSVC)
-    target_compile_options(cpp_api_smoke_tests PRIVATE /W4 /permissive-)
-    target_compile_options(cpp_api_concurrency_stress_tests PRIVATE
-        /W4 /permissive-)
-    target_compile_options(mparser_cpp_embedding_demo PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(cpp_api_smoke_tests PRIVATE
-        -Wall -Wextra -Wpedantic)
-    target_compile_options(cpp_api_concurrency_stress_tests PRIVATE
-        -Wall -Wextra -Wpedantic)
-    target_compile_options(mparser_cpp_embedding_demo PRIVATE
-        -Wall -Wextra -Wpedantic)
-endif()
 add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
@@ -2144,16 +2103,33 @@ endif()
 # The smoke executables use standard assert as a lightweight test primitive.
 # Keep those contracts active in optimized CI and release-validation builds.
 get_property(mparser_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+set(mparser_test_assertion_header
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_assertions_enabled.h")
 foreach(mparser_target IN LISTS mparser_directory_targets)
     if(mparser_target MATCHES "_tests$")
         if(MSVC)
-            target_compile_options(${mparser_target} PRIVATE /UNDEBUG)
+            target_compile_options(${mparser_target} PRIVATE
+                "/FI${mparser_test_assertion_header}")
         else()
-            target_compile_options(${mparser_target} PRIVATE -UNDEBUG)
+            target_compile_options(${mparser_target} PRIVATE
+                -include "${mparser_test_assertion_header}")
         endif()
     endif()
 endforeach()
 endif()
+
+# Apply one warning policy to every first-party compiled target. Bundled SLJIT
+# keeps its upstream warning policy and third-party subdirectory targets are
+# outside this directory target list.
+get_property(mparser_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(mparser_target IN LISTS mparser_directory_targets)
+    get_target_property(mparser_target_type ${mparser_target} TYPE)
+    if(NOT mparser_target STREQUAL "mparser_sljit" AND
+       mparser_target_type MATCHES
+           "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
+        mparser_enable_project_warnings(${mparser_target})
+    endif()
+endforeach()
 
 configure_package_config_file(
     cmake/MParserConfig.cmake.in

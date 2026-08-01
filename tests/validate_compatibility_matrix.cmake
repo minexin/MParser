@@ -139,11 +139,45 @@ foreach(index RANGE 0 ${gap_last})
     endif()
 endforeach()
 
-string(FIND "${test_registry}" "PRIVATE /UNDEBUG" msvc_assertions)
-string(FIND "${test_registry}" "PRIVATE -UNDEBUG" portable_assertions)
-if(msvc_assertions EQUAL -1 OR portable_assertions EQUAL -1)
+set(assertion_header
+    "${PROJECT_ROOT}/tests/test_assertions_enabled.h")
+if(NOT EXISTS "${assertion_header}")
     message(FATAL_ERROR
-        "optimized smoke tests must retain assertions on MSVC and GCC/Clang")
+        "optimized smoke-test assertion header is missing")
+endif()
+file(READ "${assertion_header}" assertion_header_text)
+foreach(required_assertion_text IN ITEMS
+        "#ifdef NDEBUG"
+        "#undef NDEBUG")
+    string(FIND "${assertion_header_text}"
+        "${required_assertion_text}" assertion_text_index)
+    if(assertion_text_index EQUAL -1)
+        message(FATAL_ERROR
+            "optimized smoke-test assertion header is incomplete")
+    endif()
+endforeach()
+foreach(required_build_text IN ITEMS
+        "MPARSER_WARNINGS_AS_ERRORS"
+        "mparser_enable_project_warnings"
+        "test_assertions_enabled.h"
+        "\"/FI"
+        "-include"
+        "/WX"
+        "-Werror")
+    string(FIND "${test_registry}" "${required_build_text}"
+        required_build_index)
+    if(required_build_index EQUAL -1)
+        message(FATAL_ERROR
+            "strict first-party build policy is incomplete: "
+            "${required_build_text}")
+    endif()
+endforeach()
+string(FIND "${test_registry}" "/UNDEBUG" stale_msvc_assertions)
+string(FIND "${test_registry}" "-UNDEBUG" stale_portable_assertions)
+if(NOT stale_msvc_assertions EQUAL -1 OR
+   NOT stale_portable_assertions EQUAL -1)
+    message(FATAL_ERROR
+        "optimized smoke tests retain warning-producing NDEBUG overrides")
 endif()
 
 message(STATUS

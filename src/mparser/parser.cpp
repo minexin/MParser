@@ -1039,9 +1039,9 @@ PropertyDeclarationParseResult parsePropertyDeclarationTokens(
             spec.text = trimAsciiWhitespace(joinTokenTexts(dimension));
             spec.span = spanFromTokens(dimension);
             if (dimension.empty() ||
-                !(dimension.size() == 1 &&
-                  dimension.front().kind == TokenKind::Colon) &&
-                    !isPositiveIntegerDimension(dimension)) {
+                (!(dimension.size() == 1 &&
+                   dimension.front().kind == TokenKind::Colon) &&
+                 !isPositiveIntegerDimension(dimension))) {
                 result.diagnostics.push_back(
                     {spec.span,
                      "property dimensions must be positive integers or ':'"});

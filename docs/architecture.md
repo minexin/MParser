@@ -1659,6 +1659,13 @@ relocated-consumer output directories. The DLL is not part of the installed
 SDK. A CMake smoke test checks its hash and starts the instrumented CLI before
 the broader lifecycle, fuzz, bytecode, soak, and embedding regressions run.
 
+First-party compiler diagnostics use one CMake policy across libraries, the
+CLI, tools, demos, and test executables. Checked-in presets and every CI
+configure path enable `MPARSER_WARNINGS_AS_ERRORS`; ad hoc builds leave it off
+by default, and bundled SLJIT remains outside the policy. Optimized tests
+force-include a tiny `NDEBUG` cleanup header before `<cassert>`, preserving
+their contracts without MSVC's conflicting-option `D9025` noise.
+
 After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
 embedding-framework redesign unless release evidence proves a correctness
 defect. Reliability, documentation, and candidate packaging are closed; work

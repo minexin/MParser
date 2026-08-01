@@ -5,6 +5,23 @@
 #include <stdio.h>
 #include <string.h>
 
+_Static_assert(MPARSER_C_ABI_VERSION_MAJOR == 1u,
+               "unexpected C ABI major version");
+_Static_assert(MPARSER_C_ABI_REVISION == 1u,
+               "unexpected C ABI revision");
+_Static_assert(MPARSER_INVOCATION_OPTIONS_V1_SIZE ==
+                   sizeof(mparser_invocation_options),
+               "invocation options v1 size drift");
+_Static_assert(MPARSER_EXECUTION_SUMMARY_V1_SIZE ==
+                   sizeof(mparser_execution_summary),
+               "execution summary v1 size drift");
+_Static_assert(MPARSER_SOURCE_UNIT_V1_SIZE ==
+                   sizeof(mparser_source_unit),
+               "source unit v1 size drift");
+_Static_assert(MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ==
+                   sizeof(mparser_source_load_options),
+               "source load options v1 size drift");
+
 #define CHECK(condition)                                                   \
     do {                                                                   \
         if (!(condition)) {                                                \
@@ -251,13 +268,6 @@ static int run_header_and_diagnostic_smoke(void) {
 
     CHECK(mparser_c_abi_version() == MPARSER_C_ABI_VERSION);
     CHECK(mparser_c_abi_revision() == MPARSER_C_ABI_REVISION);
-    CHECK(MPARSER_C_ABI_VERSION_MAJOR == 1u);
-    CHECK(MPARSER_C_ABI_REVISION == 1u);
-    CHECK(MPARSER_INVOCATION_OPTIONS_V1_SIZE == sizeof(options));
-    CHECK(MPARSER_EXECUTION_SUMMARY_V1_SIZE == sizeof(summary));
-    CHECK(MPARSER_SOURCE_UNIT_V1_SIZE == sizeof(mparser_source_unit));
-    CHECK(MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ==
-          sizeof(mparser_source_load_options));
     CHECK(mparser_version_major() == 0);
     CHECK(mparser_version_minor() == 90);
     CHECK(mparser_version_patch() == 0);
@@ -575,8 +585,12 @@ static int run_file_source_graph_smoke(const char* entry_path,
     const mparser_diagnostic* diagnostic;
     const char missing_path[] =
         "mparser_c_api_missing_entry_84.m";
-    const char invalid_utf8_path[] = {
-        'b', 'a', 'd', '_', (char)0xc0, (char)0xaf, '.', 'm'};
+    char invalid_utf8_path[] = {
+        'b', 'a', 'd', '_', 0, 0, '.', 'm'};
+    const unsigned char invalid_utf8_bytes[] = {0xc0u, 0xafu};
+
+    memcpy(invalid_utf8_path + 4, invalid_utf8_bytes,
+           sizeof(invalid_utf8_bytes));
 
     CHECK(MPARSER_SOURCE_LOAD_OPTIONS_INIT(&load_options) ==
           MPARSER_API_STATUS_OK);

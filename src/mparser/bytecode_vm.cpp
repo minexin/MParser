@@ -472,10 +472,6 @@ RuntimeValue arrayValueForDimensions(std::vector<size_t> dimensions,
     return result;
 }
 
-double elementAt(const RuntimeValue& value, size_t index) {
-    return isNumber(value) ? value.number : value.elements[index];
-}
-
 RuntimeValue oneBasedIndexRange(size_t length) {
     std::vector<double> values;
     values.reserve(length);
@@ -13797,7 +13793,7 @@ private:
                               "bytecode logical cannot convert NaN values");
                 return missingValue();
             }
-            return std::move(*converted);
+            return *converted;
         }
         if (name == "islogical") {
             if (arguments.size() != 1) {

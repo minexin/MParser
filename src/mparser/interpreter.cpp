@@ -307,10 +307,6 @@ size_t elementCount(const RuntimeValue& value) {
     return runtimeShapeElementCount(value);
 }
 
-double elementAt(const RuntimeValue& value, size_t index) {
-    return isNumber(value) ? value.number : value.elements[index];
-}
-
 RuntimeValue arrayValueForShape(size_t rows, size_t columns,
                                 std::vector<double> values,
                                 RuntimeNumericClass numericClass =
@@ -366,10 +362,6 @@ RuntimeValue mapUnary(
     }
     return arrayValueForDimensions(runtimeDimensions(value),
                                    std::move(mapped), numericClass);
-}
-
-bool isWholeNumber(double value) {
-    return std::isfinite(value) && std::floor(value) == value;
 }
 
 bool isLogicalBinaryOperator(std::string_view operation) {

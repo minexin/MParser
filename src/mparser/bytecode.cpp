@@ -68,7 +68,7 @@ private:
         program_.instructions.push_back(BytecodeInstruction{
             op, node.label.empty() ? node.raw : node.label, {}, {}, {},
             node.binding, {}, node.span, operandCount, target,
-            resultCount});
+            resultCount, {}, false, {}, false});
         return program_.instructions.size() - 1;
     }
 

@@ -1925,7 +1925,7 @@ int main(int argc, char** argv) {
                         nondeterministicAssignmentTargets(bytecode);
                     mparser::BytecodeOptimizationPlanner planner;
                     mparser::BytecodeTypedIrBuilder builder;
-                    const auto module = builder.build(
+                    const auto typedModule = builder.build(
                         planner.plan(runtime.profile, bytecode,
                                      semantic.builtinRegistry));
                     mparser::BytecodeVm typedVm;
@@ -1933,7 +1933,7 @@ int main(int argc, char** argv) {
                     steadyOptions.profiling =
                         mparser::BytecodeVmProfilingMode::Disabled;
                     auto typedRuntime = typedVm.run(
-                        bytecode, semantic, module, steadyOptions);
+                        bytecode, semantic, typedModule, steadyOptions);
                     runtime = std::move(typedRuntime);
                     typedOutputsMatch = runtimeVariablesEqual(
                         baselineVariables, runtime.variables,

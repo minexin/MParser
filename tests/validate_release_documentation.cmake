@@ -71,6 +71,7 @@ file(READ "${PROJECT_ROOT}/docs/v1.0-cross-platform-validation.md"
 file(READ "${PROJECT_ROOT}/README.md" project_readme)
 file(READ "${CLI_CONTRACT}" cli_contract)
 file(READ "${PROJECT_ROOT}/.github/workflows/ci.yml" ci_workflow)
+file(READ "${PROJECT_ROOT}/CMakePresets.json" cmake_presets)
 
 function(require_text variable needle description)
     string(FIND "${${variable}}" "${needle}" found_at)
@@ -130,6 +131,27 @@ foreach(required_performance_ci_text IN ITEMS
 endforeach()
 reject_text(ci_workflow "actions/upload-artifact@v4"
     "Node 24 artifact upload policy")
+
+string(REGEX MATCHALL "MPARSER_WARNINGS_AS_ERRORS=ON"
+    warning_gate_matches "${ci_workflow}")
+list(LENGTH warning_gate_matches warning_gate_count)
+if(NOT warning_gate_count EQUAL 7)
+    message(FATAL_ERROR
+        "all seven first-party CI configure paths must enable "
+        "warnings-as-errors; found ${warning_gate_count}")
+endif()
+string(REGEX MATCHALL
+    "\"MPARSER_WARNINGS_AS_ERRORS\": \"ON\""
+    preset_warning_matches "${cmake_presets}")
+list(LENGTH preset_warning_matches preset_warning_count)
+if(NOT preset_warning_count EQUAL 3)
+    message(FATAL_ERROR
+        "all checked-in configure presets must enable warnings-as-errors")
+endif()
+require_text(build_guide "MPARSER_WARNINGS_AS_ERRORS"
+    "first-party compiler warning policy")
+require_text(release_process "MPARSER_WARNINGS_AS_ERRORS=ON"
+    "release compiler warning gate")
 
 require_text(performance_guide "mparser_performance_evidence"
     "performance evidence guide")

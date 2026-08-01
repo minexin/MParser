@@ -1189,6 +1189,10 @@ page, use `--fresh` with CMake 3.24 or newer, or choose a new build directory.
 After a public runtime-header layout change, use `--clean-first` once before
 trusting test results.
 
+The checked-in configure presets enable `MPARSER_WARNINGS_AS_ERRORS=ON` for
+all first-party targets. Ad hoc builds may leave the option at its default
+`OFF`; bundled SLJIT is intentionally excluded from this policy.
+
 Native scalar-loop JIT support is enabled by default. The pinned SLJIT source
 is vendored under `third_party/sljit`, so a default configure does not require
 network access. An existing source checkout can still be supplied explicitly,

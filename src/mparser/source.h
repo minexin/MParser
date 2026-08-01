@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mparser {
@@ -23,6 +24,23 @@ struct SourceUnit {
     std::string classMethodOwner;
     std::string classPrivateFunctionOwner;
     std::vector<SourceFunctionBinding> functionBindings;
+
+    SourceUnit() = default;
+
+    SourceUnit(std::string sourceName, std::string sourceContent,
+               std::string sourceNamespace = {},
+               std::string sourceFunctionIdentity = {},
+               std::string sourceClassMethodOwner = {},
+               std::string sourceClassPrivateFunctionOwner = {},
+               std::vector<SourceFunctionBinding> sourceFunctionBindings = {})
+        : name(std::move(sourceName)),
+          content(std::move(sourceContent)),
+          namespaceName(std::move(sourceNamespace)),
+          primaryFunctionIdentity(std::move(sourceFunctionIdentity)),
+          classMethodOwner(std::move(sourceClassMethodOwner)),
+          classPrivateFunctionOwner(
+              std::move(sourceClassPrivateFunctionOwner)),
+          functionBindings(std::move(sourceFunctionBindings)) {}
 };
 
 struct SourcePosition {

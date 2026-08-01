@@ -17,6 +17,15 @@ Linux, and Apple Clang on macOS. Linux AArch64 may be cross-compiled with the
 checked-in toolchain, but physical ARM hardware is required for publishable
 performance measurements.
 
+All checked-in presets and CI configure paths set
+`MPARSER_WARNINGS_AS_ERRORS=ON`. This applies `/W4 /WX` or
+`-Wall -Wextra -Wpedantic -Werror` to first-party compiled targets. The option
+defaults to `OFF` for ad hoc consumer builds so a newer compiler warning does
+not unexpectedly become a downstream build failure. Bundled SLJIT retains its
+upstream warning policy. Optimized test targets force-include
+`tests/test_assertions_enabled.h`, which keeps standard `assert` checks active
+without passing conflicting `NDEBUG` command-line definitions.
+
 ## Windows With MSVC
 
 Run from an x64 Visual Studio Developer Command Prompt, or activate
@@ -76,7 +85,8 @@ The equivalent portable configuration, also suitable for macOS, is:
 ```bash
 cmake -S . -B build/release -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DMPARSER_ENABLE_NATIVE_JIT=ON
+  -DMPARSER_ENABLE_NATIVE_JIT=ON \
+  -DMPARSER_WARNINGS_AS_ERRORS=ON
 cmake --build build/release --parallel
 ctest --test-dir build/release --output-on-failure
 ```

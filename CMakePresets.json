@@ -13,7 +13,8 @@
       "binaryDir": "${sourceDir}/build/windows-msvc-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MPARSER_ENABLE_NATIVE_JIT": "ON"
+        "MPARSER_ENABLE_NATIVE_JIT": "ON",
+        "MPARSER_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -24,7 +25,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "MPARSER_ENABLE_NATIVE_JIT": "OFF",
-        "MPARSER_ENABLE_MSVC_ASAN": "ON"
+        "MPARSER_ENABLE_MSVC_ASAN": "ON",
+        "MPARSER_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -34,7 +36,8 @@
       "binaryDir": "${sourceDir}/build/linux-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MPARSER_ENABLE_NATIVE_JIT": "ON"
+        "MPARSER_ENABLE_NATIVE_JIT": "ON",
+        "MPARSER_WARNINGS_AS_ERRORS": "ON"
       }
     }
   ],
