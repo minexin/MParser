@@ -21,6 +21,7 @@ set(required_documents
     docs/runtime-boundaries.md
     docs/migration-v1.0.md
     docs/release-process.md
+    docs/release-authentication.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
     docs/v1.0-cross-platform-validation.md
@@ -60,6 +61,8 @@ file(READ "${PROJECT_ROOT}/docs/jit-and-fallback.md" jit_guide)
 file(READ "${PROJECT_ROOT}/docs/runtime-boundaries.md" runtime_guide)
 file(READ "${PROJECT_ROOT}/docs/migration-v1.0.md" migration_guide)
 file(READ "${PROJECT_ROOT}/docs/release-process.md" release_process)
+file(READ "${PROJECT_ROOT}/docs/release-authentication.md"
+    release_authentication)
 file(READ "${PROJECT_ROOT}/docs/embedding-c-api.md" embedding_c_api)
 file(READ "${PROJECT_ROOT}/docs/architecture.md" architecture)
 file(READ "${PROJECT_ROOT}/docs/compatibility-matrix.json"
@@ -131,6 +134,61 @@ foreach(required_performance_ci_text IN ITEMS
 endforeach()
 reject_text(ci_workflow "actions/upload-artifact@v4"
     "Node 24 artifact upload policy")
+
+foreach(required_authentication_ci_text IN ITEMS
+        "authenticate_release:"
+        "default: false"
+        "release-authentication:"
+        "github.event_name == 'workflow_dispatch' && inputs.authenticate_release"
+        "Require the exact release tag"
+        "refs/tags/v*"
+        "actions/download-artifact@v5"
+        "tests/validate_release_authentication_input.cmake"
+        "MPARSER_REQUIRE_CLEAN_SOURCE=ON"
+        "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+        "cosign sign-blob"
+        "cosign verify-blob"
+        "https://token.actions.githubusercontent.com"
+        "actions/upload-artifact@v7")
+    require_text(ci_workflow "${required_authentication_ci_text}"
+        "release authentication CI policy")
+endforeach()
+foreach(expected_archive IN ITEMS
+        "mparser-0.90.0-windows-x86_64.zip"
+        "mparser-0.90.0-linux-x86_64.tar.gz"
+        "mparser-0.90.0-linux-aarch64.tar.gz"
+        "mparser-0.90.0-macos-x86_64.tar.gz"
+        "mparser-0.90.0-macos-arm64.tar.gz")
+    require_text(ci_workflow "${expected_archive}"
+        "release authentication platform set")
+endforeach()
+string(REGEX MATCHALL "id-token: write"
+    authentication_token_matches "${ci_workflow}")
+list(LENGTH authentication_token_matches authentication_token_count)
+if(NOT authentication_token_count EQUAL 1)
+    message(FATAL_ERROR
+        "only the release-authentication job may request an OIDC token")
+endif()
+reject_text(ci_workflow "attestations: write"
+    "private-release hosted-attestation boundary")
+reject_text(ci_workflow "actions/attest@"
+    "private-release hosted-attestation boundary")
+
+foreach(required_authentication_text IN ITEMS
+        "GitHub Enterprise Cloud"
+        "public transparency log"
+        "workflow_dispatch"
+        "authenticate_release"
+        "G-PROVENANCE-001"
+        "cosign verify-blob"
+        "https://token.actions.githubusercontent.com")
+    require_text(release_authentication "${required_authentication_text}"
+        "release authentication guide")
+endforeach()
+require_text(release_process "Sigstore Release Authentication Candidate v1"
+    "release authentication build policy")
+require_text(release_process "id-token: write"
+    "release authentication permission policy")
 
 string(REGEX MATCHALL "MPARSER_WARNINGS_AS_ERRORS=ON"
     warning_gate_matches "${ci_workflow}")

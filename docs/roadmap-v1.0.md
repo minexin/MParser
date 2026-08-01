@@ -590,7 +590,7 @@ is green. It refines, rather than replaces, the four work areas above.
    index, user/build/support/CLI/JIT/runtime/migration guides, executable
    CLI-contract-to-help/reference validation, documented human and machine
    samples, and installed/archive required-file gates are present. Windows
-   native 204/204, no-JIT 198/198, and reproducible relocated package
+   native 205/205, no-JIT 198/198, and reproducible relocated package
    validation passed; evidence is recorded in
    [v1.0-documentation.md](v1.0-documentation.md). Revision `f34d8d9` passed
    installed/archive documentation and public SDK checks across every release
@@ -617,11 +617,16 @@ is green. It refines, rather than replaces, the four work areas above.
    target now requires clean source and emits a deterministic, semantically
    validated unsigned in-toto Statement v1 with SLSA Provenance v1 metadata;
    `SHA256SUMS` binds the archive and statement. The release-process
-   specification, candidate 1.0 notes, and v1.x roadmap are present. Version
-   candidate packages and uploads passed on Windows, Linux x64/AArch64, and
-   macOS x64/ARM64 in Actions run `30684969401`. Version `1.0.0`, release
-   tag/snapshots, remaining performance evidence, and authenticated publisher
-   or hosted provenance remain open. `release_candidate_readiness_smoke`
+   specification, candidate 1.0 notes, and v1.x roadmap are present. A
+   default-off manual-tag Sigstore candidate now revalidates all five same-run
+   package sets, signs each archive and local statement with one GitHub Actions
+   OIDC identity, and immediately verifies the resulting bundles. Its public
+   transparency boundary is explicit in
+   [release-authentication.md](release-authentication.md). Candidate packages
+   and uploads passed on Windows, Linux x64/AArch64, and macOS x64/ARM64 in
+   Actions run `30684969401`. Version `1.0.0`, release tag/snapshots, remaining
+   performance evidence, and a real authenticated signing run remain open.
+   `release_candidate_readiness_smoke`
    freezes the exact two-item Must-have blocker set and rejects any open
    Must-have with framework impact.
 

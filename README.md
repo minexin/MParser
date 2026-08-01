@@ -1005,8 +1005,11 @@ relocatable SDK. Their smoke test packages a fixed payload twice, unpacks it,
 builds independent C11 and multi-translation-unit C++20 consumers, and runs
 the installed CLI protocol. The package also carries deterministic unsigned
 SLSA provenance metadata. Checksums and that statement provide integrity and
-audit evidence, not publisher identity; authenticated signing or hosted
-provenance remains a v1.0 publication operation.
+audit evidence, not publisher identity. A default-off, manual release-tag
+Sigstore candidate now revalidates and signs every archive and local statement,
+but its public-transparency boundary must be explicitly accepted and a real
+authenticated run remains a v1.0 publication operation. See
+[Release Authentication](docs/release-authentication.md).
 
 The post-v0.90 contract gate adds CLI 1.0 and builtin source contract 1.0 to
 that manifest. Command-line modes and scalar options are now single-occurrence,

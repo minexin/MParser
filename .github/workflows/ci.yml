@@ -4,6 +4,14 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      authenticate_release:
+        description: >-
+          Publish release identity and digests to Sigstore's public
+          transparency log; select the exact release tag before enabling
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -342,3 +350,100 @@ jobs:
             --run-typed-bytecode --typed-backend=portable \
             samples/branched_typed_loop_demo.m | tee build-arm64-portable/arm64-branch-output.txt
           grep --fixed-strings "summary = 23520" build-arm64-portable/arm64-branch-output.txt
+
+  release-authentication:
+    name: Release archives / Sigstore authentication candidate
+    if: github.event_name == 'workflow_dispatch' && inputs.authenticate_release
+    needs:
+      - windows-x64
+      - linux-x64
+      - linux-sanitizers
+      - macos
+      - linux-aarch64
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Require the exact release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "Release authentication requires a v* tag ref" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_NAME" != "v0.90.0" ]]; then
+            echo "Release tag must equal project version v0.90.0" >&2
+            exit 1
+          fi
+      - name: Download same-run release archives
+        uses: actions/download-artifact@v5
+        with:
+          pattern: mparser-0.90.0-*
+          path: release-authentication
+      - name: Validate authentication inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_list="$RUNNER_TEMP/mparser-release-archives.txt"
+          : > "$archive_list"
+          expected_archives=(
+            mparser-0.90.0-windows-x86_64.zip
+            mparser-0.90.0-linux-x86_64.tar.gz
+            mparser-0.90.0-linux-aarch64.tar.gz
+            mparser-0.90.0-macos-x86_64.tar.gz
+            mparser-0.90.0-macos-arm64.tar.gz
+          )
+          for archive_name in "${expected_archives[@]}"; do
+            mapfile -t matches < <(
+              find release-authentication -type f -name "$archive_name" -print
+            )
+            if [[ "${#matches[@]}" -ne 1 ]]; then
+              echo "Expected one $archive_name; found ${#matches[@]}" >&2
+              exit 1
+            fi
+            archive="${matches[0]}"
+            cmake \
+              "-DMPARSER_ARCHIVE=$archive" \
+              "-DMPARSER_PROVENANCE=$archive.provenance.json" \
+              "-DMPARSER_CHECKSUM=$archive.sha256" \
+              "-DMPARSER_CHECKSUMS=$(dirname "$archive")/SHA256SUMS" \
+              "-DMPARSER_PROJECT_ROOT=$PWD" \
+              "-DMPARSER_EXPECTED_REVISION=$GITHUB_SHA" \
+              "-DMPARSER_SOURCE_REPOSITORY=https://github.com/$GITHUB_REPOSITORY" \
+              -DMPARSER_PROJECT_VERSION=0.90.0 \
+              -DMPARSER_EXPECTED_CONFIGURATION=Release \
+              -DMPARSER_EXPECTED_NATIVE_JIT=ON \
+              -DMPARSER_REQUIRE_CLEAN_SOURCE=ON \
+              -P tests/validate_release_authentication_input.cmake
+            printf '%s\n' "$archive" >> "$archive_list"
+          done
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign and verify release archives and local provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/ci.yml@${GITHUB_REF}"
+          issuer="https://token.actions.githubusercontent.com"
+          while IFS= read -r archive; do
+            for subject in "$archive" "$archive.provenance.json"; do
+              bundle="$subject.sigstore.json"
+              cosign sign-blob "$subject" --bundle "$bundle" --yes
+              cosign verify-blob "$subject" \
+                --bundle "$bundle" \
+                --certificate-identity "$identity" \
+                --certificate-oidc-issuer "$issuer"
+            done
+          done < "$RUNNER_TEMP/mparser-release-archives.txt"
+      - name: Upload authenticated release set
+        uses: actions/upload-artifact@v7
+        with:
+          name: mparser-0.90.0-authenticated-${{ github.ref_name }}
+          path: release-authentication
+          if-no-files-found: error
+          retention-days: 90

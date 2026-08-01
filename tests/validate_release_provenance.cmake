@@ -166,11 +166,14 @@ endif()
 set(contract_paths
     CMakeLists.txt
     CMakePresets.json
+    .github/workflows/ci.yml
     docs/public-contract-v1.json
     docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
     docs/compatibility-matrix.json
-    docs/release-process.md)
+    docs/release-process.md
+    docs/release-authentication.md
+    tests/validate_release_authentication_input.cmake)
 list(LENGTH contract_paths contract_count)
 math(EXPR expected_dependency_count "${contract_count} + 1")
 string(JSON dependency_count LENGTH

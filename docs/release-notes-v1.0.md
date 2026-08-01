@@ -77,7 +77,7 @@ boundary tests.
 
 Windows local evidence includes:
 
-- native Release: **204/204**;
+- native Release: **205/205**;
 - no-JIT Release: **198/198**;
 - MSVC AddressSanitizer no-JIT: **199/199** with no sanitizer report;
 - reproducible fixed-payload ZIP generation, relocation, independent C11 and
@@ -95,8 +95,11 @@ Release packaging emits the archive, its CPack `.sha256` sidecar, an unsigned
 in-toto Statement v1 using the SLSA Provenance v1 predicate, and
 `SHA256SUMS` binding both the archive and statement. The local statement is
 audit metadata, not publisher authentication and not a SLSA level claim.
-Final publication must attach the selected signing or hosted-provenance
-identity. See [v1 Release Process](release-process.md).
+A default-off manual-tag Sigstore candidate revalidates the five platform
+package sets, signs each archive and statement, and verifies the exact workflow
+and tag identity. Final publication still requires a real authenticated run.
+See [v1 Release Process](release-process.md) and
+[Release Authentication](release-authentication.md).
 
 The release-labeled candidate-readiness gate also fixes the remaining
 Must-have set to two external evidence items, performance and authenticated

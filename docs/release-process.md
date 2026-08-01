@@ -27,7 +27,9 @@ The build takes these external parameters:
 The statement also records the selected generator, compiler identity/version,
 target system, and target processor as internal parameters. Its resolved
 dependencies bind the base Git commit plus SHA-256 values for CMake build
-configuration and the public CLI/API/protocol/compatibility contracts.
+configuration, the public CLI/API/protocol/compatibility contracts, the
+release-authentication policy, its same-run workflow, and the validator that
+accepts package inputs for signing.
 
 From a clean checkout at `revision`, initialize the platform compiler
 environment, then run:
@@ -110,6 +112,38 @@ Ignoring either extension field must not confer trust. Publication policy
 independently requires a clean release commit, matching artifact and input
 digests, and an accepted signer-builder pair or equivalent hosted identity.
 
+## Sigstore Release Authentication Candidate v1
+
+Repository visibility may change between CI validation and final publication.
+GitHub hosted artifact attestations for a private repository require GitHub
+Enterprise Cloud, so the stable candidate uses Cosign keyless blob signing with
+the GitHub Actions OIDC issuer. It is deliberately dormant unless an operator
+manually dispatches CI from the exact `v<project-version>` tag and enables
+`authenticate_release`.
+
+The authentication job has job-local `id-token: write` permission and waits
+for every release package lane plus the required sanitizer lane. It downloads
+the five same-run package artifacts, validates each archive, checksum set,
+unsigned local provenance statement, source revision, and contract hashes,
+then signs both the archive and its provenance sidecar. Every generated
+Sigstore bundle is immediately verified against this identity form:
+
+```text
+https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v<project-version>
+```
+
+and issuer:
+
+```text
+https://token.actions.githubusercontent.com
+```
+
+This mechanism publishes repository, workflow, tag, certificate, timestamp,
+and subject-digest metadata to Sigstore's public transparency log. It does not
+run automatically and it does not publish a GitHub Release. The full privacy,
+activation, validation, output, and consumer-verification contract is defined
+in [Release Authentication](release-authentication.md).
+
 ## Verification And Publication
 
 Before publication:
@@ -123,8 +157,12 @@ Before publication:
 4. Verify both lines in `SHA256SUMS`.
 5. Verify the provenance subject digest, source revision, contract digests,
    builder/build type, platform, compiler, and build parameters.
-6. Attach publisher authentication using the selected release signing or
-   hosted provenance mechanism.
+6. Explicitly accept the public-transparency boundary, manually dispatch the
+   exact release tag with `authenticate_release=true`, and require the
+   same-run authentication job to sign and verify every archive and local
+   provenance statement.
+7. Verify the downloaded Cosign bundles against the exact repository,
+   workflow, tag, and GitHub Actions issuer before creating a release.
 
 The candidate-readiness gate requires the remaining Must-have set to be
 exactly cross-platform/physical-ARM performance characterization and
@@ -137,9 +175,10 @@ fixed-report validator preserve that boundary. Negative fixtures prove that
 Must-have/Should-have impact, deferred-JIT reactivation, and blocker-set drift
 are rejected. Any additional or reclassified gap fails the release label.
 
-A signed DSSE/Sigstore or hosted-platform attestation may wrap or supersede
-the local unsigned statement for publication. Its authenticated builder
-identity must describe the actual hosted trust boundary; it must not reuse the
-local builder ID. Candidate platform packaging passed in Actions run
-`30684969401`; authentication and release publication remain separate final
+The Sigstore bundle authenticates the hosted release-assembly identity and
+does not rewrite `mparser_authentication: "unsigned"` inside the local
+statement. The local builder ID continues to describe the platform CMake/CPack
+boundary; the certificate identity separately describes the hosted signing
+boundary. Candidate platform packaging passed in Actions run `30684969401`;
+a real tag-scoped signing run and release publication remain separate final
 gates.

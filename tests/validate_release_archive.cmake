@@ -159,6 +159,38 @@ function(expect_provenance_rejection
     endif()
 endfunction()
 
+function(expect_authentication_input_rejection
+         description archive provenance checksum checksums
+         expected_revision require_clean expected_pattern)
+    execute_process(
+        COMMAND "${MPARSER_CMAKE_COMMAND}"
+            "-DMPARSER_ARCHIVE=${archive}"
+            "-DMPARSER_PROVENANCE=${provenance}"
+            "-DMPARSER_CHECKSUM=${checksum}"
+            "-DMPARSER_CHECKSUMS=${checksums}"
+            "-DMPARSER_PROJECT_ROOT=${MPARSER_PROJECT_ROOT}"
+            "-DMPARSER_EXPECTED_REVISION=${expected_revision}"
+            "-DMPARSER_SOURCE_REPOSITORY=${MPARSER_SOURCE_REPOSITORY}"
+            "-DMPARSER_PROJECT_VERSION=${MPARSER_PROJECT_VERSION}"
+            "-DMPARSER_EXPECTED_CONFIGURATION=${mparser_package_config}"
+            "-DMPARSER_EXPECTED_NATIVE_JIT=${MPARSER_NATIVE_JIT}"
+            "-DMPARSER_REQUIRE_CLEAN_SOURCE=${require_clean}"
+            -P "${MPARSER_PROJECT_ROOT}/tests/validate_release_authentication_input.cmake"
+        RESULT_VARIABLE validation_status
+        OUTPUT_VARIABLE validation_output
+        ERROR_VARIABLE validation_error)
+    if(validation_status EQUAL 0)
+        message(FATAL_ERROR
+            "${description} was accepted as a signing input")
+    endif()
+    set(validation_log "${validation_output}\n${validation_error}")
+    if(NOT validation_log MATCHES "${expected_pattern}")
+        message(FATAL_ERROR
+            "${description} failed for an unexpected reason\n"
+            "${validation_log}")
+    endif()
+endfunction()
+
 function(run_unpacked_consumer
          name source_directory test_root require_cpp)
     set(command
@@ -254,6 +286,99 @@ if(NOT checksum_manifest STREQUAL expected_checksum_manifest OR
     message(FATAL_ERROR
         "SHA256SUMS does not bind the archive and provenance statement")
 endif()
+
+execute_process(
+    COMMAND "${MPARSER_GIT_COMMAND}" -C "${MPARSER_PROJECT_ROOT}"
+        rev-parse --verify HEAD
+    RESULT_VARIABLE authentication_revision_status
+    OUTPUT_VARIABLE authentication_revision
+    ERROR_VARIABLE authentication_revision_error
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT authentication_revision_status EQUAL 0)
+    message(FATAL_ERROR
+        "Unable to resolve release-authentication revision: "
+        "${authentication_revision_error}")
+endif()
+run_checked(
+    "Release-authentication input"
+    "${MPARSER_CMAKE_COMMAND}"
+    "-DMPARSER_ARCHIVE=${first_archive}"
+    "-DMPARSER_PROVENANCE=${first_provenance}"
+    "-DMPARSER_CHECKSUM=${first_archive}.sha256"
+    "-DMPARSER_CHECKSUMS=${first_package_dir}/SHA256SUMS"
+    "-DMPARSER_PROJECT_ROOT=${MPARSER_PROJECT_ROOT}"
+    "-DMPARSER_EXPECTED_REVISION=${authentication_revision}"
+    "-DMPARSER_SOURCE_REPOSITORY=${MPARSER_SOURCE_REPOSITORY}"
+    "-DMPARSER_PROJECT_VERSION=${MPARSER_PROJECT_VERSION}"
+    "-DMPARSER_EXPECTED_CONFIGURATION=${mparser_package_config}"
+    "-DMPARSER_EXPECTED_NATIVE_JIT=${MPARSER_NATIVE_JIT}"
+    -DMPARSER_REQUIRE_CLEAN_SOURCE=OFF
+    -P "${MPARSER_PROJECT_ROOT}/tests/validate_release_authentication_input.cmake")
+
+expect_authentication_input_rejection(
+    "Wrong release-authentication revision"
+    "${first_archive}"
+    "${first_provenance}"
+    "${first_archive}.sha256"
+    "${first_package_dir}/SHA256SUMS"
+    "0000000000000000000000000000000000000000"
+    OFF
+    "build parameters are invalid")
+
+set(unclean_input_dir "${mparser_test_root}/unclean-authentication-input")
+file(MAKE_DIRECTORY "${unclean_input_dir}")
+set(unclean_archive "${unclean_input_dir}/${first_archive_name}")
+set(unclean_provenance
+    "${unclean_input_dir}/${first_provenance_name}")
+configure_file("${first_archive}" "${unclean_archive}" COPYONLY)
+configure_file(
+    "${first_archive}.sha256" "${unclean_archive}.sha256" COPYONLY)
+file(READ "${first_provenance}" unclean_provenance_json)
+string(JSON unclean_provenance_json SET
+    "${unclean_provenance_json}"
+    predicate runDetails mparser_sourceTreeClean false)
+file(WRITE "${unclean_provenance}" "${unclean_provenance_json}\n")
+file(SHA256 "${unclean_provenance}" unclean_provenance_hash)
+file(WRITE "${unclean_input_dir}/SHA256SUMS"
+    "${first_hash}  ${first_archive_name}\n"
+    "${unclean_provenance_hash}  ${first_provenance_name}\n")
+expect_authentication_input_rejection(
+    "Unclean release-authentication input"
+    "${unclean_archive}"
+    "${unclean_provenance}"
+    "${unclean_archive}.sha256"
+    "${unclean_input_dir}/SHA256SUMS"
+    "${authentication_revision}"
+    ON
+    "input is not source-clean")
+
+set(contract_input_dir "${mparser_test_root}/contract-authentication-input")
+file(MAKE_DIRECTORY "${contract_input_dir}")
+set(contract_archive "${contract_input_dir}/${first_archive_name}")
+set(contract_provenance
+    "${contract_input_dir}/${first_provenance_name}")
+configure_file("${first_archive}" "${contract_archive}" COPYONLY)
+configure_file(
+    "${first_archive}.sha256" "${contract_archive}.sha256" COPYONLY)
+file(READ "${first_provenance}" contract_provenance_json)
+string(JSON contract_provenance_json SET
+    "${contract_provenance_json}"
+    predicate buildDefinition resolvedDependencies 1 digest sha256
+    "\"0000000000000000000000000000000000000000000000000000000000000000\"")
+file(WRITE "${contract_provenance}" "${contract_provenance_json}\n")
+file(SHA256 "${contract_provenance}" contract_provenance_hash)
+file(WRITE "${contract_input_dir}/SHA256SUMS"
+    "${first_hash}  ${first_archive_name}\n"
+    "${contract_provenance_hash}  ${first_provenance_name}\n")
+expect_authentication_input_rejection(
+    "Modified release-authentication contract"
+    "${contract_archive}"
+    "${contract_provenance}"
+    "${contract_archive}.sha256"
+    "${contract_input_dir}/SHA256SUMS"
+    "${authentication_revision}"
+    OFF
+    "contract identity is invalid: CMakeLists.txt")
 
 set(tampered_archive_dir "${mparser_test_root}/tampered-archive")
 file(MAKE_DIRECTORY "${tampered_archive_dir}")
@@ -351,6 +476,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/runtime-boundaries.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/migration-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-process.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-authentication.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
@@ -433,4 +559,5 @@ message(STATUS
     "${MPARSER_PACKAGE_BASENAME}${MPARSER_PACKAGE_EXTENSION}, "
     "SHA-256 ${first_hash}, reproducible fixed payload, "
     "tamper-rejecting unsigned SLSA provenance, "
+    "tamper-rejecting release-authentication input, "
     "relocated C11/C++20/CLI consumers")

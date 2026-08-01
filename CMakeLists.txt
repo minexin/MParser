@@ -2172,6 +2172,7 @@ install(FILES
     docs/runtime-boundaries.md
     docs/migration-v1.0.md
     docs/release-process.md
+    docs/release-authentication.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
     docs/public-contract-v1.json

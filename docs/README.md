@@ -57,6 +57,8 @@ adapter is Post-v1.0.
 - [Versioning And Deprecation](versioning-and-deprecation.md)
 - [v1.0 Release Notes](release-notes-v1.0.md)
 - [v1 Release Process](release-process.md)
+- [Release Authentication](release-authentication.md): opt-in release-tag
+  signing, public-transparency boundary, and consumer verification.
 - [v1.0 Contract Freeze Candidate](v1.0-contract-freeze.md)
 - [v1.0 Roadmap](roadmap-v1.0.md)
 - [v1.x Roadmap](roadmap-v1.x.md)

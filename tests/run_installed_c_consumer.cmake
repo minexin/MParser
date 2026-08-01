@@ -113,6 +113,7 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/runtime-boundaries.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/migration-v1.0.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-process.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-authentication.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
