@@ -134,5 +134,6 @@ are rejected. Any additional or reclassified gap fails the release label.
 A signed DSSE/Sigstore or hosted-platform attestation may wrap or supersede
 the local unsigned statement for publication. Its authenticated builder
 identity must describe the actual hosted trust boundary; it must not reuse the
-local builder ID. Final cross-platform authentication and release publication
-remain part of the shared validation window.
+local builder ID. Candidate platform packaging passed in Actions run
+`30684969401`; authentication and release publication remain separate final
+gates.

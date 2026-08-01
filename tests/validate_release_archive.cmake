@@ -354,6 +354,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-cross-platform-validation.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/cli-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-v1.schema.json"

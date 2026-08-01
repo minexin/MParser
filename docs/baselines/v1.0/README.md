@@ -55,6 +55,8 @@ Local release evidence for the same implementation:
   `8a84bf772b0d7e94302f38c065562d1bda909b54185ae971e4499c9455efcc1a`.
 
 The archive hash is recorded here because this source-only index is not part of
-the archive payload. Cross-platform reports and physical ARM hardware
-measurements remain pending until the shared release validation window is
-restored. Emulated AArch64 reports will be functional evidence only.
+the archive payload. Functional cross-platform validation later passed at
+revision `f34d8d9` in Actions run `30684969401`, but no comparable platform
+reports were committed by that workflow. Cross-platform reports and physical
+ARM hardware measurements remain explicit performance work. Emulated AArch64
+results are functional evidence only.

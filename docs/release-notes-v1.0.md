@@ -1,8 +1,8 @@
 # MParser 1.0.0 Release Notes
 
 Publication status: **release candidate documentation**. The source project
-remains version `0.90.0` until the final release-platform validation window
-passes and the public artifacts are generated from the frozen release commit.
+remains version `0.90.0` until performance and authenticated-provenance gates
+close and the public artifacts are generated from the frozen release commit.
 
 MParser 1.0.0 defines a stable, documented, embeddable, and sustainably
 extensible MATLAB-like subset runtime. It does not claim complete MATLAB,
@@ -75,7 +75,7 @@ allocation-failure containment, handle/listener lifecycle checks,
 load/unload and concurrent embedding stress, native-cache churn, and resource
 boundary tests.
 
-Windows local evidence currently includes:
+Windows local evidence includes:
 
 - native Release: **204/204**;
 - no-JIT Release: **198/198**;
@@ -83,8 +83,13 @@ Windows local evidence currently includes:
 - reproducible fixed-payload ZIP generation, relocation, independent C11 and
   C++20 consumers, and unpacked CLI protocol execution.
 
-Final Linux x64/AArch64 and macOS x64/ARM64 candidate confirmation is deferred
-to the shared validation window and is not represented here as passed.
+Revision `f34d8d9e00816341a01df406c2e315164886c1cc` subsequently passed all six
+jobs in [Actions run 30684969401](https://github.com/minexin/MParser/actions/runs/30684969401):
+Linux GCC, Linux Clang ASan/UBSan/LeakSanitizer, Windows MSVC, macOS x64,
+macOS ARM64, and Linux AArch64 native/portable QEMU. The run includes strict
+packages and uploaded artifacts for every release target plus relocated or
+unpacked public SDK consumers. See
+[Cross-Platform Candidate Validation](v1.0-cross-platform-validation.md).
 
 Release packaging emits the archive, its CPack `.sha256` sidecar, an unsigned
 in-toto Statement v1 using the SLSA Provenance v1 predicate, and
@@ -94,8 +99,9 @@ Final publication must attach the selected signing or hosted-provenance
 identity. See [v1 Release Process](release-process.md).
 
 The release-labeled candidate-readiness gate also fixes the remaining
-Must-have set to four external evidence items and rejects any newly introduced
-framework-impacting blocker before publication.
+Must-have set to two external evidence items, performance and authenticated
+provenance, and rejects any newly introduced framework-impacting blocker before
+publication.
 
 ## Compatibility And Migration
 

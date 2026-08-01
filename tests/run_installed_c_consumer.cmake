@@ -116,6 +116,7 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-cross-platform-validation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-protocol.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-v1.schema.json"

@@ -80,22 +80,25 @@ documentation defect and use the versioned machine contract until corrected.
 ## Release Evidence
 
 - [v0.90 Milestone](v0.90.md): embedding and release-candidate API boundary.
+- [v1.0 Cross-Platform Candidate Validation](v1.0-cross-platform-validation.md):
+  revision-bound Windows, Linux, macOS, x64, ARM64, sanitizer, SDK, and package
+  evidence.
 - [v1.0 Reliability Gate](v1.0-reliability.md): fuzz, malformed bytecode,
   soak, lifecycle, resource, cache, allocation, unload, concurrency, and
-  local Windows MSVC ASan evidence.
+  cross-platform closure plus local Windows MSVC ASan evidence.
 - [v1.0 Performance Baseline](v1.0-performance-baseline.md): timing,
   allocation, peak-memory, binary-size, and cache methodology.
 - [v1.0 JIT Scope Decision](v1.0-jit-scope-decision.md): measured rationale
   for freezing current guarded coverage and deferring broader specialization
   to v1.x.
 - [v1.0 Release Documentation Gate](v1.0-documentation.md): manual
-  consistency, installed/archive contents, and local candidate evidence.
+  consistency, installed/archive contents, and release-matrix evidence.
 - `docs/baselines/v1.0/README.md` in the source repository: committed
   source-bound reports.
 
-Release-target cross-platform evidence is finalized in the shared validation
-window. A local platform report does not silently stand in for another
-platform.
+Actions run `30684969401` is the accepted cross-platform candidate snapshot.
+It does not turn emulated AArch64 execution into physical-hardware performance
+evidence or unsigned provenance into publisher authentication.
 
 ## Historical Milestones
 

@@ -1,13 +1,13 @@
 # MParser
 
-Current release candidate: v0.90.0. The v1 public-contract candidate is
-locally frozen; reliability, performance/resource, and release-documentation
-hardening are locally closed, and the Windows MSVC ASan no-JIT evaluation
-passes locally. The measured JIT scope audit defers broader specialization to
-v1.x without changing the guarded v1.0 fallback contract. Active work is
-final-release preparation, while Linux TSan,
-macOS sanitizer, and candidate cross-platform confirmation are deferred until
-the shared validation window.
+Current release candidate: v0.90.0. The v1 public-contract candidate,
+reliability gate, and release-documentation gate are cross-platform confirmed
+at revision `f34d8d9` by Actions run `30684969401`; local Windows MSVC ASan
+no-JIT also passes 199/199. The measured JIT scope audit defers broader
+specialization to v1.x without changing the guarded v1.0 fallback contract.
+Active work is the remaining performance characterization and authenticated
+release provenance, while Linux TSan and macOS sanitizer remain bounded
+Should-have evaluations.
 Release documentation starts at
 [docs/README.md](docs/README.md), with the
 [user manual](docs/user-manual.md),
@@ -16,6 +16,8 @@ Release documentation starts at
 [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
 [docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the contract
 candidate,
+[docs/v1.0-cross-platform-validation.md](docs/v1.0-cross-platform-validation.md)
+for the six-lane release-candidate evidence,
 [docs/v1.0-reliability.md](docs/v1.0-reliability.md) for the reliability
 evidence,
 [docs/v1.0-performance-baseline.md](docs/v1.0-performance-baseline.md) for

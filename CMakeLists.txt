@@ -616,14 +616,14 @@ add_test(NAME release_candidate_readiness_smoke
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
-        "-DEXPECTED_OPEN_MUST_HAVE=G-DOCUMENTATION-001:in-progress;G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress;G-RELIABILITY-001:in-progress"
+        "-DEXPECTED_OPEN_MUST_HAVE=G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress"
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
         -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness.cmake)
 set_tests_properties(release_candidate_readiness_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 4 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
+        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 2 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
 
 add_test(NAME release_candidate_readiness_guard_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -643,7 +643,7 @@ add_test(NAME release_candidate_readiness_guard_smoke
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
-        "-DEXPECTED_OPEN_MUST_HAVE=G-DOCUMENTATION-001:in-progress;G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress;G-RELIABILITY-001:in-progress"
+        "-DEXPECTED_OPEN_MUST_HAVE=G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress"
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
         -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness_guards.cmake)
@@ -2137,6 +2137,7 @@ install(FILES
     docs/roadmap-v1.0.md
     docs/v0.90.md
     docs/v1.0-contract-freeze.md
+    docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
     docs/v1.0-performance-baseline.md
     docs/v1.0-jit-scope-decision.md

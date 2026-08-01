@@ -75,15 +75,17 @@ value/result handles.
 
 | Platform | Release target | Native JIT | Current evidence note |
 | --- | --- | --- | --- |
-| Windows x64 | Yes | Yes | Current local native/no-JIT/package evidence plus MSVC ASan no-JIT 199/199 |
-| Linux x64 | Yes | Yes | Final candidate rerun deferred to the shared cross-platform window |
-| Linux AArch64 | Yes | Yes | Cross-build/QEMU correctness lane; physical ARM required for performance |
-| macOS x64 | Yes | Yes | Final candidate rerun deferred to the shared cross-platform window |
-| macOS ARM64 | Yes | Yes | Final candidate rerun deferred to the shared cross-platform window |
+| Windows x64 | Yes | Yes | Full native suite and package/upload passed in run `30684969401`; local no-JIT 198/198 and MSVC ASan no-JIT 199/199 also pass |
+| Linux x64 | Yes | Yes | Full GCC suite/package/upload and Clang ASan/UBSan/LSan suite passed in run `30684969401` |
+| Linux AArch64 | Yes | Yes | Native and portable cross-build/QEMU smokes, installed consumers, package/unpacked SDK, and sample passed in run `30684969401`; physical ARM remains required for performance claims |
+| macOS x64 | Yes | Yes | Full suite, relocated production SDK consumers, architecture/version checks, package, and upload passed in run `30684969401` |
+| macOS ARM64 | Yes | Yes | Full suite, relocated production SDK consumers, native architecture/version checks, package, and upload passed in run `30684969401` |
 
-The table defines the intended v1.0 release set; it does not claim that a
-deferred final-candidate rerun has already happened. Unsupported operating
+The table defines the intended v1.0 release set and points to the accepted
+functional candidate snapshot at revision `f34d8d9`. Unsupported operating
 systems or architectures may build incidentally but are not release targets.
+See [Cross-Platform Candidate Validation](v1.0-cross-platform-validation.md)
+for exact lane scope and exclusions.
 
 ## Resource And Concurrency Boundaries
 

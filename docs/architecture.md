@@ -1627,6 +1627,11 @@ drift are denied. The same gate includes the fixed-report JIT scope validator:
 `G-JIT-001` stays an additive Should-have deferred to v1.x, and an unreviewed
 v1.0 reactivation is rejected.
 
+Revision `f34d8d9` passed all six release lanes in Actions run `30684969401`.
+That evidence closes the reliability and documentation Must-haves without an
+engine change; the readiness gate now permits only performance and
+authenticated provenance as open evidence-only Must-haves.
+
 The v1.0 performance gate is implemented as a non-installed engineering
 executable rather than another public runtime mode. It calls `Parser`,
 `CompiledModule`, forced bytecode/portable/native backends, and the bounded

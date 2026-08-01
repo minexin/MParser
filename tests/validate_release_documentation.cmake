@@ -23,6 +23,7 @@ set(required_documents
     docs/release-process.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
+    docs/v1.0-cross-platform-validation.md
     docs/v1.0-jit-scope-decision.md
     docs/v1.0-documentation.md
     docs/embedding-c-api.md
@@ -58,6 +59,8 @@ file(READ "${PROJECT_ROOT}/docs/cli-reference.md" cli_reference)
 file(READ "${PROJECT_ROOT}/docs/jit-and-fallback.md" jit_guide)
 file(READ "${PROJECT_ROOT}/docs/runtime-boundaries.md" runtime_guide)
 file(READ "${PROJECT_ROOT}/docs/migration-v1.0.md" migration_guide)
+file(READ "${PROJECT_ROOT}/docs/v1.0-cross-platform-validation.md"
+    cross_platform_validation)
 file(READ "${PROJECT_ROOT}/README.md" project_readme)
 file(READ "${CLI_CONTRACT}" cli_contract)
 file(READ "${PROJECT_ROOT}/.github/workflows/ci.yml" ci_workflow)
@@ -106,6 +109,15 @@ foreach(forbidden_ci_path IN ITEMS
     reject_text(ci_workflow "${forbidden_ci_path}"
         "release CI source-tree cleanliness policy")
 endforeach()
+
+require_text(cross_platform_validation "30684969401"
+    "cross-platform candidate run identity")
+require_text(cross_platform_validation
+    "f34d8d9e00816341a01df406c2e315164886c1cc"
+    "cross-platform candidate revision identity")
+require_text(cross_platform_validation
+    "G-PERFORMANCE-001` and `G-PROVENANCE-001"
+    "cross-platform remaining Must-have boundary")
 
 set(indexed_documents ${required_documents})
 list(REMOVE_ITEM indexed_documents docs/README.md)

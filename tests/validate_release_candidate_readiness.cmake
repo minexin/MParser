@@ -66,7 +66,7 @@ string(FIND "${release_notes}"
     "remains version `${EXPECTED_VERSION}`"
     candidate_version_position)
 string(FIND "${roadmap}"
-    "**Status: local publication preparation in progress.**"
+    "**Status: candidate platform validation complete; publication preparation in progress.**"
     roadmap_status_position)
 if(candidate_status_position EQUAL -1 OR
    candidate_version_position EQUAL -1 OR

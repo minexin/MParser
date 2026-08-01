@@ -90,17 +90,17 @@ function(expect_rejection description tampered_matrix expected_pattern)
     endif()
 endfunction()
 
-find_gap_index("G-RELIABILITY-001" reliability_index)
+find_gap_index("G-PERFORMANCE-001" performance_index)
 set(framework_matrix "${matrix_json}")
 string(JSON framework_matrix SET
-    "${framework_matrix}" gaps ${reliability_index}
+    "${framework_matrix}" gaps ${performance_index}
     framework_impact "\"contract-extension\"")
 set(framework_matrix_file "${test_root}/framework-impact.json")
 file(WRITE "${framework_matrix_file}" "${framework_matrix}\n")
 expect_rejection(
     "Framework-impacting release blocker"
     "${framework_matrix_file}"
-    "Open Must-have G-RELIABILITY-001")
+    "Open Must-have G-PERFORMANCE-001")
 
 find_gap_index("G-JIT-001" jit_index)
 set(should_have_matrix "${matrix_json}")
@@ -132,7 +132,7 @@ expect_rejection(
 find_gap_index("G-DOCUMENTATION-001" documentation_index)
 set(blocker_matrix "${matrix_json}")
 string(JSON blocker_matrix SET
-    "${blocker_matrix}" gaps ${documentation_index} state "\"closed\"")
+    "${blocker_matrix}" gaps ${documentation_index} state "\"in-progress\"")
 set(blocker_matrix_file "${test_root}/blocker-set.json")
 file(WRITE "${blocker_matrix_file}" "${blocker_matrix}\n")
 expect_rejection(

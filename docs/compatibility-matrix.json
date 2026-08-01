@@ -506,8 +506,8 @@
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
       "evidence": ["release_documentation_smoke", "release_candidate_readiness_smoke", "release_candidate_readiness_guard_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "release_archive_smoke"],
-      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/release-process.md", "docs/release-notes-v1.0.md", "docs/v1.0-documentation.md", "docs/v1.0-jit-scope-decision.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/validate_release_candidate_readiness.cmake", "tests/validate_release_candidate_readiness_guards.cmake", "tests/validate_v1_jit_scope.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
-      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. A separate candidate-readiness gate freezes the exact remaining gap set and rejects any open Must-have that implies framework work. Final candidate package confirmation on non-Windows release targets remains part of the shared cross-platform validation window."
+      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/release-process.md", "docs/release-notes-v1.0.md", "docs/v1.0-documentation.md", "docs/v1.0-cross-platform-validation.md", "docs/v1.0-jit-scope-decision.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/validate_release_candidate_readiness.cmake", "tests/validate_release_candidate_readiness_guards.cmake", "tests/validate_v1_jit_scope.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
+      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. A separate candidate-readiness gate freezes the exact remaining gap set and rejects any open Must-have that implies framework work. Actions run 30684969401 confirms installed and archived documentation across every advertised release lane; final versioned publication and authenticated provenance remain separate gates."
     },
     {
       "id": "MATRIX-001",
@@ -751,17 +751,17 @@
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Bind every release archive to source, public contracts, build parameters, platform/toolchain, and a documented builder identity, then authenticate the published artifact through signing or hosted provenance.",
-      "exit_evidence": "The local CMake/CPack builder emits and semantically validates a deterministic unsigned in-toto Statement v1 with the SLSA Provenance v1 predicate, requires clean source for publication targets, binds archive plus statement in SHA256SUMS, and rejects independently modified archive content or statement authentication metadata. Hosted or publisher-authenticated provenance and final release-platform verification remain required before closing this gap."
+      "exit_evidence": "The local CMake/CPack builder emits and semantically validates a deterministic unsigned in-toto Statement v1 with the SLSA Provenance v1 predicate, requires clean source for publication targets, binds archive plus statement in SHA256SUMS, and rejects independently modified archive content or statement authentication metadata. Actions run 30684969401 verifies candidate archives across every release platform; hosted or publisher-authenticated provenance remains required before closing this gap."
     },
     {
       "id": "G-RELIABILITY-001",
       "area": "runtime-safety",
       "priority": "must-have",
-      "state": "in-progress",
+      "state": "closed",
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Close deterministic frontend fuzz, malformed-bytecode, long-running invoke-many/session/adaptive, lifecycle, cancellation, resource, cache, allocation, load-unload, and concurrency evidence without weakening fallback or diagnostics.",
-      "exit_evidence": "Deterministic frontend fuzz, mandatory untrusted-bytecode verification, a named 8,012-invocation soak, lifecycle/resource/cache/allocation/unload/concurrency gates, and the local MSVC ASan configuration are implemented. The current Windows candidate passes native 204/204, no-JIT 198/198, and ASan no-JIT 199/199 with no sanitizer report; deferred cross-platform confirmation is tracked in docs/v1.0-reliability.md."
+      "exit_evidence": "Deterministic frontend fuzz, mandatory untrusted-bytecode verification, a named 8,012-invocation soak, lifecycle/resource/cache/allocation/unload/concurrency gates, and the local MSVC ASan configuration are implemented. Windows passes native 204/204, no-JIT 198/198, and ASan no-JIT 199/199 with no sanitizer report. Revision f34d8d9 passes all six jobs in Actions run 30684969401, including Linux Clang ASan/UBSan/LSan, both macOS architectures, and AArch64 native/portable QEMU evidence recorded in docs/v1.0-cross-platform-validation.md."
     },
     {
       "id": "G-PERFORMANCE-001",
@@ -771,17 +771,17 @@
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Establish reproducible, hardware-labelled parse, compile, process-cold, bytecode, portable, native cold/warm, allocation, peak-memory, binary-size, and cache-boundary evidence without machine-specific thresholds.",
-      "exit_evidence": "The protocol-1.0 collector, Draft-7 schema, semantic statistics/cache/correctness validator, quick eligible contract workload, and representative scalar/array samples are implemented. Three reports under docs/baselines/v1.0 bind implementation da4b010 to exact source/binary hashes; Windows native 201/201, no-JIT 195/195, testing-disabled SDK, and package validation passed. Shared cross-platform and native-ARM reports remain required for final closure."
+      "exit_evidence": "The protocol-1.0 collector, Draft-7 schema, semantic statistics/cache/correctness validator, quick eligible contract workload, and representative scalar/array samples are implemented. Three reports under docs/baselines/v1.0 bind implementation da4b010 to exact source/binary hashes; Windows native 201/201, no-JIT 195/195, testing-disabled SDK, and package validation passed. Functional cross-platform confirmation passed in Actions run 30684969401, but cross-platform performance reports and physical-ARM characterization remain required for final closure."
     },
     {
       "id": "G-DOCUMENTATION-001",
       "area": "release",
       "priority": "must-have",
-      "state": "in-progress",
+      "state": "closed",
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Publish a coherent user, build/install, support, CLI/API, JIT/fallback, runtime-boundary, extension-author, and pre-v1 migration manual set and prevent it from drifting from frozen contracts or package contents.",
-      "exit_evidence": "The documentation set, contract-derived smoke validator, candidate-readiness blocker-set gate, production/machine samples, and installed/archive required-file lists are implemented locally. Windows native 204/204, no-JIT 198/198, and the four-test release label with reproducible relocated package validation passed and are recorded in docs/v1.0-documentation.md. Final release-platform package confirmation is required to close the gap."
+      "exit_evidence": "The documentation set, contract-derived smoke validator, candidate-readiness blocker-set gate, production/machine samples, and installed/archive required-file lists are implemented. Windows native 204/204, no-JIT 198/198, and the four-test release label pass locally. Actions run 30684969401 validates the manuals, relocated SDK consumers, archives, checksums, CLI protocol, and uploaded candidate packages across Windows, Linux x64/AArch64, and macOS x64/ARM64 as recorded in docs/v1.0-documentation.md and docs/v1.0-cross-platform-validation.md."
     },
     {
       "id": "G-SANITIZER-001",
@@ -791,7 +791,7 @@
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Evaluate stable specialist sanitizer configurations without weakening the required Linux ASan/UBSan lane or treating optimization coverage as a correctness prerequisite.",
-      "exit_evidence": "The local Windows MSVC 19.44 ASan no-JIT preset stages the compiler-matched runtime for main and relocated-consumer tests and passes 199/199 with no sanitizer report. Linux TSan, macOS ARM64 ASan/UBSan, recurring-lane suitability, and final cross-platform confirmation remain deferred to the shared validation window."
+      "exit_evidence": "The local Windows MSVC 19.44 ASan no-JIT preset stages the compiler-matched runtime for main and relocated-consumer tests and passes 199/199 with no sanitizer report. The recurring Linux Clang ASan/UBSan/LSan lane passes at revision f34d8d9 in Actions run 30684969401. Linux TSan, macOS ARM64 ASan/UBSan, and recurring Windows-lane suitability remain focused Should-have evaluations."
     },
     {
       "id": "G-JIT-001",

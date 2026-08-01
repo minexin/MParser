@@ -538,9 +538,11 @@ is green. It refines, rather than replaces, the four work areas above.
    result protocol 1.0; and the `BuiltinRegistry`/`BuiltinDescriptor`
    extension contract. Publish one versioning and deprecation policy for all
    of them.
-   **Status: candidate implemented and Windows-validated at `cfd59b7`.**
-   Candidate cross-platform confirmation is deferred until CI capacity is
-   restored, so this is not yet the final v1.0 publication freeze.
+   **Status: candidate frozen and cross-platform confirmed.** The contract
+   implementation was Windows-validated at `cfd59b7`; revision `f34d8d9`
+   passed every release lane in Actions run `30684969401`, including public
+   contract, SDK consumer, package, macOS ARM64, and AArch64 native/portable
+   evidence. Version/tag publication remains a later operation.
 3. **Must-have: close reliability evidence.** Exercise parser/semantic fuzz,
    malformed bytecode, compile-once/invoke-many, long-running execution,
    module/session load-unload, handle/listener lifetimes, cancellation and
@@ -552,8 +554,12 @@ is green. It refines, rather than replaces, the four work areas above.
    the named 8,012-invocation soak, lifecycle/resource/cache/allocation/
    load-unload/concurrency gates, native and no-JIT full regression, and
    unpacked package validation are tracked in
-   [v1.0-reliability.md](v1.0-reliability.md). Candidate cross-platform
-   confirmation remains deferred until the shared validation window returns.
+   [v1.0-reliability.md](v1.0-reliability.md).
+   **Status: complete.** Revision `f34d8d9` passed all six jobs in Actions run
+   `30684969401`, including Linux Clang ASan/UBSan/LeakSanitizer, Windows and
+   both macOS full suites, and AArch64 native/portable QEMU evidence. The lane
+   boundary is frozen in
+   [v1.0-cross-platform-validation.md](v1.0-cross-platform-validation.md).
 4. **Must-have: establish performance and resource baselines.** Measure parse
    and compile time, cold start, bytecode, portable typed execution, native
    cold/warm execution, peak memory, allocations, binary size, and cache
@@ -567,8 +573,10 @@ is green. It refines, rather than replaces, the four work areas above.
    [v1.0-performance-baseline.md](v1.0-performance-baseline.md). Three
    SHA-256-bound Windows x86-64 reports, native 201/201 and no-JIT 195/195
    regression, a testing-disabled SDK build, and unpacked package validation
-   are indexed under `docs/baselines/v1.0`. Cross-platform and physical-ARM
-   measurements remain deferred. The fixed reports also support the
+   are indexed under `docs/baselines/v1.0`. Functional cross-platform
+   confirmation passed in Actions run `30684969401`; comparable cross-platform
+   reports and physical-ARM measurements remain open performance evidence. The
+   fixed reports also support the
    [v1.0 JIT scope decision](v1.0-jit-scope-decision.md): broader typed/JIT
    coverage is deferred to v1.x rather than added without a demonstrated
    release bottleneck.
@@ -577,14 +585,15 @@ is green. It refines, rather than replaces, the four work areas above.
    behavior, C/C++ embedding guides, machine protocol, builtin author guide,
    diagnostics/resource/concurrency/lifecycle rules, the v0.x-to-v1.0
    migration policy, and explicit unsupported/Post-v1.0 lists.
-   **Status: local candidate complete.** The task-oriented documentation
+   **Status: complete.** The task-oriented documentation
    index, user/build/support/CLI/JIT/runtime/migration guides, executable
    CLI-contract-to-help/reference validation, documented human and machine
    samples, and installed/archive required-file gates are present. Windows
    native 204/204, no-JIT 198/198, and reproducible relocated package
    validation passed; evidence is recorded in
-   [v1.0-documentation.md](v1.0-documentation.md). Shared cross-platform
-   package confirmation remains deferred to the final validation window.
+   [v1.0-documentation.md](v1.0-documentation.md). Revision `f34d8d9` passed
+   installed/archive documentation and public SDK checks across every release
+   lane in Actions run `30684969401`, closing `G-DOCUMENTATION-001`.
 6. **Should-have: evaluate specialized sanitizer CI.** Prefer Linux Clang
    TSan, then Windows MSVC ASan no-JIT, then macOS ARM64 Apple Clang
    ASan+UBSan no-JIT. A toolchain may be deferred only with a recorded
@@ -594,24 +603,26 @@ is green. It refines, rather than replaces, the four work areas above.
    `windows-msvc-asan-nojit` preset preserves normal C++ exception flags,
    disables incremental linking, stages the compiler-matched dynamic ASan
    runtime for main and relocated-consumer tests, and passed 199/199 with
-   MSVC 19.44. Linux TSan, macOS ARM64 sanitizer, and conversion of any
-   stable branch into recurring CI remain deferred to the shared
-   cross-platform validation window.
+   MSVC 19.44. The recurring Linux Clang ASan/UBSan/LeakSanitizer lane passed
+   at revision `f34d8d9`. Linux TSan, macOS ARM64 sanitizer, and recurring
+   Windows MSVC ASan suitability remain focused Should-have evaluations.
 7. **Must-have: publish 1.0.0.** Freeze the compatibility matrix, public
    contract manifest, snapshots, and version metadata; generate Windows,
    Linux, and macOS x64/ARM64 archives with SHA-256 checksums; build and run
    independent C11 and C++20 consumers plus the CLI machine protocol from each
    unpacked SDK; complete final cross-platform CI, authenticated signing or
    hosted provenance, release notes, and the v1.x roadmap.
-   **Status: local publication preparation in progress.** The CMake/CPack
+   **Status: candidate platform validation complete; publication preparation in progress.** The CMake/CPack
    target now requires clean source and emits a deterministic, semantically
    validated unsigned in-toto Statement v1 with SLSA Provenance v1 metadata;
    `SHA256SUMS` binds the archive and statement. The release-process
    specification, candidate 1.0 notes, and v1.x roadmap are present. Version
-   `1.0.0`, release tag/snapshots, authenticated publisher or hosted
-   provenance, and all-platform artifacts remain gated on the shared
-   validation window. `release_candidate_readiness_smoke` freezes that exact
-   remaining blocker set and rejects any open Must-have with framework impact.
+   candidate packages and uploads passed on Windows, Linux x64/AArch64, and
+   macOS x64/ARM64 in Actions run `30684969401`. Version `1.0.0`, release
+   tag/snapshots, remaining performance evidence, and authenticated publisher
+   or hosted provenance remain open. `release_candidate_readiness_smoke`
+   freezes the exact two-item Must-have blocker set and rejects any open
+   Must-have with framework impact.
 
 ### v1.0 Scope Controls
 
