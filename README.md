@@ -3,7 +3,9 @@
 Current release candidate: v0.90.0. The v1 public-contract candidate is
 locally frozen; reliability, performance/resource, and release-documentation
 hardening are locally closed, and the Windows MSVC ASan no-JIT evaluation
-passes locally. Active work is final-release preparation, while Linux TSan,
+passes locally. The measured JIT scope audit defers broader specialization to
+v1.x without changing the guarded v1.0 fallback contract. Active work is
+final-release preparation, while Linux TSan,
 macOS sanitizer, and candidate cross-platform confirmation are deferred until
 the shared validation window.
 Release documentation starts at
@@ -18,6 +20,8 @@ candidate,
 evidence,
 [docs/v1.0-performance-baseline.md](docs/v1.0-performance-baseline.md) for
 the versioned timing, allocation, memory, binary-size, and cache evidence,
+[docs/v1.0-jit-scope-decision.md](docs/v1.0-jit-scope-decision.md) for the
+measured decision to defer broader typed/JIT coverage to v1.x,
 [docs/v1.0-documentation.md](docs/v1.0-documentation.md) for the release
 manual and package evidence,
 [docs/release-notes-v1.0.md](docs/release-notes-v1.0.md) for the candidate

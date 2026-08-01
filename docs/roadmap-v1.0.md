@@ -568,7 +568,10 @@ is green. It refines, rather than replaces, the four work areas above.
    SHA-256-bound Windows x86-64 reports, native 201/201 and no-JIT 195/195
    regression, a testing-disabled SDK build, and unpacked package validation
    are indexed under `docs/baselines/v1.0`. Cross-platform and physical-ARM
-   measurements remain deferred.
+   measurements remain deferred. The fixed reports also support the
+   [v1.0 JIT scope decision](v1.0-jit-scope-decision.md): broader typed/JIT
+   coverage is deferred to v1.x rather than added without a demonstrated
+   release bottleneck.
 5. **Must-have: close release documentation.** Publish the user manual,
    install/build guide, support matrix, CLI/API references, JIT/fallback
    behavior, C/C++ embedding guides, machine protocol, builtin author guide,
@@ -616,11 +619,13 @@ is green. It refines, rather than replaces, the four work areas above.
   boundary. From this point, Parser, HIR, Bytecode, `RuntimeValue`, and
   embedding framework redesign is out of scope unless release evidence finds
   a correctness or public-contract defect that cannot be fixed locally.
-- `G-JIT-001` remains **Should-have**. Select only a small number of
-  high-value straight-line, matrix, builtin, or function specializations when
-  the v1.0 performance baseline proves they are necessary. Every addition
-  retains guarded fallback and bytecode/portable/native equivalence, and
-  optimization coverage cannot block correct VM execution.
+- `G-JIT-001` remains **Should-have** but is **deferred to v1.x** by the
+  measured [v1.0 JIT scope decision](v1.0-jit-scope-decision.md). The current
+  scalar, nested/branched loop, pure unary builtin, and dense linear-array
+  coverage is frozen for v1.0. Future straight-line, matrix, builtin, or
+  function specializations require a representative bottleneck, retain
+  guarded fallback and bytecode/portable/native equivalence, and cannot block
+  correct VM execution.
 - `G-LONGTAIL-001` and `G-MATLAB-001` remain **Post-v1.0**. Unbounded builtin,
   toolbox, and complete MATLAB compatibility work moves to the v1.x roadmap
   and does not block v1.0.

@@ -121,6 +121,7 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-v1.schema.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/performance-baseline-v1.schema.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-performance-baseline.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-jit-scope-decision.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/cli-contract-v1.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/versioning-and-deprecation.md"

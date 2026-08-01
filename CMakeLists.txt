@@ -604,19 +604,26 @@ set_tests_properties(release_documentation_smoke PROPERTIES
 
 add_test(NAME release_candidate_readiness_smoke
     COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DMATRIX=${CMAKE_CURRENT_SOURCE_DIR}/docs/compatibility-matrix.json
         -DPUBLIC_CONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.json
         -DRELEASE_NOTES=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-notes-v1.0.md
         -DROADMAP=${CMAKE_CURRENT_SOURCE_DIR}/docs/roadmap-v1.0.md
+        -DJIT_SCOPE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_v1_jit_scope.cmake
+        -DJIT_SCOPE_DECISION=${CMAKE_CURRENT_SOURCE_DIR}/docs/v1.0-jit-scope-decision.md
+        -DNATIVE_SCALAR_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json
+        -DNATIVE_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json
+        -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
         "-DEXPECTED_OPEN_MUST_HAVE=G-DOCUMENTATION-001:in-progress;G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress;G-RELIABILITY-001:in-progress"
-        "-DEXPECTED_OPEN_SHOULD_HAVE=G-JIT-001:open;G-SANITIZER-001:in-progress"
+        -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
+        -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness.cmake)
 set_tests_properties(release_candidate_readiness_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 4 bounded Must-have blockers, 2 scoped Should-have items")
+        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 4 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
 
 add_test(NAME release_candidate_readiness_guard_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -624,19 +631,26 @@ add_test(NAME release_candidate_readiness_guard_smoke
         -DMPARSER_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness.cmake
         -DMPARSER_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/release-candidate-readiness-guard
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DMATRIX=${CMAKE_CURRENT_SOURCE_DIR}/docs/compatibility-matrix.json
         -DPUBLIC_CONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.json
         -DRELEASE_NOTES=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-notes-v1.0.md
         -DROADMAP=${CMAKE_CURRENT_SOURCE_DIR}/docs/roadmap-v1.0.md
+        -DJIT_SCOPE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_v1_jit_scope.cmake
+        -DJIT_SCOPE_DECISION=${CMAKE_CURRENT_SOURCE_DIR}/docs/v1.0-jit-scope-decision.md
+        -DNATIVE_SCALAR_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json
+        -DNATIVE_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json
+        -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
         "-DEXPECTED_OPEN_MUST_HAVE=G-DOCUMENTATION-001:in-progress;G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress;G-RELIABILITY-001:in-progress"
-        "-DEXPECTED_OPEN_SHOULD_HAVE=G-JIT-001:open;G-SANITIZER-001:in-progress"
+        -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
+        -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness_guards.cmake)
 set_tests_properties(release_candidate_readiness_guard_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser release candidate readiness guards validated: Must-have/Should-have impact and blocker-set drift rejected")
+        "MParser release candidate readiness guards validated: Must-have/Should-have impact, deferred JIT reactivation, and blocker-set drift rejected")
 
 add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
 target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)
@@ -2125,6 +2139,7 @@ install(FILES
     docs/v1.0-contract-freeze.md
     docs/v1.0-reliability.md
     docs/v1.0-performance-baseline.md
+    docs/v1.0-jit-scope-decision.md
     docs/v1.0-documentation.md
     docs/architecture.md
     docs/c-abi-compatibility.md

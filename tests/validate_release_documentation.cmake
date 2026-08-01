@@ -23,6 +23,7 @@ set(required_documents
     docs/release-process.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
+    docs/v1.0-jit-scope-decision.md
     docs/v1.0-documentation.md
     docs/embedding-c-api.md
     docs/embedding-cpp-api.md

@@ -43,6 +43,12 @@ diagnostic interfaces with the stability policy recorded in
 [CLI Reference](cli-reference.md) and
 [Versioning And Deprecation](versioning-and-deprecation.md).
 
+The committed scalar and dense-array baselines show matching results, zero
+typed fallback, and large gains for the current optimized families. They do
+not identify another specialization required for release, so
+[`G-JIT-001`](v1.0-jit-scope-decision.md) remains Should-have but is deferred
+to v1.x. Legal unoptimized code continues through the VM.
+
 ## Embedding And Automation
 
 The release candidate freezes:

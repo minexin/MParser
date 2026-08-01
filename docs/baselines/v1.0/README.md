@@ -36,6 +36,14 @@ later native-cache hits. The no-JIT report records both native phases as
 passed the protocol-1.0 Draft-7 schema, semantic timing/allocation/cache
 validator, and an independent PowerShell SHA-256/size check.
 
+The measured comparison is reviewed in the
+[v1.0 JIT scope decision](../../v1.0-jit-scope-decision.md). It records median
+speedups of 911.12x for the native scalar loop, 166.94x for the native array
+loop, and 121.52x for the no-JIT portable array loop. The candidate-readiness
+gate also preserves conservative worst-sample evidence above 100x, 100x, and
+80x respectively. Those checks bind this fixed decision evidence; they are not
+portable performance promises or thresholds for future hosts.
+
 Local release evidence for the same implementation:
 
 - Windows native Release: 201/201 tests passed.

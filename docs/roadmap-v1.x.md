@@ -39,7 +39,10 @@ compatibility value rather than raw catalog count.
 
 ## v1.2: Typed And JIT Coverage
 
-Candidate work, gated by the v1.0 performance baseline:
+The [v1.0 JIT scope decision](v1.0-jit-scope-decision.md) deliberately defers
+`G-JIT-001` here after finding no missing specialization required for the 1.0
+release. Candidate work remains gated by a representative workload, the v1.0
+performance methodology, and profiler or allocation evidence:
 
 - more straight-line numeric regions and common matrix/array kernels;
 - typed lowering for high-value pure builtins;

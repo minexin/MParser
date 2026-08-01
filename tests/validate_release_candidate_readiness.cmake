@@ -1,14 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
 
 foreach(required_variable IN ITEMS
+        PROJECT_ROOT
         MATRIX
         PUBLIC_CONTRACT
         RELEASE_NOTES
         ROADMAP
+        JIT_SCOPE_VALIDATOR
+        JIT_SCOPE_DECISION
+        NATIVE_SCALAR_REPORT
+        NATIVE_ARRAY_REPORT
+        NOJIT_ARRAY_REPORT
         EXPECTED_VERSION
         EXPECTED_CONTRACT_STATE
         EXPECTED_OPEN_MUST_HAVE
-        EXPECTED_OPEN_SHOULD_HAVE)
+        EXPECTED_OPEN_SHOULD_HAVE
+        EXPECTED_DEFERRED_SHOULD_HAVE)
     if(NOT DEFINED ${required_variable} OR
        "${${required_variable}}" STREQUAL "")
         message(FATAL_ERROR
@@ -20,7 +27,12 @@ foreach(required_file IN ITEMS
         "${MATRIX}"
         "${PUBLIC_CONTRACT}"
         "${RELEASE_NOTES}"
-        "${ROADMAP}")
+        "${ROADMAP}"
+        "${JIT_SCOPE_VALIDATOR}"
+        "${JIT_SCOPE_DECISION}"
+        "${NATIVE_SCALAR_REPORT}"
+        "${NATIVE_ARRAY_REPORT}"
+        "${NOJIT_ARRAY_REPORT}")
     if(NOT EXISTS "${required_file}")
         message(FATAL_ERROR
             "Release-readiness input is missing: ${required_file}")
@@ -65,6 +77,7 @@ endif()
 
 set(actual_open_must_have)
 set(actual_open_should_have)
+set(actual_deferred_should_have)
 string(JSON gap_count LENGTH "${matrix_json}" gaps)
 if(gap_count LESS 1)
     message(FATAL_ERROR "Release candidate has no explicit gap contracts")
@@ -92,17 +105,28 @@ foreach(gap_index RANGE 0 ${gap_last})
         endif()
         list(APPEND actual_open_must_have
             "${gap_id}:${gap_state}")
-    elseif(gap_priority STREQUAL "should-have" AND
-           NOT gap_state STREQUAL "closed")
-        if(NOT gap_target STREQUAL "v1.0" OR
-           (NOT gap_impact STREQUAL "none" AND
-            NOT gap_impact STREQUAL "additive"))
-            message(FATAL_ERROR
-                "Open Should-have ${gap_id} is not a bounded additive "
-                "v1.0 candidate")
+    elseif(gap_priority STREQUAL "should-have")
+        if(gap_state STREQUAL "deferred")
+            if(NOT gap_target STREQUAL "v1.x" OR
+               (NOT gap_impact STREQUAL "none" AND
+                NOT gap_impact STREQUAL "additive"))
+                message(FATAL_ERROR
+                    "Deferred Should-have ${gap_id} is not a bounded "
+                    "additive v1.x item")
+            endif()
+            list(APPEND actual_deferred_should_have
+                "${gap_id}:${gap_state}")
+        elseif(NOT gap_state STREQUAL "closed")
+            if(NOT gap_target STREQUAL "v1.0" OR
+               (NOT gap_impact STREQUAL "none" AND
+                NOT gap_impact STREQUAL "additive"))
+                message(FATAL_ERROR
+                    "Open Should-have ${gap_id} is not a bounded additive "
+                    "v1.0 candidate")
+            endif()
+            list(APPEND actual_open_should_have
+                "${gap_id}:${gap_state}")
         endif()
-        list(APPEND actual_open_should_have
-            "${gap_id}:${gap_state}")
     elseif(gap_priority STREQUAL "post-v1.0" AND
            NOT gap_state STREQUAL "deferred")
         message(FATAL_ERROR
@@ -112,10 +136,13 @@ endforeach()
 
 set(expected_open_must_have ${EXPECTED_OPEN_MUST_HAVE})
 set(expected_open_should_have ${EXPECTED_OPEN_SHOULD_HAVE})
+set(expected_deferred_should_have ${EXPECTED_DEFERRED_SHOULD_HAVE})
 list(SORT actual_open_must_have)
 list(SORT actual_open_should_have)
+list(SORT actual_deferred_should_have)
 list(SORT expected_open_must_have)
 list(SORT expected_open_should_have)
+list(SORT expected_deferred_should_have)
 if(NOT "${actual_open_must_have}" STREQUAL
        "${expected_open_must_have}")
     message(FATAL_ERROR
@@ -130,10 +157,21 @@ if(NOT "${actual_open_should_have}" STREQUAL
         "actual: ${actual_open_should_have}\n"
         "expected: ${expected_open_should_have}")
 endif()
+if(NOT "${actual_deferred_should_have}" STREQUAL
+       "${expected_deferred_should_have}")
+    message(FATAL_ERROR
+        "Unexpected deferred Should-have release gaps.\n"
+        "actual: ${actual_deferred_should_have}\n"
+        "expected: ${expected_deferred_should_have}")
+endif()
+
+include("${JIT_SCOPE_VALIDATOR}")
 
 list(LENGTH actual_open_must_have must_have_count)
 list(LENGTH actual_open_should_have should_have_count)
+list(LENGTH actual_deferred_should_have deferred_should_have_count)
 message(STATUS
     "MParser release candidate readiness validated: "
     "${EXPECTED_VERSION}, ${must_have_count} bounded Must-have blockers, "
-    "${should_have_count} scoped Should-have items")
+    "${should_have_count} scoped Should-have items, "
+    "${deferred_should_have_count} deferred Should-have items")

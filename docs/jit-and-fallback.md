@@ -73,9 +73,11 @@ cache.
 
 Coverage is intentionally conservative. Objects, Cells, Struct values,
 dynamic operations, arbitrary calls, unsupported mutations, and unrecognized
-control flow commonly remain in the VM. `G-JIT-001` is Should-have: a small
-high-value specialization may be added only when performance evidence
-justifies it and fallback parity remains intact.
+control flow commonly remain in the VM. The
+[v1.0 JIT scope decision](v1.0-jit-scope-decision.md) found no measured v1.0
+release workload that requires another specialization, so `G-JIT-001` remains
+a Should-have but is deferred to v1.x. New coverage requires representative
+performance evidence and unchanged fallback parity.
 
 ## Native Backend
 

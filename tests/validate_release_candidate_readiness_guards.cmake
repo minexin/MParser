@@ -5,14 +5,21 @@ foreach(required_variable IN ITEMS
         MPARSER_VALIDATOR
         MPARSER_BUILD_DIR
         MPARSER_TEST_ROOT
+        PROJECT_ROOT
         MATRIX
         PUBLIC_CONTRACT
         RELEASE_NOTES
         ROADMAP
+        JIT_SCOPE_VALIDATOR
+        JIT_SCOPE_DECISION
+        NATIVE_SCALAR_REPORT
+        NATIVE_ARRAY_REPORT
+        NOJIT_ARRAY_REPORT
         EXPECTED_VERSION
         EXPECTED_CONTRACT_STATE
         EXPECTED_OPEN_MUST_HAVE
-        EXPECTED_OPEN_SHOULD_HAVE)
+        EXPECTED_OPEN_SHOULD_HAVE
+        EXPECTED_DEFERRED_SHOULD_HAVE)
     if(NOT DEFINED ${required_variable} OR
        "${${required_variable}}" STREQUAL "")
         message(FATAL_ERROR
@@ -52,14 +59,21 @@ endfunction()
 function(expect_rejection description tampered_matrix expected_pattern)
     execute_process(
         COMMAND "${MPARSER_CMAKE_COMMAND}"
+            "-DPROJECT_ROOT=${PROJECT_ROOT}"
             "-DMATRIX=${tampered_matrix}"
             "-DPUBLIC_CONTRACT=${PUBLIC_CONTRACT}"
             "-DRELEASE_NOTES=${RELEASE_NOTES}"
             "-DROADMAP=${ROADMAP}"
+            "-DJIT_SCOPE_VALIDATOR=${JIT_SCOPE_VALIDATOR}"
+            "-DJIT_SCOPE_DECISION=${JIT_SCOPE_DECISION}"
+            "-DNATIVE_SCALAR_REPORT=${NATIVE_SCALAR_REPORT}"
+            "-DNATIVE_ARRAY_REPORT=${NATIVE_ARRAY_REPORT}"
+            "-DNOJIT_ARRAY_REPORT=${NOJIT_ARRAY_REPORT}"
             "-DEXPECTED_VERSION=${EXPECTED_VERSION}"
             "-DEXPECTED_CONTRACT_STATE=${EXPECTED_CONTRACT_STATE}"
             "-DEXPECTED_OPEN_MUST_HAVE=${EXPECTED_OPEN_MUST_HAVE}"
             "-DEXPECTED_OPEN_SHOULD_HAVE=${EXPECTED_OPEN_SHOULD_HAVE}"
+            "-DEXPECTED_DEFERRED_SHOULD_HAVE=${EXPECTED_DEFERRED_SHOULD_HAVE}"
             -P "${MPARSER_VALIDATOR}"
         RESULT_VARIABLE validation_status
         OUTPUT_VARIABLE validation_output
@@ -98,7 +112,22 @@ file(WRITE "${should_have_matrix_file}" "${should_have_matrix}\n")
 expect_rejection(
     "Framework-impacting Should-have"
     "${should_have_matrix_file}"
-    "Open Should-have G-JIT-001")
+    "Deferred Should-have G-JIT-001")
+
+set(reactivated_jit_matrix "${matrix_json}")
+string(JSON reactivated_jit_matrix SET
+    "${reactivated_jit_matrix}" gaps ${jit_index}
+    state "\"open\"")
+string(JSON reactivated_jit_matrix SET
+    "${reactivated_jit_matrix}" gaps ${jit_index}
+    target "\"v1.0\"")
+set(reactivated_jit_matrix_file "${test_root}/reactivated-jit.json")
+file(WRITE "${reactivated_jit_matrix_file}"
+    "${reactivated_jit_matrix}\n")
+expect_rejection(
+    "Unreviewed v1.0 JIT reactivation"
+    "${reactivated_jit_matrix_file}"
+    "Unexpected open Should-have")
 
 find_gap_index("G-DOCUMENTATION-001" documentation_index)
 set(blocker_matrix "${matrix_json}")
@@ -113,4 +142,5 @@ expect_rejection(
 
 message(STATUS
     "MParser release candidate readiness guards validated: "
-    "Must-have/Should-have impact and blocker-set drift rejected")
+    "Must-have/Should-have impact, deferred JIT reactivation, and "
+    "blocker-set drift rejected")

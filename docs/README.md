@@ -85,6 +85,9 @@ documentation defect and use the versioned machine contract until corrected.
   local Windows MSVC ASan evidence.
 - [v1.0 Performance Baseline](v1.0-performance-baseline.md): timing,
   allocation, peak-memory, binary-size, and cache methodology.
+- [v1.0 JIT Scope Decision](v1.0-jit-scope-decision.md): measured rationale
+  for freezing current guarded coverage and deferring broader specialization
+  to v1.x.
 - [v1.0 Release Documentation Gate](v1.0-documentation.md): manual
   consistency, installed/archive contents, and local candidate evidence.
 - `docs/baselines/v1.0/README.md` in the source repository: committed

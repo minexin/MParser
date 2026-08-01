@@ -359,6 +359,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-v1.schema.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/performance-baseline-v1.schema.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-performance-baseline.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-jit-scope-decision.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/versioning-and-deprecation.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/default_catalog.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/compatibility-matrix.json"

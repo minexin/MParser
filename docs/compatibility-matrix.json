@@ -494,9 +494,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["performance_baseline_smoke"],
-      "sources": ["tools/performance_baseline.cpp", "tests/performance_baseline_schema_smoke.cpp", "tests/validate_performance_baseline.cmake", "tests/fixtures/performance_baseline_quick.m", "samples/performance_scalar_loop.m", "samples/performance_array_workload.m", "docs/performance-baseline-v1.schema.json", "docs/v1.0-performance-baseline.md", "docs/baselines/v1.0/README.md", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json", "CMakeLists.txt"],
-      "limits": "The non-installed engineering collector emits protocol-1.0 raw timing/allocation samples, source/binary SHA-256 identities, and exact boundaries without machine-specific pass/fail thresholds. Allocation activity is not live heap, peak RSS is process-wide, process-cold is not filesystem-cache-cold, and emulated reports are functional evidence only. Windows native/no-JIT and package evidence passed locally; shared cross-platform and physical-ARM performance evidence remains pending."
+      "evidence": ["performance_baseline_smoke", "release_candidate_readiness_smoke"],
+      "sources": ["tools/performance_baseline.cpp", "tests/performance_baseline_schema_smoke.cpp", "tests/validate_performance_baseline.cmake", "tests/validate_v1_jit_scope.cmake", "tests/fixtures/performance_baseline_quick.m", "samples/performance_scalar_loop.m", "samples/performance_array_workload.m", "docs/performance-baseline-v1.schema.json", "docs/v1.0-performance-baseline.md", "docs/v1.0-jit-scope-decision.md", "docs/baselines/v1.0/README.md", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json", "tests/validate_release_candidate_readiness.cmake", "CMakeLists.txt"],
+      "limits": "The non-installed engineering collector emits protocol-1.0 raw timing/allocation samples, source/binary SHA-256 identities, and exact boundaries without machine-specific pass/fail thresholds. Allocation activity is not live heap, peak RSS is process-wide, process-cold is not filesystem-cache-cold, and emulated reports are functional evidence only. The fixed Windows reports support deferring broader typed/JIT specialization to v1.x; their conservative evidence checks are not universal performance thresholds. Shared cross-platform and physical-ARM performance evidence remains pending."
     },
     {
       "id": "DOC-001",
@@ -506,7 +506,7 @@
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
       "evidence": ["release_documentation_smoke", "release_candidate_readiness_smoke", "release_candidate_readiness_guard_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "release_archive_smoke"],
-      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/release-process.md", "docs/release-notes-v1.0.md", "docs/v1.0-documentation.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/validate_release_candidate_readiness.cmake", "tests/validate_release_candidate_readiness_guards.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
+      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/release-process.md", "docs/release-notes-v1.0.md", "docs/v1.0-documentation.md", "docs/v1.0-jit-scope-decision.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/validate_release_candidate_readiness.cmake", "tests/validate_release_candidate_readiness_guards.cmake", "tests/validate_v1_jit_scope.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
       "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. A separate candidate-readiness gate freezes the exact remaining gap set and rejects any open Must-have that implies framework work. Final candidate package confirmation on non-Windows release targets remains part of the shared cross-platform validation window."
     },
     {
@@ -797,11 +797,11 @@
       "id": "G-JIT-001",
       "area": "jit",
       "priority": "should-have",
-      "state": "open",
-      "target": "v1.0",
+      "state": "deferred",
+      "target": "v1.x",
       "framework_impact": "additive",
-      "requirement": "Broaden typed straight-line, matrix, builtin, and function-specialization coverage while preserving guarded fallback.",
-      "exit_evidence": "Correctness parity and hardware-labelled cold/warm performance baselines for every added region family."
+      "requirement": "Broaden typed straight-line, matrix, builtin, and function-specialization coverage in v1.x when representative workload evidence identifies a material bottleneck, while preserving guarded fallback.",
+      "exit_evidence": "docs/v1.0-jit-scope-decision.md records the v1.0 deferral. Three revision- and SHA-256-bound Windows x86-64 reports show matching results, zero typed fallback, correct native cold/warm cache behavior, portable no-JIT execution, and conservative worst-sample gains above 100x for native scalar/array and 80x for no-JIT portable array execution. release_candidate_readiness_smoke validates the fixed evidence and exact deferred state; its negative guard rejects unreviewed v1.0 reactivation or representation-changing scope."
     },
     {
       "id": "G-CACHE-001",

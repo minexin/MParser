@@ -1623,7 +1623,9 @@ gap set. It rejects an unexpected Must-have or any remaining Must-have with
 non-`none` framework impact, keeping the final validation window focused on
 external evidence rather than new runtime architecture. Isolated mutated
 matrix fixtures prove Must-have/Should-have framework-impact and blocker-set
-drift are denied.
+drift are denied. The same gate includes the fixed-report JIT scope validator:
+`G-JIT-001` stays an additive Should-have deferred to v1.x, and an unreviewed
+v1.0 reactivation is rejected.
 
 The v1.0 performance gate is implemented as a non-installed engineering
 executable rather than another public runtime mode. It calls `Parser`,
@@ -1653,8 +1655,9 @@ After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
 embedding-framework redesign unless release evidence proves a correctness
 defect. Work now concentrates on contract freeze, reliability and sanitizer
 evidence, performance/resource baselines, documentation, packaging, and
-authenticated publication. Broader typed specialization is Should-have only when
-the measured baseline justifies it. Long-tail functions, toolboxes, disk
+authenticated publication. The measured v1.0 JIT scope audit found no required
+new specialization and defers broader typed work to v1.x; any later addition
+still requires representative evidence. Long-tail functions, toolboxes, disk
 caches, external callback ABIs, zero-copy borrowed arrays, LLVM/OSR, and full
 MATLAB compatibility remain v1.x or Post-v1.0 work.
 
