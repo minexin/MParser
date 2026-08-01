@@ -468,13 +468,13 @@
     {
       "id": "PLATFORM-001",
       "area": "platform",
-      "feature": "Windows x64, Linux x64, and Linux AArch64 configure/build/test paths",
+      "feature": "Windows x64, Linux x64/ARM64, and macOS x64/ARM64 configure/build/test paths",
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["parser_smoke", "production_run_cli_smoke", "native_scalar_jit_cache_smoke", "c_api_shared_library_abi", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
+      "evidence": ["parser_smoke", "production_run_cli_smoke", "native_scalar_jit_cache_smoke", "cross_platform_performance_evidence_smoke", "c_api_shared_library_abi", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke"],
       "sources": [".github/workflows/ci.yml", "CMakeLists.txt", "tests/validate_shared_library_abi.cmake"],
-      "limits": "CI covers Windows x64, Linux x64, macOS x64, macOS ARM64, and Linux AArch64 native-JIT plus portable fallback. Linux AArch64 remains cross-built and executed under QEMU rather than native hardware."
+      "limits": "CI covers Windows x64, Linux x64, native Linux ARM64, macOS x64, and macOS ARM64. The native Linux ARM64 lane runs the full SLJIT suite and non-emulated performance collector. A separate AArch64 cross-build/QEMU lane validates native-JIT and portable fallback execution, installed consumers, and the release package without treating emulated timing as performance evidence."
     },
     {
       "id": "TEST-001",
@@ -494,9 +494,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["performance_baseline_smoke", "performance_evidence_contract_smoke", "release_candidate_readiness_smoke"],
-      "sources": ["tools/performance_baseline.cpp", "tests/performance_baseline_schema_smoke.cpp", "tests/validate_performance_baseline.cmake", "tests/collect_performance_evidence.cmake", "tests/validate_v1_jit_scope.cmake", "tests/fixtures/performance_baseline_quick.m", "samples/performance_scalar_loop.m", "samples/performance_array_workload.m", "docs/performance-baseline-v1.schema.json", "docs/v1.0-performance-baseline.md", "docs/v1.0-jit-scope-decision.md", "docs/baselines/v1.0/README.md", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json", ".github/workflows/ci.yml", "tests/validate_release_candidate_readiness.cmake", "CMakeLists.txt"],
-      "limits": "The non-installed engineering collector emits protocol-1.0 raw timing/allocation samples, source/binary SHA-256 identities, and exact boundaries without machine-specific pass/fail thresholds. Allocation activity is not live heap, peak RSS is process-wide, process-cold is not filesystem-cache-cold, and emulated reports are functional evidence only. The native evidence target rejects emulation and validates revision, platform, architecture, native cache behavior, and file identities before CI upload. The fixed Windows reports support deferring broader typed/JIT specialization to v1.x; their conservative evidence checks are not universal performance thresholds. Acceptance of the new cross-platform and physical-ARM reports remains pending."
+      "evidence": ["performance_baseline_smoke", "performance_evidence_contract_smoke", "cross_platform_performance_evidence_smoke", "release_candidate_readiness_smoke"],
+      "sources": ["tools/performance_baseline.cpp", "tests/performance_baseline_schema_smoke.cpp", "tests/validate_performance_baseline.cmake", "tests/collect_performance_evidence.cmake", "tests/validate_cross_platform_performance_evidence.cmake", "tests/validate_v1_jit_scope.cmake", "tests/fixtures/performance_baseline_quick.m", "samples/performance_scalar_loop.m", "samples/performance_array_workload.m", "docs/performance-baseline-v1.schema.json", "docs/v1.0-performance-baseline.md", "docs/v1.0-jit-scope-decision.md", "docs/baselines/v1.0/README.md", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json", "docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json", "docs/baselines/v1.0/actions-30691616946/README.md", "docs/baselines/v1.0/actions-30691616946/SHA256SUMS", "docs/baselines/v1.0/actions-30691616946/mparser-performance-0.90.0-windows-x86_64/native-scalar-loop-v1.json", "docs/baselines/v1.0/actions-30691616946/mparser-performance-0.90.0-windows-x86_64/native-linear-array-v1.json", "docs/baselines/v1.0/actions-30691616946/mparser-performance-0.90.0-linux-x86_64/native-scalar-loop-v1.json", "docs/baselines/v1.0/actions-30691616946/mparser-performance-0.90.0-linux-x86_64/native-linear-array-v1.json", "docs/baselines/v1.0/actions-30691616946/mparser-performance-0.90.0-macos-x86_64/native-scalar-loop-v1.json", "docs/baselines/v1.0/actions-30691616946/mparser-performance-0.90.0-macos-x86_64/native-linear-array-v1.json", "docs/baselines/v1.0/actions-30691616946/mparser-performance-0.90.0-macos-arm64/native-scalar-loop-v1.json", "docs/baselines/v1.0/actions-30691616946/mparser-performance-0.90.0-macos-arm64/native-linear-array-v1.json", ".github/workflows/ci.yml", "tests/validate_release_candidate_readiness.cmake", "CMakeLists.txt"],
+      "limits": "The non-installed engineering collector emits protocol-1.0 raw timing/allocation samples, source/binary SHA-256 identities, and exact boundaries without machine-specific pass/fail thresholds. Allocation activity is not live heap, peak RSS is process-wide, process-cold is not filesystem-cache-cold, and emulated reports are functional evidence only. The native evidence target rejects emulation and validates revision, platform, architecture, native cache behavior, and file identities before CI upload. Fixed Windows reports support the v1.x JIT-scope decision; Actions run 30691616946 adds accepted Windows/Linux/macOS x64 and native-architecture macOS ARM64 hosted-runner evidence. The Apple M1 CPU label is explicitly Virtual, so this is not a bare-metal timing claim."
     },
     {
       "id": "DOC-001",
@@ -767,11 +767,11 @@
       "id": "G-PERFORMANCE-001",
       "area": "engineering",
       "priority": "must-have",
-      "state": "in-progress",
+      "state": "closed",
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Establish reproducible, hardware-labelled parse, compile, process-cold, bytecode, portable, native cold/warm, allocation, peak-memory, binary-size, and cache-boundary evidence without machine-specific thresholds.",
-      "exit_evidence": "The protocol-1.0 collector, Draft-7 schema, semantic statistics/cache/correctness validator, quick eligible contract workload, representative scalar/array samples, and native-only mparser_performance_evidence target are implemented. The target validates source/binary hashes, revision, OS, architecture, non-emulation, native cache behavior, and result equality before CI upload. Three reports under docs/baselines/v1.0 bind implementation da4b010 to exact Windows inputs. Acceptance and indexing of the new Windows, Linux, macOS x64, and physical macOS ARM64 reports remain required for final closure."
+      "exit_evidence": "The protocol-1.0 collector, Draft-7 schema, semantic statistics/cache/correctness validator, quick eligible contract workload, representative scalar/array samples, and native-only mparser_performance_evidence target are implemented. Three fixed Windows reports bind the JIT-scope decision to implementation da4b010. Eight additional reports from successful Actions run 30691616946 bind revision 85685b8 to exact Windows x64, Linux x64, macOS x64, and non-emulated macOS ARM64 hosted-runner environments. cross_platform_performance_evidence_smoke enforces the manifest, exact report set, revision and workload hashes, platform/compiler identities, measured boundaries, zero fallback, correctness, and native-cache transition without a machine-specific speed threshold. The ARM CPU label remains explicitly Apple M1 (Virtual), so the evidence is native-architecture rather than a bare-metal performance claim."
     },
     {
       "id": "G-DOCUMENTATION-001",

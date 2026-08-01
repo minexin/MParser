@@ -77,7 +77,7 @@ value/result handles.
 | --- | --- | --- | --- |
 | Windows x64 | Yes | Yes | Full native suite and package/upload passed in run `30684969401`; local no-JIT 198/198 and MSVC ASan no-JIT 199/199 also pass |
 | Linux x64 | Yes | Yes | Full GCC suite/package/upload and Clang ASan/UBSan/LSan suite passed in run `30684969401` |
-| Linux AArch64 | Yes | Yes | Native and portable cross-build/QEMU smokes, installed consumers, package/unpacked SDK, and sample passed in run `30684969401`; physical ARM remains required for performance claims |
+| Linux AArch64 | Yes | Yes | Native full-suite/performance CI uses `ubuntu-24.04-arm`; the independent cross-build/QEMU lane retains portable fallback, installed-consumer, package/unpacked-SDK, and sample coverage |
 | macOS x64 | Yes | Yes | Full suite, relocated production SDK consumers, architecture/version checks, package, and upload passed in run `30684969401` |
 | macOS ARM64 | Yes | Yes | Full suite, relocated production SDK consumers, native architecture/version checks, package, and upload passed in run `30684969401` |
 

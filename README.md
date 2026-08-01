@@ -3,11 +3,12 @@
 Current release candidate: v0.90.0. The v1 public-contract candidate,
 reliability gate, and release-documentation gate are cross-platform confirmed
 at revision `f34d8d9` by Actions run `30684969401`; local Windows MSVC ASan
-no-JIT also passes 199/199. The measured JIT scope audit defers broader
+no-JIT also passes 199/199. Actions run `30691616946` reconfirmed all six jobs
+at revision `85685b8` and supplied accepted Windows/Linux/macOS x64 plus native
+macOS ARM64 performance evidence. The measured JIT scope audit defers broader
 specialization to v1.x without changing the guarded v1.0 fallback contract.
-Active work is the remaining performance characterization and authenticated
-release provenance, while Linux TSan and macOS sanitizer remain bounded
-Should-have evaluations.
+Authenticated release provenance is the remaining Must-have; Linux TSan and
+macOS sanitizer remain bounded Should-have evaluations.
 Release documentation starts at
 [docs/README.md](docs/README.md), with the
 [user manual](docs/user-manual.md),
@@ -155,11 +156,12 @@ information for later diagnostics, formatting, semantic analysis, and JIT
 profiling.
 
 Cross-platform compatibility is a release constraint rather than a later
-porting task. CI builds and tests the SLJIT backend on Windows x64 and Linux
-x64, cross-compiles it for Linux AArch64, and exercises focused native and
-portable AArch64 runtime paths under QEMU. Platform-specific machine-code and
-calling-convention details remain behind SLJIT's public API; the portable typed
-kernel stays available when native JIT support is disabled.
+porting task. CI builds and tests the SLJIT backend on Windows x64, Linux x64,
+native Linux ARM64, and macOS x64/ARM64. A separate Linux AArch64 lane
+cross-compiles the release package and exercises focused native and portable
+runtime paths under QEMU. Platform-specific machine-code and calling-convention
+details remain behind SLJIT's public API; the portable typed kernel stays
+available when native JIT support is disabled.
 
 The parser also builds an initial expression tree for ordinary statements:
 assignments, output lists, member access, neutral call/index nodes, brace
@@ -1222,9 +1224,11 @@ cmake -S . -B build-arm64 -G Ninja \
 cmake --build build-arm64 --parallel
 ```
 
-The CI workflow additionally runs focused AArch64 native-JIT and portable
-tests under QEMU. Physical ARM hardware remains the authority for performance
-measurements.
+The CI workflow additionally runs the complete native-JIT suite and performance
+collector on an `ubuntu-24.04-arm` host. A separate cross-build lane runs
+focused AArch64 native-JIT and portable tests under QEMU and validates the
+Linux AArch64 release package. Only native, non-emulated reports are accepted
+as performance evidence.
 
 Run the structured-branch sample with either backend:
 

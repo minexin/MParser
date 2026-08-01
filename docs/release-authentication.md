@@ -31,8 +31,9 @@ Authentication is available only through `workflow_dispatch` in
 1. Select the exact release tag in the workflow ref selector.
 2. Set `authenticate_release` to `true`, explicitly accepting public Sigstore
    transparency for that release.
-3. Wait for Windows x64, Linux x64, Linux AArch64, macOS x64, macOS ARM64, and
-   the required Linux sanitizer lane to succeed in the same workflow run.
+3. Wait for Windows x64, Linux x64, native Linux ARM64, Linux AArch64
+   cross/QEMU, macOS x64, macOS ARM64, and the required Linux sanitizer lane
+   to succeed in the same workflow run.
 
 The authentication job rejects a branch ref and rejects a tag that does not
 equal `v<project-version>`. Its job-level token grants only `contents: read`,

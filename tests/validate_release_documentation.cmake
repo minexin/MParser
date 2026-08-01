@@ -193,9 +193,9 @@ require_text(release_process "id-token: write"
 string(REGEX MATCHALL "MPARSER_WARNINGS_AS_ERRORS=ON"
     warning_gate_matches "${ci_workflow}")
 list(LENGTH warning_gate_matches warning_gate_count)
-if(NOT warning_gate_count EQUAL 7)
+if(NOT warning_gate_count EQUAL 8)
     message(FATAL_ERROR
-        "all seven first-party CI configure paths must enable "
+        "all eight first-party CI configure paths must enable "
         "warnings-as-errors; found ${warning_gate_count}")
 endif()
 string(REGEX MATCHALL
@@ -215,8 +215,10 @@ require_text(performance_guide "mparser_performance_evidence"
     "performance evidence guide")
 require_text(performance_guide "emulated=false"
     "performance evidence native-hardware boundary")
+require_text(performance_guide "cross_platform_performance_evidence_smoke"
+    "accepted cross-platform performance evidence gate")
 require_text(release_process
-    "exactly cross-platform/physical-ARM performance characterization and"
+    "exactly authenticated provenance with"
     "release readiness blocker boundary")
 reject_text(release_process "cross-platform reliability evidence"
     "closed reliability documentation")
@@ -236,7 +238,13 @@ require_text(cross_platform_validation
     "f34d8d9e00816341a01df406c2e315164886c1cc"
     "cross-platform candidate revision identity")
 require_text(cross_platform_validation
-    "G-PERFORMANCE-001` and `G-PROVENANCE-001"
+    "30691616946"
+    "cross-platform performance run identity")
+require_text(cross_platform_validation
+    "85685b88f8f8eb4e89b03abf53aa16dbbe60c68c"
+    "cross-platform performance revision identity")
+require_text(cross_platform_validation
+    "remaining Must-have set to\n`G-PROVENANCE-001`"
     "cross-platform remaining Must-have boundary")
 
 set(indexed_documents ${required_documents})

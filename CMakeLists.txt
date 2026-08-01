@@ -621,14 +621,14 @@ add_test(NAME release_candidate_readiness_smoke
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
-        "-DEXPECTED_OPEN_MUST_HAVE=G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress"
+        -DEXPECTED_OPEN_MUST_HAVE=G-PROVENANCE-001:in-progress
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
         -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness.cmake)
 set_tests_properties(release_candidate_readiness_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 2 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
+        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 1 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
 
 add_test(NAME release_candidate_readiness_guard_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -648,7 +648,7 @@ add_test(NAME release_candidate_readiness_guard_smoke
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
-        "-DEXPECTED_OPEN_MUST_HAVE=G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress"
+        -DEXPECTED_OPEN_MUST_HAVE=G-PROVENANCE-001:in-progress
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
         -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness_guards.cmake)
@@ -1680,6 +1680,22 @@ set_tests_properties(performance_baseline_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "performance baseline protocol 1.0 validated"
     TIMEOUT 180)
+
+add_test(NAME cross_platform_performance_evidence_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_SCHEMA_VALIDATOR=$<TARGET_FILE:performance_baseline_schema_smoke_tests>
+        -DMPARSER_SCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/performance-baseline-v1.schema.json
+        -DMPARSER_EVIDENCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/actions-30691616946
+        -DMPARSER_SCALAR_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_scalar_loop.m
+        -DMPARSER_ARRAY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_array_workload.m
+        -DMPARSER_EXPECTED_REVISION=85685b88f8f8eb4e89b03abf53aa16dbbe60c68c
+        -DMPARSER_EXPECTED_VERSION=${PROJECT_VERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_cross_platform_performance_evidence.cmake)
+set_tests_properties(cross_platform_performance_evidence_smoke PROPERTIES
+    LABELS "documentation;performance;release"
+    PASS_REGULAR_EXPRESSION
+        "MParser cross-platform performance evidence validated: 8 reports"
+    TIMEOUT 120)
 
 if(MPARSER_ENABLE_NATIVE_JIT AND NOT CMAKE_CROSSCOMPILING)
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}"

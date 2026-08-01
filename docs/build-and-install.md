@@ -14,8 +14,9 @@ JIT dependency. The pinned SLJIT source is vendored under
 
 The current release-target toolchains are MSVC on Windows, GCC or Clang on
 Linux, and Apple Clang on macOS. Linux AArch64 may be cross-compiled with the
-checked-in toolchain, but physical ARM hardware is required for publishable
-performance measurements.
+checked-in toolchain. CI also builds and tests natively on GitHub's
+`ubuntu-24.04-arm` runner; only native, non-emulated reports may be used for
+performance characterization.
 
 All checked-in presets and CI configure paths set
 `MPARSER_WARNINGS_AS_ERRORS=ON`. This applies `/W4 /WX` or

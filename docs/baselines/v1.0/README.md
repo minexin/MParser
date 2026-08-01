@@ -59,7 +59,10 @@ the archive payload. Functional cross-platform validation later passed at
 revision `f34d8d9` in Actions run `30684969401`, but no comparable platform
 reports were committed by that workflow. The subsequent native-only
 `mparser_performance_evidence` target and CI upload steps make those reports
-repeatable on Windows, Linux, macOS x64, and physical macOS ARM64. This index
-will accept them only after their source revision, hardware labels, hashes,
-schema semantics, and successful full workflow run are audited. Emulated
-AArch64 results remain functional evidence only.
+repeatable on Windows, Linux, macOS x64, and native-architecture macOS ARM64.
+The accepted eight-report set from revision `85685b8` and successful Actions
+run `30691616946` is indexed under
+[`actions-30691616946`](actions-30691616946/README.md). Its ARM64 CPU label is
+`Apple M1 (Virtual)`, so the evidence is explicitly hosted and non-emulated,
+not a bare-metal timing claim. Linux AArch64/QEMU results remain functional
+evidence only.

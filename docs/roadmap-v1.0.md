@@ -565,7 +565,7 @@ is green. It refines, rather than replaces, the four work areas above.
    cold/warm execution, peak memory, allocations, binary size, and cache
    boundaries. Every result records hardware, OS, compiler, build type,
    backend, workload, and the exact timing boundary.
-   **Status: cross-platform evidence collection in progress.** The
+   **Status: complete.** The
    non-installed collector, protocol-1.0 Draft-7 schema, semantic validator,
    quick eligible contract workload, representative scalar/array workloads,
    and native-only `mparser_performance_evidence` target are defined in
@@ -573,11 +573,12 @@ is green. It refines, rather than replaces, the four work areas above.
    SHA-256-bound Windows x86-64 reports, native 201/201 and no-JIT 195/195
    regression, a testing-disabled SDK build, and unpacked package validation
    are indexed under `docs/baselines/v1.0`. Functional cross-platform
-   confirmation passed in Actions run `30684969401`. Native Windows, Linux,
-   macOS x64, and physical macOS ARM64 CI lanes now collect and upload report
-   pairs with revision/platform/hash validation; acceptance and indexing of
-   the resulting reports remain open performance evidence. The
-   fixed reports also support the
+   confirmation passed in Actions run `30684969401`. Eight Windows, Linux,
+   macOS x64, and native-architecture macOS ARM64 reports from revision
+   `85685b8` and successful Actions run `30691616946` are now SHA-256 indexed
+   and continuously validated. The ARM64 CPU label is explicitly
+   `Apple M1 (Virtual)`, so the result is hosted non-emulated evidence rather
+   than a bare-metal claim. The fixed reports also support the
    [v1.0 JIT scope decision](v1.0-jit-scope-decision.md): broader typed/JIT
    coverage is deferred to v1.x rather than added without a demonstrated
    release bottleneck.
@@ -624,10 +625,10 @@ is green. It refines, rather than replaces, the four work areas above.
    transparency boundary is explicit in
    [release-authentication.md](release-authentication.md). Candidate packages
    and uploads passed on Windows, Linux x64/AArch64, and macOS x64/ARM64 in
-   Actions run `30684969401`. Version `1.0.0`, release tag/snapshots, remaining
-   performance evidence, and a real authenticated signing run remain open.
+   Actions run `30691616946`. Version `1.0.0`, release tag/snapshots, and a
+   real authenticated signing run remain open.
    `release_candidate_readiness_smoke`
-   freezes the exact two-item Must-have blocker set and rejects any open
+   freezes the exact one-item Must-have blocker set and rejects any open
    Must-have with framework impact.
 
 ### v1.0 Scope Controls
