@@ -211,14 +211,22 @@ cmake --build build/package --parallel
 cmake --build build/package --target mparser_release_package
 ```
 
-Windows emits a ZIP; Linux and macOS emit a `.tar.gz`. The package directory
-also receives SHA-256 records. `release_archive_smoke` creates the payload
-twice with normalized metadata, compares hashes, relocates the unpacked SDK,
-builds independent C11 and C++20 consumers, and runs the unpacked CLI machine
-protocol.
+Windows emits a ZIP; Linux and macOS emit a `.tar.gz`. The publication target
+requires a clean Git worktree. The package directory receives:
 
-Publisher signing or provenance attestation is a final release operation and
-is not replaced by the SHA-256 integrity file.
+- the platform/architecture archive;
+- CPack's `<archive>.sha256` sidecar;
+- `<archive>.provenance.json`, an unsigned in-toto Statement v1 using the
+  SLSA Provenance v1 predicate;
+- `SHA256SUMS`, binding the archive and provenance statement.
+
+`release_archive_smoke` creates the payload and statement twice with
+normalized metadata, compares both hashes, relocates the unpacked SDK, builds
+independent C11 and C++20 consumers, and runs the unpacked CLI machine
+protocol. The local unsigned statement records inputs and the builder boundary
+but does not authenticate publisher identity or claim a SLSA level. Final
+publication still requires the selected signing or hosted-provenance
+mechanism. See [v1 Release Process](release-process.md).
 
 ## Troubleshooting
 

@@ -20,6 +20,9 @@ set(required_documents
     docs/jit-and-fallback.md
     docs/runtime-boundaries.md
     docs/migration-v1.0.md
+    docs/release-process.md
+    docs/release-notes-v1.0.md
+    docs/roadmap-v1.x.md
     docs/v1.0-documentation.md
     docs/embedding-c-api.md
     docs/embedding-cpp-api.md

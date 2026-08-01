@@ -1603,13 +1603,19 @@ checks exact unsigned 64-bit bounds that common signed-number Draft-7
 implementations cannot represent directly.
 
 Release packaging uses the ordinary install graph through CPack and emits one
-platform/architecture archive with SHA-256 sidecars. A fixed
-`SOURCE_DATE_EPOCH` and single-thread archive pass make the same built payload
-reproducible. The release smoke test packages twice, checks paths and hashes,
-unpacks the SDK, builds independent C11 and multi-translation-unit C++20
-consumers, and runs the installed machine protocol without source-tree or
-loader-path access. This does not claim reproducible compilation or publisher
-identity; signing/provenance remains a release operation.
+platform/architecture archive, SHA-256 sidecars, and an unsigned in-toto
+Statement v1 with the SLSA Provenance v1 predicate. The statement binds the
+archive, base Git commit, public contract inputs, toolchain/platform, build
+parameters, and local builder trust boundary. A fixed `SOURCE_DATE_EPOCH` and
+single-thread archive pass make the same built payload and statement
+reproducible. The release smoke test packages twice, checks paths, hashes, and
+provenance semantics, proves modified archives and statements are rejected,
+unpacks the SDK, builds independent C11 and
+multi-translation-unit C++20 consumers, and runs the installed machine
+protocol without source-tree or loader-path access. The publication target
+requires a clean worktree before CPack runs. This does not claim reproducible
+compilation, publisher identity, or a SLSA level; authenticated publication
+remains a release operation. See [release-process.md](release-process.md).
 
 The v1.0 performance gate is implemented as a non-installed engineering
 executable rather than another public runtime mode. It calls `Parser`,
@@ -1639,7 +1645,7 @@ After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
 embedding-framework redesign unless release evidence proves a correctness
 defect. Work now concentrates on contract freeze, reliability and sanitizer
 evidence, performance/resource baselines, documentation, packaging, and
-publication provenance. Broader typed specialization is Should-have only when
+authenticated publication. Broader typed specialization is Should-have only when
 the measured baseline justifies it. Long-tail functions, toolboxes, disk
 caches, external callback ABIs, zero-copy borrowed arrays, LLVM/OSR, and full
 MATLAB compatibility remain v1.x or Post-v1.0 work.

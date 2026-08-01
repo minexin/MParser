@@ -199,9 +199,12 @@ source-tree internal targets. Release archives contain headers, shared
 runtime, CLI, schemas, manuals, examples, Apache-2.0 license, and third-party
 notices.
 
-Verify the archive SHA-256 and retain its version/platform/architecture in
-deployment records. SHA-256 is integrity evidence, not publisher identity;
-follow the final release provenance policy when 1.0.0 is published.
+Verify both entries in `SHA256SUMS`, then verify the unsigned SLSA provenance
+subject, source revision, public-contract inputs, build type, builder, and
+platform/toolchain parameters. SHA-256 and an unsigned statement are integrity
+and audit evidence, not publisher identity; follow the authenticated
+publication policy in [v1 Release Process](release-process.md) when 1.0.0 is
+published.
 
 ## 11. Recheck Supported MATLAB Behavior
 

@@ -598,8 +598,16 @@ is green. It refines, rather than replaces, the four work areas above.
    contract manifest, snapshots, and version metadata; generate Windows,
    Linux, and macOS x64/ARM64 archives with SHA-256 checksums; build and run
    independent C11 and C++20 consumers plus the CLI machine protocol from each
-   unpacked SDK; complete final cross-platform CI, signing or provenance
-   attestation, release notes, and the v1.x roadmap.
+   unpacked SDK; complete final cross-platform CI, authenticated signing or
+   hosted provenance, release notes, and the v1.x roadmap.
+   **Status: local publication preparation in progress.** The CMake/CPack
+   target now requires clean source and emits a deterministic, semantically
+   validated unsigned in-toto Statement v1 with SLSA Provenance v1 metadata;
+   `SHA256SUMS` binds the archive and statement. The release-process
+   specification, candidate 1.0 notes, and v1.x roadmap are present. Version
+   `1.0.0`, release tag/snapshots, authenticated publisher or hosted
+   provenance, and all-platform artifacts remain gated on the shared
+   validation window.
 
 ### v1.0 Scope Controls
 

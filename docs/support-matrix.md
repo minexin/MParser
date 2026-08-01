@@ -64,7 +64,7 @@ script fail; it returns to a less specialized tier.
 | C ABI | ABI major 1 revision 1, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.0 over the C ABI |
 | Builtin extension | Source contract 1.0 using registry/descriptors/call/results |
-| Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, and notices |
+| Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
 invocation, sessions, diagnostics, cancellation, and resource summaries.

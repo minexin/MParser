@@ -77,6 +77,13 @@ if(MPARSER_ENABLE_MSVC_ASAN)
 endif()
 
 if(MPARSER_ENABLE_RELEASE_PACKAGING)
+    find_package(Git REQUIRED)
+    set(MPARSER_RELEASE_SOURCE_REPOSITORY
+        "https://github.com/minexin/MParser")
+    set(MPARSER_RELEASE_BUILD_TYPE_URI
+        "${MPARSER_RELEASE_SOURCE_REPOSITORY}/blob/main/docs/release-process.md#cmake-cpack-release-v1")
+    set(MPARSER_RELEASE_BUILDER_ID
+        "${MPARSER_RELEASE_SOURCE_REPOSITORY}/blob/main/docs/release-process.md#local-cmake-builder-v1")
     string(TOLOWER
         "${CMAKE_SYSTEM_PROCESSOR}" _mparser_release_processor)
     if(_mparser_release_processor MATCHES
@@ -94,12 +101,15 @@ if(MPARSER_ENABLE_RELEASE_PACKAGING)
     if(WIN32)
         set(MPARSER_RELEASE_PLATFORM "windows")
         set(MPARSER_RELEASE_PACKAGE_EXTENSION ".zip")
+        set(MPARSER_RELEASE_ARCHIVE_MEDIA_TYPE "application/zip")
     elseif(APPLE)
         set(MPARSER_RELEASE_PLATFORM "macos")
         set(MPARSER_RELEASE_PACKAGE_EXTENSION ".tar.gz")
+        set(MPARSER_RELEASE_ARCHIVE_MEDIA_TYPE "application/gzip")
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         set(MPARSER_RELEASE_PLATFORM "linux")
         set(MPARSER_RELEASE_PACKAGE_EXTENSION ".tar.gz")
+        set(MPARSER_RELEASE_ARCHIVE_MEDIA_TYPE "application/gzip")
     else()
         message(FATAL_ERROR
             "Release packaging does not recognize platform: "
@@ -1965,8 +1975,17 @@ if(NOT CMAKE_CROSSCOMPILING)
                 "-DMPARSER_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
                 "-DMPARSER_PROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
                 "-DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/release-archive-smoke/$<CONFIG>"
+                "-DMPARSER_RELEASE_PACKAGE_SCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tests/create_release_package.cmake"
+                "-DMPARSER_PROVENANCE_CREATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/create_release_provenance.cmake"
+                "-DMPARSER_PROVENANCE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_provenance.cmake"
+                "-DMPARSER_GIT_COMMAND=${GIT_EXECUTABLE}"
                 "-DMPARSER_PACKAGE_BASENAME=${MPARSER_RELEASE_PACKAGE_BASENAME}"
                 "-DMPARSER_PACKAGE_EXTENSION=${MPARSER_RELEASE_PACKAGE_EXTENSION}"
+                "-DMPARSER_ARCHIVE_MEDIA_TYPE=${MPARSER_RELEASE_ARCHIVE_MEDIA_TYPE}"
+                "-DMPARSER_SOURCE_REPOSITORY=${MPARSER_RELEASE_SOURCE_REPOSITORY}"
+                "-DMPARSER_BUILD_TYPE_URI=${MPARSER_RELEASE_BUILD_TYPE_URI}"
+                "-DMPARSER_BUILDER_ID=${MPARSER_RELEASE_BUILDER_ID}"
+                "-DMPARSER_NATIVE_JIT=${MPARSER_ENABLE_NATIVE_JIT}"
                 "-DMPARSER_SOURCE_DATE_EPOCH=${MPARSER_RELEASE_SOURCE_DATE_EPOCH}"
                 "-DMPARSER_INSTALL_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}"
                 "-DMPARSER_INSTALL_BINDIR=${CMAKE_INSTALL_BINDIR}"
@@ -1985,11 +2004,18 @@ if(NOT CMAKE_CROSSCOMPILING)
                 "-DMPARSER_TEST_CONFIG=$<CONFIG>"
                 "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
                 "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+                "-DMPARSER_CMAKE_VERSION=${CMAKE_VERSION}"
+                "-DMPARSER_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}"
+                "-DMPARSER_COMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}"
+                "-DMPARSER_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
+                "-DMPARSER_SYSTEM_VERSION=${CMAKE_SYSTEM_VERSION}"
+                "-DMPARSER_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}"
                 "-DMPARSER_EXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}"
                 "-DMPARSER_C_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_c_consumer"
                 "-DMPARSER_CPP_CONSUMER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/installed_cpp_consumer"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_archive.cmake")
         set_tests_properties(release_archive_smoke PROPERTIES
+            LABELS release
             PASS_REGULAR_EXPRESSION
                 "MParser release archive validated: ${MPARSER_RELEASE_PACKAGE_BASENAME}${MPARSER_RELEASE_PACKAGE_EXTENSION}"
             TIMEOUT 300)
@@ -2050,6 +2076,9 @@ install(FILES
     docs/jit-and-fallback.md
     docs/runtime-boundaries.md
     docs/migration-v1.0.md
+    docs/release-process.md
+    docs/release-notes-v1.0.md
+    docs/roadmap-v1.x.md
     docs/public-contract-v1.json
     docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
@@ -2125,9 +2154,27 @@ if(MPARSER_ENABLE_RELEASE_PACKAGING)
             "-DMPARSER_CPACK_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/CPackConfig.cmake"
             "-DMPARSER_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
             "-DMPARSER_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/packages"
+            "-DMPARSER_PROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+            "-DMPARSER_PROVENANCE_CREATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/create_release_provenance.cmake"
+            "-DMPARSER_PROVENANCE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_provenance.cmake"
+            "-DMPARSER_GIT_COMMAND=${GIT_EXECUTABLE}"
             "-DMPARSER_PACKAGE_BASENAME=${MPARSER_RELEASE_PACKAGE_BASENAME}"
             "-DMPARSER_PACKAGE_EXTENSION=${MPARSER_RELEASE_PACKAGE_EXTENSION}"
+            "-DMPARSER_ARCHIVE_MEDIA_TYPE=${MPARSER_RELEASE_ARCHIVE_MEDIA_TYPE}"
+            "-DMPARSER_SOURCE_REPOSITORY=${MPARSER_RELEASE_SOURCE_REPOSITORY}"
+            "-DMPARSER_BUILD_TYPE_URI=${MPARSER_RELEASE_BUILD_TYPE_URI}"
+            "-DMPARSER_BUILDER_ID=${MPARSER_RELEASE_BUILDER_ID}"
+            "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+            "-DMPARSER_NATIVE_JIT=${MPARSER_ENABLE_NATIVE_JIT}"
             "-DMPARSER_SOURCE_DATE_EPOCH=${MPARSER_RELEASE_SOURCE_DATE_EPOCH}"
+            "-DMPARSER_GENERATOR=${CMAKE_GENERATOR}"
+            "-DMPARSER_CMAKE_VERSION=${CMAKE_VERSION}"
+            "-DMPARSER_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}"
+            "-DMPARSER_COMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}"
+            "-DMPARSER_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
+            "-DMPARSER_SYSTEM_VERSION=${CMAKE_SYSTEM_VERSION}"
+            "-DMPARSER_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}"
+            -DMPARSER_REQUIRE_CLEAN_SOURCE=ON
             "-DMPARSER_CONFIG=$<CONFIG>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/create_release_package.cmake"
         DEPENDS mparser mparser_c_api

@@ -350,11 +350,13 @@ the installed consumer and CLI under QEMU.
 
 With `MPARSER_ENABLE_RELEASE_PACKAGING=ON`,
 `mparser_release_package` creates a platform/architecture-named ZIP or TGZ
-plus SHA-256 sidecars. `release_archive_smoke` packages one built payload
-twice with a fixed timestamp, verifies the archive paths and checksum, unpacks
-it, and consumes only that SDK from independent C11 and C++20 projects. The
-checksum proves integrity, not publisher identity; package signing remains a
-release operation.
+plus SHA-256 records and an unsigned SLSA Provenance v1 statement.
+`release_archive_smoke` packages one built payload twice with a fixed
+timestamp, verifies archive paths, checksums, and provenance semantics,
+unpacks it, and consumes only that SDK from independent C11 and C++20
+projects. These records provide integrity and audit evidence, not publisher
+identity; authenticated signing or hosted provenance remains a release
+operation.
 
 ## Licensing
 
@@ -376,8 +378,8 @@ writing a future library `sizeof` over it.
 
 `docs/versioning-and-deprecation.md` now defines the common v1 evolution
 policy. Remaining v1.0 work concerns broader reliability evidence,
-performance/resource baselines, documentation, provenance, and final release
-packaging rather than redesigning this ABI.
+performance/resource baselines, documentation, authenticated publication,
+and final cross-platform packaging rather than redesigning this ABI.
 
 The v1.0 candidate deliberately excludes a stable external native callback
 ABI and zero-copy borrowed input arrays. Their future additive rules are

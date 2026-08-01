@@ -20,6 +20,11 @@ evidence,
 the versioned timing, allocation, memory, binary-size, and cache evidence,
 [docs/v1.0-documentation.md](docs/v1.0-documentation.md) for the release
 manual and package evidence,
+[docs/release-notes-v1.0.md](docs/release-notes-v1.0.md) for the candidate
+release notes,
+[docs/release-process.md](docs/release-process.md) for checksums, provenance,
+and publication boundaries,
+[docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) for compatible post-1.0 growth,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
 machine-validated combined candidate freeze,
 [docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and
@@ -992,8 +997,10 @@ Platform/architecture-named ZIP or TGZ release archives carry Apache-2.0,
 `Copyright 2026 Wang Xin`, checksums, installed public contracts, and the
 relocatable SDK. Their smoke test packages a fixed payload twice, unpacks it,
 builds independent C11 and multi-translation-unit C++20 consumers, and runs
-the installed CLI protocol. Checksums prove integrity, not publisher identity;
-signing or provenance attestation remains a v1.0 release operation.
+the installed CLI protocol. The package also carries deterministic unsigned
+SLSA provenance metadata. Checksums and that statement provide integrity and
+audit evidence, not publisher identity; authenticated signing or hosted
+provenance remains a v1.0 publication operation.
 
 The post-v0.90 contract gate adds CLI 1.0 and builtin source contract 1.0 to
 that manifest. Command-line modes and scalar options are now single-occurrence,

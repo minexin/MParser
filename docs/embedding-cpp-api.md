@@ -227,7 +227,8 @@ allocation and undefined-behavior edges.
 
 Distribution licensing is Apache-2.0 with `Copyright 2026 Wang Xin`.
 Checksummed release archives include the public contract and schema and are
-validated only through their unpacked C/C++ SDK. This is the v1 candidate
-freeze; the common versioning/deprecation policy is now frozen in
-`docs/versioning-and-deprecation.md`, while release provenance and the final
-1.0.0 publication gate remain open.
+validated only through their unpacked C/C++ SDK. Deterministic unsigned SLSA
+provenance binds each archive to its source and build inputs. This is the v1
+candidate freeze; the common versioning/deprecation policy is now frozen in
+`docs/versioning-and-deprecation.md`, while authenticated publication and the
+final 1.0.0 platform gate remain open.

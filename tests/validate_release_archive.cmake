@@ -8,8 +8,17 @@ foreach(required_variable IN ITEMS
         MPARSER_BUILD_DIR
         MPARSER_PROJECT_ROOT
         MPARSER_TEST_ROOT
+        MPARSER_RELEASE_PACKAGE_SCRIPT
+        MPARSER_PROVENANCE_CREATOR
+        MPARSER_PROVENANCE_VALIDATOR
+        MPARSER_GIT_COMMAND
         MPARSER_PACKAGE_BASENAME
         MPARSER_PACKAGE_EXTENSION
+        MPARSER_ARCHIVE_MEDIA_TYPE
+        MPARSER_SOURCE_REPOSITORY
+        MPARSER_BUILD_TYPE_URI
+        MPARSER_BUILDER_ID
+        MPARSER_NATIVE_JIT
         MPARSER_SOURCE_DATE_EPOCH
         MPARSER_INSTALL_INCLUDEDIR
         MPARSER_INSTALL_BINDIR
@@ -18,6 +27,11 @@ foreach(required_variable IN ITEMS
         MPARSER_INSTALL_DOCDIR
         MPARSER_INSTALL_CMAKEDIR
         MPARSER_GENERATOR
+        MPARSER_CMAKE_VERSION
+        MPARSER_COMPILER_ID
+        MPARSER_COMPILER_VERSION
+        MPARSER_SYSTEM_NAME
+        MPARSER_SYSTEM_PROCESSOR
         MPARSER_PROJECT_VERSION
         MPARSER_C_CONSUMER_SOURCE_DIR
         MPARSER_CPP_CONSUMER_SOURCE_DIR)
@@ -33,6 +47,13 @@ if(NOT DEFINED MPARSER_EXECUTABLE_SUFFIX)
 endif()
 if(NOT DEFINED MPARSER_TEST_CONFIG)
     set(MPARSER_TEST_CONFIG "")
+endif()
+if(NOT DEFINED MPARSER_SYSTEM_VERSION)
+    set(MPARSER_SYSTEM_VERSION "")
+endif()
+set(mparser_package_config "${MPARSER_TEST_CONFIG}")
+if(mparser_package_config STREQUAL "")
+    set(mparser_package_config "${MPARSER_BUILD_TYPE}")
 endif()
 
 get_filename_component(
@@ -65,18 +86,77 @@ function(run_checked description)
 endfunction()
 
 function(run_cpack output_directory)
-    file(MAKE_DIRECTORY "${output_directory}")
     set(package_command
-        "${MPARSER_CMAKE_COMMAND}" -E env
-        "SOURCE_DATE_EPOCH=${MPARSER_SOURCE_DATE_EPOCH}"
-        "${MPARSER_CPACK_COMMAND}"
-        --config "${MPARSER_CPACK_CONFIG}"
-        -B "${output_directory}")
-    if(NOT MPARSER_TEST_CONFIG STREQUAL "")
-        list(APPEND package_command
-            -C "${MPARSER_TEST_CONFIG}")
-    endif()
+        "${MPARSER_CMAKE_COMMAND}"
+        "-DMPARSER_CMAKE_COMMAND=${MPARSER_CMAKE_COMMAND}"
+        "-DMPARSER_CPACK_COMMAND=${MPARSER_CPACK_COMMAND}"
+        "-DMPARSER_CPACK_CONFIG=${MPARSER_CPACK_CONFIG}"
+        "-DMPARSER_BUILD_DIR=${mparser_build_dir}"
+        "-DMPARSER_OUTPUT_DIR=${output_directory}"
+        "-DMPARSER_PROJECT_ROOT=${MPARSER_PROJECT_ROOT}"
+        "-DMPARSER_PROVENANCE_CREATOR=${MPARSER_PROVENANCE_CREATOR}"
+        "-DMPARSER_PROVENANCE_VALIDATOR=${MPARSER_PROVENANCE_VALIDATOR}"
+        "-DMPARSER_GIT_COMMAND=${MPARSER_GIT_COMMAND}"
+        "-DMPARSER_PACKAGE_BASENAME=${MPARSER_PACKAGE_BASENAME}"
+        "-DMPARSER_PACKAGE_EXTENSION=${MPARSER_PACKAGE_EXTENSION}"
+        "-DMPARSER_ARCHIVE_MEDIA_TYPE=${MPARSER_ARCHIVE_MEDIA_TYPE}"
+        "-DMPARSER_SOURCE_REPOSITORY=${MPARSER_SOURCE_REPOSITORY}"
+        "-DMPARSER_BUILD_TYPE_URI=${MPARSER_BUILD_TYPE_URI}"
+        "-DMPARSER_BUILDER_ID=${MPARSER_BUILDER_ID}"
+        "-DMPARSER_PROJECT_VERSION=${MPARSER_PROJECT_VERSION}"
+        "-DMPARSER_CONFIG=${mparser_package_config}"
+        "-DMPARSER_NATIVE_JIT=${MPARSER_NATIVE_JIT}"
+        "-DMPARSER_SOURCE_DATE_EPOCH=${MPARSER_SOURCE_DATE_EPOCH}"
+        "-DMPARSER_GENERATOR=${MPARSER_GENERATOR}"
+        "-DMPARSER_CMAKE_VERSION=${MPARSER_CMAKE_VERSION}"
+        "-DMPARSER_COMPILER_ID=${MPARSER_COMPILER_ID}"
+        "-DMPARSER_COMPILER_VERSION=${MPARSER_COMPILER_VERSION}"
+        "-DMPARSER_SYSTEM_NAME=${MPARSER_SYSTEM_NAME}"
+        "-DMPARSER_SYSTEM_VERSION=${MPARSER_SYSTEM_VERSION}"
+        "-DMPARSER_SYSTEM_PROCESSOR=${MPARSER_SYSTEM_PROCESSOR}"
+        -DMPARSER_REQUIRE_CLEAN_SOURCE=OFF
+        -P "${MPARSER_RELEASE_PACKAGE_SCRIPT}")
     run_checked("CPack ${output_directory}" ${package_command})
+endfunction()
+
+function(expect_provenance_rejection
+         description archive provenance expected_pattern)
+    execute_process(
+        COMMAND "${MPARSER_CMAKE_COMMAND}"
+            "-DMPARSER_ARCHIVE=${archive}"
+            "-DMPARSER_PROVENANCE=${provenance}"
+            "-DMPARSER_PROJECT_ROOT=${MPARSER_PROJECT_ROOT}"
+            "-DMPARSER_GIT_COMMAND=${MPARSER_GIT_COMMAND}"
+            "-DMPARSER_SOURCE_REPOSITORY=${MPARSER_SOURCE_REPOSITORY}"
+            "-DMPARSER_BUILD_TYPE_URI=${MPARSER_BUILD_TYPE_URI}"
+            "-DMPARSER_BUILDER_ID=${MPARSER_BUILDER_ID}"
+            "-DMPARSER_PROJECT_VERSION=${MPARSER_PROJECT_VERSION}"
+            "-DMPARSER_CONFIG=${mparser_package_config}"
+            "-DMPARSER_NATIVE_JIT=${MPARSER_NATIVE_JIT}"
+            "-DMPARSER_SOURCE_DATE_EPOCH=${MPARSER_SOURCE_DATE_EPOCH}"
+            "-DMPARSER_GENERATOR=${MPARSER_GENERATOR}"
+            "-DMPARSER_CMAKE_VERSION=${MPARSER_CMAKE_VERSION}"
+            "-DMPARSER_COMPILER_ID=${MPARSER_COMPILER_ID}"
+            "-DMPARSER_COMPILER_VERSION=${MPARSER_COMPILER_VERSION}"
+            "-DMPARSER_SYSTEM_NAME=${MPARSER_SYSTEM_NAME}"
+            "-DMPARSER_SYSTEM_VERSION=${MPARSER_SYSTEM_VERSION}"
+            "-DMPARSER_SYSTEM_PROCESSOR=${MPARSER_SYSTEM_PROCESSOR}"
+            "-DMPARSER_ARCHIVE_MEDIA_TYPE=${MPARSER_ARCHIVE_MEDIA_TYPE}"
+            -DMPARSER_REQUIRE_CLEAN_SOURCE=OFF
+            -P "${MPARSER_PROVENANCE_VALIDATOR}"
+        RESULT_VARIABLE validation_status
+        OUTPUT_VARIABLE validation_output
+        ERROR_VARIABLE validation_error)
+    if(validation_status EQUAL 0)
+        message(FATAL_ERROR
+            "${description} was accepted by the provenance validator")
+    endif()
+    set(validation_log "${validation_output}\n${validation_error}")
+    if(NOT validation_log MATCHES "${expected_pattern}")
+        message(FATAL_ERROR
+            "${description} failed for an unexpected reason\n"
+            "${validation_log}")
+    endif()
 endfunction()
 
 function(run_unpacked_consumer
@@ -124,11 +204,14 @@ set(first_archive
     "${first_package_dir}/${MPARSER_PACKAGE_BASENAME}${MPARSER_PACKAGE_EXTENSION}")
 set(second_archive
     "${second_package_dir}/${MPARSER_PACKAGE_BASENAME}${MPARSER_PACKAGE_EXTENSION}")
+set(first_provenance "${first_archive}.provenance.json")
+set(second_provenance "${second_archive}.provenance.json")
 foreach(archive IN ITEMS "${first_archive}" "${second_archive}")
     if(NOT EXISTS "${archive}" OR
-       NOT EXISTS "${archive}.sha256")
+       NOT EXISTS "${archive}.sha256" OR
+       NOT EXISTS "${archive}.provenance.json")
         message(FATAL_ERROR
-            "Release archive or SHA-256 sidecar is missing: ${archive}")
+            "Release archive, digest, or provenance is missing: ${archive}")
     endif()
 endforeach()
 file(SHA256 "${first_archive}" first_hash)
@@ -137,6 +220,14 @@ if(NOT first_hash STREQUAL second_hash)
     message(FATAL_ERROR
         "Fixed-payload release archives are not reproducible.\n"
         "first:  ${first_hash}\nsecond: ${second_hash}")
+endif()
+file(SHA256 "${first_provenance}" first_provenance_hash)
+file(SHA256 "${second_provenance}" second_provenance_hash)
+if(NOT first_provenance_hash STREQUAL second_provenance_hash)
+    message(FATAL_ERROR
+        "Fixed-input release provenance is not reproducible.\n"
+        "first:  ${first_provenance_hash}\n"
+        "second: ${second_provenance_hash}")
 endif()
 file(READ "${first_archive}.sha256" sidecar)
 get_filename_component(first_archive_name "${first_archive}" NAME)
@@ -147,6 +238,48 @@ if(NOT sidecar STREQUAL expected_sidecar)
     message(FATAL_ERROR
         "CPack SHA-256 sidecar has unexpected content: ${sidecar}")
 endif()
+get_filename_component(first_provenance_name
+    "${first_provenance}" NAME)
+file(READ "${first_package_dir}/SHA256SUMS" checksum_manifest)
+string(REPLACE "\r\n" "\n"
+    checksum_manifest "${checksum_manifest}")
+file(READ "${second_package_dir}/SHA256SUMS" second_checksum_manifest)
+string(REPLACE "\r\n" "\n"
+    second_checksum_manifest "${second_checksum_manifest}")
+string(CONCAT expected_checksum_manifest
+    "${first_hash}  ${first_archive_name}\n"
+    "${first_provenance_hash}  ${first_provenance_name}\n")
+if(NOT checksum_manifest STREQUAL expected_checksum_manifest OR
+   NOT second_checksum_manifest STREQUAL expected_checksum_manifest)
+    message(FATAL_ERROR
+        "SHA256SUMS does not bind the archive and provenance statement")
+endif()
+
+set(tampered_archive_dir "${mparser_test_root}/tampered-archive")
+file(MAKE_DIRECTORY "${tampered_archive_dir}")
+set(tampered_archive
+    "${tampered_archive_dir}/${first_archive_name}")
+configure_file("${first_archive}" "${tampered_archive}" COPYONLY)
+file(APPEND "${tampered_archive}" "mparser-tamper-test")
+expect_provenance_rejection(
+    "Tampered release archive"
+    "${tampered_archive}"
+    "${first_provenance}"
+    "subject does not match the archive")
+
+file(READ "${first_provenance}" tampered_provenance_json)
+string(JSON tampered_provenance_json SET
+    "${tampered_provenance_json}"
+    predicate runDetails mparser_authentication "\"signed\"")
+set(tampered_provenance
+    "${mparser_test_root}/tampered.provenance.json")
+file(WRITE "${tampered_provenance}"
+    "${tampered_provenance_json}\n")
+expect_provenance_rejection(
+    "Tampered release provenance"
+    "${first_archive}"
+    "${tampered_provenance}"
+    "builder contract changed")
 
 execute_process(
     COMMAND "${MPARSER_CMAKE_COMMAND}" -E tar tf "${first_archive}"
@@ -217,6 +350,9 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/jit-and-fallback.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/runtime-boundaries.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/migration-v1.0.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-process.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/cli-contract-v1.json"
@@ -294,4 +430,5 @@ message(STATUS
     "MParser release archive validated: "
     "${MPARSER_PACKAGE_BASENAME}${MPARSER_PACKAGE_EXTENSION}, "
     "SHA-256 ${first_hash}, reproducible fixed payload, "
+    "tamper-rejecting unsigned SLSA provenance, "
     "relocated C11/C++20/CLI consumers")
