@@ -505,9 +505,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
-      "evidence": ["release_documentation_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "release_archive_smoke"],
-      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/v1.0-documentation.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
-      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. Final candidate package confirmation on non-Windows release targets remains part of the shared cross-platform validation window."
+      "evidence": ["release_documentation_smoke", "release_candidate_readiness_smoke", "release_candidate_readiness_guard_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "release_archive_smoke"],
+      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/release-process.md", "docs/release-notes-v1.0.md", "docs/v1.0-documentation.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/validate_release_candidate_readiness.cmake", "tests/validate_release_candidate_readiness_guards.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
+      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. A separate candidate-readiness gate freezes the exact remaining gap set and rejects any open Must-have that implies framework work. Final candidate package confirmation on non-Windows release targets remains part of the shared cross-platform validation window."
     },
     {
       "id": "MATRIX-001",
@@ -759,9 +759,9 @@
       "priority": "must-have",
       "state": "in-progress",
       "target": "v1.0",
-      "framework_impact": "contract-extension",
+      "framework_impact": "none",
       "requirement": "Close deterministic frontend fuzz, malformed-bytecode, long-running invoke-many/session/adaptive, lifecycle, cancellation, resource, cache, allocation, load-unload, and concurrency evidence without weakening fallback or diagnostics.",
-      "exit_evidence": "Commit f8f85f9 adds deterministic frontend fuzz, mandatory untrusted-bytecode verification, and a named 8,012-invocation soak while retaining runtime, lifecycle, resource, cache, allocation, unload, and concurrency gates. Windows native 200/200, no-JIT 194/194, and release-package evidence passed; deferred cross-platform confirmation is tracked in docs/v1.0-reliability.md."
+      "exit_evidence": "Deterministic frontend fuzz, mandatory untrusted-bytecode verification, a named 8,012-invocation soak, lifecycle/resource/cache/allocation/unload/concurrency gates, and the local MSVC ASan configuration are implemented. The current Windows candidate passes native 204/204, no-JIT 198/198, and ASan no-JIT 199/199 with no sanitizer report; deferred cross-platform confirmation is tracked in docs/v1.0-reliability.md."
     },
     {
       "id": "G-PERFORMANCE-001",
@@ -781,7 +781,7 @@
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Publish a coherent user, build/install, support, CLI/API, JIT/fallback, runtime-boundary, extension-author, and pre-v1 migration manual set and prevent it from drifting from frozen contracts or package contents.",
-      "exit_evidence": "The documentation set, contract-derived smoke validator, production/machine samples, and installed/archive required-file lists are implemented locally. Windows native 202/202, no-JIT 196/196, and reproducible relocated package validation passed and are recorded in docs/v1.0-documentation.md. Final release-platform package confirmation is required to close the gap."
+      "exit_evidence": "The documentation set, contract-derived smoke validator, candidate-readiness blocker-set gate, production/machine samples, and installed/archive required-file lists are implemented locally. Windows native 204/204, no-JIT 198/198, and the four-test release label with reproducible relocated package validation passed and are recorded in docs/v1.0-documentation.md. Final release-platform package confirmation is required to close the gap."
     },
     {
       "id": "G-SANITIZER-001",
@@ -791,7 +791,7 @@
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Evaluate stable specialist sanitizer configurations without weakening the required Linux ASan/UBSan lane or treating optimization coverage as a correctness prerequisite.",
-      "exit_evidence": "The local Windows MSVC 19.44 ASan no-JIT preset stages the compiler-matched runtime for main and relocated-consumer tests and passes 197/197 with no sanitizer report. Linux TSan, macOS ARM64 ASan/UBSan, recurring-lane suitability, and final cross-platform confirmation remain deferred to the shared validation window."
+      "exit_evidence": "The local Windows MSVC 19.44 ASan no-JIT preset stages the compiler-matched runtime for main and relocated-consumer tests and passes 199/199 with no sanitizer report. Linux TSan, macOS ARM64 ASan/UBSan, recurring-lane suitability, and final cross-platform confirmation remain deferred to the shared validation window."
     },
     {
       "id": "G-JIT-001",

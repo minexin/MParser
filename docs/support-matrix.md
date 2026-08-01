@@ -75,7 +75,7 @@ value/result handles.
 
 | Platform | Release target | Native JIT | Current evidence note |
 | --- | --- | --- | --- |
-| Windows x64 | Yes | Yes | Current local native/no-JIT/package evidence plus MSVC ASan no-JIT 197/197 |
+| Windows x64 | Yes | Yes | Current local native/no-JIT/package evidence plus MSVC ASan no-JIT 199/199 |
 | Linux x64 | Yes | Yes | Final candidate rerun deferred to the shared cross-platform window |
 | Linux AArch64 | Yes | Yes | Cross-build/QEMU correctness lane; physical ARM required for performance |
 | macOS x64 | Yes | Yes | Final candidate rerun deferred to the shared cross-platform window |

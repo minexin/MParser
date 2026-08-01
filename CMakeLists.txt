@@ -602,6 +602,42 @@ set_tests_properties(release_documentation_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser release documentation validated: CLI 1.0, manuals, production sample, and mparser.result 1.x")
 
+add_test(NAME release_candidate_readiness_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMATRIX=${CMAKE_CURRENT_SOURCE_DIR}/docs/compatibility-matrix.json
+        -DPUBLIC_CONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.json
+        -DRELEASE_NOTES=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-notes-v1.0.md
+        -DROADMAP=${CMAKE_CURRENT_SOURCE_DIR}/docs/roadmap-v1.0.md
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
+        "-DEXPECTED_OPEN_MUST_HAVE=G-DOCUMENTATION-001:in-progress;G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress;G-RELIABILITY-001:in-progress"
+        "-DEXPECTED_OPEN_SHOULD_HAVE=G-JIT-001:open;G-SANITIZER-001:in-progress"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness.cmake)
+set_tests_properties(release_candidate_readiness_smoke PROPERTIES
+    LABELS "documentation;release"
+    PASS_REGULAR_EXPRESSION
+        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 4 bounded Must-have blockers, 2 scoped Should-have items")
+
+add_test(NAME release_candidate_readiness_guard_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_CMAKE_COMMAND=${CMAKE_COMMAND}
+        -DMPARSER_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness.cmake
+        -DMPARSER_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/release-candidate-readiness-guard
+        -DMATRIX=${CMAKE_CURRENT_SOURCE_DIR}/docs/compatibility-matrix.json
+        -DPUBLIC_CONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.json
+        -DRELEASE_NOTES=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-notes-v1.0.md
+        -DROADMAP=${CMAKE_CURRENT_SOURCE_DIR}/docs/roadmap-v1.0.md
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
+        "-DEXPECTED_OPEN_MUST_HAVE=G-DOCUMENTATION-001:in-progress;G-PERFORMANCE-001:in-progress;G-PROVENANCE-001:in-progress;G-RELIABILITY-001:in-progress"
+        "-DEXPECTED_OPEN_SHOULD_HAVE=G-JIT-001:open;G-SANITIZER-001:in-progress"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness_guards.cmake)
+set_tests_properties(release_candidate_readiness_guard_smoke PROPERTIES
+    LABELS "documentation;release"
+    PASS_REGULAR_EXPRESSION
+        "MParser release candidate readiness guards validated: Must-have/Should-have impact and blocker-set drift rejected")
+
 add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
 target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)
 add_test(NAME nd_array_smoke COMMAND nd_array_smoke_tests)

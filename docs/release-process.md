@@ -110,13 +110,24 @@ Before publication:
 
 1. Require a clean source checkout at the intended release commit and tag.
 2. Run native, no-JIT, sanitizer, installed-consumer, and release-archive
-   gates applicable to the platform.
+   gates applicable to the platform. In a packaging build,
+   `ctest -L release --output-on-failure` runs the documentation,
+   candidate-readiness, negative readiness-guard, and archive gates together.
 3. Regenerate the package with `mparser_release_package`.
 4. Verify both lines in `SHA256SUMS`.
 5. Verify the provenance subject digest, source revision, contract digests,
    builder/build type, platform, compiler, and build parameters.
 6. Attach publisher authentication using the selected release signing or
    hosted provenance mechanism.
+
+The candidate-readiness gate requires the remaining Must-have set to be
+exactly provenance authentication, cross-platform reliability evidence,
+cross-platform performance evidence, and cross-platform package/documentation
+confirmation. Every one must have `framework_impact: none`. It also confines
+the two open Should-have items to specialist sanitizer evaluation and guarded
+JIT breadth, each with only `none` or `additive` framework impact. Negative
+fixtures prove that Must-have/Should-have impact and blocker-set drift are
+rejected. Any additional or reclassified gap fails the release label.
 
 A signed DSSE/Sigstore or hosted-platform attestation may wrap or supersede
 the local unsigned statement for publication. Its authenticated builder

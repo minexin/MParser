@@ -578,7 +578,7 @@ is green. It refines, rather than replaces, the four work areas above.
    index, user/build/support/CLI/JIT/runtime/migration guides, executable
    CLI-contract-to-help/reference validation, documented human and machine
    samples, and installed/archive required-file gates are present. Windows
-   native 202/202, no-JIT 196/196, and reproducible relocated package
+   native 204/204, no-JIT 198/198, and reproducible relocated package
    validation passed; evidence is recorded in
    [v1.0-documentation.md](v1.0-documentation.md). Shared cross-platform
    package confirmation remains deferred to the final validation window.
@@ -590,7 +590,7 @@ is green. It refines, rather than replaces, the four work areas above.
    **Status: Windows local branch complete.** The checked-in
    `windows-msvc-asan-nojit` preset preserves normal C++ exception flags,
    disables incremental linking, stages the compiler-matched dynamic ASan
-   runtime for main and relocated-consumer tests, and passed 197/197 with
+   runtime for main and relocated-consumer tests, and passed 199/199 with
    MSVC 19.44. Linux TSan, macOS ARM64 sanitizer, and conversion of any
    stable branch into recurring CI remain deferred to the shared
    cross-platform validation window.
@@ -607,7 +607,8 @@ is green. It refines, rather than replaces, the four work areas above.
    specification, candidate 1.0 notes, and v1.x roadmap are present. Version
    `1.0.0`, release tag/snapshots, authenticated publisher or hosted
    provenance, and all-platform artifacts remain gated on the shared
-   validation window.
+   validation window. `release_candidate_readiness_smoke` freezes that exact
+   remaining blocker set and rejects any open Must-have with framework impact.
 
 ### v1.0 Scope Controls
 

@@ -71,9 +71,9 @@ boundary tests.
 
 Windows local evidence currently includes:
 
-- native Release: **202/202**;
-- no-JIT Release: **196/196**;
-- MSVC AddressSanitizer no-JIT: **197/197** with no sanitizer report;
+- native Release: **204/204**;
+- no-JIT Release: **198/198**;
+- MSVC AddressSanitizer no-JIT: **199/199** with no sanitizer report;
 - reproducible fixed-payload ZIP generation, relocation, independent C11 and
   C++20 consumers, and unpacked CLI protocol execution.
 
@@ -86,6 +86,10 @@ in-toto Statement v1 using the SLSA Provenance v1 predicate, and
 audit metadata, not publisher authentication and not a SLSA level claim.
 Final publication must attach the selected signing or hosted-provenance
 identity. See [v1 Release Process](release-process.md).
+
+The release-labeled candidate-readiness gate also fixes the remaining
+Must-have set to four external evidence items and rejects any newly introduced
+framework-impacting blocker before publication.
 
 ## Compatibility And Migration
 

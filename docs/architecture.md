@@ -1617,6 +1617,14 @@ requires a clean worktree before CPack runs. This does not claim reproducible
 compilation, publisher identity, or a SLSA level; authenticated publication
 remains a release operation. See [release-process.md](release-process.md).
 
+A CMake-only candidate-readiness gate cross-checks the engine version, frozen
+public-contract state, release-note status, roadmap status, and the exact open
+gap set. It rejects an unexpected Must-have or any remaining Must-have with
+non-`none` framework impact, keeping the final validation window focused on
+external evidence rather than new runtime architecture. Isolated mutated
+matrix fixtures prove Must-have/Should-have framework-impact and blocker-set
+drift are denied.
+
 The v1.0 performance gate is implemented as a non-installed engineering
 executable rather than another public runtime mode. It calls `Parser`,
 `CompiledModule`, forced bytecode/portable/native backends, and the bounded
