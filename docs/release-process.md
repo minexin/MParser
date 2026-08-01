@@ -121,11 +121,11 @@ Before publication:
    hosted provenance mechanism.
 
 The candidate-readiness gate requires the remaining Must-have set to be
-exactly provenance authentication, cross-platform reliability evidence,
-cross-platform performance evidence, and cross-platform package/documentation
-confirmation. Every one must have `framework_impact: none`. It also confines
-the only open Should-have to specialist sanitizer evaluation and records
-guarded JIT breadth as an additive Should-have explicitly deferred to v1.x.
+exactly cross-platform/physical-ARM performance characterization and
+authenticated provenance. Both must have `framework_impact: none`. It also
+confines the only open Should-have to specialist sanitizer evaluation and
+records guarded JIT breadth as an additive Should-have explicitly deferred to
+v1.x.
 The measured [v1.0 JIT scope decision](v1.0-jit-scope-decision.md) and its
 fixed-report validator preserve that boundary. Negative fixtures prove that
 Must-have/Should-have impact, deferred-JIT reactivation, and blocker-set drift

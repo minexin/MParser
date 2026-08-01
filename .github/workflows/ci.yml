@@ -24,18 +24,32 @@ jobs:
           cmake -S . -B build-ci -A x64
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+          -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
         run: cmake --build build-ci --config Release --parallel
       - name: Test
         run: ctest --test-dir build-ci -C Release --output-on-failure
+      - name: Collect native performance evidence
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: >-
+          cmake --build build-ci --config Release
+          --target mparser_performance_evidence
       - name: Build release archive and checksums
         run: cmake --build build-ci --config Release --target mparser_release_package
       - name: Upload Windows release archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mparser-0.90.0-windows-x86_64
           path: build-ci/packages/*
           if-no-files-found: error
+      - name: Upload Windows performance evidence
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v7
+        with:
+          name: mparser-performance-0.90.0-windows-x86_64
+          path: build-ci/performance-evidence/*.json
+          if-no-files-found: error
+          retention-days: 90
 
   linux-x64:
     name: Linux x64 / GCC / SLJIT
@@ -49,18 +63,32 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+          -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
         run: cmake --build build-ci --parallel
       - name: Test
         run: ctest --test-dir build-ci --output-on-failure
+      - name: Collect native performance evidence
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: >-
+          cmake --build build-ci
+          --target mparser_performance_evidence
       - name: Build release archive and checksums
         run: cmake --build build-ci --target mparser_release_package
       - name: Upload Linux x64 release archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mparser-0.90.0-linux-x86_64
           path: build-ci/packages/*
           if-no-files-found: error
+      - name: Upload Linux x64 performance evidence
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v7
+        with:
+          name: mparser-performance-0.90.0-linux-x86_64
+          path: build-ci/performance-evidence/*.json
+          if-no-files-found: error
+          retention-days: 90
 
   linux-sanitizers:
     name: Linux x64 / Clang / ASan + UBSan
@@ -111,10 +139,16 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+          -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
         run: cmake --build build-ci --parallel
       - name: Test
         run: ctest --test-dir build-ci --output-on-failure
+      - name: Collect native performance evidence
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: >-
+          cmake --build build-ci
+          --target mparser_performance_evidence
       - name: Build and relocate production SDK
         run: |
           cmake -S . -B build-sdk \
@@ -150,11 +184,19 @@ jobs:
       - name: Build release archive and checksums
         run: cmake --build build-ci --target mparser_release_package
       - name: Upload macOS release archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mparser-0.90.0-macos-${{ matrix.arch }}
           path: build-ci/packages/*
           if-no-files-found: error
+      - name: Upload macOS performance evidence
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v7
+        with:
+          name: mparser-performance-0.90.0-macos-${{ matrix.arch }}
+          path: build-ci/performance-evidence/*.json
+          if-no-files-found: error
+          retention-days: 90
 
   linux-aarch64:
     name: Linux AArch64 / GCC cross / QEMU
@@ -240,7 +282,7 @@ jobs:
             '"protocol":{"name":"mparser.result","major":1,"minor":0}' \
             "$RUNNER_TEMP/mparser-arm64-result.json"
       - name: Upload Linux AArch64 release archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mparser-0.90.0-linux-aarch64
           path: build-arm64-jit/packages/*

@@ -377,9 +377,10 @@ snapshot, and sized initializers preserve a caller-provided prefix without
 writing a future library `sizeof` over it.
 
 `docs/versioning-and-deprecation.md` now defines the common v1 evolution
-policy. Remaining v1.0 work concerns broader reliability evidence,
-performance/resource baselines, documentation, authenticated publication,
-and final cross-platform packaging rather than redesigning this ABI.
+policy. Cross-platform reliability, documentation, and candidate packaging
+are confirmed. Remaining v1.0 work concerns performance/resource evidence,
+authenticated publication, and the final version/tag operation rather than
+redesigning this ABI.
 
 The v1.0 candidate deliberately excludes a stable external native callback
 ABI and zero-copy borrowed input arrays. Their future additive rules are

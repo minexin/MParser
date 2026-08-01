@@ -1643,8 +1643,11 @@ Raw timing and allocation samples remain in every report; source and binary
 SHA-256 values bind evidence to exact inputs. A Draft-7 schema plus semantic
 validator recomputes statistics and checks backend/result/cache invariants,
 while CMake independently recomputes the hashes, all without freezing
-host-specific timing thresholds. Cross-compilation emulator prefixes are
-propagated to fresh CLI children, and emulated reports are marked as functional
+host-specific timing thresholds. The native-only
+`mparser_performance_evidence` target generates and validates the scalar and
+dense-array release reports with explicit source revision, OS, architecture,
+and `emulated=false` checks. Cross-compilation emulator prefixes remain
+available to contract tests, but emulated reports are marked as functional
 evidence rather than native performance evidence. See
 [v1.0-performance-baseline.md](v1.0-performance-baseline.md).
 
@@ -1658,13 +1661,13 @@ the broader lifecycle, fuzz, bytecode, soak, and embedding regressions run.
 
 After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
 embedding-framework redesign unless release evidence proves a correctness
-defect. Work now concentrates on contract freeze, reliability and sanitizer
-evidence, performance/resource baselines, documentation, packaging, and
-authenticated publication. The measured v1.0 JIT scope audit found no required
-new specialization and defers broader typed work to v1.x; any later addition
-still requires representative evidence. Long-tail functions, toolboxes, disk
-caches, external callback ABIs, zero-copy borrowed arrays, LLVM/OSR, and full
-MATLAB compatibility remain v1.x or Post-v1.0 work.
+defect. Reliability, documentation, and candidate packaging are closed; work
+now concentrates on performance/resource characterization, authenticated
+publication, and bounded sanitizer evaluation. The measured v1.0 JIT scope
+audit found no required new specialization and defers broader typed work to
+v1.x; any later addition still requires representative evidence. Long-tail
+functions, toolboxes, disk caches, external callback ABIs, zero-copy borrowed
+arrays, LLVM/OSR, and full MATLAB compatibility remain v1.x or Post-v1.0 work.
 
 The release gates, compatibility-matrix requirement, builtin-extension
 architecture, embedding boundary, platform matrix, and explicit v1.0

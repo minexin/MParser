@@ -33,6 +33,11 @@ set(MPARSER_RELEASE_SOURCE_DATE_EPOCH "1767225600" CACHE STRING
     "UTC epoch used to normalize release archive metadata")
 set(MPARSER_SLJIT_SOURCE_DIR "" CACHE PATH
     "SLJIT source override; empty uses third_party/sljit")
+set(MPARSER_PERFORMANCE_EVIDENCE_REVISION "working-tree" CACHE STRING
+    "Source revision recorded by the native performance evidence target")
+set(MPARSER_PERFORMANCE_EVIDENCE_OUTPUT_DIR
+    "${CMAKE_BINARY_DIR}/performance-evidence" CACHE PATH
+    "Output directory for native performance evidence reports")
 
 if(MPARSER_ENABLE_MSVC_ASAN)
     if(NOT MSVC)
@@ -1675,6 +1680,70 @@ set_tests_properties(performance_baseline_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "performance baseline protocol 1.0 validated"
     TIMEOUT 180)
+
+if(MPARSER_ENABLE_NATIVE_JIT AND NOT CMAKE_CROSSCOMPILING)
+    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}"
+        _mparser_performance_processor)
+    if(_mparser_performance_processor MATCHES
+       "^(amd64|x86_64|x64)$")
+        set(_mparser_performance_architecture "x86_64")
+    elseif(_mparser_performance_processor MATCHES
+           "^(aarch64|arm64)$")
+        set(_mparser_performance_architecture "aarch64")
+    elseif(_mparser_performance_processor MATCHES "^(x86|i[3-6]86)$")
+        set(_mparser_performance_architecture "x86")
+    elseif(_mparser_performance_processor MATCHES "^arm")
+        set(_mparser_performance_architecture "arm")
+    else()
+        set(_mparser_performance_architecture "unknown")
+    endif()
+
+    set(_mparser_performance_evidence_command
+        "${CMAKE_COMMAND}"
+        "-DMPARSER_BASELINE_TOOL=$<TARGET_FILE:mparser_performance_baseline>"
+        "-DMPARSER_CLI=$<TARGET_FILE:mparser>"
+        "-DMPARSER_C_API_LIBRARY=$<TARGET_FILE:mparser_c_api>"
+        "-DMPARSER_SCHEMA_VALIDATOR=$<TARGET_FILE:performance_baseline_schema_smoke_tests>"
+        "-DMPARSER_SCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/performance-baseline-v1.schema.json"
+        "-DMPARSER_SCALAR_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_scalar_loop.m"
+        "-DMPARSER_ARRAY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_array_workload.m"
+        "-DMPARSER_OUTPUT_DIR=${MPARSER_PERFORMANCE_EVIDENCE_OUTPUT_DIR}"
+        "-DMPARSER_REVISION=${MPARSER_PERFORMANCE_EVIDENCE_REVISION}"
+        "-DMPARSER_EXPECTED_OS=${CMAKE_SYSTEM_NAME}"
+        "-DMPARSER_EXPECTED_ARCHITECTURE=${_mparser_performance_architecture}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/collect_performance_evidence.cmake")
+
+    add_custom_target(mparser_performance_evidence
+        COMMAND ${_mparser_performance_evidence_command}
+        DEPENDS
+            mparser_performance_baseline
+            performance_baseline_schema_smoke_tests
+            mparser
+            mparser_c_api
+        COMMENT "Collecting validated native performance evidence"
+        VERBATIM)
+
+    add_test(NAME performance_evidence_contract_smoke
+        COMMAND "${CMAKE_COMMAND}"
+            "-DMPARSER_BASELINE_TOOL=$<TARGET_FILE:mparser_performance_baseline>"
+            "-DMPARSER_CLI=$<TARGET_FILE:mparser>"
+            "-DMPARSER_C_API_LIBRARY=$<TARGET_FILE:mparser_c_api>"
+            "-DMPARSER_SCHEMA_VALIDATOR=$<TARGET_FILE:performance_baseline_schema_smoke_tests>"
+            "-DMPARSER_SCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/performance-baseline-v1.schema.json"
+            "-DMPARSER_SCALAR_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/performance_baseline_quick.m"
+            "-DMPARSER_ARRAY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/performance_baseline_quick.m"
+            "-DMPARSER_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/performance-evidence-smoke"
+            -DMPARSER_REVISION=ctest-working-tree
+            "-DMPARSER_EXPECTED_OS=${CMAKE_SYSTEM_NAME}"
+            "-DMPARSER_EXPECTED_ARCHITECTURE=${_mparser_performance_architecture}"
+            -DMPARSER_QUICK=ON
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/collect_performance_evidence.cmake")
+    set_tests_properties(performance_evidence_contract_smoke PROPERTIES
+        LABELS performance
+        PASS_REGULAR_EXPRESSION
+            "performance evidence collected: 2 native reports"
+        TIMEOUT 180)
+endif()
 
 add_executable(mparser_embedding_execution_demo
     samples/embedding_execution_demo.cpp)

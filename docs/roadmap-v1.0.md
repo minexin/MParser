@@ -565,17 +565,18 @@ is green. It refines, rather than replaces, the four work areas above.
    cold/warm execution, peak memory, allocations, binary size, and cache
    boundaries. Every result records hardware, OS, compiler, build type,
    backend, workload, and the exact timing boundary.
-   **Status: local candidate complete for implementation commit `da4b010`.**
-   The
+   **Status: cross-platform evidence collection in progress.** The
    non-installed collector, protocol-1.0 Draft-7 schema, semantic validator,
-   quick eligible contract workload, and representative scalar/array
-   workloads are defined in
+   quick eligible contract workload, representative scalar/array workloads,
+   and native-only `mparser_performance_evidence` target are defined in
    [v1.0-performance-baseline.md](v1.0-performance-baseline.md). Three
    SHA-256-bound Windows x86-64 reports, native 201/201 and no-JIT 195/195
    regression, a testing-disabled SDK build, and unpacked package validation
    are indexed under `docs/baselines/v1.0`. Functional cross-platform
-   confirmation passed in Actions run `30684969401`; comparable cross-platform
-   reports and physical-ARM measurements remain open performance evidence. The
+   confirmation passed in Actions run `30684969401`. Native Windows, Linux,
+   macOS x64, and physical macOS ARM64 CI lanes now collect and upload report
+   pairs with revision/platform/hash validation; acceptance and indexing of
+   the resulting reports remain open performance evidence. The
    fixed reports also support the
    [v1.0 JIT scope decision](v1.0-jit-scope-decision.md): broader typed/JIT
    coverage is deferred to v1.x rather than added without a demonstrated

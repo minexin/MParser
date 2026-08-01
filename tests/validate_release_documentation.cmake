@@ -59,6 +59,13 @@ file(READ "${PROJECT_ROOT}/docs/cli-reference.md" cli_reference)
 file(READ "${PROJECT_ROOT}/docs/jit-and-fallback.md" jit_guide)
 file(READ "${PROJECT_ROOT}/docs/runtime-boundaries.md" runtime_guide)
 file(READ "${PROJECT_ROOT}/docs/migration-v1.0.md" migration_guide)
+file(READ "${PROJECT_ROOT}/docs/release-process.md" release_process)
+file(READ "${PROJECT_ROOT}/docs/embedding-c-api.md" embedding_c_api)
+file(READ "${PROJECT_ROOT}/docs/architecture.md" architecture)
+file(READ "${PROJECT_ROOT}/docs/compatibility-matrix.json"
+    compatibility_matrix)
+file(READ "${PROJECT_ROOT}/docs/v1.0-performance-baseline.md"
+    performance_guide)
 file(READ "${PROJECT_ROOT}/docs/v1.0-cross-platform-validation.md"
     cross_platform_validation)
 file(READ "${PROJECT_ROOT}/README.md" project_readme)
@@ -109,6 +116,39 @@ foreach(forbidden_ci_path IN ITEMS
     reject_text(ci_workflow "${forbidden_ci_path}"
         "release CI source-tree cleanliness policy")
 endforeach()
+
+foreach(required_performance_ci_text IN ITEMS
+        "MPARSER_PERFORMANCE_EVIDENCE_REVISION="
+        "mparser_performance_evidence"
+        "build-ci/performance-evidence/*.json"
+        "mparser-performance-0.90.0-windows-x86_64"
+        "mparser-performance-0.90.0-linux-x86_64"
+        "mparser-performance-0.90.0-macos-"
+        "actions/upload-artifact@v7")
+    require_text(ci_workflow "${required_performance_ci_text}"
+        "native performance evidence CI policy")
+endforeach()
+reject_text(ci_workflow "actions/upload-artifact@v4"
+    "Node 24 artifact upload policy")
+
+require_text(performance_guide "mparser_performance_evidence"
+    "performance evidence guide")
+require_text(performance_guide "emulated=false"
+    "performance evidence native-hardware boundary")
+require_text(release_process
+    "exactly cross-platform/physical-ARM performance characterization and"
+    "release readiness blocker boundary")
+reject_text(release_process "cross-platform reliability evidence"
+    "closed reliability documentation")
+reject_text(release_process "cross-platform package/documentation"
+    "closed package/documentation evidence")
+reject_text(compatibility_matrix "Final cross-platform archives"
+    "closed release-package evidence")
+reject_text(embedding_c_api "broader reliability evidence"
+    "closed embedding reliability evidence")
+reject_text(architecture
+    "reliability and sanitizer evidence, performance/resource baselines, documentation, packaging"
+    "closed architecture evidence")
 
 require_text(cross_platform_validation "30684969401"
     "cross-platform candidate run identity")

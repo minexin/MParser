@@ -57,6 +57,9 @@ Local release evidence for the same implementation:
 The archive hash is recorded here because this source-only index is not part of
 the archive payload. Functional cross-platform validation later passed at
 revision `f34d8d9` in Actions run `30684969401`, but no comparable platform
-reports were committed by that workflow. Cross-platform reports and physical
-ARM hardware measurements remain explicit performance work. Emulated AArch64
-results are functional evidence only.
+reports were committed by that workflow. The subsequent native-only
+`mparser_performance_evidence` target and CI upload steps make those reports
+repeatable on Windows, Linux, macOS x64, and physical macOS ARM64. This index
+will accept them only after their source revision, hardware labels, hashes,
+schema semantics, and successful full workflow run are audited. Emulated
+AArch64 results remain functional evidence only.
