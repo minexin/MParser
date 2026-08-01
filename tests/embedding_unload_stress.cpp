@@ -1,3 +1,4 @@
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -21,8 +22,9 @@ using VersionFunction = std::uint32_t (*)();
 
 template <typename Function>
 Function loadSymbol(HMODULE library, const char* name) {
-    return reinterpret_cast<Function>(
-        GetProcAddress(library, name));
+    const FARPROC symbol = GetProcAddress(library, name);
+    static_assert(sizeof(Function) == sizeof(symbol));
+    return std::bit_cast<Function>(symbol);
 }
 
 void runOneLoad(const std::filesystem::path& libraryPath) {

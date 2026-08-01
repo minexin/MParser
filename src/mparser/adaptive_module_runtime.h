@@ -15,7 +15,7 @@ struct AdaptiveModuleRuntimeOptions {
     size_t hotLoopThreshold = 10;
     size_t fallbackInvalidationThreshold = 3;
     bool preserveWorkspace = false;
-    std::vector<RuntimeVariable> initialWorkspace;
+    std::vector<RuntimeVariable> initialWorkspace = {};
     TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
 };
 
