@@ -2,6 +2,7 @@
 #include "mparser/lexer.h"
 #include "mparser/native_scalar_jit.h"
 #include "mparser/parser.h"
+#include "performance_environment.h"
 
 #include <nlohmann/json.hpp>
 
@@ -1159,22 +1160,7 @@ std::string cpuModel() {
     return "unknown";
 #else
     std::ifstream input("/proc/cpuinfo");
-    std::string line;
-    static constexpr std::string_view keys[]{
-        "model name", "Model", "Hardware", "Processor"};
-    while (std::getline(input, line)) {
-        const auto colon = line.find(':');
-        if (colon == std::string::npos) {
-            continue;
-        }
-        const std::string key = trim(line.substr(0, colon));
-        for (const auto candidate : keys) {
-            if (key == candidate) {
-                return trim(line.substr(colon + 1));
-            }
-        }
-    }
-    return "unknown";
+    return mparser::performance::parseLinuxCpuModel(input);
 #endif
 }
 

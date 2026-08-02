@@ -90,6 +90,8 @@ function(collect_performance_report report_name workload_id source_path)
     string(JSON reported_os GET "${report_json}" environment os)
     string(JSON reported_architecture GET
         "${report_json}" environment architecture)
+    string(JSON reported_cpu_model GET
+        "${report_json}" environment cpu_model)
     string(JSON reported_emulated GET
         "${report_json}" environment emulated)
     string(JSON native_available GET
@@ -99,6 +101,7 @@ function(collect_performance_report report_name workload_id source_path)
        NOT reported_os STREQUAL MPARSER_EXPECTED_OS OR
        NOT reported_architecture STREQUAL
            MPARSER_EXPECTED_ARCHITECTURE OR
+       reported_cpu_model STREQUAL "unknown" OR
        reported_emulated OR
        NOT native_available)
         message(FATAL_ERROR
@@ -107,6 +110,7 @@ function(collect_performance_report report_name workload_id source_path)
             "workload: ${reported_workload}\n"
             "OS: ${reported_os}\n"
             "architecture: ${reported_architecture}\n"
+            "CPU model: ${reported_cpu_model}\n"
             "emulated: ${reported_emulated}\n"
             "native JIT: ${native_available}")
     endif()

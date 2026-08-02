@@ -368,7 +368,8 @@ endif()
 add_subdirectory(third_party/json-schema-validator)
 
 add_executable(mparser_performance_baseline
-    tools/performance_baseline.cpp)
+    tools/performance_baseline.cpp
+    tools/performance_environment.cpp)
 target_link_libraries(mparser_performance_baseline PRIVATE
     mparser_core)
 target_include_directories(mparser_performance_baseline PRIVATE
@@ -1664,6 +1665,17 @@ add_executable(performance_baseline_schema_smoke_tests
     tests/performance_baseline_schema_smoke.cpp)
 target_link_libraries(performance_baseline_schema_smoke_tests PRIVATE
     mparser_json_schema_validator)
+add_executable(performance_environment_smoke_tests
+    tests/performance_environment_smoke.cpp
+    tools/performance_environment.cpp)
+target_include_directories(performance_environment_smoke_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+add_test(NAME performance_environment_smoke
+    COMMAND performance_environment_smoke_tests)
+set_tests_properties(performance_environment_smoke PROPERTIES
+    LABELS performance
+    PASS_REGULAR_EXPRESSION
+        "MParser performance environment validated")
 add_test(NAME performance_baseline_smoke
     COMMAND ${CMAKE_COMMAND}
         -DMPARSER_BASELINE_TOOL=$<TARGET_FILE:mparser_performance_baseline>

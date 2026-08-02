@@ -3,10 +3,12 @@
 Current release candidate: v0.90.0. The v1 public-contract candidate,
 reliability gate, and release-documentation gate are cross-platform confirmed
 at revision `f34d8d9` by Actions run `30684969401`; local Windows MSVC ASan
-no-JIT also passes 199/199. Actions run `30691616946` reconfirmed all six jobs
-at revision `85685b8` and supplied accepted Windows/Linux/macOS x64 plus native
-macOS ARM64 performance evidence. The measured JIT scope audit defers broader
-specialization to v1.x without changing the guarded v1.0 fallback contract.
+no-JIT now passes 201/201. Actions run `30691616946` supplied accepted
+Windows/Linux/macOS x64 plus native macOS ARM64 performance evidence. Actions
+run `30693868656` then added a successful native Linux ARM64 full-suite lane
+alongside the existing AArch64 cross/QEMU package lane. The measured JIT scope
+audit defers broader specialization to v1.x without changing the guarded v1.0
+fallback contract.
 Authenticated release provenance is the remaining Must-have; Linux TSan and
 macOS sanitizer remain bounded Should-have evaluations.
 Release documentation starts at

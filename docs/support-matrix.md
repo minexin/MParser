@@ -77,7 +77,7 @@ value/result handles.
 | --- | --- | --- | --- |
 | Windows x64 | Yes | Yes | Full native suite and package/upload passed in run `30684969401`; local no-JIT 198/198 and MSVC ASan no-JIT 199/199 also pass |
 | Linux x64 | Yes | Yes | Full GCC suite/package/upload and Clang ASan/UBSan/LSan suite passed in run `30684969401` |
-| Linux AArch64 | Yes | Yes | Native full-suite/performance CI uses `ubuntu-24.04-arm`; the independent cross-build/QEMU lane retains portable fallback, installed-consumer, package/unpacked-SDK, and sample coverage |
+| Linux AArch64 | Yes | Yes | Native `ubuntu-24.04-arm` full-suite CI and the independent cross-build/QEMU package/fallback lane passed together in run `30693868656`; hardware-labelled performance reports are being refreshed after the first runner exposed an absent model-name field |
 | macOS x64 | Yes | Yes | Full suite, relocated production SDK consumers, architecture/version checks, package, and upload passed in run `30684969401` |
 | macOS ARM64 | Yes | Yes | Full suite, relocated production SDK consumers, native architecture/version checks, package, and upload passed in run `30684969401` |
 

@@ -217,6 +217,8 @@ require_text(performance_guide "emulated=false"
     "performance evidence native-hardware boundary")
 require_text(performance_guide "cross_platform_performance_evidence_smoke"
     "accepted cross-platform performance evidence gate")
+require_text(performance_guide "performance_environment_smoke"
+    "CPU environment identity evidence gate")
 require_text(release_process
     "exactly authenticated provenance with"
     "release readiness blocker boundary")

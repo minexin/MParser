@@ -558,7 +558,10 @@ is green. It refines, rather than replaces, the four work areas above.
    **Status: complete.** Revision `f34d8d9` passed all six jobs in Actions run
    `30684969401`, including Linux Clang ASan/UBSan/LeakSanitizer, Windows and
    both macOS full suites, and AArch64 native/portable QEMU evidence. The lane
-   boundary is frozen in
+   matrix was expanded without removing that cross-build evidence: revision
+   `d69f9a8` passed the new native Linux ARM64 full-suite job together with all
+   six existing execution jobs in Actions run `30693868656`. The lane boundary
+   is frozen in
    [v1.0-cross-platform-validation.md](v1.0-cross-platform-validation.md).
 4. **Must-have: establish performance and resource baselines.** Measure parse
    and compile time, cold start, bytecode, portable typed execution, native
