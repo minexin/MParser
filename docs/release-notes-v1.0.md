@@ -1,9 +1,10 @@
 # MParser 1.0.0 Release Notes
 
 Publication status: **release candidate documentation**. The source project
-remains version `0.90.1` until authenticated-provenance and final publication
-gates close and the public artifacts are generated from the frozen release
-commit.
+remains version `0.90.1` until the final version/tag and publication gates
+close and the public artifacts are generated from the frozen release commit.
+Candidate authenticated-provenance evidence is already closed by tag run
+`30743014345`.
 
 MParser 1.0.0 defines a stable, documented, embeddable, and sustainably
 extensible MATLAB-like subset runtime. It does not claim complete MATLAB,
@@ -96,16 +97,19 @@ Release packaging emits the archive, its CPack `.sha256` sidecar, an unsigned
 in-toto Statement v1 using the SLSA Provenance v1 predicate, and
 `SHA256SUMS` binding both the archive and statement. The local statement is
 audit metadata, not publisher authentication and not a SLSA level claim.
-A default-off manual-tag Sigstore candidate revalidates the five platform
-package sets, signs each archive and statement, and verifies the exact workflow
-and tag identity. Final publication still requires a real authenticated run.
+A default-off manual-tag Sigstore job revalidated the five platform package
+sets from tag `v0.90.1`, signed each archive and statement, and verified the
+exact workflow and tag identity in successful Actions run `30743014345`.
+The retained evidence and independent ten-subject verification are recorded
+under `docs/release-evidence/v0.90.1-authentication`. Final publication still
+requires the final `1.0.0` version/tag operation and release-page assembly.
 See [v1 Release Process](release-process.md) and
 [Release Authentication](release-authentication.md).
 
-The release-labeled candidate-readiness gate also fixes the remaining
-Must-have set to two external evidence items, performance and authenticated
-provenance, and rejects any newly introduced framework-impacting blocker before
-publication.
+The release-labeled candidate-readiness gate now requires zero open Must-have
+gaps and rejects any newly introduced or framework-impacting blocker before
+publication. Performance and authenticated-provenance evidence are both
+closed and machine-validated.
 
 ## Compatibility And Migration
 

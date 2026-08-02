@@ -1,0 +1,174 @@
+{
+  "format": {
+    "name": "mparser.release-authentication-evidence",
+    "major": 1,
+    "minor": 0
+  },
+  "candidate": {
+    "version": "0.90.1",
+    "tag": "v0.90.1",
+    "repository": "https://github.com/minexin/MParser",
+    "revision": "5763b4752657c54ee5baeaf645a4249b4c5cc8ba"
+  },
+  "workflow": {
+    "path": ".github/workflows/ci.yml",
+    "event": "workflow_dispatch",
+    "authenticate_release": true,
+    "run_id": 30743014345,
+    "run_attempt": 1,
+    "url": "https://github.com/minexin/MParser/actions/runs/30743014345",
+    "created_at": "2026-08-02T10:04:21Z",
+    "completed_at": "2026-08-02T10:24:34Z",
+    "conclusion": "success",
+    "execution_jobs": [
+      91483748138,
+      91483748140,
+      91483748154,
+      91483748158,
+      91483748168,
+      91483748179,
+      91483748185
+    ],
+    "authentication_job": {
+      "id": 91485433297,
+      "url": "https://github.com/minexin/MParser/actions/runs/30743014345/job/91485433297",
+      "started_at": "2026-08-02T10:24:11Z",
+      "completed_at": "2026-08-02T10:24:33Z",
+      "conclusion": "success"
+    }
+  },
+  "signing": {
+    "identity": "https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v0.90.1",
+    "oidc_issuer": "https://token.actions.githubusercontent.com",
+    "cosign_installer_commit": "6f9f17788090df1f26f669e9d70d6ae9567deba6",
+    "cosign_version": "3.0.6",
+    "bundle_media_type": "application/vnd.dev.sigstore.bundle.v0.3+json",
+    "signed_subjects": 10,
+    "workflow_verified_subjects": 10
+  },
+  "actions_artifact": {
+    "id": 8832142356,
+    "name": "mparser-0.90.1-authenticated-v0.90.1",
+    "size_bytes": 14858931,
+    "download_sha256": "7460347da20b7b0a4b4cf041c965485c09d7622c7e349c5459f480daed2460d0",
+    "retention_days": 90,
+    "exact_platform_directories": 5,
+    "exact_files": 30
+  },
+  "independent_verification": {
+    "date": "2026-08-02",
+    "package_input_validator": "tests/validate_release_authentication_input.cmake",
+    "validated_package_inputs": 5,
+    "verifier": "sigstore-python",
+    "verifier_version": "4.5.0",
+    "mode": "offline-bundle",
+    "verified_subjects": 10
+  },
+  "platforms": [
+    {
+      "platform": "linux-aarch64",
+      "directory": "mparser-0.90.1-linux-aarch64",
+      "archive": {
+        "name": "mparser-0.90.1-linux-aarch64.tar.gz",
+        "size_bytes": 3095533,
+        "sha256": "7a6919e2376197b760be279b07232c90bedffb2bb0a9819608905c9f4d12b79e",
+        "digest_base64": "emkZ4jdhl7dgviebByMskL7f+yuwqYGWCJBcn00St54=",
+        "checked_in": false,
+        "checksum_file_sha256": "214b6ef9b70ca9f1ebdc6d7eb1980e9252e6b173c5bce64aa39a2032dede4514",
+        "bundle_sha256": "8c9b428a13d9548167c4989798a1fea8a5fb541c1d61fb3be05c79ff1d43cf52"
+      },
+      "provenance": {
+        "name": "mparser-0.90.1-linux-aarch64.tar.gz.provenance.json",
+        "size_bytes": 3969,
+        "sha256": "27e63c6f9f9d2c8b56e2d713bd984e932175194b6efd8fd5cf084174668ab17c",
+        "digest_base64": "J+Y8b5+dLItW4tcTvZhOkyF1GUtu/Y/VzwhBdGaKsXw=",
+        "bundle_sha256": "6582fcb66ba16263ea1cf3a90345906dbacafc91576ba388b902a4a106b83f5b"
+      },
+      "checksums_sha256": "92130d7d207669f872f23147bb069cbb1c04d3d86d0ff9ddbf271d7c259fcba0"
+    },
+    {
+      "platform": "linux-x86_64",
+      "directory": "mparser-0.90.1-linux-x86_64",
+      "archive": {
+        "name": "mparser-0.90.1-linux-x86_64.tar.gz",
+        "size_bytes": 3525875,
+        "sha256": "6acfabbb4bc83f86162e95260e0567b6843caeefd83d544629bfa937f7ab6572",
+        "digest_base64": "as+ru0vIP4YWLpUmDgVntoQ8ru/YPVRGKb+pN/erZXI=",
+        "checked_in": false,
+        "checksum_file_sha256": "4261e5b5c76899cda65dd2bfee3aa333d8465c77212bc36fadb59c8403ba6ffa",
+        "bundle_sha256": "30ff36f89700928367fe70786aaff51d72d18ee23bad0a7691ccb9b6c74ef8a2"
+      },
+      "provenance": {
+        "name": "mparser-0.90.1-linux-x86_64.tar.gz.provenance.json",
+        "size_bytes": 3984,
+        "sha256": "c3dfa7991d8ba5f8b141a4db165d40be0732e3ba09e538c60f769207f7a1d1c2",
+        "digest_base64": "w9+nmR2LpfixQaTbFl1Avgcy47oJ5TjGD3aSB/eh0cI=",
+        "bundle_sha256": "3c2f640a4c5e7f412b505b34c21c71add508810138085f545efc23f8eb81bd7e"
+      },
+      "checksums_sha256": "0cc07971d37e84cc5ac04f05b7114cb26e12dc70f2193fc8f2d272b6bfd20794"
+    },
+    {
+      "platform": "macos-arm64",
+      "directory": "mparser-0.90.1-macos-arm64",
+      "archive": {
+        "name": "mparser-0.90.1-macos-arm64.tar.gz",
+        "size_bytes": 2644223,
+        "sha256": "e043a232f7240a595de96b728cb3a33b87c988e07527c67075748e165893fa3f",
+        "digest_base64": "4EOiMvckClld6WtyjLOjO4fJiOB1J8ZwdXSOFliT+j8=",
+        "checked_in": false,
+        "checksum_file_sha256": "1bab5f62bb7ccf9340c0e5b3e08ad922f8072745ea6eadd1e79e8739317510b0",
+        "bundle_sha256": "54ca51bc4ae24f74db730a230a65fb17452987f4322933b298d794aae8c16d4a"
+      },
+      "provenance": {
+        "name": "mparser-0.90.1-macos-arm64.tar.gz.provenance.json",
+        "size_bytes": 4012,
+        "sha256": "48a762ef4eebfb5fe436ad03a3247b52a8674105a922af16abfecd95a9d27029",
+        "digest_base64": "SKdi707r+1/kNq0DoyR7UqhnQQWpIq8Wq/7NlanScCk=",
+        "bundle_sha256": "72572ec446b895666f2b763e58bcada79d17afad2af60293bb698d663d8c8923"
+      },
+      "checksums_sha256": "0d9e72a2be017d5105b287274fa8c53b1bc26ed49117cc0e46f17ed3f941b282"
+    },
+    {
+      "platform": "macos-x86_64",
+      "directory": "mparser-0.90.1-macos-x86_64",
+      "archive": {
+        "name": "mparser-0.90.1-macos-x86_64.tar.gz",
+        "size_bytes": 2862605,
+        "sha256": "dee5abd30a59bc47ccc7cacfb862354d99a57e660670b36dd9d3e134f915eec6",
+        "digest_base64": "3uWr0wpZvEfMx8rPuGI1TZmlfmYGcLNt2dPhNPkV7sY=",
+        "checked_in": false,
+        "checksum_file_sha256": "e45c64e256062ec674752ea71c39407b9497176c664d3a3cda8401af86af40f6",
+        "bundle_sha256": "0426cda33f1a184da26bf8790ba53995bd5b46c6f038c0f16818fe2a377aecad"
+      },
+      "provenance": {
+        "name": "mparser-0.90.1-macos-x86_64.tar.gz.provenance.json",
+        "size_bytes": 4014,
+        "sha256": "b06df45d1772fd9dcd14ee4959fc1761fe57059c9f6379e11246696ea1758986",
+        "digest_base64": "sG30XRdy/Z3NFO5JWfwXYf5XBZyfY3nhEkZpbqF1iYY=",
+        "bundle_sha256": "1368ceeff8419661c6144104621072fb0c42fdce1cab1c38f658bbb7e64dfe6b"
+      },
+      "checksums_sha256": "fc230928ac3f3a5f44b76cbae5abb434ee083fc2447e7a131acb241f21e60423"
+    },
+    {
+      "platform": "windows-x86_64",
+      "directory": "mparser-0.90.1-windows-x86_64",
+      "archive": {
+        "name": "mparser-0.90.1-windows-x86_64.zip",
+        "size_bytes": 2671837,
+        "sha256": "004a87b81be47ccd6e06ad9cc715cb7a0b67e1bf0b604a57e8ec3c7a7d16a617",
+        "digest_base64": "AEqHuBvkfM1uBq2cxxXLegtn4b8LYEpX6Ow8en0Wphc=",
+        "checked_in": false,
+        "checksum_file_sha256": "114000976d8852bb02877414a50c9b22dd5e66f1fdb852a195e9381c1bb0ce31",
+        "bundle_sha256": "613f6eae91fd512011b047a39b92b15478a31d9a6795ef43d37878e7e3cbc2d0"
+      },
+      "provenance": {
+        "name": "mparser-0.90.1-windows-x86_64.zip.provenance.json",
+        "size_bytes": 4147,
+        "sha256": "e885a29b59dc9c7a70c7a23fd60cdc3c4c508ff9b488891ca99edd930efc9f44",
+        "digest_base64": "6IWim1ncnHpwx6I/1gzcPExQj/m0iIkcqZ7dkw78n0Q=",
+        "bundle_sha256": "76c7b3547b3576c4118bf907fccb5fbc865801409d8bc6d03bb79f566a754a3e"
+      },
+      "checksums_sha256": "84d1d83e3fa09d4eaa381caf89853c4700b1ade1fd44bc76ed259d910c065540"
+    }
+  ]
+}

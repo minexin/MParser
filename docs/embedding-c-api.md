@@ -355,8 +355,9 @@ plus SHA-256 records and an unsigned SLSA Provenance v1 statement.
 timestamp, verifies archive paths, checksums, and provenance semantics,
 unpacks it, and consumes only that SDK from independent C11 and C++20
 projects. These records provide integrity and audit evidence, not publisher
-identity; authenticated signing or hosted provenance remains a release
-operation.
+identity. Tag `v0.90.1` completed the separate authenticated candidate
+operation in Actions run `30743014345`; final `1.0.0` publication must repeat
+it for the final tag.
 
 ## Licensing
 

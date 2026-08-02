@@ -13,9 +13,11 @@ be temporarily public for cross-platform CI and private for the final release.
 GitHub hosted artifact attestations for private repositories require GitHub
 Enterprise Cloud, so the stable candidate does not depend on that feature. It
 uses Cosign keyless blob signing with the GitHub Actions OIDC identity instead.
-This is a release candidate mechanism, not completed publication evidence.
-`G-PROVENANCE-001` remains open until a real release-tag run signs and verifies
-every advertised archive and its local provenance statement.
+This mechanism produced accepted candidate evidence from tag `v0.90.1` in
+successful Actions run `30743014345`: every advertised archive and local
+provenance statement was signed and verified. The downloaded artifact and all
+ten bundles were independently validated, closing `G-PROVENANCE-001`. This is
+not the final `1.0.0` tag or GitHub Release publication.
 
 Sigstore keyless signing writes metadata to a public transparency log. The
 archive contents and private source tree are not uploaded to that log, but the
@@ -65,6 +67,19 @@ an adjacent `<subject>.sigstore.json` bundle containing the short-lived signing
 certificate, signature, timestamp, and transparency-log proof. The job then
 verifies each bundle before uploading the authenticated release set as a
 workflow artifact. It does not create or publish a GitHub Release.
+
+## Accepted Candidate Evidence
+
+The immutable retained record is
+[v0.90.1-authentication](release-evidence/v0.90.1-authentication/README.md).
+It binds tag `v0.90.1`, revision
+`5763b4752657c54ee5baeaf645a4249b4c5cc8ba`, Actions run `30743014345`,
+authenticated artifact `8832142356`, five exact package inputs, and ten
+Sigstore v0.3 bundles. The same-run Cosign checks and an independent Sigstore
+Python 4.5.0 offline verification both accepted the exact workflow identity
+and GitHub Actions issuer. `release_authentication_evidence_smoke` continuously
+checks the retained file set, hashes, provenance semantics, and bundle subject
+digests.
 
 ## Consumer Verification
 

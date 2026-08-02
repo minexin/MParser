@@ -22,6 +22,7 @@ set(required_documents
     docs/migration-v1.0.md
     docs/release-process.md
     docs/release-authentication.md
+    docs/release-evidence/v0.90.1-authentication/README.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
     docs/v0.90.1.md
@@ -64,6 +65,9 @@ file(READ "${PROJECT_ROOT}/docs/migration-v1.0.md" migration_guide)
 file(READ "${PROJECT_ROOT}/docs/release-process.md" release_process)
 file(READ "${PROJECT_ROOT}/docs/release-authentication.md"
     release_authentication)
+file(READ
+    "${PROJECT_ROOT}/docs/release-evidence/v0.90.1-authentication/manifest.json"
+    release_authentication_evidence)
 file(READ "${PROJECT_ROOT}/docs/embedding-c-api.md" embedding_c_api)
 file(READ "${PROJECT_ROOT}/docs/architecture.md" architecture)
 file(READ "${PROJECT_ROOT}/docs/compatibility-matrix.json"
@@ -204,6 +208,8 @@ foreach(required_authentication_text IN ITEMS
         "workflow_dispatch"
         "authenticate_release"
         "G-PROVENANCE-001"
+        "30743014345"
+        "release_authentication_evidence_smoke"
         "cosign verify-blob"
         "https://token.actions.githubusercontent.com")
     require_text(release_authentication "${required_authentication_text}"
@@ -244,8 +250,11 @@ require_text(performance_guide "cross_platform_performance_evidence_smoke"
 require_text(performance_guide "performance_environment_smoke"
     "CPU environment identity evidence gate")
 require_text(release_process
-    "exactly authenticated provenance with"
+    "open Must-have set to be empty"
     "release readiness blocker boundary")
+reject_text(release_process
+    "exactly authenticated provenance with"
+    "closed authenticated-provenance blocker")
 reject_text(release_process "cross-platform reliability evidence"
     "closed reliability documentation")
 reject_text(release_process "cross-platform package/documentation"
@@ -270,8 +279,32 @@ require_text(cross_platform_validation
     "85685b88f8f8eb4e89b03abf53aa16dbbe60c68c"
     "cross-platform performance revision identity")
 require_text(cross_platform_validation
-    "remaining Must-have set to\n`G-PROVENANCE-001`"
+    "30743014345"
+    "cross-platform authentication run identity")
+require_text(cross_platform_validation
+    "open Must-have set to empty"
     "cross-platform remaining Must-have boundary")
+
+string(JSON authentication_evidence_version GET
+    "${release_authentication_evidence}" candidate version)
+string(JSON authentication_evidence_tag GET
+    "${release_authentication_evidence}" candidate tag)
+string(JSON authentication_evidence_revision GET
+    "${release_authentication_evidence}" candidate revision)
+string(JSON authentication_evidence_run GET
+    "${release_authentication_evidence}" workflow run_id)
+string(JSON authentication_evidence_subjects GET
+    "${release_authentication_evidence}"
+    independent_verification verified_subjects)
+if(NOT authentication_evidence_version STREQUAL "0.90.1" OR
+   NOT authentication_evidence_tag STREQUAL "v0.90.1" OR
+   NOT authentication_evidence_revision STREQUAL
+       "5763b4752657c54ee5baeaf645a4249b4c5cc8ba" OR
+   NOT authentication_evidence_run EQUAL 30743014345 OR
+   NOT authentication_evidence_subjects EQUAL 10)
+    message(FATAL_ERROR
+        "release authentication evidence identity drifted")
+endif()
 
 set(indexed_documents ${required_documents})
 list(REMOVE_ITEM indexed_documents docs/README.md)
@@ -293,6 +326,9 @@ require_text(project_readme
     "project README")
 require_text(project_readme
     "(docs/migration-v1.0.md)"
+    "project README")
+require_text(project_readme
+    "(docs/release-evidence/v0.90.1-authentication/README.md)"
     "project README")
 
 require_text(user_manual

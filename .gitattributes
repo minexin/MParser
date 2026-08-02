@@ -23,3 +23,6 @@ SHA256SUMS text eol=lf
 *.gif binary
 *.zip binary
 *.gz binary
+
+# Preserve signed release evidence byte-for-byte so hashes and signatures remain valid.
+docs/release-evidence/** -text -whitespace

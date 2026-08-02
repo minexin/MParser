@@ -1615,7 +1615,9 @@ multi-translation-unit C++20 consumers, and runs the installed machine
 protocol without source-tree or loader-path access. The publication target
 requires a clean worktree before CPack runs. This does not claim reproducible
 compilation, publisher identity, or a SLSA level; authenticated publication
-remains a release operation. See [release-process.md](release-process.md).
+remains a release operation. The v0.90.1 candidate completed that operation
+in Actions run `30743014345`; final 1.0.0 publication must repeat it for the
+final tag. See [release-process.md](release-process.md).
 
 A CMake-only candidate-readiness gate cross-checks the engine version, frozen
 public-contract state, release-note status, roadmap status, and the exact open
@@ -1629,8 +1631,9 @@ v1.0 reactivation is rejected.
 
 Revision `f34d8d9` passed all six release lanes in Actions run `30684969401`.
 That evidence closes the reliability and documentation Must-haves without an
-engine change; the readiness gate now permits only performance and
-authenticated provenance as open evidence-only Must-haves.
+engine change. Performance evidence subsequently closed in runs `30691616946`
+and `30732814590`, and authenticated provenance closed in tag run
+`30743014345`; the readiness gate now permits no open Must-haves.
 
 The v1.0 performance gate is implemented as a non-installed engineering
 executable rather than another public runtime mode. It calls `Parser`,
@@ -1668,9 +1671,9 @@ their contracts without MSVC's conflicting-option `D9025` noise.
 
 After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
 embedding-framework redesign unless release evidence proves a correctness
-defect. Reliability, documentation, and candidate packaging are closed; work
-now concentrates on performance/resource characterization, authenticated
-publication, and bounded sanitizer evaluation. The measured v1.0 JIT scope
+defect. Reliability, documentation, candidate packaging, performance, and
+authenticated-provenance evidence are closed; work now concentrates on final
+1.0.0 publication and bounded sanitizer evaluation. The measured v1.0 JIT scope
 audit found no required new specialization and defers broader typed work to
 v1.x; any later addition still requires representative evidence. Long-tail
 functions, toolboxes, disk caches, external callback ABIs, zero-copy borrowed

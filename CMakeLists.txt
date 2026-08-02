@@ -610,6 +610,19 @@ set_tests_properties(release_documentation_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser release documentation validated: CLI 1.0, manuals, production sample, and mparser.result 1.x")
 
+add_test(NAME release_authentication_evidence_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_EVIDENCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-evidence/v0.90.1-authentication
+        -DMPARSER_EXPECTED_VERSION=${PROJECT_VERSION}
+        -DMPARSER_EXPECTED_TAG=v${PROJECT_VERSION}
+        -DMPARSER_EXPECTED_REVISION=5763b4752657c54ee5baeaf645a4249b4c5cc8ba
+        -DMPARSER_EXPECTED_RUN_ID=30743014345
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_authentication_evidence.cmake)
+set_tests_properties(release_authentication_evidence_smoke PROPERTIES
+    LABELS "documentation;release"
+    PASS_REGULAR_EXPRESSION
+        "MParser release authentication evidence validated: v0.90.1, run 30743014345, 5 platforms, 10 Sigstore subjects")
+
 add_test(NAME release_candidate_readiness_smoke
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
@@ -622,17 +635,21 @@ add_test(NAME release_candidate_readiness_smoke
         -DNATIVE_SCALAR_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json
         -DNATIVE_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
+        -DAUTHENTICATION_EVIDENCE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_authentication_evidence.cmake
+        -DAUTHENTICATION_EVIDENCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-evidence/v0.90.1-authentication
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
+        -DEXPECTED_AUTHENTICATION_REVISION=5763b4752657c54ee5baeaf645a4249b4c5cc8ba
+        -DEXPECTED_AUTHENTICATION_RUN_ID=30743014345
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
-        -DEXPECTED_OPEN_MUST_HAVE=G-PROVENANCE-001:in-progress
+        -DEXPECTED_OPEN_MUST_HAVE=
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
         -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness.cmake)
 set_tests_properties(release_candidate_readiness_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 1 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
+        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 0 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
 
 add_test(NAME release_candidate_readiness_guard_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -650,10 +667,14 @@ add_test(NAME release_candidate_readiness_guard_smoke
         -DNATIVE_SCALAR_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-scalar-loop-v1.json
         -DNATIVE_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
+        -DAUTHENTICATION_EVIDENCE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_authentication_evidence.cmake
+        -DAUTHENTICATION_EVIDENCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-evidence/v0.90.1-authentication
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
+        -DEXPECTED_AUTHENTICATION_REVISION=5763b4752657c54ee5baeaf645a4249b4c5cc8ba
+        -DEXPECTED_AUTHENTICATION_RUN_ID=30743014345
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
-        -DEXPECTED_OPEN_MUST_HAVE=G-PROVENANCE-001:in-progress
+        -DEXPECTED_OPEN_MUST_HAVE=
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
         -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_candidate_readiness_guards.cmake)
@@ -2253,6 +2274,8 @@ install(FILES
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
     RENAME documentation-index.md)
+install(DIRECTORY docs/release-evidence/
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}/release-evidence")
 install(FILES
     samples/c_abi_compat_demo.c
     samples/c_embedding_demo.c

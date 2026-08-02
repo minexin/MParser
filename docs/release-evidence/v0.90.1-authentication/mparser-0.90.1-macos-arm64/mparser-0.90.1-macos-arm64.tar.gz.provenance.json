@@ -1,0 +1,140 @@
+{
+  "_type" : "https://in-toto.io/Statement/v1",
+  "predicate" : 
+  {
+    "buildDefinition" : 
+    {
+      "buildType" : "https://github.com/minexin/MParser/blob/main/docs/release-process.md#cmake-cpack-release-v1",
+      "externalParameters" : 
+      {
+        "configuration" : "Release",
+        "nativeJit" : true,
+        "projectVersion" : "0.90.1",
+        "releasePackaging" : true,
+        "repository" : "https://github.com/minexin/MParser",
+        "revision" : "5763b4752657c54ee5baeaf645a4249b4c5cc8ba",
+        "sourceDateEpoch" : "1767225600"
+      },
+      "internalParameters" : 
+      {
+        "compilerId" : "AppleClang",
+        "compilerVersion" : "17.0.0.17000013",
+        "generator" : "Unix Makefiles",
+        "systemName" : "Darwin",
+        "systemProcessor" : "arm64",
+        "systemVersion" : "24.6.0"
+      },
+      "resolvedDependencies" : 
+      [
+        {
+          "digest" : 
+          {
+            "gitCommit" : "5763b4752657c54ee5baeaf645a4249b4c5cc8ba"
+          },
+          "name" : "source-base",
+          "uri" : "git+https://github.com/minexin/MParser@5763b4752657c54ee5baeaf645a4249b4c5cc8ba"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "9af65582d3e6653888671fd86120b4918a7d674dd2e387b8d6cb050ee268cb8d"
+          },
+          "name" : "CMakeLists.txt"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "5edaf7701d8096c1381a8b6b68c5988be261986fa00ba78c968defd17ce621b4"
+          },
+          "name" : "CMakePresets.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "84178f64badf2659ab0182d0ca19f6128488de38c5623a7d7febd38c806d0c44"
+          },
+          "name" : ".github/workflows/ci.yml"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "d6e6bf958dbf9f483c4ab8d0142273e28098e365e9a7f1f3016ee79ca4eba36e"
+          },
+          "name" : "docs/public-contract-v1.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "c22a28d28d491e59011f9b82726720ce5102728f768948eb7149c76608cb0f35"
+          },
+          "name" : "docs/cli-contract-v1.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "013aa99461223287723ce4819b4cec749a719d57d53079742c56b4675c1dd8c2"
+          },
+          "name" : "docs/machine-result-v1.schema.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "1abbc75c40d9e875130af3f6c3aa0a16af1f688429d24769454e6a751e5a0b18"
+          },
+          "name" : "docs/compatibility-matrix.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "b29b6911361fad9b4bb93b03ed767abc73d7bc8f235bd2c6a04f9999182dcdb5"
+          },
+          "name" : "docs/release-process.md"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "1ded7824fdca35fea427c3b7382d494847c5cbcdcb56dfff99b23ee8adacd038"
+          },
+          "name" : "docs/release-authentication.md"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "735b07513e096748d5f33df6489c54b97544fedde882e4c4144487200aaafc8d"
+          },
+          "name" : "tests/validate_release_authentication_input.cmake"
+        }
+      ]
+    },
+    "runDetails" : 
+    {
+      "builder" : 
+      {
+        "id" : "https://github.com/minexin/MParser/blob/main/docs/release-process.md#local-cmake-builder-v1",
+        "version" : 
+        {
+          "cmake" : "4.4.0",
+          "compiler" : "AppleClang 17.0.0.17000013"
+        }
+      },
+      "mparser_authentication" : "unsigned",
+      "mparser_sourceTreeClean" : true
+    }
+  },
+  "predicateType" : "https://slsa.dev/provenance/v1",
+  "subject" : 
+  [
+    {
+      "annotations" : 
+      {
+        "mparser_sizeBytes" : 2644223
+      },
+      "digest" : 
+      {
+        "sha256" : "e043a232f7240a595de96b728cb3a33b87c988e07527c67075748e165893fa3f"
+      },
+      "mediaType" : "application/gzip",
+      "name" : "mparser-0.90.1-macos-arm64.tar.gz"
+    }
+  ]
+}

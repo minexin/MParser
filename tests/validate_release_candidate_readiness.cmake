@@ -11,10 +11,13 @@ foreach(required_variable IN ITEMS
         NATIVE_SCALAR_REPORT
         NATIVE_ARRAY_REPORT
         NOJIT_ARRAY_REPORT
+        AUTHENTICATION_EVIDENCE_VALIDATOR
+        AUTHENTICATION_EVIDENCE_ROOT
         EXPECTED_VERSION
         EXPECTED_JIT_EVIDENCE_VERSION
+        EXPECTED_AUTHENTICATION_REVISION
+        EXPECTED_AUTHENTICATION_RUN_ID
         EXPECTED_CONTRACT_STATE
-        EXPECTED_OPEN_MUST_HAVE
         EXPECTED_OPEN_SHOULD_HAVE
         EXPECTED_DEFERRED_SHOULD_HAVE)
     if(NOT DEFINED ${required_variable} OR
@@ -23,6 +26,10 @@ foreach(required_variable IN ITEMS
             "Missing release-readiness variable: ${required_variable}")
     endif()
 endforeach()
+if(NOT DEFINED EXPECTED_OPEN_MUST_HAVE)
+    message(FATAL_ERROR
+        "Missing release-readiness variable: EXPECTED_OPEN_MUST_HAVE")
+endif()
 
 foreach(required_file IN ITEMS
         "${MATRIX}"
@@ -33,7 +40,9 @@ foreach(required_file IN ITEMS
         "${JIT_SCOPE_DECISION}"
         "${NATIVE_SCALAR_REPORT}"
         "${NATIVE_ARRAY_REPORT}"
-        "${NOJIT_ARRAY_REPORT}")
+        "${NOJIT_ARRAY_REPORT}"
+        "${AUTHENTICATION_EVIDENCE_VALIDATOR}"
+        "${AUTHENTICATION_EVIDENCE_ROOT}/manifest.json")
     if(NOT EXISTS "${required_file}")
         message(FATAL_ERROR
             "Release-readiness input is missing: ${required_file}")
@@ -74,6 +83,24 @@ if(candidate_status_position EQUAL -1 OR
    roadmap_status_position EQUAL -1)
     message(FATAL_ERROR
         "Release notes or roadmap no longer describe a pre-1.0 candidate")
+endif()
+
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+        "-DMPARSER_EVIDENCE_ROOT=${AUTHENTICATION_EVIDENCE_ROOT}"
+        "-DMPARSER_EXPECTED_VERSION=${EXPECTED_VERSION}"
+        "-DMPARSER_EXPECTED_TAG=v${EXPECTED_VERSION}"
+        "-DMPARSER_EXPECTED_REVISION=${EXPECTED_AUTHENTICATION_REVISION}"
+        "-DMPARSER_EXPECTED_RUN_ID=${EXPECTED_AUTHENTICATION_RUN_ID}"
+        -P "${AUTHENTICATION_EVIDENCE_VALIDATOR}"
+    RESULT_VARIABLE authentication_validation_status
+    OUTPUT_VARIABLE authentication_validation_output
+    ERROR_VARIABLE authentication_validation_error)
+if(NOT authentication_validation_status EQUAL 0)
+    message(FATAL_ERROR
+        "Release authentication evidence failed readiness validation\n"
+        "stdout:\n${authentication_validation_output}\n"
+        "stderr:\n${authentication_validation_error}")
 endif()
 
 set(actual_open_must_have)

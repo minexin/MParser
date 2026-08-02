@@ -514,6 +514,9 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/migration-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-process.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-authentication.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/README.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/manifest.json"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/SHA256SUMS"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
@@ -543,6 +546,23 @@ foreach(path IN LISTS required_paths)
             "Required unpacked release artifact is missing: ${path}")
     endif()
 endforeach()
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+        "-DMPARSER_EVIDENCE_ROOT=${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication"
+        -DMPARSER_EXPECTED_VERSION=0.90.1
+        -DMPARSER_EXPECTED_TAG=v0.90.1
+        -DMPARSER_EXPECTED_REVISION=5763b4752657c54ee5baeaf645a4249b4c5cc8ba
+        -DMPARSER_EXPECTED_RUN_ID=30743014345
+        -P "${MPARSER_PROJECT_ROOT}/tests/validate_release_authentication_evidence.cmake"
+    RESULT_VARIABLE evidence_status
+    OUTPUT_VARIABLE evidence_output
+    ERROR_VARIABLE evidence_error)
+if(NOT evidence_status EQUAL 0)
+    message(FATAL_ERROR
+        "Unpacked release authentication evidence failed validation\n"
+        "stdout:\n${evidence_output}\n"
+        "stderr:\n${evidence_error}")
+endif()
 file(GLOB shared_libraries
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_BINDIR}/*mparser_c*"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_LIBDIR}/*mparser_c*")

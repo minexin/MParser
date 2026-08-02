@@ -167,8 +167,10 @@ Before publication:
 7. Verify the downloaded Cosign bundles against the exact repository,
    workflow, tag, and GitHub Actions issuer before creating a release.
 
-The candidate-readiness gate requires the remaining Must-have set to be
-exactly authenticated provenance with `framework_impact: none`.
+The candidate-readiness gate now requires the open Must-have set to be empty.
+Authenticated candidate provenance closed in tag-scoped Actions run
+`30743014345`; its retained manifest and ten bundles are enforced by
+`release_authentication_evidence_smoke` and by the readiness gate itself.
 Cross-platform performance characterization is closed by the checked-in
 Windows/Linux/macOS x64 and native-architecture macOS ARM64 report set from
 Actions run `30691616946`, plus the native Linux ARM64 ARM MIDR-labelled pair
@@ -186,5 +188,6 @@ does not rewrite `mparser_authentication: "unsigned"` inside the local
 statement. The local builder ID continues to describe the platform CMake/CPack
 boundary; the certificate identity separately describes the hosted signing
 boundary. Candidate platform packaging passed in Actions run `30684969401`;
-a real tag-scoped signing run and release publication remain separate final
-gates.
+the real tag-scoped candidate signing run passed in Actions run `30743014345`.
+Final `1.0.0` versioning, repetition of these checks for the final tag, and
+release-page publication remain separate release operations.

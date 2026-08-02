@@ -11,8 +11,11 @@ alongside the existing AArch64 cross/QEMU package lane. Actions run
 Linux ARM64 report pair with a non-unknown ARM MIDR identity. The measured JIT
 scope audit defers broader specialization to v1.x without changing the guarded
 v1.0 fallback contract.
-Authenticated release provenance is the remaining Must-have; Linux TSan and
-macOS sanitizer remain bounded Should-have evaluations.
+Tag `v0.90.1` then completed all seven execution jobs and authenticated all
+five archives plus five provenance statements in Actions run `30743014345`.
+All v1 candidate Must-have evidence gaps are now closed; Linux TSan and macOS
+sanitizer remain bounded Should-have evaluations, while final `1.0.0`
+versioning and publication remain release operations.
 Release documentation starts at
 [docs/README.md](docs/README.md), with the
 [user manual](docs/user-manual.md),
@@ -20,6 +23,8 @@ Release documentation starts at
 [v0.x-to-v1.0 migration guide](docs/migration-v1.0.md). See
 [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
 [docs/v0.90.1.md](docs/v0.90.1.md) for release-authentication hardening,
+[docs/release-evidence/v0.90.1-authentication/README.md](docs/release-evidence/v0.90.1-authentication/README.md)
+for the retained Sigstore candidate evidence,
 [docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the contract
 candidate,
 [docs/v1.0-cross-platform-validation.md](docs/v1.0-cross-platform-validation.md)
@@ -1014,8 +1019,9 @@ the installed CLI protocol. The package also carries deterministic unsigned
 SLSA provenance metadata. Checksums and that statement provide integrity and
 audit evidence, not publisher identity. A default-off, manual release-tag
 Sigstore candidate now revalidates and signs every archive and local statement,
-but its public-transparency boundary must be explicitly accepted and a real
-authenticated run remains a v1.0 publication operation. See
+and its public-transparency boundary must be explicitly accepted. Tag
+`v0.90.1` completed that candidate operation in Actions run `30743014345`;
+final `1.0.0` publication must repeat it for the final tag. See
 [Release Authentication](docs/release-authentication.md).
 
 The post-v0.90 contract gate adds CLI 1.0 and builtin source contract 1.0 to

@@ -632,11 +632,16 @@ is green. It refines, rather than replaces, the four work areas above.
    transparency boundary is explicit in
    [release-authentication.md](release-authentication.md). Candidate packages
    and uploads passed on Windows, Linux x64/AArch64, and macOS x64/ARM64 in
-   Actions run `30691616946`. Version `1.0.0`, release tag/snapshots, and a
-   real authenticated signing run remain open.
+   Actions run `30691616946`. Tag `v0.90.1` at revision `5763b47` then passed
+   all seven execution jobs and authenticated all ten archive/provenance
+   subjects in Actions run `30743014345`; the retained bundles, manifest, and
+   independent verification are under
+   `docs/release-evidence/v0.90.1-authentication`. Version `1.0.0`, final
+   release tag/snapshots, repetition of authenticated assembly for that tag,
+   and release-page publication remain open.
    `release_candidate_readiness_smoke`
-   freezes the exact one-item Must-have blocker set and rejects any open
-   Must-have with framework impact.
+   freezes the open Must-have blocker set to empty and rejects any newly open
+   Must-have or one with framework impact.
 
 ### v1.0 Scope Controls
 

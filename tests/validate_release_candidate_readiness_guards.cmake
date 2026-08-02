@@ -15,10 +15,13 @@ foreach(required_variable IN ITEMS
         NATIVE_SCALAR_REPORT
         NATIVE_ARRAY_REPORT
         NOJIT_ARRAY_REPORT
+        AUTHENTICATION_EVIDENCE_VALIDATOR
+        AUTHENTICATION_EVIDENCE_ROOT
         EXPECTED_VERSION
         EXPECTED_JIT_EVIDENCE_VERSION
+        EXPECTED_AUTHENTICATION_REVISION
+        EXPECTED_AUTHENTICATION_RUN_ID
         EXPECTED_CONTRACT_STATE
-        EXPECTED_OPEN_MUST_HAVE
         EXPECTED_OPEN_SHOULD_HAVE
         EXPECTED_DEFERRED_SHOULD_HAVE)
     if(NOT DEFINED ${required_variable} OR
@@ -27,6 +30,10 @@ foreach(required_variable IN ITEMS
             "Missing readiness-guard variable: ${required_variable}")
     endif()
 endforeach()
+if(NOT DEFINED EXPECTED_OPEN_MUST_HAVE)
+    message(FATAL_ERROR
+        "Missing readiness-guard variable: EXPECTED_OPEN_MUST_HAVE")
+endif()
 
 get_filename_component(build_dir "${MPARSER_BUILD_DIR}" ABSOLUTE)
 get_filename_component(test_root "${MPARSER_TEST_ROOT}" ABSOLUTE)
@@ -70,8 +77,12 @@ function(expect_rejection description tampered_matrix expected_pattern)
             "-DNATIVE_SCALAR_REPORT=${NATIVE_SCALAR_REPORT}"
             "-DNATIVE_ARRAY_REPORT=${NATIVE_ARRAY_REPORT}"
             "-DNOJIT_ARRAY_REPORT=${NOJIT_ARRAY_REPORT}"
+            "-DAUTHENTICATION_EVIDENCE_VALIDATOR=${AUTHENTICATION_EVIDENCE_VALIDATOR}"
+            "-DAUTHENTICATION_EVIDENCE_ROOT=${AUTHENTICATION_EVIDENCE_ROOT}"
             "-DEXPECTED_VERSION=${EXPECTED_VERSION}"
             "-DEXPECTED_JIT_EVIDENCE_VERSION=${EXPECTED_JIT_EVIDENCE_VERSION}"
+            "-DEXPECTED_AUTHENTICATION_REVISION=${EXPECTED_AUTHENTICATION_REVISION}"
+            "-DEXPECTED_AUTHENTICATION_RUN_ID=${EXPECTED_AUTHENTICATION_RUN_ID}"
             "-DEXPECTED_CONTRACT_STATE=${EXPECTED_CONTRACT_STATE}"
             "-DEXPECTED_OPEN_MUST_HAVE=${EXPECTED_OPEN_MUST_HAVE}"
             "-DEXPECTED_OPEN_SHOULD_HAVE=${EXPECTED_OPEN_SHOULD_HAVE}"
@@ -94,6 +105,9 @@ endfunction()
 
 find_gap_index("G-PROVENANCE-001" provenance_index)
 set(framework_matrix "${matrix_json}")
+string(JSON framework_matrix SET
+    "${framework_matrix}" gaps ${provenance_index}
+    state "\"in-progress\"")
 string(JSON framework_matrix SET
     "${framework_matrix}" gaps ${provenance_index}
     framework_impact "\"contract-extension\"")
