@@ -7,7 +7,7 @@ foreach(required_variable IN ITEMS
         NATIVE_SCALAR_REPORT
         NATIVE_ARRAY_REPORT
         NOJIT_ARRAY_REPORT
-        EXPECTED_VERSION)
+        EXPECTED_JIT_EVIDENCE_VERSION)
     if(NOT DEFINED ${required_variable} OR
        "${${required_variable}}" STREQUAL "")
         message(FATAL_ERROR
@@ -73,7 +73,7 @@ function(mparser_jit_validate_report
         ${document_variable} workload source_path)
     mparser_jit_json_get(source_sha256
         ${document_variable} workload source_sha256)
-    if(NOT project_version STREQUAL EXPECTED_VERSION OR
+    if(NOT project_version STREQUAL EXPECTED_JIT_EVIDENCE_VERSION OR
        NOT workload_id STREQUAL expected_workload OR
        NOT source_path STREQUAL expected_source OR emulated)
         message(FATAL_ERROR

@@ -42,12 +42,16 @@ signing token.
 
 ## Inputs And Outputs
 
-The job downloads the five immutable package artifacts produced earlier in the
+Each platform artifact allowlists exactly four top-level files: the archive,
+its SHA-256 sidecar, the unsigned provenance statement, and `SHA256SUMS`.
+CPack staging directories and duplicate nested archives are not uploaded. The
+job downloads the five immutable package artifacts produced earlier in the
 same run. Before requesting an OIDC certificate, it executes
 `tests/validate_release_authentication_input.cmake` for every archive. The
 validator requires:
 
 - the exact expected archive name and release version;
+- exactly those four top-level files, with no staging tree or extra input;
 - a matching per-archive SHA-256 sidecar and two-entry `SHA256SUMS` file;
 - one unsigned in-toto Statement v1 using the SLSA Provenance v1 predicate;
 - an archive subject with matching name, size, media type, and SHA-256;
@@ -64,12 +68,12 @@ workflow artifact. It does not create or publish a GitHub Release.
 
 ## Consumer Verification
 
-For a tag such as `v0.90.0`, verify an archive and its local provenance with
+For a tag such as `v0.90.1`, verify an archive and its local provenance with
 the workflow identity and GitHub Actions issuer:
 
 ```text
-cosign verify-blob mparser-0.90.0-linux-x86_64.tar.gz --bundle mparser-0.90.0-linux-x86_64.tar.gz.sigstore.json --certificate-identity=https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v0.90.0 --certificate-oidc-issuer=https://token.actions.githubusercontent.com
-cosign verify-blob mparser-0.90.0-linux-x86_64.tar.gz.provenance.json --bundle mparser-0.90.0-linux-x86_64.tar.gz.provenance.json.sigstore.json --certificate-identity=https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v0.90.0 --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+cosign verify-blob mparser-0.90.1-linux-x86_64.tar.gz --bundle mparser-0.90.1-linux-x86_64.tar.gz.sigstore.json --certificate-identity=https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v0.90.1 --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+cosign verify-blob mparser-0.90.1-linux-x86_64.tar.gz.provenance.json --bundle mparser-0.90.1-linux-x86_64.tar.gz.provenance.json.sigstore.json --certificate-identity=https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v0.90.1 --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
 After signature verification, validate the archive sidecar, `SHA256SUMS`, and

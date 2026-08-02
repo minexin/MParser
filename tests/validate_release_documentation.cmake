@@ -24,6 +24,7 @@ set(required_documents
     docs/release-authentication.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
+    docs/v0.90.1.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-jit-scope-decision.md
     docs/v1.0-documentation.md
@@ -125,9 +126,9 @@ foreach(required_performance_ci_text IN ITEMS
         "MPARSER_PERFORMANCE_EVIDENCE_REVISION="
         "mparser_performance_evidence"
         "build-ci/performance-evidence/*.json"
-        "mparser-performance-0.90.0-windows-x86_64"
-        "mparser-performance-0.90.0-linux-x86_64"
-        "mparser-performance-0.90.0-macos-"
+        "mparser-performance-0.90.1-windows-x86_64"
+        "mparser-performance-0.90.1-linux-x86_64"
+        "mparser-performance-0.90.1-macos-"
         "actions/upload-artifact@v7")
     require_text(ci_workflow "${required_performance_ci_text}"
         "native performance evidence CI policy")
@@ -145,6 +146,8 @@ foreach(required_authentication_ci_text IN ITEMS
         "actions/download-artifact@v5"
         "tests/validate_release_authentication_input.cmake"
         "MPARSER_REQUIRE_CLEAN_SOURCE=ON"
+        "MPARSER_REQUIRE_EXACT_PACKAGE_SET=ON"
+        "Expected one $archive_name; found"
         "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
         "cosign sign-blob"
         "cosign verify-blob"
@@ -154,13 +157,34 @@ foreach(required_authentication_ci_text IN ITEMS
         "release authentication CI policy")
 endforeach()
 foreach(expected_archive IN ITEMS
-        "mparser-0.90.0-windows-x86_64.zip"
-        "mparser-0.90.0-linux-x86_64.tar.gz"
-        "mparser-0.90.0-linux-aarch64.tar.gz"
-        "mparser-0.90.0-macos-x86_64.tar.gz"
-        "mparser-0.90.0-macos-arm64.tar.gz")
+        "mparser-0.90.1-windows-x86_64.zip"
+        "mparser-0.90.1-linux-x86_64.tar.gz"
+        "mparser-0.90.1-linux-aarch64.tar.gz"
+        "mparser-0.90.1-macos-x86_64.tar.gz"
+        "mparser-0.90.1-macos-arm64.tar.gz")
     require_text(ci_workflow "${expected_archive}"
         "release authentication platform set")
+endforeach()
+foreach(forbidden_release_upload IN ITEMS
+        "build-ci/packages/*"
+        "build-arm64-jit/packages/*"
+        "_CPack_Packages")
+    reject_text(ci_workflow "${forbidden_release_upload}"
+        "release artifact top-level file boundary")
+endforeach()
+foreach(required_release_upload IN ITEMS
+        "build-ci/packages/mparser-0.90.1-windows-x86_64.zip.sha256"
+        "build-ci/packages/mparser-0.90.1-windows-x86_64.zip.provenance.json"
+        "build-ci/packages/mparser-0.90.1-linux-x86_64.tar.gz.sha256"
+        "build-ci/packages/mparser-0.90.1-linux-x86_64.tar.gz.provenance.json"
+        "build-ci/packages/mparser-0.90.1-macos-\${{ matrix.arch }}.tar.gz.sha256"
+        "build-ci/packages/mparser-0.90.1-macos-\${{ matrix.arch }}.tar.gz.provenance.json"
+        "build-arm64-jit/packages/mparser-0.90.1-linux-aarch64.tar.gz.sha256"
+        "build-arm64-jit/packages/mparser-0.90.1-linux-aarch64.tar.gz.provenance.json"
+        "build-ci/packages/SHA256SUMS"
+        "build-arm64-jit/packages/SHA256SUMS")
+    require_text(ci_workflow "${required_release_upload}"
+        "release artifact explicit top-level file set")
 endforeach()
 string(REGEX MATCHALL "id-token: write"
     authentication_token_matches "${ci_workflow}")

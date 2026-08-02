@@ -10,7 +10,7 @@ The current tuple is:
 
 - ABI major: `MPARSER_C_ABI_VERSION_MAJOR == 1`;
 - ABI revision: `MPARSER_C_ABI_REVISION == 1`;
-- engine release: `0.90.0`.
+- engine release: `0.90.1`.
 
 `mparser_c_abi_version()` returns the ABI major.
 `mparser_c_abi_revision()` returns the additive feature revision. The engine

@@ -1,6 +1,6 @@
 # MParser
 
-Current release candidate: v0.90.0. The v1 public-contract candidate,
+Current release candidate: v0.90.1. The v1 public-contract candidate,
 reliability gate, and release-documentation gate are cross-platform confirmed
 at revision `f34d8d9` by Actions run `30684969401`; local Windows MSVC ASan
 no-JIT now passes 201/201. Actions run `30691616946` supplied accepted
@@ -19,6 +19,7 @@ Release documentation starts at
 [support matrix](docs/support-matrix.md), and
 [v0.x-to-v1.0 migration guide](docs/migration-v1.0.md). See
 [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
+[docs/v0.90.1.md](docs/v0.90.1.md) for release-authentication hardening,
 [docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the contract
 candidate,
 [docs/v1.0-cross-platform-validation.md](docs/v1.0-cross-platform-validation.md)
@@ -1077,7 +1078,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 0.90.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 0.90.1 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 

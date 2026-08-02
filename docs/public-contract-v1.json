@@ -5,7 +5,7 @@
     "minor": 0
   },
   "candidate": {
-    "engine_version": "0.90.0",
+    "engine_version": "0.90.1",
     "milestone": "v0.90",
     "state": "frozen-v1-candidate"
   },

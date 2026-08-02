@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.90.0",
+  "version": "0.90.1",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {

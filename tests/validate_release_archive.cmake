@@ -161,7 +161,7 @@ endfunction()
 
 function(expect_authentication_input_rejection
          description archive provenance checksum checksums
-         expected_revision require_clean expected_pattern)
+         expected_revision require_clean require_exact expected_pattern)
     execute_process(
         COMMAND "${MPARSER_CMAKE_COMMAND}"
             "-DMPARSER_ARCHIVE=${archive}"
@@ -175,6 +175,7 @@ function(expect_authentication_input_rejection
             "-DMPARSER_EXPECTED_CONFIGURATION=${mparser_package_config}"
             "-DMPARSER_EXPECTED_NATIVE_JIT=${MPARSER_NATIVE_JIT}"
             "-DMPARSER_REQUIRE_CLEAN_SOURCE=${require_clean}"
+            "-DMPARSER_REQUIRE_EXACT_PACKAGE_SET=${require_exact}"
             -P "${MPARSER_PROJECT_ROOT}/tests/validate_release_authentication_input.cmake"
         RESULT_VARIABLE validation_status
         OUTPUT_VARIABLE validation_output
@@ -299,13 +300,30 @@ if(NOT authentication_revision_status EQUAL 0)
         "Unable to resolve release-authentication revision: "
         "${authentication_revision_error}")
 endif()
+
+set(authentication_input_dir
+    "${mparser_test_root}/exact-authentication-input")
+file(MAKE_DIRECTORY "${authentication_input_dir}")
+set(authentication_archive
+    "${authentication_input_dir}/${first_archive_name}")
+set(authentication_provenance
+    "${authentication_input_dir}/${first_provenance_name}")
+configure_file("${first_archive}" "${authentication_archive}" COPYONLY)
+configure_file(
+    "${first_archive}.sha256"
+    "${authentication_archive}.sha256" COPYONLY)
+configure_file(
+    "${first_provenance}" "${authentication_provenance}" COPYONLY)
+configure_file(
+    "${first_package_dir}/SHA256SUMS"
+    "${authentication_input_dir}/SHA256SUMS" COPYONLY)
 run_checked(
     "Release-authentication input"
     "${MPARSER_CMAKE_COMMAND}"
-    "-DMPARSER_ARCHIVE=${first_archive}"
-    "-DMPARSER_PROVENANCE=${first_provenance}"
-    "-DMPARSER_CHECKSUM=${first_archive}.sha256"
-    "-DMPARSER_CHECKSUMS=${first_package_dir}/SHA256SUMS"
+    "-DMPARSER_ARCHIVE=${authentication_archive}"
+    "-DMPARSER_PROVENANCE=${authentication_provenance}"
+    "-DMPARSER_CHECKSUM=${authentication_archive}.sha256"
+    "-DMPARSER_CHECKSUMS=${authentication_input_dir}/SHA256SUMS"
     "-DMPARSER_PROJECT_ROOT=${MPARSER_PROJECT_ROOT}"
     "-DMPARSER_EXPECTED_REVISION=${authentication_revision}"
     "-DMPARSER_SOURCE_REPOSITORY=${MPARSER_SOURCE_REPOSITORY}"
@@ -313,7 +331,23 @@ run_checked(
     "-DMPARSER_EXPECTED_CONFIGURATION=${mparser_package_config}"
     "-DMPARSER_EXPECTED_NATIVE_JIT=${MPARSER_NATIVE_JIT}"
     -DMPARSER_REQUIRE_CLEAN_SOURCE=OFF
+    -DMPARSER_REQUIRE_EXACT_PACKAGE_SET=ON
     -P "${MPARSER_PROJECT_ROOT}/tests/validate_release_authentication_input.cmake")
+
+set(extra_input_dir "${mparser_test_root}/extra-authentication-input")
+file(COPY "${authentication_input_dir}/"
+    DESTINATION "${extra_input_dir}")
+file(WRITE "${extra_input_dir}/unexpected.txt" "not a release input\n")
+expect_authentication_input_rejection(
+    "Extra release-authentication input"
+    "${extra_input_dir}/${first_archive_name}"
+    "${extra_input_dir}/${first_provenance_name}"
+    "${extra_input_dir}/${first_archive_name}.sha256"
+    "${extra_input_dir}/SHA256SUMS"
+    "${authentication_revision}"
+    OFF
+    ON
+    "package directory must contain exactly")
 
 expect_authentication_input_rejection(
     "Wrong release-authentication revision"
@@ -322,6 +356,7 @@ expect_authentication_input_rejection(
     "${first_archive}.sha256"
     "${first_package_dir}/SHA256SUMS"
     "0000000000000000000000000000000000000000"
+    OFF
     OFF
     "build parameters are invalid")
 
@@ -350,6 +385,7 @@ expect_authentication_input_rejection(
     "${unclean_input_dir}/SHA256SUMS"
     "${authentication_revision}"
     ON
+    OFF
     "input is not source-clean")
 
 set(contract_input_dir "${mparser_test_root}/contract-authentication-input")
@@ -377,6 +413,7 @@ expect_authentication_input_rejection(
     "${contract_archive}.sha256"
     "${contract_input_dir}/SHA256SUMS"
     "${authentication_revision}"
+    OFF
     OFF
     "contract identity is invalid: CMakeLists.txt")
 
@@ -492,6 +529,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/compatibility-matrix.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v0.90.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v0.90.1.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-contract-freeze.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/architecture.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/extending-builtins.md"

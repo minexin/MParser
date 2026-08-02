@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.90.0 LANGUAGES C CXX)
+project(MParser VERSION 0.90.1 LANGUAGES C CXX)
+
+set(MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION "0.90.0")
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -621,6 +623,7 @@ add_test(NAME release_candidate_readiness_smoke
         -DNATIVE_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
         -DEXPECTED_OPEN_MUST_HAVE=G-PROVENANCE-001:in-progress
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
@@ -648,6 +651,7 @@ add_test(NAME release_candidate_readiness_guard_smoke
         -DNATIVE_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
         -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
         -DEXPECTED_OPEN_MUST_HAVE=G-PROVENANCE-001:in-progress
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
@@ -1701,7 +1705,7 @@ add_test(NAME cross_platform_performance_evidence_smoke
         -DMPARSER_SCALAR_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_scalar_loop.m
         -DMPARSER_ARRAY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_array_workload.m
         -DMPARSER_EXPECTED_REVISION=85685b88f8f8eb4e89b03abf53aa16dbbe60c68c
-        -DMPARSER_EXPECTED_VERSION=${PROJECT_VERSION}
+        -DMPARSER_EXPECTED_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_cross_platform_performance_evidence.cmake)
 set_tests_properties(cross_platform_performance_evidence_smoke PROPERTIES
     LABELS "documentation;performance;release"
@@ -1717,7 +1721,7 @@ add_test(NAME linux_arm64_performance_evidence_smoke
         -DMPARSER_SCALAR_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_scalar_loop.m
         -DMPARSER_ARRAY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_array_workload.m
         -DMPARSER_EXPECTED_REVISION=3ec2bc074387283785068fe6ac98b4472a109a3a
-        -DMPARSER_EXPECTED_VERSION=${PROJECT_VERSION}
+        -DMPARSER_EXPECTED_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_linux_arm64_performance_evidence.cmake)
 set_tests_properties(linux_arm64_performance_evidence_smoke PROPERTIES
     LABELS "documentation;performance;release"
@@ -1810,6 +1814,10 @@ set_tests_properties(embedding_resource_control_demo_smoke PROPERTIES
 
 add_executable(c_api_smoke_tests tests/c_api_smoke.c)
 target_link_libraries(c_api_smoke_tests PRIVATE mparser_c_api)
+target_compile_definitions(c_api_smoke_tests PRIVATE
+    MPARSER_EXPECTED_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    MPARSER_EXPECTED_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    MPARSER_EXPECTED_VERSION_PATCH=${PROJECT_VERSION_PATCH})
 set_target_properties(c_api_smoke_tests PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
@@ -2226,6 +2234,7 @@ install(FILES
     docs/compatibility-matrix.json
     docs/roadmap-v1.0.md
     docs/v0.90.md
+    docs/v0.90.1.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md

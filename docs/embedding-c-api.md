@@ -60,7 +60,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 An independent CMake project can then use:
 
 ```cmake
-find_package(MParser 0.90.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 0.90.1 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 

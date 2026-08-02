@@ -48,14 +48,18 @@ jobs:
       - name: Upload Windows release archive
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-0.90.0-windows-x86_64
-          path: build-ci/packages/*
+          name: mparser-0.90.1-windows-x86_64
+          path: |
+            build-ci/packages/mparser-0.90.1-windows-x86_64.zip
+            build-ci/packages/mparser-0.90.1-windows-x86_64.zip.sha256
+            build-ci/packages/mparser-0.90.1-windows-x86_64.zip.provenance.json
+            build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload Windows performance evidence
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-performance-0.90.0-windows-x86_64
+          name: mparser-performance-0.90.1-windows-x86_64
           path: build-ci/performance-evidence/*.json
           if-no-files-found: error
           retention-days: 90
@@ -88,14 +92,18 @@ jobs:
       - name: Upload Linux x64 release archive
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-0.90.0-linux-x86_64
-          path: build-ci/packages/*
+          name: mparser-0.90.1-linux-x86_64
+          path: |
+            build-ci/packages/mparser-0.90.1-linux-x86_64.tar.gz
+            build-ci/packages/mparser-0.90.1-linux-x86_64.tar.gz.sha256
+            build-ci/packages/mparser-0.90.1-linux-x86_64.tar.gz.provenance.json
+            build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload Linux x64 performance evidence
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-performance-0.90.0-linux-x86_64
+          name: mparser-performance-0.90.1-linux-x86_64
           path: build-ci/performance-evidence/*.json
           if-no-files-found: error
           retention-days: 90
@@ -132,7 +140,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-performance-0.90.0-linux-aarch64
+          name: mparser-performance-0.90.1-linux-aarch64
           path: build-ci/performance-evidence/*.json
           if-no-files-found: error
           retention-days: 90
@@ -214,14 +222,14 @@ jobs:
           cmake -S tests/installed_c_consumer -B build-c-consumer \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$PWD/build-sdk/relocated-sdk" \
-            -DMPARSER_REQUIRED_VERSION=0.90.0
+            -DMPARSER_REQUIRED_VERSION=0.90.1
           cmake --build build-c-consumer --parallel
           DYLD_LIBRARY_PATH="$PWD/build-sdk/relocated-sdk/lib" \
             ctest --test-dir build-c-consumer --output-on-failure
           cmake -S tests/installed_cpp_consumer -B build-cpp-consumer \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$PWD/build-sdk/relocated-sdk" \
-            -DMPARSER_REQUIRED_VERSION=0.90.0
+            -DMPARSER_REQUIRED_VERSION=0.90.1
           cmake --build build-cpp-consumer --parallel
           DYLD_LIBRARY_PATH="$PWD/build-sdk/relocated-sdk/lib" \
             ctest --test-dir build-cpp-consumer --output-on-failure
@@ -230,20 +238,24 @@ jobs:
           file build-sdk/relocated-sdk/bin/mparser | grep -F "${{ matrix.arch }}"
           file build-sdk/relocated-sdk/lib/libmparser_c.1.1.0.dylib | grep -F "${{ matrix.arch }}"
           build-sdk/relocated-sdk/bin/mparser --version | tee build-sdk/macos-sdk-version.txt
-          grep -F "MParser 0.90.0" build-sdk/macos-sdk-version.txt
+          grep -F "MParser 0.90.1" build-sdk/macos-sdk-version.txt
       - name: Build release archive and checksums
         run: cmake --build build-ci --target mparser_release_package
       - name: Upload macOS release archive
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-0.90.0-macos-${{ matrix.arch }}
-          path: build-ci/packages/*
+          name: mparser-0.90.1-macos-${{ matrix.arch }}
+          path: |
+            build-ci/packages/mparser-0.90.1-macos-${{ matrix.arch }}.tar.gz
+            build-ci/packages/mparser-0.90.1-macos-${{ matrix.arch }}.tar.gz.sha256
+            build-ci/packages/mparser-0.90.1-macos-${{ matrix.arch }}.tar.gz.provenance.json
+            build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload macOS performance evidence
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-performance-0.90.0-macos-${{ matrix.arch }}
+          name: mparser-performance-0.90.1-macos-${{ matrix.arch }}
           path: build-ci/performance-evidence/*.json
           if-no-files-found: error
           retention-days: 90
@@ -282,7 +294,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/build-arm64-jit/install-sdk" \
-            -DMPARSER_REQUIRED_VERSION=0.90.0
+            -DMPARSER_REQUIRED_VERSION=0.90.1
           cmake --build build-arm64-jit-consumer --parallel
           LD_LIBRARY_PATH="$PWD/build-arm64-jit/install-sdk/lib" \
             ctest --test-dir build-arm64-jit-consumer --output-on-failure \
@@ -292,14 +304,14 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/build-arm64-jit/install-sdk" \
-            -DMPARSER_REQUIRED_VERSION=0.90.0
+            -DMPARSER_REQUIRED_VERSION=0.90.1
           cmake --build build-arm64-jit-cpp-consumer --parallel
           LD_LIBRARY_PATH="$PWD/build-arm64-jit/install-sdk/lib" \
             ctest --test-dir build-arm64-jit-cpp-consumer --output-on-failure \
               -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./build-arm64-jit/install-sdk/bin/mparser --version | tee build-arm64-jit/arm64-jit-sdk-version.txt
-          grep --fixed-strings "MParser 0.90.0" build-arm64-jit/arm64-jit-sdk-version.txt
+          grep --fixed-strings "MParser 0.90.1" build-arm64-jit/arm64-jit-sdk-version.txt
       - name: Build AArch64 release archive and checksums
         run: cmake --build build-arm64-jit --target mparser_release_package
       - name: Validate unpacked AArch64 release archive under QEMU
@@ -307,7 +319,7 @@ jobs:
         run: |
           set -euo pipefail
           package_dir="$PWD/build-arm64-jit/packages"
-          package_name="mparser-0.90.0-linux-aarch64"
+          package_name="mparser-0.90.1-linux-aarch64"
           archive="$package_dir/$package_name.tar.gz"
           (cd "$package_dir" && sha256sum --check "$package_name.tar.gz.sha256")
           unpack_root="$RUNNER_TEMP/mparser-arm64-release"
@@ -335,8 +347,12 @@ jobs:
       - name: Upload Linux AArch64 release archive
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-0.90.0-linux-aarch64
-          path: build-arm64-jit/packages/*
+          name: mparser-0.90.1-linux-aarch64
+          path: |
+            build-arm64-jit/packages/mparser-0.90.1-linux-aarch64.tar.gz
+            build-arm64-jit/packages/mparser-0.90.1-linux-aarch64.tar.gz.sha256
+            build-arm64-jit/packages/mparser-0.90.1-linux-aarch64.tar.gz.provenance.json
+            build-arm64-jit/packages/SHA256SUMS
           if-no-files-found: error
       - name: Configure portable fallback build
         run: >-
@@ -361,7 +377,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/build-arm64-portable/install-sdk" \
-            -DMPARSER_REQUIRED_VERSION=0.90.0
+            -DMPARSER_REQUIRED_VERSION=0.90.1
           cmake --build build-arm64-portable-consumer --parallel
           LD_LIBRARY_PATH="$PWD/build-arm64-portable/install-sdk/lib" \
             ctest --test-dir build-arm64-portable-consumer --output-on-failure \
@@ -371,14 +387,14 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/build-arm64-portable/install-sdk" \
-            -DMPARSER_REQUIRED_VERSION=0.90.0
+            -DMPARSER_REQUIRED_VERSION=0.90.1
           cmake --build build-arm64-portable-cpp-consumer --parallel
           LD_LIBRARY_PATH="$PWD/build-arm64-portable/install-sdk/lib" \
             ctest --test-dir build-arm64-portable-cpp-consumer --output-on-failure \
               -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./build-arm64-portable/install-sdk/bin/mparser --version | tee build-arm64-portable/arm64-portable-sdk-version.txt
-          grep --fixed-strings "MParser 0.90.0" build-arm64-portable/arm64-portable-sdk-version.txt
+          grep --fixed-strings "MParser 0.90.1" build-arm64-portable/arm64-portable-sdk-version.txt
       - name: Run portable branch sample under QEMU
         shell: bash
         run: |
@@ -414,14 +430,14 @@ jobs:
             echo "Release authentication requires a v* tag ref" >&2
             exit 1
           fi
-          if [[ "$GITHUB_REF_NAME" != "v0.90.0" ]]; then
-            echo "Release tag must equal project version v0.90.0" >&2
+          if [[ "$GITHUB_REF_NAME" != "v0.90.1" ]]; then
+            echo "Release tag must equal project version v0.90.1" >&2
             exit 1
           fi
       - name: Download same-run release archives
         uses: actions/download-artifact@v5
         with:
-          pattern: mparser-0.90.0-*
+          pattern: mparser-0.90.1-*
           path: release-authentication
       - name: Validate authentication inputs
         shell: bash
@@ -430,11 +446,11 @@ jobs:
           archive_list="$RUNNER_TEMP/mparser-release-archives.txt"
           : > "$archive_list"
           expected_archives=(
-            mparser-0.90.0-windows-x86_64.zip
-            mparser-0.90.0-linux-x86_64.tar.gz
-            mparser-0.90.0-linux-aarch64.tar.gz
-            mparser-0.90.0-macos-x86_64.tar.gz
-            mparser-0.90.0-macos-arm64.tar.gz
+            mparser-0.90.1-windows-x86_64.zip
+            mparser-0.90.1-linux-x86_64.tar.gz
+            mparser-0.90.1-linux-aarch64.tar.gz
+            mparser-0.90.1-macos-x86_64.tar.gz
+            mparser-0.90.1-macos-arm64.tar.gz
           )
           for archive_name in "${expected_archives[@]}"; do
             mapfile -t matches < <(
@@ -453,10 +469,11 @@ jobs:
               "-DMPARSER_PROJECT_ROOT=$PWD" \
               "-DMPARSER_EXPECTED_REVISION=$GITHUB_SHA" \
               "-DMPARSER_SOURCE_REPOSITORY=https://github.com/$GITHUB_REPOSITORY" \
-              -DMPARSER_PROJECT_VERSION=0.90.0 \
+              -DMPARSER_PROJECT_VERSION=0.90.1 \
               -DMPARSER_EXPECTED_CONFIGURATION=Release \
               -DMPARSER_EXPECTED_NATIVE_JIT=ON \
               -DMPARSER_REQUIRE_CLEAN_SOURCE=ON \
+              -DMPARSER_REQUIRE_EXACT_PACKAGE_SET=ON \
               -P tests/validate_release_authentication_input.cmake
             printf '%s\n' "$archive" >> "$archive_list"
           done
@@ -481,7 +498,7 @@ jobs:
       - name: Upload authenticated release set
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-0.90.0-authenticated-${{ github.ref_name }}
+          name: mparser-0.90.1-authenticated-${{ github.ref_name }}
           path: release-authentication
           if-no-files-found: error
           retention-days: 90

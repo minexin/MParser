@@ -123,9 +123,12 @@ manually dispatches CI from the exact `v<project-version>` tag and enables
 
 The authentication job has job-local `id-token: write` permission and waits
 for every release package lane plus the required sanitizer lane. It downloads
-the five same-run package artifacts, validates each archive, checksum set,
-unsigned local provenance statement, source revision, and contract hashes,
-then signs both the archive and its provenance sidecar. Every generated
+the five same-run package artifacts. Platform uploads allowlist only the
+archive, its SHA-256 sidecar, local provenance, and `SHA256SUMS`; CPack staging
+directories are excluded. The job validates each exact four-file set,
+including archive/checksum consistency, the unsigned local provenance
+statement, source revision, and contract hashes, then signs both the archive
+and its provenance sidecar. Every generated
 Sigstore bundle is immediately verified against this identity form:
 
 ```text

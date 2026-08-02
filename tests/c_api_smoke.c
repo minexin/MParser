@@ -5,6 +5,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#if !defined(MPARSER_EXPECTED_VERSION_MAJOR) || \
+    !defined(MPARSER_EXPECTED_VERSION_MINOR) || \
+    !defined(MPARSER_EXPECTED_VERSION_PATCH)
+#error "C API smoke requires the configured MParser version"
+#endif
+
 _Static_assert(MPARSER_C_ABI_VERSION_MAJOR == 1u,
                "unexpected C ABI major version");
 _Static_assert(MPARSER_C_ABI_REVISION == 1u,
@@ -268,9 +274,9 @@ static int run_header_and_diagnostic_smoke(void) {
 
     CHECK(mparser_c_abi_version() == MPARSER_C_ABI_VERSION);
     CHECK(mparser_c_abi_revision() == MPARSER_C_ABI_REVISION);
-    CHECK(mparser_version_major() == 0);
-    CHECK(mparser_version_minor() == 90);
-    CHECK(mparser_version_patch() == 0);
+    CHECK(mparser_version_major() == MPARSER_EXPECTED_VERSION_MAJOR);
+    CHECK(mparser_version_minor() == MPARSER_EXPECTED_VERSION_MINOR);
+    CHECK(mparser_version_patch() == MPARSER_EXPECTED_VERSION_PATCH);
     CHECK(view_equals(
         mparser_api_status_name(MPARSER_API_STATUS_OWNER_MISMATCH),
         "owner-mismatch"));

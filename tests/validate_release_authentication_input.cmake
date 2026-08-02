@@ -18,6 +18,9 @@ foreach(required_variable IN ITEMS
             "Missing release-authentication variable: ${required_variable}")
     endif()
 endforeach()
+if(NOT DEFINED MPARSER_REQUIRE_EXACT_PACKAGE_SET)
+    set(MPARSER_REQUIRE_EXACT_PACKAGE_SET OFF)
+endif()
 
 foreach(required_file IN ITEMS
         "${MPARSER_ARCHIVE}"
@@ -55,6 +58,26 @@ if(NOT provenance_name STREQUAL "${archive_name}.provenance.json" OR
    NOT checksums_name STREQUAL "SHA256SUMS")
     message(FATAL_ERROR
         "Release-authentication sidecar names do not match the archive")
+endif()
+if(MPARSER_REQUIRE_EXACT_PACKAGE_SET)
+    file(GLOB package_entries
+        LIST_DIRECTORIES TRUE
+        RELATIVE "${archive_directory}"
+        "${archive_directory}/*")
+    set(expected_package_entries
+        "${archive_name}"
+        "${provenance_name}"
+        "${checksum_name}"
+        "${checksums_name}")
+    list(SORT package_entries)
+    list(SORT expected_package_entries)
+    if(NOT "${package_entries}" STREQUAL "${expected_package_entries}")
+        message(FATAL_ERROR
+            "Release-authentication package directory must contain exactly "
+            "the archive, SHA-256 sidecar, provenance, and SHA256SUMS.\n"
+            "actual: ${package_entries}\n"
+            "expected: ${expected_package_entries}")
+    endif()
 endif()
 if(archive_name MATCHES "\\.zip$")
     set(expected_media_type "application/zip")

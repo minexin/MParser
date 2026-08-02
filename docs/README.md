@@ -82,6 +82,8 @@ documentation defect and use the versioned machine contract until corrected.
 ## Release Evidence
 
 - [v0.90 Milestone](v0.90.md): embedding and release-candidate API boundary.
+- [v0.90.1 Authentication Hardening](v0.90.1.md): immutable-tag handling,
+  exact package upload sets, and the pre-signing rejection regression.
 - [v1.0 Cross-Platform Candidate Validation](v1.0-cross-platform-validation.md):
   revision-bound Windows, Linux, macOS, x64, ARM64, sanitizer, SDK, and package
   evidence.

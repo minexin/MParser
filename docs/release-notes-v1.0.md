@@ -1,8 +1,9 @@
 # MParser 1.0.0 Release Notes
 
 Publication status: **release candidate documentation**. The source project
-remains version `0.90.0` until performance and authenticated-provenance gates
-close and the public artifacts are generated from the frozen release commit.
+remains version `0.90.1` until authenticated-provenance and final publication
+gates close and the public artifacts are generated from the frozen release
+commit.
 
 MParser 1.0.0 defines a stable, documented, embeddable, and sustainably
 extensible MATLAB-like subset runtime. It does not claim complete MATLAB,
