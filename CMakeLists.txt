@@ -1709,6 +1709,22 @@ set_tests_properties(cross_platform_performance_evidence_smoke PROPERTIES
         "MParser cross-platform performance evidence validated: 8 reports"
     TIMEOUT 120)
 
+add_test(NAME linux_arm64_performance_evidence_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_SCHEMA_VALIDATOR=$<TARGET_FILE:performance_baseline_schema_smoke_tests>
+        -DMPARSER_SCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/performance-baseline-v1.schema.json
+        -DMPARSER_EVIDENCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/actions-30732814590
+        -DMPARSER_SCALAR_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_scalar_loop.m
+        -DMPARSER_ARRAY_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/performance_array_workload.m
+        -DMPARSER_EXPECTED_REVISION=3ec2bc074387283785068fe6ac98b4472a109a3a
+        -DMPARSER_EXPECTED_VERSION=${PROJECT_VERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_linux_arm64_performance_evidence.cmake)
+set_tests_properties(linux_arm64_performance_evidence_smoke PROPERTIES
+    LABELS "documentation;performance;release"
+    PASS_REGULAR_EXPRESSION
+        "MParser Linux ARM64 performance evidence validated: 2 reports"
+    TIMEOUT 120)
+
 if(MPARSER_ENABLE_NATIVE_JIT AND NOT CMAKE_CROSSCOMPILING)
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}"
         _mparser_performance_processor)

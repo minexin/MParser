@@ -64,5 +64,8 @@ The accepted eight-report set from revision `85685b8` and successful Actions
 run `30691616946` is indexed under
 [`actions-30691616946`](actions-30691616946/README.md). Its ARM64 CPU label is
 `Apple M1 (Virtual)`, so the evidence is explicitly hosted and non-emulated,
-not a bare-metal timing claim. Linux AArch64/QEMU results remain functional
-evidence only.
+not a bare-metal timing claim. The accepted native Linux ARM64 pair from
+revision `3ec2bc0` and successful Actions run `30732814590` is indexed under
+[`actions-30732814590`](actions-30732814590/README.md). It records raw ARM MIDR
+fields because the hosted kernel exposes no generic model name. Linux
+AArch64/QEMU results remain independent functional/package evidence only.

@@ -168,8 +168,10 @@ The candidate-readiness gate requires the remaining Must-have set to be
 exactly authenticated provenance with `framework_impact: none`.
 Cross-platform performance characterization is closed by the checked-in
 Windows/Linux/macOS x64 and native-architecture macOS ARM64 report set from
-Actions run `30691616946`. The gate also confines the only open Should-have to
-specialist sanitizer evaluation and records guarded JIT breadth as an additive
+Actions run `30691616946`, plus the native Linux ARM64 ARM MIDR-labelled pair
+from run `30732814590`. Exact-set gates validate both evidence directories.
+The readiness gate also confines the only open Should-have to specialist
+sanitizer evaluation and records guarded JIT breadth as an additive
 Should-have explicitly deferred to v1.x.
 The measured [v1.0 JIT scope decision](v1.0-jit-scope-decision.md) and its
 fixed-report validator preserve that boundary. Negative fixtures prove that

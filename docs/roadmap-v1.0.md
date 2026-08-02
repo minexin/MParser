@@ -581,7 +581,11 @@ is green. It refines, rather than replaces, the four work areas above.
    `85685b8` and successful Actions run `30691616946` are now SHA-256 indexed
    and continuously validated. The ARM64 CPU label is explicitly
    `Apple M1 (Virtual)`, so the result is hosted non-emulated evidence rather
-   than a bare-metal claim. The fixed reports also support the
+   than a bare-metal claim. A further native Linux ARM64 report pair from
+   revision `3ec2bc0` and successful Actions run `30732814590` records the
+   hosted ARM MIDR identity, is SHA-256 indexed, and has its own exact-set
+   CTest gate; QEMU remains functional/package evidence only. The fixed
+   reports also support the
    [v1.0 JIT scope decision](v1.0-jit-scope-decision.md): broader typed/JIT
    coverage is deferred to v1.x rather than added without a demonstrated
    release bottleneck.

@@ -6,9 +6,11 @@ at revision `f34d8d9` by Actions run `30684969401`; local Windows MSVC ASan
 no-JIT now passes 201/201. Actions run `30691616946` supplied accepted
 Windows/Linux/macOS x64 plus native macOS ARM64 performance evidence. Actions
 run `30693868656` then added a successful native Linux ARM64 full-suite lane
-alongside the existing AArch64 cross/QEMU package lane. The measured JIT scope
-audit defers broader specialization to v1.x without changing the guarded v1.0
-fallback contract.
+alongside the existing AArch64 cross/QEMU package lane. Actions run
+`30732814590` passed all seven execution jobs and supplied the accepted native
+Linux ARM64 report pair with a non-unknown ARM MIDR identity. The measured JIT
+scope audit defers broader specialization to v1.x without changing the guarded
+v1.0 fallback contract.
 Authenticated release provenance is the remaining Must-have; Linux TSan and
 macOS sanitizer remain bounded Should-have evaluations.
 Release documentation starts at

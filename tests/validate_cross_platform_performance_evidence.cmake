@@ -33,11 +33,27 @@ file(SHA256 "${MPARSER_SCALAR_SOURCE}" scalar_source_sha256)
 file(SHA256 "${MPARSER_ARRAY_SOURCE}" array_source_sha256)
 file(STRINGS "${MPARSER_EVIDENCE_ROOT}/SHA256SUMS" manifest_lines)
 
-set(platform_records
-    "mparser-performance-0.90.0-windows-x86_64|Windows|x86_64|MSVC"
-    "mparser-performance-0.90.0-linux-x86_64|Linux|x86_64|GNU"
-    "mparser-performance-0.90.0-macos-x86_64|Darwin|x86_64|AppleClang"
-    "mparser-performance-0.90.0-macos-arm64|Darwin|aarch64|AppleClang")
+if(DEFINED MPARSER_PLATFORM_RECORDS AND
+   NOT "${MPARSER_PLATFORM_RECORDS}" STREQUAL "")
+    set(platform_records ${MPARSER_PLATFORM_RECORDS})
+else()
+    set(platform_records
+        "mparser-performance-0.90.0-windows-x86_64|Windows|x86_64|MSVC"
+        "mparser-performance-0.90.0-linux-x86_64|Linux|x86_64|GNU"
+        "mparser-performance-0.90.0-macos-x86_64|Darwin|x86_64|AppleClang"
+        "mparser-performance-0.90.0-macos-arm64|Darwin|aarch64|AppleClang")
+endif()
+if(NOT DEFINED MPARSER_EXPECTED_REPORT_COUNT)
+    set(MPARSER_EXPECTED_REPORT_COUNT 8)
+endif()
+if(NOT DEFINED MPARSER_EXPECTED_PLATFORM_COUNT)
+    set(MPARSER_EXPECTED_PLATFORM_COUNT 4)
+endif()
+if(NOT DEFINED MPARSER_EVIDENCE_LABEL OR
+   "${MPARSER_EVIDENCE_LABEL}" STREQUAL "")
+    set(MPARSER_EVIDENCE_LABEL
+        "MParser cross-platform performance evidence")
+endif()
 set(report_records
     "native-scalar-loop-v1|scalar-loop-v1|${scalar_source_sha256}"
     "native-linear-array-v1|linear-array-v1|${array_source_sha256}")
@@ -134,6 +150,8 @@ foreach(platform_record IN LISTS platform_records)
            NOT reported_build_type STREQUAL "Release" OR
            NOT reported_os STREQUAL expected_os OR
            NOT reported_architecture STREQUAL expected_architecture OR
+           reported_cpu_model STREQUAL "" OR
+           reported_cpu_model STREQUAL "unknown" OR
            reported_emulated OR
            NOT reported_compiler STREQUAL expected_compiler OR
            NOT native_available OR
@@ -287,10 +305,12 @@ list(SORT manifest_lines)
 list(LENGTH expected_report_paths expected_report_count)
 list(LENGTH actual_report_paths actual_report_count)
 list(LENGTH manifest_lines manifest_count)
+list(LENGTH platform_records actual_platform_count)
 if(NOT actual_report_paths STREQUAL expected_report_paths OR
-   NOT actual_report_count EQUAL 8 OR
-   NOT expected_report_count EQUAL 8 OR
-   NOT manifest_count EQUAL 8)
+   NOT actual_report_count EQUAL MPARSER_EXPECTED_REPORT_COUNT OR
+   NOT expected_report_count EQUAL MPARSER_EXPECTED_REPORT_COUNT OR
+   NOT manifest_count EQUAL MPARSER_EXPECTED_REPORT_COUNT OR
+   NOT actual_platform_count EQUAL MPARSER_EXPECTED_PLATFORM_COUNT)
     message(FATAL_ERROR
         "cross-platform performance evidence set drifted\n"
         "expected: ${expected_report_paths}\n"
@@ -299,6 +319,8 @@ if(NOT actual_report_paths STREQUAL expected_report_paths OR
 endif()
 
 message(STATUS
-    "MParser cross-platform performance evidence validated: 8 reports, "
-    "4 native non-emulated platform/compiler identities, "
+    "${MPARSER_EVIDENCE_LABEL} validated: "
+    "${MPARSER_EXPECTED_REPORT_COUNT} reports, "
+    "${MPARSER_EXPECTED_PLATFORM_COUNT} native non-emulated "
+    "platform/compiler identities, "
     "revision=${MPARSER_EXPECTED_REVISION}")
