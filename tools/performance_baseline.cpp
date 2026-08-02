@@ -1108,6 +1108,7 @@ Measurement measureProcessColdStart(const Options& options) {
     return result;
 }
 
+#if defined(_WIN32) || defined(__APPLE__)
 std::string trim(std::string value) {
     const auto notSpace = [](unsigned char character) {
         return character != ' ' && character != '\t' &&
@@ -1120,6 +1121,7 @@ std::string trim(std::string value) {
                          .base();
     return begin < end ? std::string(begin, end) : std::string{};
 }
+#endif
 
 std::string architectureName() {
 #if defined(_M_X64) || defined(__x86_64__)
