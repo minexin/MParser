@@ -378,8 +378,8 @@ writing a future library `sizeof` over it.
 
 `docs/versioning-and-deprecation.md` defines the common v1 evolution policy.
 Cross-platform reliability, documentation, performance/resource evidence,
-and release packaging are confirmed. The remaining hosted operation is
-release-page publication and asset verification, not an ABI redesign.
+release packaging, and final hosted-asset verification are confirmed. The
+publication record does not change the frozen ABI.
 
 The v1.0 contract deliberately excludes a stable external native callback ABI
 and zero-copy borrowed input arrays. Their future additive rules are

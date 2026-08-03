@@ -542,8 +542,8 @@ is green. It refines, rather than replaces, the four work areas above.
    implementation was Windows-validated at `cfd59b7`; revision `f34d8d9`
    passed every release lane in Actions run `30684969401`, including public
    contract, SDK consumer, package, macOS ARM64, and AArch64 native/portable
-   evidence. Version and exact tag are now frozen; release-page publication
-   remains a later hosted operation.
+   evidence. Version and exact tag are frozen, and the final hosted Release is
+   published with an independently validated 32-asset manifest.
 3. **Must-have: close reliability evidence.** Exercise parser/semantic fuzz,
    malformed bytecode, compile-once/invoke-many, long-running execution,
    module/session load-unload, handle/listener lifetimes, cancellation and
@@ -622,7 +622,7 @@ is green. It refines, rather than replaces, the four work areas above.
    independent C11 and C++20 consumers plus the CLI machine protocol from each
    unpacked SDK; complete final cross-platform CI, authenticated signing or
    hosted provenance, release notes, and the v1.x roadmap.
-   **Status: 1.0.0 contract freeze complete.** The CMake/CPack target requires
+   **Status: complete.** The CMake/CPack target requires
    clean source and emits a deterministic, semantically
    validated unsigned in-toto Statement v1 with SLSA Provenance v1 metadata;
    `SHA256SUMS` binds the archive and statement. The release-process
@@ -639,7 +639,10 @@ is green. It refines, rather than replaces, the four work areas above.
    independent verification are under
    `docs/release-evidence/v1.0.0-authentication`. The engine/package version,
    compatibility matrix, public contract, and release notes are frozen at
-   `1.0.0`. Release-page publication and downloaded-asset verification remain.
+   `1.0.0`. The 32-asset GitHub Release is published, and the full canonical
+   redownload, API-digest, checksum, package-input, Sigstore, SDK-consumer, and
+   CLI audit is retained under
+   `docs/release-evidence/v1.0.0-publication`.
    `release_candidate_readiness_smoke`
    freezes the open Must-have blocker set to empty and rejects any newly open
    Must-have or one with framework impact.

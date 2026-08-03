@@ -16,8 +16,11 @@ uses Cosign keyless blob signing with the GitHub Actions OIDC identity instead.
 This mechanism produced final evidence from tag `v1.0.0` in successful Actions
 run `30780391460`: every advertised archive and local provenance statement was
 signed and verified. The downloaded artifact and all ten bundles were
-independently validated, closing `G-PROVENANCE-001`. GitHub Release publication
-remains a separate hosted operation.
+independently validated, closing `G-PROVENANCE-001`. The exact authenticated
+subjects are now published in the
+[MParser 1.0.0 Release](https://github.com/minexin/MParser/releases/tag/v1.0.0),
+and its full post-publication asset audit is retained under
+`release-evidence/v1.0.0-publication`.
 
 Sigstore keyless signing writes metadata to a public transparency log. The
 archive contents and private source tree are not uploaded to that log, but the

@@ -15,8 +15,11 @@ Tag `v1.0.0` completed all seven execution jobs and authenticated all five
 final archives plus five provenance statements in Actions run `30780391460`.
 All v1 Must-have evidence gaps are closed; Linux TSan and macOS sanitizer
 remain bounded Should-have evaluations. The engine, package metadata,
-compatibility matrix, and public contract are frozen at `1.0.0`; GitHub
-Release asset publication remains the final hosted release operation.
+compatibility matrix, and public contract are frozen at `1.0.0`. The final
+[MParser 1.0.0 Release](https://github.com/minexin/MParser/releases/tag/v1.0.0)
+publishes 32 authenticated assets for five platform/architecture targets;
+the complete post-publication download and digest audit is retained in
+[publication evidence](docs/release-evidence/v1.0.0-publication/README.md).
 Release documentation starts at
 [docs/README.md](docs/README.md), with the
 [user manual](docs/user-manual.md),
@@ -27,10 +30,12 @@ Release documentation starts at
 [docs/v1.0.md](docs/v1.0.md) for the final release freeze,
 [docs/release-evidence/v1.0.0-authentication/README.md](docs/release-evidence/v1.0.0-authentication/README.md)
 for the retained final-tag Sigstore evidence,
+[docs/release-evidence/v1.0.0-publication/README.md](docs/release-evidence/v1.0.0-publication/README.md)
+for the final hosted-asset and redownload audit,
 [docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the frozen
 contract,
 [docs/v1.0-cross-platform-validation.md](docs/v1.0-cross-platform-validation.md)
-for the six-lane release-candidate evidence,
+for the final cross-platform release evidence,
 [docs/v1.0-reliability.md](docs/v1.0-reliability.md) for the reliability
 evidence,
 [docs/v1.0-performance-baseline.md](docs/v1.0-performance-baseline.md) for
@@ -1023,8 +1028,9 @@ audit evidence, not publisher identity. A default-off, manual release-tag
 Sigstore job revalidated and signed every archive and local statement, and its
 public-transparency boundary was explicitly accepted. Tag
 `v1.0.0` completed the final operation in Actions run `30780391460`; the
-retained evidence fixes all ten subject identities before release-page
-publication. See
+retained evidence fixes all ten subject identities. The published Release
+preserves those exact subjects and its 32-asset audit is retained separately.
+See
 [Release Authentication](docs/release-authentication.md).
 
 The post-v0.90 contract gate adds CLI 1.0 and builtin source contract 1.0 to

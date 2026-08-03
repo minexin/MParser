@@ -1,10 +1,11 @@
 # MParser 1.0.0 Release Notes
 
-Publication contract: **frozen v1**. Final tag status: **authenticated**. The
+Publication contract: **frozen v1**. Publication status: **released**. The
 source project version is `1.0.0`. The immutable release commit has its exact
-`v1.0.0` tag; final tag-scoped authentication and independent artifact
-verification completed in Actions run `30780391460`. Release-page publication
-remains.
+`v1.0.0` tag; final tag-scoped authentication completed in Actions run
+`30780391460`, and the 32-asset
+[GitHub Release](https://github.com/minexin/MParser/releases/tag/v1.0.0) was
+published and independently downloaded and verified.
 
 MParser 1.0.0 defines a stable, documented, embeddable, and sustainably
 extensible MATLAB-like subset runtime. It does not claim complete MATLAB,
@@ -108,8 +109,13 @@ sets from tag `v1.0.0`, signed each archive and statement, and verified the
 exact workflow and tag identity in successful Actions run `30780391460`.
 The retained evidence and independent ten-subject verification are recorded
 under `docs/release-evidence/v1.0.0-authentication`. The version and public
-contracts are frozen at 1.0.0; only release-page assembly and final downloaded
-asset verification remain.
+contracts are frozen at 1.0.0. The published Release contains five platform
+archives and 27 checksum, provenance, Sigstore, and manifest assets totalling
+15,194,301 bytes. All 32 canonical assets matched the GitHub API and the
+prepublication set; all 31 release-wide checksum entries, five package-input
+validators, ten Sigstore verifications, unpacked C/C++ consumers, and CLI
+samples passed. The retained audit is under
+`docs/release-evidence/v1.0.0-publication`.
 See [v1 Release Process](release-process.md) and
 [Release Authentication](release-authentication.md).
 

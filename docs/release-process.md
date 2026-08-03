@@ -166,6 +166,11 @@ Before publication:
    provenance statement.
 7. Verify the downloaded Cosign bundles against the exact repository,
    workflow, tag, and GitHub Actions issuer before creating a release.
+8. Assemble a draft Release, compare every hosted API size and digest with the
+   authenticated input, and publish only the exact verified set.
+9. Download every asset again through its canonical tag URL, recheck the
+   release-wide checksum, package inputs, Sigstore subjects, unpacked SDK
+   consumers, and CLI protocol, then retain a compact publication manifest.
 
 The candidate-readiness gate now requires the open Must-have set to be empty.
 Final-tag authenticated provenance closed in Actions run `30780391460`; its
@@ -190,5 +195,8 @@ boundary; the certificate identity separately describes the hosted signing
 boundary. Candidate platform packaging passed in Actions run `30684969401`;
 the exact final-tag signing run passed in Actions run `30780391460`. The
 source, package metadata, and public contracts are frozen at `1.0.0`, and the
-final bundles are retained in the repository. Release-page publication and
-downloaded-asset verification remain separate hosted release operations.
+final bundles are retained in the repository. The 32-asset Release was
+published at <https://github.com/minexin/MParser/releases/tag/v1.0.0>; its
+canonical redownload, API-digest, package-input, Sigstore, SDK-consumer, and
+CLI checks are retained under
+`docs/release-evidence/v1.0.0-publication`.

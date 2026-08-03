@@ -60,6 +60,8 @@ adapter is Post-v1.0.
 - [v1 Release Process](release-process.md)
 - [Release Authentication](release-authentication.md): opt-in release-tag
   signing, public-transparency boundary, and consumer verification.
+- [MParser 1.0.0 Release](https://github.com/minexin/MParser/releases/tag/v1.0.0):
+  published platform SDKs, checksums, provenance, and Sigstore bundles.
 - [v1.0 Contract Freeze](v1.0-contract-freeze.md)
 - [v1.0 Roadmap](roadmap-v1.0.md)
 - [v1.x Roadmap](roadmap-v1.x.md)
@@ -83,7 +85,7 @@ documentation defect and use the versioned machine contract until corrected.
 ## Release Evidence
 
 - [v1.0 Release Freeze](v1.0.md): final engine/package version, frozen public
-  contracts, release evidence, and the exact hosted operations that remain.
+  contracts, release evidence, and publication outcome.
 - [v0.90 Milestone](v0.90.md): embedding and release-candidate API boundary.
 - [v0.90.1 Authentication Hardening](v0.90.1.md): immutable-tag handling,
   exact package upload sets, and the pre-signing rejection regression.
@@ -92,6 +94,9 @@ documentation defect and use the versioned machine contract until corrected.
 - [v1.0.0 Authentication Evidence](release-evidence/v1.0.0-authentication/README.md):
   retained final-tag provenance, checksums, ten Sigstore bundles, and
   independent verification for Actions run `30780391460`.
+- [v1.0.0 Publication Evidence](release-evidence/v1.0.0-publication/README.md):
+  exact GitHub Release identity, 32-asset manifest, release-wide checksums,
+  full redownload, package-input, Sigstore, SDK-consumer, and CLI validation.
 - [v1.0 Cross-Platform Validation](v1.0-cross-platform-validation.md):
   revision-bound Windows, Linux, macOS, x64, ARM64, sanitizer, SDK, and package
   evidence.
@@ -111,8 +116,9 @@ documentation defect and use the versioned machine contract until corrected.
 Actions run `30780391460` is the accepted final-tag cross-platform and
 authentication snapshot. It does not turn emulated AArch64 execution into
 physical-hardware performance evidence; native Linux ARM64 remains the
-performance authority for that architecture. GitHub Release publication is a
-separate hosted operation over the already authenticated assets.
+performance authority for that architecture. The final hosted Release keeps
+the authenticated asset digests unchanged and has an independently retained
+post-publication audit.
 
 ## Historical Milestones
 

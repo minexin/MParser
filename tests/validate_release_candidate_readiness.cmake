@@ -13,11 +13,16 @@ foreach(required_variable IN ITEMS
         NOJIT_ARRAY_REPORT
         AUTHENTICATION_EVIDENCE_VALIDATOR
         AUTHENTICATION_EVIDENCE_ROOT
+        PUBLICATION_EVIDENCE_VALIDATOR
+        PUBLICATION_EVIDENCE_ROOT
         EXPECTED_VERSION
         EXPECTED_JIT_EVIDENCE_VERSION
         EXPECTED_AUTHENTICATION_VERSION
         EXPECTED_AUTHENTICATION_REVISION
         EXPECTED_AUTHENTICATION_RUN_ID
+        EXPECTED_RELEASE_ID
+        EXPECTED_RELEASE_PUBLISHED_AT
+        EXPECTED_RELEASE_CHECKSUM_SHA256
         EXPECTED_CONTRACT_STATE
         EXPECTED_OPEN_SHOULD_HAVE
         EXPECTED_DEFERRED_SHOULD_HAVE)
@@ -43,7 +48,9 @@ foreach(required_file IN ITEMS
         "${NATIVE_ARRAY_REPORT}"
         "${NOJIT_ARRAY_REPORT}"
         "${AUTHENTICATION_EVIDENCE_VALIDATOR}"
-        "${AUTHENTICATION_EVIDENCE_ROOT}/manifest.json")
+        "${AUTHENTICATION_EVIDENCE_ROOT}/manifest.json"
+        "${PUBLICATION_EVIDENCE_VALIDATOR}"
+        "${PUBLICATION_EVIDENCE_ROOT}/manifest.json")
     if(NOT EXISTS "${required_file}")
         message(FATAL_ERROR
             "Release-readiness input is missing: ${required_file}")
@@ -77,16 +84,24 @@ if(EXPECTED_CONTRACT_STATE STREQUAL "frozen-v1")
     string(FIND "${release_notes}"
         "source project version is `${EXPECTED_VERSION}`"
         release_version_position)
+    string(FIND "${release_notes}"
+        "Publication status: **released**."
+        publication_status_position)
     string(FIND "${roadmap}"
-        "**Status: 1.0.0 contract freeze complete.**"
+        "**Status: complete.**"
         roadmap_status_position)
+    string(FIND "${roadmap}"
+        "The 32-asset GitHub Release is published"
+        roadmap_publication_position)
 else()
     message(FATAL_ERROR
         "Unsupported public-contract release state: ${EXPECTED_CONTRACT_STATE}")
 endif()
 if(release_status_position EQUAL -1 OR
    release_version_position EQUAL -1 OR
-   roadmap_status_position EQUAL -1)
+   publication_status_position EQUAL -1 OR
+   roadmap_status_position EQUAL -1 OR
+   roadmap_publication_position EQUAL -1)
     message(FATAL_ERROR
         "Release notes or roadmap no longer match the frozen release state")
 endif()
@@ -107,6 +122,26 @@ if(NOT authentication_validation_status EQUAL 0)
         "Release authentication evidence failed readiness validation\n"
         "stdout:\n${authentication_validation_output}\n"
         "stderr:\n${authentication_validation_error}")
+endif()
+
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+        "-DMPARSER_EVIDENCE_ROOT=${PUBLICATION_EVIDENCE_ROOT}"
+        "-DMPARSER_EXPECTED_VERSION=${EXPECTED_VERSION}"
+        "-DMPARSER_EXPECTED_TAG=v${EXPECTED_VERSION}"
+        "-DMPARSER_EXPECTED_REVISION=${EXPECTED_AUTHENTICATION_REVISION}"
+        "-DMPARSER_EXPECTED_RELEASE_ID=${EXPECTED_RELEASE_ID}"
+        "-DMPARSER_EXPECTED_PUBLISHED_AT=${EXPECTED_RELEASE_PUBLISHED_AT}"
+        "-DMPARSER_EXPECTED_RELEASE_CHECKSUM_SHA256=${EXPECTED_RELEASE_CHECKSUM_SHA256}"
+        -P "${PUBLICATION_EVIDENCE_VALIDATOR}"
+    RESULT_VARIABLE publication_validation_status
+    OUTPUT_VARIABLE publication_validation_output
+    ERROR_VARIABLE publication_validation_error)
+if(NOT publication_validation_status EQUAL 0)
+    message(FATAL_ERROR
+        "Release publication evidence failed readiness validation\n"
+        "stdout:\n${publication_validation_output}\n"
+        "stderr:\n${publication_validation_error}")
 endif()
 
 set(actual_open_must_have)

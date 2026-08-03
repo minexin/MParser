@@ -24,6 +24,7 @@ set(required_documents
     docs/release-process.md
     docs/release-authentication.md
     docs/release-evidence/v1.0.0-authentication/README.md
+    docs/release-evidence/v1.0.0-publication/README.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
     docs/v0.90.1.md
@@ -70,6 +71,9 @@ file(READ "${PROJECT_ROOT}/docs/release-authentication.md"
 file(READ
     "${PROJECT_ROOT}/docs/release-evidence/v1.0.0-authentication/manifest.json"
     release_authentication_evidence)
+file(READ
+    "${PROJECT_ROOT}/docs/release-evidence/v1.0.0-publication/manifest.json"
+    release_publication_evidence)
 file(READ "${PROJECT_ROOT}/docs/embedding-c-api.md" embedding_c_api)
 file(READ "${PROJECT_ROOT}/docs/architecture.md" architecture)
 file(READ "${PROJECT_ROOT}/docs/compatibility-matrix.json"
@@ -116,9 +120,15 @@ require_text(release_notes "Publication contract: **frozen v1**."
     "v1.0 release notes")
 require_text(release_notes "source project version is `${EXPECTED_VERSION}`"
     "v1.0 release notes")
+require_text(release_notes
+    "https://github.com/minexin/MParser/releases/tag/v1.0.0"
+    "published v1.0 release notes")
 require_text(release_roadmap
-    "**Status: 1.0.0 contract freeze complete.**"
+    "**Status: complete.**"
     "v1.0 roadmap")
+require_text(release_roadmap
+    "The 32-asset GitHub Release is published"
+    "v1.0 publication roadmap")
 require_text(release_milestone "MParser v${EXPECTED_VERSION}"
     "v1.0 milestone")
 
@@ -331,6 +341,36 @@ if(NOT authentication_evidence_version STREQUAL "1.0.0" OR
         "release authentication evidence identity drifted")
 endif()
 
+string(JSON publication_version GET
+    "${release_publication_evidence}" release version)
+string(JSON publication_tag GET
+    "${release_publication_evidence}" release tag)
+string(JSON publication_revision GET
+    "${release_publication_evidence}" release source_revision)
+string(JSON publication_url GET
+    "${release_publication_evidence}" release url)
+string(JSON publication_asset_count GET
+    "${release_publication_evidence}" release asset_count)
+string(JSON publication_asset_bytes GET
+    "${release_publication_evidence}" release total_bytes)
+string(JSON publication_downloaded_assets GET
+    "${release_publication_evidence}" verification downloaded_asset_count)
+string(JSON publication_sigstore_subjects GET
+    "${release_publication_evidence}" verification sigstore_subjects_verified)
+if(NOT publication_version STREQUAL "1.0.0" OR
+   NOT publication_tag STREQUAL "v1.0.0" OR
+   NOT publication_revision STREQUAL
+       "d8075575403bf30828a928a83bbbbfb9706ba902" OR
+   NOT publication_url STREQUAL
+       "https://github.com/minexin/MParser/releases/tag/v1.0.0" OR
+   NOT publication_asset_count EQUAL 32 OR
+   NOT publication_asset_bytes EQUAL 15194301 OR
+   NOT publication_downloaded_assets EQUAL 32 OR
+   NOT publication_sigstore_subjects EQUAL 10)
+    message(FATAL_ERROR
+        "release publication evidence identity drifted")
+endif()
+
 set(indexed_documents ${required_documents})
 list(REMOVE_ITEM indexed_documents docs/README.md)
 foreach(relative_path IN LISTS indexed_documents)
@@ -354,6 +394,9 @@ require_text(project_readme
     "project README")
 require_text(project_readme
     "(docs/release-evidence/v1.0.0-authentication/README.md)"
+    "project README")
+require_text(project_readme
+    "(docs/release-evidence/v1.0.0-publication/README.md)"
     "project README")
 
 require_text(user_manual

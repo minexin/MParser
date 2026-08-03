@@ -1617,7 +1617,8 @@ requires a clean worktree before CPack runs. This does not claim reproducible
 compilation, publisher identity, or a SLSA level; authenticated publication
 remains a release operation. The final `v1.0.0` tag completed that operation
 in Actions run `30780391460`; the source and contracts are frozen at 1.0.0 and
-the ten authenticated subjects are retained before release-page publication.
+the ten authenticated subjects are retained. The final 32-asset Release was
+published without digest drift and independently downloaded and verified.
 See [release-process.md](release-process.md).
 
 A CMake-only candidate-readiness gate cross-checks the engine version, frozen
@@ -1673,10 +1674,11 @@ their contracts without MSVC's conflicting-option `D9025` noise.
 After v0.90 the v1.0 mainline avoids Parser, HIR, Bytecode, `RuntimeValue`, or
 embedding-framework redesign unless release evidence proves a correctness
 defect. Reliability, documentation, candidate packaging, performance, and
-authenticated-provenance evidence are closed; work now concentrates on final
-1.0.0 publication and bounded sanitizer evaluation. The measured v1.0 JIT scope
-audit found no required new specialization and defers broader typed work to
-v1.x; any later addition still requires representative evidence. Long-tail
+authenticated-provenance evidence are closed; final 1.0.0 publication is also
+closed, leaving bounded sanitizer evaluation outside the release gate. The
+measured v1.0 JIT scope audit found no required new specialization and defers
+broader typed work to v1.x; any later addition still requires representative
+evidence. Long-tail
 functions, toolboxes, disk caches, external callback ABIs, zero-copy borrowed
 arrays, LLVM/OSR, and full MATLAB compatibility remain v1.x or Post-v1.0 work.
 
