@@ -23,7 +23,7 @@ set(required_documents
     docs/migration-v1.0.md
     docs/release-process.md
     docs/release-authentication.md
-    docs/release-evidence/v0.90.1-authentication/README.md
+    docs/release-evidence/v1.0.0-authentication/README.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
     docs/v0.90.1.md
@@ -68,7 +68,7 @@ file(READ "${PROJECT_ROOT}/docs/release-process.md" release_process)
 file(READ "${PROJECT_ROOT}/docs/release-authentication.md"
     release_authentication)
 file(READ
-    "${PROJECT_ROOT}/docs/release-evidence/v0.90.1-authentication/manifest.json"
+    "${PROJECT_ROOT}/docs/release-evidence/v1.0.0-authentication/manifest.json"
     release_authentication_evidence)
 file(READ "${PROJECT_ROOT}/docs/embedding-c-api.md" embedding_c_api)
 file(READ "${PROJECT_ROOT}/docs/architecture.md" architecture)
@@ -233,14 +233,14 @@ foreach(required_authentication_text IN ITEMS
         "workflow_dispatch"
         "authenticate_release"
         "G-PROVENANCE-001"
-        "30743014345"
+        "30780391460"
         "release_authentication_evidence_smoke"
         "cosign verify-blob"
         "https://token.actions.githubusercontent.com")
     require_text(release_authentication "${required_authentication_text}"
         "release authentication guide")
 endforeach()
-require_text(release_process "Sigstore Release Authentication Candidate v1"
+require_text(release_process "Sigstore Release Authentication v1"
     "release authentication build policy")
 require_text(release_process "id-token: write"
     "release authentication permission policy")
@@ -304,7 +304,7 @@ require_text(cross_platform_validation
     "85685b88f8f8eb4e89b03abf53aa16dbbe60c68c"
     "cross-platform performance revision identity")
 require_text(cross_platform_validation
-    "30743014345"
+    "30780391460"
     "cross-platform authentication run identity")
 require_text(cross_platform_validation
     "open Must-have set to empty"
@@ -321,11 +321,11 @@ string(JSON authentication_evidence_run GET
 string(JSON authentication_evidence_subjects GET
     "${release_authentication_evidence}"
     independent_verification verified_subjects)
-if(NOT authentication_evidence_version STREQUAL "0.90.1" OR
-   NOT authentication_evidence_tag STREQUAL "v0.90.1" OR
+if(NOT authentication_evidence_version STREQUAL "1.0.0" OR
+   NOT authentication_evidence_tag STREQUAL "v1.0.0" OR
    NOT authentication_evidence_revision STREQUAL
-       "5763b4752657c54ee5baeaf645a4249b4c5cc8ba" OR
-   NOT authentication_evidence_run EQUAL 30743014345 OR
+       "d8075575403bf30828a928a83bbbbfb9706ba902" OR
+   NOT authentication_evidence_run EQUAL 30780391460 OR
    NOT authentication_evidence_subjects EQUAL 10)
     message(FATAL_ERROR
         "release authentication evidence identity drifted")
@@ -353,7 +353,7 @@ require_text(project_readme
     "(docs/migration-v1.0.md)"
     "project README")
 require_text(project_readme
-    "(docs/release-evidence/v0.90.1-authentication/README.md)"
+    "(docs/release-evidence/v1.0.0-authentication/README.md)"
     "project README")
 
 require_text(user_manual

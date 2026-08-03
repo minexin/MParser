@@ -1,0 +1,140 @@
+{
+  "_type" : "https://in-toto.io/Statement/v1",
+  "predicate" : 
+  {
+    "buildDefinition" : 
+    {
+      "buildType" : "https://github.com/minexin/MParser/blob/main/docs/release-process.md#cmake-cpack-release-v1",
+      "externalParameters" : 
+      {
+        "configuration" : "Release",
+        "nativeJit" : true,
+        "projectVersion" : "1.0.0",
+        "releasePackaging" : true,
+        "repository" : "https://github.com/minexin/MParser",
+        "revision" : "d8075575403bf30828a928a83bbbbfb9706ba902",
+        "sourceDateEpoch" : "1767225600"
+      },
+      "internalParameters" : 
+      {
+        "compilerId" : "MSVC",
+        "compilerVersion" : "19.51.36252.0",
+        "generator" : "Visual Studio 18 2026",
+        "systemName" : "Windows",
+        "systemProcessor" : "AMD64",
+        "systemVersion" : "10.0.26100"
+      },
+      "resolvedDependencies" : 
+      [
+        {
+          "digest" : 
+          {
+            "gitCommit" : "d8075575403bf30828a928a83bbbbfb9706ba902"
+          },
+          "name" : "source-base",
+          "uri" : "git+https://github.com/minexin/MParser@d8075575403bf30828a928a83bbbbfb9706ba902"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "b90f366c5b825115ffe69d5bf5c7be4207f237ef7648f1b9ea6046fbf37a4861"
+          },
+          "name" : "CMakeLists.txt"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "5edaf7701d8096c1381a8b6b68c5988be261986fa00ba78c968defd17ce621b4"
+          },
+          "name" : "CMakePresets.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "4cfe70f20c10aa2e99123ce67fd85cf6367066fcc90eab9aa3a0c25ef5cd4dc7"
+          },
+          "name" : ".github/workflows/ci.yml"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "6b8201803824b2a10fbd117f9dd3f5ff4844c13e15be5285047e0dee55eec3bc"
+          },
+          "name" : "docs/public-contract-v1.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "c22a28d28d491e59011f9b82726720ce5102728f768948eb7149c76608cb0f35"
+          },
+          "name" : "docs/cli-contract-v1.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "013aa99461223287723ce4819b4cec749a719d57d53079742c56b4675c1dd8c2"
+          },
+          "name" : "docs/machine-result-v1.schema.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "9f1dc4f00a3a6ca554465b0cf8497bc9594d8b4ef4ce6f83479481228377b833"
+          },
+          "name" : "docs/compatibility-matrix.json"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "f898646a67dfb4053465c7be7b0aa472511fe64601871d6d467beed86cd30708"
+          },
+          "name" : "docs/release-process.md"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "78beb14a75d811615737fd4a4e289e5bb6d7ca96553e0b97ddcc3a76c5a1e5c0"
+          },
+          "name" : "docs/release-authentication.md"
+        },
+        {
+          "digest" : 
+          {
+            "sha256" : "735b07513e096748d5f33df6489c54b97544fedde882e4c4144487200aaafc8d"
+          },
+          "name" : "tests/validate_release_authentication_input.cmake"
+        }
+      ]
+    },
+    "runDetails" : 
+    {
+      "builder" : 
+      {
+        "id" : "https://github.com/minexin/MParser/blob/main/docs/release-process.md#local-cmake-builder-v1",
+        "version" : 
+        {
+          "cmake" : "4.4.0",
+          "compiler" : "MSVC 19.51.36252.0"
+        }
+      },
+      "mparser_authentication" : "unsigned",
+      "mparser_sourceTreeClean" : true
+    }
+  },
+  "predicateType" : "https://slsa.dev/provenance/v1",
+  "subject" : 
+  [
+    {
+      "annotations" : 
+      {
+        "mparser_sizeBytes" : 2769062
+      },
+      "digest" : 
+      {
+        "sha256" : "bbe1d57b26ac97bc176c91c3bfe804a2a99763fd47ab2bf88f8a6b0c7028e410"
+      },
+      "mediaType" : "application/zip",
+      "name" : "mparser-1.0.0-windows-x86_64.zip"
+    }
+  ]
+}

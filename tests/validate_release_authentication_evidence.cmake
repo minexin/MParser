@@ -87,20 +87,20 @@ if(NOT workflow_path STREQUAL expected_workflow OR
    NOT workflow_url STREQUAL expected_run_url OR
    NOT workflow_conclusion STREQUAL "success" OR
    NOT execution_job_count EQUAL 7 OR
-   NOT authentication_job_id EQUAL 91485433297 OR
+   NOT authentication_job_id EQUAL 91586916704 OR
    NOT authentication_job_conclusion STREQUAL "success")
     message(FATAL_ERROR
         "release authentication workflow identity drifted")
 endif()
 
 set(expected_execution_jobs
-    91483748138
-    91483748140
-    91483748154
-    91483748158
-    91483748168
-    91483748179
-    91483748185)
+    91583807723
+    91583807731
+    91583807742
+    91583807750
+    91583807755
+    91583807765
+    91583807769)
 set(actual_execution_jobs)
 math(EXPR execution_job_last "${execution_job_count} - 1")
 foreach(job_index RANGE 0 ${execution_job_last})
@@ -154,12 +154,12 @@ string(JSON artifact_platform_count GET
     "${manifest_json}" actions_artifact exact_platform_directories)
 string(JSON artifact_file_count GET
     "${manifest_json}" actions_artifact exact_files)
-if(NOT artifact_id EQUAL 8832142356 OR
+if(NOT artifact_id EQUAL 8843808799 OR
    NOT artifact_name STREQUAL
-       "mparser-0.90.1-authenticated-v0.90.1" OR
-   NOT artifact_size EQUAL 14858931 OR
+       "mparser-1.0.0-authenticated-v1.0.0" OR
+   NOT artifact_size EQUAL 15104142 OR
    NOT artifact_sha256 STREQUAL
-       "7460347da20b7b0a4b4cf041c965485c09d7622c7e349c5459f480daed2460d0" OR
+       "9224c5466e39386e9831f6641bc608b49326cc9a6834a6be999e57078d1a74e9" OR
    NOT artifact_platform_count EQUAL 5 OR
    NOT artifact_file_count EQUAL 30)
     message(FATAL_ERROR
@@ -228,11 +228,11 @@ function(validate_bundle
 endfunction()
 
 set(platform_records
-    "linux-aarch64|mparser-0.90.1-linux-aarch64|mparser-0.90.1-linux-aarch64.tar.gz|3095533|7a6919e2376197b760be279b07232c90bedffb2bb0a9819608905c9f4d12b79e|emkZ4jdhl7dgviebByMskL7f+yuwqYGWCJBcn00St54=|214b6ef9b70ca9f1ebdc6d7eb1980e9252e6b173c5bce64aa39a2032dede4514|8c9b428a13d9548167c4989798a1fea8a5fb541c1d61fb3be05c79ff1d43cf52|3969|27e63c6f9f9d2c8b56e2d713bd984e932175194b6efd8fd5cf084174668ab17c|J+Y8b5+dLItW4tcTvZhOkyF1GUtu/Y/VzwhBdGaKsXw=|6582fcb66ba16263ea1cf3a90345906dbacafc91576ba388b902a4a106b83f5b|92130d7d207669f872f23147bb069cbb1c04d3d86d0ff9ddbf271d7c259fcba0"
-    "linux-x86_64|mparser-0.90.1-linux-x86_64|mparser-0.90.1-linux-x86_64.tar.gz|3525875|6acfabbb4bc83f86162e95260e0567b6843caeefd83d544629bfa937f7ab6572|as+ru0vIP4YWLpUmDgVntoQ8ru/YPVRGKb+pN/erZXI=|4261e5b5c76899cda65dd2bfee3aa333d8465c77212bc36fadb59c8403ba6ffa|30ff36f89700928367fe70786aaff51d72d18ee23bad0a7691ccb9b6c74ef8a2|3984|c3dfa7991d8ba5f8b141a4db165d40be0732e3ba09e538c60f769207f7a1d1c2|w9+nmR2LpfixQaTbFl1Avgcy47oJ5TjGD3aSB/eh0cI=|3c2f640a4c5e7f412b505b34c21c71add508810138085f545efc23f8eb81bd7e|0cc07971d37e84cc5ac04f05b7114cb26e12dc70f2193fc8f2d272b6bfd20794"
-    "macos-arm64|mparser-0.90.1-macos-arm64|mparser-0.90.1-macos-arm64.tar.gz|2644223|e043a232f7240a595de96b728cb3a33b87c988e07527c67075748e165893fa3f|4EOiMvckClld6WtyjLOjO4fJiOB1J8ZwdXSOFliT+j8=|1bab5f62bb7ccf9340c0e5b3e08ad922f8072745ea6eadd1e79e8739317510b0|54ca51bc4ae24f74db730a230a65fb17452987f4322933b298d794aae8c16d4a|4012|48a762ef4eebfb5fe436ad03a3247b52a8674105a922af16abfecd95a9d27029|SKdi707r+1/kNq0DoyR7UqhnQQWpIq8Wq/7NlanScCk=|72572ec446b895666f2b763e58bcada79d17afad2af60293bb698d663d8c8923|0d9e72a2be017d5105b287274fa8c53b1bc26ed49117cc0e46f17ed3f941b282"
-    "macos-x86_64|mparser-0.90.1-macos-x86_64|mparser-0.90.1-macos-x86_64.tar.gz|2862605|dee5abd30a59bc47ccc7cacfb862354d99a57e660670b36dd9d3e134f915eec6|3uWr0wpZvEfMx8rPuGI1TZmlfmYGcLNt2dPhNPkV7sY=|e45c64e256062ec674752ea71c39407b9497176c664d3a3cda8401af86af40f6|0426cda33f1a184da26bf8790ba53995bd5b46c6f038c0f16818fe2a377aecad|4014|b06df45d1772fd9dcd14ee4959fc1761fe57059c9f6379e11246696ea1758986|sG30XRdy/Z3NFO5JWfwXYf5XBZyfY3nhEkZpbqF1iYY=|1368ceeff8419661c6144104621072fb0c42fdce1cab1c38f658bbb7e64dfe6b|fc230928ac3f3a5f44b76cbae5abb434ee083fc2447e7a131acb241f21e60423"
-    "windows-x86_64|mparser-0.90.1-windows-x86_64|mparser-0.90.1-windows-x86_64.zip|2671837|004a87b81be47ccd6e06ad9cc715cb7a0b67e1bf0b604a57e8ec3c7a7d16a617|AEqHuBvkfM1uBq2cxxXLegtn4b8LYEpX6Ow8en0Wphc=|114000976d8852bb02877414a50c9b22dd5e66f1fdb852a195e9381c1bb0ce31|613f6eae91fd512011b047a39b92b15478a31d9a6795ef43d37878e7e3cbc2d0|4147|e885a29b59dc9c7a70c7a23fd60cdc3c4c508ff9b488891ca99edd930efc9f44|6IWim1ncnHpwx6I/1gzcPExQj/m0iIkcqZ7dkw78n0Q=|76c7b3547b3576c4118bf907fccb5fbc865801409d8bc6d03bb79f566a754a3e|84d1d83e3fa09d4eaa381caf89853c4700b1ade1fd44bc76ed259d910c065540")
+    "linux-aarch64|mparser-1.0.0-linux-aarch64|mparser-1.0.0-linux-aarch64.tar.gz|3138173|77e8bdcdc13f626537a141be39f1e3c759150ae7a47f3e0e67bec83fb38eb0ab|d+i9zcE/YmU3oUG+OfHjx1kVCuekfz4OZ77IP7OOsKs=|60a2e2b8bb969fbdeecf297a68d6343a5cf5babfeb25bc874d9959343453cef4|3ff3756ddd0c83911c1df62f2f6244c11d6c0a059518f98ed23ac9acae416a0c|3967|c7fb4f11f5cda84ab3fbe8a083ac64768b929694eaa207c8cc4d113b79f5a601|x/tPEfXNqEqz++igg6xkdouSlpTqogfIzE0RO3n1pgE=|4df9adab508b9cccda918480beeb026003328f80187e113de75a5758b253b2f3|813239ba2f14a55a54fb5085ea15f262b682306a67b58aa6d8ef97d629e56fa2"
+    "linux-x86_64|mparser-1.0.0-linux-x86_64|mparser-1.0.0-linux-x86_64.tar.gz|3569170|08fca95bdbf10ebcffa50e47f30235f81cdac8f5bea9916eb02f6567f63aa740|CPypW9vxDrz/pQ5H8wI1+BzayPW+qZFusC9lZ/Y6p0A=|9a6a9d244bf798449387b6ab0840f8a9c4922982d26d7558d9775a1217fd6445|d25c6a339ffb8cde00b2640e3b706de33bdbc841df76cef808d95b0d169782d3|3982|9cba5282b59d491994f43016d95e40a3a9d2cd04f1e2c112fd129d169e0cda75|nLpSgrWdSRmU9DAW2V5Ao6nSzQTx4sES/RKdFp4M2nU=|6ed6816dc3b3703bc3ab6557a75394f083be823197acc95dcf7cf7d841d4aa43|7740fa69fcd65a6219316fe36f4632914107a32f3266734d7d57acd0a5ebbca3"
+    "macos-arm64|mparser-1.0.0-macos-arm64|mparser-1.0.0-macos-arm64.tar.gz|2683045|a61cf44973da3810422a7519814e8fd5661ecbac340f346a34216c6f7fcccd61|phz0SXPaOBBCKnUZgU6P1WYey6w0DzRqNCFsb3/MzWE=|ffecd4d89a88e674fc926b2cb561d3b7d2f050c5a26fe27ab911b4210f7590bf|8debab387a5bee218b2e1ac38903842b35eb8dff655baaacd6f4f43777cfdaaf|4010|ed6ebb8787603694383103efd21f791f00ad03b07113909c8647f785cd6ec4c9|7W67h4dgNpQ4MQPv0h95HwCtA7BxE5Cchkf3hc1uxMk=|76a481ae78c21f584d70de34be0a21f973af696c090f2e057322cac5b19a9f09|7fb68666f71db4e0222642af33991bdcd47704a14d1e7238996e8c8775d69c54"
+    "macos-x86_64|mparser-1.0.0-macos-x86_64|mparser-1.0.0-macos-x86_64.tar.gz|2900976|12e0f64d8c0f350e8ed4cac2e4b4d60b9d3ceb79b004c553b24d77cf11a5e2f0|EuD2TYwPNQ6O1MrC5LTWC50863mwBMVTsk13zxGl4vA=|11c213ebad90b0bfc92d6968d26c63757035ab9deca08d76f6426e8b73f60f6e|e1049e9fa5afeb5b8669b0fe28c7c226d770fbe9b59f00a294cb5ab9bced7f0e|4012|c2291ba3ee419369f7d35b7e3ac425ebe8f5a5ab987b8891217f7f44454bbe95|wikbo+5Bk2n301t+OsQl6+j1pauYe4iRIX9/REVLvpU=|128bb4d8b7be6834a93e70e4faa5482668c1900d7e22b683dd4e687040d8419e|49ee51c131b69894d075a971f276f53fb021d213eae2de7cfe98d835b8e1a64c"
+    "windows-x86_64|mparser-1.0.0-windows-x86_64|mparser-1.0.0-windows-x86_64.zip|2769062|bbe1d57b26ac97bc176c91c3bfe804a2a99763fd47ab2bf88f8a6b0c7028e410|u+HVeyasl7wXbJHDv+gEoqmXY/1Hqyv4j4prDHAo5BA=|7ed87808c660ef4f13540e7cab054487865979fb3b02a0b16bbd01c032bc3f1a|ae6a5e9f0baef013d022089c540ca4c8589e0ad09463ae14fb76c5e647f66040|4145|a2c44344bf2b6638f70a1e7be2f78f176c7b1f496bdb4eeac2d1fda6b595ae0f|osRDRL8rZjj3Ch574vePF2x7H0lr207qwtH9prWVrg8=|203e38d7fcd1f23fe8288b5036f0ae23f94a8052e0c808f294343697aed8b355|48471b9ab06380db2a622f1e57faa956aa3e0124d6375c7ae9269e2acbd371d0")
 
 string(JSON platform_count LENGTH "${manifest_json}" platforms)
 list(LENGTH platform_records expected_platform_count)

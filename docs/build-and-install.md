@@ -235,9 +235,10 @@ requires a clean Git worktree. The package directory receives:
 normalized metadata, compares both hashes, relocates the unpacked SDK, builds
 independent C11 and C++20 consumers, and runs the unpacked CLI machine
 protocol. The local unsigned statement records inputs and the builder boundary
-but does not authenticate publisher identity or claim a SLSA level. Final
-publication still requires the selected signing or hosted-provenance
-mechanism. See [v1 Release Process](release-process.md).
+but does not authenticate publisher identity or claim a SLSA level. The
+`v1.0.0` release set applies the selected Sigstore mechanism in the hosted
+workflow; see the retained evidence and
+[v1 Release Process](release-process.md).
 
 ## Troubleshooting
 

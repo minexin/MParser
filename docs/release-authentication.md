@@ -6,18 +6,18 @@ local CMake/CPack builder. A successful local package build proves integrity
 and records inputs, but it does not authenticate Wang Xin, the repository, or
 the hosted workflow that publishes the package.
 
-## Selected Candidate
+## Selected Mechanism
 
 Repository visibility is not a stable release assumption: the repository may
 be temporarily public for cross-platform CI and private for the final release.
 GitHub hosted artifact attestations for private repositories require GitHub
 Enterprise Cloud, so the stable candidate does not depend on that feature. It
 uses Cosign keyless blob signing with the GitHub Actions OIDC identity instead.
-This mechanism produced accepted candidate evidence from tag `v0.90.1` in
-successful Actions run `30743014345`: every advertised archive and local
-provenance statement was signed and verified. The downloaded artifact and all
-ten bundles were independently validated, closing `G-PROVENANCE-001`. This is
-not the final `1.0.0` tag or GitHub Release publication.
+This mechanism produced final evidence from tag `v1.0.0` in successful Actions
+run `30780391460`: every advertised archive and local provenance statement was
+signed and verified. The downloaded artifact and all ten bundles were
+independently validated, closing `G-PROVENANCE-001`. GitHub Release publication
+remains a separate hosted operation.
 
 Sigstore keyless signing writes metadata to a public transparency log. The
 archive contents and private source tree are not uploaded to that log, but the
@@ -68,13 +68,13 @@ certificate, signature, timestamp, and transparency-log proof. The job then
 verifies each bundle before uploading the authenticated release set as a
 workflow artifact. It does not create or publish a GitHub Release.
 
-## Accepted Candidate Evidence
+## Accepted Final Evidence
 
 The immutable retained record is
-[v0.90.1-authentication](release-evidence/v0.90.1-authentication/README.md).
-It binds tag `v0.90.1`, revision
-`5763b4752657c54ee5baeaf645a4249b4c5cc8ba`, Actions run `30743014345`,
-authenticated artifact `8832142356`, five exact package inputs, and ten
+[v1.0.0-authentication](release-evidence/v1.0.0-authentication/README.md).
+It binds tag `v1.0.0`, revision
+`d8075575403bf30828a928a83bbbbfb9706ba902`, Actions run `30780391460`,
+authenticated artifact `8843808799`, five exact package inputs, and ten
 Sigstore v0.3 bundles. The same-run Cosign checks and an independent Sigstore
 Python 4.5.0 offline verification both accepted the exact workflow identity
 and GitHub Actions issuer. `release_authentication_evidence_smoke` continuously
@@ -83,12 +83,12 @@ digests.
 
 ## Consumer Verification
 
-For a tag such as `v0.90.1`, verify an archive and its local provenance with
+For tag `v1.0.0`, verify an archive and its local provenance with
 the workflow identity and GitHub Actions issuer:
 
 ```text
-cosign verify-blob mparser-0.90.1-linux-x86_64.tar.gz --bundle mparser-0.90.1-linux-x86_64.tar.gz.sigstore.json --certificate-identity=https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v0.90.1 --certificate-oidc-issuer=https://token.actions.githubusercontent.com
-cosign verify-blob mparser-0.90.1-linux-x86_64.tar.gz.provenance.json --bundle mparser-0.90.1-linux-x86_64.tar.gz.provenance.json.sigstore.json --certificate-identity=https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v0.90.1 --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+cosign verify-blob mparser-1.0.0-linux-x86_64.tar.gz --bundle mparser-1.0.0-linux-x86_64.tar.gz.sigstore.json --certificate-identity=https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v1.0.0 --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+cosign verify-blob mparser-1.0.0-linux-x86_64.tar.gz.provenance.json --bundle mparser-1.0.0-linux-x86_64.tar.gz.provenance.json.sigstore.json --certificate-identity=https://github.com/minexin/MParser/.github/workflows/ci.yml@refs/tags/v1.0.0 --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
 After signature verification, validate the archive sidecar, `SHA256SUMS`, and

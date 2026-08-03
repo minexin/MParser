@@ -1615,10 +1615,10 @@ multi-translation-unit C++20 consumers, and runs the installed machine
 protocol without source-tree or loader-path access. The publication target
 requires a clean worktree before CPack runs. This does not claim reproducible
 compilation, publisher identity, or a SLSA level; authenticated publication
-remains a release operation. The v0.90.1 candidate completed that operation
-in Actions run `30743014345`; the source and contracts are now frozen at
-1.0.0, whose final tag must repeat the authenticated assembly before
-publication. See [release-process.md](release-process.md).
+remains a release operation. The final `v1.0.0` tag completed that operation
+in Actions run `30780391460`; the source and contracts are frozen at 1.0.0 and
+the ten authenticated subjects are retained before release-page publication.
+See [release-process.md](release-process.md).
 
 A CMake-only candidate-readiness gate cross-checks the engine version, frozen
 public-contract state, release-note status, roadmap status, and the exact open
@@ -1633,8 +1633,8 @@ v1.0 reactivation is rejected.
 Revision `f34d8d9` passed all six release lanes in Actions run `30684969401`.
 That evidence closes the reliability and documentation Must-haves without an
 engine change. Performance evidence subsequently closed in runs `30691616946`
-and `30732814590`, and authenticated provenance closed in tag run
-`30743014345`; the readiness gate now permits no open Must-haves.
+and `30732814590`, and final-tag authenticated provenance closed in run
+`30780391460`; the readiness gate now permits no open Must-haves.
 
 The v1.0 performance gate is implemented as a non-installed engineering
 executable rather than another public runtime mode. It calls `Parser`,

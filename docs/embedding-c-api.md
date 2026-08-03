@@ -355,9 +355,8 @@ plus SHA-256 records and an unsigned SLSA Provenance v1 statement.
 timestamp, verifies archive paths, checksums, and provenance semantics,
 unpacks it, and consumes only that SDK from independent C11 and C++20
 projects. These records provide integrity and audit evidence, not publisher
-identity. Tag `v0.90.1` completed the separate authenticated candidate
-operation in Actions run `30743014345`; final `1.0.0` publication must repeat
-it for the final tag.
+identity. Tag `v1.0.0` completed the final authenticated operation in Actions
+run `30780391460`; the retained evidence binds all ten release subjects.
 
 ## Licensing
 
@@ -379,8 +378,8 @@ writing a future library `sizeof` over it.
 
 `docs/versioning-and-deprecation.md` defines the common v1 evolution policy.
 Cross-platform reliability, documentation, performance/resource evidence,
-and release packaging are confirmed. The remaining hosted operation is exact
-`v1.0.0` tag authentication and publication, not an ABI redesign.
+and release packaging are confirmed. The remaining hosted operation is
+release-page publication and asset verification, not an ABI redesign.
 
 The v1.0 contract deliberately excludes a stable external native callback ABI
 and zero-copy borrowed input arrays. Their future additive rules are

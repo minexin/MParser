@@ -88,8 +88,10 @@ documentation defect and use the versioned machine contract until corrected.
 - [v0.90.1 Authentication Hardening](v0.90.1.md): immutable-tag handling,
   exact package upload sets, and the pre-signing rejection regression.
 - [v0.90.1 Authentication Evidence](release-evidence/v0.90.1-authentication/README.md):
-  retained provenance, checksums, ten Sigstore bundles, and independent
-  verification for Actions run `30743014345`.
+  historical candidate provenance and signing evidence.
+- [v1.0.0 Authentication Evidence](release-evidence/v1.0.0-authentication/README.md):
+  retained final-tag provenance, checksums, ten Sigstore bundles, and
+  independent verification for Actions run `30780391460`.
 - [v1.0 Cross-Platform Validation](v1.0-cross-platform-validation.md):
   revision-bound Windows, Linux, macOS, x64, ARM64, sanitizer, SDK, and package
   evidence.
@@ -106,10 +108,11 @@ documentation defect and use the versioned machine contract until corrected.
 - `docs/baselines/v1.0/README.md` in the source repository: committed
   source-bound reports.
 
-Actions run `30746822213` is the latest accepted pre-freeze cross-platform
-snapshot. It does not turn emulated AArch64 execution into physical-hardware
-performance evidence or unsigned provenance into publisher authentication;
-the exact v1.0.0 tag must still repeat authenticated assembly.
+Actions run `30780391460` is the accepted final-tag cross-platform and
+authentication snapshot. It does not turn emulated AArch64 execution into
+physical-hardware performance evidence; native Linux ARM64 remains the
+performance authority for that architecture. GitHub Release publication is a
+separate hosted operation over the already authenticated assets.
 
 ## Historical Milestones
 

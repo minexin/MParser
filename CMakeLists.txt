@@ -3,10 +3,10 @@ cmake_minimum_required(VERSION 3.20)
 project(MParser VERSION 1.0.0 LANGUAGES C CXX)
 
 set(MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION "0.90.0")
-set(MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION "0.90.1")
+set(MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION "1.0.0")
 set(MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION
-    "5763b4752657c54ee5baeaf645a4249b4c5cc8ba")
-set(MPARSER_V1_AUTHENTICATION_EVIDENCE_RUN_ID "30743014345")
+    "d8075575403bf30828a928a83bbbbfb9706ba902")
+set(MPARSER_V1_AUTHENTICATION_EVIDENCE_RUN_ID "30780391460")
 set(MPARSER_V1_AUTHENTICATION_EVIDENCE_DIRECTORY
     "v${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}-authentication")
 set(MPARSER_V1_AUTHENTICATION_EVIDENCE_ROOT
@@ -630,7 +630,7 @@ add_test(NAME release_authentication_evidence_smoke
 set_tests_properties(release_authentication_evidence_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser release authentication evidence validated: v0.90.1, run 30743014345, 5 platforms, 10 Sigstore subjects")
+        "MParser release authentication evidence validated: v1.0.0, run 30780391460, 5 platforms, 10 Sigstore subjects")
 
 add_test(NAME release_candidate_readiness_smoke
     COMMAND ${CMAKE_COMMAND}

@@ -542,7 +542,8 @@ is green. It refines, rather than replaces, the four work areas above.
    implementation was Windows-validated at `cfd59b7`; revision `f34d8d9`
    passed every release lane in Actions run `30684969401`, including public
    contract, SDK consumer, package, macOS ARM64, and AArch64 native/portable
-   evidence. Version/tag publication remains a later operation.
+   evidence. Version and exact tag are now frozen; release-page publication
+   remains a later hosted operation.
 3. **Must-have: close reliability evidence.** Exercise parser/semantic fuzz,
    malformed bytecode, compile-once/invoke-many, long-running execution,
    module/session load-unload, handle/listener lifetimes, cancellation and
@@ -632,14 +633,13 @@ is green. It refines, rather than replaces, the four work areas above.
    transparency boundary is explicit in
    [release-authentication.md](release-authentication.md). Candidate packages
    and uploads passed on Windows, Linux x64/AArch64, and macOS x64/ARM64 in
-   Actions run `30691616946`. Tag `v0.90.1` at revision `5763b47` then passed
+   Actions run `30691616946`. Tag `v1.0.0` at revision `d807557` then passed
    all seven execution jobs and authenticated all ten archive/provenance
-   subjects in Actions run `30743014345`; the retained bundles, manifest, and
+   subjects in Actions run `30780391460`; the retained bundles, manifest, and
    independent verification are under
-   `docs/release-evidence/v0.90.1-authentication`. The engine/package version,
+   `docs/release-evidence/v1.0.0-authentication`. The engine/package version,
    compatibility matrix, public contract, and release notes are frozen at
-   `1.0.0`. The final release tag, repetition of authenticated assembly for
-   that tag, final evidence retention, and release-page publication remain.
+   `1.0.0`. Release-page publication and downloaded-asset verification remain.
    `release_candidate_readiness_smoke`
    freezes the open Must-have blocker set to empty and rejects any newly open
    Must-have or one with framework impact.

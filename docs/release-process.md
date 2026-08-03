@@ -112,7 +112,7 @@ Ignoring either extension field must not confer trust. Publication policy
 independently requires a clean release commit, matching artifact and input
 digests, and an accepted signer-builder pair or equivalent hosted identity.
 
-## Sigstore Release Authentication Candidate v1
+## Sigstore Release Authentication v1
 
 Repository visibility may change between CI validation and final publication.
 GitHub hosted artifact attestations for a private repository require GitHub
@@ -168,8 +168,8 @@ Before publication:
    workflow, tag, and GitHub Actions issuer before creating a release.
 
 The candidate-readiness gate now requires the open Must-have set to be empty.
-Authenticated candidate provenance closed in tag-scoped Actions run
-`30743014345`; its retained manifest and ten bundles are enforced by
+Final-tag authenticated provenance closed in Actions run `30780391460`; its
+retained manifest and ten bundles are enforced by
 `release_authentication_evidence_smoke` and by the readiness gate itself.
 Cross-platform performance characterization is closed by the checked-in
 Windows/Linux/macOS x64 and native-architecture macOS ARM64 report set from
@@ -188,7 +188,7 @@ does not rewrite `mparser_authentication: "unsigned"` inside the local
 statement. The local builder ID continues to describe the platform CMake/CPack
 boundary; the certificate identity separately describes the hosted signing
 boundary. Candidate platform packaging passed in Actions run `30684969401`;
-the real tag-scoped candidate signing run passed in Actions run `30743014345`.
-The source, package metadata, and public contracts are frozen at `1.0.0`.
-Repetition of these checks for the exact final tag, retention of its bundles,
-and release-page publication remain separate hosted release operations.
+the exact final-tag signing run passed in Actions run `30780391460`. The
+source, package metadata, and public contracts are frozen at `1.0.0`, and the
+final bundles are retained in the repository. Release-page publication and
+downloaded-asset verification remain separate hosted release operations.

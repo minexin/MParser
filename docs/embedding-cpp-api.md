@@ -230,5 +230,5 @@ Checksummed release archives include the public contract and schema and are
 validated only through their unpacked C/C++ SDK. Deterministic unsigned SLSA
 provenance binds each archive to its source and build inputs. The stable v1
 source contract and common versioning/deprecation policy are frozen in
-`docs/versioning-and-deprecation.md`; exact-tag authentication and publication
-remain hosted release operations.
+`docs/versioning-and-deprecation.md`; exact-tag authentication is retained in
+the final evidence set, while release-page publication remains hosted.

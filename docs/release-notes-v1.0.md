@@ -1,10 +1,10 @@
 # MParser 1.0.0 Release Notes
 
-Publication contract: **frozen v1**. The source project version is `1.0.0`.
-The immutable release commit still requires its exact `v1.0.0` tag, final
-tag-scoped authentication, artifact verification, and release-page
-publication. Candidate authenticated-provenance evidence is already closed by
-tag run `30743014345`.
+Publication contract: **frozen v1**. Final tag status: **authenticated**. The
+source project version is `1.0.0`. The immutable release commit has its exact
+`v1.0.0` tag; final tag-scoped authentication and independent artifact
+verification completed in Actions run `30780391460`. Release-page publication
+remains.
 
 MParser 1.0.0 defines a stable, documented, embeddable, and sustainably
 extensible MATLAB-like subset runtime. It does not claim complete MATLAB,
@@ -104,12 +104,12 @@ in-toto Statement v1 using the SLSA Provenance v1 predicate, and
 `SHA256SUMS` binding both the archive and statement. The local statement is
 audit metadata, not publisher authentication and not a SLSA level claim.
 A default-off manual-tag Sigstore job revalidated the five platform package
-sets from tag `v0.90.1`, signed each archive and statement, and verified the
-exact workflow and tag identity in successful Actions run `30743014345`.
+sets from tag `v1.0.0`, signed each archive and statement, and verified the
+exact workflow and tag identity in successful Actions run `30780391460`.
 The retained evidence and independent ten-subject verification are recorded
-under `docs/release-evidence/v0.90.1-authentication`. The version and public
-contracts are now frozen at 1.0.0; publication still requires the final tag
-authentication and release-page assembly.
+under `docs/release-evidence/v1.0.0-authentication`. The version and public
+contracts are frozen at 1.0.0; only release-page assembly and final downloaded
+asset verification remain.
 See [v1 Release Process](release-process.md) and
 [Release Authentication](release-authentication.md).
 
