@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.90.1",
+  "version": "1.0.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -45,7 +45,7 @@
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
       "evidence": ["function_call_contract_smoke", "output_argument_smoke", "name_value_argument_smoke", "repeating_argument_smoke"],
       "sources": ["src/mparser/function_signature.cpp", "src/mparser/argument_contract.cpp", "src/mparser/runtime_argument_validation.cpp"],
-      "limits": "The C ABI 1.1, C++ source API 1.0, machine protocol 1.0, and builtin source contract 1.0 are frozen candidates. An arbitrary external native callback or plugin ABI is Post-v1.0."
+      "limits": "The C ABI 1.1, C++ source API 1.0, machine protocol 1.0, and builtin source contract 1.0 are stable v1 contracts. An arbitrary external native callback or plugin ABI is Post-v1.0."
     },
     {
       "id": "SRC-001",
@@ -342,7 +342,7 @@
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["module_execution_smoke", "machine_protocol_smoke", "machine_protocol_cli_smoke", "embedding_execution_demo_smoke", "runtime_session_smoke", "typed_region_executor_smoke"],
       "sources": ["src/mparser/module_execution.h", "src/mparser/module_execution.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "src/mparser/compiled_module.h", "src/mparser/compiled_module.cpp", "tests/module_execution_smoke.cpp", "tests/machine_protocol_smoke.cpp", "samples/embedding_execution_demo.cpp", "docs/v0.81.md", "docs/v0.86.md"],
-      "limits": "The request/result names and behavior, including resource stop fields, are source-level v1.0 API candidates with a protocol-v1 CLI projection. Existing VM-specific invoke APIs remain available. v0.90 freezes their C ABI 1.1 and header-only C++ source API 1.0 projections while explicitly making no public C++ binary-layout promise."
+      "limits": "The request/result names and behavior, including resource stop fields, are stable source-level v1.0 APIs with a protocol-v1 CLI projection. Existing VM-specific invoke APIs remain available. Their C ABI 1.1 and header-only C++ source API 1.0 projections explicitly make no public C++ binary-layout promise."
     },
     {
       "id": "EMBED-004",
@@ -358,13 +358,13 @@
     {
       "id": "EMBED-005",
       "area": "embedding",
-      "feature": "Pure C shared-library ABI candidate with opaque lifetimes, column-major values, diagnostics, sessions, resource controls, and module ownership",
+      "feature": "Pure C shared-library ABI with opaque lifetimes, column-major values, diagnostics, sessions, resource controls, and module ownership",
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["c_api_smoke", "c_api_allocation_failure", "c_api_named_fault_smoke", "c_api_lifecycle_stress", "c_api_shared_library_abi", "embedding_unload_stress", "c_api_v1_compat_smoke", "c_api_v1_1_compat_smoke", "c_api_layout_contract", "c_embedding_demo_smoke", "c_abi_compat_demo_smoke", "module_execution_smoke", "module_resource_control_smoke", "installed_c_consumer_smoke", "public_contract_smoke"],
       "sources": ["include/mparser/c_api.h", "src/mparser/c_api.cpp", "src/mparser/c_api_test_hooks.h", "docs/public-contract-v1.json", "tests/c_api_smoke.c", "tests/c_api_allocation_failure.cpp", "tests/c_api_named_fault_smoke.cpp", "tests/c_api_lifecycle_stress.cpp", "tests/c_api_abi1_symbols.txt", "tests/validate_shared_library_abi.cmake", "tests/embedding_unload_stress.cpp", "tests/c_api_v1_compat_smoke.c", "tests/c_api_v1_snapshot.h", "tests/c_api_v1_1_compat_smoke.c", "tests/c_api_layout_contract.c", "tests/public_contract/c_abi/1.1/c_api_snapshot.h", "tests/installed_c_consumer/main.c", "samples/c_embedding_demo.c", "samples/c_abi_compat_demo.c", "docs/embedding-c-api.md", "docs/c-abi-compatibility.md", "docs/v0.83.md", "docs/v0.85.md", "docs/v0.87.md", "docs/v0.89.md", "docs/v0.90.md"],
-      "limits": "Frozen v1 candidate ABI major 1 revision 1 exposes copied numeric/logical/UTF-16/Cell/scalar-Struct inputs plus returned objects and function handles. It provides source-graph loading, immutable column-major runtime-owned output views, caller-sized extensible roots, sealed fixed-stride records, v0.86 and v0.90 snapshot compatibility, 64-bit layout checks, module-bound graph synchronization, SOVERSION 1, exact exports, and allocation/internal-failure containment. Borrowed input buffers and an external native callback table are explicitly Post-v1.0."
+      "limits": "Stable v1 ABI major 1 revision 1 exposes copied numeric/logical/UTF-16/Cell/scalar-Struct inputs plus returned objects and function handles. It provides source-graph loading, immutable column-major runtime-owned output views, caller-sized extensible roots, sealed fixed-stride records, v0.86 and v0.90 snapshot compatibility, 64-bit layout checks, module-bound graph synchronization, SOVERSION 1, exact exports, and allocation/internal-failure containment. Borrowed input buffers and an external native callback table are explicitly Post-v1.0."
     },
     {
       "id": "EMBED-006",
@@ -419,7 +419,7 @@
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["c_api_smoke", "c_api_lifecycle_stress", "c_api_shared_library_abi", "embedding_unload_stress", "c_api_v1_compat_smoke", "c_api_v1_1_compat_smoke", "c_api_layout_contract", "c_abi_compat_demo_smoke", "installed_c_consumer_smoke", "public_contract_smoke"],
       "sources": ["include/mparser/c_api.h", "src/mparser/c_api.cpp", "docs/public-contract-v1.json", "tests/c_api_smoke.c", "tests/c_api_lifecycle_stress.cpp", "tests/c_api_abi1_symbols.txt", "tests/validate_shared_library_abi.cmake", "tests/embedding_unload_stress.cpp", "tests/c_api_v1_compat_smoke.c", "tests/c_api_v1_snapshot.h", "tests/c_api_v1_1_compat_smoke.c", "tests/c_api_layout_contract.c", "tests/public_contract/c_abi/1.1/c_api_snapshot.h", "samples/c_abi_compat_demo.c", "tests/installed_c_consumer/main.c", "cmake/MParserConfig.cmake.in", ".github/workflows/ci.yml", "docs/c-abi-compatibility.md", "docs/embedding-c-api.md", "docs/v0.87.md", "docs/v0.89.md", "docs/v0.90.md"],
-      "limits": "Frozen v1 candidate ABI major 1 revision 1 supports append-only root records from revision 1 onward and preserves v0.86 binaries through bounded legacy-prefix initializer writes and a hashed 1.0 snapshot. Source-unit and other array/view records are sealed. Shared-library implementation version 1.1.0 uses SOVERSION/install-name major 1, exact 64-bit layout checks, and an exact 90-symbol manifest. docs/versioning-and-deprecation.md now defines the common v1 compatibility and deprecation policy."
+      "limits": "Stable v1 ABI major 1 revision 1 supports append-only root records from revision 1 onward and preserves v0.86 binaries through bounded legacy-prefix initializer writes and a hashed 1.0 snapshot. Source-unit and other array/view records are sealed. Shared-library implementation version 1.1.0 uses SOVERSION/install-name major 1, exact 64-bit layout checks, and an exact 90-symbol manifest. docs/versioning-and-deprecation.md defines the common v1 compatibility and deprecation policy."
     },
     {
       "id": "EMBED-010",
@@ -463,7 +463,7 @@
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["module_execution_smoke", "machine_protocol_smoke", "machine_protocol_contract_smoke", "machine_protocol_cli_smoke", "c_api_smoke", "c_api_allocation_failure", "c_api_named_fault_smoke", "c_api_lifecycle_stress", "c_api_shared_library_abi", "embedding_unload_stress", "cpp_api_smoke", "cpp_api_concurrency_stress", "c_api_v1_compat_smoke", "c_api_v1_1_compat_smoke", "c_api_layout_contract", "cpp_api_v1_compat_smoke", "c_abi_compat_demo_smoke", "c_embedding_demo_smoke", "cpp_embedding_demo_smoke", "c_source_graph_demo_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "release_archive_smoke", "release_authentication_evidence_smoke", "public_contract_smoke"],
       "sources": ["docs/roadmap-v1.0.md", "docs/public-contract-v1.json", "docs/cli-contract-v1.json", "docs/versioning-and-deprecation.md", "docs/machine-result-v1.schema.json", "docs/release-evidence/v0.90.1-authentication/manifest.json", "src/mparser/compiled_module.h", "src/mparser/source_loader.cpp", "src/mparser/machine_protocol.h", "src/mparser/machine_protocol.cpp", "include/mparser/c_api.h", "include/mparser/cpp_api.hpp", "src/mparser/c_api.cpp", "cmake/MParserConfig.cmake.in", "tests/validate_public_contract.cmake", "tests/validate_machine_protocol_contract.cmake", "tests/validate_release_authentication_evidence.cmake", "tests/validate_release_archive.cmake", "tests/c_api_allocation_failure.cpp", "tests/c_api_named_fault_smoke.cpp", "tests/c_api_layout_contract.c", "tests/c_api_v1_1_compat_smoke.c", "tests/cpp_api_v1_compat_smoke.cpp", "tests/installed_c_consumer/main.c", "tests/installed_cpp_consumer/main.cpp", "docs/machine-result-protocol.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/v0.90.md", "docs/v0.90.1.md"],
-      "limits": "The combined v1 candidates now include CLI 1.0, C ABI 1.1 with exact exports/layout and old-header support, header-only C++ source API 1.0 with no binary ABI promise, machine protocol 1.0 with schema/exact framing/uint64/emergency behavior, and builtin source contract 1.0. Public-contract hashes, snapshots, and one shared version/deprecation policy make later changes explicit. Local unsigned provenance and the tag-scoped Sigstore workflow are implemented; v0.90.1 candidate authentication is retained and independently verified, while final 1.0.0 publication remains release work."
+      "limits": "The stable v1 contracts include CLI 1.0, C ABI 1.1 with exact exports/layout and old-header support, header-only C++ source API 1.0 with no binary ABI promise, machine protocol 1.0 with schema/exact framing/uint64/emergency behavior, and builtin source contract 1.0. Public-contract hashes, snapshots, and one shared version/deprecation policy make later changes explicit. Local unsigned provenance and the tag-scoped Sigstore workflow are implemented; v0.90.1 candidate authentication is retained and independently verified, while final v1.0.0 tag authentication and publication remain release work."
     },
     {
       "id": "PLATFORM-001",
@@ -507,7 +507,7 @@
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
       "evidence": ["release_documentation_smoke", "release_authentication_evidence_smoke", "release_candidate_readiness_smoke", "release_candidate_readiness_guard_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "release_archive_smoke"],
       "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/release-process.md", "docs/release-authentication.md", "docs/release-evidence/v0.90.1-authentication/README.md", "docs/release-evidence/v0.90.1-authentication/manifest.json", "docs/release-notes-v1.0.md", "docs/v1.0-documentation.md", "docs/v1.0-cross-platform-validation.md", "docs/v1.0-jit-scope-decision.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/validate_release_authentication_evidence.cmake", "tests/validate_release_candidate_readiness.cmake", "tests/validate_release_candidate_readiness_guards.cmake", "tests/validate_v1_jit_scope.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
-      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. A separate candidate-readiness gate requires an empty open Must-have set and rejects any newly open Must-have that implies framework work. Actions run 30684969401 confirms installed and archived documentation across every advertised release lane; tag run 30743014345 and the retained exact-set evidence gate close candidate authenticated provenance. Final 1.0.0 versioning and publication remain separate operations."
+      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. A release-readiness gate requires an empty open Must-have set and rejects any newly open Must-have that implies framework work. Actions run 30746822213 confirms installed and archived documentation across every advertised release lane; tag run 30743014345 and the retained exact-set evidence gate close candidate authenticated provenance. Engine versioning is frozen at 1.0.0; exact-tag authentication and publication remain separate hosted operations."
     },
     {
       "id": "MATRIX-001",
@@ -761,7 +761,7 @@
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Close deterministic frontend fuzz, malformed-bytecode, long-running invoke-many/session/adaptive, lifecycle, cancellation, resource, cache, allocation, load-unload, and concurrency evidence without weakening fallback or diagnostics.",
-      "exit_evidence": "Deterministic frontend fuzz, mandatory untrusted-bytecode verification, a named 8,012-invocation soak, lifecycle/resource/cache/allocation/unload/concurrency gates, and the local MSVC ASan configuration are implemented. Windows passes native 205/205, no-JIT 198/198, and ASan no-JIT 199/199 with no sanitizer report. Revision f34d8d9 passes all six jobs in Actions run 30684969401, including Linux Clang ASan/UBSan/LSan, both macOS architectures, and AArch64 native/portable QEMU evidence recorded in docs/v1.0-cross-platform-validation.md."
+      "exit_evidence": "Deterministic frontend fuzz, mandatory untrusted-bytecode verification, a named 8,012-invocation soak, lifecycle/resource/cache/allocation/unload/concurrency gates, and the local MSVC ASan configuration are implemented. Windows passes native 209/209 and clean no-JIT 202/202; the accepted MSVC ASan no-JIT 199/199 run has no sanitizer report. Revision fed5476 passes all seven execution jobs in Actions run 30746822213, including native Linux ARM64, Linux Clang ASan/UBSan/LSan, both macOS architectures, and AArch64 native/portable QEMU evidence recorded in docs/v1.0-cross-platform-validation.md."
     },
     {
       "id": "G-PERFORMANCE-001",
@@ -781,7 +781,7 @@
       "target": "v1.0",
       "framework_impact": "none",
       "requirement": "Publish a coherent user, build/install, support, CLI/API, JIT/fallback, runtime-boundary, extension-author, and pre-v1 migration manual set and prevent it from drifting from frozen contracts or package contents.",
-      "exit_evidence": "The documentation set, contract-derived smoke validator, candidate-readiness blocker-set gate, production/machine samples, and installed/archive required-file lists are implemented. Windows native 205/205, no-JIT 198/198, and the four-test release label pass locally. Actions run 30684969401 validates the manuals, relocated SDK consumers, archives, checksums, CLI protocol, and uploaded candidate packages across Windows, Linux x64/AArch64, and macOS x64/ARM64 as recorded in docs/v1.0-documentation.md and docs/v1.0-cross-platform-validation.md."
+      "exit_evidence": "The documentation set, contract-derived smoke validator, release-readiness blocker-set gate, production/machine samples, and installed/archive required-file lists are implemented. Windows native 209/209 and clean no-JIT 202/202 pass locally. Actions run 30746822213 validates the manuals, relocated SDK consumers, archives, checksums, CLI protocol, and uploaded packages across Windows, Linux x64/AArch64, and macOS x64/ARM64 as recorded in docs/v1.0-documentation.md and docs/v1.0-cross-platform-validation.md."
     },
     {
       "id": "G-SANITIZER-001",

@@ -77,7 +77,7 @@ void inject(FaultPoint) {}
 } // namespace mparser::c_api_test
 
 #ifndef MPARSER_VERSION_MAJOR
-#define MPARSER_VERSION_MAJOR 0
+#define MPARSER_VERSION_MAJOR 1
 #endif
 #ifndef MPARSER_VERSION_MINOR
 #define MPARSER_VERSION_MINOR 0

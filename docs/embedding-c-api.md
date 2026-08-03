@@ -21,9 +21,9 @@ The header exposes no C++ standard-library type, exception, class layout, or
 handles, fixed-width constants, byte/code-unit views, and versioned plain C
 structures.
 
-This is the frozen v1 candidate for ABI major 1 revision 1, not the final v1.0
-release promise. An incompatible correction changes the ABI major rather than
-rewriting candidate major 1 in place. Applications must query
+This is the stable v1 ABI major 1 revision 1 contract. An incompatible
+correction changes the ABI major rather than rewriting major 1 in place.
+Applications must query
 `mparser_c_abi_version()`, `mparser_c_abi_revision()`, and the three MParser
 component-version functions rather than assuming that the project, ABI major,
 and additive ABI revision advance together.
@@ -60,7 +60,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 An independent CMake project can then use:
 
 ```cmake
-find_package(MParser 0.90.1 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser 1.0.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
@@ -76,8 +76,8 @@ configuration. On Windows, deploy `mparser_c.dll` beside the host executable
 or expose the SDK `bin` directory to the runtime loader.
 
 The C package remains independently consumable. v0.88 also exports
-`MParser::cpp_api`; v0.90 records C ABI 1.1 and C++ source API 1.0 as the
-combined v1 candidates.
+`MParser::cpp_api`; MParser 1.0.0 records C ABI 1.1 and C++ source API 1.0 as
+the combined stable v1 contracts.
 
 ## Handles And Ownership
 
@@ -210,8 +210,8 @@ Unicode code units represented by `uint16_t`.
 All external array payloads and linear element indexes use MATLAB column-major
 order. MParser converts to and from its internal storage without exposing that
 storage layout. Accessor pointers are immutable and owned by the value handle.
-There is no zero-copy external input buffer or mutable view in the v1.0
-candidate. Copy-in is the frozen ownership rule for host-created arrays.
+There is no zero-copy external input buffer or mutable view in v1.0. Copy-in
+is the frozen ownership rule for host-created arrays.
 Runtime-owned numeric and character accessor pointers are immutable zero-copy
 views whose lifetime is bounded by their `mparser_value`; they must not be
 retained after that value is released. A future borrowed-input API requires a
@@ -377,14 +377,13 @@ gates. `docs/public-contract-v1.json` also hashes the legacy C ABI 1.0 header
 snapshot, and sized initializers preserve a caller-provided prefix without
 writing a future library `sizeof` over it.
 
-`docs/versioning-and-deprecation.md` now defines the common v1 evolution
-policy. Cross-platform reliability, documentation, and candidate packaging
-are confirmed. Remaining v1.0 work concerns performance/resource evidence,
-authenticated publication, and the final version/tag operation rather than
-redesigning this ABI.
+`docs/versioning-and-deprecation.md` defines the common v1 evolution policy.
+Cross-platform reliability, documentation, performance/resource evidence,
+and release packaging are confirmed. The remaining hosted operation is exact
+`v1.0.0` tag authentication and publication, not an ABI redesign.
 
-The v1.0 candidate deliberately excludes a stable external native callback
-ABI and zero-copy borrowed input arrays. Their future additive rules are
+The v1.0 contract deliberately excludes a stable external native callback ABI
+and zero-copy borrowed input arrays. Their future additive rules are
 defined in `extending-builtins.md`; neither blocks correct `.m` functions,
 source-integrated C++ builtins, or the public host invocation APIs.
 

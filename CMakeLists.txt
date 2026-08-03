@@ -1,8 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 0.90.1 LANGUAGES C CXX)
+project(MParser VERSION 1.0.0 LANGUAGES C CXX)
 
 set(MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION "0.90.0")
+set(MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION "0.90.1")
+set(MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION
+    "5763b4752657c54ee5baeaf645a4249b4c5cc8ba")
+set(MPARSER_V1_AUTHENTICATION_EVIDENCE_RUN_ID "30743014345")
+set(MPARSER_V1_AUTHENTICATION_EVIDENCE_DIRECTORY
+    "v${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}-authentication")
+set(MPARSER_V1_AUTHENTICATION_EVIDENCE_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/release-evidence/${MPARSER_V1_AUTHENTICATION_EVIDENCE_DIRECTORY}")
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -600,6 +608,7 @@ set_tests_properties(project_license_smoke PROPERTIES
 add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DCLI_CONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/cli-contract-v1.json
         -DMPARSER_EXECUTABLE=$<TARGET_FILE:mparser>
         "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
@@ -612,11 +621,11 @@ set_tests_properties(release_documentation_smoke PROPERTIES
 
 add_test(NAME release_authentication_evidence_smoke
     COMMAND ${CMAKE_COMMAND}
-        -DMPARSER_EVIDENCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-evidence/v0.90.1-authentication
-        -DMPARSER_EXPECTED_VERSION=${PROJECT_VERSION}
-        -DMPARSER_EXPECTED_TAG=v${PROJECT_VERSION}
-        -DMPARSER_EXPECTED_REVISION=5763b4752657c54ee5baeaf645a4249b4c5cc8ba
-        -DMPARSER_EXPECTED_RUN_ID=30743014345
+        -DMPARSER_EVIDENCE_ROOT=${MPARSER_V1_AUTHENTICATION_EVIDENCE_ROOT}
+        -DMPARSER_EXPECTED_VERSION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}
+        -DMPARSER_EXPECTED_TAG=v${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}
+        -DMPARSER_EXPECTED_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}
+        -DMPARSER_EXPECTED_RUN_ID=${MPARSER_V1_AUTHENTICATION_EVIDENCE_RUN_ID}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_authentication_evidence.cmake)
 set_tests_properties(release_authentication_evidence_smoke PROPERTIES
     LABELS "documentation;release"
@@ -636,12 +645,13 @@ add_test(NAME release_candidate_readiness_smoke
         -DNATIVE_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DAUTHENTICATION_EVIDENCE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_authentication_evidence.cmake
-        -DAUTHENTICATION_EVIDENCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-evidence/v0.90.1-authentication
+        -DAUTHENTICATION_EVIDENCE_ROOT=${MPARSER_V1_AUTHENTICATION_EVIDENCE_ROOT}
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
-        -DEXPECTED_AUTHENTICATION_REVISION=5763b4752657c54ee5baeaf645a4249b4c5cc8ba
-        -DEXPECTED_AUTHENTICATION_RUN_ID=30743014345
-        -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
+        -DEXPECTED_AUTHENTICATION_VERSION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}
+        -DEXPECTED_AUTHENTICATION_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}
+        -DEXPECTED_AUTHENTICATION_RUN_ID=${MPARSER_V1_AUTHENTICATION_EVIDENCE_RUN_ID}
+        -DEXPECTED_CONTRACT_STATE=frozen-v1
         -DEXPECTED_OPEN_MUST_HAVE=
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
         -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
@@ -649,7 +659,7 @@ add_test(NAME release_candidate_readiness_smoke
 set_tests_properties(release_candidate_readiness_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser release candidate readiness validated: ${PROJECT_VERSION}, 0 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
+        "MParser release readiness validated: ${PROJECT_VERSION}, 0 bounded Must-have blockers, 1 scoped Should-have items, 1 deferred Should-have items")
 
 add_test(NAME release_candidate_readiness_guard_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -668,12 +678,13 @@ add_test(NAME release_candidate_readiness_guard_smoke
         -DNATIVE_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/native-linear-array-v1.json
         -DNOJIT_ARRAY_REPORT=${CMAKE_CURRENT_SOURCE_DIR}/docs/baselines/v1.0/windows-x86_64-msvc-release/nojit-linear-array-v1.json
         -DAUTHENTICATION_EVIDENCE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_authentication_evidence.cmake
-        -DAUTHENTICATION_EVIDENCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/docs/release-evidence/v0.90.1-authentication
+        -DAUTHENTICATION_EVIDENCE_ROOT=${MPARSER_V1_AUTHENTICATION_EVIDENCE_ROOT}
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
-        -DEXPECTED_AUTHENTICATION_REVISION=5763b4752657c54ee5baeaf645a4249b4c5cc8ba
-        -DEXPECTED_AUTHENTICATION_RUN_ID=30743014345
-        -DEXPECTED_CONTRACT_STATE=frozen-v1-candidate
+        -DEXPECTED_AUTHENTICATION_VERSION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}
+        -DEXPECTED_AUTHENTICATION_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}
+        -DEXPECTED_AUTHENTICATION_RUN_ID=${MPARSER_V1_AUTHENTICATION_EVIDENCE_RUN_ID}
+        -DEXPECTED_CONTRACT_STATE=frozen-v1
         -DEXPECTED_OPEN_MUST_HAVE=
         -DEXPECTED_OPEN_SHOULD_HAVE=G-SANITIZER-001:in-progress
         -DEXPECTED_DEFERRED_SHOULD_HAVE=G-JIT-001:deferred
@@ -681,7 +692,7 @@ add_test(NAME release_candidate_readiness_guard_smoke
 set_tests_properties(release_candidate_readiness_guard_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser release candidate readiness guards validated: Must-have/Should-have impact, deferred JIT reactivation, and blocker-set drift rejected")
+        "MParser release readiness guards validated: Must-have/Should-have impact, deferred JIT reactivation, and blocker-set drift rejected")
 
 add_executable(nd_array_smoke_tests tests/nd_array_smoke.cpp)
 target_link_libraries(nd_array_smoke_tests PRIVATE mparser_core)
@@ -2082,6 +2093,7 @@ if(NOT CMAKE_CROSSCOMPILING)
             "-DMPARSER_TEST_CONFIG=$<CONFIG>"
             "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
             "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+            "-DMPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY=${MPARSER_V1_AUTHENTICATION_EVIDENCE_DIRECTORY}"
             "-DMPARSER_TEST_RUNTIME_DLL=${MPARSER_MSVC_ASAN_RUNTIME_DLL}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_installed_c_consumer.cmake")
     set_tests_properties(installed_c_consumer_smoke PROPERTIES
@@ -2110,6 +2122,7 @@ if(NOT CMAKE_CROSSCOMPILING)
             "-DMPARSER_TEST_CONFIG=$<CONFIG>"
             "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
             "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+            "-DMPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY=${MPARSER_V1_AUTHENTICATION_EVIDENCE_DIRECTORY}"
             "-DMPARSER_TEST_RUNTIME_DLL=${MPARSER_MSVC_ASAN_RUNTIME_DLL}"
             -DMPARSER_REQUIRE_CPP_SDK=ON
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_installed_c_consumer.cmake")
@@ -2155,6 +2168,10 @@ if(NOT CMAKE_CROSSCOMPILING)
                 "-DMPARSER_TEST_CONFIG=$<CONFIG>"
                 "-DMPARSER_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
                 "-DMPARSER_PROJECT_VERSION=${PROJECT_VERSION}"
+                "-DMPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY=${MPARSER_V1_AUTHENTICATION_EVIDENCE_DIRECTORY}"
+                "-DMPARSER_AUTHENTICATION_EVIDENCE_VERSION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}"
+                "-DMPARSER_AUTHENTICATION_EVIDENCE_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}"
+                "-DMPARSER_AUTHENTICATION_EVIDENCE_RUN_ID=${MPARSER_V1_AUTHENTICATION_EVIDENCE_RUN_ID}"
                 "-DMPARSER_CMAKE_VERSION=${CMAKE_VERSION}"
                 "-DMPARSER_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}"
                 "-DMPARSER_COMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}"
@@ -2256,6 +2273,7 @@ install(FILES
     docs/roadmap-v1.0.md
     docs/v0.90.md
     docs/v0.90.1.md
+    docs/v1.0.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md

@@ -6,8 +6,8 @@ narrow C ABI shared library. It does not expose Parser, HIR, Bytecode,
 `RuntimeValue`, VM, SLJIT, or C++ standard-library layouts from the shared
 library.
 
-The facade is the frozen v1 source-API candidate. Its binary boundary remains
-C ABI major 1 revision 1, so no C++ exception or standard-library object
+The facade is the stable v1 source API. Its binary boundary remains C ABI
+major 1 revision 1, so no C++ exception or standard-library object
 crosses the shared-library boundary. MParser does not promise a C++ binary
 ABI; hosts recompile the header facade and link only to the narrow C library.
 
@@ -24,7 +24,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 Consume it from a C++20 CMake project:
 
 ```cmake
-find_package(MParser 0.90.1 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 1.0.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 
@@ -171,7 +171,7 @@ order survives a module round trip. The current public constructor creates a
 scalar Struct. General external Struct-array construction remains additive
 future work.
 
-The v1.0 ownership candidate deliberately uses copy-in for host-created array
+The v1.0 ownership contract deliberately uses copy-in for host-created array
 payloads. `numericData()` and `characterData()` are readonly runtime-owned
 views tied to one `Value`; no host buffer is borrowed and no writable external
 view exists. A later borrowed-input API must use a new C descriptor with
@@ -228,7 +228,7 @@ allocation and undefined-behavior edges.
 Distribution licensing is Apache-2.0 with `Copyright 2026 Wang Xin`.
 Checksummed release archives include the public contract and schema and are
 validated only through their unpacked C/C++ SDK. Deterministic unsigned SLSA
-provenance binds each archive to its source and build inputs. This is the v1
-candidate freeze; the common versioning/deprecation policy is now frozen in
-`docs/versioning-and-deprecation.md`, while authenticated publication and the
-final 1.0.0 platform gate remain open.
+provenance binds each archive to its source and build inputs. The stable v1
+source contract and common versioning/deprecation policy are frozen in
+`docs/versioning-and-deprecation.md`; exact-tag authentication and publication
+remain hosted release operations.

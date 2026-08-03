@@ -189,5 +189,6 @@ statement. The local builder ID continues to describe the platform CMake/CPack
 boundary; the certificate identity separately describes the hosted signing
 boundary. Candidate platform packaging passed in Actions run `30684969401`;
 the real tag-scoped candidate signing run passed in Actions run `30743014345`.
-Final `1.0.0` versioning, repetition of these checks for the final tag, and
-release-page publication remain separate release operations.
+The source, package metadata, and public contracts are frozen at `1.0.0`.
+Repetition of these checks for the exact final tag, retention of its bundles,
+and release-page publication remain separate hosted release operations.

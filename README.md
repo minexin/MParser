@@ -1,6 +1,6 @@
 # MParser
 
-Current release candidate: v0.90.1. The v1 public-contract candidate,
+Current release freeze: v1.0.0. The v1 public contract,
 reliability gate, and release-documentation gate are cross-platform confirmed
 at revision `f34d8d9` by Actions run `30684969401`; local Windows MSVC ASan
 no-JIT now passes 201/201. Actions run `30691616946` supplied accepted
@@ -13,9 +13,10 @@ scope audit defers broader specialization to v1.x without changing the guarded
 v1.0 fallback contract.
 Tag `v0.90.1` then completed all seven execution jobs and authenticated all
 five archives plus five provenance statements in Actions run `30743014345`.
-All v1 candidate Must-have evidence gaps are now closed; Linux TSan and macOS
-sanitizer remain bounded Should-have evaluations, while final `1.0.0`
-versioning and publication remain release operations.
+All v1 Must-have evidence gaps are closed; Linux TSan and macOS sanitizer
+remain bounded Should-have evaluations. The engine, package metadata,
+compatibility matrix, and public contract are frozen at `1.0.0`; exact-tag
+authentication and publication remain hosted release operations.
 Release documentation starts at
 [docs/README.md](docs/README.md), with the
 [user manual](docs/user-manual.md),
@@ -23,10 +24,11 @@ Release documentation starts at
 [v0.x-to-v1.0 migration guide](docs/migration-v1.0.md). See
 [docs/v0.90.md](docs/v0.90.md) for the completed embedding boundary,
 [docs/v0.90.1.md](docs/v0.90.1.md) for release-authentication hardening,
+[docs/v1.0.md](docs/v1.0.md) for the final release freeze,
 [docs/release-evidence/v0.90.1-authentication/README.md](docs/release-evidence/v0.90.1-authentication/README.md)
 for the retained Sigstore candidate evidence,
-[docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the contract
-candidate,
+[docs/v1.0-contract-freeze.md](docs/v1.0-contract-freeze.md) for the frozen
+contract,
 [docs/v1.0-cross-platform-validation.md](docs/v1.0-cross-platform-validation.md)
 for the six-lane release-candidate evidence,
 [docs/v1.0-reliability.md](docs/v1.0-reliability.md) for the reliability
@@ -37,13 +39,13 @@ the versioned timing, allocation, memory, binary-size, and cache evidence,
 measured decision to defer broader typed/JIT coverage to v1.x,
 [docs/v1.0-documentation.md](docs/v1.0-documentation.md) for the release
 manual and package evidence,
-[docs/release-notes-v1.0.md](docs/release-notes-v1.0.md) for the candidate
-release notes,
+[docs/release-notes-v1.0.md](docs/release-notes-v1.0.md) for the release
+notes,
 [docs/release-process.md](docs/release-process.md) for checksums, provenance,
 and publication boundaries,
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) for compatible post-1.0 growth,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
-machine-validated combined candidate freeze,
+machine-validated combined v1 freeze,
 [docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and
 diagnostic CLI stability,
 [docs/versioning-and-deprecation.md](docs/versioning-and-deprecation.md) for
@@ -1084,7 +1086,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 0.90.1 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 1.0.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 

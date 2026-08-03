@@ -56,10 +56,11 @@ adapter is Post-v1.0.
 - [Migrating From v0.x To v1.0](migration-v1.0.md)
 - [Versioning And Deprecation](versioning-and-deprecation.md)
 - [v1.0 Release Notes](release-notes-v1.0.md)
+- [v1.0 Release Freeze](v1.0.md)
 - [v1 Release Process](release-process.md)
 - [Release Authentication](release-authentication.md): opt-in release-tag
   signing, public-transparency boundary, and consumer verification.
-- [v1.0 Contract Freeze Candidate](v1.0-contract-freeze.md)
+- [v1.0 Contract Freeze](v1.0-contract-freeze.md)
 - [v1.0 Roadmap](roadmap-v1.0.md)
 - [v1.x Roadmap](roadmap-v1.x.md)
 
@@ -81,13 +82,15 @@ documentation defect and use the versioned machine contract until corrected.
 
 ## Release Evidence
 
+- [v1.0 Release Freeze](v1.0.md): final engine/package version, frozen public
+  contracts, release evidence, and the exact hosted operations that remain.
 - [v0.90 Milestone](v0.90.md): embedding and release-candidate API boundary.
 - [v0.90.1 Authentication Hardening](v0.90.1.md): immutable-tag handling,
   exact package upload sets, and the pre-signing rejection regression.
 - [v0.90.1 Authentication Evidence](release-evidence/v0.90.1-authentication/README.md):
   retained provenance, checksums, ten Sigstore bundles, and independent
   verification for Actions run `30743014345`.
-- [v1.0 Cross-Platform Candidate Validation](v1.0-cross-platform-validation.md):
+- [v1.0 Cross-Platform Validation](v1.0-cross-platform-validation.md):
   revision-bound Windows, Linux, macOS, x64, ARM64, sanitizer, SDK, and package
   evidence.
 - [v1.0 Reliability Gate](v1.0-reliability.md): fuzz, malformed bytecode,
@@ -103,9 +106,10 @@ documentation defect and use the versioned machine contract until corrected.
 - `docs/baselines/v1.0/README.md` in the source repository: committed
   source-bound reports.
 
-Actions run `30684969401` is the accepted cross-platform candidate snapshot.
-It does not turn emulated AArch64 execution into physical-hardware performance
-evidence or unsigned provenance into publisher authentication.
+Actions run `30746822213` is the latest accepted pre-freeze cross-platform
+snapshot. It does not turn emulated AArch64 execution into physical-hardware
+performance evidence or unsigned provenance into publisher authentication;
+the exact v1.0.0 tag must still repeat authenticated assembly.
 
 ## Historical Milestones
 

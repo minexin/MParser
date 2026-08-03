@@ -19,6 +19,7 @@ foreach(required_variable IN ITEMS
         AUTHENTICATION_EVIDENCE_ROOT
         EXPECTED_VERSION
         EXPECTED_JIT_EVIDENCE_VERSION
+        EXPECTED_AUTHENTICATION_VERSION
         EXPECTED_AUTHENTICATION_REVISION
         EXPECTED_AUTHENTICATION_RUN_ID
         EXPECTED_CONTRACT_STATE
@@ -81,6 +82,7 @@ function(expect_rejection description tampered_matrix expected_pattern)
             "-DAUTHENTICATION_EVIDENCE_ROOT=${AUTHENTICATION_EVIDENCE_ROOT}"
             "-DEXPECTED_VERSION=${EXPECTED_VERSION}"
             "-DEXPECTED_JIT_EVIDENCE_VERSION=${EXPECTED_JIT_EVIDENCE_VERSION}"
+            "-DEXPECTED_AUTHENTICATION_VERSION=${EXPECTED_AUTHENTICATION_VERSION}"
             "-DEXPECTED_AUTHENTICATION_REVISION=${EXPECTED_AUTHENTICATION_REVISION}"
             "-DEXPECTED_AUTHENTICATION_RUN_ID=${EXPECTED_AUTHENTICATION_RUN_ID}"
             "-DEXPECTED_CONTRACT_STATE=${EXPECTED_CONTRACT_STATE}"
@@ -157,6 +159,6 @@ expect_rejection(
     "Unexpected open Must-have")
 
 message(STATUS
-    "MParser release candidate readiness guards validated: "
+    "MParser release readiness guards validated: "
     "Must-have/Should-have impact, deferred JIT reactivation, and "
     "blocker-set drift rejected")

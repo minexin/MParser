@@ -65,7 +65,7 @@ valid. Unsupported source semantics still produce a normal diagnostic.
 
 ## Current Coverage
 
-The v1.0 candidate includes guarded portable regions and bundled SLJIT native
+The v1.0 release includes guarded portable regions and bundled SLJIT native
 kernels for selected numeric scalar loops, structured branches, nested loops,
 and dense-double linear-array operations. It also contains adaptive promotion,
 invalidation, repeated module sessions, and a bounded process-local native

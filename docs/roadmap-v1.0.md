@@ -597,12 +597,12 @@ is green. It refines, rather than replaces, the four work areas above.
    **Status: complete.** The task-oriented documentation
    index, user/build/support/CLI/JIT/runtime/migration guides, executable
    CLI-contract-to-help/reference validation, documented human and machine
-   samples, and installed/archive required-file gates are present. Windows
-   native 205/205, no-JIT 198/198, and reproducible relocated package
-   validation passed; evidence is recorded in
-   [v1.0-documentation.md](v1.0-documentation.md). Revision `f34d8d9` passed
+   samples, and installed/archive required-file gates are present. Exact
+   1.0.0 Windows native 209/209, clean no-JIT 202/202, and packaging release
+   label 7/7 pass; evidence is recorded in
+   [v1.0-documentation.md](v1.0-documentation.md). Revision `fed5476` passed
    installed/archive documentation and public SDK checks across every release
-   lane in Actions run `30684969401`, closing `G-DOCUMENTATION-001`.
+   lane in Actions run `30746822213`, closing `G-DOCUMENTATION-001`.
 6. **Should-have: evaluate specialized sanitizer CI.** Prefer Linux Clang
    TSan, then Windows MSVC ASan no-JIT, then macOS ARM64 Apple Clang
    ASan+UBSan no-JIT. A toolchain may be deferred only with a recorded
@@ -621,8 +621,8 @@ is green. It refines, rather than replaces, the four work areas above.
    independent C11 and C++20 consumers plus the CLI machine protocol from each
    unpacked SDK; complete final cross-platform CI, authenticated signing or
    hosted provenance, release notes, and the v1.x roadmap.
-   **Status: candidate platform validation complete; publication preparation in progress.** The CMake/CPack
-   target now requires clean source and emits a deterministic, semantically
+   **Status: 1.0.0 contract freeze complete.** The CMake/CPack target requires
+   clean source and emits a deterministic, semantically
    validated unsigned in-toto Statement v1 with SLSA Provenance v1 metadata;
    `SHA256SUMS` binds the archive and statement. The release-process
    specification, candidate 1.0 notes, and v1.x roadmap are present. A
@@ -636,9 +636,10 @@ is green. It refines, rather than replaces, the four work areas above.
    all seven execution jobs and authenticated all ten archive/provenance
    subjects in Actions run `30743014345`; the retained bundles, manifest, and
    independent verification are under
-   `docs/release-evidence/v0.90.1-authentication`. Version `1.0.0`, final
-   release tag/snapshots, repetition of authenticated assembly for that tag,
-   and release-page publication remain open.
+   `docs/release-evidence/v0.90.1-authentication`. The engine/package version,
+   compatibility matrix, public contract, and release notes are frozen at
+   `1.0.0`. The final release tag, repetition of authenticated assembly for
+   that tag, final evidence retention, and release-page publication remain.
    `release_candidate_readiness_smoke`
    freezes the open Must-have blocker set to empty and rejects any newly open
    Must-have or one with framework impact.

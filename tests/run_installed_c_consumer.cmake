@@ -10,7 +10,8 @@ foreach(required_variable IN ITEMS
         MPARSER_INSTALL_DOCDIR
         MPARSER_INSTALL_CMAKEDIR
         MPARSER_GENERATOR
-        MPARSER_PROJECT_VERSION)
+        MPARSER_PROJECT_VERSION
+        MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY)
     if(NOT DEFINED ${required_variable} OR "${${required_variable}}" STREQUAL "")
         message(FATAL_ERROR
             "Missing installed-consumer variable: ${required_variable}")
@@ -114,11 +115,12 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/migration-v1.0.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-process.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-authentication.md"
-        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/README.md"
-        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/manifest.json"
-        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/SHA256SUMS"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}/README.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}/manifest.json"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}/SHA256SUMS"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-cross-platform-validation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"

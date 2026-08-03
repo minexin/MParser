@@ -1535,7 +1535,7 @@ load/unload, concurrent retain/release, pure invocation, shared handle,
 session, cancellation, and resource-isolation stress run beside relocated
 macOS x64/ARM64 C and C++ consumers.
 
-Array ownership is closed for the v1.0 candidate: host-created payloads copy
+Array ownership is closed for v1.0: host-created payloads copy
 into `RuntimeValue`, while result spans are immutable runtime-owned views tied
 to one retained value handle. A stable external native callback interface is
 Post-v1.0 and must be a new versioned pure-C function table; it will not
@@ -1616,8 +1616,9 @@ protocol without source-tree or loader-path access. The publication target
 requires a clean worktree before CPack runs. This does not claim reproducible
 compilation, publisher identity, or a SLSA level; authenticated publication
 remains a release operation. The v0.90.1 candidate completed that operation
-in Actions run `30743014345`; final 1.0.0 publication must repeat it for the
-final tag. See [release-process.md](release-process.md).
+in Actions run `30743014345`; the source and contracts are now frozen at
+1.0.0, whose final tag must repeat the authenticated assembly before
+publication. See [release-process.md](release-process.md).
 
 A CMake-only candidate-readiness gate cross-checks the engine version, frozen
 public-contract state, release-note status, roadmap status, and the exact open

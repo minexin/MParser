@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 foreach(required IN ITEMS
         PROJECT_ROOT
+        EXPECTED_VERSION
         CLI_CONTRACT
         MPARSER_EXECUTABLE
         ENTRY_SOURCE)
@@ -26,6 +27,7 @@ set(required_documents
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
     docs/v0.90.1.md
+    docs/v1.0.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-jit-scope-decision.md
     docs/v1.0-documentation.md
@@ -76,6 +78,10 @@ file(READ "${PROJECT_ROOT}/docs/v1.0-performance-baseline.md"
     performance_guide)
 file(READ "${PROJECT_ROOT}/docs/v1.0-cross-platform-validation.md"
     cross_platform_validation)
+file(READ "${PROJECT_ROOT}/docs/release-notes-v1.0.md" release_notes)
+file(READ "${PROJECT_ROOT}/docs/roadmap-v1.0.md" release_roadmap)
+file(READ "${PROJECT_ROOT}/docs/v1.0.md" release_milestone)
+file(READ "${PROJECT_ROOT}/docs/public-contract-v1.json" public_contract)
 file(READ "${PROJECT_ROOT}/README.md" project_readme)
 file(READ "${CLI_CONTRACT}" cli_contract)
 file(READ "${PROJECT_ROOT}/.github/workflows/ci.yml" ci_workflow)
@@ -96,6 +102,25 @@ function(reject_text variable needle description)
             "${description} retains forbidden text: ${needle}")
     endif()
 endfunction()
+
+string(JSON public_contract_version GET
+    "${public_contract}" release engine_version)
+string(JSON public_contract_state GET
+    "${public_contract}" release state)
+if(NOT public_contract_version STREQUAL EXPECTED_VERSION OR
+   NOT public_contract_state STREQUAL "frozen-v1")
+    message(FATAL_ERROR
+        "release documentation requires frozen ${EXPECTED_VERSION} public contract")
+endif()
+require_text(release_notes "Publication contract: **frozen v1**."
+    "v1.0 release notes")
+require_text(release_notes "source project version is `${EXPECTED_VERSION}`"
+    "v1.0 release notes")
+require_text(release_roadmap
+    "**Status: 1.0.0 contract freeze complete.**"
+    "v1.0 roadmap")
+require_text(release_milestone "MParser v${EXPECTED_VERSION}"
+    "v1.0 milestone")
 
 foreach(required_ci_path IN ITEMS
         "$PWD/build-sdk/install-sdk"
@@ -130,9 +155,9 @@ foreach(required_performance_ci_text IN ITEMS
         "MPARSER_PERFORMANCE_EVIDENCE_REVISION="
         "mparser_performance_evidence"
         "build-ci/performance-evidence/*.json"
-        "mparser-performance-0.90.1-windows-x86_64"
-        "mparser-performance-0.90.1-linux-x86_64"
-        "mparser-performance-0.90.1-macos-"
+        "mparser-performance-${EXPECTED_VERSION}-windows-x86_64"
+        "mparser-performance-${EXPECTED_VERSION}-linux-x86_64"
+        "mparser-performance-${EXPECTED_VERSION}-macos-"
         "actions/upload-artifact@v7")
     require_text(ci_workflow "${required_performance_ci_text}"
         "native performance evidence CI policy")
@@ -161,11 +186,11 @@ foreach(required_authentication_ci_text IN ITEMS
         "release authentication CI policy")
 endforeach()
 foreach(expected_archive IN ITEMS
-        "mparser-0.90.1-windows-x86_64.zip"
-        "mparser-0.90.1-linux-x86_64.tar.gz"
-        "mparser-0.90.1-linux-aarch64.tar.gz"
-        "mparser-0.90.1-macos-x86_64.tar.gz"
-        "mparser-0.90.1-macos-arm64.tar.gz")
+        "mparser-${EXPECTED_VERSION}-windows-x86_64.zip"
+        "mparser-${EXPECTED_VERSION}-linux-x86_64.tar.gz"
+        "mparser-${EXPECTED_VERSION}-linux-aarch64.tar.gz"
+        "mparser-${EXPECTED_VERSION}-macos-x86_64.tar.gz"
+        "mparser-${EXPECTED_VERSION}-macos-arm64.tar.gz")
     require_text(ci_workflow "${expected_archive}"
         "release authentication platform set")
 endforeach()
@@ -177,14 +202,14 @@ foreach(forbidden_release_upload IN ITEMS
         "release artifact top-level file boundary")
 endforeach()
 foreach(required_release_upload IN ITEMS
-        "build-ci/packages/mparser-0.90.1-windows-x86_64.zip.sha256"
-        "build-ci/packages/mparser-0.90.1-windows-x86_64.zip.provenance.json"
-        "build-ci/packages/mparser-0.90.1-linux-x86_64.tar.gz.sha256"
-        "build-ci/packages/mparser-0.90.1-linux-x86_64.tar.gz.provenance.json"
-        "build-ci/packages/mparser-0.90.1-macos-\${{ matrix.arch }}.tar.gz.sha256"
-        "build-ci/packages/mparser-0.90.1-macos-\${{ matrix.arch }}.tar.gz.provenance.json"
-        "build-arm64-jit/packages/mparser-0.90.1-linux-aarch64.tar.gz.sha256"
-        "build-arm64-jit/packages/mparser-0.90.1-linux-aarch64.tar.gz.provenance.json"
+        "build-ci/packages/mparser-${EXPECTED_VERSION}-windows-x86_64.zip.sha256"
+        "build-ci/packages/mparser-${EXPECTED_VERSION}-windows-x86_64.zip.provenance.json"
+        "build-ci/packages/mparser-${EXPECTED_VERSION}-linux-x86_64.tar.gz.sha256"
+        "build-ci/packages/mparser-${EXPECTED_VERSION}-linux-x86_64.tar.gz.provenance.json"
+        "build-ci/packages/mparser-${EXPECTED_VERSION}-macos-\${{ matrix.arch }}.tar.gz.sha256"
+        "build-ci/packages/mparser-${EXPECTED_VERSION}-macos-\${{ matrix.arch }}.tar.gz.provenance.json"
+        "build-arm64-jit/packages/mparser-${EXPECTED_VERSION}-linux-aarch64.tar.gz.sha256"
+        "build-arm64-jit/packages/mparser-${EXPECTED_VERSION}-linux-aarch64.tar.gz.provenance.json"
         "build-ci/packages/SHA256SUMS"
         "build-arm64-jit/packages/SHA256SUMS")
     require_text(ci_workflow "${required_release_upload}"

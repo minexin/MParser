@@ -58,9 +58,9 @@ require_json("mparser.public-contract"
 require_json("1" "public contract schema major" schema major)
 require_json("0" "public contract schema minor" schema minor)
 require_json("${EXPECTED_VERSION}"
-    "public contract engine version" candidate engine_version)
-require_json("frozen-v1-candidate"
-    "public contract candidate state" candidate state)
+    "public contract engine version" release engine_version)
+require_json("frozen-v1"
+    "public contract release state" release state)
 require_json("Apache-2.0"
     "public contract license" license spdx)
 

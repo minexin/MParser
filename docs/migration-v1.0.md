@@ -5,10 +5,9 @@ stable MATLAB-like subset runtime and its public integration boundaries. This
 guide identifies changes that pre-v1 scripts, launchers, and embedding hosts
 must review before adopting 1.0.0.
 
-The current source version is still the v0.90 release candidate. The final
-1.0.0 release changes the package version only after the remaining release
-gates pass; it does not use that version bump to redesign the frozen
-interfaces.
+The source and package version is `1.0.0`. This version freeze does not
+redesign the interfaces accepted during the v0.90 series; it converts those
+reviewed boundaries into the stable v1 compatibility promise.
 
 ## 1. Use The Production Command
 

@@ -15,6 +15,7 @@ foreach(required_variable IN ITEMS
         AUTHENTICATION_EVIDENCE_ROOT
         EXPECTED_VERSION
         EXPECTED_JIT_EVIDENCE_VERSION
+        EXPECTED_AUTHENTICATION_VERSION
         EXPECTED_AUTHENTICATION_REVISION
         EXPECTED_AUTHENTICATION_RUN_ID
         EXPECTED_CONTRACT_STATE
@@ -56,40 +57,45 @@ file(READ "${ROADMAP}" roadmap)
 
 string(JSON matrix_version GET "${matrix_json}" version)
 string(JSON contract_version GET
-    "${public_contract_json}" candidate engine_version)
+    "${public_contract_json}" release engine_version)
 string(JSON contract_state GET
-    "${public_contract_json}" candidate state)
+    "${public_contract_json}" release state)
 if(NOT matrix_version STREQUAL EXPECTED_VERSION OR
    NOT contract_version STREQUAL EXPECTED_VERSION OR
    NOT contract_state STREQUAL EXPECTED_CONTRACT_STATE)
     message(FATAL_ERROR
-        "Release candidate version/state drifted.\n"
+        "Release version/state drifted.\n"
         "matrix: ${matrix_version}\n"
         "contract: ${contract_version} (${contract_state})\n"
         "expected: ${EXPECTED_VERSION} (${EXPECTED_CONTRACT_STATE})")
 endif()
 
-string(FIND "${release_notes}"
-    "Publication status: **release candidate documentation**."
-    candidate_status_position)
-string(FIND "${release_notes}"
-    "remains version `${EXPECTED_VERSION}`"
-    candidate_version_position)
-string(FIND "${roadmap}"
-    "**Status: candidate platform validation complete; publication preparation in progress.**"
-    roadmap_status_position)
-if(candidate_status_position EQUAL -1 OR
-   candidate_version_position EQUAL -1 OR
+if(EXPECTED_CONTRACT_STATE STREQUAL "frozen-v1")
+    string(FIND "${release_notes}"
+        "Publication contract: **frozen v1**."
+        release_status_position)
+    string(FIND "${release_notes}"
+        "source project version is `${EXPECTED_VERSION}`"
+        release_version_position)
+    string(FIND "${roadmap}"
+        "**Status: 1.0.0 contract freeze complete.**"
+        roadmap_status_position)
+else()
+    message(FATAL_ERROR
+        "Unsupported public-contract release state: ${EXPECTED_CONTRACT_STATE}")
+endif()
+if(release_status_position EQUAL -1 OR
+   release_version_position EQUAL -1 OR
    roadmap_status_position EQUAL -1)
     message(FATAL_ERROR
-        "Release notes or roadmap no longer describe a pre-1.0 candidate")
+        "Release notes or roadmap no longer match the frozen release state")
 endif()
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}"
         "-DMPARSER_EVIDENCE_ROOT=${AUTHENTICATION_EVIDENCE_ROOT}"
-        "-DMPARSER_EXPECTED_VERSION=${EXPECTED_VERSION}"
-        "-DMPARSER_EXPECTED_TAG=v${EXPECTED_VERSION}"
+        "-DMPARSER_EXPECTED_VERSION=${EXPECTED_AUTHENTICATION_VERSION}"
+        "-DMPARSER_EXPECTED_TAG=v${EXPECTED_AUTHENTICATION_VERSION}"
         "-DMPARSER_EXPECTED_REVISION=${EXPECTED_AUTHENTICATION_REVISION}"
         "-DMPARSER_EXPECTED_RUN_ID=${EXPECTED_AUTHENTICATION_RUN_ID}"
         -P "${AUTHENTICATION_EVIDENCE_VALIDATOR}"
@@ -108,7 +114,7 @@ set(actual_open_should_have)
 set(actual_deferred_should_have)
 string(JSON gap_count LENGTH "${matrix_json}" gaps)
 if(gap_count LESS 1)
-    message(FATAL_ERROR "Release candidate has no explicit gap contracts")
+    message(FATAL_ERROR "Release has no explicit gap contracts")
 endif()
 math(EXPR gap_last "${gap_count} - 1")
 foreach(gap_index RANGE 0 ${gap_last})
@@ -150,7 +156,7 @@ foreach(gap_index RANGE 0 ${gap_last})
                 NOT gap_impact STREQUAL "additive"))
                 message(FATAL_ERROR
                     "Open Should-have ${gap_id} is not a bounded additive "
-                    "v1.0 candidate")
+                    "v1.0 release")
             endif()
             list(APPEND actual_open_should_have
                 "${gap_id}:${gap_state}")
@@ -199,7 +205,7 @@ list(LENGTH actual_open_must_have must_have_count)
 list(LENGTH actual_open_should_have should_have_count)
 list(LENGTH actual_deferred_should_have deferred_should_have_count)
 message(STATUS
-    "MParser release candidate readiness validated: "
+    "MParser release readiness validated: "
     "${EXPECTED_VERSION}, ${must_have_count} bounded Must-have blockers, "
     "${should_have_count} scoped Should-have items, "
     "${deferred_should_have_count} deferred Should-have items")

@@ -1,16 +1,15 @@
 # MParser C ABI Compatibility
 
-MParser v0.90 freezes the v1 candidate for C ABI major 1 revision 1. It remains
-a pre-v1.0 candidate rather than a final release promise, but its symbols,
-records, constants, ownership, and evolution rules are now machine-checked.
-Every public layout or symbol change requires the review recorded in
-`public-contract-v1.json`.
+MParser 1.0.0 freezes C ABI major 1 revision 1 as a stable v1 compatibility
+promise. Its symbols, records, constants, ownership, and evolution rules are
+machine-checked. Every public layout or symbol change requires the review
+recorded in `public-contract-v1.json`.
 
 The current tuple is:
 
 - ABI major: `MPARSER_C_ABI_VERSION_MAJOR == 1`;
 - ABI revision: `MPARSER_C_ABI_REVISION == 1`;
-- engine release: `0.90.1`.
+- engine release: `1.0.0`.
 
 `mparser_c_abi_version()` returns the ABI major.
 `mparser_c_abi_revision()` returns the additive feature revision. The engine
@@ -202,7 +201,5 @@ SHA-256 values against `docs/public-contract-v1.json`. Updating those hashes
 without the required revision/major classification and compatibility evidence
 does not satisfy the review policy.
 
-SOVERSION 1 names the frozen v1 candidate. v1.0 will convert the candidate
-into the release compatibility promise; any breaking correction discovered
-before then still changes the ABI major explicitly rather than rewriting
-major 1 in place.
+SOVERSION 1 names the stable v1 ABI family. Any breaking correction changes
+the ABI major explicitly rather than rewriting major 1 in place.

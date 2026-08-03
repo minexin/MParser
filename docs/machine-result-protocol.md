@@ -69,7 +69,7 @@ must treat JSON object member order as insignificant:
 ```json
 {
   "protocol": {"name": "mparser.result", "major": 1, "minor": 0},
-  "engine": {"name": "MParser", "version": "0.90.1"},
+  "engine": {"name": "MParser", "version": "1.0.0"},
   "status": "succeeded",
   "entry_function": "",
   "requested_output_count": 0,

@@ -33,6 +33,10 @@ foreach(required_variable IN ITEMS
         MPARSER_SYSTEM_NAME
         MPARSER_SYSTEM_PROCESSOR
         MPARSER_PROJECT_VERSION
+        MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY
+        MPARSER_AUTHENTICATION_EVIDENCE_VERSION
+        MPARSER_AUTHENTICATION_EVIDENCE_REVISION
+        MPARSER_AUTHENTICATION_EVIDENCE_RUN_ID
         MPARSER_C_CONSUMER_SOURCE_DIR
         MPARSER_CPP_CONSUMER_SOURCE_DIR)
     if(NOT DEFINED ${required_variable} OR
@@ -217,7 +221,8 @@ function(run_unpacked_consumer
         "-DMPARSER_MT=${MPARSER_MT}"
         "-DMPARSER_TEST_CONFIG=${MPARSER_TEST_CONFIG}"
         "-DMPARSER_BUILD_TYPE=${MPARSER_BUILD_TYPE}"
-        "-DMPARSER_PROJECT_VERSION=${MPARSER_PROJECT_VERSION}")
+        "-DMPARSER_PROJECT_VERSION=${MPARSER_PROJECT_VERSION}"
+        "-DMPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY=${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}")
     if(require_cpp)
         list(APPEND command -DMPARSER_REQUIRE_CPP_SDK=ON)
     endif()
@@ -514,9 +519,9 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/migration-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-process.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-authentication.md"
-    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/README.md"
-    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/manifest.json"
-    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication/SHA256SUMS"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}/README.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}/manifest.json"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}/SHA256SUMS"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
@@ -533,6 +538,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v0.90.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v0.90.1.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-contract-freeze.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/architecture.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/extending-builtins.md"
@@ -548,11 +554,11 @@ foreach(path IN LISTS required_paths)
 endforeach()
 execute_process(
     COMMAND "${CMAKE_COMMAND}"
-        "-DMPARSER_EVIDENCE_ROOT=${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/v0.90.1-authentication"
-        -DMPARSER_EXPECTED_VERSION=0.90.1
-        -DMPARSER_EXPECTED_TAG=v0.90.1
-        -DMPARSER_EXPECTED_REVISION=5763b4752657c54ee5baeaf645a4249b4c5cc8ba
-        -DMPARSER_EXPECTED_RUN_ID=30743014345
+        "-DMPARSER_EVIDENCE_ROOT=${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}"
+        "-DMPARSER_EXPECTED_VERSION=${MPARSER_AUTHENTICATION_EVIDENCE_VERSION}"
+        "-DMPARSER_EXPECTED_TAG=v${MPARSER_AUTHENTICATION_EVIDENCE_VERSION}"
+        "-DMPARSER_EXPECTED_REVISION=${MPARSER_AUTHENTICATION_EVIDENCE_REVISION}"
+        "-DMPARSER_EXPECTED_RUN_ID=${MPARSER_AUTHENTICATION_EVIDENCE_RUN_ID}"
         -P "${MPARSER_PROJECT_ROOT}/tests/validate_release_authentication_evidence.cmake"
     RESULT_VARIABLE evidence_status
     OUTPUT_VARIABLE evidence_output

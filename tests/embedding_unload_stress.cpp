@@ -42,7 +42,7 @@ void runOneLoad(const std::filesystem::path& libraryPath) {
         loadSymbol<VersionFunction>(
             library, "mparser_c_abi_revision");
     assert(versionMajor && abiMajor && abiRevision);
-    assert(versionMajor() == 0);
+    assert(versionMajor() == 1);
     assert(abiMajor() == 1);
     assert(abiRevision() >= 1);
 
@@ -72,7 +72,7 @@ void runOneLoad(const std::filesystem::path& libraryPath) {
         loadSymbol<VersionFunction>(
             library, "mparser_c_abi_revision");
     assert(versionMajor && abiMajor && abiRevision);
-    assert(versionMajor() == 0);
+    assert(versionMajor() == 1);
     assert(abiMajor() == 1);
     assert(abiRevision() >= 1);
 

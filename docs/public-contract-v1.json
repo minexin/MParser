@@ -4,10 +4,10 @@
     "major": 1,
     "minor": 0
   },
-  "candidate": {
-    "engine_version": "0.90.1",
-    "milestone": "v0.90",
-    "state": "frozen-v1-candidate"
+  "release": {
+    "engine_version": "1.0.0",
+    "milestone": "v1.0",
+    "state": "frozen-v1"
   },
   "license": {
     "spdx": "Apache-2.0",
@@ -66,7 +66,7 @@
       "path": "tests/public_contract/cpp_api/1.0/mparser/c_api.h",
       "sha256_lf": "d18a953d98cc8c17d86acf3748d757e196c21c894a079db17adaa6f54525532d"
     },
-    "compatibility": "Source compatibility is preserved within the v1 candidate; hosts link only to the narrow C shared library."
+    "compatibility": "Source compatibility is preserved within stable v1; hosts link only to the narrow C shared library."
   },
   "machine_result_protocol": {
     "name": "mparser.result",
@@ -137,7 +137,7 @@
       "Classify the change as compatible, additive, deprecated, or breaking.",
       "Add old-client or protocol-golden evidence before updating a frozen hash.",
       "Increment the applicable revision, minor, or major before shipping changed semantics.",
-      "Do not remove a v1 candidate contract before the documented deprecation window."
+      "Do not remove a stable v1 contract before the documented deprecation window."
     ]
   }
 }

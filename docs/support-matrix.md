@@ -75,16 +75,16 @@ value/result handles.
 
 | Platform | Release target | Native JIT | Current evidence note |
 | --- | --- | --- | --- |
-| Windows x64 | Yes | Yes | Full native suite and package/upload passed in run `30684969401`; local no-JIT 198/198 and MSVC ASan no-JIT 199/199 also pass |
-| Linux x64 | Yes | Yes | Full GCC suite/package/upload and Clang ASan/UBSan/LSan suite passed in run `30684969401` |
-| Linux AArch64 | Yes | Yes | Native `ubuntu-24.04-arm` full-suite CI, accepted non-emulated ARM MIDR-labelled performance reports, and the independent cross-build/QEMU package/fallback lane passed together in run `30732814590` |
-| macOS x64 | Yes | Yes | Full suite, relocated production SDK consumers, architecture/version checks, package, and upload passed in run `30684969401` |
-| macOS ARM64 | Yes | Yes | Full suite, relocated production SDK consumers, native architecture/version checks, package, and upload passed in run `30684969401` |
+| Windows x64 | Yes | Yes | Full suite/package passed in run `30746822213`; exact 1.0.0 local native 209/209, clean no-JIT 202/202, and accepted MSVC ASan no-JIT 199/199 also pass |
+| Linux x64 | Yes | Yes | Full GCC suite/package and Clang ASan/UBSan/LSan suite passed in run `30746822213` |
+| Linux AArch64 | Yes | Yes | Native `ubuntu-24.04-arm` full suite plus independent cross-build/QEMU native/portable package lane passed in run `30746822213`; accepted non-emulated ARM MIDR performance reports remain bound to run `30732814590` |
+| macOS x64 | Yes | Yes | Full suite, relocated production SDK consumers, architecture/version checks, and package passed in run `30746822213` |
+| macOS ARM64 | Yes | Yes | Full suite, relocated production SDK consumers, native architecture/version checks, and package passed in run `30746822213` |
 
-The table defines the intended v1.0 release set and points to the accepted
-functional candidate snapshot at revision `f34d8d9`. Unsupported operating
-systems or architectures may build incidentally but are not release targets.
-See [Cross-Platform Candidate Validation](v1.0-cross-platform-validation.md)
+The table defines the v1.0 release set and points to the latest accepted
+pre-freeze cross-platform snapshot at revision `fed5476`. Unsupported
+operating systems or architectures may build incidentally but are not release
+targets. See [Cross-Platform Validation](v1.0-cross-platform-validation.md)
 for exact lane scope and exclusions.
 
 ## Resource And Concurrency Boundaries
