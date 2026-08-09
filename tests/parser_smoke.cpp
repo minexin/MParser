@@ -315,6 +315,38 @@ end
     assert(matrix->children[1]->children.size() == 2);
 }
 
+void parseV11CoreCompatibilitySmoke() {
+    const std::string source = R"(power = 2^3^2;
+dotPower = 2.^3.^2;
+if power == 64, branch = 10; else, branch = -1; end
+switch branch, case 10, switched = 20; otherwise, switched = -1; end
+for value = [1 2 3], total = value; end
+while branch < 12, branch = branch + 1; end
+)";
+
+    auto result = parse(source);
+    assert(result.diagnostics.empty());
+    assert(result.root->children.size() == 6);
+
+    for (size_t index = 0; index < 2; ++index) {
+        const auto& assignment = *result.root->children[index];
+        assert(assignment.kind == mparser::SyntaxKind::AssignmentStatement);
+        assert(assignment.children.size() == 2);
+        const auto& power = *assignment.children[1];
+        assert(power.kind == mparser::SyntaxKind::BinaryExpr);
+        assert(power.children.size() == 2);
+        assert(power.children[0]->kind == mparser::SyntaxKind::BinaryExpr);
+    }
+
+    assert(result.root->children[2]->kind == mparser::SyntaxKind::IfBlock);
+    assert(result.root->children[3]->kind == mparser::SyntaxKind::SwitchBlock);
+    assert(result.root->children[4]->kind == mparser::SyntaxKind::ForBlock);
+    assert(result.root->children[5]->kind == mparser::SyntaxKind::WhileBlock);
+    assert(containsControlArmLabel(*result.root->children[2], "else"));
+    assert(containsControlArmLabel(*result.root->children[3], "case"));
+    assert(containsControlArmLabel(*result.root->children[3], "otherwise"));
+}
+
 void parseWorkspaceDeclarationSmoke() {
     const std::string source = R"(global shared, cache
 function y = f(x)
@@ -365,6 +397,7 @@ int main() {
     parseSwitchSmoke();
     parseTryCatchSmoke();
     parseMatrixRowsSmoke();
+    parseV11CoreCompatibilitySmoke();
     parseWorkspaceDeclarationSmoke();
     std::cout << "parser smoke tests passed\n";
     return 0;

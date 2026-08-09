@@ -37,7 +37,9 @@ struct Pipeline {
     mparser::BytecodeTypedIrModule module;
 };
 
-Pipeline prepare(std::string_view source) {
+Pipeline prepare(
+    std::string_view source,
+    const mparser::BytecodeVmOptions& options = {}) {
     mparser::Lexer lexer(source);
     mparser::Parser parser(lexer.lex());
     auto parseResult = parser.parse();
@@ -50,7 +52,7 @@ Pipeline prepare(std::string_view source) {
     mparser::BytecodeLowerer lowerer;
     auto bytecode = lowerer.lower(semantic);
     mparser::BytecodeVm vm;
-    auto baseline = vm.run(bytecode, semantic);
+    auto baseline = vm.run(bytecode, semantic, options);
     assert(baseline.diagnostics.empty());
 
     mparser::BytecodeOptimizationPlanner planner;
@@ -205,6 +207,66 @@ end
     assert(output != nullptr);
     assert(output->kind == mparser::RuntimeValueKind::Vector);
     assert(output->elements == std::vector<double>({650.0, 650.0}));
+}
+
+void runMatrixForLoopTypedFallbackSmoke() {
+    mparser::BytecodeVmOptions profileOptions;
+    profileOptions.initialWorkspace.push_back(
+        mparser::RuntimeVariable{
+            "range", rowVector({1.0, 2.0, 3.0, 4.0, 5.0, 6.0,
+                                7.0, 8.0, 9.0, 10.0, 11.0, 12.0})});
+    auto pipeline = prepare(R"(sumFirst = 0;
+for col = range
+    sumFirst = sumFirst + col(1);
+end
+)", profileOptions);
+
+    const auto* region = findLoopRegion(pipeline.module, "col");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+
+    std::vector<double> elements;
+    for (double value = 1.0; value <= 12.0; value += 1.0) {
+        elements.push_back(value);
+    }
+    for (double value = 101.0; value <= 112.0; value += 1.0) {
+        elements.push_back(value);
+    }
+
+    mparser::BytecodeVmOptions matrixOptions;
+    matrixOptions.typedRegionBackend =
+        mparser::TypedRegionBackend::Portable;
+    matrixOptions.initialWorkspace.push_back(
+        mparser::RuntimeVariable{
+            "range", mparser::makeRuntimeMatrixValue(
+                         2, 12, std::move(elements))});
+    mparser::BytecodeVm vm;
+    const auto result = vm.run(
+        pipeline.bytecode, pipeline.semantic, pipeline.module,
+        matrixOptions);
+
+    assert(result.diagnostics.empty());
+    const auto* execution =
+        findExecution(result, "scalar-loop", "col");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 0);
+    assert(execution->fallbackCount == 1);
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedRuntimeValue);
+    assert(execution->lastReason.find("scalar column") !=
+           std::string::npos);
+
+    const auto* sumFirst = findVariable(result.variables, "sumFirst");
+    assert(sumFirst != nullptr);
+    assert(sumFirst->kind == mparser::RuntimeValueKind::Number);
+    assert(sumFirst->number == 78.0);
+    const auto* column = findVariable(result.variables, "col");
+    assert(column != nullptr);
+    assert(column->kind == mparser::RuntimeValueKind::Matrix);
+    assert(column->rows == 2);
+    assert(column->columns == 1);
+    assert(column->elements == std::vector<double>({12.0, 112.0}));
 }
 
 void runLinearArrayTypedLoopSmoke(
@@ -1064,6 +1126,7 @@ int main() {
     try {
         runTypedLoopExecutionSmoke();
         runTypedLoopFallbackSmoke();
+        runMatrixForLoopTypedFallbackSmoke();
         runLinearArrayTypedLoopSmoke(
             mparser::TypedRegionBackend::Portable);
         runColumnVectorLinearArraySmoke(

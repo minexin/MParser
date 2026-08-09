@@ -52,6 +52,10 @@ RuntimeTextOperationResult
 runtimeIndexText(const RuntimeValue &target,
                  const std::vector<RuntimeValue> &subscripts);
 RuntimeTextOperationResult
+runtimeIndexText(const RuntimeValue &target,
+                 const std::vector<RuntimeValue> &subscripts,
+                 bool linearColon);
+RuntimeTextOperationResult
 runtimeIndexStringContents(const RuntimeValue &target,
                            const std::vector<RuntimeValue> &subscripts);
 RuntimeTextMutationResult

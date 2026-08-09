@@ -204,10 +204,6 @@ int binaryPrecedence(TokenKind kind) {
     }
 }
 
-bool isRightAssociativeBinary(TokenKind kind) {
-    return kind == TokenKind::Caret || kind == TokenKind::DotCaret;
-}
-
 bool isPrefixOperator(TokenKind kind) {
     return kind == TokenKind::Plus || kind == TokenKind::Minus ||
            kind == TokenKind::Tilde;
@@ -277,8 +273,7 @@ private:
             }
 
             const Token op = advance();
-            const int nextMinimum =
-                precedence + (isRightAssociativeBinary(op.kind) ? 0 : 1);
+            const int nextMinimum = precedence + 1;
             auto right = parseExpression(nextMinimum);
             if (!right) {
                 right = makeError(op.span, "expected right-hand expression");
@@ -1763,7 +1758,7 @@ std::unique_ptr<SyntaxNode> Parser::parseControlBlock() {
     node->label = current().text;
     advance();
 
-    const auto header = collectUntilSeparator();
+    const auto header = collectUntilSeparator(true);
     node->raw = joinTokens(header);
     if (!header.empty()) {
         node->children.push_back(buildControlHeader(header));
@@ -1780,7 +1775,7 @@ std::unique_ptr<SyntaxNode> Parser::parseControlBlock() {
             auto arm = makeNode(SyntaxKind::ControlArm, current().span.begin);
             arm->label = current().text;
             advance();
-            const auto armHeader = collectUntilSeparator();
+            const auto armHeader = collectUntilSeparator(true);
             arm->raw = joinTokens(armHeader);
             if (!armHeader.empty()) {
                 arm->children.push_back(buildControlHeader(armHeader));
@@ -1825,7 +1820,7 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
         return parseControlBlock();
     }
 
-    const auto tokens = collectUntilSeparator();
+    const auto tokens = collectUntilSeparator(true);
     consumeSeparator();
 
     return buildStatementLikeNode(tokens, SyntaxKind::ExpressionStatement);
@@ -2079,7 +2074,7 @@ AttributeSyntax Parser::buildAttribute(const std::vector<Token>& tokens) const {
     return attribute;
 }
 
-std::vector<Token> Parser::collectUntilSeparator() {
+std::vector<Token> Parser::collectUntilSeparator(bool commaIsSeparator) {
     std::vector<Token> tokens;
     int parenDepth = 0;
     int bracketDepth = 0;
@@ -2087,7 +2082,8 @@ std::vector<Token> Parser::collectUntilSeparator() {
 
     while (!isAtEnd()) {
         if (atTopLevel(parenDepth, bracketDepth, braceDepth) &&
-            atAny({TokenKind::Newline, TokenKind::Semicolon})) {
+            (atAny({TokenKind::Newline, TokenKind::Semicolon}) ||
+             (commaIsSeparator && at(TokenKind::Comma)))) {
             break;
         }
 

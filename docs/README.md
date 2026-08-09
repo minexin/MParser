@@ -1,6 +1,6 @@
 # MParser Documentation
 
-MParser v1.0 is a stable, documented, embeddable, and sustainably extensible
+MParser v1.1 is a stable, documented, embeddable, and sustainably extensible
 MATLAB-like subset runtime. It does not claim complete MATLAB compatibility.
 
 Start with the task that matches your role.
@@ -57,6 +57,7 @@ adapter is Post-v1.0.
 - [Versioning And Deprecation](versioning-and-deprecation.md)
 - [v1.0 Release Notes](release-notes-v1.0.md)
 - [v1.0 Release Freeze](v1.0.md)
+- [v1.1 Core Compatibility](v1.1.md)
 - [v1 Release Process](release-process.md)
 - [Release Authentication](release-authentication.md): opt-in release-tag
   signing, public-transparency boundary, and consumer verification.
@@ -65,6 +66,8 @@ adapter is Post-v1.0.
 - [v1.0 Contract Freeze](v1.0-contract-freeze.md)
 - [v1.0 Roadmap](roadmap-v1.0.md)
 - [v1.x Roadmap](roadmap-v1.x.md)
+- [v1.x External Gap Plan](v1.x-external-gap-plan.md): post-1.0 differential
+  findings and MExecServer kernel requests tracked to 0.1 milestones.
 
 ## Machine-Readable Authorities
 

@@ -553,6 +553,13 @@ RuntimeStructOperationResult runtimeStructFieldValues(
 RuntimeStructOperationResult runtimeIndexStruct(
     const RuntimeValue& structure,
     const std::vector<RuntimeValue>& subscripts) {
+    return runtimeIndexStruct(structure, subscripts, false);
+}
+
+RuntimeStructOperationResult runtimeIndexStruct(
+    const RuntimeValue& structure,
+    const std::vector<RuntimeValue>& subscripts,
+    bool linearColon) {
     if (structure.kind != RuntimeValueKind::Struct) {
         return failure("structure indexing requires a structure target");
     }
@@ -571,7 +578,7 @@ RuntimeStructOperationResult runtimeIndexStruct(
             subscripts.front(), runtimeStructElementCount(structure), false);
         resultDimensions = runtimeLinearIndexResultDimensions(
             structure, subscripts.front(), selection.indices.size(),
-            selection.logicalMask);
+            selection.logicalMask, linearColon);
         resultElements.reserve(selection.indices.size());
         for (const size_t logicalIndex : selection.indices) {
             const auto offset = runtimeColumnMajorLinearToStorageOffset(

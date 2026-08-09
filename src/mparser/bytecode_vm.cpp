@@ -706,10 +706,9 @@ struct StackValue {
 
 struct ForLoopState {
     std::string variable;
-    std::vector<double> values;
+    std::vector<RuntimeValue> values;
     size_t nextIndex = 0;
     size_t headerPc = 0;
-    RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
     BindingRef binding;
 };
 
@@ -5342,25 +5341,24 @@ private:
             return std::nullopt;
         }
 
-        const auto values = valuesForLoopRange(instruction, *range);
+        auto values = runtimeNumericForLoopColumns(*range);
         if (!values) {
+            addDiagnostic(
+                instruction,
+                "bytecode for loop range must be a valid numeric array");
             return std::nullopt;
         }
-        RuntimeValue firstValue;
-        const RuntimeValue* observedValue = nullptr;
-        if (!values->empty()) {
-            firstValue = numberValue(values->front(), range->numericClass);
-            observedValue = &firstValue;
-        }
+        const RuntimeValue* observedValue =
+            values->empty() ? nullptr : &values->front();
         recordForEntry(instruction, values->size(), observedValue);
         if (values->empty()) {
             return checkedTarget(instruction);
         }
 
-        storeVariable(instruction, firstValue);
+        storeVariable(instruction, values->front());
         forLoopStack_.push_back(
-            ForLoopState{instruction.operand, *values, 1, currentPc_,
-                         range->numericClass, instruction.binding});
+            ForLoopState{instruction.operand, std::move(*values), 1,
+                         currentPc_, instruction.binding});
         return std::nullopt;
     }
 
@@ -5392,6 +5390,21 @@ private:
             return std::nullopt;
         }
 
+        const auto loopValues =
+            runtimeNumericForLoopColumns(rangeValue.value);
+        if (!loopValues ||
+            std::any_of(loopValues->begin(), loopValues->end(),
+                        [](const RuntimeValue& value) {
+                            return value.kind != RuntimeValueKind::Number;
+                        })) {
+            ++execution.fallbackCount;
+            execution.lastFallbackKind =
+                RuntimeFallbackKind::UnsupportedRuntimeValue;
+            execution.lastReason =
+                "typed scalar loop requires scalar column values";
+            return std::nullopt;
+        }
+
         ScalarTypedRegionExecutor executor(
             semantic_ ? semantic_->builtinRegistry : nullptr);
         auto result = BytecodeVmTrustedAccess::executeRegion(
@@ -5413,30 +5426,19 @@ private:
         }
 
         if (profilingEnabled_) {
-            std::vector<double> loopValues;
-            if (isNumber(rangeValue.value)) {
-                loopValues.push_back(rangeValue.value.number);
-            } else if (isArray(rangeValue.value)) {
-                loopValues = rangeValue.value.elements;
-            }
-
-            RuntimeValue firstValue;
             const RuntimeValue* observedValue = nullptr;
-            if (!loopValues.empty()) {
-                firstValue = numberValue(loopValues.front());
-                observedValue = &firstValue;
+            if (!loopValues->empty()) {
+                observedValue = &loopValues->front();
             }
-            recordForEntry(instruction, loopValues.size(), observedValue);
-            if (!loopValues.empty()) {
+            recordForEntry(instruction, loopValues->size(), observedValue);
+            if (!loopValues->empty()) {
                 const auto& latch = program_->instructions[
                     active->second.contract.bodyEndPc];
-                ForLoopState state{instruction.operand, loopValues, 1,
+                ForLoopState state{instruction.operand, *loopValues, 1,
                                    currentPc_,
-                                   RuntimeNumericClass::Double,
                                    instruction.binding};
-                for (size_t index = 1; index < loopValues.size(); ++index) {
-                    recordForBackedge(state, latch,
-                                      numberValue(loopValues[index]));
+                for (size_t index = 1; index < loopValues->size(); ++index) {
+                    recordForBackedge(state, latch, (*loopValues)[index]);
                 }
                 recordForCompletion(state, latch);
             }
@@ -5492,8 +5494,7 @@ private:
             return std::nullopt;
         }
 
-        RuntimeValue nextValue = numberValue(
-            state.values[state.nextIndex], state.numericClass);
+        RuntimeValue nextValue = state.values[state.nextIndex];
         storeVariable(state.variable, state.binding, nextValue,
                       instruction);
         ++state.nextIndex;
@@ -5662,20 +5663,6 @@ private:
             currentFrame()[context.catchVariable] = std::move(exception);
         }
         return context.catchTarget;
-    }
-
-    std::optional<std::vector<double>> valuesForLoopRange(
-        const BytecodeInstruction& instruction, const RuntimeValue& value) {
-        if (isNumber(value)) {
-            return std::vector<double>{value.number};
-        }
-        if (isArray(value)) {
-            return value.elements;
-        }
-
-        addDiagnostic(instruction,
-                      "bytecode for loop range must be numeric");
-        return std::nullopt;
     }
 
     void beginIndexContext(const BytecodeInstruction& instruction) {
@@ -14133,11 +14120,17 @@ private:
             return missingValue();
         }
 
+        const bool linearColon =
+            arguments.size() == 1 &&
+            instruction.colonSubscripts.size() == 1 &&
+            instruction.colonSubscripts.front();
+
         if (isRuntimeMetadataObject(target)) {
             return indexMetadataValue(instruction, target, arguments);
         }
         if (target.kind == RuntimeValueKind::Struct) {
-            auto result = runtimeIndexStruct(target, arguments);
+            auto result = runtimeIndexStruct(target, arguments,
+                                             linearColon);
             if (!result.succeeded) {
                 addDiagnostic(instruction, "bytecode " + result.error);
                 return missingValue();
@@ -14145,7 +14138,7 @@ private:
             return std::move(result.value);
         }
         if (target.kind == RuntimeValueKind::Cell) {
-            auto result = runtimeIndexCell(target, arguments);
+            auto result = runtimeIndexCell(target, arguments, linearColon);
             if (!result.succeeded) {
                 addDiagnostic(instruction, "bytecode " + result.error);
                 return missingValue();
@@ -14153,7 +14146,7 @@ private:
             return std::move(result.value);
         }
         if (isRuntimeTextValue(target)) {
-            auto result = runtimeIndexText(target, arguments);
+            auto result = runtimeIndexText(target, arguments, linearColon);
             if (!result.succeeded) {
                 addDiagnostic(instruction, "bytecode " + result.error);
                 return missingValue();
@@ -14162,7 +14155,8 @@ private:
         }
         if (isRuntimeClassObject(target)) {
             auto result = runtimeIndexObject(
-                target, arguments, objectArrayPolicy(instruction));
+                target, arguments, objectArrayPolicy(instruction),
+                linearColon);
             if (!result.succeeded) {
                 addDiagnostic(instruction, "bytecode " + result.error);
                 return missingValue();
@@ -14175,7 +14169,7 @@ private:
                           "structure, text, or object target");
             return missingValue();
         }
-        auto result = runtimeIndexNumeric(target, arguments);
+        auto result = runtimeIndexNumeric(target, arguments, linearColon);
         if (!result.succeeded) {
             addDiagnostic(instruction, "bytecode " + result.error);
             return missingValue();
@@ -14296,7 +14290,9 @@ private:
             return values.front();
         }
         const auto dimensions = runtimeLinearIndexResultDimensions(
-            target, subscript, values.size(), selection.logicalMask);
+            target, subscript, values.size(), selection.logicalMask,
+            instruction.colonSubscripts.size() == 1 &&
+                instruction.colonSubscripts.front());
         return makeRuntimeMetadataArray(
             *metadataKind, std::move(values), dimensions);
     }

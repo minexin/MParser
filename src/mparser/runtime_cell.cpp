@@ -296,6 +296,13 @@ RuntimeCellOperationResult assignSelectedCells(
 RuntimeCellOperationResult runtimeIndexCell(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts) {
+    return runtimeIndexCell(target, subscripts, false);
+}
+
+RuntimeCellOperationResult runtimeIndexCell(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool linearColon) {
     auto resolved = resolveSelections(target, subscripts, false);
     if (!resolved.succeeded) {
         return failure(std::move(resolved.error));
@@ -305,7 +312,7 @@ RuntimeCellOperationResult runtimeIndexCell(
             subscripts.front(), runtimeShapeElementCount(target), false);
         resolved.dimensions = runtimeLinearIndexResultDimensions(
             target, subscripts.front(), selection.indices.size(),
-            selection.logicalMask);
+            selection.logicalMask, linearColon);
     }
     const auto count = checkedRuntimeDimensionProduct(resolved.dimensions);
     if (!count) {

@@ -1690,13 +1690,16 @@ private:
 
         const HirNode& loopTarget = *assignment.children.front();
         const RuntimeValue range = evaluate(*assignment.children[1]);
-        const std::vector<double> values = valuesForLoopRange(range);
+        const auto values = runtimeNumericForLoopColumns(range);
+        if (!values) {
+            addDiagnostic(assignment,
+                          "for loop range must be a valid numeric array");
+            return;
+        }
 
         LoopDepthGuard loop(loopDepth_);
-        for (double value : values) {
-            storeVariable(
-                loopTarget,
-                numberValue(value, range.numericClass));
+        for (const RuntimeValue& value : *values) {
+            storeVariable(loopTarget, value);
             executeRange(node, 1, node.children.size());
             if (diagnosticTrapTriggered()) {
                 return;
@@ -1713,16 +1716,6 @@ private:
                 return;
             }
         }
-    }
-
-    std::vector<double> valuesForLoopRange(const RuntimeValue& range) const {
-        if (isArray(range)) {
-            return range.elements;
-        }
-        if (isNumber(range)) {
-            return {range.number};
-        }
-        return {};
     }
 
     void executeIf(const HirNode& node) {
@@ -3045,8 +3038,13 @@ private:
             return missingValue();
         }
 
+        const bool linearColon =
+            arguments.size() == 1 && node.children.size() == 2 &&
+            node.children[1]->kind == HirKind::Literal &&
+            node.children[1]->label == ":";
+
         if (isStruct(target)) {
-            auto result = runtimeIndexStruct(target, arguments);
+            auto result = runtimeIndexStruct(target, arguments, linearColon);
             if (!result.succeeded) {
                 addDiagnostic(node, result.error);
                 return missingValue();
@@ -3054,7 +3052,7 @@ private:
             return std::move(result.value);
         }
         if (isCell(target)) {
-            auto result = runtimeIndexCell(target, arguments);
+            auto result = runtimeIndexCell(target, arguments, linearColon);
             if (!result.succeeded) {
                 addDiagnostic(node, std::move(result.error));
                 return missingValue();
@@ -3062,14 +3060,14 @@ private:
             return std::move(result.value);
         }
         if (isRuntimeTextValue(target)) {
-            auto result = runtimeIndexText(target, arguments);
+            auto result = runtimeIndexText(target, arguments, linearColon);
             if (!result.succeeded) {
                 addDiagnostic(node, std::move(result.error));
                 return missingValue();
             }
             return std::move(result.value);
         }
-        auto result = runtimeIndexNumeric(target, arguments);
+        auto result = runtimeIndexNumeric(target, arguments, linearColon);
         if (!result.succeeded) {
             addDiagnostic(node, std::move(result.error));
             return missingValue();

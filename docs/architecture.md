@@ -1616,9 +1616,11 @@ protocol without source-tree or loader-path access. The publication target
 requires a clean worktree before CPack runs. This does not claim reproducible
 compilation, publisher identity, or a SLSA level; authenticated publication
 remains a release operation. The final `v1.0.0` tag completed that operation
-in Actions run `30780391460`; the source and contracts are frozen at 1.0.0 and
-the ten authenticated subjects are retained. The final 32-asset Release was
-published without digest drift and independently downloaded and verified.
+in Actions run `30780391460`; the v1.0.0 source snapshot and frozen v1
+contracts are retained with the ten authenticated subjects. The final
+32-asset Release was published without digest drift and independently
+downloaded and verified. Compatible v1.x engine minors build on those frozen
+public contracts without rewriting the historical release evidence.
 See [release-process.md](release-process.md).
 
 A CMake-only candidate-readiness gate cross-checks the engine version, frozen
@@ -1681,6 +1683,22 @@ broader typed work to v1.x; any later addition still requires representative
 evidence. Long-tail
 functions, toolboxes, disk caches, external callback ABIs, zero-copy borrowed
 arrays, LLVM/OSR, and full MATLAB compatibility remain v1.x or Post-v1.0 work.
+
+v1.1 closes externally observed core semantic defects without reopening those
+framework contracts. Top-level comma handling is a Parser collection policy,
+not a new syntax-node shape. Numeric `for` iteration is centralized in
+`runtimeNumericForLoopColumns`, which projects each logical column through the
+shared shape/index helpers and preserves numeric class. Interpreter and VM use
+the same projected `RuntimeValue` sequence. Typed scalar regions preflight the
+sequence and return `UnsupportedRuntimeValue` to the VM before mutating the
+range stack when any column is nonscalar.
+
+Single-colon linear indexing carries one explicit shape bit from HIR or
+bytecode into the shared numeric, Cell, Struct, text, object, and nested-lvalue
+read helpers. This distinguishes `A(:)`, which must be column-shaped, from an
+ordinary vector subscript whose orientation follows the existing target and
+subscript rules. Existing overloads retain the old no-colon entry points, so
+the implementation correction does not invent a new public ABI.
 
 The release gates, compatibility-matrix requirement, builtin-extension
 architecture, embedding boundary, platform matrix, and explicit v1.0

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "scope": "Stable MATLAB-like v1.0 target subset; not complete MATLAB compatibility",
   "features": [
     {
@@ -21,9 +21,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["parser_smoke", "parser_semantic_fuzz", "semantic_smoke", "bytecode_smoke"],
-      "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "src/mparser/bytecode.cpp", "tests/parser_semantic_fuzz.cpp"],
-      "limits": "Production method/object dispatch and anonymous closures are supported through the bytecode VM. Anonymous-function text parsing, computed-string lazy source loading, and the remaining MATLAB call/index shadowing edge cases remain open."
+      "evidence": ["parser_smoke", "parser_semantic_fuzz", "semantic_smoke", "bytecode_smoke", "v1_1_core_production_cli_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/semantic.cpp", "src/mparser/bytecode.cpp", "tests/parser_smoke.cpp", "tests/parser_semantic_fuzz.cpp", "samples/v1_1_core_compatibility_demo.m"],
+      "limits": "MATLAB-compatible unary power precedence and left-associated ^ and .^ chains are supported. Production method/object dispatch and anonymous closures are supported through the bytecode VM. Anonymous-function text parsing, computed-string lazy source loading, and the remaining MATLAB call/index shadowing edge cases remain open."
     },
     {
       "id": "SYN-002",
@@ -32,9 +32,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["interpreter_smoke", "bytecode_vm_smoke", "exception_runtime_smoke"],
-      "sources": ["src/mparser/parser.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp"],
-      "limits": "parfor executes serially; typed regions accept only structured eligible control flow; no finally construct exists in MATLAB or MParser."
+      "evidence": ["interpreter_smoke", "bytecode_vm_smoke", "exception_runtime_smoke", "v1_1_core_interpreter_cli_smoke", "v1_1_core_bytecode_cli_smoke", "v1_1_core_production_cli_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/parser_smoke.cpp", "samples/v1_1_core_compatibility_demo.m"],
+      "limits": "Top-level commas delimit one-line if/switch/for/while forms while nested expression commas retain argument and array meaning. parfor executes serially; typed regions accept only structured eligible control flow; no finally construct exists in MATLAB or MParser."
     },
     {
       "id": "FUN-001",
@@ -65,9 +65,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["nd_array_smoke", "array_transform_smoke", "array_assignment_bytecode_cli_smoke"],
-      "sources": ["src/mparser/runtime_shape.cpp", "src/mparser/runtime_index.cpp", "src/mparser/runtime_assignment.cpp"],
-      "limits": "Complex, sparse, integer-width, categorical, table, and GPU numeric storage classes are not represented. Object arrays use the separate CLASS-006 contract."
+      "evidence": ["nd_array_smoke", "array_transform_smoke", "array_assignment_bytecode_cli_smoke", "interpreter_smoke", "bytecode_vm_smoke", "typed_region_executor_smoke", "v1_1_core_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_shape.cpp", "src/mparser/runtime_numeric.cpp", "src/mparser/runtime_index.cpp", "src/mparser/runtime_assignment.cpp", "tests/typed_region_executor_smoke.cpp", "samples/v1_1_core_compatibility_demo.m"],
+      "limits": "Numeric for loops iterate matrix and N-D inputs by columns; typed scalar-loop regions guard and fall back when a column is nonscalar. Complex, sparse, integer-width, categorical, table, and GPU numeric storage classes are not represented. Object arrays use the separate CLASS-006 contract."
     },
     {
       "id": "ARR-002",
@@ -76,9 +76,9 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["logical_index_smoke", "array_deletion_smoke", "linear_array_kernel_cli_smoke"],
-      "sources": ["src/mparser/runtime_index.cpp", "src/mparser/runtime_assignment.cpp", "tests/logical_index_smoke.cpp"],
-      "limits": "Typed/native coverage is narrower than VM correctness and falls back under guards."
+      "evidence": ["logical_index_smoke", "array_deletion_smoke", "linear_array_kernel_cli_smoke", "interpreter_smoke", "bytecode_vm_smoke", "v1_1_core_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_index.cpp", "src/mparser/runtime_assignment.cpp", "tests/logical_index_smoke.cpp", "tests/interpreter_smoke.cpp", "tests/bytecode_vm_smoke.cpp"],
+      "limits": "A(:) always produces a numel(A)-by-1 result while ordinary linear subscripts retain the documented vector-orientation rules. Typed/native coverage is narrower than VM correctness and falls back under guards."
     },
     {
       "id": "TEXT-001",
@@ -506,8 +506,8 @@
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "not-applicable", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
       "evidence": ["release_documentation_smoke", "release_authentication_evidence_smoke", "release_candidate_readiness_smoke", "release_candidate_readiness_guard_smoke", "installed_c_consumer_smoke", "installed_cpp_consumer_smoke", "release_archive_smoke"],
-      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/release-process.md", "docs/release-authentication.md", "docs/release-evidence/v1.0.0-authentication/README.md", "docs/release-evidence/v1.0.0-authentication/manifest.json", "docs/release-notes-v1.0.md", "docs/v1.0-documentation.md", "docs/v1.0-cross-platform-validation.md", "docs/v1.0-jit-scope-decision.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/validate_release_authentication_evidence.cmake", "tests/validate_release_candidate_readiness.cmake", "tests/validate_release_candidate_readiness_guards.cmake", "tests/validate_v1_jit_scope.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
-      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. A release-readiness gate requires an empty open Must-have set and rejects any newly open Must-have that implies framework work. Actions run 30780391460 confirms every advertised release lane and final-tag authenticated provenance. Engine versioning is frozen at 1.0.0; the final hosted Release and its 32-asset post-publication audit are complete."
+      "sources": ["docs/README.md", "docs/user-manual.md", "docs/build-and-install.md", "docs/support-matrix.md", "docs/cli-reference.md", "docs/jit-and-fallback.md", "docs/runtime-boundaries.md", "docs/migration-v1.0.md", "docs/release-process.md", "docs/release-authentication.md", "docs/release-evidence/v1.0.0-authentication/README.md", "docs/release-evidence/v1.0.0-authentication/manifest.json", "docs/release-notes-v1.0.md", "docs/v1.0-documentation.md", "docs/v1.0-cross-platform-validation.md", "docs/v1.0-jit-scope-decision.md", "docs/v1.1.md", "docs/v1.x-external-gap-plan.md", "docs/embedding-c-api.md", "docs/embedding-cpp-api.md", "docs/c-abi-compatibility.md", "docs/machine-result-protocol.md", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "tests/validate_release_documentation.cmake", "tests/validate_release_authentication_evidence.cmake", "tests/validate_release_candidate_readiness.cmake", "tests/validate_release_candidate_readiness_guards.cmake", "tests/validate_v1_jit_scope.cmake", "tests/run_installed_c_consumer.cmake", "tests/validate_release_archive.cmake", "CMakeLists.txt"],
+      "limits": "The prose routes users to versioned machine-readable authorities and distinguishes target platforms from current evidence. The documentation smoke derives frozen modes/options from CLI contract 1.0, checks live help, and executes human and JSON production samples. A release-readiness gate requires an empty open Must-have set and rejects any newly open Must-have that implies framework work. Actions run 30780391460 confirms every advertised v1.0.0 release lane and final-tag authenticated provenance. The v1 public contracts remain frozen while the compatible engine advances through v1.x; v1.0.0 remains the published baseline with a complete 32-asset post-publication audit."
     },
     {
       "id": "MATRIX-001",
@@ -782,6 +782,16 @@
       "framework_impact": "none",
       "requirement": "Publish a coherent user, build/install, support, CLI/API, JIT/fallback, runtime-boundary, extension-author, and pre-v1 migration manual set and prevent it from drifting from frozen contracts or package contents.",
       "exit_evidence": "The documentation set, contract-derived smoke validator, release-readiness blocker-set gate, production/machine samples, and installed/archive required-file lists are implemented. Windows native 209/209 and clean no-JIT 202/202 pass locally. Actions run 30746822213 validates the manuals, relocated SDK consumers, archives, checksums, CLI protocol, and uploaded packages across Windows, Linux x64/AArch64, and macOS x64/ARM64 as recorded in docs/v1.0-documentation.md and docs/v1.0-cross-platform-validation.md."
+    },
+    {
+      "id": "G-V1X-CORE-001",
+      "area": "language-runtime",
+      "priority": "must-have",
+      "state": "closed",
+      "target": "v1.1",
+      "framework_impact": "none",
+      "requirement": "Close externally observed power-associativity, comma-separated one-line control, matrix-column for-loop, and A(:) column-shape mismatches without changing the frozen v1 public interfaces.",
+      "exit_evidence": "parser_smoke fixes ^ and .^ tree association and one-line control parsing; interpreter_smoke and bytecode_vm_smoke run the combined behavior; typed_region_executor_smoke proves nonscalar matrix columns guard and return to the VM; all three CLI tiers run samples/v1_1_core_compatibility_demo.m with summary 188; the six original MParserV1.0Test cases pass under production --run."
     },
     {
       "id": "G-SANITIZER-001",

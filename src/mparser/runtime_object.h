@@ -85,6 +85,11 @@ RuntimeObjectOperationResult runtimeIndexObject(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts,
     const RuntimeObjectArrayPolicy& policy = {});
+RuntimeObjectOperationResult runtimeIndexObject(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    const RuntimeObjectArrayPolicy& policy,
+    bool linearColon);
 
 RuntimeObjectOperationResult runtimeAssignObjectIndexed(
     const RuntimeValue& target,

@@ -16,6 +16,10 @@ struct RuntimeCellOperationResult {
 RuntimeCellOperationResult runtimeIndexCell(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts);
+RuntimeCellOperationResult runtimeIndexCell(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool linearColon);
 
 RuntimeCellOperationResult runtimeIndexCellContents(
     const RuntimeValue& target,

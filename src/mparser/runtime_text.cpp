@@ -626,6 +626,13 @@ std::string numericText(double value) {
 RuntimeTextOperationResult
 runtimeIndexText(const RuntimeValue &target,
                  const std::vector<RuntimeValue> &subscripts) {
+  return runtimeIndexText(target, subscripts, false);
+}
+
+RuntimeTextOperationResult
+runtimeIndexText(const RuntimeValue &target,
+                 const std::vector<RuntimeValue> &subscripts,
+                 bool linearColon) {
   if (!isRuntimeTextValue(target)) {
     return textFailure("text indexing requires a text target");
   }
@@ -633,7 +640,8 @@ runtimeIndexText(const RuntimeValue &target,
     return textFailure("text indexing requires subscripts");
   }
   const auto selections =
-      runtimeResolveIndexSelections(target, subscripts, false);
+      runtimeResolveIndexSelections(target, subscripts, false,
+                                    linearColon);
   if (!selections.succeeded) {
     return textFailure(selections.error);
   }

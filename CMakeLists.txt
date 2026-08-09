@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 1.0.0 LANGUAGES C CXX)
+project(MParser VERSION 1.1.0 LANGUAGES C CXX)
 
 set(MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION "0.90.0")
+set(MPARSER_V1_RELEASE_VERSION "1.0.0")
 set(MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION "1.0.0")
 set(MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION
     "d8075575403bf30828a928a83bbbbfb9706ba902")
@@ -436,6 +437,24 @@ add_executable(bytecode_vm_smoke_tests tests/bytecode_vm_smoke.cpp)
 target_link_libraries(bytecode_vm_smoke_tests PRIVATE mparser_core)
 add_test(NAME bytecode_vm_smoke COMMAND bytecode_vm_smoke_tests)
 
+add_test(NAME v1_1_core_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/v1_1_core_compatibility_demo.m)
+set_tests_properties(v1_1_core_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 188")
+
+add_test(NAME v1_1_core_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/v1_1_core_compatibility_demo.m)
+set_tests_properties(v1_1_core_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 188")
+
+add_test(NAME v1_1_core_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/v1_1_core_compatibility_demo.m)
+set_tests_properties(v1_1_core_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 188")
+
 add_executable(struct_runtime_smoke_tests tests/struct_runtime_smoke.cpp)
 target_link_libraries(struct_runtime_smoke_tests PRIVATE mparser_core)
 add_test(NAME struct_runtime_smoke COMMAND struct_runtime_smoke_tests)
@@ -615,6 +634,7 @@ add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DV1_RELEASE_VERSION=${MPARSER_V1_RELEASE_VERSION}
         -DCLI_CONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/cli-contract-v1.json
         -DMPARSER_EXECUTABLE=$<TARGET_FILE:mparser>
         "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
@@ -641,8 +661,8 @@ set_tests_properties(release_authentication_evidence_smoke PROPERTIES
 add_test(NAME release_publication_evidence_smoke
     COMMAND ${CMAKE_COMMAND}
         -DMPARSER_EVIDENCE_ROOT=${MPARSER_V1_PUBLICATION_EVIDENCE_ROOT}
-        -DMPARSER_EXPECTED_VERSION=${PROJECT_VERSION}
-        -DMPARSER_EXPECTED_TAG=v${PROJECT_VERSION}
+        -DMPARSER_EXPECTED_VERSION=${MPARSER_V1_RELEASE_VERSION}
+        -DMPARSER_EXPECTED_TAG=v${MPARSER_V1_RELEASE_VERSION}
         -DMPARSER_EXPECTED_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}
         -DMPARSER_EXPECTED_RELEASE_ID=${MPARSER_V1_RELEASE_ID}
         -DMPARSER_EXPECTED_PUBLISHED_AT=${MPARSER_V1_RELEASE_PUBLISHED_AT}
@@ -670,6 +690,7 @@ add_test(NAME release_candidate_readiness_smoke
         -DPUBLICATION_EVIDENCE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_publication_evidence.cmake
         -DPUBLICATION_EVIDENCE_ROOT=${MPARSER_V1_PUBLICATION_EVIDENCE_ROOT}
         -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_RELEASE_VERSION=${MPARSER_V1_RELEASE_VERSION}
         -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
         -DEXPECTED_AUTHENTICATION_VERSION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}
         -DEXPECTED_AUTHENTICATION_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}
@@ -708,6 +729,7 @@ add_test(NAME release_candidate_readiness_guard_smoke
         -DPUBLICATION_EVIDENCE_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_release_publication_evidence.cmake
         -DPUBLICATION_EVIDENCE_ROOT=${MPARSER_V1_PUBLICATION_EVIDENCE_ROOT}
         -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_RELEASE_VERSION=${MPARSER_V1_RELEASE_VERSION}
         -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
         -DEXPECTED_AUTHENTICATION_VERSION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}
         -DEXPECTED_AUTHENTICATION_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}
@@ -2263,7 +2285,7 @@ configure_package_config_file(
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/MParserConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMinorVersion)
+    COMPATIBILITY SameMajorVersion)
 
 install(TARGETS mparser_c_api mparser_cpp_api mparser
     EXPORT MParserTargets
@@ -2305,6 +2327,7 @@ install(FILES
     docs/v0.90.md
     docs/v0.90.1.md
     docs/v1.0.md
+    docs/v1.1.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -2318,6 +2341,7 @@ install(FILES
     docs/extending-builtins.md
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
+    docs/v1.x-external-gap-plan.md
     tests/public_contract/builtin/1.0/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
@@ -2334,6 +2358,7 @@ install(FILES
     samples/performance_scalar_loop.m
     samples/performance_array_workload.m
     samples/reliability_boundary_demo.m
+    samples/v1_1_core_compatibility_demo.m
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
 install(DIRECTORY samples/class_folders/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples/class_folders"

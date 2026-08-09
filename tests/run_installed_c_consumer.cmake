@@ -101,6 +101,7 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/c_api.h"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/c_abi_compat_demo.c"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/machine_protocol_demo.m"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/v1_1_core_compatibility_demo.m"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/LICENSE"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/NOTICE"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/THIRD_PARTY_NOTICES.md"
@@ -120,7 +121,9 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-evidence/${MPARSER_AUTHENTICATION_EVIDENCE_DIRECTORY}/SHA256SUMS"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/release-notes-v1.0.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.x-external-gap-plan.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.1.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-cross-platform-validation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"
@@ -171,7 +174,8 @@ set(mparser_configure_command
     -G "${MPARSER_GENERATOR}"
     "-DCMAKE_PREFIX_PATH=${mparser_relocated_prefix}"
     "-DMParser_DIR=${mparser_package_dir}"
-    "-DMPARSER_REQUIRED_VERSION=${MPARSER_PROJECT_VERSION}")
+    "-DMPARSER_MINIMUM_VERSION=1.0.0"
+    "-DMPARSER_EXPECTED_ENGINE_VERSION=${MPARSER_PROJECT_VERSION}")
 if(DEFINED MPARSER_GENERATOR_PLATFORM AND
    NOT MPARSER_GENERATOR_PLATFORM STREQUAL "")
     list(APPEND mparser_configure_command

@@ -514,7 +514,7 @@ end
     assertMatrix(result, "col", 3, 1, {2.0, 5.0, 8.0});
     assertVector(result, "row", {1.0, 2.0, 3.0});
     assertMatrix(result, "block", 2, 2, {4.0, 6.0, 7.0, 9.0});
-    assertVector(result, "linear",
+    assertMatrix(result, "linear", 9, 1,
                  {1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0});
     assertVector(result, "v", {7.0, 7.0, 7.0, 7.0});
     assertMatrix(result, "A", 3, 3,
@@ -853,6 +853,39 @@ elapsed = toc;
                "preceding tic") != std::string::npos);
 }
 
+void runV11CoreCompatibilitySmoke() {
+    const auto result = run(R"(function summary = main()
+power = 2^3^2;
+dotPower = 2.^3.^2;
+if power == 64, branch = 10; else, branch = -1; end
+switch branch, case 10, switched = 20; otherwise, switched = -1; end
+A = [1 2 3; 4 5 6];
+sumFirst = 0;
+for col = A, sumFirst = sumFirst + col(1); end
+count = 0;
+while count < 3, count = count + 1; end
+linear = A(:);
+v = [7 8 9];
+vlinear = v(:);
+summary = power + dotPower + branch + switched + sumFirst + count + ...
+    sum(linear, "all");
+end
+)");
+
+    assert(result.diagnostics.empty());
+    assertNumber(result, "power", 64.0);
+    assertNumber(result, "dotPower", 64.0);
+    assertNumber(result, "branch", 10.0);
+    assertNumber(result, "switched", 20.0);
+    assertNumber(result, "sumFirst", 6.0);
+    assertNumber(result, "count", 3.0);
+    assertMatrix(result, "col", 2, 1, {3.0, 6.0});
+    assertMatrix(result, "linear", 6, 1,
+                 {1.0, 4.0, 2.0, 5.0, 3.0, 6.0});
+    assertMatrix(result, "vlinear", 3, 1, {7.0, 8.0, 9.0});
+    assertNumber(result, "summary", 188.0);
+}
+
 } // namespace
 
 int main() {
@@ -882,6 +915,7 @@ int main() {
     runSwitchSmoke();
     runTryCatchSmoke();
     runSessionCommandSmoke();
+    runV11CoreCompatibilitySmoke();
     std::cout << "bytecode VM smoke tests passed\n";
     return 0;
 }

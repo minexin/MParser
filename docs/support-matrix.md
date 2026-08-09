@@ -1,6 +1,6 @@
-# v1.0 Support Matrix
+# v1.x Support Matrix
 
-MParser v1.0 is a stable MATLAB-like subset runtime, not a complete MATLAB
+MParser v1.x is a stable MATLAB-like subset runtime, not a complete MATLAB
 replacement. This page is a release-oriented summary. The machine-readable
 [compatibility-matrix.json](compatibility-matrix.json) is authoritative and
 links every supported or partial claim to source and executable evidence.
@@ -18,6 +18,23 @@ Parser acceptance alone is not a runtime support claim. A feature may also
 have different HIR, bytecode, typed, and native tier states. Legal target
 subset code always relies on the production bytecode VM as semantic fallback;
 typed/native coverage is additive.
+
+## v1.1 Additions
+
+v1.1 preserves every frozen v1 host contract and adds four MATLAB-compatible
+runtime corrections:
+
+- chained `^` and `.^` operators associate left while power remains above
+  unary minus;
+- commas delimit one-line `if`, `switch`, `for`, and `while` statements only
+  at top-level delimiter depth;
+- a matrix `for` range yields one column per iteration, with typed scalar
+  regions falling back when a runtime column is nonscalar;
+- `A(:)` always returns a `numel(A)`-by-1 value, including for row vectors.
+
+The combined executable sample is
+`samples/v1_1_core_compatibility_demo.m`. Exact tier and limitation claims are
+recorded under `SYN-001`, `SYN-002`, `ARR-001`, and `ARR-002`.
 
 ## Language And Runtime
 

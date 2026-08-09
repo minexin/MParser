@@ -666,6 +666,7 @@ private:
         const size_t call =
             emit(BytecodeOp::CallOrIndex, node, argumentCount(node), -1,
                  resultCount);
+        attachColonSubscripts(call, node);
         if ((node.binding.kind == BindingKind::Builtin ||
              node.binding.kind == BindingKind::Function) &&
             node.children.front()->kind == HirKind::NameRef) {

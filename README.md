@@ -1,9 +1,15 @@
 # MParser
 
-Current release freeze: v1.0.0. The v1 public contract,
-reliability gate, and release-documentation gate are cross-platform confirmed
-at revision `f34d8d9` by Actions run `30684969401`; local Windows MSVC ASan
-no-JIT now passes 201/201. Actions run `30691616946` supplied accepted
+Current development milestone: v1.1.0. It preserves the frozen v1 public
+CLI/API/extension contracts while closing externally observed expression,
+one-line control-flow, matrix-loop, and linear-colon shape mismatches. See
+[docs/v1.1.md](docs/v1.1.md) and the
+[external gap plan](docs/v1.x-external-gap-plan.md).
+
+The published release baseline remains v1.0.0. Its reliability and
+release-documentation gates were cross-platform confirmed at revision
+`f34d8d9` by Actions run `30684969401`; local Windows MSVC ASan no-JIT passed
+201/201. Actions run `30691616946` supplied accepted
 Windows/Linux/macOS x64 plus native macOS ARM64 performance evidence. Actions
 run `30693868656` then added a successful native Linux ARM64 full-suite lane
 alongside the existing AArch64 cross/QEMU package lane. Actions run
@@ -13,9 +19,8 @@ scope audit defers broader specialization to v1.x without changing the guarded
 v1.0 fallback contract.
 Tag `v1.0.0` completed all seven execution jobs and authenticated all five
 final archives plus five provenance statements in Actions run `30780391460`.
-All v1 Must-have evidence gaps are closed; Linux TSan and macOS sanitizer
-remain bounded Should-have evaluations. The engine, package metadata,
-compatibility matrix, and public contract are frozen at `1.0.0`. The final
+All v1.0 Must-have evidence gaps are closed; Linux TSan and macOS sanitizer
+remain bounded Should-have evaluations. The final
 [MParser 1.0.0 Release](https://github.com/minexin/MParser/releases/tag/v1.0.0)
 publishes 32 authenticated assets for five platform/architecture targets;
 the complete post-publication download and digest audit is retained in
@@ -1012,7 +1017,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 1.0.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 1.1.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 

@@ -21,44 +21,64 @@ Every v1.x change follows these rules:
 - release archives retain checksums, provenance, relocation, independent
   consumer, and platform validation.
 
-## v1.1: Function And Array Breadth
+## v1.1: Core Compatibility Corrections
 
-Primary work:
+**Status: implemented; validation evidence is recorded in
+[v1.1.md](v1.1.md).**
 
-- expand common math, statistics, text, shape, set, sorting, searching, and
-  array-manipulation builtin families through `BuiltinRegistry`;
-- add missing target-subset overloads and edge semantics without scattering
-  builtin knowledge through Semantic, HIR, Bytecode, and VM layers;
-- broaden real dense numeric element types where `RuntimeValue`, conversion,
-  indexing, and C/C++ copying contracts can remain compatible;
-- grow `.m` standard-library coverage for functions that do not require a
-  privileged runtime intrinsic.
+This milestone closes six structural mismatches found by the 223-point
+external differential suite: left-associated power, comma-separated one-line
+control forms, matrix-column `for`, and column-shaped `A(:)`. It adds shared
+runtime authorities and guarded typed fallback without changing the frozen v1
+host contracts.
 
-Long-tail functions remain prioritized by representative workloads and
-compatibility value rather than raw catalog count.
+## v1.2: Command-Module Integration
 
-## v1.2: Typed And JIT Coverage
+The next milestone closes the highest-value MExecServer integration gaps:
 
-The [v1.0 JIT scope decision](v1.0-jit-scope-decision.md) deliberately defers
-`G-JIT-001` here after finding no missing specialization required for the 1.0
-release. Candidate work remains gated by a representative workload, the v1.0
-performance methodology, and profiler or allocation evidence:
+- compile in-memory source with explicit search and class paths;
+- expose source-graph main-function, pure-function-file, and top-level
+  statement metadata;
+- return top-level expression values and stable `ans` source locations;
+- route `disp` and formatted output through a host-owned sink;
+- preserve current file-based and CLI behavior through additive defaults.
 
-- more straight-line numeric regions and common matrix/array kernels;
-- typed lowering for high-value pure builtins;
-- guarded function-call specialization with stable deoptimization;
-- reduced `RuntimeValue`, dispatch, and temporary-allocation overhead;
-- improved native cache observability and bounded reuse.
+## v1.3-v1.4: Function Breadth
 
-Every specialization must preserve bytecode/portable/native result and
-diagnostic equivalence. LLVM, OSR, broad speculative object optimization, and
-persistent native-code disk cache require separate evidence and may remain
-later work.
+v1.3 prioritizes pure numeric, rounding, finite/shape predicate, text-format,
+ordering, set, and array-manipulation families through `BuiltinRegistry`.
+v1.4 follows with explicitly contextual services such as random state,
+workspace/path queries, warnings, environment access, and bounded file I/O.
+`.m` standard-library implementations remain preferred where no privileged
+runtime context is required. Long-tail functions are ranked by representative
+workloads and compatibility value, not raw catalog count.
 
-## v1.3: External Extension Boundary
+## v1.5: Ownership And Inspection
 
-Design work may introduce a narrow versioned C callback adapter for compiled
-external builtins. It must define:
+Close the remaining Cell, Struct, class, enum, event, and reflection gaps that
+fit the frozen representation contracts. Define safe cross-module ownership
+for module-bound handles, objects, and globals. Debugger stack/local inspection
+is an additive public contract and must be gated separately from ordinary
+execution.
+
+## v1.6+: Typed Coverage And Remaining Language Gaps
+
+The [v1.0 JIT scope decision](v1.0-jit-scope-decision.md) defers broader
+`G-JIT-001` work until a representative workload justifies it. Candidates
+include straight-line numeric regions, common matrix kernels, high-value pure
+builtin lowering, guarded function specialization, and reduced
+`RuntimeValue`/temporary allocation overhead. Every specialization must
+preserve bytecode/portable/native result and diagnostic equivalence.
+
+Remaining in-scope syntax, type, nested-function, linear-algebra,
+FFT/convolution, persistence, and dynamic-evaluation gaps continue in coherent
+0.1 milestones. LLVM, OSR, speculative object optimization, and persistent
+native-code disk cache require separate evidence and may remain later work.
+
+## External Extension Boundary
+
+A later v1.x milestone may introduce a narrow versioned C callback adapter for
+compiled external builtins. It must define:
 
 - descriptor/version negotiation and capability discovery;
 - copied versus owned array/value transfer and optional view rules;

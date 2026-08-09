@@ -542,18 +542,29 @@ private:
                 break;
             }
 
-            const bool carriesColonContract =
+            const bool requiresColonContract =
                 instruction.op == BytecodeOp::StoreIndex ||
                 instruction.op == BytecodeOp::LvalueDescendIndex ||
                 instruction.op == BytecodeOp::StorePathIndex;
-            if (carriesColonContract &&
+            const bool acceptsColonContract =
+                requiresColonContract ||
+                instruction.op == BytecodeOp::CallOrIndex;
+            if (requiresColonContract &&
                 instruction.operandCount >= 0 &&
                 instruction.colonSubscripts.size() !=
                     static_cast<size_t>(instruction.operandCount)) {
                 addDiagnostic(
                     pc, "colon subscript metadata does not match "
                         "operandCount");
-            } else if (!carriesColonContract &&
+            } else if (instruction.op == BytecodeOp::CallOrIndex &&
+                       !instruction.colonSubscripts.empty() &&
+                       instruction.operandCount >= 0 &&
+                       instruction.colonSubscripts.size() !=
+                           static_cast<size_t>(instruction.operandCount)) {
+                addDiagnostic(
+                    pc, "colon subscript metadata does not match "
+                        "operandCount");
+            } else if (!acceptsColonContract &&
                        !instruction.colonSubscripts.empty()) {
                 addDiagnostic(
                     pc, "this opcode cannot carry colon subscript metadata");

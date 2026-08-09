@@ -39,6 +39,11 @@ RuntimeIndexSelectionsResult runtimeResolveIndexSelections(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts,
     bool allowNumericGrowth);
+RuntimeIndexSelectionsResult runtimeResolveIndexSelections(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool allowNumericGrowth,
+    bool linearColon);
 
 std::optional<size_t> runtimeIndexSelectionSourceLogicalIndex(
     const RuntimeIndexSelectionsResult& selections,
@@ -50,9 +55,17 @@ std::optional<size_t> runtimeIndexSelectionRequiredExtent(
 RuntimeIndexOperationResult runtimeIndexNumeric(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts);
+RuntimeIndexOperationResult runtimeIndexNumeric(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool linearColon);
 
 std::vector<size_t> runtimeLinearIndexResultDimensions(
     const RuntimeValue& target, const RuntimeValue& subscript,
     size_t resultElementCount, bool logicalMask);
+std::vector<size_t> runtimeLinearIndexResultDimensions(
+    const RuntimeValue& target, const RuntimeValue& subscript,
+    size_t resultElementCount, bool logicalMask,
+    bool linearColon);
 
 } // namespace mparser

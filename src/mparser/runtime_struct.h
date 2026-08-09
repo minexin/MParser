@@ -60,6 +60,10 @@ RuntimeStructOperationResult runtimeStructFieldValues(
 RuntimeStructOperationResult runtimeIndexStruct(
     const RuntimeValue& structure,
     const std::vector<RuntimeValue>& subscripts);
+RuntimeStructOperationResult runtimeIndexStruct(
+    const RuntimeValue& structure,
+    const std::vector<RuntimeValue>& subscripts,
+    bool linearColon);
 
 RuntimeStructOperationResult runtimeEnsureStructIndexedCapacity(
     const RuntimeValue& structure,

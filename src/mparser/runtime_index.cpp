@@ -84,6 +84,15 @@ RuntimeIndexSelectionsResult runtimeResolveIndexSelections(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts,
     bool allowNumericGrowth) {
+    return runtimeResolveIndexSelections(target, subscripts,
+                                         allowNumericGrowth, false);
+}
+
+RuntimeIndexSelectionsResult runtimeResolveIndexSelections(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool allowNumericGrowth,
+    bool linearColon) {
     RuntimeIndexSelectionsResult result;
     if (subscripts.empty()) {
         result.error = "indexing requires subscripts";
@@ -112,7 +121,7 @@ RuntimeIndexSelectionsResult runtimeResolveIndexSelections(
     if (subscripts.size() == 1) {
         result.resultDimensions = runtimeLinearIndexResultDimensions(
             target, subscripts.front(), result.indices.front().size(),
-            result.logicalMask);
+            result.logicalMask, linearColon);
     } else {
         result.resultDimensions.reserve(result.indices.size());
         for (const auto& selection : result.indices) {
@@ -168,6 +177,13 @@ std::optional<size_t> runtimeIndexSelectionRequiredExtent(
 RuntimeIndexOperationResult runtimeIndexNumeric(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts) {
+    return runtimeIndexNumeric(target, subscripts, false);
+}
+
+RuntimeIndexOperationResult runtimeIndexNumeric(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool linearColon) {
     if (!isRuntimeNumericValue(target)) {
         return operationFailure("indexing requires a numeric target");
     }
@@ -176,7 +192,8 @@ RuntimeIndexOperationResult runtimeIndexNumeric(
     }
 
     const auto selections =
-        runtimeResolveIndexSelections(target, subscripts, false);
+        runtimeResolveIndexSelections(target, subscripts, false,
+                                      linearColon);
     if (!selections.succeeded) {
         return operationFailure(selections.error);
     }
@@ -214,6 +231,17 @@ RuntimeIndexOperationResult runtimeIndexNumeric(
 std::vector<size_t> runtimeLinearIndexResultDimensions(
     const RuntimeValue& target, const RuntimeValue& subscript,
     size_t resultElementCount, bool logicalMask) {
+    return runtimeLinearIndexResultDimensions(
+        target, subscript, resultElementCount, logicalMask, false);
+}
+
+std::vector<size_t> runtimeLinearIndexResultDimensions(
+    const RuntimeValue& target, const RuntimeValue& subscript,
+    size_t resultElementCount, bool logicalMask,
+    bool linearColon) {
+    if (linearColon) {
+        return {resultElementCount, 1};
+    }
     const bool targetIsVector = isVectorShape(target);
     const bool subscriptIsVector = isVectorShape(subscript);
     if (targetIsVector && subscriptIsVector) {

@@ -16,6 +16,7 @@ foreach(required_variable IN ITEMS
         PUBLICATION_EVIDENCE_VALIDATOR
         PUBLICATION_EVIDENCE_ROOT
         EXPECTED_VERSION
+        EXPECTED_RELEASE_VERSION
         EXPECTED_JIT_EVIDENCE_VERSION
         EXPECTED_AUTHENTICATION_VERSION
         EXPECTED_AUTHENTICATION_REVISION
@@ -82,7 +83,7 @@ if(EXPECTED_CONTRACT_STATE STREQUAL "frozen-v1")
         "Publication contract: **frozen v1**."
         release_status_position)
     string(FIND "${release_notes}"
-        "source project version is `${EXPECTED_VERSION}`"
+        "source project version is `${EXPECTED_RELEASE_VERSION}`"
         release_version_position)
     string(FIND "${release_notes}"
         "Publication status: **released**."
@@ -127,8 +128,8 @@ endif()
 execute_process(
     COMMAND "${CMAKE_COMMAND}"
         "-DMPARSER_EVIDENCE_ROOT=${PUBLICATION_EVIDENCE_ROOT}"
-        "-DMPARSER_EXPECTED_VERSION=${EXPECTED_VERSION}"
-        "-DMPARSER_EXPECTED_TAG=v${EXPECTED_VERSION}"
+        "-DMPARSER_EXPECTED_VERSION=${EXPECTED_RELEASE_VERSION}"
+        "-DMPARSER_EXPECTED_TAG=v${EXPECTED_RELEASE_VERSION}"
         "-DMPARSER_EXPECTED_REVISION=${EXPECTED_AUTHENTICATION_REVISION}"
         "-DMPARSER_EXPECTED_RELEASE_ID=${EXPECTED_RELEASE_ID}"
         "-DMPARSER_EXPECTED_PUBLISHED_AT=${EXPECTED_RELEASE_PUBLISHED_AT}"

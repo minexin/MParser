@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 foreach(required IN ITEMS
         PROJECT_ROOT
         EXPECTED_VERSION
+        V1_RELEASE_VERSION
         CLI_CONTRACT
         MPARSER_EXECUTABLE
         ENTRY_SOURCE)
@@ -27,8 +28,10 @@ set(required_documents
     docs/release-evidence/v1.0.0-publication/README.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
+    docs/v1.x-external-gap-plan.md
     docs/v0.90.1.md
     docs/v1.0.md
+    docs/v1.1.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-jit-scope-decision.md
     docs/v1.0-documentation.md
@@ -118,7 +121,7 @@ if(NOT public_contract_version STREQUAL EXPECTED_VERSION OR
 endif()
 require_text(release_notes "Publication contract: **frozen v1**."
     "v1.0 release notes")
-require_text(release_notes "source project version is `${EXPECTED_VERSION}`"
+require_text(release_notes "source project version is `${V1_RELEASE_VERSION}`"
     "v1.0 release notes")
 require_text(release_notes
     "https://github.com/minexin/MParser/releases/tag/v1.0.0"
@@ -129,7 +132,7 @@ require_text(release_roadmap
 require_text(release_roadmap
     "The 32-asset GitHub Release is published"
     "v1.0 publication roadmap")
-require_text(release_milestone "MParser v${EXPECTED_VERSION}"
+require_text(release_milestone "MParser v${V1_RELEASE_VERSION}"
     "v1.0 milestone")
 
 foreach(required_ci_path IN ITEMS

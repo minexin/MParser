@@ -50,7 +50,7 @@ private:
 
     std::vector<AttributeSyntax> parseAttributeList();
     AttributeSyntax buildAttribute(const std::vector<Token>& tokens) const;
-    std::vector<Token> collectUntilSeparator();
+    std::vector<Token> collectUntilSeparator(bool commaIsSeparator = false);
     void consumeSeparator();
     void skipSeparators();
     void consumeExpectedEnd(const char* owner);

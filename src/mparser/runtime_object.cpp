@@ -501,11 +501,20 @@ RuntimeObjectOperationResult runtimeIndexObject(
     const RuntimeValue& target,
     const std::vector<RuntimeValue>& subscripts,
     const RuntimeObjectArrayPolicy& policy) {
+    return runtimeIndexObject(target, subscripts, policy, false);
+}
+
+RuntimeObjectOperationResult runtimeIndexObject(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    const RuntimeObjectArrayPolicy& policy,
+    bool linearColon) {
     if (!isRuntimeClassObject(target)) {
         return failure("object indexing requires a class object target");
     }
     const auto selections =
-        runtimeResolveIndexSelections(target, subscripts, false);
+        runtimeResolveIndexSelections(target, subscripts, false,
+                                      linearColon);
     if (!selections.succeeded) {
         return failure(selections.error);
     }

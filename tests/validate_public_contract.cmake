@@ -242,13 +242,26 @@ foreach(required_metadata IN ITEMS
 endforeach()
 
 file(READ "${PROJECT_ROOT}/CMakeLists.txt" project_cmake)
-string(FIND
-    "${project_cmake}" "COMPATIBILITY SameMinorVersion"
-    pre_v1_compatibility_position)
-if(pre_v1_compatibility_position EQUAL -1)
+string(REGEX MATCH "^([0-9]+)" expected_version_major_match
+    "${EXPECTED_VERSION}")
+set(expected_version_major "${CMAKE_MATCH_1}")
+if(expected_version_major STREQUAL "")
     message(FATAL_ERROR
-        "Pre-v1 CMake package compatibility no longer matches the "
-        "frozen policy")
+        "Unable to read the engine major from ${EXPECTED_VERSION}")
+endif()
+if(expected_version_major LESS 1)
+    set(expected_package_compatibility "SameMinorVersion")
+else()
+    set(expected_package_compatibility "SameMajorVersion")
+endif()
+string(FIND
+    "${project_cmake}"
+    "COMPATIBILITY ${expected_package_compatibility}"
+    package_compatibility_position)
+if(package_compatibility_position EQUAL -1)
+    message(FATAL_ERROR
+        "CMake package compatibility for ${EXPECTED_VERSION} no longer "
+        "matches ${expected_package_compatibility}")
 endif()
 
 file(READ "${PROJECT_ROOT}/include/mparser/c_api.h" c_header)

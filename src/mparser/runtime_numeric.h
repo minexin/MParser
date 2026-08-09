@@ -25,6 +25,9 @@ std::optional<RuntimeValue> runtimeNumericValueFromLogicalOrder(
     std::vector<size_t> dimensions, std::vector<double> values,
     RuntimeNumericClass numericClass);
 
+std::optional<std::vector<RuntimeValue>>
+runtimeNumericForLoopColumns(const RuntimeValue& value);
+
 std::optional<RuntimeValue> runtimeConvertNumericClass(
     RuntimeValue value, RuntimeNumericClass numericClass);
 

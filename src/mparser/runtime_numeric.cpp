@@ -100,6 +100,45 @@ std::optional<RuntimeValue> runtimeNumericValueFromLogicalOrder(
     return result;
 }
 
+std::optional<std::vector<RuntimeValue>>
+runtimeNumericForLoopColumns(const RuntimeValue& value) {
+    if (!isRuntimeNumericValue(value)) {
+        return std::nullopt;
+    }
+
+    const auto dimensions = runtimeDimensions(value);
+    const size_t rowCount = dimensions.front();
+    const std::vector<size_t> trailingDimensions(
+        dimensions.begin() + 1, dimensions.end());
+    const auto columnCount =
+        checkedRuntimeDimensionProduct(trailingDimensions);
+    if (!columnCount) {
+        return std::nullopt;
+    }
+
+    std::vector<RuntimeValue> columns;
+    columns.reserve(*columnCount);
+    for (size_t column = 0; column < *columnCount; ++column) {
+        std::vector<double> elements;
+        elements.reserve(rowCount);
+        for (size_t row = 0; row < rowCount; ++row) {
+            const auto element = runtimeNumericElement(
+                value, column * rowCount + row);
+            if (!element) {
+                return std::nullopt;
+            }
+            elements.push_back(*element);
+        }
+        auto columnValue = runtimeNumericValueFromLogicalOrder(
+            {rowCount, 1}, std::move(elements), value.numericClass);
+        if (!columnValue) {
+            return std::nullopt;
+        }
+        columns.push_back(std::move(*columnValue));
+    }
+    return columns;
+}
+
 std::optional<RuntimeValue> runtimeConvertNumericClass(
     RuntimeValue value, RuntimeNumericClass numericClass) {
     if (!isRuntimeNumericValue(value)) {

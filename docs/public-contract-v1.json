@@ -5,8 +5,8 @@
     "minor": 0
   },
   "release": {
-    "engine_version": "1.0.0",
-    "milestone": "v1.0",
+    "engine_version": "1.1.0",
+    "milestone": "v1.1",
     "state": "frozen-v1"
   },
   "license": {

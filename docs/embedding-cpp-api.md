@@ -24,7 +24,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 Consume it from a C++20 CMake project:
 
 ```cmake
-find_package(MParser 1.0.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 1.1.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 

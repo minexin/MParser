@@ -27,6 +27,12 @@ bool isObject(const RuntimeValue& value) {
            !isRuntimeException(value);
 }
 
+bool isLinearColon(const RuntimeLvalueSegment& segment) {
+    return segment.subscripts.size() == 1 &&
+           segment.colonSubscripts.size() == 1 &&
+           segment.colonSubscripts.front();
+}
+
 RuntimeLvalueOperationResult readMember(
     const RuntimeValue& parent, std::string_view name,
     const RuntimeLvalueHooks& hooks,
@@ -68,38 +74,45 @@ RuntimeLvalueOperationResult readSegment(
     switch (segment.kind) {
     case RuntimeLvalueSegmentKind::Member:
         return readMember(parent, segment.memberName, hooks, missingSeed);
-    case RuntimeLvalueSegmentKind::Parenthesis:
+    case RuntimeLvalueSegmentKind::Parenthesis: {
+        const bool linearColon = isLinearColon(segment);
         if (parent.kind == RuntimeValueKind::Struct) {
-            auto result = runtimeIndexStruct(parent, segment.subscripts);
+            auto result = runtimeIndexStruct(parent, segment.subscripts,
+                                             linearColon);
             return result.succeeded
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
         }
         if (parent.kind == RuntimeValueKind::Cell) {
-            auto result = runtimeIndexCell(parent, segment.subscripts);
+            auto result = runtimeIndexCell(parent, segment.subscripts,
+                                           linearColon);
             return result.succeeded
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
         }
         if (isRuntimeTextValue(parent)) {
-            auto result = runtimeIndexText(parent, segment.subscripts);
+            auto result = runtimeIndexText(parent, segment.subscripts,
+                                           linearColon);
             return result.succeeded
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
         }
         if (isRuntimeClassObject(parent)) {
             auto result = runtimeIndexObject(
-                parent, segment.subscripts, hooks.objectArrays);
+                parent, segment.subscripts, hooks.objectArrays,
+                linearColon);
             return result.succeeded
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
         }
         {
-            auto result = runtimeIndexNumeric(parent, segment.subscripts);
+            auto result = runtimeIndexNumeric(parent, segment.subscripts,
+                                              linearColon);
             return result.succeeded
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
         }
+    }
     case RuntimeLvalueSegmentKind::Brace: {
         if (isRuntimeStringArray(parent)) {
             auto result = runtimeIndexStringContents(

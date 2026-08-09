@@ -2,11 +2,20 @@ cmake_minimum_required(VERSION 3.20)
 
 project(MParserInstalledCConsumer LANGUAGES C)
 
-if(DEFINED MPARSER_REQUIRED_VERSION)
+if(DEFINED MPARSER_MINIMUM_VERSION)
+    find_package(MParser ${MPARSER_MINIMUM_VERSION} CONFIG REQUIRED
+        COMPONENTS C CLI)
+elseif(DEFINED MPARSER_REQUIRED_VERSION)
     find_package(MParser ${MPARSER_REQUIRED_VERSION} EXACT CONFIG REQUIRED
         COMPONENTS C CLI)
 else()
     find_package(MParser CONFIG REQUIRED COMPONENTS C CLI)
+endif()
+
+if(DEFINED MPARSER_EXPECTED_ENGINE_VERSION AND
+   NOT MParser_VERSION VERSION_EQUAL MPARSER_EXPECTED_ENGINE_VERSION)
+    message(FATAL_ERROR
+        "Unexpected installed engine version: ${MParser_VERSION}")
 endif()
 
 if(NOT TARGET MParser::c_api OR NOT TARGET MParser::cli)
