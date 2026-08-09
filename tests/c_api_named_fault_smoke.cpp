@@ -73,6 +73,39 @@ mparser_invocation_options invocationOptions(
     return options;
 }
 
+mparser_api_status createDoubleScalar(
+    double value, mparser_value** output) {
+    constexpr std::size_t dimensions[]{1, 1};
+    const mparser_numeric_buffer buffer{
+        MPARSER_NUMERIC_DOUBLE, 0, &value, nullptr, 1};
+    return mparser_value_create_numeric(
+        dimensions, 2, &buffer, output);
+}
+
+mparser_api_status doubleData(
+    const mparser_value* value,
+    const double** output,
+    std::size_t* count) {
+    if (!output || !count) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *output = nullptr;
+    *count = 0;
+    mparser_numeric_buffer buffer{};
+    const auto status =
+        mparser_value_get_numeric_buffer(value, &buffer);
+    if (status != MPARSER_API_STATUS_OK) {
+        return status;
+    }
+    if (buffer.numeric_class != MPARSER_NUMERIC_DOUBLE ||
+        buffer.is_complex != 0) {
+        return MPARSER_API_STATUS_TYPE_MISMATCH;
+    }
+    *output = static_cast<const double*>(buffer.real_data);
+    *count = buffer.element_count;
+    return MPARSER_API_STATUS_OK;
+}
+
 double scalar(const mparser_result* result) {
     mparser_value* output = nullptr;
     const double* data = nullptr;
@@ -82,7 +115,7 @@ double scalar(const mparser_result* result) {
     require(mparser_result_output(result, 0, &output) ==
                 MPARSER_API_STATUS_OK,
             "failed to project named-fault result");
-    require(mparser_value_numeric_data(output, &data, &count) ==
+    require(doubleData(output, &data, &count) ==
                 MPARSER_API_STATUS_OK &&
                 count == 1,
             "named-fault result is not scalar");
@@ -135,8 +168,7 @@ int main() {
         mparser_module* module = compileModule(source);
 
         const auto valueCall = [](mparser_value** output) {
-            return mparser_value_create_scalar(
-                40.0, MPARSER_NUMERIC_DOUBLE, output);
+            return createDoubleScalar(40.0, output);
         };
         requireFault<mparser_value>(
             FaultPoint::ValuePublish, ExceptionKind::BadAllocation,
@@ -274,8 +306,7 @@ int main() {
         std::thread isolated([&]() {
             mparser_value* value = nullptr;
             isolatedStatus.store(
-                mparser_value_create_scalar(
-                    1.0, MPARSER_NUMERIC_DOUBLE, &value),
+                createDoubleScalar(1.0, &value),
                 std::memory_order_relaxed);
             mparser_value_release(value);
         });
@@ -284,9 +315,8 @@ int main() {
                     MPARSER_API_STATUS_OK,
                 "fault injection leaked into another thread");
         mparser_value* currentThreadValue = nullptr;
-        require(mparser_value_create_scalar(
-                    1.0, MPARSER_NUMERIC_DOUBLE,
-                    &currentThreadValue) ==
+        require(createDoubleScalar(
+                    1.0, &currentThreadValue) ==
                     MPARSER_API_STATUS_ALLOCATION_FAILED &&
                     currentThreadValue == nullptr,
                 "thread-local fault was not retained by its owner thread");
@@ -294,7 +324,7 @@ int main() {
 
         const double* argumentData = nullptr;
         std::size_t argumentCount = 0;
-        require(mparser_value_numeric_data(
+        require(doubleData(
                     argument, &argumentData, &argumentCount) ==
                     MPARSER_API_STATUS_OK &&
                     argumentCount == 1 &&

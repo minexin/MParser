@@ -1,6 +1,7 @@
 #include "mparser/runtime_value.h"
 
 #include "mparser/runtime_metadata.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_object.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
@@ -203,6 +204,57 @@ private:
         return validateObjectFields(value, path);
     }
 
+    bool validateNumeric(const RuntimeValue& value,
+                         const std::string& path, size_t count) {
+        if (value.kind == RuntimeValueKind::Number) {
+            if (count != 1) {
+                return fail(path, "number must be scalar");
+            }
+            if (!value.elements.empty()) {
+                return fail(path,
+                            "scalar numeric value has array real storage");
+            }
+        } else if (value.elements.size() != count) {
+            return fail(path,
+                        "numeric payload count does not match shape");
+        }
+
+        const bool integer =
+            runtimeNumericClassIsInteger(value.numericClass);
+        if (integer) {
+            if (value.exactIntegerElements.size() != count) {
+                return fail(path,
+                            "integer payload count does not match shape");
+            }
+            if (!value.imaginaryElements.empty()) {
+                return fail(path,
+                            "integer value uses floating imaginary storage");
+            }
+        } else if (!value.exactIntegerElements.empty() ||
+                   !value.exactIntegerImaginaryElements.empty()) {
+            return fail(path,
+                        "noninteger value uses exact integer storage");
+        }
+
+        if (!value.numericComplex) {
+            if (!value.imaginaryElements.empty() ||
+                !value.exactIntegerImaginaryElements.empty()) {
+                return fail(path,
+                            "real numeric value has imaginary storage");
+            }
+            return true;
+        }
+
+        if (integer) {
+            return value.exactIntegerImaginaryElements.size() == count ||
+                   fail(path,
+                        "complex integer imaginary payload count does not match shape");
+        }
+        return value.imaginaryElements.size() == count ||
+               fail(path,
+                    "complex imaginary payload count does not match shape");
+    }
+
     bool validateValue(const RuntimeValue& value,
                        const std::string& path) {
         size_t count = 0;
@@ -215,8 +267,7 @@ private:
             return count == 0 ||
                    fail(path, "missing value must have empty shape");
         case RuntimeValueKind::Number:
-            return count == 1 ||
-                   fail(path, "number must be scalar");
+            return validateNumeric(value, path, count);
         case RuntimeValueKind::CharacterArray:
             return value.characterElements.size() == count ||
                    fail(path,
@@ -226,8 +277,7 @@ private:
                    fail(path, "string payload count does not match shape");
         case RuntimeValueKind::Vector:
         case RuntimeValueKind::Matrix:
-            return value.elements.size() == count ||
-                   fail(path, "numeric payload count does not match shape");
+            return validateNumeric(value, path, count);
         case RuntimeValueKind::Cell:
         case RuntimeValueKind::CommaSeparatedList:
             if (value.cells.size() != count) {
@@ -331,12 +381,26 @@ private:
         return countWorkspace(value.fields);
     }
 
+    bool countNumeric(const RuntimeValue& value) {
+        const size_t realCount =
+            value.kind == RuntimeValueKind::Number
+                ? size_t{1}
+                : value.elements.size();
+        return addElements(realCount, sizeof(double)) &&
+               addElements(value.imaginaryElements.size(),
+                           sizeof(double)) &&
+               addElements(value.exactIntegerElements.size(),
+                           sizeof(std::uint64_t)) &&
+               addElements(value.exactIntegerImaginaryElements.size(),
+                           sizeof(std::uint64_t));
+    }
+
     bool countValue(const RuntimeValue& value) {
         switch (value.kind) {
         case RuntimeValueKind::Missing:
             return true;
         case RuntimeValueKind::Number:
-            return add(sizeof(double));
+            return countNumeric(value);
         case RuntimeValueKind::CharacterArray:
             return addElements(value.characterElements.size(),
                                sizeof(char16_t));
@@ -350,8 +414,7 @@ private:
             return true;
         case RuntimeValueKind::Vector:
         case RuntimeValueKind::Matrix:
-            return addElements(value.elements.size(),
-                               sizeof(double));
+            return countNumeric(value);
         case RuntimeValueKind::Cell:
         case RuntimeValueKind::CommaSeparatedList:
             for (const auto& element : value.cells) {
@@ -403,6 +466,10 @@ RuntimeValue makeRuntimeMissingValue() {
 
 RuntimeValue makeRuntimeNumberValue(
     double value, RuntimeNumericClass numericClass) {
+    if (auto result = runtimeNumericValueFromLogicalOrder(
+            {1, 1}, {value}, numericClass)) {
+        return std::move(*result);
+    }
     RuntimeValue result;
     result.kind = RuntimeValueKind::Number;
     result.number = value;
@@ -419,6 +486,10 @@ RuntimeValue makeRuntimeLogicalValue(bool value) {
 RuntimeValue makeRuntimeVectorValue(
     std::vector<double> values,
     RuntimeNumericClass numericClass) {
+    if (auto result = runtimeNumericValueFromLogicalOrder(
+            {1, values.size()}, values, numericClass)) {
+        return std::move(*result);
+    }
     RuntimeValue result;
     result.kind = RuntimeValueKind::Vector;
     result.elements = std::move(values);
@@ -430,6 +501,25 @@ RuntimeValue makeRuntimeVectorValue(
 RuntimeValue makeRuntimeMatrixValue(
     size_t rows, size_t columns, std::vector<double> values,
     RuntimeNumericClass numericClass) {
+    std::vector<double> logicalValues;
+    if (rows == 0 || columns <=
+                         std::numeric_limits<size_t>::max() / rows) {
+        const size_t count = rows * columns;
+        if (count == values.size()) {
+            logicalValues.reserve(count);
+            for (size_t column = 0; column < columns; ++column) {
+                for (size_t row = 0; row < rows; ++row) {
+                    logicalValues.push_back(
+                        values[row * columns + column]);
+                }
+            }
+            if (auto result = runtimeNumericValueFromLogicalOrder(
+                    {rows, columns}, std::move(logicalValues),
+                    numericClass)) {
+                return std::move(*result);
+            }
+        }
+    }
     RuntimeValue result;
     result.kind = RuntimeValueKind::Matrix;
     result.elements = std::move(values);

@@ -280,8 +280,13 @@ int main() {
 
         requireAllocationFailure<mparser_value>(
             [](mparser_value** output) {
-                return mparser_value_create_scalar(
-                    42.0, MPARSER_NUMERIC_DOUBLE, output);
+                constexpr std::size_t dimensions[]{1, 1};
+                const double value = 42.0;
+                const mparser_numeric_buffer buffer{
+                    MPARSER_NUMERIC_DOUBLE, 0,
+                    &value, nullptr, 1};
+                return mparser_value_create_numeric(
+                    dimensions, 2, &buffer, output);
             },
             "value creation did not translate std::bad_alloc");
 

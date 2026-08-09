@@ -3,6 +3,7 @@
 
 #include "mparser/c_api.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -10,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -24,7 +26,7 @@ namespace mparser::sdk {
  */
 using ApiStatus = mparser_api_status;
 
-inline constexpr std::uint32_t kSourceApiVersionMajor = 1;
+inline constexpr std::uint32_t kSourceApiVersionMajor = 2;
 inline constexpr std::uint32_t kSourceApiVersionMinor = 0;
 
 struct SourceApiVersion {
@@ -95,6 +97,15 @@ enum class ValueKind : std::uint32_t {
 enum class NumericClass : std::uint32_t {
     Double = MPARSER_NUMERIC_DOUBLE,
     Logical = MPARSER_NUMERIC_LOGICAL,
+    Single = MPARSER_NUMERIC_SINGLE,
+    Int8 = MPARSER_NUMERIC_INT8,
+    UInt8 = MPARSER_NUMERIC_UINT8,
+    Int16 = MPARSER_NUMERIC_INT16,
+    UInt16 = MPARSER_NUMERIC_UINT16,
+    Int32 = MPARSER_NUMERIC_INT32,
+    UInt32 = MPARSER_NUMERIC_UINT32,
+    Int64 = MPARSER_NUMERIC_INT64,
+    UInt64 = MPARSER_NUMERIC_UINT64,
 };
 
 struct Version {
@@ -391,29 +402,53 @@ public:
         return takeCreated(status, value, "create missing value");
     }
 
-    [[nodiscard]] static Value scalar(
-        double value,
-        NumericClass numericClass = NumericClass::Double) {
-        mparser_value* created = nullptr;
-        const auto status = mparser_value_create_scalar(
-            value,
-            static_cast<mparser_numeric_class>(numericClass),
-            &created);
-        return takeCreated(status, created, "create scalar value");
+    [[nodiscard]] static Value scalar(double value) {
+        return numericScalar(NumericClass::Double, value);
     }
 
+    template <typename Element>
+    [[nodiscard]] static Value numericScalar(
+        NumericClass numericClass, Element real,
+        std::optional<Element> imaginary = std::nullopt) {
+        const std::array<std::size_t, 2> dimensions{1, 1};
+        const std::span<const Element> realData(&real, 1);
+        const std::optional<std::span<const Element>> imaginaryData =
+            imaginary
+                ? std::optional<std::span<const Element>>(
+                      std::span<const Element>(&*imaginary, 1))
+                : std::nullopt;
+        return numericArray(
+            numericClass, dimensions, realData, imaginaryData);
+    }
+
+    template <typename Element>
     [[nodiscard]] static Value numericArray(
         NumericClass numericClass,
         std::span<const std::size_t> dimensions,
-        std::span<const double> columnMajorElements) {
+        std::span<const Element> columnMajorReal,
+        std::optional<std::span<const Element>> columnMajorImaginary =
+            std::nullopt) {
+        if (!numericClassMatches<Element>(numericClass) ||
+            (columnMajorImaginary &&
+             columnMajorImaginary->size() != columnMajorReal.size())) {
+            throw ApiError(
+                MPARSER_API_STATUS_INVALID_ARGUMENT,
+                "numeric buffer type, class, or component sizes differ");
+        }
+        mparser_numeric_buffer buffer{};
+        buffer.numeric_class =
+            static_cast<mparser_numeric_class>(numericClass);
+        buffer.is_complex = columnMajorImaginary ? 1u : 0u;
+        buffer.real_data = columnMajorReal.data();
+        buffer.imaginary_data = columnMajorImaginary
+                                    ? columnMajorImaginary->data()
+                                    : nullptr;
+        buffer.element_count = columnMajorReal.size();
         mparser_value* created = nullptr;
-        const auto status = mparser_value_create_numeric_array(
-            static_cast<mparser_numeric_class>(numericClass),
+        const auto status = mparser_value_create_numeric(
             dimensions.data(), dimensions.size(),
-            columnMajorElements.data(),
-            columnMajorElements.size(), &created);
-        return takeCreated(
-            status, created, "create numeric array");
+            &buffer, &created);
+        return takeCreated(status, created, "create numeric value");
     }
 
     [[nodiscard]] static Value characterArray(
@@ -523,14 +558,42 @@ public:
         return mparser_value_element_count(requireRaw());
     }
 
-    [[nodiscard]] std::span<const double> numericData() const {
-        const double* data = nullptr;
-        std::size_t count = 0;
-        detail::checkStatus(
-            mparser_value_numeric_data(
-                requireRaw(), &data, &count),
-            "read numeric data");
-        return std::span<const double>(data, count);
+    [[nodiscard]] bool isComplex() const {
+        return numericBuffer().is_complex != 0;
+    }
+
+    template <typename Element = double>
+    [[nodiscard]] std::span<const Element> numericData() const {
+        const auto buffer = numericBuffer();
+        const auto numericClass =
+            static_cast<NumericClass>(buffer.numeric_class);
+        if (!numericClassMatches<Element>(numericClass)) {
+            throw ApiError(
+                MPARSER_API_STATUS_TYPE_MISMATCH,
+                "numeric data element type does not match its class");
+        }
+        return std::span<const Element>(
+            static_cast<const Element*>(buffer.real_data),
+            buffer.element_count);
+    }
+
+    template <typename Element = double>
+    [[nodiscard]] std::span<const Element>
+    numericImaginaryData() const {
+        const auto buffer = numericBuffer();
+        const auto numericClass =
+            static_cast<NumericClass>(buffer.numeric_class);
+        if (!numericClassMatches<Element>(numericClass)) {
+            throw ApiError(
+                MPARSER_API_STATUS_TYPE_MISMATCH,
+                "numeric data element type does not match its class");
+        }
+        return buffer.is_complex != 0
+                   ? std::span<const Element>(
+                         static_cast<const Element*>(
+                             buffer.imaginary_data),
+                         buffer.element_count)
+                   : std::span<const Element>{};
     }
 
     [[nodiscard]] std::span<const std::uint16_t>
@@ -603,6 +666,44 @@ public:
     }
 
 private:
+    template <typename Element>
+    [[nodiscard]] static constexpr bool numericClassMatches(
+        NumericClass numericClass) noexcept {
+        using ValueType = std::remove_cv_t<Element>;
+        if constexpr (std::is_same_v<ValueType, double>) {
+            return numericClass == NumericClass::Double;
+        } else if constexpr (std::is_same_v<ValueType, float>) {
+            return numericClass == NumericClass::Single;
+        } else if constexpr (std::is_same_v<ValueType, std::int8_t>) {
+            return numericClass == NumericClass::Int8;
+        } else if constexpr (std::is_same_v<ValueType, std::uint8_t>) {
+            return numericClass == NumericClass::Logical ||
+                   numericClass == NumericClass::UInt8;
+        } else if constexpr (std::is_same_v<ValueType, std::int16_t>) {
+            return numericClass == NumericClass::Int16;
+        } else if constexpr (std::is_same_v<ValueType, std::uint16_t>) {
+            return numericClass == NumericClass::UInt16;
+        } else if constexpr (std::is_same_v<ValueType, std::int32_t>) {
+            return numericClass == NumericClass::Int32;
+        } else if constexpr (std::is_same_v<ValueType, std::uint32_t>) {
+            return numericClass == NumericClass::UInt32;
+        } else if constexpr (std::is_same_v<ValueType, std::int64_t>) {
+            return numericClass == NumericClass::Int64;
+        } else if constexpr (std::is_same_v<ValueType, std::uint64_t>) {
+            return numericClass == NumericClass::UInt64;
+        } else {
+            return false;
+        }
+    }
+
+    [[nodiscard]] mparser_numeric_buffer numericBuffer() const {
+        mparser_numeric_buffer buffer{};
+        detail::checkStatus(
+            mparser_value_get_numeric_buffer(requireRaw(), &buffer),
+            "read numeric buffer");
+        return buffer;
+    }
+
     using Handle = detail::SharedHandle<
         mparser_value, detail::ValuePolicy>;
 

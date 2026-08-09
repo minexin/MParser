@@ -1,9 +1,11 @@
 #include "mparser/machine_protocol.h"
 
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
 
+#include <bit>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -400,13 +402,7 @@ void writeDimensions(JsonWriter& writer, const RuntimeValue& value) {
 }
 
 std::string_view numericClassName(RuntimeNumericClass numericClass) {
-    switch (numericClass) {
-    case RuntimeNumericClass::Double:
-        return "double";
-    case RuntimeNumericClass::Logical:
-        return "logical";
-    }
-    return "unknown";
+    return runtimeNumericClassName(numericClass);
 }
 
 std::string_view functionHandleKindName(
@@ -440,6 +436,24 @@ std::string_view functionHandleBackendName(
 void writeRuntimeValue(JsonWriter& writer, const RuntimeValue& value,
                        size_t depth);
 
+void writeNumericElement(JsonWriter& writer,
+                         const RuntimeNumericElementValue& value) {
+    if (value.numericClass == RuntimeNumericClass::Logical) {
+        writer.booleanValue(value.real != 0.0);
+        return;
+    }
+    if (runtimeNumericClassIsInteger(value.numericClass)) {
+        if (runtimeNumericClassIsSignedInteger(value.numericClass)) {
+            writer.signedValue(
+                std::bit_cast<std::int64_t>(value.integerRealBits));
+        } else {
+            writer.unsignedValue(value.integerRealBits);
+        }
+        return;
+    }
+    writer.doubleValue(value.real);
+}
+
 void writeNumericValue(JsonWriter& writer, const RuntimeValue& value) {
     writer.beginObject();
     writer.field("kind", "numeric");
@@ -448,26 +462,14 @@ void writeNumericValue(JsonWriter& writer, const RuntimeValue& value) {
     writeDimensions(writer, value);
     writer.key("data");
     writer.beginArray();
-    if (value.kind == RuntimeValueKind::Number) {
-        if (value.numericClass == RuntimeNumericClass::Logical) {
-            writer.booleanValue(value.number != 0.0);
-        } else {
-            writer.doubleValue(value.number);
+    const size_t count = valueElementCount(value);
+    for (size_t index = 0; index < count; ++index) {
+        const auto element = runtimeNumericElementValue(value, index);
+        if (!element) {
+            throw std::runtime_error(
+                "numeric runtime payload does not match its shape");
         }
-    } else {
-        const size_t count = valueElementCount(value);
-        for (size_t index = 0; index < count; ++index) {
-            const size_t offset = storageOffset(value, index);
-            if (offset >= value.elements.size()) {
-                throw std::runtime_error(
-                    "numeric runtime payload does not match its shape");
-            }
-            if (value.numericClass == RuntimeNumericClass::Logical) {
-                writer.booleanValue(value.elements[offset] != 0.0);
-            } else {
-                writer.doubleValue(value.elements[offset]);
-            }
-        }
+        writeNumericElement(writer, *element);
     }
     writer.endArray();
     writer.endObject();

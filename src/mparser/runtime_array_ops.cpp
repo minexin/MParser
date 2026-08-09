@@ -45,28 +45,45 @@ RuntimeArrayOperationResult success(RuntimeValue value) {
     return RuntimeArrayOperationResult{true, std::move(value), {}};
 }
 
-RuntimeValue numericResult(std::vector<size_t> dimensions,
-                           std::vector<double> elements,
-                           bool preferNumber,
-                           RuntimeNumericClass numericClass) {
+std::optional<RuntimeValue> numericResult(
+    std::vector<size_t> dimensions,
+    std::vector<RuntimeNumericElementValue> elements,
+    bool preferNumber, RuntimeNumericClass numericClass) {
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
-    if (preferNumber && elements.size() == 1 && dimensions[0] == 1 &&
-        dimensions[1] == 1) {
-        RuntimeValue result;
-        result.kind = RuntimeValueKind::Number;
-        result.number = elements.front();
-        result.numericClass = numericClass;
-        setRuntimeDimensions(result, {1, 1});
-        return result;
+    const auto count = checkedRuntimeDimensionProduct(dimensions);
+    if (!count || *count != elements.size()) {
+        return std::nullopt;
     }
 
-    RuntimeValue result;
-    result.kind = dimensions.size() == 2 && dimensions[0] == 1
-                      ? RuntimeValueKind::Vector
-                      : RuntimeValueKind::Matrix;
-    result.elements = std::move(elements);
-    result.numericClass = numericClass;
-    setRuntimeDimensions(result, std::move(dimensions));
+    std::vector<RuntimeNumericElementValue> logicalElements;
+    logicalElements.reserve(*count);
+    for (size_t logicalIndex = 0; logicalIndex < *count;
+         ++logicalIndex) {
+        const auto coordinates = runtimeColumnMajorCoordinates(
+            logicalIndex, dimensions);
+        const auto storageOffset = coordinates
+                                       ? runtimeRowMajorStorageOffset(
+                                             *coordinates, dimensions)
+                                       : std::nullopt;
+        if (!storageOffset || *storageOffset >= elements.size()) {
+            return std::nullopt;
+        }
+        logicalElements.push_back(elements[*storageOffset]);
+    }
+
+    auto result = runtimeNumericValueFromElements(
+        dimensions, std::move(logicalElements), numericClass);
+    if (!result) {
+        return std::nullopt;
+    }
+    if (!preferNumber && result->kind == RuntimeValueKind::Number) {
+        result->kind = dimensions.size() == 2 && dimensions[0] == 1
+                           ? RuntimeValueKind::Vector
+                           : RuntimeValueKind::Matrix;
+        result->elements = {result->number};
+        result->number = 0.0;
+        setRuntimeDimensions(*result, std::move(dimensions));
+    }
     return result;
 }
 
@@ -79,18 +96,6 @@ RuntimeValue cellResult(std::vector<size_t> dimensions,
     return result;
 }
 
-std::optional<double> numericStorageElement(const RuntimeValue& value,
-                                            size_t storageOffset) {
-    if (isNumber(value)) {
-        return storageOffset == 0 ? std::optional<double>(value.number)
-                                  : std::nullopt;
-    }
-    if (!isNumericArray(value) || storageOffset >= value.elements.size()) {
-        return std::nullopt;
-    }
-    return value.elements[storageOffset];
-}
-
 std::optional<std::vector<double>> logicalNumericValues(
     const RuntimeValue& value) {
     if (!isNumeric(value)) {
@@ -101,16 +106,11 @@ std::optional<std::vector<double>> logicalNumericValues(
     std::vector<double> result;
     result.reserve(count);
     for (size_t logicalIndex = 0; logicalIndex < count; ++logicalIndex) {
-        if (isNumber(value)) {
-            result.push_back(value.number);
-            continue;
-        }
-        const auto storageOffset =
-            runtimeColumnMajorLinearToStorageOffset(value, logicalIndex);
-        if (!storageOffset || *storageOffset >= value.elements.size()) {
+        const auto element = runtimeNumericElement(value, logicalIndex);
+        if (!element) {
             return std::nullopt;
         }
-        result.push_back(value.elements[*storageOffset]);
+        result.push_back(*element);
     }
     return result;
 }
@@ -291,7 +291,7 @@ RuntimeArrayOperationResult permuteValue(
     }
 
     if (isNumeric(value)) {
-        std::vector<double> elements(*count, 0.0);
+        std::vector<RuntimeNumericElementValue> elements(*count);
         for (size_t sourceOffset = 0; sourceOffset < *count;
              ++sourceOffset) {
             const auto sourceCoordinates = runtimeRowMajorCoordinates(
@@ -303,14 +303,19 @@ RuntimeArrayOperationResult permuteValue(
             }
             const auto outputOffset = runtimeRowMajorStorageOffset(
                 outputCoordinates, outputDimensions);
-            const auto element = numericStorageElement(value, sourceOffset);
+            const auto element = runtimeNumericStorageElementValue(
+                value, sourceOffset);
             if (!outputOffset || !element) {
                 return failure("permute could not map an array element");
             }
             elements[*outputOffset] = *element;
         }
-        return success(numericResult(outputDimensions, std::move(elements),
-                                     isNumber(value), value.numericClass));
+        auto result = numericResult(
+            outputDimensions, std::move(elements), isNumber(value),
+            value.numericClass);
+        return result
+                   ? success(std::move(*result))
+                   : failure("permute could not construct a numeric result");
     }
 
     if (isRuntimeCharacterArray(value)) {
@@ -536,7 +541,7 @@ RuntimeArrayOperationResult repmatBuiltin(
     }
 
     if (isNumeric(arguments.front())) {
-        std::vector<double> elements(*outputCount, 0.0);
+        std::vector<RuntimeNumericElementValue> elements(*outputCount);
         for (size_t outputOffset = 0; outputOffset < *outputCount;
              ++outputOffset) {
             const auto outputCoordinates = runtimeRowMajorCoordinates(
@@ -549,7 +554,7 @@ RuntimeArrayOperationResult repmatBuiltin(
             const auto sourceOffset = runtimeRowMajorStorageOffset(
                 sourceCoordinates, sourceDimensions);
             const auto element = sourceOffset
-                                     ? numericStorageElement(
+                                     ? runtimeNumericStorageElementValue(
                                            arguments.front(), *sourceOffset)
                                      : std::nullopt;
             if (!sourceOffset || !element) {
@@ -557,9 +562,13 @@ RuntimeArrayOperationResult repmatBuiltin(
             }
             elements[outputOffset] = *element;
         }
-        return success(numericResult(outputDimensions, std::move(elements),
-                                     isNumber(arguments.front()),
-                                     arguments.front().numericClass));
+        auto result = numericResult(
+            outputDimensions, std::move(elements),
+            isNumber(arguments.front()),
+            arguments.front().numericClass);
+        return result
+                   ? success(std::move(*result))
+                   : failure("repmat could not construct a numeric result");
     }
 
     if (isRuntimeCharacterArray(arguments.front())) {
@@ -765,7 +774,7 @@ RuntimeArrayOperationResult concatenate(
     }
 
     if (numeric) {
-        std::vector<double> elements(*outputCount, 0.0);
+        std::vector<RuntimeNumericElementValue> elements(*outputCount);
         size_t axisOffset = 0;
         bool preferNumber = true;
         const RuntimeNumericClass numericClass =
@@ -781,23 +790,26 @@ RuntimeArrayOperationResult concatenate(
                 coordinates[axis] += axisOffset;
                 const auto outputOffset = runtimeRowMajorStorageOffset(
                     coordinates, outputDimensions);
-                const auto element = numericStorageElement(value, sourceOffset);
-                const auto converted =
-                    element ? runtimeCoerceNumericElement(*element,
-                                                          numericClass)
-                            : std::nullopt;
-                if (!outputOffset || !converted) {
+                const auto element = runtimeNumericStorageElementValue(
+                    value, sourceOffset);
+                if (!outputOffset || !element) {
                     return failure(
-                        numericClass == RuntimeNumericClass::Logical
-                            ? "concatenation cannot convert NaN to logical"
-                            : "concatenation could not map a numeric element");
+                        "concatenation could not map a numeric element");
                 }
-                elements[*outputOffset] = *converted;
+                elements[*outputOffset] = *element;
             }
             axisOffset += inputDimensions[valueIndex][axis];
         }
-        return success(numericResult(outputDimensions, std::move(elements),
-                                     preferNumber, numericClass));
+        auto result = numericResult(
+            outputDimensions, std::move(elements), preferNumber,
+            numericClass);
+        if (!result) {
+            return failure(
+                numericClass == RuntimeNumericClass::Logical
+                    ? "concatenation cannot convert NaN to logical"
+                    : "concatenation inputs have incompatible numeric classes");
+        }
+        return success(std::move(*result));
     }
 
     std::vector<RuntimeValue> outputCells(*outputCount);
@@ -890,7 +902,7 @@ RuntimeArrayOperationResult runtimeReshapeValue(
     }
 
     if (isNumeric(value)) {
-        std::vector<double> elements(*count, 0.0);
+        std::vector<RuntimeNumericElementValue> elements(*count);
         for (size_t logicalIndex = 0; logicalIndex < *count;
              ++logicalIndex) {
             const auto sourceOffset = isNumber(value)
@@ -904,16 +916,20 @@ RuntimeArrayOperationResult runtimeReshapeValue(
                                                 *targetCoordinates, dimensions)
                                           : std::nullopt;
             const auto element = sourceOffset
-                                     ? numericStorageElement(value,
-                                                             *sourceOffset)
+                                     ? runtimeNumericStorageElementValue(
+                                           value, *sourceOffset)
                                      : std::nullopt;
             if (!sourceOffset || !targetOffset || !element) {
                 return failure("reshape could not preserve logical element order");
             }
             elements[*targetOffset] = *element;
         }
-        return success(numericResult(dimensions, std::move(elements),
-                                     isNumber(value), value.numericClass));
+        auto result = numericResult(
+            dimensions, std::move(elements), isNumber(value),
+            value.numericClass);
+        return result
+                   ? success(std::move(*result))
+                   : failure("reshape could not construct a numeric result");
     }
 
     if (isRuntimeCharacterArray(value)) {

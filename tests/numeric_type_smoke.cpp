@@ -1,0 +1,574 @@
+#include "mparser/bytecode.h"
+#include "mparser/bytecode_vm.h"
+#include "mparser/interpreter.h"
+#include "mparser/lexer.h"
+#include "mparser/machine_protocol.h"
+#include "mparser/optimization_plan.h"
+#include "mparser/parser.h"
+#include "mparser/runtime_numeric.h"
+#include "mparser/runtime_shape.h"
+#include "mparser/semantic.h"
+#include "mparser/typed_ir.h"
+
+#include <bit>
+#include <cmath>
+#include <cstdint>
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace {
+
+struct RuntimePair {
+    mparser::InterpreterResult interpreter;
+    mparser::BytecodeVmResult vm;
+    mparser::BytecodeProgram bytecode;
+    mparser::SemanticResult semantic;
+};
+
+void require(bool condition, std::string_view message) {
+    if (!condition) {
+        throw std::runtime_error(std::string(message));
+    }
+}
+
+RuntimePair runBoth(std::string_view source) {
+    mparser::Lexer lexer(source);
+    mparser::Parser parser(lexer.lex());
+    auto parse = parser.parse();
+    require(parse.diagnostics.empty(),
+            "numeric-type source did not parse");
+
+    mparser::SemanticAnalyzer analyzer;
+    auto semantic = analyzer.analyze(*parse.root);
+    require(semantic.diagnostics.empty(),
+            "numeric-type source failed semantic analysis");
+
+    mparser::BytecodeLowerer lowerer;
+    auto bytecode = lowerer.lower(semantic);
+    require(bytecode.diagnostics.empty(),
+            "numeric-type source did not lower");
+
+    mparser::Interpreter interpreter;
+    auto interpreterResult = interpreter.run(semantic);
+    mparser::BytecodeVm vm;
+    auto vmResult = vm.run(bytecode, semantic);
+    return RuntimePair{std::move(interpreterResult),
+                       std::move(vmResult), std::move(bytecode),
+                       std::move(semantic)};
+}
+
+template <typename Result>
+const mparser::RuntimeValue& variable(const Result& result,
+                                      std::string_view name) {
+    for (const auto& candidate : result.variables) {
+        if (candidate.name == name) {
+            return candidate.value;
+        }
+    }
+    throw std::runtime_error("missing numeric-type variable: " +
+                             std::string(name));
+}
+
+template <typename Result>
+bool hasDiagnostic(const Result& result, std::string_view fragment) {
+    for (const auto& diagnostic : result.diagnostics) {
+        if (diagnostic.message.find(fragment) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void requireScalar(const mparser::RuntimeValue& value,
+                   mparser::RuntimeNumericClass numericClass,
+                   double expected, std::string_view context) {
+    require(value.kind == mparser::RuntimeValueKind::Number, context);
+    require(value.numericClass == numericClass, context);
+    require(std::fabs(value.number - expected) < 1e-7, context);
+}
+
+void requireArray(const mparser::RuntimeValue& value,
+                  mparser::RuntimeNumericClass numericClass,
+                  const std::vector<double>& expected,
+                  std::string_view context) {
+    require(value.kind == mparser::RuntimeValueKind::Vector ||
+                value.kind == mparser::RuntimeValueKind::Matrix,
+            context);
+    require(value.numericClass == numericClass, context);
+    require(value.elements == expected, context);
+}
+
+void requireIntegerBits(
+    const mparser::RuntimeValue& value,
+    const std::vector<std::uint64_t>& expected,
+    std::string_view context) {
+    require(mparser::runtimeNumericClassIsInteger(value.numericClass),
+            context);
+    require(mparser::runtimeShapeElementCount(value) == expected.size(),
+            context);
+    for (size_t index = 0; index < expected.size(); ++index) {
+        const auto element =
+            mparser::runtimeNumericElementValue(value, index);
+        require(element &&
+                    element->integerRealBits == expected[index],
+                context);
+    }
+}
+
+mparser::RuntimeValue exactIntegerValue(
+    mparser::RuntimeNumericClass numericClass,
+    std::vector<size_t> dimensions,
+    const std::vector<std::uint64_t>& bits) {
+    std::vector<mparser::RuntimeNumericElementValue> elements;
+    elements.reserve(bits.size());
+    for (const std::uint64_t value : bits) {
+        mparser::RuntimeNumericElementValue element;
+        element.numericClass = numericClass;
+        element.integerRealBits = value;
+        elements.push_back(element);
+    }
+    auto result = mparser::runtimeNumericValueFromElements(
+        std::move(dimensions), std::move(elements), numericClass);
+    require(result.has_value(), "exact integer value could not be constructed");
+    return std::move(*result);
+}
+
+template <typename Result>
+void verify(const Result& result) {
+    require(result.diagnostics.empty(),
+            "numeric-type execution emitted diagnostics");
+
+    requireScalar(variable(result, "single_value"),
+                  mparser::RuntimeNumericClass::Single,
+                  static_cast<double>(static_cast<float>(0.1)),
+                  "single conversion did not round to binary32");
+    requireArray(variable(result, "int8_values"),
+                 mparser::RuntimeNumericClass::Int8,
+                 {-128, -128, -128, -2, -1, 1, 2, 127, 127, 0},
+                 "int8 conversion did not match MATLAB rounding/saturation");
+    requireArray(variable(result, "uint8_values"),
+                 mparser::RuntimeNumericClass::UInt8,
+                 {0, 0, 0, 1, 2, 128, 255, 0},
+                 "uint8 conversion did not match MATLAB rounding/saturation");
+    requireArray(variable(result, "int16_values"),
+                 mparser::RuntimeNumericClass::Int16,
+                 {-32768, -32768, 32767, 32767},
+                 "int16 conversion did not saturate");
+    requireArray(variable(result, "uint16_values"),
+                 mparser::RuntimeNumericClass::UInt16,
+                 {0, 0, 65535, 65535},
+                 "uint16 conversion did not saturate");
+    requireArray(variable(result, "int32_values"),
+                 mparser::RuntimeNumericClass::Int32,
+                 {-2147483648.0, -2147483648.0,
+                  2147483647.0, 2147483647.0},
+                 "int32 conversion did not saturate");
+    requireArray(variable(result, "uint32_values"),
+                 mparser::RuntimeNumericClass::UInt32,
+                 {0, 0, 4294967295.0, 4294967295.0},
+                 "uint32 conversion did not saturate");
+    requireIntegerBits(
+        variable(result, "int64_values"),
+        {std::bit_cast<std::uint64_t>(
+             std::numeric_limits<std::int64_t>::min()),
+         std::bit_cast<std::uint64_t>(
+             std::numeric_limits<std::int64_t>::min()),
+         std::bit_cast<std::uint64_t>(
+             std::numeric_limits<std::int64_t>::max()),
+         std::bit_cast<std::uint64_t>(
+             std::numeric_limits<std::int64_t>::max()),
+         0},
+        "int64 conversion did not retain exact saturated bits");
+    requireIntegerBits(
+        variable(result, "uint64_values"),
+        {0, 0, 1, std::numeric_limits<std::uint64_t>::max(),
+         std::numeric_limits<std::uint64_t>::max(), 0},
+        "uint64 conversion did not retain exact saturated bits");
+    requireIntegerBits(
+        variable(result, "uint64_from_negative"), {0},
+        "signed-to-unsigned exact conversion did not saturate");
+    requireIntegerBits(
+        variable(result, "int64_from_uintmax"),
+        {std::bit_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::max())},
+        "unsigned-to-signed exact conversion did not saturate");
+    requireArray(variable(result, "single_sum"),
+                 mparser::RuntimeNumericClass::Single,
+                 {static_cast<double>(static_cast<float>(
+                      static_cast<double>(static_cast<float>(0.1)) + 0.25)),
+                  static_cast<double>(static_cast<float>(
+                      static_cast<double>(static_cast<float>(0.2)) + 0.25))},
+                 "single arithmetic did not preserve binary32 class");
+    requireArray(variable(result, "int8_sum"),
+                 mparser::RuntimeNumericClass::Int8,
+                 {127, -100},
+                 "integer plus scalar double did not saturate");
+    requireArray(variable(result, "uint8_product"),
+                 mparser::RuntimeNumericClass::UInt8,
+                 {255, 255},
+                 "same-class integer multiplication did not saturate");
+    requireArray(variable(result, "int16_matrix"),
+                 mparser::RuntimeNumericClass::Int16,
+                 {206, 18},
+                 "integer matrix multiplication lost its class");
+    requireArray(variable(result, "single_matrix"),
+                 mparser::RuntimeNumericClass::Single,
+                 {17, 39},
+                 "single matrix multiplication lost its class");
+    requireScalar(variable(result, "logical_sum"),
+                  mparser::RuntimeNumericClass::Double, 2.0,
+                  "logical arithmetic must produce double");
+    requireScalar(variable(result, "int8_negated"),
+                  mparser::RuntimeNumericClass::Int8, 127.0,
+                  "integer unary minus did not saturate");
+    requireScalar(variable(result, "uint8_negated"),
+                  mparser::RuntimeNumericClass::UInt8, 0.0,
+                  "unsigned unary minus did not saturate");
+    requireScalar(variable(result, "single_negated"),
+                  mparser::RuntimeNumericClass::Single,
+                  static_cast<double>(static_cast<float>(
+                      -static_cast<double>(static_cast<float>(0.1)))),
+                  "single unary minus lost its class");
+
+    for (std::string_view name : {"class_checks", "isa_checks",
+                                  "predicate_checks", "comparison"}) {
+        requireScalar(variable(result, name),
+                      mparser::RuntimeNumericClass::Logical, 1.0,
+                      "numeric class metadata check failed");
+    }
+}
+
+void verifyExactIntegerStorage() {
+    constexpr std::uint64_t beyondFlintmax = 9007199254740993ULL;
+    mparser::RuntimeNumericElementValue element;
+    element.numericClass = mparser::RuntimeNumericClass::UInt64;
+    element.integerRealBits = beyondFlintmax;
+    element.real = static_cast<double>(beyondFlintmax);
+
+    auto value = mparser::runtimeNumericValueFromElements(
+        {1, 1}, {element}, mparser::RuntimeNumericClass::UInt64);
+    require(value.has_value(),
+            "exact uint64 value could not be constructed");
+    requireIntegerBits(*value, {beyondFlintmax},
+                       "uint64 storage rounded through double");
+
+    auto signedValue = mparser::runtimeConvertNumericClass(
+        *value, mparser::RuntimeNumericClass::Int64);
+    require(signedValue.has_value(),
+            "exact uint64-to-int64 conversion failed");
+    requireIntegerBits(
+        *signedValue,
+        {std::bit_cast<std::uint64_t>(
+            static_cast<std::int64_t>(beyondFlintmax))},
+        "uint64-to-int64 conversion rounded through double");
+
+    auto doubleValue = mparser::runtimeConvertNumericClass(
+        *value, mparser::RuntimeNumericClass::Double);
+    require(doubleValue &&
+                doubleValue->number ==
+                    static_cast<double>(beyondFlintmax),
+             "uint64-to-double conversion did not use the documented lossy boundary");
+}
+
+void verifyExactIntegerArithmetic() {
+    constexpr std::uint64_t beyondFlintmax = 9007199254740993ULL;
+    constexpr std::uint64_t uintMaximum =
+        std::numeric_limits<std::uint64_t>::max();
+    constexpr std::uint64_t intMinimumBits =
+        std::bit_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::min());
+    constexpr std::uint64_t intMaximumBits =
+        std::bit_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::max());
+
+    const auto beyond = exactIntegerValue(
+        mparser::RuntimeNumericClass::UInt64, {1, 1}, {beyondFlintmax});
+    const auto one = exactIntegerValue(
+        mparser::RuntimeNumericClass::UInt64, {1, 1}, {1});
+    const auto two = exactIntegerValue(
+        mparser::RuntimeNumericClass::UInt64, {1, 1}, {2});
+    const auto maximum = exactIntegerValue(
+        mparser::RuntimeNumericClass::UInt64, {1, 1}, {uintMaximum});
+
+    const auto sum = mparser::runtimeApplyNumericBinary("+", beyond, two);
+    require(sum.succeeded, "exact uint64 addition failed");
+    requireIntegerBits(sum.value, {beyondFlintmax + 2},
+                       "exact uint64 addition rounded through double");
+
+    const auto saturated =
+        mparser::runtimeApplyNumericBinary("+", maximum, one);
+    require(saturated.succeeded, "saturating uint64 addition failed");
+    requireIntegerBits(saturated.value, {uintMaximum},
+                       "uint64 addition did not saturate");
+
+    const auto floored = mparser::runtimeApplyNumericBinary("-", one, two);
+    require(floored.succeeded, "saturating uint64 subtraction failed");
+    requireIntegerBits(floored.value, {0},
+                       "uint64 subtraction did not saturate at zero");
+
+    const auto signedMinimum = exactIntegerValue(
+        mparser::RuntimeNumericClass::Int64, {1, 1}, {intMinimumBits});
+    const auto negated =
+        mparser::runtimeApplyNumericUnary("-", signedMinimum);
+    require(negated.succeeded, "saturating int64 unary minus failed");
+    requireIntegerBits(negated.value, {intMaximumBits},
+                       "int64 unary minus did not saturate");
+
+    const auto signedNegativeFive = exactIntegerValue(
+        mparser::RuntimeNumericClass::Int64, {1, 1},
+        {std::bit_cast<std::uint64_t>(std::int64_t{-5})});
+    const auto signedTwo = exactIntegerValue(
+        mparser::RuntimeNumericClass::Int64, {1, 1},
+        {std::bit_cast<std::uint64_t>(std::int64_t{2})});
+    const auto divided = mparser::runtimeApplyNumericBinary(
+        "/", signedNegativeFive, signedTwo);
+    require(divided.succeeded, "exact int64 division failed");
+    requireIntegerBits(
+        divided.value,
+        {std::bit_cast<std::uint64_t>(std::int64_t{-3})},
+        "integer division did not round halves away from zero");
+
+    const auto uintComparison = mparser::runtimeApplyNumericBinary(
+        "~=", maximum,
+        mparser::makeRuntimeNumberValue(18446744073709551616.0));
+    require(uintComparison.succeeded,
+            "uint64 boundary comparison failed");
+    requireScalar(uintComparison.value,
+                  mparser::RuntimeNumericClass::Logical, 1.0,
+                  "uint64 max compared equal to double 2^64");
+
+    const auto signedMaximum = exactIntegerValue(
+        mparser::RuntimeNumericClass::Int64, {1, 1}, {intMaximumBits});
+    const auto intComparison = mparser::runtimeApplyNumericBinary(
+        "~=", signedMaximum,
+        mparser::makeRuntimeNumberValue(9223372036854775808.0));
+    require(intComparison.succeeded,
+            "int64 boundary comparison failed");
+    requireScalar(intComparison.value,
+                  mparser::RuntimeNumericClass::Logical, 1.0,
+                  "int64 max compared equal to double 2^63");
+
+    const auto left = exactIntegerValue(
+        mparser::RuntimeNumericClass::UInt64, {1, 2},
+        {beyondFlintmax, 1});
+    const auto right = exactIntegerValue(
+        mparser::RuntimeNumericClass::UInt64, {2, 1}, {1, 2});
+    const auto product =
+        mparser::runtimeApplyNumericBinary("*", left, right);
+    require(product.succeeded, "exact uint64 matrix multiply failed");
+    requireIntegerBits(product.value, {beyondFlintmax + 2},
+                       "uint64 matrix multiply rounded through double");
+}
+
+template <typename Result>
+void verifyExactArrayResult(const Result& result) {
+    require(result.diagnostics.empty(),
+            "exact integer array execution emitted diagnostics");
+    constexpr std::uint64_t exact = 9007199254740993ULL;
+    requireIntegerBits(variable(result, "indexed"), {exact},
+                       "indexed uint64 value lost exact bits");
+    requireIntegerBits(variable(result, "reshaped"), {exact, 7},
+                       "reshape lost exact uint64 bits");
+    requireIntegerBits(variable(result, "repeated"), {exact, exact},
+                       "repmat lost exact uint64 bits");
+    requireIntegerBits(variable(result, "joined"), {exact, 9},
+                       "concatenation lost exact uint64 bits");
+    requireIntegerBits(variable(result, "assigned"), {0, exact},
+                       "indexed assignment lost exact uint64 bits");
+    requireIntegerBits(variable(result, "grown"), {0, 0, exact},
+                       "array growth lost exact uint64 bits");
+    requireIntegerBits(variable(result, "deleted"), {exact, 3},
+                       "array deletion lost exact uint64 bits");
+}
+
+void verifyExactArrayPaths() {
+    const auto result = runBoth(R"(
+exact = uint64(9007199254740992) + uint64(1);
+values = [exact, uint64(7)];
+indexed = values(1);
+reshaped = reshape(values, 2, 1);
+repeated = repmat(exact, 1, 2);
+joined = [exact, uint64(9)];
+assigned = uint64([0, 0]);
+assigned(2) = exact;
+grown = uint64(0);
+grown(3) = exact;
+deleted = [uint64(1), exact, uint64(3)];
+deleted(1) = [];
+)");
+    verifyExactArrayResult(result.interpreter);
+    verifyExactArrayResult(result.vm);
+}
+
+void verifyMixedClassDiagnostics() {
+    const auto mixedClass = runBoth(R"(
+bad = int8([1, 2]) + single(1);
+)");
+    constexpr std::string_view mixedMessage =
+        "integer arithmetic requires the same integer class or a scalar double operand";
+    require(hasDiagnostic(mixedClass.interpreter, mixedMessage),
+            "interpreter accepted mixed integer and single arithmetic");
+    require(hasDiagnostic(mixedClass.vm, mixedMessage),
+            "VM accepted mixed integer and single arithmetic");
+
+    const auto doubleArray = runBoth(R"(
+bad = int8([1, 2]) + [1, 2];
+)");
+    require(hasDiagnostic(doubleArray.interpreter, mixedMessage),
+            "interpreter accepted integer plus a non-scalar double array");
+    require(hasDiagnostic(doubleArray.vm, mixedMessage),
+            "VM accepted integer plus a non-scalar double array");
+
+    const auto exactMixed = runBoth(R"(
+bad = uint64(1) + 1;
+)");
+    constexpr std::string_view exactMixedMessage =
+        "64-bit integer arithmetic with scalar double is not implemented without precision loss";
+    require(hasDiagnostic(exactMixed.interpreter, exactMixedMessage),
+            "interpreter silently rounded uint64 plus scalar double");
+    require(hasDiagnostic(exactMixed.vm, exactMixedMessage),
+            "VM silently rounded uint64 plus scalar double");
+}
+
+void verifyTypedFallback() {
+    const auto result = runBoth(R"(
+total = 0;
+for item = single(1:12)
+    total = total + double(item);
+end
+)");
+    require(result.interpreter.diagnostics.empty(),
+            "interpreter rejected single loop range");
+    require(result.vm.diagnostics.empty(),
+            "VM rejected single loop range");
+
+    const mparser::BytecodeLoopProfile* loop = nullptr;
+    for (const auto& candidate : result.vm.profile.loops) {
+        if (candidate.variable == "item") {
+            loop = &candidate;
+            break;
+        }
+    }
+    require(loop && loop->hot,
+            "single loop was not profiled as hot");
+    require(loop->variableObservation.numericClass == "single",
+            "single loop profile lost its numeric class");
+
+    mparser::BytecodeOptimizationPlanner planner;
+    const auto plan = planner.plan(result.vm.profile, result.bytecode);
+    const mparser::BytecodeOptimizationCandidate* optimized = nullptr;
+    for (const auto& candidate : plan.candidates) {
+        if (candidate.kind == "hot-loop" &&
+            candidate.target == "item") {
+            optimized = &candidate;
+            break;
+        }
+    }
+    require(optimized && !optimized->guards.empty(),
+            "single loop did not produce an optimization guard");
+    require(optimized->guards.front().numericClass == "single",
+            "single optimization guard lost its numeric class");
+
+    mparser::BytecodeTypedIrBuilder builder;
+    const auto typed = builder.build(plan);
+    for (const auto& region : typed.regions) {
+        if (region.sourcePc == optimized->pc) {
+            require(region.kind != "scalar-loop",
+                    "single loop entered the double-only typed path");
+            return;
+        }
+    }
+    throw std::runtime_error("single loop did not reach Typed IR");
+}
+
+} // namespace
+
+int main() {
+    try {
+        constexpr std::string_view source = R"(
+single_value = single(0.1);
+int8_values = int8([-inf, -129, -128.5, -1.5, -0.5, 0.5, 1.5, 127.5, inf, nan]);
+uint8_values = uint8([-inf, -1, -0.5, 0.5, 1.5, 127.5, inf, nan]);
+int16_values = int16([-inf, -40000, 40000, inf]);
+uint16_values = uint16([-inf, -1, 70000, inf]);
+  int32_values = int32([-inf, -3000000000, 3000000000, inf]);
+  uint32_values = uint32([-inf, -1, 5000000000, inf]);
+  int64_values = int64([-inf, -9223372036854775808, 9223372036854775807, inf, nan]);
+  uint64_values = uint64([-inf, -1, 0.5, 18446744073709551615, inf, nan]);
+  uint64_from_negative = uint64(int64(-1));
+  int64_from_uintmax = int64(uint64(inf));
+  single_sum = single([0.1, 0.2]) + 0.25;
+  int8_sum = int8([120, -120]) + 20;
+  uint8_product = uint8([20, 200]) .* uint8([20, 2]);
+  int16_matrix = int16([100, 2; 3, 4]) * int16([2; 3]);
+  single_matrix = single([1, 2; 3, 4]) * single([5; 6]);
+  logical_sum = true + true;
+  int8_negated = -int8(-128);
+  uint8_negated = -uint8(10);
+  single_negated = -single(0.1);
+class_checks = strcmp(class(single_value), 'single') && ...
+               strcmp(class(int8_values), 'int8') && ...
+               strcmp(class(uint32_values), 'uint32');
+isa_checks = isa(single_value, 'single') && ...
+             isa(single_value, 'numeric') && ...
+             isa(int8_values, 'int8') && ...
+             isa(int8_values, 'numeric') && ...
+             ~isa(true, 'numeric');
+predicate_checks = isnumeric(single_value) && isfloat(single_value) && ...
+                   ~isinteger(single_value) && isnumeric(int8_values) && ...
+                   isinteger(int8_values) && ~isfloat(int8_values) && ...
+                   ~isnumeric(true) && islogical(true);
+comparison = int8(5) == 5;
+)";
+
+        const auto result = runBoth(source);
+        verify(result.interpreter);
+        verify(result.vm);
+        verifyExactIntegerStorage();
+        verifyExactIntegerArithmetic();
+        verifyExactArrayPaths();
+        verifyMixedClassDiagnostics();
+        verifyTypedFallback();
+
+        require(mparser::runtimeNumericClassFromName("uint32") ==
+                    mparser::RuntimeNumericClass::UInt32,
+                "numeric class lookup failed");
+        require(!mparser::runtimeNumericClassHasLegacyDoubleStorage(
+                     mparser::RuntimeNumericClass::UInt64),
+                "uint64 must not claim legacy double-only storage");
+
+        mparser::ModuleInvocationResult machineResult;
+        const auto exactProtocolValue = exactIntegerValue(
+            mparser::RuntimeNumericClass::UInt64, {1, 2},
+            {9007199254740993ULL,
+             std::numeric_limits<std::uint64_t>::max()});
+        machineResult.variables = {
+            {"single_value", variable(result.vm, "single_value")},
+            {"int8_values", variable(result.vm, "int8_values")},
+            {"uint64_exact", exactProtocolValue},
+        };
+        const std::string json = mparser::serializeMachineResultJsonV1(
+            machineResult, "numeric-type-test");
+        require(json.find("\"class\":\"single\"") !=
+                    std::string::npos,
+                "machine protocol omitted single class");
+        require(json.find("\"class\":\"int8\"") !=
+                    std::string::npos,
+                "machine protocol omitted int8 class");
+        require(json.find(
+                    "\"class\":\"uint64\",\"dimensions\":[1,2],\"data\":[9007199254740993,18446744073709551615]") !=
+                    std::string::npos,
+                "machine protocol rounded exact uint64 payloads");
+
+        std::cout << "Numeric type smoke tests passed\n";
+        return 0;
+    } catch (const std::exception& error) {
+        std::cerr << "Numeric type smoke failure: " << error.what()
+                  << '\n';
+        return 1;
+    }
+}

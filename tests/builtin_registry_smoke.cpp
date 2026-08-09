@@ -159,9 +159,9 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 0,
+                mparser::kBuiltinSourceContractMinor == 1,
             "builtin source contract version changed");
-    require(registry->names().size() == 118,
+    require(registry->names().size() == 129,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");

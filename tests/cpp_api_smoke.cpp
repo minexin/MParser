@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -102,7 +103,8 @@ void runValueSmoke() {
     const std::array<std::size_t, 2> matrixShape{2, 2};
     const std::array<double, 4> matrixData{1, 3, 2, 4};
     const auto matrix = Value::numericArray(
-        NumericClass::Double, matrixShape, matrixData);
+        NumericClass::Double, matrixShape,
+        std::span<const double>(matrixData));
     auto matrixCopy = matrix;
     auto matrixMoved = std::move(matrixCopy);
     assert(!matrixCopy.hasValue());
@@ -115,10 +117,43 @@ void runValueSmoke() {
         matrixMoved.numericData().begin(), matrixMoved.numericData().end(),
         matrixData.begin()));
 
-    const std::array<double, 4> logicalData{0, 1, 1, 0};
+    const std::array<std::uint8_t, 4> logicalData{0, 1, 1, 0};
     const auto logical = Value::numericArray(
-        NumericClass::Logical, matrixShape, logicalData);
+        NumericClass::Logical, matrixShape,
+        std::span<const std::uint8_t>(logicalData));
     assert(logical.numericClass() == NumericClass::Logical);
+
+    const auto single = Value::numericScalar(
+        NumericClass::Single, float{0.1F});
+    assert(single.numericClass() == NumericClass::Single);
+    assert(single.numericData<float>().front() == 0.1F);
+
+    const std::array<std::int8_t, 4> int8Data{-128, -1, 2, 127};
+    const auto int8Array = Value::numericArray(
+        NumericClass::Int8, matrixShape,
+        std::span<const std::int8_t>(int8Data));
+    assert(int8Array.numericClass() == NumericClass::Int8);
+    assert(std::equal(int8Array.numericData<std::int8_t>().begin(),
+                      int8Array.numericData<std::int8_t>().end(),
+                      int8Data.begin()));
+
+    const auto int64Scalar = Value::numericScalar(
+        NumericClass::Int64,
+        std::numeric_limits<std::int64_t>::min());
+    assert(int64Scalar.numericClass() == NumericClass::Int64);
+    assert(int64Scalar.numericData<std::int64_t>().front() ==
+           std::numeric_limits<std::int64_t>::min());
+
+    const std::array<std::uint64_t, 4> uint64Data{
+        UINT64_C(9007199254740993),
+        std::numeric_limits<std::uint64_t>::max(), 7, 11};
+    const auto uint64Array = Value::numericArray(
+        NumericClass::UInt64, matrixShape,
+        std::span<const std::uint64_t>(uint64Data));
+    assert(uint64Array.numericClass() == NumericClass::UInt64);
+    assert(std::equal(uint64Array.numericData<std::uint64_t>().begin(),
+                      uint64Array.numericData<std::uint64_t>().end(),
+                      uint64Data.begin()));
 
     const std::array<std::size_t, 2> rowShape{1, 2};
     const std::array<std::uint16_t, 2> characters{'A', 'B'};
@@ -321,10 +356,10 @@ int main(int argc, char** argv) {
     assert(argc == 3);
     constexpr auto sourceApiVersion =
         mparser::sdk::sourceApiVersion();
-    static_assert(sourceApiVersion.major == 1);
+    static_assert(sourceApiVersion.major == 2);
     static_assert(sourceApiVersion.minor == 0);
-    assert(mparser::sdk::abiMajor() == 1);
-    assert(mparser::sdk::abiRevision() >= 1);
+    assert(mparser::sdk::abiMajor() == 2);
+    assert(mparser::sdk::abiRevision() == 0);
     runValueSmoke();
     runModuleSmoke(argv[1], argv[2]);
     std::cout << "cpp api smoke = 5050,42,21,abi-"

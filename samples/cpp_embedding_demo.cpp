@@ -20,7 +20,7 @@ int main() {
     try {
         constexpr auto sourceApiVersion =
             mparser::sdk::sourceApiVersion();
-        static_assert(sourceApiVersion.major == 1);
+        static_assert(sourceApiVersion.major == 2);
         static_assert(sourceApiVersion.minor == 0);
         const auto module = mparser::sdk::Module::compile(R"(
 function total = sumTo(limit)

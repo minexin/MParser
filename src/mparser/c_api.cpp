@@ -3,6 +3,7 @@
 #include "mparser/c_api_test_hooks.h"
 #include "mparser/compiled_module.h"
 #include "mparser/filesystem_utf8.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 #include "mparser/runtime_value.h"
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +27,9 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mparser::c_api_test {
@@ -103,12 +107,26 @@ struct DiagnosticFrame {
 
 struct ModuleState;
 
+using NumericColumnMajorStorage = std::variant<
+    std::monostate,
+    std::vector<double>,
+    std::vector<float>,
+    std::vector<int8_t>,
+    std::vector<uint8_t>,
+    std::vector<int16_t>,
+    std::vector<uint16_t>,
+    std::vector<int32_t>,
+    std::vector<uint32_t>,
+    std::vector<int64_t>,
+    std::vector<uint64_t>>;
+
 struct ValueState {
     mparser::RuntimeValue value;
     std::shared_ptr<ModuleState> owner;
     std::vector<size_t> dimensions;
     size_t elementCount = 0;
-    std::vector<double> numericColumnMajor;
+    NumericColumnMajorStorage numericRealColumnMajor;
+    NumericColumnMajorStorage numericImaginaryColumnMajor;
     std::vector<uint16_t> characterColumnMajor;
     std::vector<std::vector<uint16_t>> stringColumnMajor;
     std::vector<std::string> structFieldNames;
@@ -584,6 +602,101 @@ std::vector<std::string> structFieldNames(
     return result;
 }
 
+template <typename Element>
+bool buildNumericComponentCache(
+    NumericColumnMajorStorage& storage,
+    const mparser::RuntimeValue& value,
+    size_t count, bool imaginary) {
+    std::vector<Element> elements;
+    elements.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        const auto source =
+            mparser::runtimeNumericElementValue(value, index);
+        if (!source) {
+            return false;
+        }
+        if (value.numericClass ==
+            mparser::RuntimeNumericClass::Logical) {
+            const double component = imaginary
+                                         ? source->imaginary
+                                         : source->real;
+            elements.push_back(
+                static_cast<Element>(component != 0.0));
+        } else if (mparser::runtimeNumericClassIsInteger(
+                       value.numericClass)) {
+            const uint64_t bits = imaginary
+                                      ? source->integerImaginaryBits
+                                      : source->integerRealBits;
+            if (mparser::runtimeNumericClassIsSignedInteger(
+                    value.numericClass)) {
+                elements.push_back(static_cast<Element>(
+                    std::bit_cast<int64_t>(bits)));
+            } else {
+                elements.push_back(static_cast<Element>(bits));
+            }
+        } else {
+            elements.push_back(static_cast<Element>(
+                imaginary ? source->imaginary : source->real));
+        }
+    }
+    storage = std::move(elements);
+    return true;
+}
+
+bool buildNumericComponentCache(
+    NumericColumnMajorStorage& storage,
+    const mparser::RuntimeValue& value,
+    size_t count, bool imaginary) {
+    switch (value.numericClass) {
+    case mparser::RuntimeNumericClass::Double:
+        return buildNumericComponentCache<double>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::Logical:
+    case mparser::RuntimeNumericClass::UInt8:
+        return buildNumericComponentCache<uint8_t>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::Single:
+        return buildNumericComponentCache<float>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::Int8:
+        return buildNumericComponentCache<int8_t>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::Int16:
+        return buildNumericComponentCache<int16_t>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::UInt16:
+        return buildNumericComponentCache<uint16_t>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::Int32:
+        return buildNumericComponentCache<int32_t>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::UInt32:
+        return buildNumericComponentCache<uint32_t>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::Int64:
+        return buildNumericComponentCache<int64_t>(
+            storage, value, count, imaginary);
+    case mparser::RuntimeNumericClass::UInt64:
+        return buildNumericComponentCache<uint64_t>(
+            storage, value, count, imaginary);
+    }
+    return false;
+}
+
+const void* numericStorageData(
+    const NumericColumnMajorStorage& storage) {
+    return std::visit(
+        [](const auto& elements) -> const void* {
+            using Storage = std::decay_t<decltype(elements)>;
+            if constexpr (std::is_same_v<Storage, std::monostate>) {
+                return nullptr;
+            } else {
+                return elements.data();
+            }
+        },
+        storage);
+}
+
 bool buildExternalCaches(ValueState& state) {
     const auto& value = state.value;
     state.dimensions = mparser::runtimeDimensions(value);
@@ -593,21 +706,15 @@ bool buildExternalCaches(ValueState& state) {
         return false;
     }
     state.elementCount = *count;
-    if (value.kind == mparser::RuntimeValueKind::Number) {
-        state.numericColumnMajor = {value.number};
-    } else if (
-        value.kind == mparser::RuntimeValueKind::Vector ||
-        value.kind == mparser::RuntimeValueKind::Matrix) {
-        state.numericColumnMajor.resize(*count);
-        for (size_t index = 0; index < *count; ++index) {
-            const auto offset =
-                logicalStorageOffset(
-                    state.dimensions, index);
-            if (!offset || *offset >= value.elements.size()) {
-                return false;
-            }
-            state.numericColumnMajor[index] =
-                value.elements[*offset];
+    if (mparser::isRuntimeNumericValue(value)) {
+        if (!buildNumericComponentCache(
+                state.numericRealColumnMajor, value, *count, false)) {
+            return false;
+        }
+        if (value.numericComplex &&
+            !buildNumericComponentCache(
+                state.numericImaginaryColumnMajor, value, *count, true)) {
+            return false;
         }
     } else if (
         value.kind ==
@@ -736,7 +843,119 @@ bool numericClass(
         result = mparser::RuntimeNumericClass::Logical;
         return true;
     }
+    if (value == MPARSER_NUMERIC_SINGLE) {
+        result = mparser::RuntimeNumericClass::Single;
+        return true;
+    }
+    if (value == MPARSER_NUMERIC_INT8) {
+        result = mparser::RuntimeNumericClass::Int8;
+        return true;
+    }
+    if (value == MPARSER_NUMERIC_UINT8) {
+        result = mparser::RuntimeNumericClass::UInt8;
+        return true;
+    }
+    if (value == MPARSER_NUMERIC_INT16) {
+        result = mparser::RuntimeNumericClass::Int16;
+        return true;
+    }
+    if (value == MPARSER_NUMERIC_UINT16) {
+        result = mparser::RuntimeNumericClass::UInt16;
+        return true;
+    }
+    if (value == MPARSER_NUMERIC_INT32) {
+        result = mparser::RuntimeNumericClass::Int32;
+        return true;
+    }
+    if (value == MPARSER_NUMERIC_UINT32) {
+        result = mparser::RuntimeNumericClass::UInt32;
+        return true;
+    }
+    if (value == MPARSER_NUMERIC_INT64) {
+        result = mparser::RuntimeNumericClass::Int64;
+        return true;
+    }
+    if (value == MPARSER_NUMERIC_UINT64) {
+        result = mparser::RuntimeNumericClass::UInt64;
+        return true;
+    }
     return false;
+}
+
+template <typename Element>
+std::vector<mparser::RuntimeNumericElementValue>
+copyNumericBufferElements(
+    const mparser_numeric_buffer& buffer,
+    mparser::RuntimeNumericClass numericClass) {
+    const auto* real = static_cast<const Element*>(buffer.real_data);
+    const auto* imaginary =
+        static_cast<const Element*>(buffer.imaginary_data);
+    std::vector<mparser::RuntimeNumericElementValue> elements;
+    elements.reserve(buffer.element_count);
+    for (size_t index = 0; index < buffer.element_count; ++index) {
+        mparser::RuntimeNumericElementValue element;
+        element.numericClass = numericClass;
+        element.complex = buffer.is_complex != 0;
+        if (numericClass == mparser::RuntimeNumericClass::Logical) {
+            element.real = real[index] != 0 ? 1.0 : 0.0;
+            element.imaginary =
+                element.complex && imaginary[index] != 0 ? 1.0 : 0.0;
+        } else if (mparser::runtimeNumericClassIsInteger(numericClass)) {
+            if (mparser::runtimeNumericClassIsSignedInteger(numericClass)) {
+                element.integerRealBits = std::bit_cast<uint64_t>(
+                    static_cast<int64_t>(real[index]));
+                if (element.complex) {
+                    element.integerImaginaryBits = std::bit_cast<uint64_t>(
+                        static_cast<int64_t>(imaginary[index]));
+                }
+            } else {
+                element.integerRealBits =
+                    static_cast<uint64_t>(real[index]);
+                if (element.complex) {
+                    element.integerImaginaryBits =
+                        static_cast<uint64_t>(imaginary[index]);
+                }
+            }
+        } else {
+            element.real = static_cast<double>(real[index]);
+            if (element.complex) {
+                element.imaginary =
+                    static_cast<double>(imaginary[index]);
+            }
+        }
+        elements.push_back(element);
+    }
+    return elements;
+}
+
+std::optional<std::vector<mparser::RuntimeNumericElementValue>>
+copyNumericBufferElements(
+    const mparser_numeric_buffer& buffer,
+    mparser::RuntimeNumericClass numericClass) {
+    switch (numericClass) {
+    case mparser::RuntimeNumericClass::Double:
+        return copyNumericBufferElements<double>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::Logical:
+    case mparser::RuntimeNumericClass::UInt8:
+        return copyNumericBufferElements<uint8_t>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::Single:
+        return copyNumericBufferElements<float>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::Int8:
+        return copyNumericBufferElements<int8_t>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::Int16:
+        return copyNumericBufferElements<int16_t>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::UInt16:
+        return copyNumericBufferElements<uint16_t>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::Int32:
+        return copyNumericBufferElements<int32_t>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::UInt32:
+        return copyNumericBufferElements<uint32_t>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::Int64:
+        return copyNumericBufferElements<int64_t>(buffer, numericClass);
+    case mparser::RuntimeNumericClass::UInt64:
+        return copyNumericBufferElements<uint64_t>(buffer, numericClass);
+    }
+    return std::nullopt;
 }
 
 mparser_api_status ownerForComposedValues(
@@ -1886,100 +2105,46 @@ mparser_value_create_missing(mparser_value** out_value) {
         mparser::makeRuntimeMissingValue(), {}, out_value);
 }
 
-mparser_api_status mparser_value_create_scalar(
-    double value,
-    mparser_numeric_class numeric_class,
-    mparser_value** out_value) {
-    if (!out_value) {
-        return MPARSER_API_STATUS_INVALID_ARGUMENT;
-    }
-    *out_value = nullptr;
-    mparser::RuntimeNumericClass runtimeClass;
-    if (!mparser_c_detail::numericClass(
-            numeric_class, runtimeClass)) {
-        return MPARSER_API_STATUS_INVALID_ARGUMENT;
-    }
-    if (runtimeClass ==
-        mparser::RuntimeNumericClass::Logical) {
-        value = value == 0.0 ? 0.0 : 1.0;
-    }
-    try {
-        auto runtimeValue =
-            mparser::makeRuntimeNumberValue(
-                value, runtimeClass);
-        return mparser_c_detail::makeValueHandle(
-            std::move(runtimeValue), {}, out_value);
-    } catch (const std::bad_alloc&) {
-        return MPARSER_API_STATUS_ALLOCATION_FAILED;
-    } catch (...) {
-        return MPARSER_API_STATUS_INTERNAL_ERROR;
-    }
-}
-
-mparser_api_status mparser_value_create_numeric_array(
-    mparser_numeric_class numeric_class,
-    const size_t* dimensions,
-    size_t rank,
-    const double* column_major_elements,
-    size_t element_count,
+mparser_api_status mparser_value_create_numeric(
+    const size_t* dimensions, size_t rank,
+    const mparser_numeric_buffer* buffer,
     mparser_value** out_value) {
     using namespace mparser_c_detail;
-    if (!out_value) {
+    if (!out_value || !buffer) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     *out_value = nullptr;
-    if (!column_major_elements && element_count != 0) {
+    if (buffer->is_complex > 1 ||
+        (!buffer->real_data && buffer->element_count != 0) ||
+        (buffer->is_complex != 0 && !buffer->imaginary_data &&
+         buffer->element_count != 0) ||
+        (buffer->is_complex == 0 && buffer->imaginary_data)) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
         std::vector<size_t> shape;
         const auto shapeStatus = copyDimensions(
-            dimensions, rank, element_count, shape);
+            dimensions, rank, buffer->element_count, shape);
         if (shapeStatus != MPARSER_API_STATUS_OK) {
             return shapeStatus;
         }
         mparser::RuntimeNumericClass runtimeClass;
-        if (!numericClass(numeric_class, runtimeClass)) {
+        if (!numericClass(buffer->numeric_class, runtimeClass) ||
+            (runtimeClass == mparser::RuntimeNumericClass::Logical &&
+             buffer->is_complex != 0)) {
             return MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
-        if (element_count == 1 &&
-            mparser::normalizeRuntimeDimensions(shape) ==
-                std::vector<size_t>{1, 1}) {
-            double scalar = column_major_elements[0];
-            if (runtimeClass ==
-                mparser::RuntimeNumericClass::Logical) {
-                scalar = scalar == 0.0 ? 0.0 : 1.0;
-            }
-            return makeValueHandle(
-                mparser::makeRuntimeNumberValue(
-                    scalar, runtimeClass),
-                {}, out_value);
+        auto elements = copyNumericBufferElements(*buffer, runtimeClass);
+        if (!elements) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
-
-        mparser::RuntimeValue value;
-        value.kind = mparser::RuntimeValueKind::Matrix;
-        value.numericClass = runtimeClass;
-        value.elements.resize(element_count);
-        mparser::setRuntimeDimensions(value, std::move(shape));
-        for (size_t index = 0;
-             index < element_count; ++index) {
-            const auto offset =
-                logicalStorageOffset(
-                    value.dimensions, index);
-            if (!offset || *offset >= value.elements.size()) {
-                return MPARSER_API_STATUS_INTERNAL_ERROR;
-            }
-            const double element =
-                runtimeClass ==
-                        mparser::RuntimeNumericClass::Logical
-                    ? (column_major_elements[index] == 0.0
-                           ? 0.0
-                           : 1.0)
-                    : column_major_elements[index];
-            value.elements[*offset] = element;
+        auto value = mparser::runtimeNumericValueFromElements(
+            std::move(shape), std::move(*elements), runtimeClass);
+        if (!value) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
         return makeValueHandle(
-            std::move(value), {}, out_value);
+            std::move(*value), {}, out_value);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {
@@ -2222,10 +2387,31 @@ mparser_value_get_numeric_class(
             MPARSER_VALUE_NUMERIC) {
         return MPARSER_NUMERIC_DOUBLE;
     }
-    return value->state->value.numericClass ==
-                   mparser::RuntimeNumericClass::Logical
-               ? MPARSER_NUMERIC_LOGICAL
-               : MPARSER_NUMERIC_DOUBLE;
+    switch (value->state->value.numericClass) {
+    case mparser::RuntimeNumericClass::Double:
+        return MPARSER_NUMERIC_DOUBLE;
+    case mparser::RuntimeNumericClass::Logical:
+        return MPARSER_NUMERIC_LOGICAL;
+    case mparser::RuntimeNumericClass::Single:
+        return MPARSER_NUMERIC_SINGLE;
+    case mparser::RuntimeNumericClass::Int8:
+        return MPARSER_NUMERIC_INT8;
+    case mparser::RuntimeNumericClass::UInt8:
+        return MPARSER_NUMERIC_UINT8;
+    case mparser::RuntimeNumericClass::Int16:
+        return MPARSER_NUMERIC_INT16;
+    case mparser::RuntimeNumericClass::UInt16:
+        return MPARSER_NUMERIC_UINT16;
+    case mparser::RuntimeNumericClass::Int32:
+        return MPARSER_NUMERIC_INT32;
+    case mparser::RuntimeNumericClass::UInt32:
+        return MPARSER_NUMERIC_UINT32;
+    case mparser::RuntimeNumericClass::Int64:
+        return MPARSER_NUMERIC_INT64;
+    case mparser::RuntimeNumericClass::UInt64:
+        return MPARSER_NUMERIC_UINT64;
+    }
+    return MPARSER_NUMERIC_DOUBLE;
 }
 
 uint32_t
@@ -2269,16 +2455,13 @@ mparser_value_element_count(const mparser_value* value) {
                : 0;
 }
 
-mparser_api_status mparser_value_numeric_data(
+mparser_api_status mparser_value_get_numeric_buffer(
     const mparser_value* value,
-    const double** out_column_major_elements,
-    size_t* out_element_count) {
-    if (!out_column_major_elements ||
-        !out_element_count) {
+    mparser_numeric_buffer* out_buffer) {
+    if (!out_buffer) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
-    *out_column_major_elements = nullptr;
-    *out_element_count = 0;
+    *out_buffer = mparser_numeric_buffer{};
     if (!value || !value->state) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
@@ -2286,10 +2469,18 @@ mparser_api_status mparser_value_numeric_data(
         MPARSER_VALUE_NUMERIC) {
         return MPARSER_API_STATUS_TYPE_MISMATCH;
     }
-    *out_column_major_elements =
-        value->state->numericColumnMajor.data();
-    *out_element_count =
-        value->state->numericColumnMajor.size();
+    out_buffer->numeric_class =
+        mparser_value_get_numeric_class(value);
+    out_buffer->is_complex =
+        value->state->value.numericComplex ? 1u : 0u;
+    out_buffer->real_data = mparser_c_detail::numericStorageData(
+        value->state->numericRealColumnMajor);
+    out_buffer->imaginary_data =
+        value->state->value.numericComplex
+            ? mparser_c_detail::numericStorageData(
+                  value->state->numericImaginaryColumnMajor)
+            : nullptr;
+    out_buffer->element_count = value->state->elementCount;
     return MPARSER_API_STATUS_OK;
 }
 

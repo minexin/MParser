@@ -43,8 +43,8 @@ void runOneLoad(const std::filesystem::path& libraryPath) {
             library, "mparser_c_abi_revision");
     assert(versionMajor && abiMajor && abiRevision);
     assert(versionMajor() == 1);
-    assert(abiMajor() == 1);
-    assert(abiRevision() >= 1);
+    assert(abiMajor() == 2);
+    assert(abiRevision() == 0);
 
     assert(FreeLibrary(library) != 0);
 }
@@ -73,8 +73,8 @@ void runOneLoad(const std::filesystem::path& libraryPath) {
             library, "mparser_c_abi_revision");
     assert(versionMajor && abiMajor && abiRevision);
     assert(versionMajor() == 1);
-    assert(abiMajor() == 1);
-    assert(abiRevision() >= 1);
+    assert(abiMajor() == 2);
+    assert(abiRevision() == 0);
 
     assert(dlclose(library) == 0);
 }
@@ -93,6 +93,6 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "embedding unload stress = "
-              << kLoadCount << ",abi-1.1\n";
+              << kLoadCount << ",abi-2.0\n";
     return 0;
 }

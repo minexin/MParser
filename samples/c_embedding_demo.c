@@ -46,20 +46,30 @@ static mparser_invocation_options options_for(const char* entry) {
     return options;
 }
 
+static mparser_api_status create_double_scalar(
+    double value, mparser_value** output) {
+    const size_t dimensions[2] = {1, 1};
+    const mparser_numeric_buffer buffer = {
+        MPARSER_NUMERIC_DOUBLE, 0, &value, NULL, 1};
+    return mparser_value_create_numeric(
+        dimensions, 2, &buffer, output);
+}
+
 static int read_scalar(const mparser_result* result, double* value) {
     mparser_value* output = NULL;
-    const double* data = NULL;
-    size_t count = 0;
+    mparser_numeric_buffer buffer = {0};
     if (!mparser_result_succeeded(result) ||
         mparser_result_output(result, 0, &output) !=
             MPARSER_API_STATUS_OK ||
-        mparser_value_numeric_data(output, &data, &count) !=
+        mparser_value_get_numeric_buffer(output, &buffer) !=
             MPARSER_API_STATUS_OK ||
-        count != 1) {
+        buffer.numeric_class != MPARSER_NUMERIC_DOUBLE ||
+        buffer.is_complex != 0 ||
+        buffer.element_count != 1) {
         mparser_value_release(output);
         return 0;
     }
-    *value = data[0];
+    *value = ((const double*)buffer.real_data)[0];
     mparser_value_release(output);
     return 1;
 }
@@ -85,8 +95,7 @@ int main(void) {
             mparser_module_create_session(module, &session),
             "create session") ||
         !check_status(
-            mparser_value_create_scalar(
-                100.0, MPARSER_NUMERIC_DOUBLE, &argument),
+            create_double_scalar(100.0, &argument),
             "create argument")) {
         return 1;
     }
@@ -124,8 +133,7 @@ int main(void) {
     result = NULL;
 
     if (!check_status(
-            mparser_value_create_scalar(
-                42.0, MPARSER_NUMERIC_DOUBLE, &argument),
+            create_double_scalar(42.0, &argument),
             "create recovery argument")) {
         return 1;
     }

@@ -56,29 +56,32 @@ bool growNumericTarget(RuntimeValue& target,
         return false;
     }
 
-    std::vector<double> grown(*newCount, 0.0);
+    RuntimeNumericElementValue zero;
+    zero.numericClass = target.numericClass;
+    zero.complex = target.numericComplex;
+    std::vector<RuntimeNumericElementValue> grown(*newCount, zero);
     for (size_t logicalIndex = 0; logicalIndex < oldCount; ++logicalIndex) {
-        const auto value = runtimeNumericElement(target, logicalIndex);
+        const auto value = runtimeNumericElementValue(target, logicalIndex);
         auto coordinates = runtimeColumnMajorCoordinates(
             logicalIndex, oldViewDimensions);
         if (!value || !coordinates) {
             return false;
         }
         coordinates->resize(newDimensions.size(), 0);
-        const auto storageOffset =
-            runtimeRowMajorStorageOffset(*coordinates, newDimensions);
-        if (!storageOffset || *storageOffset >= grown.size()) {
+        const auto newLogicalIndex = runtimeColumnMajorLinearIndex(
+            *coordinates, newDimensions);
+        if (!newLogicalIndex || *newLogicalIndex >= grown.size()) {
             return false;
         }
-        grown[*storageOffset] = *value;
+        grown[*newLogicalIndex] = *value;
     }
 
-    target.kind = newDimensions.size() == 2 && newDimensions[0] == 1
-                      ? RuntimeValueKind::Vector
-                      : RuntimeValueKind::Matrix;
-    target.number = 0.0;
-    target.elements = std::move(grown);
-    setRuntimeDimensions(target, std::move(newDimensions));
+    auto result = runtimeNumericValueFromElements(
+        newDimensions, std::move(grown), target.numericClass);
+    if (!result) {
+        return false;
+    }
+    target = std::move(*result);
     return true;
 }
 
@@ -185,14 +188,14 @@ RuntimeNumericAssignmentResult assignLinear(
             "on both sides");
     }
 
-    std::vector<double> assignedValues;
+    std::vector<RuntimeNumericElementValue> assignedValues;
     assignedValues.reserve(indices.size());
     for (size_t ordinal = 0; ordinal < indices.size(); ++ordinal) {
-        const auto assigned = runtimeNumericElement(
+        const auto assigned = runtimeNumericElementValue(
             value, scalarExpansion ? 0 : ordinal);
         const auto converted =
-            assigned ? runtimeCoerceNumericElement(*assigned,
-                                                   target.numericClass)
+            assigned ? runtimeConvertNumericElementValue(
+                           *assigned, target.numericClass)
                      : std::nullopt;
         if (!converted) {
             return failure(
@@ -208,16 +211,10 @@ RuntimeNumericAssignmentResult assignLinear(
         return capacity;
     }
     for (size_t ordinal = 0; ordinal < indices.size(); ++ordinal) {
-        if (isNumber(target)) {
-            target.number = assignedValues[ordinal];
-            continue;
-        }
-        const auto storageOffset = runtimeColumnMajorLinearToStorageOffset(
-            target, indices[ordinal]);
-        if (!storageOffset || *storageOffset >= target.elements.size()) {
+        if (!runtimeStoreNumericElementValue(
+                target, indices[ordinal], assignedValues[ordinal])) {
             return failure("indexed assignment could not map a linear index");
         }
-        target.elements[*storageOffset] = assignedValues[ordinal];
     }
     return success();
 }
@@ -251,14 +248,14 @@ RuntimeNumericAssignmentResult assignSubscripts(
             "sides");
     }
 
-    std::vector<double> assignedValues;
+    std::vector<RuntimeNumericElementValue> assignedValues;
     assignedValues.reserve(*selectionCount);
     for (size_t ordinal = 0; ordinal < *selectionCount; ++ordinal) {
-        const auto assigned = runtimeNumericElement(
+        const auto assigned = runtimeNumericElementValue(
             value, scalarExpansion ? 0 : ordinal);
         const auto converted =
-            assigned ? runtimeCoerceNumericElement(*assigned,
-                                                   target.numericClass)
+            assigned ? runtimeConvertNumericElementValue(
+                           *assigned, target.numericClass)
                      : std::nullopt;
         if (!converted) {
             return failure(
@@ -287,16 +284,11 @@ RuntimeNumericAssignmentResult assignSubscripts(
             targetCoordinates[index] =
                 selections[index][(*selectionCoordinates)[index]];
         }
-        const auto storageOffset = runtimeSubscriptsToStorageOffset(
-            target, targetCoordinates, effectiveDimensions);
-        if (!storageOffset) {
-            return failure("indexed assignment could not map subscripts");
-        }
-        if (isNumber(target)) {
-            target.number = assignedValues[ordinal];
-        } else if (*storageOffset < target.elements.size()) {
-            target.elements[*storageOffset] = assignedValues[ordinal];
-        } else {
+        const auto logicalIndex = runtimeColumnMajorLinearIndex(
+            targetCoordinates, effectiveDimensions);
+        if (!logicalIndex ||
+            !runtimeStoreNumericElementValue(
+                target, *logicalIndex, assignedValues[ordinal])) {
             return failure("indexed assignment could not map subscripts");
         }
     }
@@ -309,16 +301,29 @@ std::vector<size_t> uniqueIndices(std::vector<size_t> indices) {
     return indices;
 }
 
-void replaceNumericArray(RuntimeValue& target,
-                         std::vector<size_t> dimensions,
-                         std::vector<double> elements) {
+bool replaceNumericArray(
+    RuntimeValue& target, std::vector<size_t> dimensions,
+    std::vector<RuntimeNumericElementValue> elements) {
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
-    target.kind = dimensions.size() == 2 && dimensions[0] == 1
-                      ? RuntimeValueKind::Vector
-                      : RuntimeValueKind::Matrix;
-    target.number = 0.0;
-    target.elements = std::move(elements);
-    setRuntimeDimensions(target, std::move(dimensions));
+    const bool preserveComplex = target.numericComplex;
+    auto result = runtimeNumericValueFromElements(
+        dimensions, std::move(elements), target.numericClass);
+    if (!result) {
+        return false;
+    }
+    if (result->kind == RuntimeValueKind::Number) {
+        result->kind = dimensions.size() == 2 && dimensions[0] == 1
+                           ? RuntimeValueKind::Vector
+                           : RuntimeValueKind::Matrix;
+        result->elements = {result->number};
+        result->number = 0.0;
+    }
+    if (runtimeShapeElementCount(*result) == 0 && preserveComplex) {
+        result->numericComplex = true;
+    }
+    setRuntimeDimensions(*result, std::move(dimensions));
+    target = std::move(*result);
+    return true;
 }
 
 RuntimeNumericAssignmentResult deleteLinear(
@@ -346,13 +351,13 @@ RuntimeNumericAssignmentResult deleteLinear(
         removed[index] = true;
     }
 
-    std::vector<double> kept;
+    std::vector<RuntimeNumericElementValue> kept;
     kept.reserve(oldCount - indices.size());
     for (size_t logicalIndex = 0; logicalIndex < oldCount; ++logicalIndex) {
         if (removed[logicalIndex]) {
             continue;
         }
-        const auto value = runtimeNumericElement(target, logicalIndex);
+        const auto value = runtimeNumericElementValue(target, logicalIndex);
         if (!value) {
             return failure("null assignment could not read the target array");
         }
@@ -367,7 +372,10 @@ RuntimeNumericAssignmentResult deleteLinear(
     } else {
         newDimensions = {kept.size(), 1};
     }
-    replaceNumericArray(target, std::move(newDimensions), std::move(kept));
+    if (!replaceNumericArray(
+            target, std::move(newDimensions), std::move(kept))) {
+        return failure("null assignment could not construct the result array");
+    }
     return success();
 }
 
@@ -425,11 +433,11 @@ RuntimeNumericAssignmentResult deleteSlices(
     if (!newCount) {
         return failure("null assignment dimensions are too large");
     }
-    std::vector<double> kept(*newCount, 0.0);
+    std::vector<RuntimeNumericElementValue> kept(*newCount);
     for (size_t logicalIndex = 0; logicalIndex < oldCount; ++logicalIndex) {
         auto coordinates = runtimeColumnMajorCoordinates(
             logicalIndex, oldDimensions);
-        const auto value = runtimeNumericElement(target, logicalIndex);
+        const auto value = runtimeNumericElementValue(target, logicalIndex);
         if (!coordinates || !value) {
             return failure("null assignment could not map the target array");
         }
@@ -438,15 +446,18 @@ RuntimeNumericAssignmentResult deleteSlices(
             continue;
         }
         (*coordinates)[deletionDimension] -= removedBefore[selected];
-        const auto storageOffset = runtimeRowMajorStorageOffset(
+        const auto newLogicalIndex = runtimeColumnMajorLinearIndex(
             *coordinates, newDimensions);
-        if (!storageOffset || *storageOffset >= kept.size()) {
+        if (!newLogicalIndex || *newLogicalIndex >= kept.size()) {
             return failure("null assignment could not map the result array");
         }
-        kept[*storageOffset] = *value;
+        kept[*newLogicalIndex] = *value;
     }
 
-    replaceNumericArray(target, std::move(newDimensions), std::move(kept));
+    if (!replaceNumericArray(
+            target, std::move(newDimensions), std::move(kept))) {
+        return failure("null assignment could not construct the result array");
+    }
     return success();
 }
 

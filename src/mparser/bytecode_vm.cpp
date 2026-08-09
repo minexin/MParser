@@ -481,13 +481,6 @@ RuntimeValue oneBasedIndexRange(size_t length) {
     return vectorValue(std::move(values));
 }
 
-double matrixElement(const RuntimeValue& value, size_t row, size_t column) {
-    if (isNumber(value)) {
-        return value.number;
-    }
-    return value.elements[row * columnCount(value) + column];
-}
-
 bool truthy(const RuntimeValue& value) {
     if (isNumber(value)) {
         return value.number != 0.0 && !std::isnan(value.number);
@@ -505,13 +498,6 @@ bool truthy(const RuntimeValue& value) {
 
 bool isWholeNumber(double value) {
     return std::isfinite(value) && std::floor(value) == value;
-}
-
-bool isLogicalBinaryOperator(std::string_view operation) {
-    return operation == ">" || operation == "<" || operation == ">=" ||
-           operation == "<=" || operation == "==" || operation == "~=" ||
-           operation == "&" || operation == "|" || operation == "&&" ||
-           operation == "||";
 }
 
 std::optional<double> parseNumber(std::string_view text) {
@@ -9449,28 +9435,12 @@ private:
                           "bytecode unary operator requires numeric input");
             return;
         }
-        if (instruction.operand == "+") {
-            pushRuntime(mapUnary(*value, [](double element) {
-                return element;
-            }));
+        auto result = runtimeApplyNumericUnary(instruction.operand, *value);
+        if (!result.succeeded) {
+            addDiagnostic(instruction, "bytecode " + result.error);
             return;
         }
-        if (instruction.operand == "-") {
-            pushRuntime(mapUnary(*value, [](double element) {
-                return -element;
-            }));
-            return;
-        }
-        if (instruction.operand == "~") {
-            pushRuntime(mapUnary(*value, [](double element) {
-                return element == 0.0 ? 1.0 : 0.0;
-            }, RuntimeNumericClass::Logical));
-            return;
-        }
-
-        addDiagnostic(instruction,
-                      "unsupported bytecode unary operator: " +
-                          instruction.operand);
+        pushRuntime(std::move(result.value));
     }
 
     void applyBinary(const BytecodeInstruction& instruction) {
@@ -13738,9 +13708,11 @@ private:
                 matches =
                     reflectableClassDerivesFrom(value.className, target);
             } else if (isNumeric(value)) {
-                matches = isRuntimeLogical(value)
-                              ? target == "logical"
-                              : target == "double" || target == "numeric";
+                matches = target ==
+                              runtimeNumericClassName(value.numericClass) ||
+                          (target == "numeric" &&
+                           value.numericClass !=
+                               RuntimeNumericClass::Logical);
             } else if (isRuntimeCharacterArray(value)) {
                 matches = target == "char";
             } else if (isRuntimeStringArray(value)) {
@@ -14359,175 +14331,13 @@ private:
     RuntimeValue applyNumericBinary(const BytecodeInstruction& instruction,
                                     const RuntimeValue& left,
                                     const RuntimeValue& right) {
-        if (isNumber(left) && isNumber(right)) {
-            return applyScalarBinary(instruction, left.number, right.number);
-        }
-
-        if (instruction.operand == "*" && isArray(left) && isArray(right)) {
-            if (runtimeDimensionCount(left) > 2 ||
-                runtimeDimensionCount(right) > 2) {
-                addDiagnostic(instruction,
-                              "bytecode matrix multiplication requires "
-                              "two-dimensional arrays");
-                return missingValue();
-            }
-            return matrixMultiply(instruction, left, right);
-        }
-
-        std::vector<size_t> dimensions;
-        if (isArray(left) && isArray(right)) {
-            const auto expanded = runtimeImplicitExpansionDimensions(
-                runtimeDimensions(left), runtimeDimensions(right));
-            if (!expanded) {
-                addDiagnostic(
-                    instruction,
-                    "bytecode elementwise operands have incompatible "
-                    "dimensions");
-                return missingValue();
-            }
-            dimensions = *expanded;
-        } else {
-            dimensions = isArray(left) ? runtimeDimensions(left)
-                                       : runtimeDimensions(right);
-        }
-        const size_t count =
-            checkedRuntimeDimensionProduct(dimensions).value_or(0);
-        std::vector<double> elements;
-        elements.reserve(count);
-        for (size_t index = 0; index < count; ++index) {
-            const auto coordinates =
-                runtimeRowMajorCoordinates(index, dimensions);
-            const auto leftOffset =
-                isArray(left)
-                    ? runtimeImplicitExpansionStorageOffset(
-                          coordinates, runtimeDimensions(left))
-                    : std::optional<size_t>(0);
-            const auto rightOffset =
-                isArray(right)
-                    ? runtimeImplicitExpansionStorageOffset(
-                          coordinates, runtimeDimensions(right))
-                    : std::optional<size_t>(0);
-            if (!leftOffset || !rightOffset) {
-                addDiagnostic(
-                    instruction,
-                    "bytecode elementwise expansion could not map an operand");
-                return missingValue();
-            }
-            const double leftValue =
-                isArray(left) ? left.elements[*leftOffset] : left.number;
-            const double rightValue =
-                isArray(right) ? right.elements[*rightOffset] : right.number;
-            const RuntimeValue value =
-                applyScalarBinary(instruction, leftValue, rightValue);
-            if (!isNumber(value)) {
-                return missingValue();
-            }
-            elements.push_back(value.number);
-        }
-        const RuntimeNumericClass resultClass =
-            isLogicalBinaryOperator(instruction.operand)
-                ? RuntimeNumericClass::Logical
-                : RuntimeNumericClass::Double;
-        return arrayValueForDimensions(dimensions, std::move(elements),
-                                       resultClass);
-    }
-
-    RuntimeValue applyScalarBinary(const BytecodeInstruction& instruction,
-                                   double left, double right) {
-        if (instruction.operand == "+") {
-            return numberValue(left + right);
-        }
-        if (instruction.operand == "-") {
-            return numberValue(left - right);
-        }
-        if (instruction.operand == "*" || instruction.operand == ".*") {
-            return numberValue(left * right);
-        }
-        if (instruction.operand == "/" || instruction.operand == "./") {
-            return numberValue(left / right);
-        }
-        if (instruction.operand == "^" || instruction.operand == ".^") {
-            return numberValue(std::pow(left, right));
-        }
-        if (instruction.operand == ">") {
-            return logicalValue(left > right);
-        }
-        if (instruction.operand == "<") {
-            return logicalValue(left < right);
-        }
-        if (instruction.operand == ">=") {
-            return logicalValue(left >= right);
-        }
-        if (instruction.operand == "<=") {
-            return logicalValue(left <= right);
-        }
-        if (instruction.operand == "==") {
-            return logicalValue(left == right);
-        }
-        if (instruction.operand == "~=") {
-            return logicalValue(left != right);
-        }
-        if (instruction.operand == "&" || instruction.operand == "&&") {
-            return logicalValue(left != 0.0 && right != 0.0);
-        }
-        if (instruction.operand == "|" || instruction.operand == "||") {
-            return logicalValue(left != 0.0 || right != 0.0);
-        }
-
-        addDiagnostic(instruction,
-                      "unsupported bytecode binary operator: " +
-                          instruction.operand);
-        return missingValue();
-    }
-
-    RuntimeValue matrixMultiply(const BytecodeInstruction& instruction,
-                                const RuntimeValue& left,
-                                const RuntimeValue& right) {
-        const size_t leftRows = rowCount(left);
-        const size_t leftColumns = columnCount(left);
-        const size_t rightRows = rowCount(right);
-        const size_t rightColumns = columnCount(right);
-
-        if (leftColumns != rightRows) {
-            addDiagnostic(instruction,
-                          "bytecode matrix dimensions do not agree for *");
+        auto result = runtimeApplyNumericBinary(
+            instruction.operand, left, right);
+        if (!result.succeeded) {
+            addDiagnostic(instruction, "bytecode " + result.error);
             return missingValue();
         }
-
-        std::vector<double> result(leftRows * rightColumns, 0.0);
-        for (size_t row = 0; row < leftRows; ++row) {
-            for (size_t column = 0; column < rightColumns; ++column) {
-                double total = 0.0;
-                for (size_t inner = 0; inner < leftColumns; ++inner) {
-                    total += matrixElement(left, row, inner) *
-                             matrixElement(right, inner, column);
-                }
-                result[row * rightColumns + column] = total;
-            }
-        }
-
-        if (leftRows == 1 && rightColumns == 1) {
-            return numberValue(result.front());
-        }
-        return arrayValueForShape(leftRows, rightColumns, std::move(result));
-    }
-
-    template <typename Operation>
-    RuntimeValue mapUnary(
-        const RuntimeValue& value, Operation operation,
-        RuntimeNumericClass numericClass =
-            RuntimeNumericClass::Double) const {
-        if (isNumber(value)) {
-            return numberValue(operation(value.number), numericClass);
-        }
-
-        std::vector<double> mapped;
-        mapped.reserve(value.elements.size());
-        for (double element : value.elements) {
-            mapped.push_back(operation(element));
-        }
-        return arrayValueForDimensions(runtimeDimensions(value),
-                                        std::move(mapped), numericClass);
+        return std::move(result.value);
     }
 
     std::optional<StackValue>

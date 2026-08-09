@@ -204,13 +204,13 @@ RuntimeIndexOperationResult runtimeIndexNumeric(
         return operationFailure("indexed result dimensions are too large");
     }
 
-    std::vector<double> values;
+    std::vector<RuntimeNumericElementValue> values;
     values.reserve(*resultCount);
     for (size_t ordinal = 0; ordinal < *resultCount; ++ordinal) {
         const auto sourceLogicalIndex =
             runtimeIndexSelectionSourceLogicalIndex(selections, ordinal);
         const auto value = sourceLogicalIndex
-                               ? runtimeNumericElement(
+                               ? runtimeNumericElementValue(
                                      target, *sourceLogicalIndex)
                                : std::nullopt;
         if (!value) {
@@ -219,7 +219,7 @@ RuntimeIndexOperationResult runtimeIndexNumeric(
         values.push_back(*value);
     }
 
-    const auto result = runtimeNumericValueFromLogicalOrder(
+    const auto result = runtimeNumericValueFromElements(
         selections.resultDimensions, std::move(values),
         target.numericClass);
     if (!result) {

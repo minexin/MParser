@@ -22,8 +22,8 @@
 extern "C" {
 #endif
 
-#define MPARSER_C_ABI_VERSION_MAJOR 1u
-#define MPARSER_C_ABI_REVISION 1u
+#define MPARSER_C_ABI_VERSION_MAJOR 2u
+#define MPARSER_C_ABI_REVISION 0u
 #define MPARSER_C_ABI_VERSION MPARSER_C_ABI_VERSION_MAJOR
 
 typedef uint32_t mparser_api_status;
@@ -87,6 +87,23 @@ typedef uint32_t mparser_value_kind;
 typedef uint32_t mparser_numeric_class;
 #define MPARSER_NUMERIC_DOUBLE 0u
 #define MPARSER_NUMERIC_LOGICAL 1u
+#define MPARSER_NUMERIC_SINGLE 2u
+#define MPARSER_NUMERIC_INT8 3u
+#define MPARSER_NUMERIC_UINT8 4u
+#define MPARSER_NUMERIC_INT16 5u
+#define MPARSER_NUMERIC_UINT16 6u
+#define MPARSER_NUMERIC_INT32 7u
+#define MPARSER_NUMERIC_UINT32 8u
+#define MPARSER_NUMERIC_INT64 9u
+#define MPARSER_NUMERIC_UINT64 10u
+
+typedef struct mparser_numeric_buffer {
+    mparser_numeric_class numeric_class;
+    uint32_t is_complex;
+    const void* real_data;
+    const void* imaginary_data;
+    size_t element_count;
+} mparser_numeric_buffer;
 
 /*
  * Threading and lifetime contract:
@@ -367,16 +384,10 @@ mparser_diagnostic_cause(const mparser_diagnostic* diagnostic,
 
 MPARSER_C_API mparser_api_status
 mparser_value_create_missing(mparser_value** out_value);
-MPARSER_C_API mparser_api_status mparser_value_create_scalar(
-    double value,
-    mparser_numeric_class numeric_class,
-    mparser_value** out_value);
-MPARSER_C_API mparser_api_status mparser_value_create_numeric_array(
-    mparser_numeric_class numeric_class,
+MPARSER_C_API mparser_api_status mparser_value_create_numeric(
     const size_t* dimensions,
     size_t rank,
-    const double* column_major_elements,
-    size_t element_count,
+    const mparser_numeric_buffer* buffer,
     mparser_value** out_value);
 MPARSER_C_API mparser_api_status mparser_value_create_character_array(
     const size_t* dimensions,
@@ -416,10 +427,9 @@ MPARSER_C_API mparser_api_status mparser_value_dimension(
     size_t* out_dimension);
 MPARSER_C_API size_t
 mparser_value_element_count(const mparser_value* value);
-MPARSER_C_API mparser_api_status mparser_value_numeric_data(
+MPARSER_C_API mparser_api_status mparser_value_get_numeric_buffer(
     const mparser_value* value,
-    const double** out_column_major_elements,
-    size_t* out_element_count);
+    mparser_numeric_buffer* out_buffer);
 MPARSER_C_API mparser_api_status mparser_value_character_data(
     const mparser_value* value,
     const uint16_t** out_column_major_code_units,

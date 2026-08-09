@@ -31,8 +31,7 @@ static int read_scalar_variable(const mparser_result* result,
          ++index) {
         mparser_utf8_view name;
         mparser_value* value = NULL;
-        const double* data = NULL;
-        size_t count = 0;
+        mparser_numeric_buffer buffer = {0};
         if (mparser_result_variable(
                 result, index, &name, &value) !=
             MPARSER_API_STATUS_OK) {
@@ -41,12 +40,15 @@ static int read_scalar_variable(const mparser_result* result,
         if (name.size == strlen(expected_name) &&
             memcmp(name.data, expected_name, name.size) == 0) {
             const int valid =
-                mparser_value_numeric_data(
-                    value, &data, &count) ==
+                mparser_value_get_numeric_buffer(
+                    value, &buffer) ==
                     MPARSER_API_STATUS_OK &&
-                count == 1;
+                buffer.numeric_class == MPARSER_NUMERIC_DOUBLE &&
+                buffer.is_complex == 0 &&
+                buffer.element_count == 1;
             if (valid) {
-                *output = data[0];
+                *output =
+                    ((const double*)buffer.real_data)[0];
             }
             mparser_value_release(value);
             return valid;

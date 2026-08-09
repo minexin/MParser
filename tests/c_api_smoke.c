@@ -11,10 +11,16 @@
 #error "C API smoke requires the configured MParser version"
 #endif
 
-_Static_assert(MPARSER_C_ABI_VERSION_MAJOR == 1u,
+_Static_assert(MPARSER_C_ABI_VERSION_MAJOR == 2u,
                "unexpected C ABI major version");
-_Static_assert(MPARSER_C_ABI_REVISION == 1u,
+_Static_assert(MPARSER_C_ABI_REVISION == 0u,
                "unexpected C ABI revision");
+_Static_assert(MPARSER_NUMERIC_SINGLE == 2u &&
+                   MPARSER_NUMERIC_INT8 == 3u &&
+                   MPARSER_NUMERIC_UINT32 == 8u &&
+                   MPARSER_NUMERIC_INT64 == 9u &&
+                   MPARSER_NUMERIC_UINT64 == 10u,
+               "numeric class identifiers drifted");
 _Static_assert(MPARSER_INVOCATION_OPTIONS_V1_SIZE ==
                    sizeof(mparser_invocation_options),
                "invocation options v1 size drift");
@@ -35,6 +41,68 @@ _Static_assert(MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ==
             return 0;                                                      \
         }                                                                  \
     } while (0)
+
+static mparser_api_status create_test_scalar(
+    double value,
+    mparser_numeric_class numeric_class,
+    mparser_value** out_value) {
+    const size_t dimensions[2] = {1, 1};
+    mparser_numeric_buffer buffer = {0};
+    uint8_t logical_value = value != 0.0 ? 1u : 0u;
+
+    buffer.numeric_class = numeric_class;
+    buffer.element_count = 1;
+    if (numeric_class == MPARSER_NUMERIC_DOUBLE) {
+        buffer.real_data = &value;
+    } else if (numeric_class == MPARSER_NUMERIC_LOGICAL && !isnan(value)) {
+        buffer.real_data = &logical_value;
+    } else {
+        if (out_value != NULL) {
+            *out_value = NULL;
+        }
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    return mparser_value_create_numeric(
+        dimensions, 2, &buffer, out_value);
+}
+
+static mparser_api_status create_test_double_array(
+    const size_t* dimensions,
+    size_t rank,
+    const double* elements,
+    size_t element_count,
+    mparser_value** out_value) {
+    mparser_numeric_buffer buffer = {0};
+    buffer.numeric_class = MPARSER_NUMERIC_DOUBLE;
+    buffer.real_data = elements;
+    buffer.element_count = element_count;
+    return mparser_value_create_numeric(
+        dimensions, rank, &buffer, out_value);
+}
+
+static mparser_api_status get_test_double_data(
+    const mparser_value* value,
+    const double** out_data,
+    size_t* out_count) {
+    mparser_numeric_buffer buffer = {0};
+    mparser_api_status status;
+    if (out_data == NULL || out_count == NULL) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_data = NULL;
+    *out_count = 0;
+    status = mparser_value_get_numeric_buffer(value, &buffer);
+    if (status != MPARSER_API_STATUS_OK) {
+        return status;
+    }
+    if (buffer.numeric_class != MPARSER_NUMERIC_DOUBLE ||
+        buffer.is_complex != 0) {
+        return MPARSER_API_STATUS_TYPE_MISMATCH;
+    }
+    *out_data = (const double*)buffer.real_data;
+    *out_count = buffer.element_count;
+    return MPARSER_API_STATUS_OK;
+}
 
 static const char k_module_source[] =
     "function total = sumTo(limit)\n"
@@ -196,7 +264,7 @@ static int output_scalar_at(const mparser_result* result,
           MPARSER_API_STATUS_OK);
     CHECK(value != NULL);
     CHECK(mparser_value_get_kind(value) == MPARSER_VALUE_NUMERIC);
-    CHECK(mparser_value_numeric_data(value, &data, &count) ==
+    CHECK(get_test_double_data(value, &data, &count) ==
           MPARSER_API_STATUS_OK);
     CHECK(count == 1);
     CHECK(fabs(data[0] - expected) < 1e-9);
@@ -241,7 +309,7 @@ static int variable_is_scalar(const mparser_result* result,
     size_t count = 0;
     CHECK(find_variable(result, name, &value) ==
           MPARSER_API_STATUS_OK);
-    CHECK(mparser_value_numeric_data(value, &data, &count) ==
+    CHECK(get_test_double_data(value, &data, &count) ==
           MPARSER_API_STATUS_OK);
     CHECK(count == 1);
     CHECK(fabs(data[0] - expected) < 1e-9);
@@ -390,7 +458,7 @@ static int run_versioned_structure_smoke(
         invocation.future_tail,
         sizeof(invocation.future_tail), 0));
 
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               3.0, MPARSER_NUMERIC_DOUBLE, &argument) ==
           MPARSER_API_STATUS_OK);
     arguments[0] = argument;
@@ -701,7 +769,7 @@ static int run_scalar_resource_and_session_smoke(
     mparser_session* session = NULL;
     mparser_result* result = NULL;
 
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               100.0, MPARSER_NUMERIC_DOUBLE, &limit) ==
           MPARSER_API_STATUS_OK);
     arguments[0] = limit;
@@ -727,10 +795,10 @@ static int run_scalar_resource_and_session_smoke(
         mparser_value* left = NULL;
         mparser_value* right = NULL;
         const mparser_value* pair_arguments[2];
-        CHECK(mparser_value_create_scalar(
+        CHECK(create_test_scalar(
                   9.0, MPARSER_NUMERIC_DOUBLE, &left) ==
               MPARSER_API_STATUS_OK);
-        CHECK(mparser_value_create_scalar(
+        CHECK(create_test_scalar(
                   4.0, MPARSER_NUMERIC_DOUBLE, &right) ==
               MPARSER_API_STATUS_OK);
         pair_arguments[0] = left;
@@ -777,7 +845,7 @@ static int run_scalar_resource_and_session_smoke(
     mparser_cancel_token_release(cancellation);
     mparser_cancel_token_request(cancellation);
     CHECK(mparser_cancel_token_is_requested(cancellation) == 1);
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               7.0, MPARSER_NUMERIC_DOUBLE, &limit) ==
           MPARSER_API_STATUS_OK);
     arguments[0] = limit;
@@ -807,7 +875,7 @@ static int run_scalar_resource_and_session_smoke(
           MPARSER_API_STATUS_OK);
     mparser_result_release(result);
     result = NULL;
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               42.0, MPARSER_NUMERIC_DOUBLE, &limit) ==
           MPARSER_API_STATUS_OK);
     arguments[0] = limit;
@@ -864,8 +932,7 @@ static int run_array_text_and_composite_smoke(
     size_t answer_field = (size_t)-1;
     mparser_utf16_view string_element;
 
-    CHECK(mparser_value_create_numeric_array(
-              MPARSER_NUMERIC_DOUBLE,
+    CHECK(create_test_double_array(
               matrix_dimensions, 2,
               matrix_data, 6, &matrix) ==
           MPARSER_API_STATUS_OK);
@@ -884,7 +951,7 @@ static int run_array_text_and_composite_smoke(
     CHECK(mparser_value_dimension(output, 1, &dimension) ==
           MPARSER_API_STATUS_OK);
     CHECK(dimension == 3);
-    CHECK(mparser_value_numeric_data(
+    CHECK(get_test_double_data(
               output, &numeric_data, &count) ==
           MPARSER_API_STATUS_OK);
     CHECK(count == 6);
@@ -941,7 +1008,7 @@ static int run_array_text_and_composite_smoke(
     mparser_result_release(result);
     result = NULL;
 
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               9.0, MPARSER_NUMERIC_DOUBLE, &scalar) ==
           MPARSER_API_STATUS_OK);
     cell_elements[0] = scalar;
@@ -959,7 +1026,7 @@ static int run_array_text_and_composite_smoke(
     CHECK(mparser_value_get_kind(output) == MPARSER_VALUE_CELL);
     CHECK(mparser_value_cell_element(output, 0, &child) ==
           MPARSER_API_STATUS_OK);
-    CHECK(mparser_value_numeric_data(
+    CHECK(get_test_double_data(
               child, &numeric_data, &count) ==
           MPARSER_API_STATUS_OK);
     CHECK(count == 1 && numeric_data[0] == 9.0);
@@ -1005,7 +1072,7 @@ static int run_array_text_and_composite_smoke(
     CHECK(mparser_value_struct_field(
               output, 0, answer_field, &child) ==
           MPARSER_API_STATUS_OK);
-    CHECK(mparser_value_numeric_data(
+    CHECK(get_test_double_data(
               child, &numeric_data, &count) ==
           MPARSER_API_STATUS_OK);
     CHECK(count == 1 && numeric_data[0] == 9.0);
@@ -1016,6 +1083,155 @@ static int run_array_text_and_composite_smoke(
     mparser_value_release(matrix);
     mparser_value_release(string_array);
     mparser_value_release(structure);
+    return 1;
+}
+
+static int run_numeric_class_smoke(void) {
+    const size_t scalar_dimensions[2] = {1, 1};
+    const size_t vector_dimensions[2] = {1, 4};
+    const size_t matrix_dimensions[2] = {2, 2};
+    size_t index;
+
+    {
+        const float input = 0.1F;
+        const mparser_numeric_buffer input_buffer = {
+            MPARSER_NUMERIC_SINGLE, 0, &input, NULL, 1};
+        mparser_numeric_buffer output_buffer = {0};
+        mparser_value* value = NULL;
+        CHECK(mparser_value_create_numeric(
+                  scalar_dimensions, 2, &input_buffer, &value) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(mparser_value_get_numeric_buffer(
+                  value, &output_buffer) == MPARSER_API_STATUS_OK);
+        CHECK(output_buffer.numeric_class == MPARSER_NUMERIC_SINGLE);
+        CHECK(output_buffer.is_complex == 0);
+        CHECK(output_buffer.element_count == 1);
+        CHECK(((const float*)output_buffer.real_data)[0] == input);
+        CHECK(output_buffer.imaginary_data == NULL);
+        mparser_value_release(value);
+    }
+
+    {
+        const int8_t input[4] = {-128, -1, 2, 127};
+        const mparser_numeric_buffer input_buffer = {
+            MPARSER_NUMERIC_INT8, 0, input, NULL, 4};
+        mparser_numeric_buffer output_buffer = {0};
+        mparser_value* value = NULL;
+        CHECK(mparser_value_create_numeric(
+                  vector_dimensions, 2, &input_buffer, &value) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(mparser_value_get_numeric_buffer(
+                  value, &output_buffer) == MPARSER_API_STATUS_OK);
+        CHECK(output_buffer.numeric_class == MPARSER_NUMERIC_INT8);
+        CHECK(output_buffer.element_count == 4);
+        for (index = 0; index < 4; ++index) {
+            CHECK(((const int8_t*)output_buffer.real_data)[index] ==
+                  input[index]);
+        }
+        mparser_value_release(value);
+    }
+
+    {
+        const uint32_t input = UINT32_MAX;
+        const mparser_numeric_buffer input_buffer = {
+            MPARSER_NUMERIC_UINT32, 0, &input, NULL, 1};
+        mparser_numeric_buffer output_buffer = {0};
+        mparser_value* value = NULL;
+        CHECK(mparser_value_create_numeric(
+                  scalar_dimensions, 2, &input_buffer, &value) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(mparser_value_get_numeric_buffer(
+                  value, &output_buffer) == MPARSER_API_STATUS_OK);
+        CHECK(output_buffer.numeric_class == MPARSER_NUMERIC_UINT32);
+        CHECK(((const uint32_t*)output_buffer.real_data)[0] == input);
+        mparser_value_release(value);
+    }
+
+    {
+        const int64_t input = INT64_MIN;
+        const mparser_numeric_buffer input_buffer = {
+            MPARSER_NUMERIC_INT64, 0, &input, NULL, 1};
+        mparser_numeric_buffer output_buffer = {0};
+        mparser_value* value = NULL;
+        CHECK(mparser_value_create_numeric(
+                  scalar_dimensions, 2, &input_buffer, &value) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(mparser_value_get_numeric_buffer(
+                  value, &output_buffer) == MPARSER_API_STATUS_OK);
+        CHECK(output_buffer.numeric_class == MPARSER_NUMERIC_INT64);
+        CHECK(((const int64_t*)output_buffer.real_data)[0] == input);
+        mparser_value_release(value);
+    }
+
+    {
+        const uint64_t input[4] = {
+            UINT64_C(9007199254740993), UINT64_MAX,
+            UINT64_C(7), UINT64_C(11)};
+        const mparser_numeric_buffer input_buffer = {
+            MPARSER_NUMERIC_UINT64, 0, input, NULL, 4};
+        mparser_numeric_buffer output_buffer = {0};
+        mparser_value* value = NULL;
+        CHECK(mparser_value_create_numeric(
+                  matrix_dimensions, 2, &input_buffer, &value) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(mparser_value_get_numeric_buffer(
+                  value, &output_buffer) == MPARSER_API_STATUS_OK);
+        CHECK(output_buffer.numeric_class == MPARSER_NUMERIC_UINT64);
+        CHECK(output_buffer.element_count == 4);
+        for (index = 0; index < 4; ++index) {
+            CHECK(((const uint64_t*)output_buffer.real_data)[index] ==
+                  input[index]);
+        }
+        mparser_value_release(value);
+    }
+
+    {
+        const double real[4] = {1.0, 2.0, 3.0, 4.0};
+        const double imaginary[4] = {-1.0, 0.5, 8.0, -3.0};
+        const mparser_numeric_buffer input_buffer = {
+            MPARSER_NUMERIC_DOUBLE, 1, real, imaginary, 4};
+        mparser_numeric_buffer output_buffer = {0};
+        mparser_value* value = NULL;
+        CHECK(mparser_value_create_numeric(
+                  matrix_dimensions, 2, &input_buffer, &value) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(mparser_value_get_numeric_buffer(
+                  value, &output_buffer) == MPARSER_API_STATUS_OK);
+        CHECK(output_buffer.numeric_class == MPARSER_NUMERIC_DOUBLE);
+        CHECK(output_buffer.is_complex == 1);
+        CHECK(output_buffer.element_count == 4);
+        for (index = 0; index < 4; ++index) {
+            CHECK(((const double*)output_buffer.real_data)[index] ==
+                  real[index]);
+            CHECK(((const double*)output_buffer.imaginary_data)[index] ==
+                  imaginary[index]);
+        }
+        mparser_value_release(value);
+    }
+
+    {
+        const uint8_t logical = 1;
+        const mparser_numeric_buffer complex_logical = {
+            MPARSER_NUMERIC_LOGICAL, 1, &logical, &logical, 1};
+        const mparser_numeric_buffer bad_shape = {
+            MPARSER_NUMERIC_UINT8, 0, &logical, NULL, 1};
+        const mparser_numeric_buffer unexpected_imaginary = {
+            MPARSER_NUMERIC_DOUBLE, 0, &logical, &logical, 1};
+        mparser_value* value = NULL;
+        CHECK(mparser_value_create_numeric(
+                  scalar_dimensions, 2, &complex_logical, &value) ==
+              MPARSER_API_STATUS_INVALID_ARGUMENT);
+        CHECK(value == NULL);
+        CHECK(mparser_value_create_numeric(
+                  vector_dimensions, 2, &bad_shape, &value) ==
+              MPARSER_API_STATUS_INVALID_ARGUMENT);
+        CHECK(value == NULL);
+        CHECK(mparser_value_create_numeric(
+                  scalar_dimensions, 2,
+                  &unexpected_imaginary, &value) ==
+              MPARSER_API_STATUS_INVALID_ARGUMENT);
+        CHECK(value == NULL);
+    }
     return 1;
 }
 
@@ -1035,7 +1251,7 @@ static int run_function_handle_ownership_smoke(
 
     CHECK(compile_valid(
         k_consumer_source, "consumer.m", &consumer));
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               4.0, MPARSER_NUMERIC_DOUBLE, &factor) ==
           MPARSER_API_STATUS_OK);
     arguments[0] = factor;
@@ -1054,7 +1270,7 @@ static int run_function_handle_ownership_smoke(
     result = NULL;
     mparser_value_release(factor);
 
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               5.0, MPARSER_NUMERIC_DOUBLE, &argument) ==
           MPARSER_API_STATUS_OK);
     arguments[0] = closure;
@@ -1104,7 +1320,7 @@ static int run_function_handle_ownership_smoke(
     result = NULL;
 
     mparser_value_release(argument);
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               0.0, MPARSER_NUMERIC_DOUBLE, &argument) ==
           MPARSER_API_STATUS_OK);
     arguments[0] = builtin;
@@ -1140,7 +1356,7 @@ static int run_object_transport_smoke(void) {
         k_object_consumer_source,
         "object_consumer.m", &consumer));
 
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               0.0, MPARSER_NUMERIC_LOGICAL, &use_input) ==
           MPARSER_API_STATUS_OK);
     workspace[0].name = "use_input";
@@ -1162,7 +1378,7 @@ static int run_object_transport_smoke(void) {
     result = NULL;
     mparser_value_release(use_input);
 
-    CHECK(mparser_value_create_scalar(
+    CHECK(create_test_scalar(
               1.0, MPARSER_NUMERIC_LOGICAL, &use_input) ==
           MPARSER_API_STATUS_OK);
     workspace[0].value = use_input;
@@ -1177,7 +1393,7 @@ static int run_object_transport_smoke(void) {
           MPARSER_API_STATUS_OK);
     CHECK(find_variable(result, "scaled", &scaled) ==
           MPARSER_API_STATUS_OK);
-    CHECK(mparser_value_numeric_data(
+    CHECK(get_test_double_data(
               scaled, &numeric_data, &count) ==
           MPARSER_API_STATUS_OK);
     CHECK(count == 1 && numeric_data[0] == 8.0);
@@ -1229,6 +1445,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (!run_header_and_diagnostic_smoke()) {
+        return 1;
+    }
+    if (!run_numeric_class_smoke()) {
         return 1;
     }
     if (!compile_valid(

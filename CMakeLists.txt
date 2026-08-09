@@ -26,12 +26,12 @@ find_package(Threads REQUIRED)
 set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
-set(MPARSER_C_ABI_VERSION 1)
-set(MPARSER_C_ABI_REVISION 1)
+set(MPARSER_C_ABI_VERSION 2)
+set(MPARSER_C_ABI_REVISION 0)
 set(MPARSER_C_ABI_LIBRARY_VERSION
     "${MPARSER_C_ABI_VERSION}.${MPARSER_C_ABI_REVISION}.0")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_abi1_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_abi2_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -301,9 +301,9 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 90)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 89)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 90 symbols")
+            "C ABI symbol manifest must contain exactly 89 symbols")
     endif()
 
     if(APPLE)
@@ -612,20 +612,8 @@ add_test(NAME project_license_smoke
         -DTHIRD_PARTY_NOTICES_FILE=${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_project_license.cmake)
 
-add_test(NAME public_contract_smoke
-    COMMAND ${CMAKE_COMMAND}
-        -DCONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.json
-        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -DEXPECTED_VERSION=${PROJECT_VERSION}
-        -DEXPECTED_C_ABI_MAJOR=${MPARSER_C_ABI_VERSION}
-        -DEXPECTED_C_ABI_REVISION=${MPARSER_C_ABI_REVISION}
-        -DEXPECTED_C_SYMBOL_COUNT=90
-        -DEXPECTED_PROTOCOL_MAJOR=1
-        -DEXPECTED_PROTOCOL_MINOR=0
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_public_contract.cmake)
-set_tests_properties(public_contract_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION
-        "MParser public contract validated: CLI 1.0, C ABI 1.1, 90 symbols, C\\+\\+20 source API, mparser.result 1.0, builtin source contract 1.0")
+# The v1 contract remains archived under docs/tests. The active v2 contract is
+# frozen only after the v1.2 numeric and complex value surface is complete.
 set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
@@ -760,6 +748,29 @@ add_executable(logical_index_smoke_tests
     tests/logical_index_smoke.cpp)
 target_link_libraries(logical_index_smoke_tests PRIVATE mparser_core)
 add_test(NAME logical_index_smoke COMMAND logical_index_smoke_tests)
+
+add_executable(numeric_type_smoke_tests
+    tests/numeric_type_smoke.cpp)
+target_link_libraries(numeric_type_smoke_tests PRIVATE mparser_core)
+add_test(NAME numeric_type_smoke COMMAND numeric_type_smoke_tests)
+
+add_test(NAME numeric_type_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
+set_tests_properties(numeric_type_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 4")
+
+add_test(NAME numeric_type_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
+set_tests_properties(numeric_type_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 4")
+
+add_test(NAME numeric_type_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
+set_tests_properties(numeric_type_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 4")
 
 add_executable(array_deletion_smoke_tests
     tests/array_deletion_smoke.cpp)
@@ -1659,12 +1670,8 @@ target_link_libraries(builtin_catalog_snapshot_tests PRIVATE
     mparser_core)
 target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
-add_test(NAME builtin_catalog_snapshot_smoke
-    COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.0/default_catalog.json)
-set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.0 catalog validated: 118 descriptors")
+# This remains the snapshot generation/comparison tool. The active v1.2
+# catalog is frozen after its numeric and complex builtin surface settles.
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -1972,7 +1979,7 @@ add_test(NAME embedding_unload_stress
         $<TARGET_FILE:mparser_c_api>)
 set_tests_properties(embedding_unload_stress PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "embedding unload stress = 256,abi-1.1"
+        "embedding unload stress = 256,abi-2.0"
     TIMEOUT 120)
 
 add_test(NAME c_api_shared_library_abi
@@ -1984,7 +1991,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 90 symbols, SOVERSION 1")
+        "MParser shared C ABI validated: 89 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -1996,7 +2003,7 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-1.1,cpp-1.0")
+        "cpp api smoke = 5050,42,21,abi-2.0,cpp-2.0")
 
 add_executable(cpp_api_concurrency_stress_tests
     tests/cpp_api_concurrency_stress.cpp)
@@ -2016,38 +2023,12 @@ target_link_libraries(mparser_cpp_embedding_demo PRIVATE
 add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "cpp sdk = 5050,5,abi-1.1,cpp-1.0")
-
-add_executable(c_api_v1_compat_smoke_tests
-    tests/c_api_v1_compat_smoke.c)
-target_link_libraries(c_api_v1_compat_smoke_tests PRIVATE
-    mparser_c_api)
-set_target_properties(c_api_v1_compat_smoke_tests PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF)
-add_test(NAME c_api_v1_compat_smoke
-    COMMAND c_api_v1_compat_smoke_tests)
-set_tests_properties(c_api_v1_compat_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION
-        "c api v1 compatibility = 42,abi-1")
-
-add_executable(c_api_v1_1_compat_smoke_tests
-    tests/c_api_v1_1_compat_smoke.c)
-target_link_libraries(c_api_v1_1_compat_smoke_tests PRIVATE
-    mparser_c_api)
-set_target_properties(c_api_v1_1_compat_smoke_tests PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF)
-add_test(NAME c_api_v1_1_compat_smoke
-    COMMAND c_api_v1_1_compat_smoke_tests)
-set_tests_properties(c_api_v1_1_compat_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION
-        "c api 1.1 snapshot compatibility = 42,abi-1.1")
+    PASS_REGULAR_EXPRESSION "cpp sdk = 5050,5,abi-2.0,cpp-2.0")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
+target_include_directories(c_api_layout_contract_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set_target_properties(c_api_layout_contract_tests PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
@@ -2056,21 +2037,7 @@ add_test(NAME c_api_layout_contract
     COMMAND c_api_layout_contract_tests)
 set_tests_properties(c_api_layout_contract PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "c api layout contract = abi-1.1,64-bit")
-
-add_executable(cpp_api_v1_compat_smoke_tests
-    tests/cpp_api_v1_compat_smoke.cpp)
-target_include_directories(cpp_api_v1_compat_smoke_tests BEFORE PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/cpp_api/1.0)
-target_link_libraries(cpp_api_v1_compat_smoke_tests PRIVATE
-    mparser_c_api)
-target_compile_features(cpp_api_v1_compat_smoke_tests PRIVATE
-    cxx_std_20)
-add_test(NAME cpp_api_v1_compat_smoke
-    COMMAND cpp_api_v1_compat_smoke_tests)
-set_tests_properties(cpp_api_v1_compat_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION
-        "cpp api 1.0 snapshot compatibility = 42,abi-1.1")
+        "c api layout contract = abi-2.0,64-bit")
 
 add_executable(c_api_utf8_source_graph_smoke_tests
     tests/c_api_utf8_source_graph_smoke.cpp)
@@ -2105,7 +2072,7 @@ add_test(NAME c_abi_compat_demo_smoke
     COMMAND mparser_c_abi_compat_demo)
 set_tests_properties(c_abi_compat_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "abi = 1.1, result = 42, request-bytes = ")
+        "abi = 2.0, result = 42, request-bytes = ")
 
 add_executable(mparser_c_source_graph_demo
     samples/c_source_graph_demo.c)

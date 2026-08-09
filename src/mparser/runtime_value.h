@@ -3,6 +3,7 @@
 #include "mparser/source.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -32,6 +33,15 @@ enum class RuntimeValueKind {
 enum class RuntimeNumericClass {
   Double,
   Logical,
+  Single,
+  Int8,
+  UInt8,
+  Int16,
+  UInt16,
+  Int32,
+  UInt32,
+  Int64,
+  UInt64,
 };
 
 enum class RuntimeFunctionHandleKind {
@@ -74,6 +84,9 @@ struct RuntimeValue {
   double number = 0.0;
   std::string text;
   std::vector<double> elements;
+  std::vector<double> imaginaryElements;
+  std::vector<std::uint64_t> exactIntegerElements;
+  std::vector<std::uint64_t> exactIntegerImaginaryElements;
   std::u16string characterElements;
   std::vector<RuntimeStringElement> stringElements;
   std::vector<RuntimeValue> cells;
@@ -91,6 +104,7 @@ struct RuntimeValue {
   size_t columns = 0;
   std::vector<size_t> dimensions;
   RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
+  bool numericComplex = false;
 };
 
 using RuntimeWorkspace = std::map<std::string, RuntimeValue>;

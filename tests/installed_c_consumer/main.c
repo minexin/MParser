@@ -9,24 +9,35 @@ static const char k_source[] =
     "difference = left - right;\n"
     "end\n";
 
+static mparser_api_status create_double_scalar(
+    double value, mparser_value** output) {
+    const size_t dimensions[2] = {1, 1};
+    const mparser_numeric_buffer buffer = {
+        MPARSER_NUMERIC_DOUBLE, 0, &value, NULL, 1};
+    return mparser_value_create_numeric(
+        dimensions, 2, &buffer, output);
+}
+
 static int read_scalar(const mparser_result* result,
                        size_t index,
                        double expected) {
     mparser_value* output = NULL;
-    const double* data = NULL;
-    size_t count = 0;
+    mparser_numeric_buffer buffer = {0};
     double difference = 0.0;
     int valid = 0;
     if (mparser_result_output(result, index, &output) !=
             MPARSER_API_STATUS_OK ||
-        mparser_value_numeric_data(output, &data, &count) !=
+        mparser_value_get_numeric_buffer(output, &buffer) !=
             MPARSER_API_STATUS_OK ||
-        count != 1) {
+        buffer.numeric_class != MPARSER_NUMERIC_DOUBLE ||
+        buffer.is_complex != 0 ||
+        buffer.element_count != 1) {
         mparser_value_release(output);
         return 0;
     }
 
-    difference = data[0] - expected;
+    difference =
+        ((const double*)buffer.real_data)[0] - expected;
     if (difference < 0.0) {
         difference = -difference;
     }
@@ -54,11 +65,9 @@ int main(void) {
             "installed_consumer.m",
             strlen("installed_consumer.m"), &module) !=
             MPARSER_API_STATUS_OK ||
-        mparser_value_create_scalar(
-            39.0, MPARSER_NUMERIC_DOUBLE, &left) !=
+        create_double_scalar(39.0, &left) !=
             MPARSER_API_STATUS_OK ||
-        mparser_value_create_scalar(
-            3.0, MPARSER_NUMERIC_DOUBLE, &right) !=
+        create_double_scalar(3.0, &right) !=
             MPARSER_API_STATUS_OK ||
         MPARSER_INVOCATION_OPTIONS_INIT(&options) !=
             MPARSER_API_STATUS_OK) {

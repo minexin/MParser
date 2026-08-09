@@ -42,17 +42,28 @@ void waitForStart(const std::atomic<bool>& start) {
     }
 }
 
+mparser_api_status createDoubleScalar(
+    double value, mparser_value** output) {
+    constexpr std::size_t dimensions[]{1, 1};
+    const mparser_numeric_buffer buffer{
+        MPARSER_NUMERIC_DOUBLE, 0, &value, nullptr, 1};
+    return mparser_value_create_numeric(
+        dimensions, 2, &buffer, output);
+}
+
 bool scalarEquals(
     const mparser_value* value,
     double expected) {
-    const double* data = nullptr;
-    std::size_t count = 0;
+    mparser_numeric_buffer buffer{};
     return value &&
            mparser_value_get_kind(value) == MPARSER_VALUE_NUMERIC &&
-           mparser_value_numeric_data(value, &data, &count) ==
+           mparser_value_get_numeric_buffer(value, &buffer) ==
                MPARSER_API_STATUS_OK &&
-           data && count == 1 &&
-           std::abs(data[0] - expected) < kTolerance;
+           buffer.numeric_class == MPARSER_NUMERIC_DOUBLE &&
+           buffer.is_complex == 0 &&
+           buffer.real_data && buffer.element_count == 1 &&
+           std::abs(static_cast<const double*>(
+                        buffer.real_data)[0] - expected) < kTolerance;
 }
 
 mparser_result* execute(
@@ -114,8 +125,7 @@ int main() {
     assert(session);
 
     mparser_value* scalar = nullptr;
-    assert(mparser_value_create_scalar(
-               42.0, MPARSER_NUMERIC_DOUBLE, &scalar) ==
+    assert(createDoubleScalar(42.0, &scalar) ==
            MPARSER_API_STATUS_OK);
     assert(scalar);
 

@@ -347,30 +347,6 @@ bool truthy(const RuntimeValue& value) {
     return false;
 }
 
-template <typename Operation>
-RuntimeValue mapUnary(
-    const RuntimeValue& value, Operation operation,
-    RuntimeNumericClass numericClass = RuntimeNumericClass::Double) {
-    if (isNumber(value)) {
-        return numberValue(operation(value.number), numericClass);
-    }
-
-    std::vector<double> mapped;
-    mapped.reserve(value.elements.size());
-    for (double element : value.elements) {
-        mapped.push_back(operation(element));
-    }
-    return arrayValueForDimensions(runtimeDimensions(value),
-                                   std::move(mapped), numericClass);
-}
-
-bool isLogicalBinaryOperator(std::string_view operation) {
-    return operation == ">" || operation == "<" || operation == ">=" ||
-           operation == "<=" || operation == "==" || operation == "~=" ||
-           operation == "&" || operation == "|" || operation == "&&" ||
-           operation == "||";
-}
-
 std::optional<double> parseNumber(std::string_view text) {
     std::string buffer(text);
     char* end = nullptr;
@@ -2199,20 +2175,12 @@ private:
             return missingValue();
         }
 
-        if (node.label == "+") {
-            return mapUnary(value, [](double element) { return element; });
+        auto result = runtimeApplyNumericUnary(node.label, value);
+        if (!result.succeeded) {
+            addDiagnostic(node, result.error);
+            return missingValue();
         }
-        if (node.label == "-") {
-            return mapUnary(value, [](double element) { return -element; });
-        }
-        if (node.label == "~") {
-            return mapUnary(value, [](double element) {
-                return element == 0.0 ? 1.0 : 0.0;
-            }, RuntimeNumericClass::Logical);
-        }
-
-        addDiagnostic(node, "unsupported unary operator: " + node.label);
-        return missingValue();
+        return std::move(result.value);
     }
 
     RuntimeValue evaluateMatrix(const HirNode& node) {
@@ -2327,170 +2295,12 @@ private:
 
     RuntimeValue applyBinary(const HirNode& node, const RuntimeValue& left,
                              const RuntimeValue& right) {
-        if (isNumber(left) && isNumber(right)) {
-            return applyScalarBinary(node, left.number, right.number);
-        }
-
-        if (node.label == "*" && isArray(left) && isArray(right)) {
-            if (runtimeDimensionCount(left) > 2 ||
-                runtimeDimensionCount(right) > 2) {
-                addDiagnostic(node,
-                              "matrix multiplication requires two-dimensional arrays");
-                return missingValue();
-            }
-            return applyMatrixMultiply(node, left, right);
-        }
-
-        if ((node.label == "/" || node.label == "\\" || node.label == "^") &&
-            isArray(left) && isArray(right)) {
-            addDiagnostic(node,
-                          "matrix division and matrix power are not "
-                          "implemented for array operands yet");
+        auto result = runtimeApplyNumericBinary(node.label, left, right);
+        if (!result.succeeded) {
+            addDiagnostic(node, result.error);
             return missingValue();
         }
-
-        std::vector<size_t> dimensions;
-        if (isArray(left) && isArray(right)) {
-            const auto expanded = runtimeImplicitExpansionDimensions(
-                runtimeDimensions(left), runtimeDimensions(right));
-            if (!expanded) {
-                addDiagnostic(
-                    node,
-                    "elementwise operands have incompatible dimensions");
-                return missingValue();
-            }
-            dimensions = *expanded;
-        } else {
-            dimensions = isArray(left) ? runtimeDimensions(left)
-                                       : runtimeDimensions(right);
-        }
-        const size_t count =
-            checkedRuntimeDimensionProduct(dimensions).value_or(0);
-        std::vector<double> elements;
-        elements.reserve(count);
-        for (size_t index = 0; index < count; ++index) {
-            const auto coordinates =
-                runtimeRowMajorCoordinates(index, dimensions);
-            const auto leftOffset =
-                isArray(left)
-                    ? runtimeImplicitExpansionStorageOffset(
-                          coordinates, runtimeDimensions(left))
-                    : std::optional<size_t>(0);
-            const auto rightOffset =
-                isArray(right)
-                    ? runtimeImplicitExpansionStorageOffset(
-                          coordinates, runtimeDimensions(right))
-                    : std::optional<size_t>(0);
-            if (!leftOffset || !rightOffset) {
-                addDiagnostic(node,
-                              "elementwise expansion could not map an operand");
-                return missingValue();
-            }
-            const double leftValue =
-                isArray(left) ? left.elements[*leftOffset] : left.number;
-            const double rightValue =
-                isArray(right) ? right.elements[*rightOffset] : right.number;
-            const RuntimeValue value =
-                applyScalarBinary(node, leftValue, rightValue);
-            if (!isNumber(value)) {
-                return missingValue();
-            }
-            elements.push_back(value.number);
-        }
-
-        const RuntimeNumericClass resultClass =
-            isLogicalBinaryOperator(node.label)
-                ? RuntimeNumericClass::Logical
-                : RuntimeNumericClass::Double;
-        return arrayValueForDimensions(dimensions, std::move(elements),
-                                       resultClass);
-    }
-
-    RuntimeValue applyMatrixMultiply(const HirNode& node,
-                                     const RuntimeValue& left,
-                                     const RuntimeValue& right) {
-        const size_t leftRows = rowCount(left);
-        const size_t leftColumns = columnCount(left);
-        const size_t rightRows = rowCount(right);
-        const size_t rightColumns = columnCount(right);
-
-        if (leftColumns != rightRows) {
-            addDiagnostic(node, "matrix dimensions do not agree for *");
-            return missingValue();
-        }
-
-        std::vector<double> result(leftRows * rightColumns, 0.0);
-        for (size_t row = 0; row < leftRows; ++row) {
-            for (size_t column = 0; column < rightColumns; ++column) {
-                double total = 0.0;
-                for (size_t inner = 0; inner < leftColumns; ++inner) {
-                    total += matrixElement(left, row, inner) *
-                             matrixElement(right, inner, column);
-                }
-                result[row * rightColumns + column] = total;
-            }
-        }
-
-        if (leftRows == 1 && rightColumns == 1) {
-            return numberValue(result.front());
-        }
-        return arrayValueForShape(leftRows, rightColumns, std::move(result));
-    }
-
-    double matrixElement(const RuntimeValue& value, size_t row,
-                         size_t column) const {
-        if (isNumber(value)) {
-            return value.number;
-        }
-        return value.elements[row * columnCount(value) + column];
-    }
-
-    RuntimeValue applyScalarBinary(const HirNode& node, double left,
-                                   double right) {
-        if (node.label == "+") {
-            return numberValue(left + right);
-        }
-        if (node.label == "-") {
-            return numberValue(left - right);
-        }
-        if (node.label == "*" || node.label == ".*") {
-            return numberValue(left * right);
-        }
-        if (node.label == "/" || node.label == "./") {
-            return numberValue(left / right);
-        }
-        if (node.label == "^" || node.label == ".^") {
-            return numberValue(std::pow(left, right));
-        }
-        if (node.label == ">") {
-            return logicalValue(left > right);
-        }
-        if (node.label == "<") {
-            return logicalValue(left < right);
-        }
-        if (node.label == ">=") {
-            return logicalValue(left >= right);
-        }
-        if (node.label == "<=") {
-            return logicalValue(left <= right);
-        }
-        if (node.label == "==") {
-            return logicalValue(left == right);
-        }
-        if (node.label == "~=") {
-            return logicalValue(left != right);
-        }
-        if (node.label == "&" || node.label == "&&") {
-            return logicalValue(truthy(numberValue(left)) &&
-                                truthy(numberValue(right)));
-        }
-        if (node.label == "|" || node.label == "||") {
-            return logicalValue(truthy(numberValue(left)) ||
-                                truthy(numberValue(right)));
-        }
-
-        addDiagnostic(node, "unsupported binary operator: " + node.label);
-        return missingValue();
+        return std::move(result.value);
     }
 
     RuntimeValue evaluateColon(const HirNode& node) {
@@ -2604,20 +2414,12 @@ private:
             return missingValue();
         }
 
-        if (node.label == "+") {
-            return value;
+        auto result = runtimeApplyNumericUnary(node.label, value);
+        if (!result.succeeded) {
+            addDiagnostic(node, result.error);
+            return missingValue();
         }
-        if (node.label == "-") {
-            return mapUnary(value, [](double element) { return -element; });
-        }
-        if (node.label == "~") {
-            return mapUnary(value, [](double element) {
-                return (element != 0.0 && !std::isnan(element)) ? 0.0 : 1.0;
-            });
-        }
-
-        addDiagnostic(node, "unsupported unary operator: " + node.label);
-        return missingValue();
+        return std::move(result.value);
     }
 
     RuntimeValue evaluateBinaryWithIndexContext(const HirNode& node,
@@ -3549,9 +3351,11 @@ private:
             const RuntimeValue& value = arguments.front();
             bool matches = false;
             if (isNumeric(value)) {
-                matches = isRuntimeLogical(value)
-                              ? *target == "logical"
-                              : *target == "double" || *target == "numeric";
+                matches = *target ==
+                              runtimeNumericClassName(value.numericClass) ||
+                          (*target == "numeric" &&
+                           value.numericClass !=
+                               RuntimeNumericClass::Logical);
             } else if (isRuntimeCharacterArray(value)) {
                 matches = *target == "char";
             } else if (isRuntimeStringArray(value)) {

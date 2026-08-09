@@ -28,6 +28,15 @@ static int tail_is_zero(const unsigned char* tail, size_t size) {
     return 1;
 }
 
+static mparser_api_status create_double_scalar(
+    double value, mparser_value** output) {
+    const size_t dimensions[2] = {1, 1};
+    const mparser_numeric_buffer buffer = {
+        MPARSER_NUMERIC_DOUBLE, 0, &value, NULL, 1};
+    return mparser_value_create_numeric(
+        dimensions, 2, &buffer, output);
+}
+
 int main(void) {
     mparser_module* module = NULL;
     mparser_value* argument = NULL;
@@ -36,16 +45,14 @@ int main(void) {
     future_execution_summary summary;
     mparser_result* result = NULL;
     mparser_value* output = NULL;
-    const double* data = NULL;
-    size_t count = 0;
+    mparser_numeric_buffer numeric_buffer = {0};
     int succeeded = 0;
 
     if (mparser_module_compile_utf8(
             k_source, strlen(k_source), "c_abi_compat_demo.m",
             strlen("c_abi_compat_demo.m"), &module) !=
             MPARSER_API_STATUS_OK ||
-        mparser_value_create_scalar(
-            40.0, MPARSER_NUMERIC_DOUBLE, &argument) !=
+        create_double_scalar(40.0, &argument) !=
             MPARSER_API_STATUS_OK ||
         mparser_invocation_options_init_sized(
             &invocation, sizeof(invocation),
@@ -69,9 +76,13 @@ int main(void) {
         !mparser_result_succeeded(result) ||
         mparser_result_output(result, 0, &output) !=
             MPARSER_API_STATUS_OK ||
-        mparser_value_numeric_data(output, &data, &count) !=
+        mparser_value_get_numeric_buffer(
+            output, &numeric_buffer) !=
             MPARSER_API_STATUS_OK ||
-        count != 1 || data[0] != 42.0 ||
+        numeric_buffer.numeric_class != MPARSER_NUMERIC_DOUBLE ||
+        numeric_buffer.is_complex != 0 ||
+        numeric_buffer.element_count != 1 ||
+        ((const double*)numeric_buffer.real_data)[0] != 42.0 ||
         mparser_execution_summary_init_sized(
             &summary, sizeof(summary),
             MPARSER_C_ABI_VERSION) != MPARSER_API_STATUS_OK ||
@@ -84,7 +95,8 @@ int main(void) {
 
     printf("abi = %u.%u, result = %.0f, request-bytes = %u\n",
            mparser_c_abi_version(), mparser_c_abi_revision(),
-           data[0], invocation.value.struct_size);
+           ((const double*)numeric_buffer.real_data)[0],
+           invocation.value.struct_size);
     succeeded = 1;
 
 cleanup:

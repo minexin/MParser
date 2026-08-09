@@ -2,10 +2,12 @@
 
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_math.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_object.h"
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_text.h"
 #include "mparser/runtime_warning.h"
 
 #include <algorithm>
@@ -68,14 +70,21 @@ constexpr std::string_view kBuiltinNames[] = {
     "getReport",
     "horzcat",
     "inf",
+    "int16",
+    "int32",
+    "int64",
+    "int8",
     "ipermute",
     "isa",
     "isenum",
     "isempty",
     "ischar",
     "isfield",
+    "isfloat",
+    "isinteger",
     "islogical",
     "ismethod",
+    "isnumeric",
     "isequal",
     "ismissing",
     "isprop",
@@ -133,6 +142,10 @@ constexpr std::string_view kBuiltinNames[] = {
     "toc",
     "true",
     "rethrow",
+    "uint16",
+    "uint32",
+    "uint64",
+    "uint8",
     "vertcat",
     "warning",
     "zeros",
@@ -228,6 +241,109 @@ BuiltinDescriptor mathDescriptor(std::string_view name) {
                 "MParser:InvalidBuiltinArgument");
         }
         return BuiltinResult::success({std::move(*result)});
+    };
+    return descriptor;
+}
+
+bool isNumericConversionBuiltin(std::string_view name) {
+    return matches(name, {"double", "logical", "single", "int8",
+                          "uint8", "int16", "uint16", "int32",
+                          "uint32", "int64", "uint64"});
+}
+
+BuiltinDescriptor numericConversionDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::fixed(1);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary =
+        "MATLAB-like numeric class conversion with class-specific rounding.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        if (builtin == "double" &&
+            isRuntimeCharacterArray(call.arguments.front())) {
+            auto result = runtimeCharacterCodes(call.arguments.front());
+            if (!result.succeeded) {
+                return helperFailure(
+                    call.span, std::move(result.error),
+                    "MParser:InvalidNumericConversion");
+            }
+            return call.requestedOutputCount == 0
+                       ? BuiltinResult::success()
+                       : BuiltinResult::success(
+                             {std::move(result.value)});
+        }
+        if (!isRuntimeNumericValue(call.arguments.front())) {
+            return helperFailure(
+                call.span, builtin + " expects one numeric argument",
+                "MParser:InvalidNumericConversion");
+        }
+        const auto target = runtimeNumericClassFromName(builtin);
+        if (!target) {
+            return helperFailure(
+                call.span,
+                builtin + " is not a supported numeric class",
+                "MParser:UnsupportedNumericClass");
+        }
+        auto converted = runtimeConvertNumericClass(
+            call.arguments.front(), *target);
+        if (!converted) {
+            return helperFailure(
+                call.span,
+                builtin == "logical"
+                    ? "NaN cannot be converted to class logical"
+                    : "numeric value cannot be converted to class " +
+                          builtin,
+                "MParser:InvalidNumericConversion");
+        }
+        return call.requestedOutputCount == 0
+                   ? BuiltinResult::success()
+                   : BuiltinResult::success(
+                         {std::move(*converted)});
+    };
+    return descriptor;
+}
+
+bool isNumericPredicateBuiltin(std::string_view name) {
+    return matches(name, {"isnumeric", "isfloat", "isinteger",
+                          "islogical"});
+}
+
+BuiltinDescriptor numericPredicateDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::fixed(1);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Scalar,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary = "Numeric class-family predicate.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        return BuiltinResult::success({makeRuntimeLogicalValue(
+            runtimeNumericPredicate(builtin, call.arguments.front()))});
     };
     return descriptor;
 }
@@ -399,6 +515,12 @@ BuiltinDescriptor warningDescriptor(std::string_view name) {
 }
 
 BuiltinDescriptor descriptorFor(std::string_view name) {
+    if (isNumericConversionBuiltin(name)) {
+        return numericConversionDescriptor(name);
+    }
+    if (isNumericPredicateBuiltin(name)) {
+        return numericPredicateDescriptor(name);
+    }
     if (isRuntimePureUnaryMathBuiltin(name)) {
         return mathDescriptor(name);
     }
@@ -418,7 +540,7 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
     descriptor.sideEffects = BuiltinSideEffect::External;
     if (matches(name, {"disp", "empty", "fprintf", "plot",
-                       "rand", "randn", "single", "table"})) {
+                       "rand", "randn", "table"})) {
         descriptor.implementation =
             BuiltinImplementationKind::Unsupported;
         descriptor.sideEffects = BuiltinSideEffect::None;

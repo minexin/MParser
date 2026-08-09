@@ -2,6 +2,8 @@
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_exception.h"
+#include "mparser/runtime_numeric.h"
+#include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
@@ -71,12 +73,18 @@ void assertVector(const mparser::InterpreterResult& result,
                   std::initializer_list<double> expected) {
     const auto* value = findVariable(result, name);
     assert(value != nullptr);
-    assert(value->kind == mparser::RuntimeValueKind::Vector);
-    assert(value->elements.size() == expected.size());
+    assert(mparser::isRuntimeNumericValue(*value));
+    const auto dimensions = mparser::runtimeDimensions(*value);
+    assert(dimensions.size() == 2);
+    assert(dimensions[0] == 1);
+    assert(dimensions[1] == expected.size());
 
     size_t index = 0;
     for (double element : expected) {
-        assert(std::fabs(value->elements[index] - element) < 1e-9);
+        const auto actual =
+            mparser::runtimeNumericElementValue(*value, index);
+        assert(actual.has_value());
+        assert(std::fabs(actual->real - element) < 1e-9);
         ++index;
     }
 }
@@ -86,15 +94,22 @@ void assertMatrix(const mparser::InterpreterResult& result,
                   std::initializer_list<double> expected) {
     const auto* value = findVariable(result, name);
     assert(value != nullptr);
-    assert(value->kind == mparser::RuntimeValueKind::Matrix);
-    assert(value->rows == rows);
-    assert(value->columns == columns);
-    assert(value->elements.size() == expected.size());
+    assert(mparser::isRuntimeNumericValue(*value));
+    const auto dimensions = mparser::runtimeDimensions(*value);
+    assert(dimensions.size() == 2);
+    assert(dimensions[0] == rows);
+    assert(dimensions[1] == columns);
+    assert(rows * columns == expected.size());
 
-    size_t index = 0;
-    for (double element : expected) {
-        assert(std::fabs(value->elements[index] - element) < 1e-9);
-        ++index;
+    auto expectedElement = expected.begin();
+    for (size_t row = 0; row < rows; ++row) {
+        for (size_t column = 0; column < columns; ++column) {
+            const auto actual = mparser::runtimeNumericElementValue(
+                *value, column * rows + row);
+            assert(actual.has_value());
+            assert(std::fabs(actual->real - *expectedElement) < 1e-9);
+            ++expectedElement;
+        }
     }
 }
 

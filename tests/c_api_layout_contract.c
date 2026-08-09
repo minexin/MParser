@@ -1,4 +1,4 @@
-#include "public_contract/c_abi/1.1/c_api_snapshot.h"
+#include "mparser/c_api.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -12,9 +12,9 @@ _Static_assert(sizeof(void*) == 8,
 _Static_assert(sizeof(size_t) == 8,
                "MParser v1 release platforms require 64-bit size_t");
 
-_Static_assert(MPARSER_C_ABI_VERSION_MAJOR == 1u,
+_Static_assert(MPARSER_C_ABI_VERSION_MAJOR == 2u,
                "C ABI major changed");
-_Static_assert(MPARSER_C_ABI_REVISION == 1u,
+_Static_assert(MPARSER_C_ABI_REVISION == 0u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
                "allocation status changed");
@@ -30,6 +30,16 @@ _Static_assert(MPARSER_STOP_DIAGNOSTIC_LIMIT == 6u,
                "stop reason range changed");
 _Static_assert(MPARSER_VALUE_FUNCTION_HANDLE == 7u,
                "value kind range changed");
+_Static_assert(MPARSER_NUMERIC_UINT64 == 10u,
+               "numeric class range changed");
+
+_Static_assert(sizeof(mparser_numeric_buffer) == 32,
+               "mparser_numeric_buffer size changed");
+REQUIRE_OFFSET(mparser_numeric_buffer, numeric_class, 0);
+REQUIRE_OFFSET(mparser_numeric_buffer, is_complex, 4);
+REQUIRE_OFFSET(mparser_numeric_buffer, real_data, 8);
+REQUIRE_OFFSET(mparser_numeric_buffer, imaginary_data, 16);
+REQUIRE_OFFSET(mparser_numeric_buffer, element_count, 24);
 
 _Static_assert(sizeof(mparser_utf8_view) == 16,
                "mparser_utf8_view size changed");
@@ -116,6 +126,6 @@ REQUIRE_OFFSET(mparser_execution_summary, maximum_diagnostic_count, 112);
 REQUIRE_OFFSET(mparser_execution_summary, elapsed_nanoseconds, 120);
 
 int main(void) {
-    puts("c api layout contract = abi-1.1,64-bit");
+    puts("c api layout contract = abi-2.0,64-bit");
     return 0;
 }

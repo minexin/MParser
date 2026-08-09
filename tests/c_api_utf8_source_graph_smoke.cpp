@@ -157,12 +157,14 @@ int main() {
 
     mparser_value* value = nullptr;
     assert(findVariable(result, "utf8_result", value) != nullptr);
-    const double* data = nullptr;
-    size_t count = 0;
-    assert(mparser_value_numeric_data(value, &data, &count) ==
+    mparser_numeric_buffer buffer{};
+    assert(mparser_value_get_numeric_buffer(value, &buffer) ==
            MPARSER_API_STATUS_OK);
-    assert(count == 1);
-    assert(std::fabs(data[0] - 9.0) < 1e-9);
+    assert(buffer.numeric_class == MPARSER_NUMERIC_DOUBLE);
+    assert(buffer.is_complex == 0);
+    assert(buffer.element_count == 1);
+    assert(std::fabs(static_cast<const double*>(
+                         buffer.real_data)[0] - 9.0) < 1e-9);
 
     mparser_value_release(value);
     mparser_result_release(result);
