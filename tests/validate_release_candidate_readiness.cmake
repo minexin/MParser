@@ -17,6 +17,7 @@ foreach(required_variable IN ITEMS
         PUBLICATION_EVIDENCE_ROOT
         EXPECTED_VERSION
         EXPECTED_RELEASE_VERSION
+        EXPECTED_PUBLIC_CONTRACT_VERSION
         EXPECTED_JIT_EVIDENCE_VERSION
         EXPECTED_AUTHENTICATION_VERSION
         EXPECTED_AUTHENTICATION_REVISION
@@ -69,13 +70,15 @@ string(JSON contract_version GET
 string(JSON contract_state GET
     "${public_contract_json}" release state)
 if(NOT matrix_version STREQUAL EXPECTED_VERSION OR
-   NOT contract_version STREQUAL EXPECTED_VERSION OR
+   NOT contract_version STREQUAL EXPECTED_PUBLIC_CONTRACT_VERSION OR
    NOT contract_state STREQUAL EXPECTED_CONTRACT_STATE)
     message(FATAL_ERROR
         "Release version/state drifted.\n"
         "matrix: ${matrix_version}\n"
         "contract: ${contract_version} (${contract_state})\n"
-        "expected: ${EXPECTED_VERSION} (${EXPECTED_CONTRACT_STATE})")
+        "expected matrix: ${EXPECTED_VERSION}\n"
+        "expected historical contract: ${EXPECTED_PUBLIC_CONTRACT_VERSION} "
+        "(${EXPECTED_CONTRACT_STATE})")
 endif()
 
 if(EXPECTED_CONTRACT_STATE STREQUAL "frozen-v1")

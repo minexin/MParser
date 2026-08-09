@@ -12,8 +12,11 @@ _Static_assert(sizeof(void*) == 8,
 _Static_assert(sizeof(size_t) == 8,
                "MParser v1 release platforms require 64-bit size_t");
 
-_Static_assert(MPARSER_C_ABI_VERSION_MAJOR == 2u,
-               "C ABI major changed");
+_Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
+                   MPARSER_C_API_VERSION_MINOR == 2u,
+               "C API version changed");
+_Static_assert(MPARSER_C_ABI_GENERATION == 2u,
+               "C ABI generation changed");
 _Static_assert(MPARSER_C_ABI_REVISION == 0u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
@@ -55,7 +58,7 @@ REQUIRE_OFFSET(mparser_utf16_view, missing, 16);
 _Static_assert(sizeof(mparser_source_unit) == 40,
                "mparser_source_unit size changed");
 REQUIRE_OFFSET(mparser_source_unit, struct_size, 0);
-REQUIRE_OFFSET(mparser_source_unit, abi_version, 4);
+REQUIRE_OFFSET(mparser_source_unit, abi_generation, 4);
 REQUIRE_OFFSET(mparser_source_unit, source_name, 8);
 REQUIRE_OFFSET(mparser_source_unit, source_name_size, 16);
 REQUIRE_OFFSET(mparser_source_unit, source, 24);
@@ -64,7 +67,7 @@ REQUIRE_OFFSET(mparser_source_unit, source_size, 32);
 _Static_assert(sizeof(mparser_source_load_options) == 24,
                "mparser_source_load_options size changed");
 REQUIRE_OFFSET(mparser_source_load_options, struct_size, 0);
-REQUIRE_OFFSET(mparser_source_load_options, abi_version, 4);
+REQUIRE_OFFSET(mparser_source_load_options, abi_generation, 4);
 REQUIRE_OFFSET(mparser_source_load_options, search_paths, 8);
 REQUIRE_OFFSET(mparser_source_load_options, search_path_count, 16);
 
@@ -83,7 +86,7 @@ REQUIRE_OFFSET(mparser_source_position, column, 12);
 _Static_assert(sizeof(mparser_invocation_options) == 128,
                "mparser_invocation_options size changed");
 REQUIRE_OFFSET(mparser_invocation_options, struct_size, 0);
-REQUIRE_OFFSET(mparser_invocation_options, abi_version, 4);
+REQUIRE_OFFSET(mparser_invocation_options, abi_generation, 4);
 REQUIRE_OFFSET(mparser_invocation_options, entry_name, 8);
 REQUIRE_OFFSET(mparser_invocation_options, entry_name_size, 16);
 REQUIRE_OFFSET(mparser_invocation_options, arguments, 24);
@@ -104,7 +107,7 @@ REQUIRE_OFFSET(mparser_invocation_options, cancellation_token, 120);
 _Static_assert(sizeof(mparser_execution_summary) == 128,
                "mparser_execution_summary size changed");
 REQUIRE_OFFSET(mparser_execution_summary, struct_size, 0);
-REQUIRE_OFFSET(mparser_execution_summary, abi_version, 4);
+REQUIRE_OFFSET(mparser_execution_summary, abi_generation, 4);
 REQUIRE_OFFSET(mparser_execution_summary, requested_backend, 8);
 REQUIRE_OFFSET(mparser_execution_summary, effective_tier, 12);
 REQUIRE_OFFSET(mparser_execution_summary, profiling_collected, 16);
@@ -126,6 +129,6 @@ REQUIRE_OFFSET(mparser_execution_summary, maximum_diagnostic_count, 112);
 REQUIRE_OFFSET(mparser_execution_summary, elapsed_nanoseconds, 120);
 
 int main(void) {
-    puts("c api layout contract = abi-2.0,64-bit");
+    puts("c api layout contract = api-1.2,abi-generation-2,64-bit");
     return 0;
 }

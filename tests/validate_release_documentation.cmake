@@ -4,6 +4,7 @@ foreach(required IN ITEMS
         PROJECT_ROOT
         EXPECTED_VERSION
         V1_RELEASE_VERSION
+        V1_PUBLIC_CONTRACT_VERSION
         CLI_CONTRACT
         MPARSER_EXECUTABLE
         ENTRY_SOURCE)
@@ -114,10 +115,10 @@ string(JSON public_contract_version GET
     "${public_contract}" release engine_version)
 string(JSON public_contract_state GET
     "${public_contract}" release state)
-if(NOT public_contract_version STREQUAL EXPECTED_VERSION OR
+if(NOT public_contract_version STREQUAL V1_PUBLIC_CONTRACT_VERSION OR
    NOT public_contract_state STREQUAL "frozen-v1")
     message(FATAL_ERROR
-        "release documentation requires frozen ${EXPECTED_VERSION} public contract")
+        "release documentation requires frozen historical public contract engine ${V1_PUBLIC_CONTRACT_VERSION}")
 endif()
 require_text(release_notes "Publication contract: **frozen v1**."
     "v1.0 release notes")

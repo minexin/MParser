@@ -161,7 +161,7 @@ void runDefaultCatalogSmoke() {
     require(mparser::kBuiltinSourceContractMajor == 1 &&
                 mparser::kBuiltinSourceContractMinor == 1,
             "builtin source contract version changed");
-    require(registry->names().size() == 154,
+    require(registry->names().size() == 163,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");
@@ -192,7 +192,8 @@ void runDefaultCatalogSmoke() {
                 isreal->outputConstraints.front().shape ==
                     mparser::BuiltinShapeConstraint::Scalar,
             "isreal descriptor metadata mismatch");
-    for (std::string_view name : {"acosh", "round", "isfinite"}) {
+    for (std::string_view name : {"acosh", "nextpow2", "round",
+                                  "isfinite"}) {
         const auto* descriptor = registry->find(name);
         require(descriptor && descriptor->inputs.minimum == 1 &&
                     descriptor->inputs.maximum == 1 &&
@@ -201,13 +202,31 @@ void runDefaultCatalogSmoke() {
                     descriptor->purity == mparser::BuiltinPurity::Pure,
                 "shared unary math metadata mismatch");
     }
-    for (std::string_view name : {"atan2", "hypot"}) {
+    for (std::string_view name : {"atan2", "hypot", "mod", "rem"}) {
         const auto* descriptor = registry->find(name);
         require(descriptor && descriptor->inputs.minimum == 2 &&
                     descriptor->inputs.maximum == 2 &&
                     descriptor->implementation ==
                         mparser::BuiltinImplementationKind::Shared,
                 "shared binary math metadata mismatch");
+    }
+    for (std::string_view name : {"isscalar", "isvector", "isrow",
+                                  "iscolumn", "ismatrix"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor && descriptor->inputs.minimum == 1 &&
+                    descriptor->inputs.maximum == 1 &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Shared &&
+                    descriptor->purity == mparser::BuiltinPurity::Pure,
+                "shape predicate metadata mismatch");
+    }
+    for (std::string_view name : {"isequal", "isequaln"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor && descriptor->inputs.minimum == 2 &&
+                    !descriptor->inputs.maximum &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Shared,
+                "deep equality metadata mismatch");
     }
     const auto* epsilon = registry->find("eps");
     require(epsilon && epsilon->inputs.minimum == 0 &&

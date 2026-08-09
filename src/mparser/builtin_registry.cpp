@@ -8,6 +8,7 @@
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
+#include "mparser/runtime_value_ops.h"
 #include "mparser/runtime_warning.h"
 
 #include <algorithm>
@@ -92,23 +93,29 @@ constexpr std::string_view kBuiltinNames[] = {
     "isenum",
     "isempty",
     "ischar",
+    "iscolumn",
     "isfield",
     "isfinite",
     "isfloat",
     "isinf",
     "isinteger",
     "islogical",
+    "ismatrix",
     "ismethod",
     "isnumeric",
     "isnan",
     "isreal",
+    "isrow",
+    "isscalar",
     "isequal",
+    "isequaln",
     "ismissing",
     "isprop",
     "isstring",
     "isStringScalar",
     "isstruct",
     "isvalid",
+    "isvector",
     "j",
     "lastwarn",
     "length",
@@ -124,10 +131,12 @@ constexpr std::string_view kBuiltinNames[] = {
     "metafunction",
     "methods",
     "min",
+    "mod",
     "nan",
     "nargin",
     "nargout",
     "ndims",
+    "nextpow2",
     "notify",
     "numel",
     "ones",
@@ -139,6 +148,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "rand",
     "randn",
     "real",
+    "rem",
     "repmat",
     "reshape",
     "rmfield",
@@ -297,10 +307,13 @@ BuiltinDescriptor binaryMathDescriptor(std::string_view name) {
         auto result = runtimeApplyPureBinaryMathBuiltin(
             builtin, call.arguments[0], call.arguments[1]);
         if (!result) {
+            const auto message =
+                builtin == "atan2" || builtin == "hypot"
+                    ? builtin + " requires real floating-point inputs"
+                    : builtin +
+                          " requires compatible real numeric inputs";
             return helperFailure(
-                call.span,
-                builtin +
-                    " requires real floating-point inputs with compatible shapes",
+                call.span, message,
                 "MParser:InvalidBuiltinArgument");
         }
         return BuiltinResult::success({std::move(*result)});
@@ -441,6 +454,80 @@ BuiltinDescriptor numericPredicateDescriptor(std::string_view name) {
         }
         return BuiltinResult::success({makeRuntimeLogicalValue(
             runtimeNumericPredicate(builtin, call.arguments.front()))});
+    };
+    return descriptor;
+}
+
+bool isShapePredicateBuiltin(std::string_view name) {
+    return matches(name, {"isscalar", "isvector", "isrow",
+                          "iscolumn", "ismatrix"});
+}
+
+BuiltinDescriptor shapePredicateDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::fixed(1);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Scalar,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary = "MATLAB-like value shape predicate.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        const auto result = runtimeShapePredicate(
+            builtin, call.arguments.front());
+        return result
+                   ? BuiltinResult::success(
+                         {makeRuntimeLogicalValue(*result)})
+                   : helperFailure(
+                         call.span, "unknown shape predicate: " + builtin,
+                         "MParser:InvalidBuiltinArgument");
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor equalityDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::variadic(2);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Scalar,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary =
+        name == "isequaln"
+            ? "Deep value equality with corresponding NaNs equal."
+            : "Deep MATLAB-like value equality.";
+    descriptor.handler = [equalNaNs = name == "isequaln"](
+                             const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        const bool equal = std::all_of(
+            call.arguments.begin() + 1, call.arguments.end(),
+            [&](const RuntimeValue& value) {
+                return runtimeValuesEqual(
+                    call.arguments.front(), value,
+                    equalNaNs ? RuntimeNaNEquality::Equal
+                              : RuntimeNaNEquality::Unequal);
+            });
+        return BuiltinResult::success(
+            {makeRuntimeLogicalValue(equal)});
     };
     return descriptor;
 }
@@ -753,6 +840,12 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isNumericPredicateBuiltin(name)) {
         return numericPredicateDescriptor(name);
+    }
+    if (isShapePredicateBuiltin(name)) {
+        return shapePredicateDescriptor(name);
+    }
+    if (name == "isequal" || name == "isequaln") {
+        return equalityDescriptor(name);
     }
     if (isRuntimeComplexNumericBuiltin(name)) {
         return complexNumericDescriptor(name);

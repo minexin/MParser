@@ -3234,19 +3234,6 @@ private:
             return FunctionCallResult{{logicalValue(
                 isStruct(arguments.front()))}};
         }
-        if (name == "isequal") {
-            if (arguments.size() < 2) {
-                addDiagnostic(node,
-                              "isequal expects at least two arguments");
-                return FunctionCallResult{{missingValue()}};
-            }
-            const bool equal = std::all_of(
-                arguments.begin() + 1, arguments.end(),
-                [&](const RuntimeValue& value) {
-                    return runtimeEqual(arguments.front(), value);
-                });
-            return FunctionCallResult{{logicalValue(equal)}};
-        }
         if (name == "double" && arguments.size() == 1 &&
             isRuntimeCharacterArray(arguments.front())) {
             auto result = runtimeCharacterCodes(arguments.front());

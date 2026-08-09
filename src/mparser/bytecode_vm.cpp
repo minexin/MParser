@@ -13136,19 +13136,6 @@ private:
             }
             return characterValue(runtimeValueClassName(arguments.front()));
         }
-        if (name == "isequal") {
-            if (arguments.size() < 2) {
-                addDiagnostic(instruction,
-                              "bytecode isequal expects at least two arguments");
-                return missingValue();
-            }
-            const bool equal = std::all_of(
-                arguments.begin() + 1, arguments.end(),
-                [&](const RuntimeValue& value) {
-                    return runtimeEqual(arguments.front(), value);
-                });
-            return logicalValue(equal);
-        }
         if (name == "isa") {
             if (arguments.size() != 2 || !isString(arguments[1])) {
                 addDiagnostic(

@@ -1,14 +1,14 @@
 # MParser
 
-Current development milestone: v1.2. The product and installed SDK will share
-version `1.2.0` when the complete release train reaches its candidate gate;
-until then the project version remains `1.1.0`. This active line extends the
-runtime with exact core numeric classes, dense complex double/single values,
-typed constructors and elementary math, C ABI generation 2, C++ source API
-1.2, and machine result protocol 1.1. The released v1.0 contracts remain
-archived evidence; unreleased interfaces may be simplified without
-compatibility adapters. See [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) and
-the [external gap plan](docs/v1.x-external-gap-plan.md).
+Current development milestone: v1.2. The source tree, product metadata, and
+installed SDK now share development version `1.2.0`; this is not yet a tagged
+release. This active line extends the runtime with exact core numeric classes,
+dense complex double/single values, typed constructors and elementary math,
+C/C++ source API 1.2, C ABI generation 2 revision 0, and machine result
+protocol 1.1. The released v1.0 contracts remain archived evidence;
+unreleased interfaces may be simplified without compatibility adapters. See
+[docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) and the
+[external gap plan](docs/v1.x-external-gap-plan.md).
 
 The published release baseline remains v1.0.0. Its reliability and
 release-documentation gates were cross-platform confirmed at revision
@@ -1021,7 +1021,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 1.1.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 1.2.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 

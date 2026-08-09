@@ -31,7 +31,7 @@ The three extension levels are:
 3. a future independently compiled native adapter, explicitly Post-v1.0.
 
 The future third level must be a separately versioned pure C function table.
-It must negotiate structure sizes and ABI major/revision, use opaque handles
+It must negotiate structure sizes and ABI generation/revision, use opaque handles
 or copied plain-C values, contain every exception at the boundary, and declare
 thread safety, determinism, side effects, workspace/context permissions, and
 resource-control cooperation. It must also define callback and allocator

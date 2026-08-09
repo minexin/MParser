@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 1.1.0 LANGUAGES C CXX)
+project(MParser VERSION 1.2.0 LANGUAGES C CXX)
 
 set(MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION "0.90.0")
 set(MPARSER_V1_RELEASE_VERSION "1.0.0")
+set(MPARSER_V1_PUBLIC_CONTRACT_ENGINE_VERSION "1.1.0")
 set(MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION "1.0.0")
 set(MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION
     "d8075575403bf30828a928a83bbbbfb9706ba902")
@@ -26,12 +27,11 @@ find_package(Threads REQUIRED)
 set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
-set(MPARSER_C_ABI_VERSION 2)
+set(MPARSER_C_ABI_GENERATION 2)
 set(MPARSER_C_ABI_REVISION 0)
-set(MPARSER_C_ABI_LIBRARY_VERSION
-    "${MPARSER_C_ABI_VERSION}.${MPARSER_C_ABI_REVISION}.0")
+set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_abi2_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -281,15 +281,15 @@ target_compile_definitions(mparser_c_api
         MPARSER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         MPARSER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
         MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-        MPARSER_C_ABI_VERSION_EXPECTED=${MPARSER_C_ABI_VERSION}
+        MPARSER_C_ABI_GENERATION_EXPECTED=${MPARSER_C_ABI_GENERATION}
         MPARSER_C_ABI_REVISION_EXPECTED=${MPARSER_C_ABI_REVISION}
     INTERFACE
         MPARSER_C_API_SHARED=1)
 set_target_properties(mparser_c_api PROPERTIES
     EXPORT_NAME c_api
     OUTPUT_NAME mparser_c
-    VERSION ${MPARSER_C_ABI_LIBRARY_VERSION}
-    SOVERSION ${MPARSER_C_ABI_VERSION}
+    VERSION ${MPARSER_C_LIBRARY_VERSION}
+    SOVERSION ${MPARSER_C_ABI_GENERATION}
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES)
 if(UNIX)
@@ -612,8 +612,8 @@ add_test(NAME project_license_smoke
         -DTHIRD_PARTY_NOTICES_FILE=${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_project_license.cmake)
 
-# The v1 contract remains archived under docs/tests. The active v2 contract is
-# frozen only after the v1.2 numeric and complex value surface is complete.
+# The v1 contract remains archived under docs/tests. The active API 1.2 / ABI
+# generation 2 contract freezes only after the v1.2 surface is complete.
 set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
@@ -623,6 +623,7 @@ add_test(NAME release_documentation_smoke
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DV1_RELEASE_VERSION=${MPARSER_V1_RELEASE_VERSION}
+        -DV1_PUBLIC_CONTRACT_VERSION=${MPARSER_V1_PUBLIC_CONTRACT_ENGINE_VERSION}
         -DCLI_CONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/cli-contract-v1.json
         -DMPARSER_EXECUTABLE=$<TARGET_FILE:mparser>
         "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
@@ -679,6 +680,7 @@ add_test(NAME release_candidate_readiness_smoke
         -DPUBLICATION_EVIDENCE_ROOT=${MPARSER_V1_PUBLICATION_EVIDENCE_ROOT}
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_RELEASE_VERSION=${MPARSER_V1_RELEASE_VERSION}
+        -DEXPECTED_PUBLIC_CONTRACT_VERSION=${MPARSER_V1_PUBLIC_CONTRACT_ENGINE_VERSION}
         -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
         -DEXPECTED_AUTHENTICATION_VERSION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}
         -DEXPECTED_AUTHENTICATION_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}
@@ -718,6 +720,7 @@ add_test(NAME release_candidate_readiness_guard_smoke
         -DPUBLICATION_EVIDENCE_ROOT=${MPARSER_V1_PUBLICATION_EVIDENCE_ROOT}
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -DEXPECTED_RELEASE_VERSION=${MPARSER_V1_RELEASE_VERSION}
+        -DEXPECTED_PUBLIC_CONTRACT_VERSION=${MPARSER_V1_PUBLIC_CONTRACT_ENGINE_VERSION}
         -DEXPECTED_JIT_EVIDENCE_VERSION=${MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION}
         -DEXPECTED_AUTHENTICATION_VERSION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_VERSION}
         -DEXPECTED_AUTHENTICATION_REVISION=${MPARSER_V1_AUTHENTICATION_EVIDENCE_REVISION}
@@ -758,6 +761,38 @@ add_executable(complex_numeric_smoke_tests
     tests/complex_numeric_smoke.cpp)
 target_link_libraries(complex_numeric_smoke_tests PRIVATE mparser_core)
 add_test(NAME complex_numeric_smoke COMMAND complex_numeric_smoke_tests)
+
+add_executable(core_numeric_builtin_smoke_tests
+    tests/core_numeric_builtin_smoke.cpp)
+target_link_libraries(core_numeric_builtin_smoke_tests PRIVATE mparser_core)
+add_test(NAME core_numeric_builtin_smoke
+    COMMAND core_numeric_builtin_smoke_tests)
+
+add_test(NAME core_numeric_builtin_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/core_numeric_builtins_demo.m)
+set_tests_properties(core_numeric_builtin_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 0")
+
+add_test(NAME core_numeric_builtin_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/core_numeric_builtins_demo.m)
+set_tests_properties(core_numeric_builtin_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 0")
+
+add_test(NAME core_numeric_builtin_portable_jit_cli_smoke
+    COMMAND mparser --run --jit=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/core_numeric_builtins_demo.m)
+set_tests_properties(core_numeric_builtin_portable_jit_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 0")
+
+if(MPARSER_ENABLE_NATIVE_JIT)
+    add_test(NAME core_numeric_builtin_native_jit_cli_smoke
+        COMMAND mparser --run --jit=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/core_numeric_builtins_demo.m)
+    set_tests_properties(core_numeric_builtin_native_jit_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "summary = 0")
+endif()
 
 add_test(NAME complex_numeric_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -1961,7 +1996,7 @@ target_compile_definitions(c_api_allocation_failure_tests PRIVATE
     MPARSER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     MPARSER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-    MPARSER_C_ABI_VERSION_EXPECTED=${MPARSER_C_ABI_VERSION}
+    MPARSER_C_ABI_GENERATION_EXPECTED=${MPARSER_C_ABI_GENERATION}
     MPARSER_C_ABI_REVISION_EXPECTED=${MPARSER_C_ABI_REVISION})
 add_test(NAME c_api_allocation_failure
     COMMAND c_api_allocation_failure_tests)
@@ -1981,7 +2016,7 @@ target_compile_definitions(c_api_named_fault_smoke_tests PRIVATE
     MPARSER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     MPARSER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     MPARSER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-    MPARSER_C_ABI_VERSION_EXPECTED=${MPARSER_C_ABI_VERSION}
+    MPARSER_C_ABI_GENERATION_EXPECTED=${MPARSER_C_ABI_GENERATION}
     MPARSER_C_ABI_REVISION_EXPECTED=${MPARSER_C_ABI_REVISION})
 add_test(NAME c_api_named_fault_smoke
     COMMAND c_api_named_fault_smoke_tests)
@@ -2010,14 +2045,14 @@ add_test(NAME embedding_unload_stress
         $<TARGET_FILE:mparser_c_api>)
 set_tests_properties(embedding_unload_stress PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "embedding unload stress = 256,abi-2.0"
+        "embedding unload stress = 256,abi-generation-2-revision-0"
     TIMEOUT 120)
 
 add_test(NAME c_api_shared_library_abi
     COMMAND "${CMAKE_COMMAND}"
         "-DMPARSER_SHARED_LIBRARY=$<TARGET_FILE:mparser_c_api>"
         "-DMPARSER_SYMBOL_LIST=${MPARSER_C_ABI_SYMBOL_LIST}"
-        "-DMPARSER_ABI_SOVERSION=${MPARSER_C_ABI_VERSION}"
+        "-DMPARSER_ABI_SOVERSION=${MPARSER_C_ABI_GENERATION}"
         "-DMPARSER_LINKER=${CMAKE_LINKER}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
@@ -2034,7 +2069,7 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-2.0,cpp-1.2")
+        "cpp api smoke = 5050,42,21,abi-generation-2-revision-0,cpp-api-1.2")
 
 add_executable(cpp_api_concurrency_stress_tests
     tests/cpp_api_concurrency_stress.cpp)
@@ -2054,7 +2089,8 @@ target_link_libraries(mparser_cpp_embedding_demo PRIVATE
 add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "cpp sdk = 5050,5,abi-2.0,cpp-1.2")
+    PASS_REGULAR_EXPRESSION
+        "cpp sdk = 5050,5,abi-generation-2-revision-0,cpp-api-1.2")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
@@ -2068,7 +2104,7 @@ add_test(NAME c_api_layout_contract
     COMMAND c_api_layout_contract_tests)
 set_tests_properties(c_api_layout_contract PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "c api layout contract = abi-2.0,64-bit")
+        "c api layout contract = api-1.2,abi-generation-2,64-bit")
 
 add_executable(c_api_utf8_source_graph_smoke_tests
     tests/c_api_utf8_source_graph_smoke.cpp)
@@ -2103,7 +2139,7 @@ add_test(NAME c_abi_compat_demo_smoke
     COMMAND mparser_c_abi_compat_demo)
 set_tests_properties(c_abi_compat_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "abi = 2.0, result = 42, request-bytes = ")
+        "api = 1.2, abi-generation = 2, revision = 0, result = 42, request-bytes = ")
 
 add_executable(mparser_c_source_graph_demo
     samples/c_source_graph_demo.c)
@@ -2355,6 +2391,7 @@ install(FILES
     samples/machine_protocol_demo.m
     samples/numeric_types_demo.m
     samples/complex_numeric_demo.m
+    samples/core_numeric_builtins_demo.m
     samples/performance_scalar_loop.m
     samples/performance_array_workload.m
     samples/reliability_boundary_demo.m

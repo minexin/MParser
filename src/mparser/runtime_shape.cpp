@@ -92,6 +92,28 @@ size_t runtimeShapeElementCount(const RuntimeValue& value) {
     return product.value_or(0);
 }
 
+std::optional<bool> runtimeShapePredicate(
+    std::string_view name, const RuntimeValue& value) {
+    const auto dimensions = runtimeDimensions(value);
+    if (name == "isscalar") {
+        return runtimeShapeElementCount(value) == 1;
+    }
+    if (name == "isvector") {
+        return dimensions.size() == 2 &&
+               (dimensions[0] == 1 || dimensions[1] == 1);
+    }
+    if (name == "isrow") {
+        return dimensions.size() == 2 && dimensions[0] == 1;
+    }
+    if (name == "iscolumn") {
+        return dimensions.size() == 2 && dimensions[1] == 1;
+    }
+    if (name == "ismatrix") {
+        return dimensions.size() == 2;
+    }
+    return std::nullopt;
+}
+
 std::vector<size_t>
 runtimeEffectiveSubscriptDimensions(const RuntimeValue& value,
                                     size_t subscriptCount) {

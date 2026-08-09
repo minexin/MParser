@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace mparser {
@@ -26,6 +27,9 @@ checkedRuntimeDimensionProduct(const std::vector<size_t>& dimensions);
 std::optional<size_t> checkedRuntimeNonnegativeInteger(double value);
 
 size_t runtimeShapeElementCount(const RuntimeValue& value);
+
+std::optional<bool> runtimeShapePredicate(
+    std::string_view name, const RuntimeValue& value);
 
 std::vector<size_t>
 runtimeEffectiveSubscriptDimensions(const RuntimeValue& value,

@@ -27,13 +27,14 @@ Every v1.x change follows these rules:
 
 A `0.1` release is a complete release train rather than a single narrow fix.
 Several implementation batches may land under the same development milestone,
-with focused local regression at each batch boundary. The engine version,
+with focused local regression at each batch boundary. The product/source SDK
+is stamped once with that train's development version, while the final
 milestone narrative, full differential rerun, release packaging, and complete
 platform CI are updated together only when the whole milestone is a release
 candidate. Cross-platform-risk changes may still use intermediate CI, but do
 not create an extra public version.
 
-The C ABI generation 2 and C++ source API 1.2 work in v1.2 intentionally
+The C API 1.2, C ABI generation 2, and C++ source API 1.2 work in v1.2 intentionally
 replace the archived v1 host surface so exact integer and complex arrays have one direct
 transport model. MExecServer and other downstream projects consume the
 resulting milestone API after it settles; preserving their current adapters is
@@ -88,7 +89,8 @@ function growth:
   rules against the selected MATLAB reference release;
 - deliver the first coherent pure-math tranche, including elementary binary
   and unary functions, rounding and finite predicates, numeric/type/shape
-  predicates, `eps`, `real`/`imag`/`conj`/`isreal`, and related constructors;
+  predicates, `mod`/`rem`, `nextpow2`, `isequaln`, `eps`,
+  `real`/`imag`/`conj`/`isreal`, and related constructors;
 - preserve double-specialized typed/native execution and add explicit guards,
   deoptimization, and VM equivalence for every newly legal class before wider
   typed lowering is attempted.

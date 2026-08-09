@@ -22,10 +22,10 @@ if(NOT TARGET MParser::cpp_api OR NOT TARGET MParser::cli)
     message(FATAL_ERROR
         "The installed package must export MParser::cpp_api and MParser::cli")
 endif()
-if(NOT MParser_C_ABI_VERSION EQUAL 2 OR
+if(NOT MParser_C_ABI_GENERATION EQUAL 2 OR
    NOT MParser_C_ABI_REVISION EQUAL 0)
     message(FATAL_ERROR
-        "Unexpected installed C ABI: ${MParser_C_ABI_VERSION}.${MParser_C_ABI_REVISION}")
+        "Unexpected installed C ABI generation/revision: ${MParser_C_ABI_GENERATION}/${MParser_C_ABI_REVISION}")
 endif()
 if(NOT MParser_CPP_API_VERSION_MAJOR EQUAL 1 OR
    NOT MParser_CPP_API_VERSION_MINOR EQUAL 2)
@@ -81,7 +81,7 @@ add_test(NAME installed_cpp_api_runtime
     COMMAND mparser_installed_cpp_consumer)
 set_tests_properties(installed_cpp_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-2.0,cpp-1.2")
+        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-generation-2-revision-0,cpp-api-1.2")
 
 add_test(NAME installed_cpp_cli_version
     COMMAND MParser::cli --version)

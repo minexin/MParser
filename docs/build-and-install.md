@@ -206,7 +206,8 @@ cannot locate the package. Exported targets are:
 - `MParser::cli`: imported `mparser` executable.
 
 The package also exports contract versions and paths such as
-`MParser_C_ABI_VERSION`, `MParser_C_ABI_REVISION`,
+`MParser_C_API_VERSION_MAJOR`, `MParser_C_API_VERSION_MINOR`,
+`MParser_C_ABI_GENERATION`, `MParser_C_ABI_REVISION`,
 `MParser_CPP_API_VERSION_MAJOR`, `MParser_CLI_CONTRACT_MAJOR`,
 `MParser_MACHINE_PROTOCOL_MAJOR`, and `MParser_PUBLIC_CONTRACT_FILE`.
 

@@ -31,8 +31,9 @@ target_link_libraries(host PRIVATE MParser::cpp_api)
 `MParser::cpp_api` supplies the include directory, C++20 requirement, and a
 transitive link to `MParser::c_api`. `MParser::cli` is the matching imported
 executable. The package exports `MParser_CPP_FOUND`,
-`MParser_CPP_INCLUDE_DIR`, engine version components, and C ABI major/revision
-metadata. It also exports C++ source API `1.2`, machine result protocol `1.1`,
+`MParser_CPP_INCLUDE_DIR`, engine/C API version components, and C ABI
+generation/revision metadata. It also exports C++ source API `1.2`, machine
+result protocol `1.1`,
 CLI contract `1.0`, builtin source contract `1.0`, and checked paths to the
 public/CLI contracts, protocol schema, builtin catalog/author guide, and
 versioning policy. On Windows, deploy `mparser_c.dll` beside the host

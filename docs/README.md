@@ -29,8 +29,9 @@ mparser --run --result-format=json-v1 script.m
 
 ## Embed MParser
 
-- [C Embedding API](embedding-c-api.md): current C ABI generation 2, opaque handles,
-  values, sessions, diagnostics, cancellation, and limits.
+- [C Embedding API](embedding-c-api.md): C source API 1.2 over ABI generation
+  2, with opaque handles, values, sessions, diagnostics, cancellation, and
+  limits.
 - [C ABI Compatibility](c-abi-compatibility.md): structure evolution,
   symbols, layouts, ownership, and candidate-freeze rules.
 - [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.2.

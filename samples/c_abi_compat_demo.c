@@ -56,7 +56,7 @@ int main(void) {
             MPARSER_API_STATUS_OK ||
         mparser_invocation_options_init_sized(
             &invocation, sizeof(invocation),
-            MPARSER_C_ABI_VERSION) != MPARSER_API_STATUS_OK ||
+            MPARSER_C_ABI_GENERATION) != MPARSER_API_STATUS_OK ||
         !tail_is_zero(
             invocation.future_tail,
             sizeof(invocation.future_tail))) {
@@ -85,7 +85,7 @@ int main(void) {
         ((const double*)numeric_buffer.real_data)[0] != 42.0 ||
         mparser_execution_summary_init_sized(
             &summary, sizeof(summary),
-            MPARSER_C_ABI_VERSION) != MPARSER_API_STATUS_OK ||
+            MPARSER_C_ABI_GENERATION) != MPARSER_API_STATUS_OK ||
         mparser_result_execution_summary(
             result, &summary.value) != MPARSER_API_STATUS_OK ||
         !tail_is_zero(
@@ -93,8 +93,9 @@ int main(void) {
         goto cleanup;
     }
 
-    printf("abi = %u.%u, result = %.0f, request-bytes = %u\n",
-           mparser_c_abi_version(), mparser_c_abi_revision(),
+    printf("api = 1.2, abi-generation = %u, revision = %u, "
+           "result = %.0f, request-bytes = %u\n",
+           mparser_c_abi_generation(), mparser_c_abi_revision(),
            ((const double*)numeric_buffer.real_data)[0],
            invocation.value.struct_size);
     succeeded = 1;

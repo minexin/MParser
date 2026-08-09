@@ -12,12 +12,11 @@ handles, fixed-width constants, byte/code-unit views, and versioned plain C
 structures.
 
 The current v1.2 development tree uses C ABI generation 2 revision 0. That is
-binary-contract metadata, not the SDK product version: MParser and its installed SDK share one
-product version and will both become `1.2.0` at the milestone candidate gate.
-The current source tree still reports product version `1.1.0` until that
-coordinated bump. Applications can query
-`mparser_c_abi_version()`, `mparser_c_abi_revision()`, and the three MParser
-component-version functions rather than assuming that product, ABI, C++ API,
+binary-contract metadata, not the SDK product version. MParser, the installed
+SDK, and the C/C++ source APIs report development version `1.2.0`/`1.2`; the
+tree is not a tagged release until the milestone gate. Applications can query
+`mparser_c_abi_generation()`, `mparser_c_abi_revision()`, and the three
+MParser component-version functions rather than assuming that product, ABI,
 and machine protocol levels advance together. The released ABI 1.1 contract
 is retained only in the v1.0 archive and is not a compatibility gate for this
 non-production line.
@@ -37,11 +36,11 @@ build\mparser_c_source_graph_demo.exe `
   samples\class_folders\lib
 ```
 
-On Linux the link name is `libmparser_c.so` and its current ABI-major SONAME is
+On Linux the link name is `libmparser_c.so` and its current ABI-generation SONAME is
 `libmparser_c.so.2`. On macOS the corresponding install name is
 `libmparser_c.2.dylib`. On Windows it is `mparser_c.dll` plus the toolchain
 import library. The current shared-library ABI implementation version is
-`2.0.0`; this is not the MParser SDK product version.
+`1.2.0`; its loader compatibility identity remains generation 2.
 
 For a production-only installed SDK:
 
@@ -59,8 +58,8 @@ target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
 `MParser::cli` is the imported matching CLI executable. The package also
-exports project-version components, `MParser_C_ABI_VERSION`,
-`MParser_C_ABI_REVISION`,
+exports project-version and C API version components,
+`MParser_C_ABI_GENERATION`, `MParser_C_ABI_REVISION`,
 `MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.2`, machine
 protocol `1.1`, CLI contract `1.0`, builtin source contract `1.0`, and checked
 paths to the license, notices, public/CLI contracts, protocol schema, builtin
@@ -273,17 +272,15 @@ outside MParser.
 ## Structure Versioning
 
 `mparser_invocation_options`, `mparser_execution_summary`, and
-`mparser_source_load_options` start with `struct_size` and `abi_version`.
+`mparser_source_load_options` start with `struct_size` and `abi_generation`.
 Initialize current source with the uppercase `MPARSER_*_INIT` macros; do not
 use aggregate literals. The macros pass the caller's complete storage size and
-current ABI level to the sized initializers. Input readers ignore unknown
+current ABI generation to the sized initializers. Input readers ignore unknown
 tails, and output writers stop at the caller's recorded capacity. The direct
 initializer functions initialize exactly the current known record size.
 
-The public minimum-size constants still carry their original `_V1_SIZE`
-identifier spelling because these record prefixes did not change when typed
-numeric transport moved to ABI 2. They describe record sizes, not the active
-ABI or SDK product version.
+The public minimum-size constants use neutral `MPARSER_*_SIZE` names. They
+describe record sizes, not the active ABI or SDK product version.
 
 `mparser_source_unit` is sealed within ABI generation 2 because arrays use its fixed
 size as the descriptor stride. Oversized source-unit descriptors are rejected.
@@ -338,7 +335,7 @@ state, shared cancellation, and per-invocation resource isolation.
 loads, queries, and unloads the shared library 256 times.
 
 `c_api_shared_library_abi` compares the dynamic export table against
-`tests/c_api_abi2_symbols.txt` and validates ELF SONAME or macOS install-name
+`tests/c_api_generation2_symbols.txt` and validates ELF SONAME or macOS install-name
 major 2. Internal compiler, VM, C++ facade, and SLJIT symbols use hidden
 visibility. Windows x64, Linux x64, macOS x64/ARM64, and focused Linux
 AArch64 jobs execute the applicable ABI and stress evidence.
@@ -370,10 +367,10 @@ Simplified BSD terms reproduced in the third-party notices.
 
 ## Current Development Boundary
 
-The active v1.2 host surface is C ABI generation 2 revision 0, header-only C++
-source API 1.2, and machine protocol 1.1. These contracts are versioned
+The active v1.2 host surface is C source API 1.2, C ABI generation 2 revision
+0, header-only C++ source API 1.2, and machine protocol 1.1. These contracts are versioned
 independently for technical checks, while the CLI, libraries, headers, and
-installed SDK share one MParser product version. Current in-repository and
+installed SDK report MParser development version 1.2.0. Current in-repository and
 relocated consumers are updated together; a new immutable contract snapshot
 is created only when the complete v1.2 milestone reaches its candidate gate.
 

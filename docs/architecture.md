@@ -1711,13 +1711,22 @@ subscript rules. Existing overloads retain the old no-colon entry points, so
 the implementation correction does not invent a new public ABI.
 
 v1.2 deliberately advances the host value transport while the project remains
-in active development. C ABI generation 2 and C++ source API 1.2 expose
+in active development. C source API 1.2, C ABI generation 2, and C++ source
+API 1.2 expose
 typed numeric buffers and separate complex components; machine protocol 1.1
 carries the same classes without losing 64-bit integer precision. The product
-and installed SDK still share one MParser release version. Historical v1.0
+and installed SDK both report development version 1.2.0. Historical v1.0
 snapshots remain unchanged, but they do not require compatibility adapters in
 the current kernel. The active contracts freeze together only after the full
 v1.2 numeric, function, sample, regression, and platform train is complete.
+
+The v1.2 core numeric builtin tranche also removes tier-specific equality
+behavior. `BuiltinRegistry` routes `mod`/`rem` and `nextpow2` through shared
+numeric helpers, shape predicates through `runtime_shape`, and recursive
+`isequal`/`isequaln` through `runtime_value_ops`. Interpreter and bytecode VM
+therefore share class, shape, NaN, Cell, Struct, and object-lifetime semantics;
+typed or native ineligibility returns to that same VM authority. The combined
+execution sample is `samples/core_numeric_builtins_demo.m`.
 
 The release gates, compatibility-matrix requirement, builtin-extension
 architecture, embedding boundary, platform matrix, and explicit v1.0

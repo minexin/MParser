@@ -68,9 +68,10 @@ end
         }
 
         std::cout << "cpp sdk = " << scalar(sumResult.output(0)) << ','
-                  << scalar(counterResult.output(0)) << ",abi-"
-                  << mparser::sdk::abiMajor() << '.'
-                  << mparser::sdk::abiRevision() << ",cpp-"
+                  << scalar(counterResult.output(0))
+                  << ",abi-generation-"
+                  << mparser::sdk::abiGeneration() << "-revision-"
+                  << mparser::sdk::abiRevision() << ",cpp-api-"
                   << sourceApiVersion.major << '.'
                   << sourceApiVersion.minor << '\n';
         return 0;

@@ -948,7 +948,8 @@ bool isArithmeticOperation(std::string_view operation) {
            operation == "*" || operation == ".*" ||
            operation == "/" || operation == "./" ||
            operation == "\\" || operation == ".\\" ||
-           operation == "^" || operation == ".^";
+           operation == "^" || operation == ".^" ||
+           operation == "mod" || operation == "rem";
 }
 
 RuntimeNumericOperationResult numericOperationFailure(std::string error) {
@@ -1229,6 +1230,19 @@ std::optional<RuntimeNumericElementValue> applyExactIntegerOperation(
         } else if (operation == "^" || operation == ".^") {
             value = saturatingSignedPower(
                 leftValue, rightValue, numericClass);
+        } else if (operation == "mod" || operation == "rem") {
+            if (rightValue == 0) {
+                value = operation == "mod" ? leftValue : 0;
+            } else if (leftValue == signedMinimum(numericClass) &&
+                       rightValue == -1) {
+                value = 0;
+            } else {
+                value = leftValue % rightValue;
+                if (operation == "mod" && value != 0 &&
+                    ((value < 0) != (rightValue < 0))) {
+                    value += rightValue;
+                }
+            }
         } else {
             return std::nullopt;
         }
@@ -1254,6 +1268,10 @@ std::optional<RuntimeNumericElementValue> applyExactIntegerOperation(
         } else if (operation == "^" || operation == ".^") {
             value = saturatingUnsignedPower(
                 leftValue, rightValue, numericClass);
+        } else if (operation == "mod" || operation == "rem") {
+            value = rightValue == 0
+                        ? (operation == "mod" ? leftValue : 0)
+                        : leftValue % rightValue;
         } else {
             return std::nullopt;
         }
@@ -1426,6 +1444,23 @@ std::optional<double> applyScalarOperation(std::string_view operation,
     }
     if (operation == "^" || operation == ".^") {
         return std::pow(left, right);
+    }
+    if (operation == "rem") {
+        return std::fmod(left, right);
+    }
+    if (operation == "mod") {
+        if (right == 0.0 && !std::isnan(left)) {
+            return left;
+        }
+        double remainder = std::fmod(left, right);
+        if (remainder != 0.0 && !std::isnan(remainder) &&
+            std::signbit(remainder) != std::signbit(right)) {
+            remainder += right;
+        }
+        if (remainder == 0.0) {
+            remainder = std::copysign(0.0, right);
+        }
+        return remainder;
     }
     if (operation == ">") {
         return left > right ? 1.0 : 0.0;
@@ -1667,6 +1702,46 @@ std::optional<RuntimeNumericElementValue> runtimeApplyNumericElementBinary(
         operation, left, right, resultClass);
 }
 
+bool runtimeNumericValuesEqual(
+    const RuntimeValue& left, const RuntimeValue& right,
+    bool equalNaNs) {
+    if (!isRuntimeNumericValue(left) ||
+        !isRuntimeNumericValue(right) ||
+        runtimeDimensions(left) != runtimeDimensions(right)) {
+        return false;
+    }
+
+    const auto count = checkedRuntimeDimensionProduct(
+        runtimeDimensions(left));
+    if (!count) {
+        return false;
+    }
+    const auto componentsEqual = [equalNaNs](
+                                     const RuntimeNumericElementValue& lhs,
+                                     const RuntimeNumericElementValue& rhs) {
+        const auto comparison = compareNumericElements(lhs, rhs);
+        if (comparison && *comparison == 0) {
+            return true;
+        }
+        return equalNaNs && !comparison &&
+               !runtimeNumericClassIsInteger(lhs.numericClass) &&
+               !runtimeNumericClassIsInteger(rhs.numericClass) &&
+               std::isnan(lhs.real) && std::isnan(rhs.real);
+    };
+
+    for (size_t index = 0; index < *count; ++index) {
+        const auto leftElement = runtimeNumericElementValue(left, index);
+        const auto rightElement = runtimeNumericElementValue(right, index);
+        if (!leftElement || !rightElement ||
+            !componentsEqual(*leftElement, *rightElement) ||
+            !componentsEqual(imaginaryComponent(*leftElement),
+                             imaginaryComponent(*rightElement))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 RuntimeNumericOperationResult runtimeApplyNumericUnary(
     std::string_view operation, const RuntimeValue& value) {
     if (!isRuntimeNumericValue(value)) {
@@ -1769,6 +1844,12 @@ RuntimeNumericOperationResult runtimeApplyNumericBinary(
         (left.numericComplex || right.numericComplex)) {
         return numericOperationFailure(
             "logical operators require real numeric operands");
+    }
+    if ((operation == "mod" || operation == "rem") &&
+        (left.numericComplex || right.numericComplex)) {
+        return numericOperationFailure(
+            std::string(operation) +
+            " requires real numeric operands");
     }
     if (isArithmeticOperation(operation) &&
         ((left.numericComplex &&

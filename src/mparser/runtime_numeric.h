@@ -94,6 +94,10 @@ std::optional<bool> runtimeNumericTruthValue(
 bool runtimeNumericValuesIdentical(
     const RuntimeValue& left, const RuntimeValue& right);
 
+bool runtimeNumericValuesEqual(
+    const RuntimeValue& left, const RuntimeValue& right,
+    bool equalNaNs = false);
+
 int runtimeCompareNumericElementsForExtrema(
     const RuntimeNumericElementValue& left,
     const RuntimeNumericElementValue& right);

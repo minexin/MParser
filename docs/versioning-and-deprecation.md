@@ -8,9 +8,9 @@ Those numbers are never SDK product versions.
 ## Product And SDK
 
 MParser uses semantic versions for release tags and packages. The active
-source tree is the v1.2 development train but continues to report `1.1.0`
-until the complete milestone reaches its release-candidate gate. At that gate,
-the product and installed SDK move together to `1.2.0`.
+source tree, product metadata, and installed SDK report development version
+`1.2.0`. This identifies the in-progress v1.2 train; it is not a tagged
+release until the complete milestone reaches its release-candidate gate.
 
 This project is not currently using the v1.2 interfaces in production.
 Implementation, in-repository consumers, tests, samples, and documentation may
@@ -26,8 +26,9 @@ requirement.
 
 | Boundary | Current identifier | Meaning |
 | --- | --- | --- |
-| MParser product and SDK | v1.2 development, candidate `1.2.0` | User-facing release identity |
+| MParser product and SDK | `1.2.0` development snapshot | User-facing release identity |
 | Production CLI | 1.0 | Command, option, channel, and exit contract |
+| C source API | 1.2 | Header-level source contract for C hosts |
 | C ABI | generation 2, revision 0 | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.2 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
@@ -46,10 +47,12 @@ separate execution products.
 
 ## C ABI Generation 2
 
-`MPARSER_C_ABI_VERSION_MAJOR` currently contains generation `2`, and
-`MPARSER_C_ABI_REVISION` contains revision `0`. The existing function and
-macro names retain `VERSION` for conventional ABI negotiation, but documents
-call this a generation to distinguish it from the MParser product version.
+`MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.2.0`.
+`MPARSER_C_ABI_GENERATION` contains generation `2`, and
+`MPARSER_C_ABI_REVISION` contains revision `0`.
+`mparser_c_abi_generation()` and `mparser_c_abi_revision()` expose the same
+binary compatibility identifiers at runtime. The generation terminology is
+deliberately distinct from the MParser product version and source API.
 
 Generation 2 directly transports every core numeric class and separate
 complex real/imaginary buffers. The current SONAME/install-name major is 2.
@@ -93,9 +96,9 @@ are not an installed plugin ABI and do not expose stable C++ object layouts.
 Contract 1.0 defines naming, aliases, registry freezing, arity, value/shape
 constraints, context permissions, side effects, determinism, exception
 conversion, diagnostics, ownership, and typed-lowering eligibility. The
-archived v1 catalog contains 118 descriptors. The active v1.2 catalog is
-larger and remains intentionally unsnapshotted until the complete milestone
-function surface settles.
+archived v1 catalog contains 118 descriptors. The active v1.2 catalog has 163
+descriptors and remains intentionally unsnapshotted until the complete
+milestone function surface settles.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry

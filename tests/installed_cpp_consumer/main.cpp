@@ -141,9 +141,10 @@ end
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','
-                  << counterValue << ",abi-" << mparser::sdk::abiMajor()
-                  << '.' << mparser::sdk::abiRevision()
-                  << ",cpp-" << sourceApiVersion.major << '.'
+                  << counterValue << ",abi-generation-"
+                  << mparser::sdk::abiGeneration() << "-revision-"
+                  << mparser::sdk::abiRevision()
+                  << ",cpp-api-" << sourceApiVersion.major << '.'
                   << sourceApiVersion.minor << '\n';
         return 0;
     } catch (const std::exception& error) {

@@ -391,13 +391,13 @@ int main(int argc, char** argv) {
         mparser::sdk::sourceApiVersion();
     static_assert(sourceApiVersion.major == 1);
     static_assert(sourceApiVersion.minor == 2);
-    assert(mparser::sdk::abiMajor() == 2);
+    assert(mparser::sdk::abiGeneration() == 2);
     assert(mparser::sdk::abiRevision() == 0);
     runValueSmoke();
     runModuleSmoke(argv[1], argv[2]);
-    std::cout << "cpp api smoke = 5050,42,21,abi-"
-              << mparser::sdk::abiMajor() << '.'
-              << mparser::sdk::abiRevision() << ",cpp-"
+    std::cout << "cpp api smoke = 5050,42,21,abi-generation-"
+              << mparser::sdk::abiGeneration() << "-revision-"
+              << mparser::sdk::abiRevision() << ",cpp-api-"
               << sourceApiVersion.major << '.'
               << sourceApiVersion.minor << '\n';
     return 0;

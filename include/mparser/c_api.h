@@ -22,9 +22,11 @@
 extern "C" {
 #endif
 
-#define MPARSER_C_ABI_VERSION_MAJOR 2u
+#define MPARSER_C_API_VERSION_MAJOR 1u
+#define MPARSER_C_API_VERSION_MINOR 2u
+#define MPARSER_C_API_VERSION_PATCH 0u
+#define MPARSER_C_ABI_GENERATION 2u
 #define MPARSER_C_ABI_REVISION 0u
-#define MPARSER_C_ABI_VERSION MPARSER_C_ABI_VERSION_MAJOR
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -138,7 +140,7 @@ typedef struct mparser_utf16_view {
 
 typedef struct mparser_source_unit {
     uint32_t struct_size;
-    uint32_t abi_version;
+    uint32_t abi_generation;
     const char* source_name;
     size_t source_name_size;
     const char* source;
@@ -147,7 +149,7 @@ typedef struct mparser_source_unit {
 
 typedef struct mparser_source_load_options {
     uint32_t struct_size;
-    uint32_t abi_version;
+    uint32_t abi_generation;
     const mparser_utf8_view* search_paths;
     size_t search_path_count;
 } mparser_source_load_options;
@@ -166,7 +168,7 @@ typedef struct mparser_source_position {
 
 typedef struct mparser_invocation_options {
     uint32_t struct_size;
-    uint32_t abi_version;
+    uint32_t abi_generation;
     const char* entry_name;
     size_t entry_name_size;
     const mparser_value* const* arguments;
@@ -187,7 +189,7 @@ typedef struct mparser_invocation_options {
 
 typedef struct mparser_execution_summary {
     uint32_t struct_size;
-    uint32_t abi_version;
+    uint32_t abi_generation;
     mparser_backend requested_backend;
     mparser_execution_tier effective_tier;
     uint32_t profiling_collected;
@@ -209,34 +211,34 @@ typedef struct mparser_execution_summary {
 } mparser_execution_summary;
 
 /*
- * ABI-major-1 prefix sizes. The three extensible structures may gain tail
- * fields without changing these constants. mparser_source_unit is sealed
- * because arrays of descriptors use sizeof(mparser_source_unit) as stride.
+ * ABI-generation-2 structure sizes. The three extensible structures may gain
+ * tail fields without changing their minimum sizes. mparser_source_unit is
+ * sealed because arrays use sizeof(mparser_source_unit) as their stride.
  */
-#define MPARSER_INVOCATION_OPTIONS_V1_SIZE                              \
+#define MPARSER_INVOCATION_OPTIONS_SIZE                                 \
     ((uint32_t)(offsetof(mparser_invocation_options, cancellation_token) + \
                 sizeof(((mparser_invocation_options*)0)->cancellation_token)))
-#define MPARSER_EXECUTION_SUMMARY_V1_SIZE                               \
+#define MPARSER_EXECUTION_SUMMARY_SIZE                                  \
     ((uint32_t)(offsetof(mparser_execution_summary, elapsed_nanoseconds) + \
                 sizeof(((mparser_execution_summary*)0)->elapsed_nanoseconds)))
-#define MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE                             \
+#define MPARSER_SOURCE_LOAD_OPTIONS_SIZE                                \
     ((uint32_t)(offsetof(mparser_source_load_options, search_path_count) + \
                 sizeof(((mparser_source_load_options*)0)->search_path_count)))
-#define MPARSER_SOURCE_UNIT_V1_SIZE                                     \
+#define MPARSER_SOURCE_UNIT_SIZE                                        \
     ((uint32_t)(offsetof(mparser_source_unit, source_size) +            \
                 sizeof(((mparser_source_unit*)0)->source_size)))
 
 #define MPARSER_INVOCATION_OPTIONS_INIT(options)                        \
     mparser_invocation_options_init_sized(                              \
-        (options), sizeof(*(options)), MPARSER_C_ABI_VERSION)
+        (options), sizeof(*(options)), MPARSER_C_ABI_GENERATION)
 #define MPARSER_EXECUTION_SUMMARY_INIT(summary)                         \
     mparser_execution_summary_init_sized(                              \
-        (summary), sizeof(*(summary)), MPARSER_C_ABI_VERSION)
+        (summary), sizeof(*(summary)), MPARSER_C_ABI_GENERATION)
 #define MPARSER_SOURCE_LOAD_OPTIONS_INIT(options)                       \
     mparser_source_load_options_init_sized(                            \
-        (options), sizeof(*(options)), MPARSER_C_ABI_VERSION)
+        (options), sizeof(*(options)), MPARSER_C_ABI_GENERATION)
 
-MPARSER_C_API uint32_t mparser_c_abi_version(void);
+MPARSER_C_API uint32_t mparser_c_abi_generation(void);
 MPARSER_C_API uint32_t mparser_c_abi_revision(void);
 MPARSER_C_API uint32_t mparser_version_major(void);
 MPARSER_C_API uint32_t mparser_version_minor(void);
@@ -249,13 +251,13 @@ mparser_invocation_options_init(mparser_invocation_options* options);
 MPARSER_C_API mparser_api_status mparser_invocation_options_init_sized(
     void* storage,
     size_t storage_size,
-    uint32_t abi_version);
+    uint32_t abi_generation);
 MPARSER_C_API mparser_api_status
 mparser_execution_summary_init(mparser_execution_summary* summary);
 MPARSER_C_API mparser_api_status mparser_execution_summary_init_sized(
     void* storage,
     size_t storage_size,
-    uint32_t abi_version);
+    uint32_t abi_generation);
 MPARSER_C_API mparser_api_status
 mparser_source_unit_init(mparser_source_unit* source);
 MPARSER_C_API mparser_api_status mparser_source_load_options_init(
@@ -263,7 +265,7 @@ MPARSER_C_API mparser_api_status mparser_source_load_options_init(
 MPARSER_C_API mparser_api_status mparser_source_load_options_init_sized(
     void* storage,
     size_t storage_size,
-    uint32_t abi_version);
+    uint32_t abi_generation);
 
 MPARSER_C_API mparser_api_status mparser_module_compile_utf8(
     const char* source,

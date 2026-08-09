@@ -14,6 +14,11 @@ struct RuntimeSingleValueResult {
     std::string error;
 };
 
+enum class RuntimeNaNEquality {
+    Unequal,
+    Equal,
+};
+
 bool isRuntimeCommaSeparatedList(const RuntimeValue& value);
 
 RuntimeValue makeRuntimeCommaSeparatedList(
@@ -28,5 +33,9 @@ std::vector<RuntimeValue> runtimeExpandedValues(
 
 RuntimeSingleValueResult runtimeRequireSingleValue(
     const RuntimeValue& value, std::string_view context);
+
+bool runtimeValuesEqual(
+    const RuntimeValue& left, const RuntimeValue& right,
+    RuntimeNaNEquality nanEquality = RuntimeNaNEquality::Unequal);
 
 } // namespace mparser

@@ -1,6 +1,6 @@
 mparser_api_status_name
 mparser_c_abi_revision
-mparser_c_abi_version
+mparser_c_abi_generation
 mparser_cancel_token_create
 mparser_cancel_token_is_requested
 mparser_cancel_token_release

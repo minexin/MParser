@@ -121,8 +121,8 @@ struct Version {
         mparser_version_patch()};
 }
 
-[[nodiscard]] inline std::uint32_t abiMajor() noexcept {
-    return mparser_c_abi_version();
+[[nodiscard]] inline std::uint32_t abiGeneration() noexcept {
+    return mparser_c_abi_generation();
 }
 
 [[nodiscard]] inline std::uint32_t abiRevision() noexcept {

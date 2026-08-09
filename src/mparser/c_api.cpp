@@ -84,18 +84,22 @@ void inject(FaultPoint) {}
 #define MPARSER_VERSION_MAJOR 1
 #endif
 #ifndef MPARSER_VERSION_MINOR
-#define MPARSER_VERSION_MINOR 1
+#define MPARSER_VERSION_MINOR 2
 #endif
 #ifndef MPARSER_VERSION_PATCH
 #define MPARSER_VERSION_PATCH 0
 #endif
 
 static_assert(
-    MPARSER_C_ABI_VERSION ==
-    MPARSER_C_ABI_VERSION_EXPECTED);
+    MPARSER_C_ABI_GENERATION ==
+    MPARSER_C_ABI_GENERATION_EXPECTED);
 static_assert(
     MPARSER_C_ABI_REVISION ==
     MPARSER_C_ABI_REVISION_EXPECTED);
+static_assert(
+    MPARSER_C_API_VERSION_MAJOR == MPARSER_VERSION_MAJOR &&
+    MPARSER_C_API_VERSION_MINOR == MPARSER_VERSION_MINOR &&
+    MPARSER_C_API_VERSION_PATCH == MPARSER_VERSION_PATCH);
 
 namespace mparser_c_detail {
 
@@ -1016,8 +1020,8 @@ mparser_api_status buildRequest(
         return MPARSER_API_STATUS_OK;
     }
     if (options->struct_size <
-            MPARSER_INVOCATION_OPTIONS_V1_SIZE ||
-        options->abi_version != MPARSER_C_ABI_VERSION) {
+            MPARSER_INVOCATION_OPTIONS_SIZE ||
+        options->abi_generation != MPARSER_C_ABI_GENERATION) {
         return MPARSER_API_STATUS_ABI_MISMATCH;
     }
     if (options->has_requested_output_count > 1 ||
@@ -1263,11 +1267,11 @@ const mparser::RuntimeWorkspace* structElement(
 template <typename Structure>
 mparser_api_status initializeVersionedStructure(
     void* storage, size_t storageSize, size_t minimumSize,
-    uint32_t abiVersion) noexcept {
+    uint32_t abiGeneration) noexcept {
     if (!storage) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
-    if (abiVersion != MPARSER_C_ABI_VERSION ||
+    if (abiGeneration != MPARSER_C_ABI_GENERATION ||
         storageSize < minimumSize ||
         storageSize > std::numeric_limits<uint32_t>::max()) {
         return MPARSER_API_STATUS_ABI_MISMATCH;
@@ -1275,27 +1279,27 @@ mparser_api_status initializeVersionedStructure(
     std::memset(storage, 0, storageSize);
     auto* structure = static_cast<Structure*>(storage);
     structure->struct_size = static_cast<uint32_t>(storageSize);
-    structure->abi_version = abiVersion;
+    structure->abi_generation = abiGeneration;
     return MPARSER_API_STATUS_OK;
 }
 
 static_assert(
     sizeof(mparser_invocation_options) >=
-    MPARSER_INVOCATION_OPTIONS_V1_SIZE);
+    MPARSER_INVOCATION_OPTIONS_SIZE);
 static_assert(
     sizeof(mparser_execution_summary) >=
-    MPARSER_EXECUTION_SUMMARY_V1_SIZE);
+    MPARSER_EXECUTION_SUMMARY_SIZE);
 static_assert(
     sizeof(mparser_source_load_options) >=
-    MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE);
+    MPARSER_SOURCE_LOAD_OPTIONS_SIZE);
 
 } // namespace
 } // namespace mparser_c_detail
 
 extern "C" {
 
-uint32_t mparser_c_abi_version(void) {
-    return MPARSER_C_ABI_VERSION;
+uint32_t mparser_c_abi_generation(void) {
+    return MPARSER_C_ABI_GENERATION;
 }
 
 uint32_t mparser_c_abi_revision(void) {
@@ -1347,18 +1351,18 @@ mparser_api_status
 mparser_invocation_options_init(
     mparser_invocation_options* options) {
     return mparser_invocation_options_init_sized(
-        options, MPARSER_INVOCATION_OPTIONS_V1_SIZE,
-        MPARSER_C_ABI_VERSION);
+        options, MPARSER_INVOCATION_OPTIONS_SIZE,
+        MPARSER_C_ABI_GENERATION);
 }
 
 mparser_api_status mparser_invocation_options_init_sized(
     void* storage, size_t storage_size,
-    uint32_t abi_version) {
+    uint32_t abi_generation) {
     const auto status =
         mparser_c_detail::initializeVersionedStructure<
             mparser_invocation_options>(
             storage, storage_size,
-            MPARSER_INVOCATION_OPTIONS_V1_SIZE, abi_version);
+            MPARSER_INVOCATION_OPTIONS_SIZE, abi_generation);
     if (status == MPARSER_API_STATUS_OK) {
         auto* options =
             static_cast<mparser_invocation_options*>(storage);
@@ -1371,17 +1375,17 @@ mparser_api_status
 mparser_execution_summary_init(
     mparser_execution_summary* summary) {
     return mparser_execution_summary_init_sized(
-        summary, MPARSER_EXECUTION_SUMMARY_V1_SIZE,
-        MPARSER_C_ABI_VERSION);
+        summary, MPARSER_EXECUTION_SUMMARY_SIZE,
+        MPARSER_C_ABI_GENERATION);
 }
 
 mparser_api_status mparser_execution_summary_init_sized(
     void* storage, size_t storage_size,
-    uint32_t abi_version) {
+    uint32_t abi_generation) {
     return mparser_c_detail::initializeVersionedStructure<
         mparser_execution_summary>(
         storage, storage_size,
-        MPARSER_EXECUTION_SUMMARY_V1_SIZE, abi_version);
+        MPARSER_EXECUTION_SUMMARY_SIZE, abi_generation);
 }
 
 mparser_api_status
@@ -1389,27 +1393,27 @@ mparser_source_unit_init(mparser_source_unit* source) {
     if (!source) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
-    static_assert(sizeof(*source) == MPARSER_SOURCE_UNIT_V1_SIZE);
+    static_assert(sizeof(*source) == MPARSER_SOURCE_UNIT_SIZE);
     *source = {};
-    source->struct_size = MPARSER_SOURCE_UNIT_V1_SIZE;
-    source->abi_version = MPARSER_C_ABI_VERSION;
+    source->struct_size = MPARSER_SOURCE_UNIT_SIZE;
+    source->abi_generation = MPARSER_C_ABI_GENERATION;
     return MPARSER_API_STATUS_OK;
 }
 
 mparser_api_status mparser_source_load_options_init(
     mparser_source_load_options* options) {
     return mparser_source_load_options_init_sized(
-        options, MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE,
-        MPARSER_C_ABI_VERSION);
+        options, MPARSER_SOURCE_LOAD_OPTIONS_SIZE,
+        MPARSER_C_ABI_GENERATION);
 }
 
 mparser_api_status mparser_source_load_options_init_sized(
     void* storage, size_t storage_size,
-    uint32_t abi_version) {
+    uint32_t abi_generation) {
     return mparser_c_detail::initializeVersionedStructure<
         mparser_source_load_options>(
         storage, storage_size,
-        MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE, abi_version);
+        MPARSER_SOURCE_LOAD_OPTIONS_SIZE, abi_generation);
 }
 
 mparser_api_status mparser_module_compile_utf8(
@@ -1467,8 +1471,8 @@ mparser_api_status mparser_module_compile_sources(
         copiedSources.reserve(source_count);
         for (size_t index = 0; index < source_count; ++index) {
             const auto& source = sources[index];
-            if (source.struct_size != MPARSER_SOURCE_UNIT_V1_SIZE ||
-                source.abi_version != MPARSER_C_ABI_VERSION) {
+            if (source.struct_size != MPARSER_SOURCE_UNIT_SIZE ||
+                source.abi_generation != MPARSER_C_ABI_GENERATION) {
                 return MPARSER_API_STATUS_ABI_MISMATCH;
             }
             const auto sourceName = copyBytes(
@@ -1514,8 +1518,8 @@ mparser_api_status mparser_module_load_file_utf8(
         mparser::SourceLoaderOptions loaderOptions;
         if (options) {
             if (options->struct_size <
-                    MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ||
-                options->abi_version != MPARSER_C_ABI_VERSION) {
+                    MPARSER_SOURCE_LOAD_OPTIONS_SIZE ||
+                options->abi_generation != MPARSER_C_ABI_GENERATION) {
                 return MPARSER_API_STATUS_ABI_MISMATCH;
             }
             if (!options->search_paths &&
@@ -1938,14 +1942,14 @@ mparser_result_execution_summary(
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     const uint32_t storageSize = out_summary->struct_size;
-    if (storageSize < MPARSER_EXECUTION_SUMMARY_V1_SIZE ||
-        out_summary->abi_version != MPARSER_C_ABI_VERSION) {
+    if (storageSize < MPARSER_EXECUTION_SUMMARY_SIZE ||
+        out_summary->abi_generation != MPARSER_C_ABI_GENERATION) {
         return MPARSER_API_STATUS_ABI_MISMATCH;
     }
     const auto& source = result->value.execution;
     mparser_execution_summary summary{};
     summary.struct_size = storageSize;
-    summary.abi_version = MPARSER_C_ABI_VERSION;
+    summary.abi_generation = MPARSER_C_ABI_GENERATION;
     summary.requested_backend =
         externalBackend(source.requestedBackend);
     summary.effective_tier =

@@ -11,8 +11,12 @@
 #error "C API smoke requires the configured MParser version"
 #endif
 
-_Static_assert(MPARSER_C_ABI_VERSION_MAJOR == 2u,
-               "unexpected C ABI major version");
+_Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
+                   MPARSER_C_API_VERSION_MINOR == 2u &&
+                   MPARSER_C_API_VERSION_PATCH == 0u,
+               "unexpected C API version");
+_Static_assert(MPARSER_C_ABI_GENERATION == 2u,
+               "unexpected C ABI generation");
 _Static_assert(MPARSER_C_ABI_REVISION == 0u,
                "unexpected C ABI revision");
 _Static_assert(MPARSER_NUMERIC_SINGLE == 2u &&
@@ -21,16 +25,16 @@ _Static_assert(MPARSER_NUMERIC_SINGLE == 2u &&
                    MPARSER_NUMERIC_INT64 == 9u &&
                    MPARSER_NUMERIC_UINT64 == 10u,
                "numeric class identifiers drifted");
-_Static_assert(MPARSER_INVOCATION_OPTIONS_V1_SIZE ==
+_Static_assert(MPARSER_INVOCATION_OPTIONS_SIZE ==
                    sizeof(mparser_invocation_options),
                "invocation options v1 size drift");
-_Static_assert(MPARSER_EXECUTION_SUMMARY_V1_SIZE ==
+_Static_assert(MPARSER_EXECUTION_SUMMARY_SIZE ==
                    sizeof(mparser_execution_summary),
                "execution summary v1 size drift");
-_Static_assert(MPARSER_SOURCE_UNIT_V1_SIZE ==
+_Static_assert(MPARSER_SOURCE_UNIT_SIZE ==
                    sizeof(mparser_source_unit),
                "source unit v1 size drift");
-_Static_assert(MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE ==
+_Static_assert(MPARSER_SOURCE_LOAD_OPTIONS_SIZE ==
                    sizeof(mparser_source_load_options),
                "source load options v1 size drift");
 
@@ -340,7 +344,7 @@ static int run_header_and_diagnostic_smoke(void) {
     mparser_source_position begin;
     mparser_api_status status;
 
-    CHECK(mparser_c_abi_version() == MPARSER_C_ABI_VERSION);
+    CHECK(mparser_c_abi_generation() == MPARSER_C_ABI_GENERATION);
     CHECK(mparser_c_abi_revision() == MPARSER_C_ABI_REVISION);
     CHECK(mparser_version_major() == MPARSER_EXPECTED_VERSION_MAJOR);
     CHECK(mparser_version_minor() == MPARSER_EXPECTED_VERSION_MINOR);
@@ -357,24 +361,24 @@ static int run_header_and_diagnostic_smoke(void) {
     CHECK(mparser_source_load_options_init(NULL) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_invocation_options_init_sized(
-              NULL, sizeof(options), MPARSER_C_ABI_VERSION) ==
+              NULL, sizeof(options), MPARSER_C_ABI_GENERATION) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_execution_summary_init_sized(
-              NULL, sizeof(summary), MPARSER_C_ABI_VERSION) ==
+              NULL, sizeof(summary), MPARSER_C_ABI_GENERATION) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_source_load_options_init_sized(
               NULL, sizeof(mparser_source_load_options),
-              MPARSER_C_ABI_VERSION) ==
+              MPARSER_C_ABI_GENERATION) ==
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_invocation_options_init(&options) ==
           MPARSER_API_STATUS_OK);
     CHECK(options.struct_size == sizeof(options));
-    CHECK(options.abi_version == MPARSER_C_ABI_VERSION);
+    CHECK(options.abi_generation == MPARSER_C_ABI_GENERATION);
     CHECK(options.backend == MPARSER_BACKEND_AUTOMATIC);
     CHECK(mparser_execution_summary_init(&summary) ==
           MPARSER_API_STATUS_OK);
     CHECK(summary.struct_size == sizeof(summary));
-    CHECK(summary.abi_version == MPARSER_C_ABI_VERSION);
+    CHECK(summary.abi_generation == MPARSER_C_ABI_GENERATION);
     CHECK(mparser_value_create_missing(&missing) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_value_get_kind(missing) == MPARSER_VALUE_MISSING);
@@ -425,15 +429,15 @@ static int run_versioned_structure_smoke(
     memset(&invocation, 0xa5, sizeof(invocation));
     CHECK(mparser_invocation_options_init_sized(
               &invocation,
-              MPARSER_INVOCATION_OPTIONS_V1_SIZE - 1u,
-              MPARSER_C_ABI_VERSION) ==
+              MPARSER_INVOCATION_OPTIONS_SIZE - 1u,
+              MPARSER_C_ABI_GENERATION) ==
           MPARSER_API_STATUS_ABI_MISMATCH);
     CHECK(bytes_equal(
         (const unsigned char*)&invocation,
         sizeof(invocation), 0xa5));
     CHECK(mparser_invocation_options_init_sized(
               &invocation, sizeof(invocation),
-              MPARSER_C_ABI_VERSION + 1u) ==
+              MPARSER_C_ABI_GENERATION + 1u) ==
           MPARSER_API_STATUS_ABI_MISMATCH);
     CHECK(bytes_equal(
         (const unsigned char*)&invocation,
@@ -442,7 +446,7 @@ static int run_versioned_structure_smoke(
     CHECK(mparser_invocation_options_init(&invocation.value) ==
           MPARSER_API_STATUS_OK);
     CHECK(invocation.value.struct_size ==
-          MPARSER_INVOCATION_OPTIONS_V1_SIZE);
+          MPARSER_INVOCATION_OPTIONS_SIZE);
     CHECK(bytes_equal(
         invocation.future_tail,
         sizeof(invocation.future_tail), 0xa5));
@@ -450,7 +454,7 @@ static int run_versioned_structure_smoke(
     memset(&invocation, 0xa5, sizeof(invocation));
     CHECK(mparser_invocation_options_init_sized(
               &invocation, sizeof(invocation),
-              MPARSER_C_ABI_VERSION) ==
+              MPARSER_C_ABI_GENERATION) ==
           MPARSER_API_STATUS_OK);
     CHECK(invocation.value.struct_size == sizeof(invocation));
     CHECK(invocation.value.backend == MPARSER_BACKEND_AUTOMATIC);
@@ -476,7 +480,7 @@ static int run_versioned_structure_smoke(
     memset(&summary, 0xa5, sizeof(summary));
     CHECK(mparser_execution_summary_init_sized(
               &summary, sizeof(summary),
-              MPARSER_C_ABI_VERSION) ==
+              MPARSER_C_ABI_GENERATION) ==
           MPARSER_API_STATUS_OK);
     CHECK(summary.value.struct_size == sizeof(summary));
     CHECK(bytes_equal(
@@ -493,7 +497,7 @@ static int run_versioned_structure_smoke(
     CHECK(mparser_execution_summary_init(&summary.value) ==
           MPARSER_API_STATUS_OK);
     CHECK(summary.value.struct_size ==
-          MPARSER_EXECUTION_SUMMARY_V1_SIZE);
+          MPARSER_EXECUTION_SUMMARY_SIZE);
     CHECK(bytes_equal(
         summary.future_tail, sizeof(summary.future_tail), 0xa5));
     CHECK(mparser_result_execution_summary(
@@ -506,14 +510,14 @@ static int run_versioned_structure_smoke(
     CHECK(mparser_source_load_options_init(&load_options.value) ==
           MPARSER_API_STATUS_OK);
     CHECK(load_options.value.struct_size ==
-          MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE);
+          MPARSER_SOURCE_LOAD_OPTIONS_SIZE);
     CHECK(bytes_equal(
         load_options.future_tail,
         sizeof(load_options.future_tail), 0xa5));
     memset(&load_options, 0xa5, sizeof(load_options));
     CHECK(mparser_source_load_options_init_sized(
               &load_options, sizeof(load_options),
-              MPARSER_C_ABI_VERSION) ==
+              MPARSER_C_ABI_GENERATION) ==
           MPARSER_API_STATUS_OK);
     CHECK(load_options.value.struct_size == sizeof(load_options));
     CHECK(bytes_equal(
@@ -535,7 +539,7 @@ static int run_versioned_structure_smoke(
     CHECK(mparser_source_unit_init(&source_unit.value) ==
           MPARSER_API_STATUS_OK);
     CHECK(source_unit.value.struct_size ==
-          MPARSER_SOURCE_UNIT_V1_SIZE);
+          MPARSER_SOURCE_UNIT_SIZE);
     CHECK(bytes_equal(
         source_unit.forbidden_tail,
         sizeof(source_unit.forbidden_tail), 0xa5));
@@ -574,7 +578,7 @@ static int run_multi_source_compilation_smoke(void) {
     CHECK(mparser_source_unit_init(&sources[1]) ==
           MPARSER_API_STATUS_OK);
     CHECK(sources[0].struct_size == sizeof(sources[0]));
-    CHECK(sources[0].abi_version == MPARSER_C_ABI_VERSION);
+    CHECK(sources[0].abi_generation == MPARSER_C_ABI_GENERATION);
     sources[0].source_name = entry_name;
     sources[0].source_name_size = strlen(entry_name);
     sources[0].source = entry_source;
@@ -615,7 +619,7 @@ static int run_multi_source_compilation_smoke(void) {
     CHECK(module == NULL);
     CHECK(mparser_source_unit_init(&invalid_source) ==
           MPARSER_API_STATUS_OK);
-    invalid_source.abi_version += 1;
+    invalid_source.abi_generation += 1;
     CHECK(mparser_module_compile_sources(
               &invalid_source, 1, &module) ==
           MPARSER_API_STATUS_ABI_MISMATCH);
@@ -669,7 +673,7 @@ static int run_file_source_graph_smoke(const char* entry_path,
     CHECK(MPARSER_SOURCE_LOAD_OPTIONS_INIT(&load_options) ==
           MPARSER_API_STATUS_OK);
     CHECK(load_options.struct_size == sizeof(load_options));
-    CHECK(load_options.abi_version == MPARSER_C_ABI_VERSION);
+    CHECK(load_options.abi_generation == MPARSER_C_ABI_GENERATION);
     search_path.data = library_path;
     search_path.size = strlen(library_path);
     load_options.search_paths = &search_path;
@@ -698,7 +702,7 @@ static int run_file_source_graph_smoke(const char* entry_path,
     result = NULL;
     module = NULL;
 
-    load_options.abi_version += 1;
+    load_options.abi_generation += 1;
     CHECK(mparser_module_load_file_utf8(
               entry_path, strlen(entry_path),
               &load_options, &module) ==
@@ -1416,7 +1420,7 @@ static int run_object_transport_smoke(void) {
 static int run_request_validation_smoke(mparser_module* module) {
     mparser_invocation_options options = options_for("spin");
     mparser_result* result = NULL;
-    options.abi_version += 1;
+    options.abi_generation += 1;
     CHECK(mparser_module_execute(module, &options, &result) ==
           MPARSER_API_STATUS_ABI_MISMATCH);
     CHECK(result == NULL);

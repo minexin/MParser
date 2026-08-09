@@ -49,16 +49,19 @@ The current v1.2 train is building one end-to-end numeric foundation:
   reductions, scans, predicates, and elementary math;
 - typed constructors and class-aware `colon`, `size`, `linspace`, `sum`, and
   `prod` behavior;
+- shared `mod`/`rem`, `nextpow2`, scalar/vector/row/column/matrix predicates,
+  and recursive `isequal`/`isequaln` semantics;
 - guarded portable/native fallback for types not represented by Typed IR;
-- C ABI generation 2, C++ source API 1.2, and machine protocol 1.1
+- C/C++ source API 1.2, C ABI generation 2, and machine protocol 1.1
   transport.
 
-The runnable coverage is split between `samples/numeric_types_demo.m` and
-`samples/complex_numeric_demo.m`. The product and installed SDK still share
-one release version; ABI generation and protocol numbers are independent
-contract metadata, not SDK product versions. This is an internal milestone, so its active
-catalog and public snapshots freeze only after the remaining v1.2 work is
-complete.
+The runnable coverage is split between `samples/numeric_types_demo.m`,
+`samples/complex_numeric_demo.m`, and
+`samples/core_numeric_builtins_demo.m`. The source tree and installed SDK
+report development version `1.2.0`; ABI generation and protocol numbers are
+independent contract metadata, not SDK product versions. This is an internal
+milestone, so its active 163-descriptor catalog and public snapshots freeze
+only after the remaining v1.2 work is complete.
 
 ## Language And Runtime
 
@@ -102,7 +105,7 @@ script fail; it returns to a less specialized tier.
 | --- | --- |
 | CLI | Production `--run`, strict options, stable exit classes, JSON protocol selector |
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, one document plus LF |
-| C ABI | ABI generation 2 revision 0, typed real/imaginary buffers, opaque retained handles, caller-sized roots |
+| C API/ABI | C source API 1.2; ABI generation 2 revision 0, typed real/imaginary buffers, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2 |
 | Builtin extension | Source contract 1.0 using registry/descriptors/call/results |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |

@@ -35,15 +35,15 @@ void runOneLoad(const std::filesystem::path& libraryPath) {
     const auto versionMajor =
         loadSymbol<VersionFunction>(
             library, "mparser_version_major");
-    const auto abiMajor =
+    const auto abiGeneration =
         loadSymbol<VersionFunction>(
-            library, "mparser_c_abi_version");
+            library, "mparser_c_abi_generation");
     const auto abiRevision =
         loadSymbol<VersionFunction>(
             library, "mparser_c_abi_revision");
-    assert(versionMajor && abiMajor && abiRevision);
+    assert(versionMajor && abiGeneration && abiRevision);
     assert(versionMajor() == 1);
-    assert(abiMajor() == 2);
+    assert(abiGeneration() == 2);
     assert(abiRevision() == 0);
 
     assert(FreeLibrary(library) != 0);
@@ -65,15 +65,15 @@ void runOneLoad(const std::filesystem::path& libraryPath) {
     const auto versionMajor =
         loadSymbol<VersionFunction>(
             library, "mparser_version_major");
-    const auto abiMajor =
+    const auto abiGeneration =
         loadSymbol<VersionFunction>(
-            library, "mparser_c_abi_version");
+            library, "mparser_c_abi_generation");
     const auto abiRevision =
         loadSymbol<VersionFunction>(
             library, "mparser_c_abi_revision");
-    assert(versionMajor && abiMajor && abiRevision);
+    assert(versionMajor && abiGeneration && abiRevision);
     assert(versionMajor() == 1);
-    assert(abiMajor() == 2);
+    assert(abiGeneration() == 2);
     assert(abiRevision() == 0);
 
     assert(dlclose(library) == 0);
@@ -93,6 +93,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "embedding unload stress = "
-              << kLoadCount << ",abi-2.0\n";
+              << kLoadCount
+              << ",abi-generation-2-revision-0\n";
     return 0;
 }
