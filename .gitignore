@@ -9,6 +9,7 @@
 /.vscode/
 /.codex/
 /.agents/
+/workspace/
 *.suo
 *.user
 *.VC.db
