@@ -21,6 +21,32 @@ Every v1.x change follows these rules:
 - release archives retain checksums, provenance, relocation, independent
   consumer, and platform validation.
 
+A `0.1` release is a complete release train rather than a single narrow fix.
+Several implementation batches may land under the same development milestone,
+with focused local regression at each batch boundary. The engine version,
+milestone narrative, full differential rerun, release packaging, and complete
+platform CI are updated together only when the whole milestone is a release
+candidate. Cross-platform-risk changes may still use intermediate CI, but do
+not create an extra public version.
+
+## Workstream Boundaries
+
+The remaining v1.x work is tracked in four related but distinct streams:
+
+- **Language and data semantics** are prerequisites. Core MATLAB numeric
+  classes, complex values, conversion and promotion, array shape, indexing,
+  operators, and diagnostics must be correct in the VM before functions or JIT
+  paths claim support.
+- **Function-library coverage** grows through `BuiltinRegistry` and `.m`
+  libraries. Mathematical and array functions share the same value, calling,
+  error, and multi-output contracts as user functions.
+- **System and host services** require explicit session-scoped capabilities for
+  output, workspace, paths, environment, files, processes, time, and random
+  state. Embedded execution must not silently mutate process-global state.
+- **Optimization coverage** is evidence-driven. Legal code always retains a
+  bytecode authority and guarded fallback; unsupported types or shapes are not
+  coerced merely to enter a typed/native path.
+
 ## v1.1: Core Compatibility Corrections
 
 **Status: implemented; validation evidence is recorded in
@@ -32,48 +58,100 @@ control forms, matrix-column `for`, and column-shaped `A(:)`. It adds shared
 runtime authorities and guarded typed fallback without changing the frozen v1
 host contracts.
 
-## v1.2: Command-Module Integration
+## v1.2: Core Runtime And Numeric Foundation
 
-The next milestone closes the highest-value MExecServer integration gaps:
+v1.2 is a broad vertical milestone, not one constructor per release. It closes
+the public host foundation and the core numeric representation needed by later
+function growth:
 
-- compile in-memory source with explicit search and class paths;
-- expose source-graph main-function, pure-function-file, and top-level
-  statement metadata;
-- return top-level expression values and stable `ans` source locations;
-- route `disp` and formatted output through a host-owned sink;
-- preserve current file-based and CLI behavior through additive defaults.
+- compile in-memory source with explicit search/class paths, expose source
+  metadata, return top-level expression values with stable `ans` locations,
+  and route output through a host-owned sink;
+- support MATLAB core numeric classes end to end: `double`, `single`,
+  `logical`, `int8`/`uint8`, `int16`/`uint16`, `int32`/`uint32`, and
+  `int64`/`uint64`;
+- support real and complex `double`/`single` scalars and dense arrays,
+  imaginary literals, conjugating versus nonconjugating transpose, and exact
+  embedding/machine-protocol transport;
+- define conversion, rounding, saturation/overflow, mixed-class promotion,
+  comparison, concatenation, indexing, assignment, reduction, and diagnostic
+  rules against the selected MATLAB reference release;
+- deliver the first coherent pure-math tranche, including elementary binary
+  and unary functions, rounding and finite predicates, numeric/type/shape
+  predicates, `eps`, `real`/`imag`/`conj`/`isreal`, and related constructors;
+- preserve double-specialized typed/native execution and add explicit guards,
+  deoptimization, and VM equivalence for every newly legal class before wider
+  typed lowering is attempted.
 
-## v1.3-v1.4: Function Breadth
+Character/string, cell, struct, function-handle, and object values remain part
+of the stable value model. Missing strings are included in the v1.2 correctness
+inventory. Large domain families such as sparse arrays, datetime/duration,
+categorical, table, and timetable remain separately staged because they add
+storage and container semantics beyond a numeric class tag.
 
-v1.3 prioritizes pure numeric, rounding, finite/shape predicate, text-format,
-ordering, set, and array-manipulation families through `BuiltinRegistry`.
-v1.4 follows with explicitly contextual services such as random state,
-workspace/path queries, warnings, environment access, and bounded file I/O.
-`.m` standard-library implementations remain preferred where no privileged
-runtime context is required. Long-tail functions are ranked by representative
-workloads and compatibility value, not raw catalog count.
+## v1.3: System And Broad Standard Library
 
-## v1.5: Ownership And Inspection
+v1.3 builds on the v1.2 host boundary and closes a substantial system-function
+and general-library bundle:
+
+- session-scoped output, workspace inspection/mutation, search paths and
+  current directory, warnings, environment, clock/sleep, random state, and
+  bounded filesystem services;
+- permission-gated process execution and dynamic evaluation, with safe CLI
+  defaults and explicit embedding capabilities;
+- `who`/`whos`, `which`, `path`, `pwd`/`cd`, `dir`, `getenv`, `system`,
+  `pause`, date/clock, computer/version, `evalc`, `evalin`, and `assignin`
+  families;
+- formatted text/output, ordering/set, array-construction and manipulation,
+  number-theory, and random functions that do not require the later
+  high-performance backend;
+- end-to-end MExecServer command-module adoption without command-window shims
+  for behavior now owned by the kernel.
+
+System services are capability checked and testable with injected deterministic
+adapters. The CLI may provide an explicit native host adapter, while embedded
+sessions retain isolation and resource controls.
+
+## v1.4: Advanced Mathematics And Typed Performance
+
+v1.4 groups the heavier numerical families with the optimization work needed
+to make them useful:
+
+- statistics and reductions, sort/unique variants, dot/cross and matrix norms,
+  determinant/inverse/rank/eigenvalue families, convolution, and FFT;
+- optional mature BLAS/LAPACK/FFT backends with documented license, threading,
+  determinism, feature detection, and portable fallback contracts;
+- representative MATLAB/MParser benchmarks covering parse/compile/cold/warm,
+  bytecode/portable/native, allocation, peak memory, cache, and fallback;
+- straight-line numeric regions, general dense-array shape/stride guards,
+  element-wise fusion, common reduction lowering, and guarded function-call
+  specialization where profiling evidence shows value.
+
+Every optimized family must pass native/no-JIT result equivalence, guard
+failure and transactional fallback tests, and applicable x64/ARM64 validation.
+Optimization coverage may improve release value, but cannot turn a legal VM
+program into an error.
+
+## v1.5: Rich Data, Ownership, And Inspection
 
 Close the remaining Cell, Struct, class, enum, event, and reflection gaps that
-fit the frozen representation contracts. Define safe cross-module ownership
-for module-bound handles, objects, and globals. Debugger stack/local inspection
-is an additive public contract and must be gated separately from ordinary
-execution.
+fit the stable contracts. Define safe cross-module ownership for module-bound
+handles, objects, and globals. Add rich data families in coherent vertical
+slices, prioritizing sparse numeric values, datetime/duration, categorical,
+table, and timetable according to real workloads. Debugger stack/local
+inspection remains an additive, separately gated public contract.
 
-## v1.6+: Typed Coverage And Remaining Language Gaps
+## v1.6+: Remaining Semantics And Deeper Optimization
 
-The [v1.0 JIT scope decision](v1.0-jit-scope-decision.md) defers broader
-`G-JIT-001` work until a representative workload justifies it. Candidates
-include straight-line numeric regions, common matrix kernels, high-value pure
-builtin lowering, guarded function specialization, and reduced
-`RuntimeValue`/temporary allocation overhead. Every specialization must
-preserve bytecode/portable/native result and diagnostic equivalence.
+Remaining in-scope parser, nested-function, persistence, dynamic-evaluation,
+data-family, and standard-library gaps continue in complete functional bundles.
+After the v1.4 baseline, later optimization candidates are numeric-type-aware
+lowering, copy-on-write/alias and temporary-buffer reuse, x86 SIMD/ARM NEON,
+CPU dispatch, loop-invariant and induction optimization, advanced tiering,
+OSR, parallel kernels, optional GPU execution, and persistent native cache.
 
-Remaining in-scope syntax, type, nested-function, linear-algebra,
-FFT/convolution, persistence, and dynamic-evaluation gaps continue in coherent
-0.1 milestones. LLVM, OSR, speculative object optimization, and persistent
-native-code disk cache require separate evidence and may remain later work.
+LLVM, broad object speculation, OSR, GPU execution, and disk machine-code cache
+remain evidence-gated and do not displace language or function correctness.
 
 ## External Extension Boundary
 
@@ -92,10 +170,10 @@ part of this work.
 
 ## Later v1.x Candidates
 
-Subject to demand and architecture fit:
+Subject to demand and architecture fit after the scheduled core milestones:
 
-- complex and sparse numeric values;
-- tables/timetables and richer domain value types;
+- additional sparse formats and richer domain value types beyond the v1.5
+  priority set;
 - broader class metadata and reflection inside an explicit compatibility
   boundary;
 - package/distribution tooling for reusable `.m` libraries;
