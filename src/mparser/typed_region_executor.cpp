@@ -95,7 +95,8 @@ RuntimeValue arrayValue(const TypedNumericArray& value) {
 bool isDirectLinearDoubleArray(const RuntimeValue& value) {
     if ((value.kind != RuntimeValueKind::Vector &&
          value.kind != RuntimeValueKind::Matrix) ||
-        value.numericClass != RuntimeNumericClass::Double) {
+        value.numericClass != RuntimeNumericClass::Double ||
+        value.numericComplex) {
         return false;
     }
     const auto dimensions = runtimeDimensions(value);
@@ -228,7 +229,8 @@ std::optional<ScalarKernelOp> mathOperation(
 }
 
 std::optional<LoopRangeView> loopValues(const RuntimeValue& range) {
-    if (range.numericClass != RuntimeNumericClass::Double) {
+    if (range.numericClass != RuntimeNumericClass::Double ||
+        range.numericComplex) {
         return std::nullopt;
     }
     if (range.kind == RuntimeValueKind::Number) {
@@ -354,7 +356,8 @@ std::optional<ScalarKernel> compileKernel(
             return std::nullopt;
         }
         if (variable->second.kind == RuntimeValueKind::Number &&
-            variable->second.numericClass == RuntimeNumericClass::Double) {
+            variable->second.numericClass == RuntimeNumericClass::Double &&
+            !variable->second.numericComplex) {
             const size_t slot = findOrAddSlot(kernel, input, variables);
             if (!kernel.initialized[slot]) {
                 failureReason =
@@ -1117,10 +1120,20 @@ bool executeKernelInstruction(
     case ScalarKernelOp::NotEqual:
     case ScalarKernelOp::LogicalAnd:
     case ScalarKernelOp::LogicalOr:
-        result = binaryResult(
-            instruction.op,
-            readOperand(instruction.left, kernel, registers),
-            readOperand(instruction.right, kernel, registers));
+        {
+            const TypedScalar left = readOperand(
+                instruction.left, kernel, registers);
+            const TypedScalar right = readOperand(
+                instruction.right, kernel, registers);
+            if (instruction.op == ScalarKernelOp::Power &&
+                left.value < 0.0 && std::isfinite(right.value) &&
+                std::floor(right.value) != right.value) {
+                failureReason =
+                    "typed power requires a complex result";
+                return false;
+            }
+            result = binaryResult(instruction.op, left, right);
+        }
         break;
     case ScalarKernelOp::Absolute:
     case ScalarKernelOp::ArcCosine:
@@ -1132,9 +1145,25 @@ bool executeKernelInstruction(
     case ScalarKernelOp::Sine:
     case ScalarKernelOp::SquareRoot:
     case ScalarKernelOp::Tangent:
-        result = TypedScalar{mathResult(
-            instruction.op,
-            readOperand(instruction.left, kernel, registers).value)};
+        {
+            const double input = readOperand(
+                instruction.left, kernel, registers).value;
+            const bool inverseDomain =
+                (instruction.op == ScalarKernelOp::ArcCosine ||
+                 instruction.op == ScalarKernelOp::ArcSine) &&
+                std::fabs(input) > 1.0;
+            const bool negativeDomain =
+                (instruction.op == ScalarKernelOp::Logarithm ||
+                 instruction.op == ScalarKernelOp::SquareRoot) &&
+                input < 0.0;
+            if (inverseDomain || negativeDomain) {
+                failureReason =
+                    "typed math builtin requires a complex result";
+                return false;
+            }
+            result = TypedScalar{
+                mathResult(instruction.op, input)};
+        }
         break;
     case ScalarKernelOp::LoadArrayElement: {
         if (instruction.arraySlot >= kernel.arrays.size()) {
@@ -1384,7 +1413,8 @@ ScalarTypedRegionExecutor::executeValidated(
         }
         const bool supportedScalar =
             variable->second.kind == RuntimeValueKind::Number &&
-            variable->second.numericClass == RuntimeNumericClass::Double;
+            variable->second.numericClass == RuntimeNumericClass::Double &&
+            !variable->second.numericComplex;
         if (!supportedScalar &&
             !isDirectLinearDoubleArray(variable->second)) {
             return fallback(

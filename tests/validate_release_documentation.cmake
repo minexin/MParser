@@ -409,8 +409,8 @@ require_text(support_matrix
     "compatibility-matrix.json"
     "support matrix authority")
 require_text(support_matrix
-    "Post-v1.0"
-    "support matrix deferred scope")
+    "superseded development interfaces"
+    "support matrix development scope")
 require_text(jit_guide
     "bytecode VM remains the semantic authority"
     "JIT fallback contract")

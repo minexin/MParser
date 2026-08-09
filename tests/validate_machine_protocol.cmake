@@ -162,12 +162,13 @@ run_backend_case(backend_native native native)
 
 string(JSON workspace_length ERROR_VARIABLE json_error
     LENGTH "${success_JSON}" workspace)
-if(json_error OR workspace_length LESS 7)
+if(json_error OR workspace_length LESS 8)
     message(FATAL_ERROR
         "success: expected the demo workspace in the result: ${json_error}")
 endif()
 
 set(found_matrix FALSE)
+set(found_complex FALSE)
 set(found_string FALSE)
 set(found_structure FALSE)
 math(EXPR workspace_last "${workspace_length} - 1")
@@ -181,6 +182,16 @@ foreach(index RANGE 0 ${workspace_last})
         require_json_equal(matrix_column_major "${success_JSON}" 3
             workspace ${index} value data 1)
         set(found_matrix TRUE)
+    elseif(variable_name STREQUAL "complex_value")
+        require_json_equal(complex_kind "${success_JSON}" numeric
+            workspace ${index} value kind)
+        require_json_equal(complex_class "${success_JSON}" single
+            workspace ${index} value class)
+        require_json_equal(complex_real "${success_JSON}" 3
+            workspace ${index} value data 1)
+        require_json_equal(complex_imaginary "${success_JSON}" -4
+            workspace ${index} value imaginary_data 1)
+        set(found_complex TRUE)
     elseif(variable_name STREQUAL "string_value")
         require_json_equal(string_kind "${success_JSON}" string
             workspace ${index} value kind)
@@ -195,9 +206,10 @@ foreach(index RANGE 0 ${workspace_last})
         set(found_structure TRUE)
     endif()
 endforeach()
-if(NOT found_matrix OR NOT found_string OR NOT found_structure)
+if(NOT found_matrix OR NOT found_complex OR NOT found_string OR
+   NOT found_structure)
     message(FATAL_ERROR
-        "success: expected matrix, string, and structure projections")
+        "success: expected matrix, complex, string, and structure projections")
 endif()
 
 run_machine_case(compilation 1 "${COMPILE_FAILURE_SOURCE}")

@@ -1,65 +1,59 @@
-# MParser C ABI Compatibility
+# MParser C ABI Development Contract
 
-MParser 1.0.0 freezes C ABI major 1 revision 1 as a stable v1 compatibility
-promise. Its symbols, records, constants, ownership, and evolution rules are
-machine-checked. Every public layout or symbol change requires the review
-recorded in `public-contract-v1.json`.
+MParser and its installed SDK use one product version. The current source tree
+is the v1.2 development line and still reports product version `1.1.0` until
+the complete milestone reaches its release-candidate gate; the coordinated
+candidate version will be `1.2.0`.
 
-The current tuple is:
+The embedding boundary has an independent technical contract level:
 
-- ABI major: `MPARSER_C_ABI_VERSION_MAJOR == 1`;
-- ABI revision: `MPARSER_C_ABI_REVISION == 1`;
-- engine release: `1.0.0`.
+- C ABI major: `MPARSER_C_ABI_VERSION_MAJOR == 2`;
+- C ABI revision: `MPARSER_C_ABI_REVISION == 0`;
+- shared-library ABI implementation version: `2.0.0`.
 
-`mparser_c_abi_version()` returns the ABI major.
-`mparser_c_abi_revision()` returns the additive feature revision. The engine
-version functions describe language/runtime behavior and do not replace ABI
-negotiation.
+These numbers are ABI negotiation data, not an MParser SDK version.
+`mparser_c_abi_version()` and `mparser_c_abi_revision()` report them at
+runtime. The three `mparser_version_*()` functions report the product version.
 
-## Compatibility Policy
+## Development Policy
 
-Within one ABI major, MParser may:
+The project is not yet using the v1.2 SDK in production. Current headers,
+implementation, in-repository callers, tests, examples, and documentation move
+together. Superseded development headers and binaries are not compatibility
+targets, and no adapters are added solely to preserve them.
 
-- add exported functions;
-- add status or enum-like integer constants without reusing old values;
-- append fields to explicitly extensible structures;
-- add new opaque handle types;
-- strengthen diagnostics while preserving status and ownership meaning.
+At the v1.2 candidate gate, the current header, layouts, symbols, package
+metadata, and independent consumers will be frozen as one reviewed contract.
+After that freeze, an incompatible correction requires a new ABI major. An
+additive change within one frozen ABI major requires a revision increase and
+updated consumer evidence.
 
-Within one ABI major, MParser must not:
+The released MParser 1.0.0 ABI 1.1 contract remains immutable historical
+evidence in `docs/public-contract-v1.json` and
+`tests/public_contract/c_abi/1.1`. It is not the active ABI 2 test target.
 
-- remove or change an existing exported function signature;
-- change an existing constant value;
-- reorder, remove, or reinterpret an existing structure field;
-- change ownership of an existing returned handle or borrowed view;
-- expose a formerly opaque handle layout;
-- append fields to a sealed structure used in an array.
+## Library Identity
 
-An incompatible correction requires a new ABI major and a matching
-shared-library ABI name. An additive change requires an ABI revision increase,
-an updated snapshot, and an old-client compatibility test before release.
+The current ABI-major library names are:
 
-The current shared-library implementation version is `1.1.0`, with ABI-major
-SONAME/install name 1:
-
-- ELF: `libmparser_c.so.1`;
-- macOS: `libmparser_c.1.dylib`;
+- ELF: `libmparser_c.so.2`;
+- macOS: `libmparser_c.2.dylib`;
 - Windows: `mparser_c.dll` plus its import library.
 
-The engine release remains independent. Internal compiler, VM, C++ facade,
-and SLJIT symbols have hidden visibility. The complete public export set is
-the 90-name manifest in `tests/c_api_abi1_symbols.txt`.
+Internal compiler, VM, C++ facade, and SLJIT symbols have hidden visibility.
+The current public export set is the 89-name manifest in
+`tests/c_api_abi2_symbols.txt`.
 
-## Extensible Structures
+## Extensible Roots
 
-These root structures may gain tail fields:
+These root structures start with `struct_size` and `abi_version` and may gain
+tail fields within ABI 2:
 
 - `mparser_invocation_options`;
 - `mparser_execution_summary`;
 - `mparser_source_load_options`.
 
-Each starts with `struct_size` and `abi_version`. New code initializes the
-complete storage available in the compiling host with:
+Initialize current-source storage with the uppercase macros:
 
 ```c
 mparser_invocation_options options;
@@ -72,134 +66,68 @@ mparser_source_load_options load_options;
 MPARSER_SOURCE_LOAD_OPTIONS_INIT(&load_options);
 ```
 
-The macros call the corresponding `*_init_sized` function with the caller's
-`sizeof` and ABI major. A host wrapper with reserved future storage may call
-the sized entry directly:
+The macros call the matching `*_init_sized` function with the caller's
+complete `sizeof` and current ABI major. A host wrapper may reserve tail
+storage explicitly:
 
 ```c
-struct future_request {
+struct extended_request {
     mparser_invocation_options value;
     unsigned char future_tail[32];
 };
 
-struct future_request request;
+struct extended_request request;
 mparser_api_status status = mparser_invocation_options_init_sized(
     &request, sizeof(request), MPARSER_C_ABI_VERSION);
 ```
 
-A successful sized initializer:
+A successful sized initializer validates the ABI major and minimum prefix,
+clears the caller-declared storage, records its capacity in `struct_size`, and
+sets known defaults. Input readers consume known fields and ignore an unknown
+tail. Output writers never exceed the recorded capacity.
 
-1. requires storage at least as large as the ABI-major-1 prefix;
-2. rejects an unsupported ABI major with `ABI_MISMATCH`;
-3. clears every byte in the caller-declared storage;
-4. records that storage capacity in `struct_size`;
-5. initializes known defaults such as the automatic backend.
+The public minimum-size constants retain their original `_V1_SIZE` spelling
+because the root record prefixes did not change when typed numeric transport
+moved to ABI 2. The suffix names a record layout generation; it does not report
+the active ABI or SDK product version.
 
-The storage must be writable for the declared size and naturally aligned for
-the corresponding public structure. Making that structure the first member
-of a host wrapper, as above, satisfies both the prefix-address and alignment
-requirements.
+## Sealed Records
 
-Input consumers require the ABI-major-1 prefix, read only fields known to the
-library, and ignore a larger unknown tail. This lets a newer-header host call
-an older revision-1-or-later library when it uses only fields understood by
-that library.
-
-For output structures, the host initializes its storage before the getter.
-`mparser_result_execution_summary` writes only fields known to the library and
-never writes beyond the recorded capacity. Bytes belonging to a future tail
-remain at their initialized default.
-
-The fixed minimum constants are:
-
-- `MPARSER_INVOCATION_OPTIONS_V1_SIZE`;
-- `MPARSER_EXECUTION_SUMMARY_V1_SIZE`;
-- `MPARSER_SOURCE_LOAD_OPTIONS_V1_SIZE`.
-
-## Legacy Initializers
-
-The original v0.83-v0.86 functions remain exported:
-
-- `mparser_invocation_options_init`;
-- `mparser_execution_summary_init`;
-- `mparser_source_load_options_init`.
-
-They always clear and report exactly the frozen ABI-major-1 prefix, even if a
-future library was compiled with a larger current structure. That fixed write
-range is required so an old binary cannot be overwritten by a newer library.
-
-New source should use the uppercase safe-initialization macros. The legacy
-functions exist for already-built ABI-major-1 consumers and for compatibility
-tests.
-
-## Sealed Structures
-
-The following records have fixed layout within ABI major 1:
-
-- `mparser_source_unit`;
-- `mparser_named_value`;
-- `mparser_utf8_view` and `mparser_utf16_view`;
-- `mparser_source_position`.
-
-In particular, `mparser_module_compile_sources` receives an array of
-`mparser_source_unit`, so the compiled library uses the frozen structure size
-as the array stride. `mparser_source_unit.struct_size` must equal
-`MPARSER_SOURCE_UNIT_V1_SIZE`; an oversized descriptor is rejected rather
-than ambiguously indexed. A future source descriptor needs a new type and a
-new function that carries an explicit stride or pointer list.
+`mparser_source_unit`, `mparser_named_value`, `mparser_numeric_buffer`, the
+UTF views, and source positions are fixed-stride records in the current ABI.
+In particular, source units are passed as an array, so
+`mparser_source_unit.struct_size` must equal `MPARSER_SOURCE_UNIT_V1_SIZE`.
+An oversized source-unit descriptor is rejected rather than interpreted with
+an ambiguous stride.
 
 Opaque module, session, result, value, cancellation, and diagnostic handles
-may change internally without changing this ABI. Their retain/release and
-borrowed-view rules remain those in `embedding-c-api.md`.
+may change internally. Their retain/release, ownership, concurrency, and
+borrowed-view rules are documented in `embedding-c-api.md`.
 
-## Compatibility Matrix
+## Numeric Transport
 
-| Host binary | Runtime library | Contract |
-| --- | --- | --- |
-| v0.86 ABI-major-1 header | v0.90 | Supported through frozen old symbols and prefixes |
-| v0.90 ABI 1.1 header | v0.90 | Supported, including sized initialization |
-| Future ABI-major-1 header | v0.90 | Supported for known prefix fields when revision-1 symbols are available |
-| v0.90 code using revision-1 symbols | v0.86 | Not load-compatible because those additive symbols do not exist |
-| Different ABI major | Any | Rejected or requires a separately named ABI/library |
+ABI 2 replaces the double-only numeric transport with
+`mparser_numeric_buffer`. It carries a numeric class, complexity flag, element
+count, and typed real/imaginary pointers. `int64_t` and `uint64_t` therefore
+cross the boundary exactly instead of passing through `double`; complex double
+and single arrays preserve separate components. Logical and integer values
+must be real.
 
-Use package-version constraints when deploying code that depends on a newer
-additive symbol. Runtime ABI revision checks describe capabilities after the
-binary has loaded; they cannot make a missing dynamic symbol loadable.
+Input buffers are copied. Output buffers are immutable views owned by the
+returned `mparser_value`. No external C++ layout, writable runtime storage, or
+borrowed-input lifetime crosses the C boundary.
 
 ## Validation
 
-`c_api_smoke` covers undersized and wrong-major rejection, old-prefix write
-bounds, oversized request execution, oversized source-load execution,
-oversized summary output, and sealed source descriptors.
+`c_api_smoke` validates ABI negotiation, caller-sized roots, sealed records,
+every numeric class, complex buffers, source graphs, sessions, ownership,
+resources, and failure boundaries. `c_api_layout_contract` checks current
+64-bit sizes, offsets, and constant values.
 
-`c_api_v1_compat_smoke` is compiled only against the frozen v0.86 header
-snapshot. It links the current library, compiles a two-source graph, executes
-it, and reads an execution summary without any revision-1 declarations.
-
-`c_api_v1_1_compat_smoke` is compiled against the exact v0.90 ABI 1.1
-snapshot under `tests/public_contract/c_abi/1.1`. It exercises the current
-sized request/result boundary while linking only to the live shared library.
-
-`c_api_layout_contract` freezes the 64-bit sizes and offsets of every public C
-record together with status and enum-like values. The release platform matrix
-is 64-bit only; adding a 32-bit platform requires a separately reviewed layout
-profile rather than silently reusing these assertions.
-
-`c_abi_compat_demo_smoke` runs `samples/c_abi_compat_demo.c`, which demonstrates
-future-tail request and summary storage. The installed consumer checks ABI
-`1.1` after package relocation. Focused Linux AArch64 native and portable jobs
-run the same evidence under QEMU.
-
-`c_api_shared_library_abi` inspects the built dynamic library with
-`dumpbin`, `nm`, `readelf`, or `otool` as appropriate. It rejects missing or
-unexpected externally defined exports, including accidental non-`mparser_*`
-symbols, and rejects an ELF SONAME or macOS install name whose major differs
-from ABI major 1.
-
-`public_contract_smoke` verifies the normalized header and export-manifest
-SHA-256 values against `docs/public-contract-v1.json`. Updating those hashes
-without the required revision/major classification and compatibility evidence
-does not satisfy the review policy.
-
-SOVERSION 1 names the stable v1 ABI family. Any breaking correction changes
-the ABI major explicitly rather than rewriting major 1 in place.
+`c_api_shared_library_abi` inspects the dynamic library with the platform
+toolchain, compares its exports with `tests/c_api_abi2_symbols.txt`, and checks
+SONAME/install-name major 2. Lifecycle, unload, allocation-failure, named-fault,
+concurrency, and relocated C/C++ consumer tests exercise the same current
+headers. The complete platform matrix runs once the v1.2 train reaches its
+candidate gate; internal batches use focused local regression unless a change
+has unusual cross-platform risk.

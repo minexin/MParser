@@ -361,7 +361,8 @@ private:
 
     std::unique_ptr<SyntaxNode> parsePostfix(std::unique_ptr<SyntaxNode> left) {
         while (!isAtEnd()) {
-            if (at(TokenKind::Apostrophe)) {
+            if (atAny({TokenKind::Apostrophe,
+                       TokenKind::DotApostrophe})) {
                 const Token op = advance();
                 auto postfix =
                     makeNodeFromSpan(SyntaxKind::PostfixExpr,

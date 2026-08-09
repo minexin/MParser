@@ -339,18 +339,6 @@ size_t columnCount(const RuntimeValue& value) {
     return runtimeDimension(value, 1);
 }
 
-template <typename Predicate>
-bool allNumericElements(const RuntimeValue& value, Predicate predicate) {
-    if (isNumber(value)) {
-        return predicate(value.number);
-    }
-    if (!isArray(value)) {
-        return false;
-    }
-    return std::all_of(value.elements.begin(), value.elements.end(),
-                       predicate);
-}
-
 std::string runtimeKindName(const RuntimeValue& value) {
     switch (value.kind) {
     case RuntimeValueKind::Missing:
@@ -447,16 +435,6 @@ size_t elementCount(const RuntimeValue& value) {
     return runtimeShapeElementCount(value);
 }
 
-RuntimeValue arrayValueForShape(size_t rows, size_t columns,
-                                std::vector<double> values,
-                                RuntimeNumericClass numericClass =
-                                    RuntimeNumericClass::Double) {
-    if (rows == 1) {
-        return vectorValue(std::move(values), numericClass);
-    }
-    return matrixValue(rows, columns, std::move(values), numericClass);
-}
-
 RuntimeValue arrayValueForDimensions(std::vector<size_t> dimensions,
                                      std::vector<double> values,
                                      RuntimeNumericClass numericClass =
@@ -482,25 +460,10 @@ RuntimeValue oneBasedIndexRange(size_t length) {
 }
 
 bool truthy(const RuntimeValue& value) {
-    if (isNumber(value)) {
-        return value.number != 0.0 && !std::isnan(value.number);
-    }
-    if (isArray(value)) {
-        for (double element : value.elements) {
-            if (element == 0.0 || std::isnan(element)) {
-                return false;
-            }
-        }
-        return !value.elements.empty();
-    }
-    return false;
+    return runtimeNumericTruthValue(value).value_or(false);
 }
 
-bool isWholeNumber(double value) {
-    return std::isfinite(value) && std::floor(value) == value;
-}
-
-std::optional<double> parseNumber(std::string_view text) {
+std::optional<double> parseRealNumber(std::string_view text) {
     std::string buffer(text);
     char* end = nullptr;
     const double value = std::strtod(buffer.c_str(), &end);
@@ -535,17 +498,11 @@ std::string decodeStringLiteral(std::string_view text) {
 }
 
 bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
-    if (isNumber(left) && isNumber(right)) {
-        return left.numericClass == right.numericClass &&
-               left.number == right.number;
+    if (isNumeric(left) && isNumeric(right)) {
+        return runtimeNumericValuesIdentical(left, right);
     }
     if (isString(left) && isString(right)) {
         return runtimeTextPayloadEqual(left, right);
-    }
-    if (isArray(left) && isArray(right)) {
-        return left.numericClass == right.numericClass &&
-               runtimeDimensions(left) == runtimeDimensions(right) &&
-               left.elements == right.elements;
     }
     if (isCell(left) && isCell(right)) {
         if (runtimeDimensions(left) != runtimeDimensions(right) ||
@@ -2503,7 +2460,8 @@ private:
                     property.weakHandle = *value;
                 }
             } else if (name == "partialmatchpriority") {
-                const auto value = parseNumber(trimAscii(attribute.value));
+                const auto value = parseRealNumber(
+                    trimAscii(attribute.value));
                 if (attribute.negated || !value || !std::isfinite(*value) ||
                     *value < 1.0 || std::floor(*value) != *value) {
                     diagnostics_.push_back(Diagnostic{
@@ -5310,7 +5268,14 @@ private:
         if (!condition) {
             return std::nullopt;
         }
-        if (!truthy(*condition)) {
+        const auto conditionValue = runtimeNumericTruthValue(*condition);
+        if (!conditionValue) {
+            addDiagnostic(
+                instruction,
+                "bytecode condition must be a real numeric value without NaN");
+            return std::nullopt;
+        }
+        if (!*conditionValue) {
             const auto target = checkedTarget(instruction);
             if (target) {
                 unwindStructuredContexts(*target);
@@ -6111,6 +6076,12 @@ private:
                     runtimeStackValue(numberValue(3.14159265358979323846)));
                 return;
             }
+            if (instruction.operand == "i" ||
+                instruction.operand == "j") {
+                stack_.push_back(runtimeStackValue(
+                    *runtimeParseNumericLiteral("1i")));
+                return;
+            }
             if (instruction.operand == "eps") {
                 stack_.push_back(runtimeStackValue(
                     numberValue(std::numeric_limits<double>::epsilon())));
@@ -6242,8 +6213,9 @@ private:
             return;
         }
 
-        if (const auto number = parseNumber(instruction.operand)) {
-            stack_.push_back(runtimeStackValue(numberValue(*number)));
+        if (auto number = runtimeParseNumericLiteral(
+                instruction.operand)) {
+            stack_.push_back(runtimeStackValue(std::move(*number)));
             return;
         }
 
@@ -6981,14 +6953,18 @@ private:
             "AbortSet", "GetObservable", "Hidden", "NonCopyable",
             "SetObservable", "Transient", "WeakHandle"};
         if (logicalMembers.contains(member)) {
-            if (!isNumber(value)) {
+            const auto logical = isNumber(value)
+                                     ? runtimeNumericTruthValue(value)
+                                     : std::nullopt;
+            if (!logical) {
                 addDiagnostic(instruction,
                               "dynamic property logical metadata requires "
-                              "a scalar numeric value: " + member);
+                              "a real scalar numeric value without NaN: " +
+                                  member);
                 return;
             }
             (*descriptor.sharedFields)[member] =
-                logicalValue(truthy(value));
+                logicalValue(*logical);
             return;
         }
         if (member == "GetAccess" || member == "SetAccess") {
@@ -7016,12 +6992,16 @@ private:
             return;
         }
         if (member == "PartialMatchPriority") {
-            if (!isNumber(value) || !std::isfinite(value.number) ||
-                value.number <= 0.0) {
+            const auto element = isNumber(value)
+                                     ? runtimeNumericElementValue(value, 0)
+                                     : std::nullopt;
+            if (!element || element->complex ||
+                !std::isfinite(element->real) ||
+                element->real <= 0.0) {
                 addDiagnostic(
                     instruction,
                     "dynamic property PartialMatchPriority requires a "
-                    "positive scalar");
+                    "positive real scalar");
                 return;
             }
             (*descriptor.sharedFields)[member] = value;
@@ -9561,41 +9541,23 @@ private:
             return;
         }
 
-        if (instruction.operand != "'") {
+        if (instruction.operand != "'" &&
+            instruction.operand != ".'") {
             addDiagnostic(instruction,
                           "unsupported bytecode postfix operator: " +
                               instruction.operand);
             return;
         }
 
-        if (isNumber(*value)) {
-            pushRuntime(*value);
-            return;
-        }
-        if (isVector(*value)) {
-            pushRuntime(matrixValue(value->elements.size(), 1,
-                                    value->elements,
-                                    value->numericClass));
-            return;
-        }
-        if (isMatrix(*value)) {
-            if (runtimeDimensionCount(*value) > 2) {
+        if (isNumeric(*value)) {
+            auto result = runtimeTransposeNumeric(
+                *value, instruction.operand == "'");
+            if (!result.succeeded) {
                 addDiagnostic(instruction,
-                              "bytecode transpose requires a "
-                              "two-dimensional array");
+                              "bytecode " + result.error);
                 return;
             }
-            std::vector<double> transposed;
-            transposed.reserve(value->elements.size());
-            for (size_t column = 0; column < value->columns; ++column) {
-                for (size_t row = 0; row < value->rows; ++row) {
-                    transposed.push_back(
-                        value->elements[row * value->columns + column]);
-                }
-            }
-            pushRuntime(matrixValue(value->columns, value->rows,
-                                    std::move(transposed),
-                                    value->numericClass));
+            pushRuntime(std::move(result.value));
             return;
         }
 
@@ -11891,33 +11853,6 @@ private:
             return {};
         }
 
-        if (name == "size" && requestedCount > 1) {
-            if (arguments.size() != 1) {
-                addDiagnostic(instruction,
-                              "bytecode size expects one argument");
-                return missingOutputs(requestedCount);
-            }
-
-            std::vector<RuntimeValue> outputs;
-            outputs.reserve(static_cast<size_t>(requestedCount));
-            const auto dimensions = runtimeDimensions(arguments.front());
-            for (int index = 0; index < requestedCount; ++index) {
-                size_t dimension = 1;
-                if (index + 1 == requestedCount &&
-                    static_cast<size_t>(requestedCount) < dimensions.size()) {
-                    std::vector<size_t> folded(
-                        dimensions.begin() + index, dimensions.end());
-                    dimension =
-                        checkedRuntimeDimensionProduct(folded).value_or(0);
-                } else if (static_cast<size_t>(index) < dimensions.size()) {
-                    dimension = dimensions[static_cast<size_t>(index)];
-                }
-                outputs.push_back(
-                    numberValue(static_cast<double>(dimension)));
-            }
-            return outputs;
-        }
-
         if (requestedCount != 1) {
             addDiagnostic(instruction,
                           "bytecode builtin does not support multiple "
@@ -12166,38 +12101,11 @@ private:
         if (dimension.text == ":") {
             return std::nullopt;
         }
-        const auto value = parseNumber(dimension.text);
+        const auto value = parseRealNumber(dimension.text);
         if (!value) {
             return std::nullopt;
         }
         return checkedRuntimeNonnegativeInteger(*value);
-    }
-
-    std::pair<size_t, size_t> propertyValueShape(
-        const RuntimeValue& value, const PropertyInfo& property) const {
-        (void)property;
-        return {rowCount(value), columnCount(value)};
-    }
-
-    std::vector<size_t> propertyValueDimensions(
-        const RuntimeValue& value, const PropertyInfo& property) const {
-        (void)property;
-        return runtimeDimensions(value);
-    }
-
-    size_t propertyValueCount(const RuntimeValue& value,
-                              const PropertyInfo& property) const {
-        (void)property;
-        if (value.kind == RuntimeValueKind::Missing) {
-            return 0;
-        }
-        if (isRuntimeTextValue(value)) {
-            return runtimeShapeElementCount(value);
-        }
-        if (isCell(value)) {
-            return value.cells.size();
-        }
-        return isNumber(value) ? 1 : value.elements.size();
     }
 
     bool propertyValidationError(const BytecodeInstruction& instruction,
@@ -12209,462 +12117,26 @@ private:
         return false;
     }
 
-    std::optional<RuntimeValue> coercePropertyClass(
-        const BytecodeInstruction& instruction, const PropertyInfo& property,
-        RuntimeValue value) {
-        const std::string& type = property.spec.className;
-        if (type.empty()) {
-            return value;
-        }
-        if (type == "double") {
-            if (isNumeric(value)) {
-                return runtimeConvertNumericClass(
-                    std::move(value), RuntimeNumericClass::Double);
-            }
-            propertyValidationError(instruction, property,
-                                    "value must be numeric for class double");
-            return std::nullopt;
-        }
-        if (type == "logical") {
-            if (!isNumeric(value)) {
-                propertyValidationError(
-                    instruction, property,
-                    "value must be numeric or logical for class logical");
-                return std::nullopt;
-            }
-            auto converted = runtimeConvertNumericClass(
-                std::move(value), RuntimeNumericClass::Logical);
-            if (!converted) {
-                propertyValidationError(
-                    instruction, property,
-                    "NaN cannot be converted to class logical");
-            }
-            return converted;
-        }
-        if (type == "char") {
-            if (isRuntimeCharacterArray(value)) {
-                return value;
-            }
-            if (const auto text = runtimeTextScalarCodeUnits(value)) {
-                return makeRuntimeCharacterVector(*text);
-            }
-            propertyValidationError(instruction, property,
-                                    "value must be text for class char");
-            return std::nullopt;
-        }
-        if (type == "string") {
-            if (isRuntimeStringArray(value)) {
-                return value;
-            }
-            if (const auto text = runtimeTextScalarCodeUnits(value)) {
-                return makeRuntimeStringScalar(*text);
-            }
-            propertyValidationError(instruction, property,
-                                    "value must be text for class string");
-            return std::nullopt;
-        }
-        if (type == "cell") {
-            if (isCell(value)) {
-                return value;
-            }
-            propertyValidationError(instruction, property,
-                                    "value must be a cell array");
-            return std::nullopt;
-        }
-        if (type == "handle") {
-            if (isObject(value) && value.handleObject) {
-                return value;
-            }
-            propertyValidationError(instruction, property,
-                                    "value must be a handle object");
-            return std::nullopt;
-        }
-
-        if (value.kind == RuntimeValueKind::Missing) {
-            return value;
-        }
-        if (isObject(value) && classesByName_.contains(type) &&
-            classDerivesFrom(value.className, type)) {
-            return value;
-        }
-        if (!classesByName_.contains(type)) {
-            propertyValidationError(instruction, property,
-                                    "property class is not available: " + type);
-        } else {
-            propertyValidationError(instruction, property,
-                                    "value must be an object of class " + type);
-        }
-        return std::nullopt;
-    }
-
-    std::optional<RuntimeValue> reshapePropertyValue(
-        const BytecodeInstruction& instruction, const PropertyInfo& property,
-        RuntimeValue value, std::vector<size_t> dimensions) {
-        dimensions = normalizeRuntimeDimensions(std::move(dimensions));
-        const auto count = checkedRuntimeDimensionProduct(dimensions);
-        if (!count) {
-            propertyValidationError(instruction, property,
-                                    "property dimensions are too large");
-            return std::nullopt;
-        }
-        if (isNumber(value)) {
-            if (*count == 1) {
-                return value;
-            }
-            return arrayValueForDimensions(
-                dimensions, std::vector<double>(*count, value.number));
-        }
-        if (isArray(value)) {
-            if (value.elements.size() != *count) {
-                propertyValidationError(
-                    instruction, property,
-                    "value has " + std::to_string(value.elements.size()) +
-                        " elements but the property requires " +
-                        std::to_string(*count));
-                return std::nullopt;
-            }
-            if (*count == 1) {
-                return numberValue(value.elements.front());
-            }
-            auto reshaped = runtimeReshapeValue(value, dimensions);
-            if (!reshaped.succeeded) {
-                propertyValidationError(instruction, property,
-                                        "property " + reshaped.error);
-                return std::nullopt;
-            }
-            return std::move(reshaped.value);
-        }
-        if (isCell(value)) {
-            if (value.cells.size() != *count) {
-                propertyValidationError(
-                    instruction, property,
-                    "cell value has incompatible property dimensions");
-                return std::nullopt;
-            }
-            auto reshaped = runtimeReshapeValue(value, dimensions);
-            if (!reshaped.succeeded) {
-                propertyValidationError(instruction, property,
-                                        "property " + reshaped.error);
-                return std::nullopt;
-            }
-            return std::move(reshaped.value);
-        }
-        if (isRuntimeTextValue(value)) {
-            if (runtimeShapeElementCount(value) != *count) {
-                propertyValidationError(
-                    instruction, property,
-                    "text value has incompatible property dimensions");
-                return std::nullopt;
-            }
-            auto reshaped = runtimeReshapeValue(value, dimensions);
-            if (!reshaped.succeeded) {
-                propertyValidationError(instruction, property,
-                                        "property " + reshaped.error);
-                return std::nullopt;
-            }
-            return std::move(reshaped.value);
-        }
-
-        propertyValidationError(instruction, property,
-                                "value cannot be reshaped to the property size");
-        return std::nullopt;
-    }
-
-    std::optional<RuntimeValue> coercePropertySize(
-        const BytecodeInstruction& instruction, const PropertyInfo& property,
-        RuntimeValue value) {
-        if (property.spec.dimensions.empty()) {
-            return value;
-        }
-        for (const auto& dimension : property.spec.dimensions) {
-            if (dimension.text != ":" && !propertyDimension(dimension)) {
-                propertyValidationError(
-                    instruction, property,
-                    "property dimension cannot be represented at runtime");
-                return std::nullopt;
-            }
-        }
-
-        std::vector<std::optional<size_t>> expected;
-        expected.reserve(std::max<size_t>(2,
-                                          property.spec.dimensions.size()));
-        for (const auto& dimension : property.spec.dimensions) {
-            expected.push_back(propertyDimension(dimension));
-        }
-        if (expected.size() == 1) {
-            expected.push_back(1);
-        }
-
-        const auto actual = propertyValueDimensions(value, property);
-        bool exact = true;
-        for (size_t index = 0; index < expected.size(); ++index) {
-            if (expected[index] &&
-                runtimeDimension(value, index) != *expected[index]) {
-                exact = false;
-            }
-        }
-        for (size_t index = expected.size(); index < actual.size(); ++index) {
-            if (actual[index] != 1) {
-                exact = false;
-            }
-        }
-        if (exact) {
-            return value;
-        }
-
-        if (!isNumeric(value) && !isCell(value) &&
-            !isRuntimeTextValue(value)) {
-            propertyValidationError(instruction, property,
-                                    "value shape does not match the property size");
-            return std::nullopt;
-        }
-
-        size_t wildcardCount = 0;
-        size_t wildcardIndex = 0;
-        std::vector<size_t> targetDimensions(expected.size(), 1);
-        for (size_t index = 0; index < expected.size(); ++index) {
-            if (expected[index]) {
-                targetDimensions[index] = *expected[index];
-            } else {
-                ++wildcardCount;
-                wildcardIndex = index;
-            }
-        }
-        if (wildcardCount > 1) {
-            propertyValidationError(
-                instruction, property,
-                "value shape cannot be inferred for multiple wildcard dimensions");
-            return std::nullopt;
-        }
-
-        const size_t valueCount = propertyValueCount(value, property);
-        if (wildcardCount == 1) {
-            targetDimensions[wildcardIndex] = 1;
-            const auto fixedCount =
-                checkedRuntimeDimensionProduct(targetDimensions);
-            if (!fixedCount || *fixedCount == 0 ||
-                valueCount % *fixedCount != 0) {
-                propertyValidationError(
-                    instruction, property,
-                    "value element count does not match the property size");
-                return std::nullopt;
-            }
-            targetDimensions[wildcardIndex] = valueCount / *fixedCount;
-        }
-        return reshapePropertyValue(instruction, property, std::move(value),
-                                    std::move(targetDimensions));
-    }
-
-    std::optional<double> validatorNumericArgument(
-        const BytecodeInstruction& instruction, const PropertyInfo& property,
-        const PropertyValidatorSpec& validator) {
-        size_t begin = 0;
-        if (!validator.arguments.empty() &&
-            validator.arguments.front() == property.name) {
-            begin = 1;
-        }
-        if (validator.arguments.size() != begin + 1) {
-            propertyValidationError(
-                instruction, property,
-                validator.name + " requires one literal comparison value");
-            return std::nullopt;
-        }
-        const auto argument = parseNumber(validator.arguments[begin]);
-        if (!argument) {
-            propertyValidationError(
-                instruction, property,
-                validator.name + " comparison value must be numeric");
-            return std::nullopt;
-        }
-        return argument;
-    }
-
-    bool applyPropertyValidator(const BytecodeInstruction& instruction,
-                                const PropertyInfo& property,
-                                const PropertyValidatorSpec& validator,
-                                const RuntimeValue& value) {
-        const std::string& name = validator.name;
-        const auto requireNumeric = [&]() {
-            return isNumeric(value) ||
-                   propertyValidationError(instruction, property,
-                                           name + " requires numeric data");
-        };
-        const auto numericCheck = [&](auto predicate,
-                                      std::string message) {
-            return requireNumeric() &&
-                   (allNumericElements(value, predicate) ||
-                    propertyValidationError(instruction, property,
-                                            std::move(message)));
-        };
-
-        if (name == "mustBePositive") {
-            return numericCheck([](double item) { return item > 0.0; },
-                                "value must be positive");
-        }
-        if (name == "mustBeNonpositive") {
-            return numericCheck([](double item) { return item <= 0.0; },
-                                "value must be nonpositive");
-        }
-        if (name == "mustBeNonnegative") {
-            return numericCheck([](double item) { return item >= 0.0; },
-                                "value must be nonnegative");
-        }
-        if (name == "mustBeNegative") {
-            return numericCheck([](double item) { return item < 0.0; },
-                                "value must be negative");
-        }
-        if (name == "mustBeFinite") {
-            return numericCheck([](double item) { return std::isfinite(item); },
-                                "value must be finite");
-        }
-        if (name == "mustBeNonNan") {
-            return numericCheck([](double item) { return !std::isnan(item); },
-                                "value must not contain NaN");
-        }
-        if (name == "mustBeNonzero") {
-            return numericCheck([](double item) { return item != 0.0; },
-                                "value must be nonzero");
-        }
-        if (name == "mustBeInteger") {
-            return numericCheck(
-                [](double item) {
-                    return std::isfinite(item) && std::floor(item) == item;
-                },
-                "value must contain integers");
-        }
-        if (name == "mustBeReal" || name == "mustBeFloat" ||
-            name == "mustBeNumeric" ||
-            name == "mustBeNumericOrLogical") {
-            return requireNumeric();
-        }
-        if (name == "mustBeNonsparse") {
-            return true;
-        }
-        if (name == "mustBeSparse") {
-            return propertyValidationError(
-                instruction, property,
-                "sparse values are not represented by the current runtime");
-        }
-
-        const size_t count = propertyValueCount(value, property);
-        const auto [rows, columns] = propertyValueShape(value, property);
-        const size_t dimensionCount =
-            propertyValueDimensions(value, property).size();
-        const bool empty = value.kind == RuntimeValueKind::Missing || count == 0;
-        if (name == "mustBeNonempty") {
-            return !empty || propertyValidationError(
-                                 instruction, property,
-                                 "value must be nonempty");
-        }
-        if (name == "mustBeScalarOrEmpty") {
-            return count <= 1 || propertyValidationError(
-                                     instruction, property,
-                                     "value must be scalar or empty");
-        }
-        if (name == "mustBeVector") {
-            return (!empty && dimensionCount == 2 &&
-                    (rows == 1 || columns == 1)) ||
-                   propertyValidationError(instruction, property,
-                                           "value must be a vector");
-        }
-        if (name == "mustBeRow") {
-            return (dimensionCount == 2 && rows == 1) ||
-                   propertyValidationError(instruction, property,
-                                           "value must be a row");
-        }
-        if (name == "mustBeColumn") {
-            return (dimensionCount == 2 && columns == 1) ||
-                   propertyValidationError(instruction, property,
-                                           "value must be a column");
-        }
-        if (name == "mustBeMatrix") {
-            return dimensionCount == 2 || propertyValidationError(
-                                              instruction, property,
-                                              "value must be a matrix");
-        }
-        if (name == "mustBeText") {
-            return isRuntimeTextValue(value) || propertyValidationError(
-                                          instruction, property,
-                                          "value must be text");
-        }
-        if (name == "mustBeTextScalar") {
-            return runtimeTextScalarCodeUnits(value).has_value() ||
-                   propertyValidationError(instruction, property,
-                                           "value must be a text scalar");
-        }
-        if (name == "mustBeNonzeroLengthText") {
-            const auto text = runtimeTextScalarCodeUnits(value);
-            return (text && !text->empty()) ||
-                   propertyValidationError(
-                       instruction, property,
-                       "text value must have nonzero length");
-        }
-        if (name == "mustBeNonmissing") {
-            const bool present = value.kind != RuntimeValueKind::Missing &&
-                                 (!isNumeric(value) ||
-                                  allNumericElements(value, [](double item) {
-                                      return !std::isnan(item);
-                                  }));
-            return present || propertyValidationError(
-                                  instruction, property,
-                                  "value must not be missing");
-        }
-
-        if (name == "mustBeGreaterThan" || name == "mustBeLessThan" ||
-            name == "mustBeGreaterThanOrEqual" ||
-            name == "mustBeLessThanOrEqual") {
-            if (!requireNumeric()) {
-                return false;
-            }
-            const auto limit =
-                validatorNumericArgument(instruction, property, validator);
-            if (!limit) {
-                return false;
-            }
-            bool valid = false;
-            if (name == "mustBeGreaterThan") {
-                valid = allNumericElements(
-                    value, [limit](double item) { return item > *limit; });
-            } else if (name == "mustBeLessThan") {
-                valid = allNumericElements(
-                    value, [limit](double item) { return item < *limit; });
-            } else if (name == "mustBeGreaterThanOrEqual") {
-                valid = allNumericElements(
-                    value, [limit](double item) { return item >= *limit; });
-            } else {
-                valid = allNumericElements(
-                    value, [limit](double item) { return item <= *limit; });
-            }
-            return valid || propertyValidationError(
-                                instruction, property,
-                                "value does not satisfy " + name);
-        }
-
-        return propertyValidationError(
-            instruction, property,
-            "validator is not executable yet: " + name);
-    }
-
     std::optional<RuntimeValue> validatePropertyValue(
         const BytecodeInstruction& instruction, const PropertyInfo& property,
         RuntimeValue value) {
-        auto classValue = coercePropertyClass(instruction, property,
-                                              std::move(value));
-        if (!classValue) {
+        RuntimeArgumentValidationOptions options;
+        options.classAvailable = [this](const std::string& name) {
+            return classesByName_.contains(name);
+        };
+        options.objectIsA = [this](const std::string& actual,
+                                  const std::string& expected) {
+            return classesByName_.contains(expected) &&
+                   classDerivesFrom(actual, expected);
+        };
+        auto validation = validateRuntimeArgument(
+            std::move(value), property.spec, options);
+        if (!validation.succeeded) {
+            propertyValidationError(
+                instruction, property, std::move(validation.error));
             return std::nullopt;
         }
-        auto sizedValue = coercePropertySize(instruction, property,
-                                             std::move(*classValue));
-        if (!sizedValue) {
-            return std::nullopt;
-        }
-        for (const auto& validator : property.spec.validators) {
-            if (!applyPropertyValidator(instruction, property, validator,
-                                        *sizedValue)) {
-                return std::nullopt;
-            }
-        }
-        return sizedValue;
+        return std::move(validation.value);
     }
 
     std::vector<RuntimeValue> callPropertyValidationMethod(
@@ -12771,10 +12243,15 @@ private:
                 "property validation function descriptor is not available");
             return {};
         }
-        (void)applyPropertyValidator(
-            instruction, *property,
-            property->spec.validators[static_cast<size_t>(parsed)],
-            arguments.front());
+        PropertySpec validatorSpec;
+        validatorSpec.validators.push_back(
+            property->spec.validators[static_cast<size_t>(parsed)]);
+        const auto validation = validateRuntimeArgument(
+            arguments.front(), validatorSpec);
+        if (!validation.succeeded) {
+            propertyValidationError(
+                instruction, *property, validation.error);
+        }
         return {};
     }
 
@@ -12810,11 +12287,15 @@ private:
             return std::nullopt;
         }
 
-        if (type.empty() || type == "double" || type == "logical") {
+        if (type.empty()) {
+            return arrayValueForDimensions(
+                dimensions, std::vector<double>(*count, 0.0));
+        }
+        if (const auto numericClass =
+                runtimeNumericClassFromName(type)) {
             return arrayValueForDimensions(
                 dimensions, std::vector<double>(*count, 0.0),
-                type == "logical" ? RuntimeNumericClass::Logical
-                                  : RuntimeNumericClass::Double);
+                *numericClass);
         }
         if (type == "char") {
             return makeRuntimeCharacterArray(
@@ -13480,7 +12961,16 @@ private:
                               "MParser:InvalidAssertion");
                 return missingValue();
             }
-            if (truthy(arguments.front())) {
+            const auto condition = runtimeNumericTruthValue(
+                arguments.front());
+            if (!condition) {
+                addDiagnostic(
+                    instruction,
+                    "assert condition must be a real numeric value without NaN",
+                    "MParser:InvalidAssertion");
+                return missingValue();
+            }
+            if (*condition) {
                 return missingValue();
             }
 
@@ -13533,37 +13023,6 @@ private:
             const std::chrono::duration<double> elapsed =
                 std::chrono::steady_clock::now() - *ticStart_;
             return numberValue(elapsed.count());
-        }
-        if (name == "cell") {
-            const auto shape = constructorShape(instruction, arguments);
-            if (!shape) {
-                return missingValue();
-            }
-            const auto count = checkedRuntimeDimensionProduct(*shape);
-            if (!count) {
-                addDiagnostic(instruction,
-                              "bytecode cell dimensions are too large");
-                return missingValue();
-            }
-            return cellValueForDimensions(
-                *shape, std::vector<RuntimeValue>(*count, missingValue()));
-        }
-        if (name == "strings") {
-            const auto shape = arguments.empty()
-                                   ? std::optional<std::vector<size_t>>(
-                                         std::vector<size_t>{1, 1})
-                                   : constructorShape(instruction, arguments);
-            if (!shape) {
-                return missingValue();
-            }
-            const auto count = checkedRuntimeDimensionProduct(*shape);
-            if (!count) {
-                addDiagnostic(instruction,
-                              "bytecode strings dimensions are too large");
-                return missingValue();
-            }
-            return makeRuntimeStringArray(
-                *shape, std::vector<RuntimeStringElement>(*count));
         }
         if (name == "metaclass") {
             return metaclassBuiltin(instruction, arguments);
@@ -13819,16 +13278,12 @@ private:
             }
             return std::move(result.value);
         }
-        if (name == "length" || name == "numel" || name == "size" ||
+        if (name == "length" || name == "numel" ||
             name == "ndims" || name == "isempty") {
-            const bool validSizeArguments =
-                name == "size" &&
-                (arguments.size() == 1 || arguments.size() == 2);
-            if (!validSizeArguments && arguments.size() != 1) {
+            if (arguments.size() != 1) {
                 addDiagnostic(instruction,
                               "bytecode " + name +
-                                  " expects one argument" +
-                                  (name == "size" ? " or a dimension" : ""));
+                                  " expects one argument");
                 return missingValue();
             }
             if (name == "length") {
@@ -13847,64 +13302,6 @@ private:
                 return numberValue(static_cast<double>(
                     runtimeDimensionCount(arguments.front())));
             }
-
-            const auto dimensions = runtimeDimensions(arguments.front());
-            if (arguments.size() == 1) {
-                std::vector<double> values;
-                values.reserve(dimensions.size());
-                for (const size_t dimension : dimensions) {
-                    values.push_back(static_cast<double>(dimension));
-                }
-                return vectorValue(std::move(values));
-            }
-
-            const RuntimeValue& requested = arguments[1];
-            auto dimensionValue = [&](double raw) -> std::optional<double> {
-                const auto dimension =
-                    checkedRuntimeNonnegativeInteger(raw);
-                if (!dimension || *dimension == 0) {
-                    return std::nullopt;
-                }
-                return static_cast<double>(runtimeDimension(
-                    arguments.front(), *dimension - 1));
-            };
-            if (isNumber(requested)) {
-                const auto value = dimensionValue(requested.number);
-                if (!value) {
-                    addDiagnostic(instruction,
-                                  "bytecode size dimension must be a positive integer");
-                    return missingValue();
-                }
-                return numberValue(*value);
-            }
-            if (!isArray(requested)) {
-                addDiagnostic(instruction,
-                              "bytecode size dimensions must be numeric");
-                return missingValue();
-            }
-            std::vector<double> values;
-            values.reserve(requested.elements.size());
-            for (const double raw : requested.elements) {
-                const auto value = dimensionValue(raw);
-                if (!value) {
-                    addDiagnostic(instruction,
-                                  "bytecode size dimension must be a positive integer");
-                    return missingValue();
-                }
-                values.push_back(*value);
-            }
-            return vectorValue(std::move(values));
-        }
-        if (name == "zeros" || name == "ones" || name == "eye" ||
-            name == "true" || name == "false") {
-            if ((name == "true" || name == "false") &&
-                arguments.empty()) {
-                return logicalValue(name == "true");
-            }
-            return arrayConstructor(instruction, name, arguments);
-        }
-        if (name == "linspace") {
-            return linspaceBuiltin(instruction, arguments);
         }
         if (name == "strcmp" || name == "strcmpi") {
             if (arguments.size() != 2 ||
@@ -13928,159 +13325,6 @@ private:
         addDiagnostic(instruction,
                       "bytecode builtin is not executable yet: " + name);
         return missingValue();
-    }
-
-    RuntimeValue arrayConstructor(const BytecodeInstruction& instruction,
-                                  const std::string& name,
-                                  const std::vector<RuntimeValue>& arguments) {
-        const auto shape = constructorShape(instruction, arguments);
-        if (!shape) {
-            return missingValue();
-        }
-        if (name == "eye" && shape->size() > 2) {
-            addDiagnostic(instruction,
-                          "bytecode eye creates only two-dimensional arrays");
-            return missingValue();
-        }
-
-        const auto count = checkedRuntimeDimensionProduct(*shape);
-        if (!count) {
-            addDiagnostic(instruction,
-                          "bytecode array constructor dimensions are too large");
-            return missingValue();
-        }
-        const bool logical = name == "true" || name == "false";
-        std::vector<double> elements(
-            *count, name == "ones" || name == "true" ? 1.0 : 0.0);
-        if (name == "eye") {
-            const size_t rows = (*shape)[0];
-            const size_t columns = (*shape)[1];
-            const size_t diagonal = std::min(rows, columns);
-            for (size_t index = 0; index < diagonal; ++index) {
-                elements[index * columns + index] = 1.0;
-            }
-        }
-        return arrayValueForDimensions(
-            *shape, std::move(elements),
-            logical ? RuntimeNumericClass::Logical
-                    : RuntimeNumericClass::Double);
-    }
-
-    std::optional<std::vector<size_t>>
-    constructorShape(const BytecodeInstruction& instruction,
-                     const std::vector<RuntimeValue>& arguments) {
-        if (arguments.empty()) {
-            addDiagnostic(instruction,
-                          "bytecode array constructor expects dimensions");
-            return std::nullopt;
-        }
-
-        if (arguments.size() > 1) {
-            std::vector<size_t> dimensions;
-            dimensions.reserve(arguments.size());
-            for (const auto& argument : arguments) {
-                if (!isNumber(argument)) {
-                    addDiagnostic(instruction,
-                                  "bytecode constructor dimensions must be scalar");
-                    return std::nullopt;
-                }
-                const auto dimension =
-                    checkedDimension(instruction, argument.number);
-                if (!dimension) {
-                    return std::nullopt;
-                }
-                dimensions.push_back(*dimension);
-            }
-            if (dimensions.size() < 2) {
-                addDiagnostic(instruction,
-                              "bytecode constructor requires at least two dimensions");
-                return std::nullopt;
-            }
-            return normalizeRuntimeDimensions(std::move(dimensions));
-        }
-
-        if (isNumber(arguments.front())) {
-            const auto dimension = checkedDimension(instruction,
-                                                    arguments.front().number);
-            if (!dimension) {
-                return std::nullopt;
-            }
-            return std::vector<size_t>{*dimension, *dimension};
-        }
-
-        if (!isArray(arguments.front()) ||
-            arguments.front().elements.empty()) {
-            addDiagnostic(instruction,
-                          "bytecode constructor shape must contain dimensions");
-            return std::nullopt;
-        }
-        std::vector<size_t> dimensions;
-        dimensions.reserve(arguments.front().elements.size());
-        for (const double raw : arguments.front().elements) {
-            const auto dimension = checkedDimension(instruction, raw);
-            if (!dimension) {
-                return std::nullopt;
-            }
-            dimensions.push_back(*dimension);
-        }
-        if (dimensions.size() == 1) {
-            dimensions.push_back(dimensions.front());
-        }
-        return normalizeRuntimeDimensions(std::move(dimensions));
-    }
-
-    std::optional<size_t> checkedDimension(
-        const BytecodeInstruction& instruction, double value) {
-        const auto dimension = checkedRuntimeNonnegativeInteger(value);
-        if (!dimension) {
-            addDiagnostic(instruction,
-                          "bytecode constructor dimension must be a "
-                          "representable nonnegative integer");
-            return std::nullopt;
-        }
-        return dimension;
-    }
-
-    RuntimeValue linspaceBuiltin(const BytecodeInstruction& instruction,
-                                 const std::vector<RuntimeValue>& arguments) {
-        if (arguments.size() != 2 && arguments.size() != 3) {
-            addDiagnostic(instruction,
-                          "bytecode linspace expects two or three arguments");
-            return missingValue();
-        }
-        if (!isNumber(arguments[0]) || !isNumber(arguments[1]) ||
-            (arguments.size() == 3 && !isNumber(arguments[2]))) {
-            addDiagnostic(instruction,
-                          "bytecode linspace arguments must be scalar");
-            return missingValue();
-        }
-
-        size_t count = 100;
-        if (arguments.size() == 3) {
-            if (!isWholeNumber(arguments[2].number) ||
-                arguments[2].number < 0.0) {
-                addDiagnostic(instruction,
-                              "bytecode linspace count must be nonnegative");
-                return missingValue();
-            }
-            count = static_cast<size_t>(arguments[2].number);
-        }
-        if (count == 0) {
-            return vectorValue({});
-        }
-        if (count == 1) {
-            return vectorValue({arguments[1].number});
-        }
-
-        std::vector<double> values;
-        values.reserve(count);
-        const double denominator = static_cast<double>(count - 1);
-        for (size_t index = 0; index < count; ++index) {
-            const double t = static_cast<double>(index) / denominator;
-            values.push_back(arguments[0].number +
-                             (arguments[1].number - arguments[0].number) * t);
-        }
-        return vectorValue(std::move(values));
     }
 
     RuntimeValue indexValue(const BytecodeInstruction& instruction,
@@ -14282,50 +13526,14 @@ private:
         return std::move(selection.indices);
     }
 
-    std::optional<size_t> checkedIndex(const BytecodeInstruction& instruction,
-                                       double rawIndex, size_t length) {
-        if (!isWholeNumber(rawIndex)) {
-            addDiagnostic(instruction,
-                          "bytecode index must be a positive integer");
-            return std::nullopt;
-        }
-        if (rawIndex < 1.0 || rawIndex > static_cast<double>(length)) {
-            addDiagnostic(instruction, "bytecode index is out of bounds");
-            return std::nullopt;
-        }
-        return static_cast<size_t>(rawIndex) - 1;
-    }
-
-    double linearElement(const RuntimeValue& value,
-                         size_t zeroBasedIndex) const {
-        if (isNumber(value)) {
-            return value.number;
-        }
-        const auto storageOffset =
-            runtimeColumnMajorLinearToStorageOffset(value, zeroBasedIndex);
-        return value.elements[*storageOffset];
-    }
-
     void applyColon(const BytecodeInstruction& instruction,
                     const std::vector<RuntimeValue>& operands) {
-        std::vector<double> terms;
-        terms.reserve(operands.size());
-        for (const auto& operand : operands) {
-            if (!isNumber(operand)) {
-                addDiagnostic(
-                    instruction,
-                    "bytecode colon operands must be scalar numbers");
-                return;
-            }
-            terms.push_back(operand.number);
-        }
-
-        const auto range = runtimePlanColonRange(terms);
+        auto range = runtimeMaterializeColonValue(operands);
         if (!range.succeeded) {
             addDiagnostic(instruction, "bytecode " + range.error);
             return;
         }
-        pushRuntime(vectorValue(runtimeMaterializeColonRange(range)));
+        pushRuntime(std::move(range.value));
     }
 
     RuntimeValue applyNumericBinary(const BytecodeInstruction& instruction,

@@ -1,32 +1,26 @@
 # MParser C Embedding API
 
-MParser v0.83 introduced a narrow, pure C embedding boundary in
-`include/mparser/c_api.h`. It is implemented by the `mparser_c_api` CMake
-shared-library target, whose output name is `mparser_c`. v0.84 extends that
-same boundary with explicit multi-source compilation and UTF-8 filesystem
-source-graph loading. v0.85 installs it as a relocatable CMake package. v0.86
-adds a separate machine-readable CLI result protocol over the same
-engine-neutral invocation result. v0.87 adds executable ABI-major-1 evolution
-rules, sized structure initialization, and a frozen old-header consumer.
-v0.88 adds a separate public C++20 RAII facade over this same boundary; see
-`embedding-cpp-api.md`. v0.89 adds the shared-object concurrency boundary,
-ABI-major shared-library naming, an exact public symbol manifest, repeated
-lifecycle/unload stress, and macOS package consumers.
-v0.90 freezes ABI candidate 1.1 through exact header/layout/export snapshots,
-adds deterministic allocation/internal-failure containment tests, publishes
-the combined public contract, and validates unpacked checksummed SDK archives.
+`include/mparser/c_api.h` defines MParser's narrow pure-C embedding boundary.
+It is implemented by the `mparser_c_api` CMake shared-library target, whose
+output name is `mparser_c`. It supports explicit source graphs, compile-once
+execution, sessions, structured diagnostics, resource controls, typed numeric
+values, and host-owned output routing.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
 handles, fixed-width constants, byte/code-unit views, and versioned plain C
 structures.
 
-This is the stable v1 ABI major 1 revision 1 contract. An incompatible
-correction changes the ABI major rather than rewriting major 1 in place.
-Applications must query
+The current v1.2 development tree uses C ABI generation 2 revision 0. That is
+binary-contract metadata, not the SDK product version: MParser and its installed SDK share one
+product version and will both become `1.2.0` at the milestone candidate gate.
+The current source tree still reports product version `1.1.0` until that
+coordinated bump. Applications can query
 `mparser_c_abi_version()`, `mparser_c_abi_revision()`, and the three MParser
-component-version functions rather than assuming that the project, ABI major,
-and additive ABI revision advance together.
+component-version functions rather than assuming that product, ABI, C++ API,
+and machine protocol levels advance together. The released ABI 1.1 contract
+is retained only in the v1.0 archive and is not a compatibility gate for this
+non-production line.
 
 ## Build
 
@@ -43,11 +37,11 @@ build\mparser_c_source_graph_demo.exe `
   samples\class_folders\lib
 ```
 
-On Linux the link name is `libmparser_c.so` and its ABI-major SONAME is
-`libmparser_c.so.1`. On macOS the corresponding install name is
-`libmparser_c.1.dylib`. On Windows it is `mparser_c.dll` plus the toolchain
-import library. The complete shared-library implementation version is
-`1.1.0`, independently of the engine release.
+On Linux the link name is `libmparser_c.so` and its current ABI-major SONAME is
+`libmparser_c.so.2`. On macOS the corresponding install name is
+`libmparser_c.2.dylib`. On Windows it is `mparser_c.dll` plus the toolchain
+import library. The current shared-library ABI implementation version is
+`2.0.0`; this is not the MParser SDK product version.
 
 For a production-only installed SDK:
 
@@ -60,24 +54,24 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 An independent CMake project can then use:
 
 ```cmake
-find_package(MParser 1.1.0 EXACT CONFIG REQUIRED COMPONENTS C CLI)
+find_package(MParser CONFIG REQUIRED COMPONENTS C CLI)
 target_link_libraries(host PRIVATE MParser::c_api)
 ```
 
 `MParser::cli` is the imported matching CLI executable. The package also
 exports project-version components, `MParser_C_ABI_VERSION`,
 `MParser_C_ABI_REVISION`,
-`MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.0`, machine
-protocol `1.0`, CLI contract `1.0`, builtin source contract `1.0`, and checked
+`MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.2`, machine
+protocol `1.1`, CLI contract `1.0`, builtin source contract `1.0`, and checked
 paths to the license, notices, public/CLI contracts, protocol schema, builtin
 catalog/author guide, and versioning policy. Its paths are relative to the
 package prefix, so the installed tree may be moved as a unit before consumer
 configuration. On Windows, deploy `mparser_c.dll` beside the host executable
 or expose the SDK `bin` directory to the runtime loader.
 
-The C package remains independently consumable. v0.88 also exports
-`MParser::cpp_api`; MParser 1.0.0 records C ABI 1.1 and C++ source API 1.0 as
-the combined stable v1 contracts.
+The C package remains independently consumable. The same MParser SDK also
+exports `MParser::cpp_api`; its API level is metadata for source-contract
+checks rather than a separate SDK version.
 
 ## Handles And Ownership
 
@@ -193,7 +187,9 @@ outputs, variables, diagnostics, and the execution summary.
 
 The external value model supports:
 
-- double and logical scalars/arrays;
+- double, single, logical, and all fixed-width signed/unsigned integer
+  scalars/arrays;
+- complex double and single scalars/arrays;
 - UTF-16 character arrays;
 - UTF-16 string arrays, including missing elements;
 - N-dimensional Cell arrays;
@@ -204,14 +200,18 @@ The external value model supports:
 
 Array constructors require a rank of at least two and a dimension product
 equal to the supplied element count. Dimensions and payloads are copied.
-Numeric/logical payloads use `double`; character and string payloads use
+Numeric values use `mparser_numeric_buffer`. `numeric_class` selects `double`,
+`float`, `int8_t`/`uint8_t`, `int16_t`/`uint16_t`, `int32_t`/`uint32_t`, or
+`int64_t`/`uint64_t` storage. Logical data uses `uint8_t`. Complex values are
+limited to double/single and carry equal-length real and imaginary buffers;
+integer and logical values must be real. Character and string payloads use
 Unicode code units represented by `uint16_t`.
 
 All external array payloads and linear element indexes use MATLAB column-major
 order. MParser converts to and from its internal storage without exposing that
 storage layout. Accessor pointers are immutable and owned by the value handle.
-There is no zero-copy external input buffer or mutable view in v1.0. Copy-in
-is the frozen ownership rule for host-created arrays.
+There is no zero-copy external input buffer or mutable view in the current
+API. Host-created arrays are copied.
 Runtime-owned numeric and character accessor pointers are immutable zero-copy
 views whose lifetime is bounded by their `mparser_value`; they must not be
 retained after that value is released. A future borrowed-input API requires a
@@ -275,15 +275,19 @@ outside MParser.
 `mparser_invocation_options`, `mparser_execution_summary`, and
 `mparser_source_load_options` start with `struct_size` and `abi_version`.
 Initialize current source with the uppercase `MPARSER_*_INIT` macros; do not
-use aggregate literals. The macros pass the caller's complete storage size to
-the revision-1 sized initializers. New libraries accept the frozen v1 prefix,
-ignore unknown input tails, and limit output writes to the caller's recorded
-capacity. The old initializer symbols remain available and write only the
-frozen v1 prefix for already-built consumers.
+use aggregate literals. The macros pass the caller's complete storage size and
+current ABI level to the sized initializers. Input readers ignore unknown
+tails, and output writers stop at the caller's recorded capacity. The direct
+initializer functions initialize exactly the current known record size.
 
-`mparser_source_unit` is sealed within ABI major 1 because arrays use its
-fixed size as the descriptor stride. Oversized source-unit descriptors are
-rejected. Full structure and symbol evolution rules are in
+The public minimum-size constants still carry their original `_V1_SIZE`
+identifier spelling because these record prefixes did not change when typed
+numeric transport moved to ABI 2. They describe record sizes, not the active
+ABI or SDK product version.
+
+`mparser_source_unit` is sealed within ABI generation 2 because arrays use its fixed
+size as the descriptor stride. Oversized source-unit descriptors are rejected.
+Current structure and symbol rules are in
 [c-abi-compatibility.md](c-abi-compatibility.md).
 
 The C constants are integer typedefs plus macros rather than compiler enums,
@@ -301,6 +305,7 @@ covers:
 - non-ASCII entry/search paths and retained UTF-8 source names;
 - scalar and multiple-output invocation;
 - MATLAB column-major numeric, character, and string round trips;
+- exact single/integer buffers and complex real/imaginary round trips;
 - Cell and Struct construction with independent child lifetimes;
 - script workspace injection and result-variable lookup;
 - object pass-through after releasing the producing result;
@@ -308,20 +313,16 @@ covers:
 - cross-module independent builtin handles;
 - resource stops, pre-cancellation, execution summaries, and session recovery;
 - retain/release and ABI-request validation;
-- old-prefix write bounds, oversized request/load/summary storage, and sealed
-  source-unit rejection.
+- caller-capacity write bounds, oversized request/load/summary storage, and
+  sealed source-unit rejection.
 
 `c_api_utf8_source_graph_smoke` creates non-ASCII entry and library
 directories. `c_embedding_demo_smoke` runs the single-source C host and
 `c_source_graph_demo_smoke` loads a real `+package/@Class` graph.
-`c_api_v1_compat_smoke` compiles against the frozen v0.86 header snapshot, and
-`c_abi_compat_demo_smoke` executes future-tail storage. All are
-included in Linux AArch64 native-JIT and portable-only QEMU jobs in addition
-to the complete Windows x64 and Linux x64 suites.
-
-`c_api_v1_1_compat_smoke` compiles against the exact ABI 1.1 snapshot.
-`c_api_layout_contract` freezes the 64-bit public record layout and constant
-ranges. `c_api_allocation_failure` intercepts global allocation across
+`c_abi_compat_demo_smoke` exercises current caller-sized future-tail storage;
+it does not test an older SDK. `c_api_layout_contract` checks the current
+64-bit public record layout and constant ranges.
+`c_api_allocation_failure` intercepts global allocation across
 protocol serialization and representative C API construction/execution
 routes. `c_api_named_fault_smoke` injects deterministic bad-allocation and
 internal faults at publication boundaries, proves thread-local isolation, and
@@ -337,8 +338,8 @@ state, shared cancellation, and per-invocation resource isolation.
 loads, queries, and unloads the shared library 256 times.
 
 `c_api_shared_library_abi` compares the dynamic export table against
-`tests/c_api_abi1_symbols.txt` and validates ELF SONAME or macOS install-name
-major 1. Internal compiler, VM, C++ facade, and SLJIT symbols use hidden
+`tests/c_api_abi2_symbols.txt` and validates ELF SONAME or macOS install-name
+major 2. Internal compiler, VM, C++ facade, and SLJIT symbols use hidden
 visibility. Windows x64, Linux x64, macOS x64/ARM64, and focused Linux
 AArch64 jobs execute the applicable ABI and stress evidence.
 
@@ -367,24 +368,24 @@ The relocated CMake package exports `MParser_LICENSE`, `MParser_COPYRIGHT`,
 and checked paths to all three files. Vendored SLJIT remains under the
 Simplified BSD terms reproduced in the third-party notices.
 
-## Frozen Boundary
+## Current Development Boundary
 
-The v0.90 embedding gate is closed: C ABI 1.1, header-only C++ source API 1.0,
-machine protocol 1.0, allocation/internal-failure containment, sanitizer
-coverage, and checksummed unpacked-SDK validation are all active regression
-gates. `docs/public-contract-v1.json` also hashes the legacy C ABI 1.0 header
-snapshot, and sized initializers preserve a caller-provided prefix without
-writing a future library `sizeof` over it.
+The active v1.2 host surface is C ABI generation 2 revision 0, header-only C++
+source API 1.2, and machine protocol 1.1. These contracts are versioned
+independently for technical checks, while the CLI, libraries, headers, and
+installed SDK share one MParser product version. Current in-repository and
+relocated consumers are updated together; a new immutable contract snapshot
+is created only when the complete v1.2 milestone reaches its candidate gate.
 
-`docs/versioning-and-deprecation.md` defines the common v1 evolution policy.
-Cross-platform reliability, documentation, performance/resource evidence,
-release packaging, and final hosted-asset verification are confirmed. The
-publication record does not change the frozen ABI.
+The v1.0 contract, package, hashes, and authentication evidence remain
+available as a historical release record in `docs/public-contract-v1.json`
+and the v1.0 milestone documents. They do not require ABI 2 to preserve old
+development adapters.
 
-The v1.0 contract deliberately excludes a stable external native callback ABI
-and zero-copy borrowed input arrays. Their future additive rules are
-defined in `extending-builtins.md`; neither blocks correct `.m` functions,
-source-integrated C++ builtins, or the public host invocation APIs.
+The current API excludes an independently compiled native callback ABI and
+zero-copy borrowed input arrays. Their future rules are defined in
+`extending-builtins.md`; neither blocks `.m` functions, source-integrated C++
+builtins, or normal host invocation.
 
 The CLI schema and exit/channel contract are defined separately in
 [machine-result-protocol.md](machine-result-protocol.md).

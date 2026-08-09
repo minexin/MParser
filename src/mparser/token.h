@@ -68,6 +68,7 @@ enum class TokenKind {
     DotSlash,
     DotBackslash,
     DotCaret,
+    DotApostrophe,
     Ampersand,
     Pipe,
     DoubleAmpersand,

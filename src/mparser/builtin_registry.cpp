@@ -26,6 +26,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "MException",
     "abs",
     "acos",
+    "acosh",
     "addCause",
     "addCorrection",
     "addlistener",
@@ -33,16 +34,23 @@ constexpr std::string_view kBuiltinNames[] = {
     "all",
     "any",
     "asin",
+    "asinh",
     "assert",
     "atan",
+    "atan2",
+    "atanh",
     "cat",
     "cell",
     "cellstr",
+    "ceil",
     "char",
     "class",
     "clc",
     "clear",
+    "complex",
+    "conj",
     "cos",
+    "cosh",
     "cummax",
     "cummin",
     "cumprod",
@@ -64,11 +72,16 @@ constexpr std::string_view kBuiltinNames[] = {
     "feval",
     "findobj",
     "findprop",
+    "fix",
+    "floor",
     "fprintf",
     "func2str",
     "functions",
     "getReport",
     "horzcat",
+    "hypot",
+    "i",
+    "imag",
     "inf",
     "int16",
     "int32",
@@ -80,11 +93,15 @@ constexpr std::string_view kBuiltinNames[] = {
     "isempty",
     "ischar",
     "isfield",
+    "isfinite",
     "isfloat",
+    "isinf",
     "isinteger",
     "islogical",
     "ismethod",
     "isnumeric",
+    "isnan",
+    "isreal",
     "isequal",
     "ismissing",
     "isprop",
@@ -92,11 +109,14 @@ constexpr std::string_view kBuiltinNames[] = {
     "isStringScalar",
     "isstruct",
     "isvalid",
+    "j",
     "lastwarn",
     "length",
     "linspace",
     "listener",
     "log",
+    "log10",
+    "log2",
     "logical",
     "max",
     "mean",
@@ -118,11 +138,15 @@ constexpr std::string_view kBuiltinNames[] = {
     "properties",
     "rand",
     "randn",
+    "real",
     "repmat",
     "reshape",
     "rmfield",
+    "round",
+    "sign",
     "single",
     "sin",
+    "sinh",
     "size",
     "sqrt",
     "squeeze",
@@ -136,6 +160,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "sum",
     "table",
     "tan",
+    "tanh",
     "throw",
     "throwAsCaller",
     "tic",
@@ -237,7 +262,79 @@ BuiltinDescriptor mathDescriptor(std::string_view name) {
         if (!result) {
             return helperFailure(
                 call.span,
-                builtin + " requires one numeric argument",
+                builtin +
+                    " does not support the supplied numeric class or value",
+                "MParser:InvalidBuiltinArgument");
+        }
+        return BuiltinResult::success({std::move(*result)});
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor binaryMathDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::fixed(2);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {
+        {BuiltinValueConstraint::Numeric, BuiltinShapeConstraint::Any},
+        {BuiltinValueConstraint::Numeric, BuiltinShapeConstraint::Any},
+    };
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary =
+        "Pure element-wise numeric binary operation with implicit expansion.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        auto result = runtimeApplyPureBinaryMathBuiltin(
+            builtin, call.arguments[0], call.arguments[1]);
+        if (!result) {
+            return helperFailure(
+                call.span,
+                builtin +
+                    " requires real floating-point inputs with compatible shapes",
+                "MParser:InvalidBuiltinArgument");
+        }
+        return BuiltinResult::success({std::move(*result)});
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor epsilonDescriptor() {
+    BuiltinDescriptor descriptor = baseDescriptor("eps");
+    descriptor.inputs = BuiltinArity::range(0, 1);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary =
+        "Floating-point spacing for double or single values.";
+    descriptor.handler = [](const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        auto result = runtimeEpsilonBuiltin(call.arguments);
+        if (!result) {
+            return helperFailure(
+                call.span,
+                "eps accepts double, single, or a floating-point class name",
                 "MParser:InvalidBuiltinArgument");
         }
         return BuiltinResult::success({std::move(*result)});
@@ -344,6 +441,46 @@ BuiltinDescriptor numericPredicateDescriptor(std::string_view name) {
         }
         return BuiltinResult::success({makeRuntimeLogicalValue(
             runtimeNumericPredicate(builtin, call.arguments.front()))});
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor complexNumericDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = name == "complex"
+                            ? BuiltinArity::range(1, 2)
+                            : BuiltinArity::fixed(1);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints.assign(
+        name == "complex" ? 2 : 1,
+        BuiltinArgumentConstraint{
+            BuiltinValueConstraint::Numeric,
+            BuiltinShapeConstraint::Any});
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        name == "isreal" ? BuiltinShapeConstraint::Scalar
+                         : BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary =
+        "MATLAB-like complex construction, projection, conjugation, or predicate.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        auto result = runtimeApplyComplexNumericBuiltin(
+            builtin, call.arguments);
+        if (!result.succeeded) {
+            return helperFailure(
+                call.span, std::move(result.error),
+                "MParser:InvalidComplexNumericOperation");
+        }
+        return BuiltinResult::success(
+            {std::move(result.value)});
     };
     return descriptor;
 }
@@ -462,6 +599,102 @@ BuiltinDescriptor arrayDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor arrayConstructorDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::variadic();
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidArrayConstructor";
+    descriptor.summary =
+        "MATLAB-like numeric, logical, cell, or string array constructor.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        auto result = runtimeArrayConstructorBuiltin(
+            builtin, call.arguments);
+        if (!result.succeeded) {
+            return helperFailure(
+                call.span, std::move(result.error),
+                "MParser:InvalidArrayConstructor");
+        }
+        return BuiltinResult::success({std::move(result.value)});
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor linspaceDescriptor() {
+    BuiltinDescriptor descriptor = baseDescriptor("linspace");
+    descriptor.inputs = BuiltinArity::range(2, 3);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {{
+        BuiltinValueConstraint::ScalarNumeric,
+        BuiltinShapeConstraint::Scalar,
+    }, {
+        BuiltinValueConstraint::ScalarNumeric,
+        BuiltinShapeConstraint::Scalar,
+    }, {
+        BuiltinValueConstraint::ScalarNumeric,
+        BuiltinShapeConstraint::Scalar,
+    }};
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidLinspace";
+    descriptor.summary =
+        "Evenly spaced real or complex floating-point row vector.";
+    descriptor.handler = [](const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        auto result = runtimeLinspaceBuiltin(call.arguments);
+        if (!result.succeeded) {
+            return helperFailure(
+                call.span, std::move(result.error),
+                "MParser:InvalidLinspace");
+        }
+        return BuiltinResult::success({std::move(result.value)});
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor sizeDescriptor() {
+    BuiltinDescriptor descriptor = baseDescriptor("size");
+    descriptor.inputs = BuiltinArity::range(1, 2);
+    descriptor.outputs = BuiltinArity::variadic();
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidSize";
+    descriptor.summary =
+        "Array dimensions with scalar, vector, or multiple-output queries.";
+    descriptor.handler = [](const BuiltinCall& call) {
+        auto result = runtimeSizeBuiltin(
+            call.arguments, call.requestedOutputCount);
+        if (!result.succeeded) {
+            return helperFailure(
+                call.span, std::move(result.error),
+                "MParser:InvalidSize");
+        }
+        return BuiltinResult::success(std::move(result.outputs));
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor warningDescriptor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
     descriptor.inputs = BuiltinArity::variadic();
@@ -521,8 +754,17 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isNumericPredicateBuiltin(name)) {
         return numericPredicateDescriptor(name);
     }
+    if (isRuntimeComplexNumericBuiltin(name)) {
+        return complexNumericDescriptor(name);
+    }
     if (isRuntimePureUnaryMathBuiltin(name)) {
         return mathDescriptor(name);
+    }
+    if (isRuntimePureBinaryMathBuiltin(name)) {
+        return binaryMathDescriptor(name);
+    }
+    if (name == "eps") {
+        return epsilonDescriptor();
     }
     if (isRuntimeReductionBuiltin(name)) {
         return reductionDescriptor(name);
@@ -532,6 +774,15 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isRuntimeArrayOperationBuiltin(name)) {
         return arrayDescriptor(name);
+    }
+    if (isRuntimeArrayConstructorBuiltin(name)) {
+        return arrayConstructorDescriptor(name);
+    }
+    if (name == "linspace") {
+        return linspaceDescriptor();
+    }
+    if (name == "size") {
+        return sizeDescriptor();
     }
     if (name == "warning" || name == "lastwarn") {
         return warningDescriptor(name);

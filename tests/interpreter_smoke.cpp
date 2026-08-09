@@ -65,7 +65,13 @@ void assertException(const mparser::InterpreterResult& result,
     const auto* message =
         mparser::runtimeExceptionProperty(*value, "message");
     assert(message != nullptr);
-    assert(mparser::runtimeTextScalarUtf8(*message) == expectedMessage);
+    const auto actualMessage = mparser::runtimeTextScalarUtf8(*message);
+    if (actualMessage != expectedMessage) {
+        std::cerr << "unexpected exception message for " << name
+                  << ": expected '" << expectedMessage << "', got '"
+                  << actualMessage.value_or("<non-scalar text>") << "'\n";
+    }
+    assert(actualMessage == expectedMessage);
 }
 
 void assertVector(const mparser::InterpreterResult& result,

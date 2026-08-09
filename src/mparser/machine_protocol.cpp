@@ -28,7 +28,7 @@ namespace {
 
 constexpr size_t kMaximumProtocolNestingDepth = 128;
 constexpr std::string_view kEmergencyMachineResultJsonV1 =
-    "{\"protocol\":{\"name\":\"mparser.result\",\"major\":1,\"minor\":0},"
+    "{\"protocol\":{\"name\":\"mparser.result\",\"major\":1,\"minor\":1},"
     "\"engine\":{\"name\":\"MParser\",\"version\":\"unknown\"},"
     "\"status\":\"request-rejected\",\"entry_function\":\"\","
     "\"requested_output_count\":0,\"outputs\":[],\"workspace\":[],"
@@ -437,21 +437,24 @@ void writeRuntimeValue(JsonWriter& writer, const RuntimeValue& value,
                        size_t depth);
 
 void writeNumericElement(JsonWriter& writer,
-                         const RuntimeNumericElementValue& value) {
+                         const RuntimeNumericElementValue& value,
+                         bool imaginary) {
     if (value.numericClass == RuntimeNumericClass::Logical) {
         writer.booleanValue(value.real != 0.0);
         return;
     }
     if (runtimeNumericClassIsInteger(value.numericClass)) {
+        const std::uint64_t bits =
+            imaginary ? value.integerImaginaryBits
+                      : value.integerRealBits;
         if (runtimeNumericClassIsSignedInteger(value.numericClass)) {
-            writer.signedValue(
-                std::bit_cast<std::int64_t>(value.integerRealBits));
+            writer.signedValue(std::bit_cast<std::int64_t>(bits));
         } else {
-            writer.unsignedValue(value.integerRealBits);
+            writer.unsignedValue(bits);
         }
         return;
     }
-    writer.doubleValue(value.real);
+    writer.doubleValue(imaginary ? value.imaginary : value.real);
 }
 
 void writeNumericValue(JsonWriter& writer, const RuntimeValue& value) {
@@ -469,9 +472,23 @@ void writeNumericValue(JsonWriter& writer, const RuntimeValue& value) {
             throw std::runtime_error(
                 "numeric runtime payload does not match its shape");
         }
-        writeNumericElement(writer, *element);
+        writeNumericElement(writer, *element, false);
     }
     writer.endArray();
+    if (value.numericComplex) {
+        writer.field("complex", true);
+        writer.key("imaginary_data");
+        writer.beginArray();
+        for (size_t index = 0; index < count; ++index) {
+            const auto element = runtimeNumericElementValue(value, index);
+            if (!element || !element->complex) {
+                throw std::runtime_error(
+                    "complex runtime payload does not match its shape");
+            }
+            writeNumericElement(writer, *element, true);
+        }
+        writer.endArray();
+    }
     writer.endObject();
 }
 

@@ -1,5 +1,6 @@
 #include "mparser/machine_protocol.h"
 
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
@@ -38,6 +39,16 @@ std::string readGolden(const std::string& path) {
     return text;
 }
 
+void writeGolden(const std::string& path, std::string_view text) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    require(static_cast<bool>(output),
+            "failed to open machine-protocol golden file for writing: " +
+                path);
+    output << text << '\n';
+    require(static_cast<bool>(output),
+            "failed to write machine-protocol golden file: " + path);
+}
+
 mparser::RuntimeValue makeCommaSeparatedList(
     std::vector<mparser::RuntimeValue> values) {
     mparser::RuntimeValue result;
@@ -58,6 +69,37 @@ mparser::RuntimeValue makeOpaqueObject() {
         "hidden", mparser::makeRuntimeNumberValue(99));
     mparser::setRuntimeDimensions(result, {1, 1});
     return result;
+}
+
+mparser::RuntimeValue makeComplexSingle() {
+    using mparser::RuntimeNumericClass;
+    using mparser::RuntimeNumericElementValue;
+    std::vector<RuntimeNumericElementValue> elements(2);
+    elements[0] = {RuntimeNumericClass::Single, 1.0, 2.0, 0, 0,
+                   true};
+    elements[1] = {RuntimeNumericClass::Single, 3.0, -4.0, 0, 0,
+                   true};
+    auto result = mparser::runtimeNumericValueFromElements(
+        {1, 2}, std::move(elements), RuntimeNumericClass::Single);
+    require(result.has_value(),
+            "failed to construct complex machine-protocol fixture");
+    return std::move(*result);
+}
+
+mparser::RuntimeValue makeExactUint64() {
+    using mparser::RuntimeNumericClass;
+    using mparser::RuntimeNumericElementValue;
+    std::vector<RuntimeNumericElementValue> elements(2);
+    elements[0].numericClass = RuntimeNumericClass::UInt64;
+    elements[0].integerRealBits = 9007199254740993ULL;
+    elements[1].numericClass = RuntimeNumericClass::UInt64;
+    elements[1].integerRealBits =
+        std::numeric_limits<std::uint64_t>::max();
+    auto result = mparser::runtimeNumericValueFromElements(
+        {1, 2}, std::move(elements), RuntimeNumericClass::UInt64);
+    require(result.has_value(),
+            "failed to construct uint64 machine-protocol fixture");
+    return std::move(*result);
 }
 
 mparser::ModuleInvocationResult makeResult() {
@@ -93,6 +135,8 @@ mparser::ModuleInvocationResult makeResult() {
              std::numeric_limits<double>::infinity(),
              -std::numeric_limits<double>::infinity(), -0.0}),
     });
+    result.variables.push_back({"complex_single", makeComplexSingle()});
+    result.variables.push_back({"uint64_exact", makeExactUint64()});
     result.variables.push_back({
         "character",
         mparser::makeRuntimeCharacterArray({2, 2}, u"ABCD"),
@@ -225,9 +269,11 @@ mparser::ModuleInvocationResult makeResult() {
 
 int main(int argc, char** argv) {
     try {
-        require(argc == 3,
+        require(argc == 3 ||
+                    (argc == 4 &&
+                     std::string_view(argv[3]) == "--update-golden"),
                 "machine_protocol_smoke expects normal and emergency "
-                "golden-file paths");
+                "golden-file paths and optional --update-golden");
         const auto result = makeResult();
         const std::string actual =
             mparser::serializeMachineResultJsonV1(
@@ -237,6 +283,12 @@ int main(int argc, char** argv) {
                 result, "0.86.0-test");
         require(actual == second,
                 "machine protocol must be deterministic");
+        if (argc == 4) {
+            writeGolden(argv[1], actual);
+            writeGolden(argv[2],
+                        mparser::machineProtocolEmergencyJsonV1());
+            return EXIT_SUCCESS;
+        }
         const std::string expected = readGolden(argv[1]);
         if (actual != expected) {
             std::cerr << "machine protocol golden mismatch\n"

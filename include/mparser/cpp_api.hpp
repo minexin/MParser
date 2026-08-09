@@ -26,8 +26,8 @@ namespace mparser::sdk {
  */
 using ApiStatus = mparser_api_status;
 
-inline constexpr std::uint32_t kSourceApiVersionMajor = 2;
-inline constexpr std::uint32_t kSourceApiVersionMinor = 0;
+inline constexpr std::uint32_t kSourceApiVersionMajor = 1;
+inline constexpr std::uint32_t kSourceApiVersionMinor = 2;
 
 struct SourceApiVersion {
     std::uint32_t major = 0;

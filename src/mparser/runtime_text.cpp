@@ -8,10 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <iomanip>
 #include <limits>
-#include <locale>
-#include <sstream>
 
 namespace mparser {
 namespace {
@@ -611,14 +608,6 @@ bool stringElementEqual(const RuntimeStringElement &left,
                     [](char16_t a, char16_t b) {
                       return foldAscii(a) == foldAscii(b);
                     });
-}
-
-std::string numericText(double value) {
-  std::ostringstream output;
-  output.imbue(std::locale::classic());
-  output << std::setprecision(std::numeric_limits<double>::max_digits10)
-         << value;
-  return output.str();
 }
 
 } // namespace
@@ -1243,11 +1232,14 @@ runtimeConvertToCharacter(const RuntimeValue &value) {
     std::vector<char16_t> elements;
     elements.reserve(count);
     for (size_t index = 0; index < count; ++index) {
-      const auto raw = runtimeNumericElement(value, index);
+      const auto raw = runtimeNumericElementValue(value, index);
       if (!raw) {
         return textFailure("char conversion could not map a numeric element");
       }
-      double codeUnit = *raw;
+      if (raw->complex) {
+        return textFailure("complex values cannot be converted to char");
+      }
+      double codeUnit = raw->real;
       if (std::isnan(codeUnit)) {
         codeUnit = 32.0;
       } else {
@@ -1278,12 +1270,18 @@ RuntimeTextOperationResult runtimeConvertToString(const RuntimeValue &value) {
     std::vector<RuntimeStringElement> elements;
     elements.reserve(count);
     for (size_t index = 0; index < count; ++index) {
-      const auto raw = runtimeNumericElement(value, index);
+      const auto raw = runtimeNumericElementValue(value, index);
       if (!raw) {
         return textFailure("string conversion could not map a numeric element");
       }
-      elements.push_back(
-          RuntimeStringElement{runtimeUtf8ToUtf16(numericText(*raw)), false});
+      auto scalar = runtimeNumericValueFromElements(
+          {1, 1}, {*raw}, raw->numericClass);
+      if (!scalar) {
+        return textFailure(
+            "string conversion could not construct a numeric scalar");
+      }
+      elements.push_back(RuntimeStringElement{
+          runtimeUtf8ToUtf16(runtimeValueToString(*scalar)), false});
     }
     const auto result =
         stringFromLogicalOrder(runtimeDimensions(value), elements);

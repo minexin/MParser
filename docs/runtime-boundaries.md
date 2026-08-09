@@ -175,13 +175,15 @@ An embedding application remains responsible for:
 - isolating untrusted extensions;
 - validating machine protocol size before accepting unbounded external input.
 
-## Stable And Additive Boundaries
+## Current Development Boundaries
 
-C ABI 1.1 ownership, sealed/extensible structure rules, and symbol meanings
-are frozen for v1. The C++ facade promises source compatibility, not a C++
-binary ABI. Machine protocol 1.x allows only documented additive evolution.
-Builtin source contract 1.0 is compiled with the engine and is not an external
-plugin ABI.
+C ABI generation 2 ownership, sealed/extensible structure rules, and symbol
+meanings are checked against current headers and consumers. The C++ source API
+is 1.2 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
+typed and complex numeric values. Builtin source contract 1.0 is compiled with
+the engine and is not an external plugin ABI. These current interfaces may
+still move together before the v1.2 candidate freeze; archived v1.0 contracts
+are historical evidence rather than compatibility gates.
 
 See [Versioning And Deprecation](versioning-and-deprecation.md) for the common
 policy.

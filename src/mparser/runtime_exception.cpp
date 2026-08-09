@@ -1,10 +1,12 @@
 #include "mparser/runtime_exception.h"
 
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -180,14 +182,21 @@ std::optional<std::string> formatValue(
                 std::u16string_view(text->data(), length));
             return output.str();
         }
-        if (value.kind == RuntimeValueKind::Number) {
-            output << static_cast<char>(static_cast<int>(value.number));
+        const auto numeric = value.kind == RuntimeValueKind::Number
+                                 ? runtimeNumericElementValue(value, 0)
+                                 : std::nullopt;
+        if (numeric) {
+            output << static_cast<char>(
+                static_cast<int>(numeric->real));
             return output.str();
         }
         error = "%c exception message values must be text or numeric scalars";
         return std::nullopt;
     }
-    if (value.kind != RuntimeValueKind::Number) {
+    const auto numeric = value.kind == RuntimeValueKind::Number
+                             ? runtimeNumericElementValue(value, 0)
+                             : std::nullopt;
+    if (!numeric) {
         error = "numeric exception message specifiers require scalar numbers";
         return std::nullopt;
     }
@@ -195,16 +204,26 @@ std::optional<std::string> formatValue(
     switch (specifier.conversion) {
     case 'd':
     case 'i':
-        output << static_cast<long long>(value.number);
+        if (runtimeNumericClassIsInteger(numeric->numericClass)) {
+            if (runtimeNumericClassIsSignedInteger(
+                    numeric->numericClass)) {
+                output << std::bit_cast<std::int64_t>(
+                    numeric->integerRealBits);
+            } else {
+                output << numeric->integerRealBits;
+            }
+        } else {
+            output << static_cast<long long>(numeric->real);
+        }
         break;
     case 'f':
-        output << std::fixed << value.number;
+        output << std::fixed << numeric->real;
         break;
     case 'e':
-        output << std::scientific << value.number;
+        output << std::scientific << numeric->real;
         break;
     case 'g':
-        output << std::defaultfloat << value.number;
+        output << std::defaultfloat << numeric->real;
         break;
     default:
         return std::nullopt;

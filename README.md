@@ -1,10 +1,14 @@
 # MParser
 
-Current development milestone: v1.1.0. It preserves the frozen v1 public
-CLI/API/extension contracts while closing externally observed expression,
-one-line control-flow, matrix-loop, and linear-colon shape mismatches. See
-[docs/v1.1.md](docs/v1.1.md) and the
-[external gap plan](docs/v1.x-external-gap-plan.md).
+Current development milestone: v1.2. The product and installed SDK will share
+version `1.2.0` when the complete release train reaches its candidate gate;
+until then the project version remains `1.1.0`. This active line extends the
+runtime with exact core numeric classes, dense complex double/single values,
+typed constructors and elementary math, C ABI generation 2, C++ source API
+1.2, and machine result protocol 1.1. The released v1.0 contracts remain
+archived evidence; unreleased interfaces may be simplified without
+compatibility adapters. See [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) and
+the [external gap plan](docs/v1.x-external-gap-plan.md).
 
 The published release baseline remains v1.0.0. Its reliability and
 release-documentation gates were cross-platform confirmed at revision
@@ -53,7 +57,7 @@ manual and package evidence,
 notes,
 [docs/release-process.md](docs/release-process.md) for checksums, provenance,
 and publication boundaries,
-[docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) for compatible post-1.0 growth,
+[docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) for current v1.x development,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
 machine-validated combined v1 freeze,
 [docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and

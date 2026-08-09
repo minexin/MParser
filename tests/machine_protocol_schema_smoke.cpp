@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -31,16 +32,107 @@ void require(bool condition, std::string message) {
     }
 }
 
-void requireUint64(const Json& value, const std::string& path) {
+std::uint64_t requireUint64(const Json& value,
+                            const std::string& path) {
     if (value.is_number_unsigned()) {
-        return;
+        return value.get<std::uint64_t>();
     }
     if (value.is_number_integer() &&
         value.get<std::int64_t>() >= 0) {
-        return;
+        return static_cast<std::uint64_t>(
+            value.get<std::int64_t>());
     }
     throw std::runtime_error(path +
                              " is not an unsigned 64-bit integer");
+}
+
+size_t numericElementCount(const Json& value,
+                           const std::string& path) {
+    size_t result = 1;
+    size_t index = 0;
+    for (const auto& dimension : value.at("dimensions")) {
+        const std::uint64_t count = requireUint64(
+            dimension, path + "/dimensions/" +
+                           std::to_string(index++));
+        require(count <= std::numeric_limits<size_t>::max(),
+                path + " dimension exceeds host size_t");
+        const size_t hostCount = static_cast<size_t>(count);
+        require(hostCount == 0 ||
+                    result <= std::numeric_limits<size_t>::max() /
+                                  hostCount,
+                path + " dimensions overflow host size_t");
+        result *= hostCount;
+    }
+    return result;
+}
+
+void validateIntegerElement(const Json& value,
+                            const std::string& className,
+                            const std::string& path) {
+    const bool signedClass = !className.empty() &&
+                             className.front() == 'i';
+    if (signedClass) {
+        static constexpr std::array signedRanges{
+            std::pair{"int8", std::pair<std::int64_t, std::int64_t>{
+                                   -128, 127}},
+            std::pair{"int16", std::pair<std::int64_t, std::int64_t>{
+                                    -32768, 32767}},
+            std::pair{"int32", std::pair<std::int64_t, std::int64_t>{
+                                    std::numeric_limits<std::int32_t>::min(),
+                                    std::numeric_limits<std::int32_t>::max()}},
+            std::pair{"int64", std::pair<std::int64_t, std::int64_t>{
+                                    std::numeric_limits<std::int64_t>::min(),
+                                    std::numeric_limits<std::int64_t>::max()}},
+        };
+        for (const auto& [name, range] : signedRanges) {
+            if (className != name) {
+                continue;
+            }
+            if (value.is_number_unsigned()) {
+                require(value.get<std::uint64_t>() <=
+                            static_cast<std::uint64_t>(range.second),
+                        path + " exceeds " + className);
+                return;
+            }
+            require(value.is_number_integer(),
+                    path + " is not an integer");
+            const std::int64_t number = value.get<std::int64_t>();
+            require(number >= range.first && number <= range.second,
+                    path + " exceeds " + className);
+            return;
+        }
+    } else {
+        static constexpr std::array unsignedMaximums{
+            std::pair{"uint8", std::uint64_t{255}},
+            std::pair{"uint16", std::uint64_t{65535}},
+            std::pair{"uint32", std::uint64_t{4294967295ULL}},
+            std::pair{"uint64",
+                      std::numeric_limits<std::uint64_t>::max()},
+        };
+        const std::uint64_t number = requireUint64(value, path);
+        for (const auto& [name, maximum] : unsignedMaximums) {
+            if (className == name) {
+                require(number <= maximum,
+                        path + " exceeds " + className);
+                return;
+            }
+        }
+    }
+    throw std::runtime_error(path + " has an unknown integer class");
+}
+
+void validateNumericChannel(const Json& data,
+                            const std::string& className,
+                            const std::string& path) {
+    if (className.find("int") == std::string::npos) {
+        return;
+    }
+    size_t index = 0;
+    for (const auto& element : data) {
+        validateIntegerElement(
+            element, className,
+            path + "/" + std::to_string(index++));
+    }
 }
 
 void validateRuntimeValueSemantics(
@@ -55,7 +147,24 @@ void validateRuntimeValueSemantics(
     }
 
     const std::string kind = value.value("kind", "");
-    if (kind == "cell" || kind == "comma-separated-list") {
+    if (kind == "numeric") {
+        const size_t count = numericElementCount(value, path);
+        const std::string className = value.at("class");
+        require(value.at("data").size() == count,
+                path + "/data length does not match dimensions");
+        validateNumericChannel(
+            value.at("data"), className, path + "/data");
+        if (value.contains("imaginary_data")) {
+            require(value.value("complex", false),
+                    path + " imaginary payload is not marked complex");
+            require(value.at("imaginary_data").size() == count,
+                    path + "/imaginary_data length does not match dimensions");
+            validateNumericChannel(value.at("imaginary_data"),
+                                   className,
+                                   path + "/imaginary_data");
+        }
+    } else if (kind == "cell" ||
+               kind == "comma-separated-list") {
         size_t index = 0;
         for (const auto& element : value.at("data")) {
             validateRuntimeValueSemantics(
@@ -217,6 +326,35 @@ void runNegativeCases(const Validator& validator, const Json& golden) {
     invalidUnsigned["requested_output_count"] = -1;
     require(documentRejected(validator, invalidUnsigned),
             "protocol semantic validation accepted a negative uint64");
+
+    Json missingImaginary = golden;
+    Json* complex = findNumericClass(missingImaginary, "single");
+    require(complex && complex->value("complex", false),
+            "golden fixture has no complex numeric payload");
+    complex->erase("imaginary_data");
+    require(documentRejected(validator, missingImaginary),
+            "schema accepted a complex value without imaginary_data");
+
+    Json invalidImaginary = golden;
+    complex = findNumericClass(invalidImaginary, "single");
+    (*complex)["imaginary_data"][0] = true;
+    require(documentRejected(validator, invalidImaginary),
+            "schema accepted a boolean imaginary float component");
+
+    Json truncatedComplex = golden;
+    complex = findNumericClass(truncatedComplex, "single");
+    complex->at("imaginary_data").erase(
+        complex->at("imaginary_data").begin());
+    require(documentRejected(validator, truncatedComplex),
+            "semantic validation accepted a truncated imaginary channel");
+
+    Json invalidUint64 = golden;
+    Json* uint64Value = findNumericClass(invalidUint64, "uint64");
+    require(uint64Value && !uint64Value->at("data").empty(),
+            "golden fixture has no uint64 numeric payload");
+    (*uint64Value)["data"][0] = -1;
+    require(documentRejected(validator, invalidUint64),
+            "semantic validation accepted a negative uint64 element");
 }
 
 } // namespace

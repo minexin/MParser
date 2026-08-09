@@ -161,7 +161,7 @@ void runDefaultCatalogSmoke() {
     require(mparser::kBuiltinSourceContractMajor == 1 &&
                 mparser::kBuiltinSourceContractMinor == 1,
             "builtin source contract version changed");
-    require(registry->names().size() == 129,
+    require(registry->names().size() == 154,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");
@@ -179,6 +179,42 @@ void runDefaultCatalogSmoke() {
     const auto* find = registry->find("find");
     require(find && find->outputs.maximum == 3,
             "find multi-output metadata mismatch");
+    const auto* complex = registry->find("complex");
+    require(complex && complex->inputs.minimum == 1 &&
+                complex->inputs.maximum == 2 &&
+                complex->implementation ==
+                    mparser::BuiltinImplementationKind::Shared &&
+                complex->purity == mparser::BuiltinPurity::Pure,
+            "complex descriptor metadata mismatch");
+    const auto* isreal = registry->find("isreal");
+    require(isreal && isreal->outputs.maximum == 1 &&
+                isreal->outputConstraints.size() == 1 &&
+                isreal->outputConstraints.front().shape ==
+                    mparser::BuiltinShapeConstraint::Scalar,
+            "isreal descriptor metadata mismatch");
+    for (std::string_view name : {"acosh", "round", "isfinite"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor && descriptor->inputs.minimum == 1 &&
+                    descriptor->inputs.maximum == 1 &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Shared &&
+                    descriptor->purity == mparser::BuiltinPurity::Pure,
+                "shared unary math metadata mismatch");
+    }
+    for (std::string_view name : {"atan2", "hypot"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor && descriptor->inputs.minimum == 2 &&
+                    descriptor->inputs.maximum == 2 &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Shared,
+                "shared binary math metadata mismatch");
+    }
+    const auto* epsilon = registry->find("eps");
+    require(epsilon && epsilon->inputs.minimum == 0 &&
+                epsilon->inputs.maximum == 1 &&
+                epsilon->implementation ==
+                    mparser::BuiltinImplementationKind::Shared,
+            "eps descriptor metadata mismatch");
     const auto* warning = registry->find("warning");
     require(warning &&
                 warning->implementation ==
@@ -193,6 +229,16 @@ void runDefaultCatalogSmoke() {
                     reshape->contextPermissions,
                     mparser::BuiltinContextPermission::ObjectArrayPolicy),
             "reshape object-array policy metadata mismatch");
+    for (std::string_view name : {"size", "linspace", "zeros",
+                                  "ones", "eye", "true", "false",
+                                  "cell", "strings", "inf", "nan"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Shared &&
+                    descriptor->purity == mparser::BuiltinPurity::Pure,
+                "shared array builtin metadata mismatch");
+    }
     const auto* unsupported = registry->find("disp");
     require(unsupported &&
                 unsupported->implementation ==

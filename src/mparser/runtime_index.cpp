@@ -51,13 +51,17 @@ RuntimeIndexSelectionResult runtimeResolveIndexSelection(
     const size_t count = runtimeShapeElementCount(subscript);
     result.indices.reserve(count);
     for (size_t logicalIndex = 0; logicalIndex < count; ++logicalIndex) {
-        const auto raw = runtimeNumericElement(subscript, logicalIndex);
-        if (!raw) {
+        const auto element =
+            runtimeNumericElementValue(subscript, logicalIndex);
+        if (!element) {
             return failure("index subscript has an invalid shape");
+        }
+        if (element->complex) {
+            return failure("index subscript must be real");
         }
 
         if (result.logicalMask) {
-            if (*raw == 0.0) {
+            if (element->real == 0.0) {
                 continue;
             }
             if (logicalIndex >= extent) {
@@ -68,7 +72,8 @@ RuntimeIndexSelectionResult runtimeResolveIndexSelection(
             continue;
         }
 
-        const auto oneBasedIndex = checkedRuntimeNonnegativeInteger(*raw);
+        const auto oneBasedIndex =
+            runtimeNumericElementAsNonnegativeSize(*element);
         if (!oneBasedIndex || *oneBasedIndex == 0) {
             return failure("index must be a positive integer");
         }

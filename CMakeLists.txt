@@ -754,6 +754,37 @@ add_executable(numeric_type_smoke_tests
 target_link_libraries(numeric_type_smoke_tests PRIVATE mparser_core)
 add_test(NAME numeric_type_smoke COMMAND numeric_type_smoke_tests)
 
+add_executable(complex_numeric_smoke_tests
+    tests/complex_numeric_smoke.cpp)
+target_link_libraries(complex_numeric_smoke_tests PRIVATE mparser_core)
+add_test(NAME complex_numeric_smoke COMMAND complex_numeric_smoke_tests)
+
+add_test(NAME complex_numeric_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/complex_numeric_demo.m)
+set_tests_properties(complex_numeric_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 0")
+
+add_test(NAME complex_numeric_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/complex_numeric_demo.m)
+set_tests_properties(complex_numeric_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 0")
+
+add_test(NAME complex_numeric_portable_jit_cli_smoke
+    COMMAND mparser --run --jit=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/complex_numeric_demo.m)
+set_tests_properties(complex_numeric_portable_jit_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 0")
+
+if(MPARSER_ENABLE_NATIVE_JIT)
+    add_test(NAME complex_numeric_native_jit_cli_smoke
+        COMMAND mparser --run --jit=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/complex_numeric_demo.m)
+    set_tests_properties(complex_numeric_native_jit_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "summary = 0")
+endif()
+
 add_test(NAME numeric_type_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
@@ -1719,7 +1750,7 @@ add_test(NAME machine_protocol_contract_smoke
         -DSCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/machine-result-v1.schema.json
         -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_v1.json
         -DEMERGENCY=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_emergency_v1.json
-        -DSNAPSHOT=${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/protocol/1.0/machine_result_1_0.json
+        -DSNAPSHOT=${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/protocol/1.1/machine_result_1_1.json
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_machine_protocol_contract.cmake)
 set_tests_properties(machine_protocol_contract_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
@@ -1735,7 +1766,7 @@ add_test(NAME machine_protocol_schema_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/docs/machine-result-v1.schema.json
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_v1.json
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/machine_result_emergency_v1.json
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/protocol/1.0/machine_result_1_0.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/protocol/1.1/machine_result_1_1.json)
 
 add_test(NAME machine_protocol_cli_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -2003,7 +2034,7 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-2.0,cpp-2.0")
+        "cpp api smoke = 5050,42,21,abi-2.0,cpp-1.2")
 
 add_executable(cpp_api_concurrency_stress_tests
     tests/cpp_api_concurrency_stress.cpp)
@@ -2023,7 +2054,7 @@ target_link_libraries(mparser_cpp_embedding_demo PRIVATE
 add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "cpp sdk = 5050,5,abi-2.0,cpp-2.0")
+    PASS_REGULAR_EXPRESSION "cpp sdk = 5050,5,abi-2.0,cpp-1.2")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
@@ -2322,6 +2353,8 @@ install(FILES
     samples/cpp_embedding_demo.cpp
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m
+    samples/numeric_types_demo.m
+    samples/complex_numeric_demo.m
     samples/performance_scalar_loop.m
     samples/performance_array_workload.m
     samples/reliability_boundary_demo.m

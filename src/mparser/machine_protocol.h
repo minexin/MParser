@@ -9,7 +9,7 @@
 namespace mparser {
 
 inline constexpr unsigned kMachineResultProtocolMajor = 1;
-inline constexpr unsigned kMachineResultProtocolMinor = 0;
+inline constexpr unsigned kMachineResultProtocolMinor = 1;
 
 std::string serializeMachineResultJsonV1(
     const ModuleInvocationResult& result,

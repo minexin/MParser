@@ -72,7 +72,11 @@ std::optional<double> scalarNumeric(const RuntimeValue& value) {
         runtimeShapeElementCount(value) != 1) {
         return std::nullopt;
     }
-    return runtimeNumericElement(value, 0);
+    const auto element = runtimeNumericElementValue(value, 0);
+    if (!element || element->complex) {
+        return std::nullopt;
+    }
+    return element->real;
 }
 
 std::optional<size_t> positiveDimension(const RuntimeValue& value) {
@@ -157,13 +161,14 @@ bool parseScanOptions(ScanKind kind,
     return true;
 }
 
-std::optional<std::vector<double>> logicalNumericValues(
+std::optional<std::vector<RuntimeNumericElementValue>>
+logicalNumericValues(
     const RuntimeValue& input) {
     const size_t count = runtimeShapeElementCount(input);
-    std::vector<double> values;
+    std::vector<RuntimeNumericElementValue> values;
     values.reserve(count);
     for (size_t index = 0; index < count; ++index) {
-        const auto value = runtimeNumericElement(input, index);
+        const auto value = runtimeNumericElementValue(input, index);
         if (!value) {
             return std::nullopt;
         }
@@ -172,40 +177,91 @@ std::optional<std::vector<double>> logicalNumericValues(
     return values;
 }
 
-void updateAccumulator(ScanKind kind, MissingPolicy policy,
-                       double value, bool& initialized,
-                       double& accumulator) {
-    const bool missing = std::isnan(value);
+bool numericMissing(const RuntimeNumericElementValue& value) {
+    return std::isnan(value.real) ||
+           (value.complex && std::isnan(value.imaginary));
+}
+
+std::optional<RuntimeNumericElementValue> applyScalarBinary(
+    std::string_view operation,
+    const RuntimeNumericElementValue& left,
+    const RuntimeNumericElementValue& right,
+    RuntimeNumericClass outputClass) {
+    auto leftValue = runtimeNumericValueFromElements(
+        {1, 1}, {left}, left.numericClass);
+    auto rightValue = runtimeNumericValueFromElements(
+        {1, 1}, {right}, right.numericClass);
+    if (!leftValue || !rightValue) {
+        return std::nullopt;
+    }
+    auto result = runtimeApplyNumericBinary(
+        operation, *leftValue, *rightValue);
+    if (!result.succeeded) {
+        return std::nullopt;
+    }
+    const auto element = runtimeNumericElementValue(result.value, 0);
+    return element ? runtimeConvertNumericElementValue(*element,
+                                                       outputClass)
+                   : std::nullopt;
+}
+
+RuntimeNumericElementValue scanIdentity(ScanKind kind,
+                                        RuntimeNumericClass numericClass) {
+    RuntimeNumericElementValue result;
+    result.numericClass = numericClass;
+    if (kind == ScanKind::Product) {
+        result.real = 1.0;
+        if (runtimeNumericClassIsInteger(numericClass)) {
+            result.integerRealBits = 1;
+        }
+    }
+    return result;
+}
+
+bool updateAccumulator(ScanKind kind, MissingPolicy policy,
+                       const RuntimeNumericElementValue& value,
+                       RuntimeNumericClass outputClass,
+                       bool& initialized,
+                       RuntimeNumericElementValue& accumulator) {
+    const bool missing = numericMissing(value);
     if (kind == ScanKind::Sum || kind == ScanKind::Product) {
         if (missing && policy == MissingPolicy::Omit) {
-            return;
+            return true;
         }
-        accumulator = kind == ScanKind::Sum ? accumulator + value
-                                             : accumulator * value;
-        return;
+        const auto result = applyScalarBinary(
+            kind == ScanKind::Sum ? "+" : "*", accumulator, value,
+            outputClass);
+        if (!result) {
+            return false;
+        }
+        accumulator = *result;
+        return true;
     }
 
     if (missing) {
         if (policy == MissingPolicy::Include) {
             initialized = true;
-            accumulator = std::numeric_limits<double>::quiet_NaN();
+            accumulator = value;
         }
-        return;
+        return true;
     }
     if (!initialized) {
         initialized = true;
         accumulator = value;
-        return;
+        return true;
     }
-    if (std::isnan(accumulator)) {
-        return;
+    if (numericMissing(accumulator)) {
+        return true;
     }
+    const int comparison = runtimeCompareNumericElementsForExtrema(
+        value, accumulator);
     const bool better = kind == ScanKind::Minimum
-                            ? value < accumulator
-                            : value > accumulator;
+                            ? comparison < 0
+                            : comparison > 0;
     if (better) {
         accumulator = value;
     }
+    return true;
 }
 
 RuntimeScanResult cumulativeBuiltin(
@@ -228,6 +284,11 @@ RuntimeScanResult cumulativeBuiltin(
     }
 
     const RuntimeValue& input = arguments.front();
+    if (input.numericComplex &&
+        runtimeNumericClassIsInteger(input.numericClass)) {
+        return failure(
+            "cumulative operations do not support complex integer values");
+    }
     const auto dimensions = runtimeDimensions(input);
     const size_t dimension = options.dimension.value_or(
         firstNonsingletonDimension(dimensions));
@@ -252,8 +313,7 @@ RuntimeScanResult cumulativeBuiltin(
     if (!count) {
         return failure("cumulative input dimensions are too large");
     }
-    std::vector<double> outputValues(
-        *count, std::numeric_limits<double>::quiet_NaN());
+    std::vector<RuntimeNumericElementValue> outputValues(*count);
     std::vector<size_t> lineDimensions = dimensions;
     const size_t lineLength = lineDimensions[dimension];
     lineDimensions[dimension] = 1;
@@ -270,7 +330,8 @@ RuntimeScanResult cumulativeBuiltin(
         }
         auto coordinates = *baseCoordinates;
         bool initialized = !isExtrema(kind);
-        double accumulator = kind == ScanKind::Product ? 1.0 : 0.0;
+        RuntimeNumericElementValue accumulator =
+            scanIdentity(kind, outputClass);
         for (size_t step = 0; step < lineLength; ++step) {
             const size_t position = options.reverse
                                         ? lineLength - step - 1
@@ -279,21 +340,29 @@ RuntimeScanResult cumulativeBuiltin(
             const auto logicalIndex = runtimeColumnMajorLinearIndex(
                 coordinates, dimensions);
             const auto value = logicalIndex
-                                   ? runtimeNumericElement(input,
-                                                           *logicalIndex)
+                                   ? runtimeNumericElementValue(
+                                         input, *logicalIndex)
                                    : std::nullopt;
             if (!logicalIndex || !value || *logicalIndex >= outputValues.size()) {
                 return failure("cumulative operation could not map an element");
             }
-            updateAccumulator(kind, options.missingPolicy, *value,
-                              initialized, accumulator);
-            outputValues[*logicalIndex] =
-                initialized ? accumulator
-                            : std::numeric_limits<double>::quiet_NaN();
+            if (!updateAccumulator(kind, options.missingPolicy, *value,
+                                   outputClass, initialized,
+                                   accumulator)) {
+                return failure(
+                    "cumulative numeric operation could not be represented");
+            }
+            if (initialized) {
+                outputValues[*logicalIndex] = accumulator;
+            } else {
+                outputValues[*logicalIndex].numericClass = outputClass;
+                outputValues[*logicalIndex].real =
+                    std::numeric_limits<double>::quiet_NaN();
+            }
         }
     }
 
-    auto output = runtimeNumericValueFromLogicalOrder(
+    auto output = runtimeNumericValueFromElements(
         dimensions, std::move(outputValues), outputClass);
     if (!output) {
         return failure("cumulative result could not be represented");
@@ -322,6 +391,11 @@ RuntimeScanResult differenceBuiltin(
     if (requestedOutputCount > 1) {
         return failure("diff supports at most one output");
     }
+    if (arguments.front().numericComplex &&
+        runtimeNumericClassIsInteger(
+            arguments.front().numericClass)) {
+        return failure("diff does not support complex integer values");
+    }
 
     size_t order = 1;
     if (arguments.size() >= 2 && !isEmptyNumeric(arguments[1])) {
@@ -345,6 +419,11 @@ RuntimeScanResult differenceBuiltin(
     }
     dimensions.resize(std::max(dimensions.size(), dimension + 1), 1);
 
+    const RuntimeNumericClass outputClass =
+        arguments.front().numericClass == RuntimeNumericClass::Logical
+            ? RuntimeNumericClass::Double
+            : arguments.front().numericClass;
+
     auto values = logicalNumericValues(arguments.front());
     if (!values) {
         return failure("diff could not read the input array");
@@ -360,7 +439,7 @@ RuntimeScanResult differenceBuiltin(
         if (!outputCount) {
             return failure("diff output dimensions are too large");
         }
-        std::vector<double> outputValues(*outputCount);
+        std::vector<RuntimeNumericElementValue> outputValues(*outputCount);
         for (size_t outputIndex = 0; outputIndex < *outputCount;
              ++outputIndex) {
             const auto lowerCoordinates = runtimeColumnMajorCoordinates(
@@ -379,18 +458,20 @@ RuntimeScanResult differenceBuiltin(
                 *upperIndex >= values->size()) {
                 return failure("diff could not map an input pair");
             }
-            outputValues[outputIndex] =
-                (*values)[*upperIndex] - (*values)[*lowerIndex];
+            const auto difference = applyScalarBinary(
+                "-", (*values)[*upperIndex], (*values)[*lowerIndex],
+                outputClass);
+            if (!difference) {
+                return failure(
+                    "diff numeric result could not be represented");
+            }
+            outputValues[outputIndex] = *difference;
         }
         dimensions = std::move(outputDimensions);
         values = std::move(outputValues);
     }
 
-    const RuntimeNumericClass outputClass =
-        arguments.front().numericClass == RuntimeNumericClass::Logical
-            ? RuntimeNumericClass::Double
-            : arguments.front().numericClass;
-    auto output = runtimeNumericValueFromLogicalOrder(
+    auto output = runtimeNumericValueFromElements(
         dimensions, std::move(*values), outputClass);
     if (!output) {
         return failure("diff result could not be represented");

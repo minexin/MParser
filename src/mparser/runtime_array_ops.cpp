@@ -6,6 +6,7 @@
 #include "mparser/runtime_text.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -43,6 +44,15 @@ RuntimeArrayOperationResult failure(std::string message) {
 
 RuntimeArrayOperationResult success(RuntimeValue value) {
     return RuntimeArrayOperationResult{true, std::move(value), {}};
+}
+
+RuntimeArrayOutputsResult outputsFailure(std::string message) {
+    return RuntimeArrayOutputsResult{false, {}, std::move(message)};
+}
+
+RuntimeArrayOutputsResult outputsSuccess(
+    std::vector<RuntimeValue> outputs) {
+    return RuntimeArrayOutputsResult{true, std::move(outputs), {}};
 }
 
 std::optional<RuntimeValue> numericResult(
@@ -96,18 +106,20 @@ RuntimeValue cellResult(std::vector<size_t> dimensions,
     return result;
 }
 
-std::optional<std::vector<double>> logicalNumericValues(
+std::optional<std::vector<RuntimeNumericElementValue>>
+logicalRealNumericValues(
     const RuntimeValue& value) {
     if (!isNumeric(value)) {
         return std::nullopt;
     }
 
     const size_t count = runtimeShapeElementCount(value);
-    std::vector<double> result;
+    std::vector<RuntimeNumericElementValue> result;
     result.reserve(count);
     for (size_t logicalIndex = 0; logicalIndex < count; ++logicalIndex) {
-        const auto element = runtimeNumericElement(value, logicalIndex);
-        if (!element) {
+        const auto element =
+            runtimeNumericElementValue(value, logicalIndex);
+        if (!element || element->complex) {
             return std::nullopt;
         }
         result.push_back(*element);
@@ -119,26 +131,187 @@ bool isNumericRowVector(const RuntimeValue& value) {
     return isNumericArray(value) && runtimeDimension(value, 0) == 1;
 }
 
-std::optional<size_t> nonnegativeDimension(double raw) {
-    return checkedRuntimeNonnegativeInteger(raw);
+std::optional<RuntimeNumericElementValue> realNumericScalar(
+    const RuntimeValue& value) {
+    if (!isNumber(value)) {
+        return std::nullopt;
+    }
+    const auto element = runtimeNumericElementValue(value, 0);
+    return element && !element->complex ? element : std::nullopt;
 }
 
-std::optional<size_t> positiveDimension(double raw) {
-    const auto dimension = checkedRuntimeNonnegativeInteger(raw);
+std::optional<size_t> nonnegativeDimension(
+    const RuntimeNumericElementValue& raw) {
+    return runtimeNumericElementAsNonnegativeSize(raw);
+}
+
+std::optional<size_t> positiveDimension(
+    const RuntimeNumericElementValue& raw) {
+    const auto dimension = runtimeNumericElementAsNonnegativeSize(raw);
     if (!dimension || *dimension == 0) {
         return std::nullopt;
     }
     return dimension;
 }
 
-std::optional<size_t> repetitionFactor(double raw) {
-    if (!std::isfinite(raw) || std::floor(raw) != raw) {
+std::optional<size_t> repetitionFactor(
+    const RuntimeNumericElementValue& raw) {
+    if (raw.complex) {
         return std::nullopt;
     }
-    if (raw <= 0.0) {
+    if (runtimeNumericClassIsInteger(raw.numericClass)) {
+        if (runtimeNumericClassIsSignedInteger(raw.numericClass) &&
+            std::bit_cast<std::int64_t>(raw.integerRealBits) < 0) {
+            return size_t{0};
+        }
+        return runtimeNumericElementAsNonnegativeSize(raw);
+    }
+    if (!std::isfinite(raw.real) ||
+        std::floor(raw.real) != raw.real) {
+        return std::nullopt;
+    }
+    if (raw.real <= 0.0) {
         return size_t{0};
     }
-    return checkedRuntimeNonnegativeInteger(raw);
+    return runtimeNumericElementAsNonnegativeSize(raw);
+}
+
+std::optional<std::vector<size_t>> constructorShape(
+    std::string_view name,
+    const std::vector<RuntimeValue>& arguments) {
+    if (arguments.empty()) {
+        if (name == "cell") {
+            return std::vector<size_t>{0, 0};
+        }
+        return std::vector<size_t>{1, 1};
+    }
+
+    const auto appendDimension = [](
+                                     std::vector<size_t>& dimensions,
+                                     const RuntimeNumericElementValue& raw) {
+        const auto dimension = nonnegativeDimension(raw);
+        if (!dimension) {
+            return false;
+        }
+        dimensions.push_back(*dimension);
+        return true;
+    };
+
+    if (arguments.size() > 1) {
+        std::vector<size_t> dimensions;
+        dimensions.reserve(arguments.size());
+        for (const RuntimeValue& argument : arguments) {
+            const auto raw = realNumericScalar(argument);
+            if (!raw || !appendDimension(dimensions, *raw)) {
+                return std::nullopt;
+            }
+        }
+        return normalizeRuntimeDimensions(std::move(dimensions));
+    }
+
+    const RuntimeValue& shape = arguments.front();
+    if (!isNumeric(shape)) {
+        return std::nullopt;
+    }
+    const size_t count = runtimeShapeElementCount(shape);
+    if (count == 0) {
+        return std::vector<size_t>{0, 0};
+    }
+
+    std::vector<size_t> dimensions;
+    dimensions.reserve(count == 1 ? 2 : count);
+    for (size_t index = 0; index < count; ++index) {
+        const auto raw = runtimeNumericElementValue(shape, index);
+        if (!raw || raw->complex ||
+            !appendDimension(dimensions, *raw)) {
+            return std::nullopt;
+        }
+    }
+    if (dimensions.size() == 1) {
+        dimensions.push_back(dimensions.front());
+    }
+    return normalizeRuntimeDimensions(std::move(dimensions));
+}
+
+std::optional<RuntimeNumericClass> constructorNumericClass(
+    std::string_view name, std::vector<RuntimeValue>& arguments) {
+    if (name == "true" || name == "false") {
+        return RuntimeNumericClass::Logical;
+    }
+    if (name == "cell" || name == "strings") {
+        return RuntimeNumericClass::Double;
+    }
+    if (arguments.empty()) {
+        return RuntimeNumericClass::Double;
+    }
+
+    const auto className = runtimeTextScalarUtf8(arguments.back());
+    if (!className) {
+        return RuntimeNumericClass::Double;
+    }
+    const auto numericClass = runtimeNumericClassFromName(*className);
+    if (!numericClass) {
+        return std::nullopt;
+    }
+    if ((name == "inf" || name == "nan") &&
+        !runtimeNumericClassIsFloating(*numericClass)) {
+        return std::nullopt;
+    }
+    arguments.pop_back();
+    return numericClass;
+}
+
+RuntimeArrayOperationResult numericConstructor(
+    std::string_view name, std::vector<RuntimeValue> arguments) {
+    const auto numericClass = constructorNumericClass(name, arguments);
+    if (!numericClass) {
+        return failure(std::string(name) +
+                       " trailing class name is not supported");
+    }
+    const auto dimensions = constructorShape(name, arguments);
+    if (!dimensions) {
+        return failure(std::string(name) +
+                       " dimensions must be real, representable nonnegative integers");
+    }
+    if (name == "eye" && dimensions->size() > 2) {
+        return failure("eye creates only two-dimensional arrays");
+    }
+    const auto count = checkedRuntimeDimensionProduct(*dimensions);
+    if (!count) {
+        return failure(std::string(name) + " dimensions are too large");
+    }
+
+    RuntimeNumericElementValue fill;
+    fill.real = name == "ones" || name == "true"
+                    ? 1.0
+                : name == "inf"
+                    ? std::numeric_limits<double>::infinity()
+                : name == "nan"
+                    ? std::numeric_limits<double>::quiet_NaN()
+                    : 0.0;
+    std::vector<RuntimeNumericElementValue> elements(*count, fill);
+    if (name == "eye") {
+        const size_t rows = dimensions->front();
+        const size_t columns = (*dimensions)[1];
+        for (size_t index = 0; index < std::min(rows, columns);
+             ++index) {
+            elements[index * (rows + 1)].real = 1.0;
+        }
+    }
+
+    auto result = runtimeNumericValueFromElements(
+        *dimensions, std::move(elements), *numericClass);
+    return result ? success(std::move(*result))
+                  : failure(std::string(name) +
+                            " could not construct the requested numeric class");
+}
+
+std::optional<RuntimeNumericElementValue> numericScalar(
+    const RuntimeValue& value) {
+    if (!isNumeric(value) || runtimeShapeElementCount(value) != 1) {
+        return std::nullopt;
+    }
+    return runtimeNumericElementValue(value, 0);
 }
 
 RuntimeArrayOperationResult reshapeBuiltin(
@@ -158,12 +331,13 @@ RuntimeArrayOperationResult reshapeBuiltin(
         if (!isNumericRowVector(shape)) {
             return failure("reshape size must be a numeric row vector");
         }
-        const auto values = logicalNumericValues(shape);
+        const auto values = logicalRealNumericValues(shape);
         if (!values || values->size() < 2) {
-            return failure("reshape size vector must contain at least two dimensions");
+            return failure(
+                "reshape size vector must contain at least two real dimensions");
         }
         requested.reserve(values->size());
-        for (const double raw : *values) {
+        for (const auto& raw : *values) {
             const auto dimension = nonnegativeDimension(raw);
             if (!dimension) {
                 return failure(
@@ -189,11 +363,12 @@ RuntimeArrayOperationResult reshapeBuiltin(
                 requested.push_back(std::nullopt);
                 continue;
             }
-            if (!isNumber(argument)) {
+            const auto raw = realNumericScalar(argument);
+            if (!raw) {
                 return failure(
-                    "reshape dimensions must be scalar numbers or one empty value");
+                    "reshape dimensions must be real scalar numbers or one empty value");
             }
-            const auto dimension = nonnegativeDimension(argument.number);
+            const auto dimension = nonnegativeDimension(*raw);
             if (!dimension) {
                 return failure(
                     "reshape dimensions must be representable nonnegative integers");
@@ -244,7 +419,7 @@ std::optional<std::vector<size_t>> permutationOrder(
         error = "dimension order must be a numeric row vector";
         return std::nullopt;
     }
-    const auto values = logicalNumericValues(orderValue);
+    const auto values = logicalRealNumericValues(orderValue);
     if (!values || values->size() < runtimeDimensionCount(value)) {
         error = "dimension order must include every input dimension";
         return std::nullopt;
@@ -252,7 +427,7 @@ std::optional<std::vector<size_t>> permutationOrder(
 
     std::vector<size_t> order;
     order.reserve(values->size());
-    for (const double raw : *values) {
+    for (const auto& raw : *values) {
         const auto dimension = positiveDimension(raw);
         if (!dimension) {
             error = "dimension order must contain positive integers";
@@ -464,14 +639,15 @@ std::optional<std::vector<size_t>> repetitionFactors(
         return std::nullopt;
     }
 
-    std::vector<double> rawFactors;
+    std::vector<RuntimeNumericElementValue> rawFactors;
     if (arguments.size() == 2) {
-        if (isNumber(arguments[1])) {
-            rawFactors = {arguments[1].number, arguments[1].number};
+        if (const auto scalar = realNumericScalar(arguments[1])) {
+            rawFactors = {*scalar, *scalar};
         } else if (isNumericRowVector(arguments[1])) {
-            const auto values = logicalNumericValues(arguments[1]);
+            const auto values = logicalRealNumericValues(arguments[1]);
             if (!values || values->empty()) {
-                error = "repmat repetition vector cannot be empty";
+                error =
+                    "repmat repetition vector must contain real values";
                 return std::nullopt;
             }
             rawFactors = *values;
@@ -485,17 +661,19 @@ std::optional<std::vector<size_t>> repetitionFactors(
     } else {
         rawFactors.reserve(arguments.size() - 1);
         for (size_t index = 1; index < arguments.size(); ++index) {
-            if (!isNumber(arguments[index])) {
-                error = "repmat separate repetition factors must be scalar";
+            const auto scalar = realNumericScalar(arguments[index]);
+            if (!scalar) {
+                error =
+                    "repmat separate repetition factors must be real scalars";
                 return std::nullopt;
             }
-            rawFactors.push_back(arguments[index].number);
+            rawFactors.push_back(*scalar);
         }
     }
 
     std::vector<size_t> factors;
     factors.reserve(rawFactors.size());
-    for (const double raw : rawFactors) {
+    for (const auto& raw : rawFactors) {
         const auto factor = repetitionFactor(raw);
         if (!factor) {
             error = "repmat factors must be representable integers";
@@ -838,12 +1016,16 @@ RuntimeArrayOperationResult concatenateBuiltin(
     std::string_view name, const std::vector<RuntimeValue>& arguments,
     const RuntimeObjectArrayPolicy& objectPolicy) {
     if (name == "cat") {
-        if (arguments.size() < 2 || !isNumber(arguments.front())) {
+        if (arguments.size() < 2) {
             return failure("cat expects a positive dimension and arrays");
         }
-        const auto dimension = positiveDimension(arguments.front().number);
+        const auto rawDimension = realNumericScalar(arguments.front());
+        const auto dimension = rawDimension
+                                   ? positiveDimension(*rawDimension)
+                                   : std::nullopt;
         if (!dimension) {
-            return failure("cat dimension must be a positive integer");
+            return failure(
+                "cat dimension must be a positive real integer");
         }
         return concatenate(
             *dimension,
@@ -883,6 +1065,187 @@ RuntimeArrayOperationResult runtimeArrayOperationBuiltin(
         return concatenateBuiltin(name, arguments, objectPolicy);
     }
     return failure("unknown array operation builtin");
+}
+
+bool isRuntimeArrayConstructorBuiltin(std::string_view name) {
+    return name == "zeros" || name == "ones" || name == "eye" ||
+           name == "true" || name == "false" || name == "cell" ||
+           name == "strings" || name == "inf" || name == "nan";
+}
+
+RuntimeArrayOperationResult runtimeArrayConstructorBuiltin(
+    std::string_view name, const std::vector<RuntimeValue>& arguments) {
+    if (!isRuntimeArrayConstructorBuiltin(name)) {
+        return failure("unknown array constructor builtin");
+    }
+    if (name != "cell" && name != "strings") {
+        return numericConstructor(name, arguments);
+    }
+
+    const auto dimensions = constructorShape(name, arguments);
+    if (!dimensions) {
+        return failure(std::string(name) +
+                       " dimensions must be real, representable nonnegative integers");
+    }
+    const auto count = checkedRuntimeDimensionProduct(*dimensions);
+    if (!count) {
+        return failure(std::string(name) + " dimensions are too large");
+    }
+    if (name == "cell") {
+        return success(cellResult(
+            *dimensions, std::vector<RuntimeValue>(*count)));
+    }
+    return success(makeRuntimeStringArray(
+        *dimensions, std::vector<RuntimeStringElement>(*count)));
+}
+
+RuntimeArrayOperationResult runtimeLinspaceBuiltin(
+    const std::vector<RuntimeValue>& arguments) {
+    if (arguments.size() != 2 && arguments.size() != 3) {
+        return failure("linspace expects two or three scalar numeric arguments");
+    }
+    const auto start = numericScalar(arguments[0]);
+    const auto stop = numericScalar(arguments[1]);
+    if (!start || !stop) {
+        return failure("linspace endpoints must be scalar numeric values");
+    }
+
+    size_t count = 100;
+    if (arguments.size() == 3) {
+        const auto requested = numericScalar(arguments[2]);
+        const auto converted = requested
+                                   ? runtimeNumericElementAsNonnegativeSize(
+                                         *requested)
+                                   : std::nullopt;
+        if (!converted) {
+            return failure(
+                "linspace count must be a real, representable nonnegative integer");
+        }
+        count = *converted;
+    }
+
+    const RuntimeNumericClass resultClass =
+        start->numericClass == RuntimeNumericClass::Single ||
+                stop->numericClass == RuntimeNumericClass::Single
+            ? RuntimeNumericClass::Single
+            : RuntimeNumericClass::Double;
+    const bool complex = start->complex || stop->complex;
+    std::vector<RuntimeNumericElementValue> elements;
+    elements.reserve(count);
+    if (count == 1) {
+        elements.push_back(*stop);
+    } else if (count > 1) {
+        const double denominator = static_cast<double>(count - 1);
+        for (size_t index = 0; index < count; ++index) {
+            RuntimeNumericElementValue value;
+            value.numericClass = resultClass;
+            value.complex = complex;
+            if (index == 0) {
+                value.real = start->real;
+                value.imaginary = start->imaginary;
+            } else if (index + 1 == count) {
+                value.real = stop->real;
+                value.imaginary = stop->imaginary;
+            } else {
+                const double t = static_cast<double>(index) / denominator;
+                value.real = start->real + (stop->real - start->real) * t;
+                value.imaginary =
+                    start->imaginary +
+                    (stop->imaginary - start->imaginary) * t;
+            }
+            elements.push_back(value);
+        }
+    }
+
+    auto result = runtimeNumericValueFromElements(
+        {1, count}, std::move(elements), resultClass);
+    if (!result) {
+        return failure("linspace could not construct its numeric result");
+    }
+    if (count == 0 && complex) {
+        result->numericComplex = true;
+    }
+    return success(std::move(*result));
+}
+
+RuntimeArrayOutputsResult runtimeSizeBuiltin(
+    const std::vector<RuntimeValue>& arguments,
+    size_t requestedOutputCount) {
+    if (arguments.empty() || arguments.size() > 2) {
+        return outputsFailure("size expects an array and optional dimension");
+    }
+    if (requestedOutputCount == 0) {
+        return outputsSuccess({});
+    }
+
+    const RuntimeValue& value = arguments.front();
+    const auto dimensions = runtimeDimensions(value);
+    if (arguments.size() == 2) {
+        if (requestedOutputCount != 1) {
+            return outputsFailure(
+                "size with a dimension produces one output");
+        }
+        if (!isNumeric(arguments[1])) {
+            return outputsFailure("size dimensions must be numeric");
+        }
+
+        const size_t count = runtimeShapeElementCount(arguments[1]);
+        std::vector<double> values;
+        values.reserve(count);
+        for (size_t index = 0; index < count; ++index) {
+            const auto raw = runtimeNumericElementValue(
+                arguments[1], index);
+            const auto dimension = raw && !raw->complex
+                                       ? positiveDimension(*raw)
+                                       : std::nullopt;
+            if (!dimension) {
+                return outputsFailure(
+                    "size dimension must be a positive real integer");
+            }
+            values.push_back(static_cast<double>(
+                runtimeDimension(value, *dimension - 1)));
+        }
+        auto output = runtimeNumericValueFromLogicalOrder(
+            {1, count}, std::move(values), RuntimeNumericClass::Double);
+        return output
+                   ? outputsSuccess({std::move(*output)})
+                   : outputsFailure("size could not construct its result");
+    }
+
+    if (requestedOutputCount == 1) {
+        std::vector<double> values;
+        values.reserve(dimensions.size());
+        for (const size_t dimension : dimensions) {
+            values.push_back(static_cast<double>(dimension));
+        }
+        auto output = runtimeNumericValueFromLogicalOrder(
+            {1, dimensions.size()}, std::move(values),
+            RuntimeNumericClass::Double);
+        return output
+                   ? outputsSuccess({std::move(*output)})
+                   : outputsFailure("size could not construct its result");
+    }
+
+    std::vector<RuntimeValue> outputs;
+    outputs.reserve(requestedOutputCount);
+    for (size_t index = 0; index < requestedOutputCount; ++index) {
+        size_t dimension = 1;
+        if (index + 1 == requestedOutputCount &&
+            requestedOutputCount < dimensions.size()) {
+            const std::vector<size_t> folded(
+                dimensions.begin() + index, dimensions.end());
+            const auto product = checkedRuntimeDimensionProduct(folded);
+            if (!product) {
+                return outputsFailure("size dimensions are too large");
+            }
+            dimension = *product;
+        } else if (index < dimensions.size()) {
+            dimension = dimensions[index];
+        }
+        outputs.push_back(
+            makeRuntimeNumberValue(static_cast<double>(dimension)));
+    }
+    return outputsSuccess(std::move(outputs));
 }
 
 RuntimeArrayOperationResult runtimeReshapeValue(

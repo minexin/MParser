@@ -1,7 +1,9 @@
 # v1.x Support Matrix
 
-MParser v1.x is a stable MATLAB-like subset runtime, not a complete MATLAB
-replacement. This page is a release-oriented summary. The machine-readable
+MParser v1.x is a MATLAB-like subset runtime, not a complete MATLAB
+replacement. This page summarizes the released v1.0 baseline plus the active
+v1.2 development line. Development interfaces are not production compatibility
+promises until their milestone candidate is frozen. The machine-readable
 [compatibility-matrix.json](compatibility-matrix.json) is authoritative and
 links every supported or partial claim to source and executable evidence.
 
@@ -36,15 +38,37 @@ The combined executable sample is
 `samples/v1_1_core_compatibility_demo.m`. Exact tier and limitation claims are
 recorded under `SYN-001`, `SYN-002`, `ARR-001`, and `ARR-002`.
 
+## v1.2 Development Additions
+
+The current v1.2 train is building one end-to-end numeric foundation:
+
+- dense `double`, `single`, logical, and all eight fixed-width integer classes;
+- exact `int64`/`uint64` storage and transport without conversion through
+  `double`;
+- dense complex `double` and `single` literals, operators, transpose,
+  reductions, scans, predicates, and elementary math;
+- typed constructors and class-aware `colon`, `size`, `linspace`, `sum`, and
+  `prod` behavior;
+- guarded portable/native fallback for types not represented by Typed IR;
+- C ABI generation 2, C++ source API 1.2, and machine protocol 1.1
+  transport.
+
+The runnable coverage is split between `samples/numeric_types_demo.m` and
+`samples/complex_numeric_demo.m`. The product and installed SDK still share
+one release version; ABI generation and protocol numbers are independent
+contract metadata, not SDK product versions. This is an internal milestone, so its active
+catalog and public snapshots freeze only after the remaining v1.2 work is
+complete.
+
 ## Language And Runtime
 
-| Area | v1.0 summary | Matrix entries |
+| Area | Current v1.x summary | Matrix entries |
 | --- | --- | --- |
 | Lexing and expressions | Lossless tokens, MATLAB-like literals/operators, precedence, member access, and delayed call/index resolution | `LEX-001`, `SYN-001` |
 | Control flow | `for`, serial `parfor`, `while`, `if`, `switch`, `try/catch`, `break`, `continue`, `return` | `SYN-002` |
 | Functions | Local/cross-file calls, argument contracts, `nargin`/`nargout`, multiple outputs, and supported handles | `FUN-001`, `HANDLE-001` |
 | Source graph | Search paths, packages, private functions, and class folders | `SRC-001` |
-| Numeric/logical arrays | Dense scalar through N-D shape/index rules, logical/colon/`end` indexing, growth, and deletion within recorded limits | `ARR-001`, `ARR-002` |
+| Numeric/logical arrays | Dense core numeric classes and complex double/single through N-D shape/index rules, logical/colon/`end` indexing, growth, and deletion within recorded limits | `ARR-001`, `ARR-002` |
 | Text | Distinct UTF-16 character and string arrays with shared conversion/formatting rules | `TEXT-001` |
 | Cell and Struct | N-D Cells, ordered structures, structure arrays, dynamic fields, and comma-separated field results | `CELL-001`, `STRUCT-001`, `STRUCT-002` |
 | Assignment | Transactional nested member/parenthesis/brace copy-back | `LVAL-001` |
@@ -74,12 +98,12 @@ script fail; it returns to a less specialized tier.
 
 ## Embedding And Extension
 
-| Boundary | v1.0 contract |
+| Boundary | Current development contract |
 | --- | --- |
 | CLI | Production `--run`, strict options, stable exit classes, JSON protocol selector |
-| Machine protocol | `mparser.result` 1.0, one JSON document plus LF |
-| C ABI | ABI major 1 revision 1, opaque retained handles, caller-sized roots |
-| C++ API | Header-only C++20 source API 1.0 over the C ABI |
+| Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, one document plus LF |
+| C ABI | ABI generation 2 revision 0, typed real/imaginary buffers, opaque retained handles, caller-sized roots |
+| C++ API | Header-only C++20 source API 1.2 over C ABI generation 2 |
 | Builtin extension | Source contract 1.0 using registry/descriptors/call/results |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
@@ -121,12 +145,12 @@ variable is invalid.
 See [Runtime Boundaries](runtime-boundaries.md) for the complete operational
 contract.
 
-## Explicitly Unsupported In v1.0
+## Explicitly Unsupported In Current v1.x
 
 - complete MATLAB language or behavioral compatibility;
 - complete MATLAB builtin and toolbox catalogs;
 - Live Scripts, P-code, MEX, Simulink, graphics, and MATLAB desktop features;
-- complex and sparse numeric arrays;
+- sparse and complex-integer numeric arrays;
 - GPU arrays, tables, timetables, and unlisted domain value types;
 - true parallel `parfor`;
 - arbitrary MATLAB metaclass, Java, or .NET behavior;
@@ -134,9 +158,9 @@ contract.
 - zero-copy borrowed host input arrays;
 - persistent native-code disk cache.
 
-Long-tail functions/toolboxes and complete MATLAB compatibility are
-Post-v1.0. They do not block v1.0 and must not force silent reinterpretation
-of the frozen CLI/API/extension contracts.
+Long-tail functions/toolboxes and complete MATLAB compatibility remain staged
+v1.x or later work. They do not force the current milestone to carry adapters
+for superseded development interfaces.
 
 ## Evidence And Change Policy
 
@@ -145,6 +169,7 @@ test and one source artifact. `compatibility_matrix_smoke` rejects missing
 sources, missing test registrations, duplicate IDs, invalid states, and
 version drift.
 
-Starting with 1.0.0, additive language features or optimized regions may land
-in v1.x, but stable v1 contracts cannot be removed or reinterpreted before
-v2. See [Versioning And Deprecation](versioning-and-deprecation.md).
+The v1.0 snapshots remain immutable historical evidence. During the current
+non-production milestone, implementation, in-repository consumers, tests, and
+documentation move together; a fresh contract snapshot is frozen at the v1.2
+candidate gate. See [v1.x Roadmap](roadmap-v1.x.md).

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mparser/runtime_value.h"
+
 #include <string>
 #include <vector>
 
@@ -13,6 +15,12 @@ struct RuntimeColonRange {
     std::string error;
 };
 
+struct RuntimeColonValueResult {
+    bool succeeded = false;
+    RuntimeValue value;
+    std::string error;
+};
+
 RuntimeColonRange runtimePlanColonRange(
     const std::vector<double>& terms);
 RuntimeColonRange runtimePlanColonRange(double start, double step,
@@ -21,5 +29,8 @@ bool runtimeColonRangeContains(const RuntimeColonRange& range,
                                double value);
 std::vector<double> runtimeMaterializeColonRange(
     const RuntimeColonRange& range);
+
+RuntimeColonValueResult runtimeMaterializeColonValue(
+    const std::vector<RuntimeValue>& operands);
 
 } // namespace mparser

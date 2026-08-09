@@ -1,7 +1,8 @@
 # MParser Documentation
 
-MParser v1.1 is a stable, documented, embeddable, and sustainably extensible
-MATLAB-like subset runtime. It does not claim complete MATLAB compatibility.
+MParser is a documented, embeddable, and sustainably extensible MATLAB-like
+subset runtime. The published baseline is v1.0; the active source tree is the
+v1.2 development train and does not claim complete MATLAB compatibility.
 
 Start with the task that matches your role.
 
@@ -28,13 +29,13 @@ mparser --run --result-format=json-v1 script.m
 
 ## Embed MParser
 
-- [C Embedding API](embedding-c-api.md): stable C ABI 1.1, opaque handles,
+- [C Embedding API](embedding-c-api.md): current C ABI generation 2, opaque handles,
   values, sessions, diagnostics, cancellation, and limits.
 - [C ABI Compatibility](c-abi-compatibility.md): structure evolution,
-  symbols, layouts, ownership, and old-header support.
-- [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.0.
+  symbols, layouts, ownership, and candidate-freeze rules.
+- [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.2.
 - [Machine Result Protocol](machine-result-protocol.md): one-shot JSON
-  protocol 1.0.
+  protocol 1.1.
 
 Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 `MParser::cli`.
@@ -76,14 +77,15 @@ These files are release contracts, not generated prose:
 | Artifact | Authority |
 | --- | --- |
 | [compatibility-matrix.json](compatibility-matrix.json) | Feature status, tier coverage, limits, executable evidence, and gaps |
-| [public-contract-v1.json](public-contract-v1.json) | Combined public contract hashes and versions |
+| [public-contract-v1.json](public-contract-v1.json) | Archived v1.0 public contract hashes and versions |
 | [cli-contract-v1.json](cli-contract-v1.json) | CLI 1.0 modes, options, channels, and compatibility |
 | [machine-result-v1.schema.json](machine-result-v1.schema.json) | Tolerant `mparser.result` major-1 consumer schema |
 | [performance-baseline-v1.schema.json](performance-baseline-v1.schema.json) | Engineering baseline protocol schema |
-| `default_catalog.json` | Installed normalized builtin catalog snapshot |
+| `default_catalog.json` | Archived v1.0 normalized builtin catalog snapshot |
 
-When prose and a machine-readable contract appear to disagree, treat it as a
-documentation defect and use the versioned machine contract until corrected.
+For the active development line, the implementation, compatibility matrix,
+current protocol snapshot, and milestone documentation move together. The v1
+public contract and catalog remain authorities only for their archived release.
 
 ## Release Evidence
 

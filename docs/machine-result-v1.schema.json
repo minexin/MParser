@@ -88,6 +88,23 @@
       "minItems": 2,
       "items": {"$ref": "#/definitions/uint64"}
     },
+    "floatingNumericData": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"type": "number"},
+          {"enum": ["NaN", "Infinity", "-Infinity"]}
+        ]
+      }
+    },
+    "integerNumericData": {
+      "type": "array",
+      "items": {"type": "integer"}
+    },
+    "logicalNumericData": {
+      "type": "array",
+      "items": {"type": "boolean"}
+    },
     "runtimeValue": {
       "oneOf": [
         {
@@ -101,32 +118,56 @@
           "required": ["kind", "class", "dimensions", "data"],
           "properties": {
             "kind": {"const": "numeric"},
-            "class": {"enum": ["double", "logical"]},
+            "class": {
+              "enum": [
+                "double", "single", "int8", "uint8", "int16",
+                "uint16", "int32", "uint32", "int64", "uint64",
+                "logical"
+              ]
+            },
             "dimensions": {"$ref": "#/definitions/dimensions"},
-            "data": {"type": "array"}
+            "data": {"type": "array"},
+            "complex": {"const": true},
+            "imaginary_data": {"type": "array"}
+          },
+          "dependencies": {
+            "complex": ["imaginary_data"],
+            "imaginary_data": ["complex"]
           },
           "oneOf": [
             {
               "properties": {
-                "class": {"const": "double"},
-                "data": {
-                  "type": "array",
-                  "items": {
-                    "oneOf": [
-                      {"type": "number"},
-                      {"enum": ["NaN", "Infinity", "-Infinity"]}
-                    ]
-                  }
+                "class": {"enum": ["double", "single"]},
+                "data": {"$ref": "#/definitions/floatingNumericData"},
+                "imaginary_data": {
+                  "$ref": "#/definitions/floatingNumericData"
+                }
+              }
+            },
+            {
+              "properties": {
+                "class": {
+                  "enum": [
+                    "int8", "uint8", "int16", "uint16", "int32",
+                    "uint32", "int64", "uint64"
+                  ]
+                },
+                "data": {"$ref": "#/definitions/integerNumericData"},
+                "imaginary_data": {
+                  "$ref": "#/definitions/integerNumericData"
                 }
               }
             },
             {
               "properties": {
                 "class": {"const": "logical"},
-                "data": {
-                  "type": "array",
-                  "items": {"type": "boolean"}
-                }
+                "data": {"$ref": "#/definitions/logicalNumericData"}
+              },
+              "not": {
+                "anyOf": [
+                  {"required": ["complex"]},
+                  {"required": ["imaginary_data"]}
+                ]
               }
             }
           ],

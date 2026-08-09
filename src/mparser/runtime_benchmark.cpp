@@ -1,5 +1,6 @@
 #include "mparser/runtime_benchmark.h"
 #include "mparser/optimization_plan.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_object.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
@@ -40,18 +41,22 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
         return false;
     }
 
+    if (isRuntimeNumericValue(left)) {
+        return runtimeNumericValuesIdentical(left, right);
+    }
+
     switch (left.kind) {
     case RuntimeValueKind::Missing:
         return true;
     case RuntimeValueKind::Number:
-        return left.number == right.number;
+        return false;
     case RuntimeValueKind::CharacterArray:
         return left.characterElements == right.characterElements;
     case RuntimeValueKind::StringArray:
         return left.stringElements == right.stringElements;
     case RuntimeValueKind::Vector:
     case RuntimeValueKind::Matrix:
-        return left.elements == right.elements;
+        return false;
     case RuntimeValueKind::Cell:
     case RuntimeValueKind::CommaSeparatedList:
         if (left.cells.size() != right.cells.size()) {

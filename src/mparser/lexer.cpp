@@ -304,6 +304,10 @@ Token Lexer::scanToken(std::vector<Trivia> leadingTrivia) {
         if (match('^')) {
             return makeToken(TokenKind::DotCaret, begin, ".^", std::move(leadingTrivia));
         }
+        if (match('\'')) {
+            return makeToken(TokenKind::DotApostrophe, begin, ".'",
+                             std::move(leadingTrivia));
+        }
         return makeToken(TokenKind::Dot, begin, ".", std::move(leadingTrivia));
     default:
         return makeToken(TokenKind::Unknown, begin,

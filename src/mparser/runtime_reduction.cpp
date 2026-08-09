@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <limits>
 #include <optional>
 #include <string>
@@ -43,10 +44,14 @@ struct ReductionOptions {
 };
 
 struct ReductionBucket {
-    double value = 0.0;
+    double real = 0.0;
+    double imaginary = 0.0;
+    RuntimeNumericElementValue selected;
+    RuntimeNumericElementValue exactAccumulator;
     size_t validCount = 0;
     size_t index = 1;
     bool initialized = false;
+    bool complexSeen = false;
 };
 
 RuntimeReductionResult failure(std::string error) {
@@ -97,7 +102,11 @@ std::optional<double> scalarNumeric(const RuntimeValue& value) {
         runtimeShapeElementCount(value) != 1) {
         return std::nullopt;
     }
-    return runtimeNumericElement(value, 0);
+    const auto element = runtimeNumericElementValue(value, 0);
+    if (!element || element->complex) {
+        return std::nullopt;
+    }
+    return element->real;
 }
 
 bool parsePositiveDimensions(const RuntimeValue& value,
@@ -113,7 +122,10 @@ bool parsePositiveDimensions(const RuntimeValue& value,
     dimensions.clear();
     dimensions.reserve(count);
     for (size_t index = 0; index < count; ++index) {
-        const auto raw = runtimeNumericElement(value, index);
+        const auto element = runtimeNumericElementValue(value, index);
+        const auto raw = element && !element->complex
+                             ? std::optional<double>(element->real)
+                             : std::nullopt;
         const auto parsed =
             raw ? checkedRuntimeNonnegativeInteger(*raw) : std::nullopt;
         if (!parsed || *parsed == 0) {
@@ -245,73 +257,116 @@ double initialValue(ReductionKind kind) {
     return 0.0;
 }
 
-bool reductionTruth(double value) {
-    return value != 0.0;
+bool numericMissing(const RuntimeNumericElementValue& value) {
+    return std::isnan(value.real) ||
+           (value.complex && std::isnan(value.imaginary));
 }
 
-void updateBucket(ReductionBucket& bucket, ReductionKind kind,
-                  double value, size_t index, MissingPolicy policy) {
-    const bool missing = std::isnan(value);
+bool numericTruth(const RuntimeNumericElementValue& value) {
+    return value.real != 0.0 ||
+           (value.complex && value.imaginary != 0.0);
+}
+
+bool updateBucket(ReductionBucket& bucket, ReductionKind kind,
+                  const RuntimeNumericElementValue& value, size_t index,
+                  MissingPolicy policy,
+                  RuntimeNumericClass outputClass) {
+    const bool missing = numericMissing(value);
     if (missing && policy == MissingPolicy::Omit &&
         kind != ReductionKind::Any && kind != ReductionKind::All) {
-        return;
+        return true;
     }
+
+    bucket.complexSeen = bucket.complexSeen || value.complex;
 
     switch (kind) {
     case ReductionKind::Sum:
     case ReductionKind::Mean:
-        bucket.value += value;
+        if (kind == ReductionKind::Sum &&
+            runtimeNumericClassIsInteger(outputClass)) {
+            const auto accumulated = runtimeApplyNumericElementBinary(
+                "+", bucket.exactAccumulator, value, outputClass);
+            if (!accumulated) {
+                return false;
+            }
+            bucket.exactAccumulator = *accumulated;
+            ++bucket.validCount;
+            return true;
+        }
+        bucket.real += value.real;
+        bucket.imaginary += value.imaginary;
         ++bucket.validCount;
-        return;
-    case ReductionKind::Product:
-        bucket.value *= value;
+        return true;
+    case ReductionKind::Product: {
+        if (runtimeNumericClassIsInteger(outputClass)) {
+            const auto accumulated = runtimeApplyNumericElementBinary(
+                "*", bucket.exactAccumulator, value, outputClass);
+            if (!accumulated) {
+                return false;
+            }
+            bucket.exactAccumulator = *accumulated;
+            ++bucket.validCount;
+            return true;
+        }
+        const std::complex<double> product =
+            std::complex<double>(bucket.real, bucket.imaginary) *
+            std::complex<double>(value.real, value.imaginary);
+        bucket.real = product.real();
+        bucket.imaginary = product.imag();
         ++bucket.validCount;
-        return;
+        return true;
+    }
     case ReductionKind::Any:
-        bucket.value = bucket.value != 0.0 || reductionTruth(value)
-                           ? 1.0
-                           : 0.0;
+        bucket.real = bucket.real != 0.0 || numericTruth(value) ? 1.0
+                                                                : 0.0;
         ++bucket.validCount;
-        return;
+        return true;
     case ReductionKind::All:
-        bucket.value = bucket.value != 0.0 && reductionTruth(value)
-                           ? 1.0
-                           : 0.0;
+        bucket.real = bucket.real != 0.0 && numericTruth(value) ? 1.0
+                                                                : 0.0;
         ++bucket.validCount;
-        return;
+        return true;
     case ReductionKind::Minimum:
     case ReductionKind::Maximum:
         break;
     }
 
     if (!bucket.initialized) {
-        bucket.value = value;
+        bucket.selected = value;
         bucket.index = index;
         bucket.initialized = true;
         ++bucket.validCount;
-        return;
+        return true;
     }
-    if (std::isnan(bucket.value)) {
-        return;
+    if (numericMissing(bucket.selected)) {
+        return true;
     }
     if (missing) {
-        bucket.value = value;
+        bucket.selected = value;
         bucket.index = index;
-        return;
+        return true;
     }
+    const int comparison = runtimeCompareNumericElementsForExtrema(
+        value, bucket.selected);
     const bool better = kind == ReductionKind::Minimum
-                            ? value < bucket.value
-                            : value > bucket.value;
+                            ? comparison < 0
+                            : comparison > 0;
     if (better) {
-        bucket.value = value;
+        bucket.selected = value;
         bucket.index = index;
     }
     ++bucket.validCount;
+    return true;
 }
 
 RuntimeReductionResult reduceNumeric(
     ReductionKind kind, const RuntimeValue& input,
     ReductionOptions options, size_t requestedOutputCount) {
+    if (input.numericComplex &&
+        runtimeNumericClassIsInteger(input.numericClass)) {
+        return failure(
+            "reductions do not support complex integer values");
+    }
     auto inputDimensions = runtimeDimensions(input);
     auto dimensions = selectedDimensions(inputDimensions,
                                          options.selection);
@@ -357,7 +412,15 @@ RuntimeReductionResult reduceNumeric(
 
     std::vector<ReductionBucket> buckets(*outputCount);
     for (auto& bucket : buckets) {
-        bucket.value = initialValue(kind);
+        bucket.real = initialValue(kind);
+        if (runtimeNumericClassIsInteger(options.outputClass) &&
+            (kind == ReductionKind::Sum ||
+             kind == ReductionKind::Product)) {
+            bucket.exactAccumulator.numericClass = options.outputClass;
+            bucket.exactAccumulator.integerRealBits =
+                kind == ReductionKind::Product ? 1 : 0;
+            bucket.exactAccumulator.real = initialValue(kind);
+        }
     }
 
     const size_t inputCount = runtimeShapeElementCount(input);
@@ -365,7 +428,8 @@ RuntimeReductionResult reduceNumeric(
          ++logicalIndex) {
         const auto coordinates = runtimeColumnMajorCoordinates(
             logicalIndex, inputDimensions);
-        const auto value = runtimeNumericElement(input, logicalIndex);
+        const auto value =
+            runtimeNumericElementValue(input, logicalIndex);
         if (!coordinates || !value) {
             return failure("reduction could not map the input array");
         }
@@ -385,26 +449,12 @@ RuntimeReductionResult reduceNumeric(
             dimensions.size() == 1) {
             reportedIndex = (*coordinates)[dimensions.front()] + 1;
         }
-        updateBucket(buckets[*outputIndex], kind, *value, reportedIndex,
-                     options.missingPolicy);
-    }
-
-    std::vector<double> values;
-    std::vector<double> indices;
-    values.reserve(buckets.size());
-    indices.reserve(buckets.size());
-    for (auto& bucket : buckets) {
-        if (kind == ReductionKind::Mean) {
-            bucket.value = bucket.validCount == 0
-                               ? std::numeric_limits<double>::quiet_NaN()
-                               : bucket.value /
-                                     static_cast<double>(bucket.validCount);
-        } else if (isExtrema(kind) && !bucket.initialized) {
-            bucket.value = std::numeric_limits<double>::quiet_NaN();
-            bucket.index = 1;
+        if (!updateBucket(buckets[*outputIndex], kind, *value,
+                          reportedIndex, options.missingPolicy,
+                          options.outputClass)) {
+            return failure(
+                "native integer reduction could not accumulate its result");
         }
-        values.push_back(bucket.value);
-        indices.push_back(static_cast<double>(bucket.index));
     }
 
     RuntimeNumericClass outputClass = options.outputClass;
@@ -413,7 +463,46 @@ RuntimeReductionResult reduceNumeric(
     } else if (isExtrema(kind)) {
         outputClass = input.numericClass;
     }
-    const auto valueResult = runtimeNumericValueFromLogicalOrder(
+
+    std::vector<RuntimeNumericElementValue> values;
+    std::vector<double> indices;
+    values.reserve(buckets.size());
+    indices.reserve(buckets.size());
+    for (auto& bucket : buckets) {
+        RuntimeNumericElementValue value;
+        if (kind == ReductionKind::Mean) {
+            if (bucket.validCount == 0) {
+                value.real =
+                    std::numeric_limits<double>::quiet_NaN();
+            } else {
+                value.real = bucket.real /
+                             static_cast<double>(bucket.validCount);
+                value.imaginary = bucket.imaginary /
+                                  static_cast<double>(bucket.validCount);
+            }
+        } else if (isExtrema(kind) && !bucket.initialized) {
+            value.real = std::numeric_limits<double>::quiet_NaN();
+            bucket.index = 1;
+        } else if (isExtrema(kind)) {
+            value = bucket.selected;
+        } else if (runtimeNumericClassIsInteger(outputClass) &&
+                   (kind == ReductionKind::Sum ||
+                    kind == ReductionKind::Product)) {
+            value = bucket.exactAccumulator;
+        } else {
+            value.real = bucket.real;
+            value.imaginary = bucket.imaginary;
+        }
+        if (!isExtrema(kind)) {
+            value.complex = bucket.complexSeen &&
+                            (value.imaginary != 0.0 ||
+                             std::isnan(value.imaginary));
+        }
+        values.push_back(value);
+        indices.push_back(static_cast<double>(bucket.index));
+    }
+
+    const auto valueResult = runtimeNumericValueFromElements(
         outputDimensions, std::move(values), outputClass);
     if (!valueResult) {
         return failure("reduction result could not be represented");
@@ -433,18 +522,16 @@ RuntimeReductionResult reduceNumeric(
     return success(std::move(outputs));
 }
 
-std::optional<double> expandedNumericElement(
+std::optional<RuntimeNumericElementValue> expandedNumericElement(
     const RuntimeValue& value,
     const std::vector<size_t>& outputCoordinates) {
     if (value.kind == RuntimeValueKind::Number) {
-        return value.number;
+        return runtimeNumericStorageElementValue(value, 0);
     }
     const auto offset = runtimeImplicitExpansionStorageOffset(
         outputCoordinates, runtimeDimensions(value));
-    if (!offset || *offset >= value.elements.size()) {
-        return std::nullopt;
-    }
-    return value.elements[*offset];
+    return offset ? runtimeNumericStorageElementValue(value, *offset)
+                  : std::nullopt;
 }
 
 RuntimeReductionResult elementwiseExtrema(
@@ -457,6 +544,13 @@ RuntimeReductionResult elementwiseExtrema(
     if (!isRuntimeNumericValue(left) || !isRuntimeNumericValue(right)) {
         return failure("elementwise min/max requires numeric inputs");
     }
+    if ((left.numericComplex &&
+         runtimeNumericClassIsInteger(left.numericClass)) ||
+        (right.numericComplex &&
+         runtimeNumericClassIsInteger(right.numericClass))) {
+        return failure(
+            "elementwise min/max does not support complex integer values");
+    }
     const auto dimensions = runtimeImplicitExpansionDimensions(
         runtimeDimensions(left), runtimeDimensions(right));
     if (!dimensions) {
@@ -468,7 +562,7 @@ RuntimeReductionResult elementwiseExtrema(
         return failure("elementwise min/max dimensions are too large");
     }
 
-    std::vector<double> values;
+    std::vector<RuntimeNumericElementValue> values;
     values.reserve(*count);
     for (size_t logicalIndex = 0; logicalIndex < *count;
          ++logicalIndex) {
@@ -483,16 +577,22 @@ RuntimeReductionResult elementwiseExtrema(
         if (!leftValue || !rightValue) {
             return failure("elementwise min/max could not map its inputs");
         }
-        values.push_back(kind == ReductionKind::Minimum
-                             ? std::fmin(*leftValue, *rightValue)
-                             : std::fmax(*leftValue, *rightValue));
+        const int comparison =
+            runtimeCompareNumericElementsForExtrema(
+                *leftValue, *rightValue);
+        const bool chooseLeft = kind == ReductionKind::Minimum
+                                    ? comparison <= 0
+                                    : comparison >= 0;
+        values.push_back(chooseLeft ? *leftValue : *rightValue);
     }
-    const RuntimeNumericClass outputClass =
-        left.numericClass == RuntimeNumericClass::Logical &&
-                right.numericClass == RuntimeNumericClass::Logical
-            ? RuntimeNumericClass::Logical
-            : RuntimeNumericClass::Double;
-    const auto result = runtimeNumericValueFromLogicalOrder(
+    RuntimeNumericClass outputClass = RuntimeNumericClass::Double;
+    if (left.numericClass == right.numericClass) {
+        outputClass = left.numericClass;
+    } else if (left.numericClass == RuntimeNumericClass::Single ||
+               right.numericClass == RuntimeNumericClass::Single) {
+        outputClass = RuntimeNumericClass::Single;
+    }
+    const auto result = runtimeNumericValueFromElements(
         *dimensions, std::move(values), outputClass);
     if (!result) {
         return failure("elementwise min/max result could not be represented");
@@ -627,11 +727,11 @@ RuntimeReductionResult findBuiltin(
     for (size_t logicalIndex = 0; logicalIndex < inputCount;
          ++logicalIndex) {
         const auto value =
-            runtimeNumericElement(arguments.front(), logicalIndex);
+            runtimeNumericElementValue(arguments.front(), logicalIndex);
         if (!value) {
             return failure("find could not map the input array");
         }
-        if (*value != 0.0) {
+        if (numericTruth(*value)) {
             matches.push_back(logicalIndex);
         }
     }
@@ -648,7 +748,7 @@ RuntimeReductionResult findBuiltin(
     std::vector<double> linearIndices;
     std::vector<double> rowIndices;
     std::vector<double> columnIndices;
-    std::vector<double> foundValues;
+    std::vector<RuntimeNumericElementValue> foundValues;
     linearIndices.reserve(matches.size());
     rowIndices.reserve(matches.size());
     columnIndices.reserve(matches.size());
@@ -656,7 +756,7 @@ RuntimeReductionResult findBuiltin(
     const size_t rowCount = inputDimensions[0];
     for (const size_t logicalIndex : matches) {
         const auto value =
-            runtimeNumericElement(arguments.front(), logicalIndex);
+            runtimeNumericElementValue(arguments.front(), logicalIndex);
         if (!value || rowCount == 0) {
             return failure("find could not map a selected element");
         }
@@ -694,7 +794,7 @@ RuntimeReductionResult findBuiltin(
         outputs.push_back(*rows);
         outputs.push_back(*columns);
         if (effectiveRequested == 3) {
-            const auto values = runtimeNumericValueFromLogicalOrder(
+        const auto values = runtimeNumericValueFromElements(
                 dimensions, std::move(foundValues),
                 arguments.front().numericClass);
             if (!values) {
@@ -740,7 +840,10 @@ RuntimeReductionResult runtimeReductionBuiltin(
 
     ReductionOptions options;
     options.missingPolicy = MissingPolicy::Include;
-    options.outputClass = RuntimeNumericClass::Double;
+    options.outputClass = arguments.front().numericClass ==
+                                  RuntimeNumericClass::Single
+                              ? RuntimeNumericClass::Single
+                              : RuntimeNumericClass::Double;
     std::string error;
     if (!parseOrdinaryReductionOptions(*kind, arguments.front(), arguments,
                                        options, error)) {

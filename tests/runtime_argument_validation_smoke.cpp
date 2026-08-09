@@ -1,10 +1,13 @@
 #include "mparser/runtime_argument_validation.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -24,6 +27,31 @@ mparser::RuntimeValue row(std::vector<double> values) {
     result.elements = std::move(values);
     mparser::setRuntimeDimensions(result, {1, result.elements.size()});
     return result;
+}
+
+mparser::RuntimeValue numericScalar(
+    mparser::RuntimeNumericElementValue element) {
+    auto value = mparser::runtimeNumericValueFromElements(
+        {1, 1}, {element}, element.numericClass);
+    assert(value.has_value());
+    return std::move(*value);
+}
+
+mparser::RuntimeValue complexNumber(double real, double imaginary) {
+    mparser::RuntimeNumericElementValue element;
+    element.real = real;
+    element.imaginary = imaginary;
+    element.complex = true;
+    return numericScalar(element);
+}
+
+mparser::RuntimeValue integerNumber(
+    mparser::RuntimeNumericClass numericClass, std::uint64_t bits) {
+    mparser::RuntimeNumericElementValue element;
+    element.numericClass = numericClass;
+    element.integerRealBits = bits;
+    element.real = static_cast<double>(bits);
+    return numericScalar(element);
 }
 
 mparser::PropertySpec spec(
@@ -91,6 +119,93 @@ void numericValidatorSmoke() {
                 .succeeded);
 }
 
+void complexAndNumericClassValidatorSmoke() {
+    assert(mparser::validateRuntimeArgument(
+               complexNumber(1, 2),
+               spec("", {"mustBeFinite", "mustBeNonNan",
+                           "mustBeNonzero", "mustBeFloat",
+                           "mustBeNumeric"}))
+               .succeeded);
+    assert(!mparser::validateRuntimeArgument(
+                complexNumber(1, std::numeric_limits<double>::infinity()),
+                spec("", {"mustBeFinite"}))
+                .succeeded);
+    assert(!mparser::validateRuntimeArgument(
+                complexNumber(1, std::nan("")),
+                spec("", {"mustBeNonNan"}))
+                .succeeded);
+    assert(mparser::validateRuntimeArgument(
+               complexNumber(0, 1), spec("", {"mustBeNonzero"}))
+               .succeeded);
+    assert(!mparser::validateRuntimeArgument(
+                complexNumber(0, 0), spec("", {"mustBeNonzero"}))
+                .succeeded);
+    for (const auto& validator : {
+             "mustBeReal", "mustBePositive", "mustBeInteger",
+             "mustBeGreaterThan"}) {
+        auto complexSpec = spec("", {validator});
+        if (std::string_view(validator) == "mustBeGreaterThan") {
+            complexSpec.validators.front().arguments = {"0"};
+        }
+        assert(!mparser::validateRuntimeArgument(
+                    complexNumber(1, 0), complexSpec)
+                    .succeeded);
+    }
+
+    const auto int8Value = integerNumber(
+        mparser::RuntimeNumericClass::Int8, 1);
+    assert(!mparser::validateRuntimeArgument(
+                int8Value, spec("", {"mustBeFloat"}))
+                .succeeded);
+    assert(mparser::validateRuntimeArgument(
+               int8Value, spec("", {"mustBeInteger",
+                                      "mustBeNumeric"}))
+               .succeeded);
+
+    auto logical = number(1);
+    logical.numericClass = mparser::RuntimeNumericClass::Logical;
+    assert(!mparser::validateRuntimeArgument(
+                logical, spec("", {"mustBeNumeric"}))
+                .succeeded);
+    assert(mparser::validateRuntimeArgument(
+               logical, spec("", {"mustBeNumericOrLogical"}))
+               .succeeded);
+}
+
+void numericShapePreservationSmoke() {
+    auto complexSpec = spec("single");
+    complexSpec.dimensions = {
+        mparser::PropertyDimensionSpec{"1", {}},
+        mparser::PropertyDimensionSpec{"2", {}}};
+    const auto complex = mparser::validateRuntimeArgument(
+        complexNumber(3, 4), complexSpec);
+    assert(complex.succeeded);
+    assert(complex.value.numericClass ==
+           mparser::RuntimeNumericClass::Single);
+    assert(complex.value.numericComplex);
+    assert(mparser::runtimeDimensions(complex.value) ==
+           std::vector<size_t>({1, 2}));
+    for (size_t index = 0; index < 2; ++index) {
+        const auto element = mparser::runtimeNumericElementValue(
+            complex.value, index);
+        assert(element && element->real == 3.0 &&
+               element->imaginary == 4.0);
+    }
+
+    constexpr std::uint64_t exact = 9007199254740993ULL;
+    auto integerSpec = spec("uint64");
+    integerSpec.dimensions = complexSpec.dimensions;
+    const auto integer = mparser::validateRuntimeArgument(
+        integerNumber(mparser::RuntimeNumericClass::UInt64, exact),
+        integerSpec);
+    assert(integer.succeeded);
+    for (size_t index = 0; index < 2; ++index) {
+        const auto element = mparser::runtimeNumericElementValue(
+            integer.value, index);
+        assert(element && element->integerRealBits == exact);
+    }
+}
+
 void shapeTextAndComparisonSmoke() {
     assert(mparser::validateRuntimeArgument(
                row({1, 2}), spec("double", {"mustBeVector", "mustBeRow"}))
@@ -155,6 +270,8 @@ void objectConstraintSmoke() {
 int main() {
     primitiveConversionAndShapeSmoke();
     numericValidatorSmoke();
+    complexAndNumericClassValidatorSmoke();
+    numericShapePreservationSmoke();
     shapeTextAndComparisonSmoke();
     objectConstraintSmoke();
     std::cout << "runtime argument validation smoke tests passed\n";

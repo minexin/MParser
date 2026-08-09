@@ -2,6 +2,7 @@
 #include "mparser/bytecode_vm.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
@@ -353,7 +354,8 @@ record = ValidationRecord();
 record.Coordinates = [1 2 3];
 )");
     assert(result.diagnostics.size() == 1);
-    assert(hasDiagnostic(result, "property requires 2"));
+    assert(hasDiagnostic(
+        result, "value element count does not match the argument size"));
 
     result = run(std::string(kValidatedClasses) + R"(
 record = ValidationRecord();
@@ -370,6 +372,58 @@ record.Label = 3;
     assert(hasDiagnostic(result, "class string"));
 }
 
+void numericClassAndComplexPropertySmoke() {
+    auto result = run(R"(classdef NumericProperties
+    properties
+        Samples(1,2) single
+        Counters(1,2) uint64
+        FiniteValue(1,1) {mustBeFinite} = 1 + 2i
+        NonzeroValue(1,1) {mustBeNonzero} = 1i
+        RealValue(1,1) {mustBeReal} = 2
+    end
+end
+
+value = NumericProperties();
+samples = value.Samples;
+counters = value.Counters;
+finite_value = value.FiniteValue;
+nonzero_value = value.NonzeroValue;
+)");
+    assert(result.diagnostics.empty());
+
+    const auto* samples = findVariable(result, "samples");
+    assert(samples != nullptr);
+    assert(samples->numericClass == mparser::RuntimeNumericClass::Single);
+    assert(mparser::runtimeDimensions(*samples) ==
+           std::vector<size_t>({1, 2}));
+
+    const auto* counters = findVariable(result, "counters");
+    assert(counters != nullptr);
+    assert(counters->numericClass == mparser::RuntimeNumericClass::UInt64);
+    for (size_t index = 0; index < 2; ++index) {
+        const auto element =
+            mparser::runtimeNumericElementValue(*counters, index);
+        assert(element && element->integerRealBits == 0);
+    }
+
+    for (const auto name : {"finite_value", "nonzero_value"}) {
+        const auto* complexValue = findVariable(result, name);
+        assert(complexValue != nullptr && complexValue->numericComplex);
+    }
+
+    result = run(R"(classdef NumericProperties
+    properties
+        RealValue(1,1) {mustBeReal} = 2
+    end
+end
+
+value = NumericProperties();
+value.RealValue = complex(1, 0);
+)");
+    assert(result.diagnostics.size() == 1);
+    assert(hasDiagnostic(result, "value must be real"));
+}
+
 } // namespace
 
 int main() {
@@ -381,6 +435,7 @@ int main() {
     executeTextPropertyDimensionsSmoke();
     rejectInvalidDefaultSmoke();
     rejectInvalidAssignmentsSmoke();
+    numericClassAndComplexPropertySmoke();
     std::cout << "property validation smoke tests passed\n";
     return 0;
 }

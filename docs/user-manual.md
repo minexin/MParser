@@ -1,9 +1,11 @@
 # MParser User Manual
 
-MParser is an embeddable MATLAB-like subset runtime. Its v1.0 contract covers
-a documented language subset, a production bytecode VM, guarded typed/JIT
-execution, a command-line interface, and C/C++ embedding APIs. It does not
-claim complete MATLAB or toolbox compatibility.
+MParser is an embeddable MATLAB-like subset runtime. The published v1.0
+baseline and active v1.2 development line cover a documented language subset,
+a production bytecode VM, guarded typed/JIT execution, a command-line
+interface, and C/C++ embedding APIs. It does not claim complete MATLAB or toolbox compatibility.
+Current v1.2 interfaces may still change together
+before the milestone candidate is frozen.
 
 The machine-readable [compatibility matrix](compatibility-matrix.json) is the
 authority for individual support claims. This manual describes the normal
@@ -109,10 +111,13 @@ available through the C or C++ embedding API.
 ## Arrays And Values
 
 MParser uses MATLAB column-major linear order at language, C, C++, and machine
-protocol boundaries. The v1.0 target subset includes:
+protocol boundaries. The current target subset includes:
 
-- dense double and logical scalars, vectors, matrices, and N-dimensional
+- dense `double`, `single`, logical, `int8`/`uint8`, `int16`/`uint16`,
+  `int32`/`uint32`, and exact `int64`/`uint64` scalars and N-dimensional
   arrays;
+- dense complex `double` and `single` values with separate real and imaginary
+  components;
 - colon and `end` indexing, logical indexing, indexed growth, and deletion
   within the matrix's documented limits;
 - UTF-16 character arrays and string arrays;
@@ -123,8 +128,8 @@ protocol boundaries. The v1.0 target subset includes:
 
 Indexing and nested assignment use transactional root-and-path semantics. A
 failed nested mutation does not commit a partially modified root value.
-Complex numbers, sparse arrays, tables, timetables, GPU arrays, and arbitrary
-MATLAB domain objects are outside the v1.0 contract.
+Sparse arrays, complex integer arrays, tables, timetables, GPU arrays, and
+arbitrary MATLAB domain objects are outside the current contract.
 
 ## Control Flow And Exceptions
 
@@ -192,8 +197,8 @@ Choose the narrowest boundary that fits the host:
 | Host need | Interface |
 | --- | --- |
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
-| Stable binary boundary from C or another FFI | C ABI 1.1 |
-| C++20 RAII and copied STL-facing values | Header-only C++ source API 1.0 |
+| Narrow binary boundary from C or another FFI | Current C ABI generation 2 |
+| C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
 | Builtin compiled into the engine | Builtin source contract 1.0 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
@@ -213,12 +218,12 @@ The following are not v1.0 release claims:
 - complete MATLAB compatibility;
 - Live Scripts, P-code, MEX, Simulink, graphics, or desktop UI integration;
 - MATLAB toolboxes and their long-tail function catalogs;
-- complex, sparse, GPU, table, timetable, or every domain-specific value;
+- sparse, complex-integer, GPU, table, timetable, or every domain-specific value;
 - parallel `parfor`;
 - an external binary plugin ABI or zero-copy borrowed array ABI;
 - a persistent on-disk native-code cache.
 
-Long-tail builtin and toolbox growth is v1.x work performed through the
-frozen extension rules. See [Support Matrix](support-matrix.md) for the
-release-level summary and [Migration To v1.0](migration-v1.0.md) before
-upgrading a pre-v1 integration.
+Long-tail builtin and toolbox growth is staged v1.x work performed through the
+shared extension rules. See [Support Matrix](support-matrix.md) for the
+current summary. The [Migration To v1.0](migration-v1.0.md) guide applies only
+to the archived v1.0 release boundary.

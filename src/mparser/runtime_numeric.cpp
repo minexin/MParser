@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <complex>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <string>
 #include <utility>
@@ -375,6 +377,37 @@ bool runtimeNumericClassHasLegacyDoubleStorage(
            numericClass != RuntimeNumericClass::UInt64;
 }
 
+std::optional<RuntimeValue> runtimeParseNumericLiteral(
+    std::string_view text) {
+    bool imaginary = false;
+    if (!text.empty() &&
+        (text.back() == 'i' || text.back() == 'j')) {
+        imaginary = true;
+        text.remove_suffix(1);
+    }
+    if (text.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string buffer(text);
+    char* end = nullptr;
+    const double parsed = std::strtod(buffer.c_str(), &end);
+    if (end == buffer.c_str() ||
+        end != buffer.c_str() + buffer.size()) {
+        return std::nullopt;
+    }
+
+    RuntimeNumericElementValue element;
+    if (imaginary) {
+        element.imaginary = parsed;
+        element.complex = true;
+    } else {
+        element.real = parsed;
+    }
+    return runtimeNumericValueFromElements(
+        {1, 1}, {element}, RuntimeNumericClass::Double);
+}
+
 std::optional<double> runtimeCoerceNumericElement(
     double value, RuntimeNumericClass numericClass) {
     RuntimeNumericElementValue source;
@@ -406,6 +439,38 @@ std::optional<RuntimeNumericElementValue> runtimeNumericElementValue(
     return storageOffset
                ? runtimeNumericStorageElementValue(value, *storageOffset)
                : std::nullopt;
+}
+
+std::optional<size_t> runtimeNumericElementAsNonnegativeSize(
+    const RuntimeNumericElementValue& value) {
+    if (value.complex) {
+        return std::nullopt;
+    }
+    if (runtimeNumericClassIsInteger(value.numericClass)) {
+        std::uint64_t magnitude = value.integerRealBits;
+        if (runtimeNumericClassIsSignedInteger(value.numericClass)) {
+            const std::int64_t signedValue =
+                signedIntegerFromBits(value.integerRealBits);
+            if (signedValue < 0) {
+                return std::nullopt;
+            }
+            magnitude = static_cast<std::uint64_t>(signedValue);
+        }
+        if (magnitude >
+            static_cast<std::uint64_t>(
+                std::numeric_limits<size_t>::max())) {
+            return std::nullopt;
+        }
+        return static_cast<size_t>(magnitude);
+    }
+    if (!std::isfinite(value.real) ||
+        std::floor(value.real) != value.real || value.real < 0.0 ||
+        static_cast<long double>(value.real) >
+            static_cast<long double>(
+                std::numeric_limits<size_t>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<size_t>(value.real);
 }
 
 std::optional<RuntimeNumericElementValue> runtimeNumericStorageElementValue(
@@ -733,6 +798,131 @@ bool runtimeNumericPredicate(std::string_view name,
         return value.numericClass == RuntimeNumericClass::Logical;
     }
     return false;
+}
+
+std::optional<bool> runtimeNumericTruthValue(
+    const RuntimeValue& value) {
+    if (!isRuntimeNumericValue(value) || value.numericComplex) {
+        return std::nullopt;
+    }
+    const auto count = checkedRuntimeDimensionProduct(
+        runtimeDimensions(value));
+    if (!count) {
+        return std::nullopt;
+    }
+    if (*count == 0) {
+        return false;
+    }
+    for (size_t index = 0; index < *count; ++index) {
+        const auto element = runtimeNumericElementValue(value, index);
+        if (!element) {
+            return std::nullopt;
+        }
+        if (runtimeNumericClassIsInteger(element->numericClass)) {
+            if (element->integerRealBits == 0) {
+                return false;
+            }
+        } else {
+            if (std::isnan(element->real)) {
+                return std::nullopt;
+            }
+            if (element->real == 0.0) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+int runtimeCompareNumericElementsForExtrema(
+    const RuntimeNumericElementValue& left,
+    const RuntimeNumericElementValue& right) {
+    if (!left.complex && !right.complex) {
+        if (runtimeNumericClassIsInteger(left.numericClass) &&
+            left.numericClass == right.numericClass) {
+            if (runtimeNumericClassIsSignedInteger(left.numericClass)) {
+                const std::int64_t leftValue =
+                    signedIntegerFromBits(left.integerRealBits);
+                const std::int64_t rightValue =
+                    signedIntegerFromBits(right.integerRealBits);
+                return leftValue < rightValue
+                           ? -1
+                           : (leftValue > rightValue ? 1 : 0);
+            }
+            return left.integerRealBits < right.integerRealBits
+                       ? -1
+                       : (left.integerRealBits > right.integerRealBits ? 1
+                                                                        : 0);
+        }
+        return left.real < right.real
+                   ? -1
+                   : (left.real > right.real ? 1 : 0);
+    }
+
+    const double leftMagnitude = std::hypot(left.real, left.imaginary);
+    const double rightMagnitude = std::hypot(right.real, right.imaginary);
+    if (leftMagnitude < rightMagnitude) {
+        return -1;
+    }
+    if (leftMagnitude > rightMagnitude) {
+        return 1;
+    }
+    const double leftPhase = std::atan2(left.imaginary, left.real);
+    const double rightPhase = std::atan2(right.imaginary, right.real);
+    return leftPhase < rightPhase
+               ? -1
+               : (leftPhase > rightPhase ? 1 : 0);
+}
+
+bool runtimeNumericValuesIdentical(
+    const RuntimeValue& left, const RuntimeValue& right) {
+    if (!isRuntimeNumericValue(left) ||
+        !isRuntimeNumericValue(right) ||
+        left.numericClass != right.numericClass ||
+        runtimeDimensions(left) != runtimeDimensions(right)) {
+        return false;
+    }
+    const auto count = checkedRuntimeDimensionProduct(
+        runtimeDimensions(left));
+    if (!count) {
+        return false;
+    }
+    for (size_t index = 0; index < *count; ++index) {
+        const auto leftElement = runtimeNumericElementValue(left, index);
+        const auto rightElement = runtimeNumericElementValue(right, index);
+        if (!leftElement || !rightElement) {
+            return false;
+        }
+        if (runtimeNumericClassIsInteger(left.numericClass)) {
+            if (leftElement->integerRealBits !=
+                rightElement->integerRealBits) {
+                return false;
+            }
+            const std::uint64_t leftImaginary =
+                leftElement->complex
+                    ? leftElement->integerImaginaryBits
+                    : 0;
+            const std::uint64_t rightImaginary =
+                rightElement->complex
+                    ? rightElement->integerImaginaryBits
+                    : 0;
+            if (leftImaginary != rightImaginary) {
+                return false;
+            }
+            continue;
+        }
+        if (leftElement->real != rightElement->real) {
+            return false;
+        }
+        const double leftImaginary =
+            leftElement->complex ? leftElement->imaginary : 0.0;
+        const double rightImaginary =
+            rightElement->complex ? rightElement->imaginary : 0.0;
+        if (leftImaginary != rightImaginary) {
+            return false;
+        }
+    }
+    return true;
 }
 
 namespace {
@@ -1193,6 +1383,30 @@ std::optional<int> compareNumericElements(
                                   : 0;
 }
 
+RuntimeNumericElementValue imaginaryComponent(
+    const RuntimeNumericElementValue& value) {
+    RuntimeNumericElementValue result = value;
+    result.real = value.complex ? value.imaginary : 0.0;
+    result.integerRealBits =
+        value.complex ? value.integerImaginaryBits : 0;
+    result.imaginary = 0.0;
+    result.integerImaginaryBits = 0;
+    result.complex = false;
+    return result;
+}
+
+bool numericElementsEqual(
+    const RuntimeNumericElementValue& left,
+    const RuntimeNumericElementValue& right) {
+    const auto realComparison = compareNumericElements(left, right);
+    if (!realComparison || *realComparison != 0) {
+        return false;
+    }
+    const auto imaginaryComparison = compareNumericElements(
+        imaginaryComponent(left), imaginaryComponent(right));
+    return imaginaryComparison && *imaginaryComparison == 0;
+}
+
 std::optional<double> applyScalarOperation(std::string_view operation,
                                            double left, double right) {
     if (operation == "+") {
@@ -1240,10 +1454,42 @@ std::optional<double> applyScalarOperation(std::string_view operation,
     return std::nullopt;
 }
 
-bool numericElementTruthy(const RuntimeNumericElementValue& value) {
-    return runtimeNumericClassIsInteger(value.numericClass)
-               ? value.integerRealBits != 0
-               : value.real != 0.0;
+std::optional<bool> numericElementTruthy(
+    const RuntimeNumericElementValue& value) {
+    if (value.complex) {
+        return std::nullopt;
+    }
+    if (runtimeNumericClassIsInteger(value.numericClass)) {
+        return value.integerRealBits != 0;
+    }
+    if (std::isnan(value.real)) {
+        return std::nullopt;
+    }
+    return value.real != 0.0;
+}
+
+std::optional<std::complex<double>> applyComplexScalarOperation(
+    std::string_view operation, std::complex<double> left,
+    std::complex<double> right) {
+    if (operation == "+") {
+        return left + right;
+    }
+    if (operation == "-") {
+        return left - right;
+    }
+    if (operation == "*" || operation == ".*") {
+        return left * right;
+    }
+    if (operation == "/" || operation == "./") {
+        return left / right;
+    }
+    if (operation == "\\" || operation == ".\\") {
+        return right / left;
+    }
+    if (operation == "^" || operation == ".^") {
+        return std::pow(left, right);
+    }
+    return std::nullopt;
 }
 
 std::optional<RuntimeNumericElementValue> applyScalarElementOperation(
@@ -1252,17 +1498,19 @@ std::optional<RuntimeNumericElementValue> applyScalarElementOperation(
     const RuntimeNumericElementValue& right,
     RuntimeNumericClass resultClass) {
     if (isRelationalOperation(operation)) {
-        const auto comparison = compareNumericElements(left, right);
         bool value = false;
         if (operation == "==") {
-            value = comparison && *comparison == 0;
+            value = numericElementsEqual(left, right);
         } else if (operation == "~=") {
-            value = !comparison || *comparison != 0;
-        } else if (comparison) {
-            value = operation == ">"   ? *comparison > 0
-                  : operation == "<"   ? *comparison < 0
-                  : operation == ">="  ? *comparison >= 0
-                                        : *comparison <= 0;
+            value = !numericElementsEqual(left, right);
+        } else {
+            const auto comparison = compareNumericElements(left, right);
+            if (comparison) {
+                value = operation == ">"   ? *comparison > 0
+                      : operation == "<"   ? *comparison < 0
+                      : operation == ">="  ? *comparison >= 0
+                                            : *comparison <= 0;
+            }
         }
         RuntimeNumericElementValue result;
         result.numericClass = RuntimeNumericClass::Logical;
@@ -1270,13 +1518,16 @@ std::optional<RuntimeNumericElementValue> applyScalarElementOperation(
         return result;
     }
     if (isLogicalOperation(operation)) {
-        const bool leftValue = numericElementTruthy(left);
-        const bool rightValue = numericElementTruthy(right);
+        const auto leftValue = numericElementTruthy(left);
+        const auto rightValue = numericElementTruthy(right);
+        if (!leftValue || !rightValue) {
+            return std::nullopt;
+        }
         RuntimeNumericElementValue result;
         result.numericClass = RuntimeNumericClass::Logical;
         result.real = operation == "&" || operation == "&&"
-                          ? (leftValue && rightValue ? 1.0 : 0.0)
-                          : (leftValue || rightValue ? 1.0 : 0.0);
+                          ? (*leftValue && *rightValue ? 1.0 : 0.0)
+                          : (*leftValue || *rightValue ? 1.0 : 0.0);
         return result;
     }
     if (runtimeNumericClassIsInteger(resultClass) &&
@@ -1284,6 +1535,40 @@ std::optional<RuntimeNumericElementValue> applyScalarElementOperation(
         runtimeNumericClassIsInteger(right.numericClass)) {
         return applyExactIntegerOperation(
             operation, left, right, resultClass);
+    }
+
+    if (left.complex || right.complex) {
+        if (runtimeNumericClassIsInteger(left.numericClass) ||
+            runtimeNumericClassIsInteger(right.numericClass)) {
+            return std::nullopt;
+        }
+        const auto raw = applyComplexScalarOperation(
+            operation,
+            {left.real, left.complex ? left.imaginary : 0.0},
+            {right.real, right.complex ? right.imaginary : 0.0});
+        if (!raw) {
+            return std::nullopt;
+        }
+        RuntimeNumericElementValue result;
+        result.real = raw->real();
+        result.imaginary = raw->imag();
+        result.complex = result.imaginary != 0.0;
+        return convertNumericElement(result, resultClass);
+    }
+
+    if ((operation == "^" || operation == ".^") &&
+        left.real < 0.0 && std::isfinite(right.real) &&
+        std::floor(right.real) != right.real) {
+        const auto raw = applyComplexScalarOperation(
+            operation, {left.real, 0.0}, {right.real, 0.0});
+        if (!raw) {
+            return std::nullopt;
+        }
+        RuntimeNumericElementValue result;
+        result.real = raw->real();
+        result.imaginary = raw->imag();
+        result.complex = result.imaginary != 0.0;
+        return convertNumericElement(result, resultClass);
     }
 
     const auto raw = applyScalarOperation(
@@ -1373,6 +1658,15 @@ RuntimeNumericOperationResult applyMatrixMultiply(
 
 } // namespace
 
+std::optional<RuntimeNumericElementValue> runtimeApplyNumericElementBinary(
+    std::string_view operation,
+    const RuntimeNumericElementValue& left,
+    const RuntimeNumericElementValue& right,
+    RuntimeNumericClass resultClass) {
+    return applyScalarElementOperation(
+        operation, left, right, resultClass);
+}
+
 RuntimeNumericOperationResult runtimeApplyNumericUnary(
     std::string_view operation, const RuntimeValue& value) {
     if (!isRuntimeNumericValue(value)) {
@@ -1382,6 +1676,16 @@ RuntimeNumericOperationResult runtimeApplyNumericUnary(
     if (operation != "+" && operation != "-" && operation != "~") {
         return numericOperationFailure(
             "unsupported unary operator: " + std::string(operation));
+    }
+    if (value.numericComplex && operation == "~") {
+        return numericOperationFailure(
+            "logical operators require real numeric operands");
+    }
+    if (value.numericComplex &&
+        runtimeNumericClassIsInteger(value.numericClass) &&
+        (operation == "+" || operation == "-")) {
+        return numericOperationFailure(
+            "arithmetic is not supported for complex integer values");
     }
 
     RuntimeNumericClass resultClass = value.numericClass;
@@ -1410,7 +1714,12 @@ RuntimeNumericOperationResult runtimeApplyNumericUnary(
         if (operation == "~") {
             RuntimeNumericElementValue logical;
             logical.numericClass = RuntimeNumericClass::Logical;
-            logical.real = numericElementTruthy(*element) ? 0.0 : 1.0;
+            const auto elementValue = numericElementTruthy(*element);
+            if (!elementValue) {
+                return numericOperationFailure(
+                    "logical conversion requires real, non-NaN values");
+            }
+            logical.real = *elementValue ? 0.0 : 1.0;
             converted = logical;
         } else if (operation == "-" &&
                    runtimeNumericClassIsInteger(resultClass)) {
@@ -1455,6 +1764,19 @@ RuntimeNumericOperationResult runtimeApplyNumericBinary(
         !isLogicalOperation(operation)) {
         return numericOperationFailure(
             "unsupported binary operator: " + std::string(operation));
+    }
+    if (isLogicalOperation(operation) &&
+        (left.numericComplex || right.numericComplex)) {
+        return numericOperationFailure(
+            "logical operators require real numeric operands");
+    }
+    if (isArithmeticOperation(operation) &&
+        ((left.numericComplex &&
+          runtimeNumericClassIsInteger(left.numericClass)) ||
+         (right.numericComplex &&
+          runtimeNumericClassIsInteger(right.numericClass)))) {
+        return numericOperationFailure(
+            "arithmetic is not supported for complex integer values");
     }
 
     RuntimeNumericClass resultClass = RuntimeNumericClass::Logical;
@@ -1539,6 +1861,246 @@ RuntimeNumericOperationResult runtimeApplyNumericBinary(
             "binary operator could not construct its result");
     }
     return numericOperationSuccess(std::move(*result));
+}
+
+RuntimeNumericOperationResult runtimeTransposeNumeric(
+    const RuntimeValue& value, bool conjugate) {
+    if (!isRuntimeNumericValue(value)) {
+        return numericOperationFailure(
+            "transpose requires numeric input");
+    }
+    const auto dimensions = runtimeDimensions(value);
+    if (dimensions.size() != 2) {
+        return numericOperationFailure(
+            "transpose requires a two-dimensional numeric array");
+    }
+    if (conjugate && value.numericComplex &&
+        runtimeNumericClassIsInteger(value.numericClass)) {
+        return numericOperationFailure(
+            "conjugate transpose is not supported for complex integer values");
+    }
+
+    const size_t rows = dimensions[0];
+    const size_t columns = dimensions[1];
+    std::vector<RuntimeNumericElementValue> elements;
+    elements.reserve(rows * columns);
+    for (size_t outputColumn = 0; outputColumn < rows;
+         ++outputColumn) {
+        for (size_t outputRow = 0; outputRow < columns;
+             ++outputRow) {
+            const auto element = runtimeNumericElementValue(
+                value, outputColumn + outputRow * rows);
+            if (!element) {
+                return numericOperationFailure(
+                    "transpose could not read a numeric element");
+            }
+            RuntimeNumericElementValue mapped = *element;
+            if (conjugate && mapped.complex) {
+                mapped.imaginary = -mapped.imaginary;
+            }
+            elements.push_back(mapped);
+        }
+    }
+
+    auto result = runtimeNumericValueFromElements(
+        {columns, rows}, std::move(elements), value.numericClass);
+    if (!result) {
+        return numericOperationFailure(
+            "transpose could not construct its result");
+    }
+    return numericOperationSuccess(std::move(*result));
+}
+
+bool isRuntimeComplexNumericBuiltin(std::string_view name) {
+    return name == "complex" || name == "conj" ||
+           name == "imag" || name == "isreal" ||
+           name == "real";
+}
+
+RuntimeNumericOperationResult runtimeApplyComplexNumericBuiltin(
+    std::string_view name,
+    const std::vector<RuntimeValue>& arguments) {
+    if (!isRuntimeComplexNumericBuiltin(name)) {
+        return numericOperationFailure(
+            "unsupported complex numeric builtin: " +
+            std::string(name));
+    }
+    const size_t maximumArguments = name == "complex" ? 2 : 1;
+    if (arguments.empty() || arguments.size() > maximumArguments) {
+        return numericOperationFailure(
+            std::string(name) + " expects " +
+            (name == "complex" ? "one or two" : "one") +
+            " numeric arguments");
+    }
+    if (std::any_of(arguments.begin(), arguments.end(),
+                    [](const RuntimeValue& argument) {
+                        return !isRuntimeNumericValue(argument);
+                    })) {
+        return numericOperationFailure(
+            std::string(name) + " requires numeric arguments");
+    }
+
+    const RuntimeValue& input = arguments.front();
+    if (name == "isreal") {
+        return numericOperationSuccess(
+            makeRuntimeLogicalValue(!input.numericComplex));
+    }
+
+    if (name == "real" || name == "imag" || name == "conj") {
+        if (name == "conj" && input.numericComplex &&
+            runtimeNumericClassIsInteger(input.numericClass)) {
+            return numericOperationFailure(
+                "conj is not supported for complex integer values");
+        }
+        const auto dimensions = runtimeDimensions(input);
+        const auto count = checkedRuntimeDimensionProduct(dimensions);
+        if (!count) {
+            return numericOperationFailure(
+                std::string(name) + " input dimensions overflow");
+        }
+        std::vector<RuntimeNumericElementValue> elements;
+        elements.reserve(*count);
+        for (size_t index = 0; index < *count; ++index) {
+            const auto source = runtimeNumericElementValue(input, index);
+            if (!source) {
+                return numericOperationFailure(
+                    std::string(name) +
+                    " could not read a numeric element");
+            }
+            RuntimeNumericElementValue result = *source;
+            if (name == "real") {
+                result.imaginary = 0.0;
+                result.integerImaginaryBits = 0;
+                result.complex = false;
+            } else if (name == "imag") {
+                result.real = source->complex
+                                  ? source->imaginary
+                                  : 0.0;
+                result.integerRealBits =
+                    source->complex
+                        ? source->integerImaginaryBits
+                        : 0;
+                result.imaginary = 0.0;
+                result.integerImaginaryBits = 0;
+                result.complex = false;
+            } else if (result.complex) {
+                result.imaginary = -result.imaginary;
+            }
+            elements.push_back(result);
+        }
+        auto result = runtimeNumericValueFromElements(
+            dimensions, std::move(elements), input.numericClass);
+        return result
+                   ? numericOperationSuccess(std::move(*result))
+                   : numericOperationFailure(
+                         std::string(name) +
+                         " could not construct its result");
+    }
+
+    RuntimeNumericClass resultClass = input.numericClass;
+    if (resultClass == RuntimeNumericClass::Logical) {
+        resultClass = RuntimeNumericClass::Double;
+    }
+    std::vector<size_t> dimensions = runtimeDimensions(input);
+    if (arguments.size() == 2) {
+        const RuntimeValue& imaginary = arguments[1];
+        if (input.numericComplex || imaginary.numericComplex) {
+            return numericOperationFailure(
+                "complex real and imaginary inputs must be real numeric values");
+        }
+
+        if (input.numericClass == imaginary.numericClass) {
+            resultClass = input.numericClass == RuntimeNumericClass::Logical
+                              ? RuntimeNumericClass::Double
+                              : input.numericClass;
+        } else if (input.numericClass == RuntimeNumericClass::Double) {
+            resultClass = imaginary.numericClass ==
+                                  RuntimeNumericClass::Logical
+                              ? RuntimeNumericClass::Double
+                              : imaginary.numericClass;
+        } else if (imaginary.numericClass ==
+                   RuntimeNumericClass::Double) {
+            resultClass = input.numericClass ==
+                                  RuntimeNumericClass::Logical
+                              ? RuntimeNumericClass::Double
+                              : input.numericClass;
+        } else {
+            return numericOperationFailure(
+                "complex inputs must have the same class or one double input");
+        }
+
+        const bool inputArray = isRuntimeNumericArray(input);
+        const bool imaginaryArray = isRuntimeNumericArray(imaginary);
+        if (inputArray && imaginaryArray) {
+            const auto expanded = runtimeImplicitExpansionDimensions(
+                runtimeDimensions(input), runtimeDimensions(imaginary));
+            if (!expanded) {
+                return numericOperationFailure(
+                    "complex inputs have incompatible dimensions");
+            }
+            dimensions = *expanded;
+        } else if (imaginaryArray) {
+            dimensions = runtimeDimensions(imaginary);
+        }
+    }
+
+    const auto count = checkedRuntimeDimensionProduct(dimensions);
+    if (!count) {
+        return numericOperationFailure(
+            "complex result dimensions overflow");
+    }
+    std::vector<RuntimeNumericElementValue> elements;
+    elements.reserve(*count);
+    for (size_t index = 0; index < *count; ++index) {
+        const auto coordinates = runtimeColumnMajorCoordinates(
+            index, dimensions);
+        if (!coordinates) {
+            return numericOperationFailure(
+                "complex result coordinates overflow");
+        }
+        const auto realSource = numericElementAtCoordinates(
+            input, *coordinates);
+        if (!realSource) {
+            return numericOperationFailure(
+                "complex could not map its real input");
+        }
+        const auto real = convertNumericElement(
+            *realSource, resultClass);
+        if (!real) {
+            return numericOperationFailure(
+                "complex real input is not representable in the result class");
+        }
+
+        RuntimeNumericElementValue result = *real;
+        if (arguments.size() == 1) {
+            result.complex = true;
+            elements.push_back(result);
+            continue;
+        }
+
+        const auto imaginarySource = numericElementAtCoordinates(
+            arguments[1], *coordinates);
+        const auto imaginary = imaginarySource
+                                   ? convertNumericElement(
+                                         *imaginarySource, resultClass)
+                                   : std::nullopt;
+        if (!imaginary) {
+            return numericOperationFailure(
+                "complex imaginary input is not representable in the result class");
+        }
+        result.imaginary = imaginary->real;
+        result.integerImaginaryBits =
+            imaginary->integerRealBits;
+        result.complex = true;
+        elements.push_back(result);
+    }
+
+    auto result = runtimeNumericValueFromElements(
+        dimensions, std::move(elements), resultClass);
+    return result
+               ? numericOperationSuccess(std::move(*result))
+               : numericOperationFailure(
+                     "complex could not construct its result");
 }
 
 } // namespace mparser

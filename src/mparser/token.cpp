@@ -124,6 +124,8 @@ const char* tokenKindName(TokenKind kind) {
         return "DotBackslash";
     case TokenKind::DotCaret:
         return "DotCaret";
+    case TokenKind::DotApostrophe:
+        return "DotApostrophe";
     case TokenKind::Ampersand:
         return "Ampersand";
     case TokenKind::Pipe:

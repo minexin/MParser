@@ -1,9 +1,12 @@
 # MParser v1.x Roadmap
 
-The v1.x line grows the released MATLAB-like subset while preserving the
-public CLI, C ABI major 1, C++ source API 1.x, machine protocol major 1, and
-builtin source contract 1.x. This roadmap starts after 1.0.0 publication; it
-does not expand the remaining 1.0 release gate.
+The v1.x line grows the MATLAB-like subset after the 1.0.0 baseline. The
+current line is active development rather than a production deployment: v1
+release contracts remain historical evidence, while current CLI, C/C++ API,
+machine protocol, and builtin contracts may move forward together when a
+cleaner runtime model requires it. In-repository users are updated in the same
+change; compatibility adapters for unreleased development interfaces are not
+added by default.
 
 ## Release Discipline
 
@@ -11,15 +14,16 @@ Every v1.x change follows these rules:
 
 - legal code outside an optimized region must continue through verified
   bytecode/VM fallback;
-- compatible additive fields are allowed in tolerant machine/API structures,
-  while required field removal or reinterpretation waits for v2;
+- prefer one coherent current contract over wrappers for obsolete development
+  interfaces; freeze a new public snapshot only at a milestone release gate;
 - each language or builtin addition updates the compatibility matrix,
   representative interpreter/VM/typed tests, samples when user-facing, and
   extension/user documentation;
 - performance changes include correctness equivalence and measured evidence,
   not timing-only acceptance;
-- release archives retain checksums, provenance, relocation, independent
-  consumer, and platform validation.
+- release-candidate archives retain checksums, provenance, relocation,
+  independent consumer, and platform validation; internal batches do not pay
+  that packaging cost repeatedly.
 
 A `0.1` release is a complete release train rather than a single narrow fix.
 Several implementation batches may land under the same development milestone,
@@ -28,6 +32,12 @@ milestone narrative, full differential rerun, release packaging, and complete
 platform CI are updated together only when the whole milestone is a release
 candidate. Cross-platform-risk changes may still use intermediate CI, but do
 not create an extra public version.
+
+The C ABI generation 2 and C++ source API 1.2 work in v1.2 intentionally
+replace the archived v1 host surface so exact integer and complex arrays have one direct
+transport model. MExecServer and other downstream projects consume the
+resulting milestone API after it settles; preserving their current adapters is
+not a kernel release requirement during this iteration.
 
 ## Workstream Boundaries
 
@@ -105,8 +115,8 @@ and general-library bundle:
 - formatted text/output, ordering/set, array-construction and manipulation,
   number-theory, and random functions that do not require the later
   high-performance backend;
-- end-to-end MExecServer command-module adoption without command-window shims
-  for behavior now owned by the kernel.
+- publish enough host/session behavior for downstream command modules to adopt
+  it without kernel-side service-specific shims.
 
 System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
@@ -163,7 +173,8 @@ compiled external builtins. It must define:
 - callback lifetime, unload, reentrancy, thread safety, and cancellation;
 - deterministic exception/diagnostic conversion;
 - namespace, precedence, shadowing, purity, side-effect, and JIT eligibility;
-- compatibility tests against older headers and independently built modules.
+- conformance tests against the current headers and independently built
+  modules once that adapter reaches a release-candidate contract.
 
 No internal Parser, HIR, Bytecode, VM, or `RuntimeValue` layout becomes ABI as
 part of this work.

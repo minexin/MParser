@@ -38,10 +38,9 @@ complete write:
   a result format produces a protocol `request-rejected` document, independent
   of argument order.
 
-Output-producing MATLAB-like builtins are not implemented as of v0.87. A future
-output builtin must be captured, represented by a protocol extension, or
-rejected in machine mode; it must not write unframed bytes into protocol
-stdout.
+An output-producing MATLAB-like builtin must use the host output sink, be
+represented by a protocol extension, or be rejected in machine mode; it must
+not write unframed bytes into protocol stdout.
 
 Process exit codes are stable within protocol major 1:
 
@@ -68,8 +67,8 @@ must treat JSON object member order as insignificant:
 
 ```json
 {
-  "protocol": {"name": "mparser.result", "major": 1, "minor": 0},
-  "engine": {"name": "MParser", "version": "1.0.0"},
+  "protocol": {"name": "mparser.result", "major": 1, "minor": 1},
+  "engine": {"name": "MParser", "version": "1.1.0"},
   "status": "succeeded",
   "entry_function": "",
   "requested_output_count": 0,
@@ -115,9 +114,29 @@ MATLAB column-major linear order. Internal C++ storage order is not exposed.
 ```
 
 Logical payload elements are JSON booleans and use `"class":"logical"`.
-Finite doubles are JSON numbers formatted for round-trip binary64 recovery.
-Non-finite values are the strings `"NaN"`, `"Infinity"`, and `"-Infinity"`;
-this keeps every document valid JSON.
+Floating classes are `double` and `single`. Integer classes are `int8`,
+`uint8`, `int16`, `uint16`, `int32`, `uint32`, `int64`, and `uint64`.
+Finite floating values are JSON numbers; non-finite values are the strings
+`"NaN"`, `"Infinity"`, and `"-Infinity"`. Integer payloads are exact JSON
+integers, including values outside the binary64 exact range.
+
+Protocol 1.1 adds exact complex floating payloads:
+
+```json
+{
+  "kind":"numeric",
+  "class":"single",
+  "dimensions":[1,2],
+  "data":[1,3],
+  "complex":true,
+  "imaginary_data":[2,-4]
+}
+```
+
+`data` and `imaginary_data` have the same element count and MATLAB
+column-major order. Logical values are always real. The runtime currently
+rejects complex integer arithmetic even though the recursive schema reserves
+an integer imaginary channel for forward numeric transport.
 
 ### Character And String
 
@@ -232,8 +251,8 @@ The normative machine-readable shape is
 [`machine-result-v1.schema.json`](machine-result-v1.schema.json). This file
 is the tolerant Draft-7 major-1 consumer profile. It permits additive object
 members while preserving all current required members, field types, and
-recursive value/diagnostic shapes. Exact protocol-1.0 producer shape is frozen
-by the golden and immutable public snapshots. A future minor that adds enum
+recursive value/diagnostic shapes. The current protocol-1.1 producer shape is
+checked by the golden and current contract snapshot. A future minor that adds enum
 values or value kinds must publish a revised major-1 schema; consumers apply a
 schema only up to the minor they support.
 
@@ -248,8 +267,9 @@ schema only up to the minor they support.
 
 `tests/golden/machine_result_v1.json` freezes producer spelling and ordering
 for all RuntimeValue kinds, diagnostic trees, non-finite numbers, UTF
-replacement, exact uint64 values, and execution fields. An immutable protocol
-1.0 copy lives under `tests/public_contract/protocol/1.0`.
+replacement, exact integer and complex values, and execution fields. The
+current protocol 1.1 copy lives under `tests/public_contract/protocol/1.1`;
+the 1.0 directory is retained only as historical release evidence.
 `tests/golden/machine_result_emergency_v1.json` independently freezes the
 allocation-free exit-4 document used while stdout remains writable.
 `machine_protocol_contract_smoke` validates the schema from an independent

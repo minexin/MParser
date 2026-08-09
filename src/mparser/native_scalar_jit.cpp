@@ -30,6 +30,7 @@ enum class NativeRuntimeStatus : int {
     InvalidLinearIndex = 2,
     LinearIndexOutOfBounds = 3,
     InvalidArraySlot = 4,
+    ComplexResultRequired = 5,
 };
 
 struct NativeArrayView {
@@ -60,6 +61,14 @@ using NativeEntry = void(SLJIT_FUNC*)(NativeContext*);
 
 double SLJIT_FUNC nativePower(double left, double right) {
     return std::pow(left, right);
+}
+
+sljit_sw SLJIT_FUNC nativePowerRequiresComplex(double left,
+                                                double right) {
+    return left < 0.0 && std::isfinite(right) &&
+                   std::floor(right) != right
+               ? 1
+               : 0;
 }
 
 std::optional<size_t> nativeLinearArrayOffset(
@@ -264,6 +273,18 @@ public:
         if (!arrayFailureJumps_.empty()) {
             auto* arrayFailure = sljit_emit_label(compiler_);
             bindJumps(arrayFailureJumps_, arrayFailure);
+            sljit_emit_return_void(compiler_);
+        }
+        if (!complexFailureJumps_.empty()) {
+            auto* complexFailure = sljit_emit_label(compiler_);
+            bindJumps(complexFailureJumps_, complexFailure);
+            sljit_emit_op1(
+                compiler_, SLJIT_MOV_S32,
+                SLJIT_MEM1(SLJIT_S0),
+                SLJIT_OFFSETOF(NativeContext, status),
+                SLJIT_IMM,
+                static_cast<sljit_sw>(
+                    NativeRuntimeStatus::ComplexResultRequired));
             sljit_emit_return_void(compiler_);
         }
         for (const auto& jumps : pendingKernelJumps_) {
@@ -659,6 +680,15 @@ private:
             loadOperand(instruction.right, SLJIT_FR1);
             sljit_emit_icall(
                 compiler_, SLJIT_CALL,
+                SLJIT_ARGS2(W, F64, F64), SLJIT_IMM,
+                SLJIT_FUNC_ADDR(nativePowerRequiresComplex));
+            complexFailureJumps_.push_back(sljit_emit_cmp(
+                compiler_, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
+                SLJIT_IMM, 0));
+            loadOperand(instruction.left, SLJIT_FR0);
+            loadOperand(instruction.right, SLJIT_FR1);
+            sljit_emit_icall(
+                compiler_, SLJIT_CALL,
                 SLJIT_ARGS2(F64, F64, F64), SLJIT_IMM,
                 SLJIT_FUNC_ADDR(nativePower));
             writeDouble();
@@ -727,6 +757,25 @@ private:
         case ScalarKernelOp::SquareRoot:
         case ScalarKernelOp::Tangent:
             loadOperand(instruction.left, SLJIT_FR0);
+            if (instruction.op == ScalarKernelOp::ArcCosine ||
+                instruction.op == ScalarKernelOp::ArcSine) {
+                sljit_emit_fset64(compiler_, SLJIT_FR1, -1.0);
+                complexFailureJumps_.push_back(sljit_emit_fcmp(
+                    compiler_, SLJIT_ORDERED_LESS,
+                    SLJIT_FR0, 0, SLJIT_FR1, 0));
+                sljit_emit_fset64(compiler_, SLJIT_FR1, 1.0);
+                complexFailureJumps_.push_back(sljit_emit_fcmp(
+                    compiler_, SLJIT_ORDERED_GREATER,
+                    SLJIT_FR0, 0, SLJIT_FR1, 0));
+            } else if (instruction.op ==
+                           ScalarKernelOp::Logarithm ||
+                       instruction.op ==
+                           ScalarKernelOp::SquareRoot) {
+                sljit_emit_fset64(compiler_, SLJIT_FR1, 0.0);
+                complexFailureJumps_.push_back(sljit_emit_fcmp(
+                    compiler_, SLJIT_ORDERED_LESS,
+                    SLJIT_FR0, 0, SLJIT_FR1, 0));
+            }
             sljit_emit_icall(
                 compiler_, SLJIT_CALL, SLJIT_ARGS1(F64, F64),
                 SLJIT_IMM, unaryMathAddress(instruction.op));
@@ -941,6 +990,7 @@ private:
     const ScalarKernel& kernel_;
     std::vector<sljit_jump*> rangeFailureJumps_;
     std::vector<sljit_jump*> arrayFailureJumps_;
+    std::vector<sljit_jump*> complexFailureJumps_;
     std::vector<sljit_label*> kernelLabels_;
     std::vector<std::vector<sljit_jump*>> pendingKernelJumps_;
     bool tracksInstructionCounts_ = false;
@@ -1382,6 +1432,10 @@ NativeScalarJitResult executeNativeScalarKernel(
         case NativeRuntimeStatus::InvalidArraySlot:
             result.reason =
                 "native typed kernel referenced an invalid array slot";
+            break;
+        case NativeRuntimeStatus::ComplexResultRequired:
+            result.reason =
+                "native typed operation requires a complex result";
             break;
         case NativeRuntimeStatus::Success:
             result.reason = "native typed kernel failed at runtime";

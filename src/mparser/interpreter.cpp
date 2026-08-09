@@ -24,7 +24,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <cstdlib>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -176,17 +175,11 @@ std::string decodeStringLiteral(std::string_view text) {
 }
 
 bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
-    if (isNumber(left) && isNumber(right)) {
-        return left.numericClass == right.numericClass &&
-               left.number == right.number;
+    if (isNumeric(left) && isNumeric(right)) {
+        return runtimeNumericValuesIdentical(left, right);
     }
     if (isText(left) && isText(right)) {
         return runtimeTextPayloadEqual(left, right);
-    }
-    if (isArray(left) && isArray(right)) {
-        return left.numericClass == right.numericClass &&
-               runtimeDimensions(left) == runtimeDimensions(right) &&
-               left.elements == right.elements;
     }
     if (isCell(left) && isCell(right)) {
         if (runtimeDimensions(left) != runtimeDimensions(right) ||
@@ -305,56 +298,6 @@ size_t columnCount(const RuntimeValue& value) {
 
 size_t elementCount(const RuntimeValue& value) {
     return runtimeShapeElementCount(value);
-}
-
-RuntimeValue arrayValueForShape(size_t rows, size_t columns,
-                                std::vector<double> values,
-                                RuntimeNumericClass numericClass =
-                                    RuntimeNumericClass::Double) {
-    if (rows == 1) {
-        return vectorValue(std::move(values), numericClass);
-    }
-    return matrixValue(rows, columns, std::move(values), numericClass);
-}
-
-RuntimeValue arrayValueForDimensions(std::vector<size_t> dimensions,
-                                     std::vector<double> values,
-                                     RuntimeNumericClass numericClass =
-                                         RuntimeNumericClass::Double) {
-    dimensions = normalizeRuntimeDimensions(std::move(dimensions));
-    RuntimeValue result;
-    result.kind = dimensions.size() == 2 && dimensions[0] == 1
-                      ? RuntimeValueKind::Vector
-                      : RuntimeValueKind::Matrix;
-    result.elements = std::move(values);
-    result.numericClass = numericClass;
-    setRuntimeDimensions(result, std::move(dimensions));
-    return result;
-}
-
-bool truthy(const RuntimeValue& value) {
-    if (value.kind == RuntimeValueKind::Number) {
-        return value.number != 0.0 && !std::isnan(value.number);
-    }
-    if (isArray(value)) {
-        for (double element : value.elements) {
-            if (element == 0.0 || std::isnan(element)) {
-                return false;
-            }
-        }
-        return !value.elements.empty();
-    }
-    return false;
-}
-
-std::optional<double> parseNumber(std::string_view text) {
-    std::string buffer(text);
-    char* end = nullptr;
-    const double value = std::strtod(buffer.c_str(), &end);
-    if (end == buffer.c_str() || *end != '\0') {
-        return std::nullopt;
-    }
-    return value;
 }
 
 struct FunctionCallResult {
@@ -1710,7 +1653,19 @@ private:
 
         const size_t firstArm =
             arms.empty() ? node.children.size() : arms.front();
-        if (truthy(evaluateHeader(*node.children.front()))) {
+        const RuntimeValue conditionValue =
+            evaluateHeader(*node.children.front());
+        if (diagnosticTrapTriggered()) {
+            return;
+        }
+        const auto condition = runtimeNumericTruthValue(conditionValue);
+        if (!condition) {
+            addDiagnostic(
+                node,
+                "if condition must be a real numeric value without NaN");
+            return;
+        }
+        if (*condition) {
             executeRange(node, 1, firstArm);
             return;
         }
@@ -1725,10 +1680,23 @@ private:
                 executeRange(node, current + 1, next);
                 return;
             }
-            if (arm.label == "elseif" && !arm.children.empty() &&
-                truthy(evaluateHeader(*arm.children.front()))) {
-                executeRange(node, current + 1, next);
-                return;
+            if (arm.label == "elseif" && !arm.children.empty()) {
+                const RuntimeValue armValue =
+                    evaluateHeader(*arm.children.front());
+                if (diagnosticTrapTriggered()) {
+                    return;
+                }
+                const auto armCondition = runtimeNumericTruthValue(armValue);
+                if (!armCondition) {
+                    addDiagnostic(
+                        arm,
+                        "elseif condition must be a real numeric value without NaN");
+                    return;
+                }
+                if (*armCondition) {
+                    executeRange(node, current + 1, next);
+                    return;
+                }
             }
         }
     }
@@ -1743,7 +1711,21 @@ private:
         const HirNode& header = *node.children.front();
         size_t iterations = 0;
         LoopDepthGuard loop(loopDepth_);
-        while (truthy(evaluateHeader(header))) {
+        while (true) {
+            const RuntimeValue conditionValue = evaluateHeader(header);
+            if (diagnosticTrapTriggered()) {
+                return;
+            }
+            const auto condition = runtimeNumericTruthValue(conditionValue);
+            if (!condition) {
+                addDiagnostic(
+                    node,
+                    "while condition must be a real numeric value without NaN");
+                return;
+            }
+            if (!*condition) {
+                break;
+            }
             if (++iterations > kMaxWhileIterations) {
                 addDiagnostic(node,
                               "while loop exceeded the interpreter iteration "
@@ -2053,34 +2035,19 @@ private:
         }
 
         const RuntimeValue value = evaluate(*node.children.front());
-        if (node.label != "'") {
+        if (node.label != "'" && node.label != ".'") {
             addDiagnostic(node, "unsupported postfix operator: " + node.label);
             return missingValue();
         }
 
-        if (isNumber(value)) {
-            return value;
-        }
-        if (isVector(value)) {
-            return matrixValue(value.elements.size(), 1, value.elements,
-                               value.numericClass);
-        }
-        if (isMatrix(value)) {
-            if (runtimeDimensionCount(value) > 2) {
-                addDiagnostic(node,
-                              "transpose requires a two-dimensional array");
+        if (isNumeric(value)) {
+            auto result = runtimeTransposeNumeric(
+                value, node.label == "'");
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
                 return missingValue();
             }
-            std::vector<double> transposed;
-            transposed.reserve(value.elements.size());
-            for (size_t column = 0; column < value.columns; ++column) {
-                for (size_t row = 0; row < value.rows; ++row) {
-                    transposed.push_back(value.elements[row * value.columns +
-                                                        column]);
-                }
-            }
-            return matrixValue(value.columns, value.rows,
-                               std::move(transposed), value.numericClass);
+            return std::move(result.value);
         }
         if (isRuntimeTextValue(value)) {
             if (runtimeDimensionCount(value) > 2) {
@@ -2120,6 +2087,9 @@ private:
             if (node.label == "pi") {
                 return numberValue(3.14159265358979323846);
             }
+            if (node.label == "i" || node.label == "j") {
+                return *runtimeParseNumericLiteral("1i");
+            }
             if (node.label == "eps") {
                 return numberValue(std::numeric_limits<double>::epsilon());
             }
@@ -2156,8 +2126,8 @@ private:
                        : makeRuntimeStringScalarUtf8(decoded);
         }
 
-        if (const auto number = parseNumber(node.label)) {
-            return numberValue(*number);
+        if (auto number = runtimeParseNumericLiteral(node.label)) {
+            return std::move(*number);
         }
 
         addDiagnostic(node, "unsupported literal: " + node.label);
@@ -2242,11 +2212,17 @@ private:
                 return missingValue();
             }
 
-            const bool leftValue = truthy(left);
-            if (node.label == "&&" && !leftValue) {
+            const auto leftValue = runtimeNumericTruthValue(left);
+            if (!leftValue) {
+                addDiagnostic(
+                    node,
+                    "short-circuit operands must be real numeric values without NaN");
+                return missingValue();
+            }
+            if (node.label == "&&" && !*leftValue) {
                 return logicalValue(false);
             }
-            if (node.label == "||" && leftValue) {
+            if (node.label == "||" && *leftValue) {
                 return logicalValue(true);
             }
 
@@ -2260,7 +2236,14 @@ private:
                 }
                 return missingValue();
             }
-            return logicalValue(truthy(right));
+            const auto rightValue = runtimeNumericTruthValue(right);
+            if (!rightValue) {
+                addDiagnostic(
+                    node,
+                    "short-circuit operands must be real numeric values without NaN");
+                return missingValue();
+            }
+            return logicalValue(*rightValue);
         }
 
         const RuntimeValue right = evaluate(*node.children[1]);
@@ -2304,19 +2287,22 @@ private:
     }
 
     RuntimeValue evaluateColon(const HirNode& node) {
-        std::vector<double> terms;
+        const size_t diagnosticBase = diagnostics_.size();
+        std::vector<RuntimeValue> terms;
         collectColonTerms(node, terms);
-        const auto range = runtimePlanColonRange(terms);
+        if (diagnostics_.size() != diagnosticBase) {
+            return missingValue();
+        }
+        auto range = runtimeMaterializeColonValue(terms);
         if (!range.succeeded) {
             addDiagnostic(node, range.error);
-            return range.error == "colon range step cannot be zero"
-                       ? vectorValue({})
-                       : missingValue();
+            return missingValue();
         }
-        return vectorValue(runtimeMaterializeColonRange(range));
+        return std::move(range.value);
     }
 
-    void collectColonTerms(const HirNode& node, std::vector<double>& terms) {
+    void collectColonTerms(const HirNode& node,
+                           std::vector<RuntimeValue>& terms) {
         if (node.kind == HirKind::Binary && node.label == ":") {
             for (const auto& child : node.children) {
                 collectColonTerms(*child, terms);
@@ -2325,11 +2311,7 @@ private:
         }
 
         const RuntimeValue value = evaluate(node);
-        if (!isNumber(value)) {
-            addDiagnostic(node, "colon operand must be a scalar number");
-            return;
-        }
-        terms.push_back(value.number);
+        terms.push_back(value);
     }
 
     std::vector<RuntimeValue> evaluateArguments(const HirNode& node) {
@@ -2449,21 +2431,23 @@ private:
     RuntimeValue evaluateColonWithIndexContext(const HirNode& node,
                                                const RuntimeValue& target,
                                                size_t position, size_t total) {
-        std::vector<double> terms;
+        const size_t diagnosticBase = diagnostics_.size();
+        std::vector<RuntimeValue> terms;
         collectColonTermsWithIndexContext(node, target, position, total, terms);
-        const auto range = runtimePlanColonRange(terms);
+        if (diagnostics_.size() != diagnosticBase) {
+            return missingValue();
+        }
+        auto range = runtimeMaterializeColonValue(terms);
         if (!range.succeeded) {
             addDiagnostic(node, range.error);
-            return range.error == "colon range step cannot be zero"
-                       ? vectorValue({})
-                       : missingValue();
+            return missingValue();
         }
-        return vectorValue(runtimeMaterializeColonRange(range));
+        return std::move(range.value);
     }
 
     void collectColonTermsWithIndexContext(
         const HirNode& node, const RuntimeValue& target, size_t position,
-        size_t total, std::vector<double>& terms) {
+        size_t total, std::vector<RuntimeValue>& terms) {
         if (node.kind == HirKind::Binary && node.label == ":") {
             for (const auto& child : node.children) {
                 collectColonTermsWithIndexContext(*child, target, position,
@@ -2474,11 +2458,7 @@ private:
 
         const RuntimeValue value =
             evaluateWithIndexContext(node, target, position, total);
-        if (!isNumber(value)) {
-            addDiagnostic(node, "colon operand must be a scalar number");
-            return;
-        }
-        terms.push_back(value.number);
+        terms.push_back(value);
     }
 
     RuntimeValue evaluateMatrixWithIndexContext(const HirNode& node,
@@ -3101,7 +3081,16 @@ private:
                               "MParser:InvalidAssertion");
                 return FunctionCallResult{{missingValue()}};
             }
-            if (truthy(arguments.front())) {
+            const auto condition = runtimeNumericTruthValue(
+                arguments.front());
+            if (!condition) {
+                addDiagnostic(
+                    node,
+                    "assert condition must be a real numeric value without NaN",
+                    "MParser:InvalidAssertion");
+                return FunctionCallResult{{missingValue()}};
+            }
+            if (*condition) {
                 return {};
             }
 
@@ -3151,46 +3140,6 @@ private:
             const std::chrono::duration<double> elapsed =
                 std::chrono::steady_clock::now() - *ticStart_;
             return FunctionCallResult{{numberValue(elapsed.count())}};
-        }
-        if (name == "zeros" || name == "ones" || name == "eye" ||
-            name == "true" || name == "false") {
-            if ((name == "true" || name == "false") &&
-                arguments.empty()) {
-                return FunctionCallResult{{logicalValue(name == "true")}};
-            }
-            return callArrayConstructorBuiltin(node, name, arguments);
-        }
-        if (name == "cell") {
-            const auto shape = constructorShape(node, name, arguments);
-            if (!shape) {
-                return FunctionCallResult{{missingValue()}};
-            }
-            const auto count = checkedRuntimeDimensionProduct(*shape);
-            if (!count) {
-                addDiagnostic(node, "cell dimensions are too large");
-                return FunctionCallResult{{missingValue()}};
-            }
-            return FunctionCallResult{{cellValueForDimensions(
-                *shape, std::vector<RuntimeValue>(*count, missingValue()))}};
-        }
-        if (name == "strings") {
-            const auto shape = arguments.empty()
-                                   ? std::optional<std::vector<size_t>>(
-                                         std::vector<size_t>{1, 1})
-                                   : constructorShape(node, name, arguments);
-            if (!shape) {
-                return FunctionCallResult{{missingValue()}};
-            }
-            const auto count = checkedRuntimeDimensionProduct(*shape);
-            if (!count) {
-                addDiagnostic(node, "strings dimensions are too large");
-                return FunctionCallResult{{missingValue()}};
-            }
-            return FunctionCallResult{{makeRuntimeStringArray(
-                *shape, std::vector<RuntimeStringElement>(*count))}};
-        }
-        if (name == "linspace") {
-            return callLinspaceBuiltin(node, arguments);
         }
         if (name == "strcmp" || name == "strcmpi") {
             return callStrcmpBuiltin(node, name, arguments);
@@ -3370,9 +3319,6 @@ private:
             return FunctionCallResult{{logicalValue(matches)}};
         }
 
-        if (name == "size") {
-            return callSizeBuiltin(node, arguments, requestedOutputCount);
-        }
         if (name == "length" || name == "numel" || name == "ndims" ||
             name == "isempty") {
             if (arguments.size() != 1) {
@@ -3416,247 +3362,6 @@ private:
             return FunctionCallResult{{missingValue()}};
         }
         return FunctionCallResult{{std::move(result.value)}};
-    }
-
-    FunctionCallResult callSizeBuiltin(
-        const HirNode& node, const std::vector<RuntimeValue>& arguments,
-        size_t requestedOutputCount) {
-        if (arguments.empty() || arguments.size() > 2) {
-            addDiagnostic(node, "size expects an array and optional dimension");
-            return FunctionCallResult{{missingValue()}};
-        }
-        if (requestedOutputCount == 0) {
-            return FunctionCallResult{};
-        }
-
-        const RuntimeValue& value = arguments.front();
-        const auto dimensions = runtimeDimensions(value);
-        if (arguments.size() == 2) {
-            if (requestedOutputCount != 1) {
-                addDiagnostic(node,
-                              "size with a dimension produces one output");
-                return FunctionCallResult{{missingValue()}};
-            }
-
-            auto dimensionValue = [&](double raw) -> std::optional<double> {
-                const auto dimension =
-                    checkedRuntimeNonnegativeInteger(raw);
-                if (!dimension || *dimension == 0) {
-                    return std::nullopt;
-                }
-                return static_cast<double>(runtimeDimension(
-                    value, *dimension - 1));
-            };
-
-            const RuntimeValue& requested = arguments[1];
-            if (isNumber(requested)) {
-                const auto result = dimensionValue(requested.number);
-                if (!result) {
-                    addDiagnostic(node,
-                                  "size dimension must be a positive integer");
-                    return FunctionCallResult{{missingValue()}};
-                }
-                return FunctionCallResult{{numberValue(*result)}};
-            }
-            if (!isArray(requested)) {
-                addDiagnostic(node, "size dimensions must be numeric");
-                return FunctionCallResult{{missingValue()}};
-            }
-            std::vector<double> results;
-            results.reserve(requested.elements.size());
-            for (const double raw : requested.elements) {
-                const auto result = dimensionValue(raw);
-                if (!result) {
-                    addDiagnostic(node,
-                                  "size dimension must be a positive integer");
-                    return FunctionCallResult{{missingValue()}};
-                }
-                results.push_back(*result);
-            }
-            return FunctionCallResult{{vectorValue(std::move(results))}};
-        }
-
-        if (requestedOutputCount == 1) {
-            std::vector<double> results;
-            results.reserve(dimensions.size());
-            for (const size_t dimension : dimensions) {
-                results.push_back(static_cast<double>(dimension));
-            }
-            return FunctionCallResult{{vectorValue(std::move(results))}};
-        }
-
-        FunctionCallResult result;
-        result.outputs.reserve(requestedOutputCount);
-        for (size_t index = 0; index < requestedOutputCount; ++index) {
-            size_t dimension = 1;
-            if (index + 1 == requestedOutputCount &&
-                requestedOutputCount < dimensions.size()) {
-                std::vector<size_t> folded(dimensions.begin() + index,
-                                           dimensions.end());
-                dimension =
-                    checkedRuntimeDimensionProduct(folded).value_or(0);
-            } else if (index < dimensions.size()) {
-                dimension = dimensions[index];
-            }
-            result.outputs.push_back(
-                numberValue(static_cast<double>(dimension)));
-        }
-        return result;
-    }
-
-    FunctionCallResult
-    callArrayConstructorBuiltin(const HirNode& node, const std::string& name,
-                                const std::vector<RuntimeValue>& arguments) {
-        const auto shape = constructorShape(node, name, arguments);
-        if (!shape) {
-            return FunctionCallResult{{missingValue()}};
-        }
-
-        if (name == "eye" && shape->size() > 2) {
-            addDiagnostic(node, "eye creates only two-dimensional arrays");
-            return FunctionCallResult{{missingValue()}};
-        }
-        const auto count = checkedRuntimeDimensionProduct(*shape);
-        if (!count) {
-            addDiagnostic(node, "array constructor dimensions are too large");
-            return FunctionCallResult{{missingValue()}};
-        }
-        const bool logical = name == "true" || name == "false";
-        std::vector<double> elements(
-            *count, name == "ones" || name == "true" ? 1.0 : 0.0);
-        if (name == "eye") {
-            const size_t rows = (*shape)[0];
-            const size_t columns = (*shape)[1];
-            const size_t diagonal = rows < columns ? rows : columns;
-            for (size_t index = 0; index < diagonal; ++index) {
-                elements[index * columns + index] = 1.0;
-            }
-        }
-
-        return FunctionCallResult{{
-            arrayValueForDimensions(
-                *shape, std::move(elements),
-                logical ? RuntimeNumericClass::Logical
-                        : RuntimeNumericClass::Double)}};
-    }
-
-    std::optional<std::vector<size_t>>
-    constructorShape(const HirNode& node, const std::string& name,
-                     const std::vector<RuntimeValue>& arguments) {
-        if (arguments.empty()) {
-            addDiagnostic(node,
-                          "array constructor expects dimensions: " + name);
-            return std::nullopt;
-        }
-
-        if (arguments.size() > 1) {
-            std::vector<size_t> dimensions;
-            dimensions.reserve(arguments.size());
-            for (const auto& argument : arguments) {
-                if (!isNumber(argument)) {
-                    addDiagnostic(
-                        node,
-                        "array constructor dimensions must be scalar numbers: " +
-                            name);
-                    return std::nullopt;
-                }
-                const auto dimension =
-                    dimensionFromNumber(node, argument.number);
-                if (!dimension) {
-                    return std::nullopt;
-                }
-                dimensions.push_back(*dimension);
-            }
-            return normalizeRuntimeDimensions(std::move(dimensions));
-        }
-
-        const RuntimeValue& shape = arguments.front();
-        if (isNumber(shape)) {
-            const auto dimension = dimensionFromNumber(node, shape.number);
-            if (!dimension) {
-                return std::nullopt;
-            }
-            return std::vector<size_t>{*dimension, *dimension};
-        }
-
-        if (!isArray(shape) || shape.elements.empty()) {
-            addDiagnostic(node,
-                          "array constructor shape vector must contain "
-                          "dimensions: " +
-                              name);
-            return std::nullopt;
-        }
-
-        std::vector<size_t> dimensions;
-        dimensions.reserve(shape.elements.size());
-        for (const double raw : shape.elements) {
-            const auto dimension = dimensionFromNumber(node, raw);
-            if (!dimension) {
-                return std::nullopt;
-            }
-            dimensions.push_back(*dimension);
-        }
-        if (dimensions.size() == 1) {
-            dimensions.push_back(dimensions.front());
-        }
-        return normalizeRuntimeDimensions(std::move(dimensions));
-    }
-
-    std::optional<size_t> dimensionFromNumber(const HirNode& node,
-                                              double value) {
-        const auto dimension = checkedRuntimeNonnegativeInteger(value);
-        if (!dimension) {
-            addDiagnostic(node,
-                          "dimension or count must be a representable "
-                          "nonnegative integer");
-            return std::nullopt;
-        }
-        return dimension;
-    }
-
-    FunctionCallResult
-    callLinspaceBuiltin(const HirNode& node,
-                        const std::vector<RuntimeValue>& arguments) {
-        if (arguments.size() != 2 && arguments.size() != 3) {
-            addDiagnostic(node,
-                          "linspace expects two or three scalar arguments");
-            return FunctionCallResult{{missingValue()}};
-        }
-        if (!isNumber(arguments[0]) || !isNumber(arguments[1]) ||
-            (arguments.size() == 3 && !isNumber(arguments[2]))) {
-            addDiagnostic(node, "linspace arguments must be scalar numbers");
-            return FunctionCallResult{{missingValue()}};
-        }
-
-        size_t count = 100;
-        if (arguments.size() == 3) {
-            const auto requested = dimensionFromNumber(node, arguments[2].number);
-            if (!requested) {
-                return FunctionCallResult{{missingValue()}};
-            }
-            count = *requested;
-        }
-
-        std::vector<double> values;
-        values.reserve(count);
-        if (count == 0) {
-            return FunctionCallResult{{vectorValue(std::move(values))}};
-        }
-
-        const double start = arguments[0].number;
-        const double stop = arguments[1].number;
-        if (count == 1) {
-            values.push_back(stop);
-            return FunctionCallResult{{vectorValue(std::move(values))}};
-        }
-
-        const double denominator = static_cast<double>(count - 1);
-        for (size_t index = 0; index < count; ++index) {
-            const double t = static_cast<double>(index) / denominator;
-            values.push_back(start + (stop - start) * t);
-        }
-
-        return FunctionCallResult{{vectorValue(std::move(values))}};
     }
 
     const SemanticResult* semantic_ = nullptr;

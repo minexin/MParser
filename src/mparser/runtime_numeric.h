@@ -38,6 +38,9 @@ struct RuntimeNumericElementValue {
     bool complex = false;
 };
 
+std::optional<RuntimeValue> runtimeParseNumericLiteral(
+    std::string_view text);
+
 std::optional<double> runtimeCoerceNumericElement(
     double value, RuntimeNumericClass numericClass);
 
@@ -47,12 +50,21 @@ std::optional<double> runtimeNumericElement(
 std::optional<RuntimeNumericElementValue> runtimeNumericElementValue(
     const RuntimeValue& value, size_t logicalIndex);
 
+std::optional<size_t> runtimeNumericElementAsNonnegativeSize(
+    const RuntimeNumericElementValue& value);
+
 std::optional<RuntimeNumericElementValue> runtimeNumericStorageElementValue(
     const RuntimeValue& value, size_t storageOffset);
 
 std::optional<RuntimeNumericElementValue> runtimeConvertNumericElementValue(
     const RuntimeNumericElementValue& value,
     RuntimeNumericClass numericClass);
+
+std::optional<RuntimeNumericElementValue> runtimeApplyNumericElementBinary(
+    std::string_view operation,
+    const RuntimeNumericElementValue& left,
+    const RuntimeNumericElementValue& right,
+    RuntimeNumericClass resultClass);
 
 bool runtimeStoreNumericElementValue(
     RuntimeValue& target, size_t logicalIndex,
@@ -76,6 +88,16 @@ std::optional<RuntimeValue> runtimeConvertNumericClass(
 bool runtimeNumericPredicate(std::string_view name,
                              const RuntimeValue& value);
 
+std::optional<bool> runtimeNumericTruthValue(
+    const RuntimeValue& value);
+
+bool runtimeNumericValuesIdentical(
+    const RuntimeValue& left, const RuntimeValue& right);
+
+int runtimeCompareNumericElementsForExtrema(
+    const RuntimeNumericElementValue& left,
+    const RuntimeNumericElementValue& right);
+
 struct RuntimeNumericOperationResult {
     bool succeeded = false;
     RuntimeValue value;
@@ -88,5 +110,14 @@ RuntimeNumericOperationResult runtimeApplyNumericUnary(
 RuntimeNumericOperationResult runtimeApplyNumericBinary(
     std::string_view operation, const RuntimeValue& left,
     const RuntimeValue& right);
+
+RuntimeNumericOperationResult runtimeTransposeNumeric(
+    const RuntimeValue& value, bool conjugate);
+
+bool isRuntimeComplexNumericBuiltin(std::string_view name);
+
+RuntimeNumericOperationResult runtimeApplyComplexNumericBuiltin(
+    std::string_view name,
+    const std::vector<RuntimeValue>& arguments);
 
 } // namespace mparser

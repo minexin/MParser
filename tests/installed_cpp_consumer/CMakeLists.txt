@@ -27,14 +27,14 @@ if(NOT MParser_C_ABI_VERSION EQUAL 2 OR
     message(FATAL_ERROR
         "Unexpected installed C ABI: ${MParser_C_ABI_VERSION}.${MParser_C_ABI_REVISION}")
 endif()
-if(NOT MParser_CPP_API_VERSION_MAJOR EQUAL 2 OR
-   NOT MParser_CPP_API_VERSION_MINOR EQUAL 0)
+if(NOT MParser_CPP_API_VERSION_MAJOR EQUAL 1 OR
+   NOT MParser_CPP_API_VERSION_MINOR EQUAL 2)
     message(FATAL_ERROR
         "Unexpected C++ source API: ${MParser_CPP_API_VERSION_MAJOR}.${MParser_CPP_API_VERSION_MINOR}")
 endif()
 if(NOT MParser_MACHINE_PROTOCOL_NAME STREQUAL "mparser.result" OR
-   NOT MParser_MACHINE_PROTOCOL_MAJOR EQUAL 1 OR
-   NOT MParser_MACHINE_PROTOCOL_MINOR EQUAL 0)
+    NOT MParser_MACHINE_PROTOCOL_MAJOR EQUAL 1 OR
+    NOT MParser_MACHINE_PROTOCOL_MINOR EQUAL 1)
     message(FATAL_ERROR
         "Unexpected machine protocol: ${MParser_MACHINE_PROTOCOL_NAME} ${MParser_MACHINE_PROTOCOL_MAJOR}.${MParser_MACHINE_PROTOCOL_MINOR}")
 endif()
@@ -81,7 +81,7 @@ add_test(NAME installed_cpp_api_runtime
     COMMAND mparser_installed_cpp_consumer)
 set_tests_properties(installed_cpp_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-2.0,cpp-2.0")
+        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-2.0,cpp-1.2")
 
 add_test(NAME installed_cpp_cli_version
     COMMAND MParser::cli --version)

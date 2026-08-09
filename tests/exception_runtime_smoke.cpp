@@ -4,6 +4,7 @@
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
 #include "mparser/runtime_exception.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
@@ -622,6 +623,31 @@ void runSharedContractSmoke() {
                 textValue(requiredProperty(formatted.value, "message")) ==
                     "7 2.2 % Z",
             "scalar exception formatting mismatch");
+
+    mparser::RuntimeNumericElementValue exactInteger;
+    exactInteger.numericClass = mparser::RuntimeNumericClass::UInt64;
+    exactInteger.integerRealBits = 9007199254740993ULL;
+    exactInteger.real = 9007199254740992.0;
+    auto exactValue = mparser::runtimeNumericValueFromElements(
+        {1, 1}, {exactInteger}, exactInteger.numericClass);
+    require(exactValue.has_value(),
+            "exact integer exception value construction failed");
+    mparser::RuntimeNumericElementValue complexElement;
+    complexElement.real = 1.0;
+    complexElement.imaginary = 2.0;
+    complexElement.complex = true;
+    auto complexValue = mparser::runtimeNumericValueFromElements(
+        {1, 1}, {complexElement}, complexElement.numericClass);
+    require(complexValue.has_value(),
+            "complex exception value construction failed");
+    const auto numericFormatted = mparser::runtimeConstructMException(
+        {stringValue("Format:NumericChannels"),
+         stringValue("%d %g"), *exactValue, *complexValue});
+    require(numericFormatted.succeeded &&
+                textValue(requiredProperty(
+                    numericFormatted.value, "message")) ==
+                    "9007199254740993 1",
+            "numeric-channel exception formatting mismatch");
 
     auto errorStruct = mparser::makeRuntimeStructValue();
     mparser::runtimeSetStructField(

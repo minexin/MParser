@@ -351,6 +351,25 @@ name = property.Name;
 )");
     check(hasDiagnostic(deletedAccess, "descriptor is not valid"),
           "deleted dynamic descriptor remained readable");
+
+    const auto complexLogicalMetadata = run(
+        std::string(kDynamicBagClass) + R"(
+bag = DynamicBag();
+property = addprop(bag, 'Extra');
+property.Hidden = complex(1, 0);
+)");
+    check(hasDiagnostic(complexLogicalMetadata,
+                        "real scalar numeric value"),
+          "dynamic logical metadata accepted a complex value");
+
+    const auto complexPriority = run(
+        std::string(kDynamicBagClass) + R"(
+bag = DynamicBag();
+property = addprop(bag, 'Extra');
+property.PartialMatchPriority = complex(2, 0);
+)");
+    check(hasDiagnostic(complexPriority, "positive real scalar"),
+          "PartialMatchPriority accepted a complex value");
 }
 
 } // namespace

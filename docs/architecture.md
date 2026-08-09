@@ -251,7 +251,7 @@ saturation.
 The secondary reference engine is a small HIR interpreter. Its purpose is to
 define and differentially test execution semantics alongside the production
 bytecode VM and JIT. It
-supports scalar double values, N-dimensional numeric arrays, N-dimensional
+supports core real and complex numeric classes, N-dimensional numeric arrays, N-dimensional
 Cells, string literals, variable assignment, local function calls
 with isolated stack frames, namespace, ordinary path, and private function calls,
 first-output single-value
@@ -282,8 +282,8 @@ Unsupported dynamic features produce runtime diagnostics. That includes class
 instances and method handles, anonymous-function text parsing, lazy source
 discovery for computed function-name strings, other builtin multi-output
 conventions beyond the implemented
-`size`/`min`/`max`/`find` subset, complex
-numbers, sparse arrays, and object dispatch.
+`size`/`min`/`max`/`find` subset, sparse arrays, complex integer arrays, and
+object dispatch.
 This keeps the first interpreter useful for loop and expression validation
 without hiding missing MATLAB semantics behind incorrect fallbacks.
 
@@ -313,8 +313,9 @@ whole-program scan. Legal jumps out of `switch` or `try` scopes unwind those
 runtime contexts before execution resumes. Bytecode remains an internal
 representation, not a serialized public ABI.
 
-v0.54 has an executable bytecode VM for scalar doubles, logical values, strings,
-N-dimensional numeric arrays and heterogeneous Cells, matrix/cell literals,
+The executable bytecode VM handles every core real numeric class, complex
+double/single values, logical values, strings, N-dimensional numeric arrays
+and heterogeneous Cells, matrix/cell literals,
 core arithmetic, selected builtins, scripts,
 named entry functions with positional arguments, `if`/`for`/`while` control flow with
 `break`, `continue`, and `return`, same-file local function calls, isolated
@@ -366,6 +367,15 @@ extrema value/index pairs, elementwise extrema with implicit expansion, and
 `find` orientation and N-dimensional trailing-subscript folding. Keeping this
 logic below both dispatchers prevents interpreter and VM semantics from
 drifting before native lowering is introduced.
+
+`runtime_numeric` is the canonical numeric-class boundary. It stores
+fixed-width integers without a double round trip, carries separate real and
+imaginary channels for complex floating values, applies checked MATLAB-like
+conversion and saturation, and centralizes scalar element operations used by
+operators, ranges, indexing, reductions, scans, embedding, and display.
+Typed/native regions currently specialize dense real doubles; numeric-class,
+shape, and complexity guards return unsupported values to the VM before an
+optimized region can publish mutation.
 
 `runtime_scan` owns cumulative and finite-difference array traversal. The four
 cumulative operations retain the complete input shape and walk independent
@@ -1699,6 +1709,15 @@ read helpers. This distinguishes `A(:)`, which must be column-shaped, from an
 ordinary vector subscript whose orientation follows the existing target and
 subscript rules. Existing overloads retain the old no-colon entry points, so
 the implementation correction does not invent a new public ABI.
+
+v1.2 deliberately advances the host value transport while the project remains
+in active development. C ABI generation 2 and C++ source API 1.2 expose
+typed numeric buffers and separate complex components; machine protocol 1.1
+carries the same classes without losing 64-bit integer precision. The product
+and installed SDK still share one MParser release version. Historical v1.0
+snapshots remain unchanged, but they do not require compatibility adapters in
+the current kernel. The active contracts freeze together only after the full
+v1.2 numeric, function, sample, regression, and platform train is complete.
 
 The release gates, compatibility-matrix requirement, builtin-extension
 architecture, embedding boundary, platform matrix, and explicit v1.0

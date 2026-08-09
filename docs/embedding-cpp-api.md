@@ -1,15 +1,15 @@
 # MParser C++ Embedding SDK
 
-MParser v0.90 provides public C++ source API 1.0 in
-`include/mparser/cpp_api.hpp`. The facade is header-only and delegates to the
-narrow C ABI shared library. It does not expose Parser, HIR, Bytecode,
-`RuntimeValue`, VM, SLJIT, or C++ standard-library layouts from the shared
-library.
+`include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
+facade. The current v1.2 development line reports source API 1.2 and delegates
+to C ABI generation 2. The product and installed SDK still share one MParser
+version; source API 1.2 is contract metadata, not a separately versioned SDK.
 
-The facade is the stable v1 source API. Its binary boundary remains C ABI
-major 1 revision 1, so no C++ exception or standard-library object
-crosses the shared-library boundary. MParser does not promise a C++ binary
-ABI; hosts recompile the header facade and link only to the narrow C library.
+The facade does not expose Parser, HIR, Bytecode, `RuntimeValue`, VM, SLJIT,
+or C++ standard-library layouts from the shared library. No C++ exception or
+standard-library object crosses that binary boundary. MParser does not promise
+a C++ binary ABI; hosts compile the current header facade and link only to the
+narrow C library.
 
 ## Install And Link
 
@@ -24,7 +24,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 Consume it from a C++20 CMake project:
 
 ```cmake
-find_package(MParser 1.1.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 
@@ -32,7 +32,7 @@ target_link_libraries(host PRIVATE MParser::cpp_api)
 transitive link to `MParser::c_api`. `MParser::cli` is the matching imported
 executable. The package exports `MParser_CPP_FOUND`,
 `MParser_CPP_INCLUDE_DIR`, engine version components, and C ABI major/revision
-metadata. It also exports C++ source API `1.0`, machine result protocol `1.0`,
+metadata. It also exports C++ source API `1.2`, machine result protocol `1.1`,
 CLI contract `1.0`, builtin source contract `1.0`, and checked paths to the
 public/CLI contracts, protocol schema, builtin catalog/author guide, and
 versioning policy. On Windows, deploy `mparser_c.dll` beside the host
@@ -42,7 +42,7 @@ Hosts can query the header declaration directly:
 
 ```cpp
 static_assert(mparser::sdk::kSourceApiVersionMajor == 1);
-static_assert(mparser::sdk::kSourceApiVersionMinor == 0);
+static_assert(mparser::sdk::kSourceApiVersionMinor == 2);
 const auto version = mparser::sdk::sourceApiVersion();
 ```
 
@@ -151,7 +151,9 @@ eligible for portable or native optimization.
 
 `Value` supports the current external transport model:
 
-- double and logical scalars or N-dimensional arrays;
+- double, single, logical, and every fixed-width signed/unsigned integer
+  scalar or N-dimensional array;
+- complex double and single arrays with separate real and imaginary spans;
 - UTF-16 character arrays;
 - UTF-16 string arrays with missing elements;
 - N-dimensional Cell arrays;
@@ -161,18 +163,21 @@ eligible for portable or native optimization.
 
 Dimensions, numeric payloads, text payloads, and Cell/Struct children are
 copied on construction. Array payload and linear element order is MATLAB
-column-major. `numericData()` and `characterData()` return immutable spans
-whose lifetime is tied to that `Value`; retain the `Value` instead of keeping
-a span returned through a temporary wrapper. `stringElement`, `cellElement`,
-and `structField` return copied or independently retained values.
+column-major. `numericClass()` and `isComplex()` describe numeric storage;
+`numericData<Element>()` and `numericImaginaryData<Element>()` return typed
+immutable spans and reject an element type that does not match the numeric
+class. Their lifetime is tied to that `Value`; retain the `Value` instead of
+keeping a span returned through a temporary wrapper. `characterData()`,
+`stringElement`, `cellElement`, and `structField` return borrowed spans,
+copies, or independently retained values as documented by their types.
 
 Structure field indexes follow the order supplied to `Value::structure`; that
 order survives a module round trip. The current public constructor creates a
 scalar Struct. General external Struct-array construction remains additive
 future work.
 
-The v1.0 ownership contract deliberately uses copy-in for host-created array
-payloads. `numericData()` and `characterData()` are readonly runtime-owned
+The current ownership contract uses copy-in for host-created array payloads.
+Numeric and character spans are readonly runtime-owned
 views tied to one `Value`; no host buffer is borrowed and no writable external
 view exists. A later borrowed-input API must use a new C descriptor with
 explicit lifetime, alignment, mutability, and thread-safety fields.
@@ -204,32 +209,25 @@ admission, so queue deadlines remain a host responsibility.
 
 ## Current Boundary
 
-v0.90 validates this SDK on Windows x64, Linux x64, macOS x64/ARM64, and
-native-JIT plus portable Linux AArch64 builds. Source-tree and relocated
-installed consumers
-exercise compile-once invocation, multi-output results, composite values,
-retained lifetimes, diagnostics, sessions, cancellation, resource limits, and
-UTF-8 source graphs.
+Source-tree and relocated installed consumers exercise source API 1.2 through
+compile-once invocation, exact typed and complex numeric values, multi-output
+results, composite values, retained lifetimes, diagnostics, sessions,
+cancellation, resource limits, and UTF-8 source graphs. The installed
+reference consumer spans multiple translation units and checks product, C ABI,
+C++ API, and protocol metadata after relocation.
 
 Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared
 cancellation, isolated limits, and concurrent retain/release. The shared C
-library carries ABI-major version 1
-and an exact exported-symbol manifest; the C++ facade remains header-only and
-source-compatible rather than a C++ binary ABI.
+library carries ABI generation 2 and an exact exported-symbol manifest; the
+C++ facade remains header-only rather than a C++ binary ABI.
 
-An exact API 1.0 header snapshot is compiled by
-`cpp_api_v1_compat_smoke`. The installed reference consumer spans multiple
-translation units and checks the source API and protocol metadata after
-relocation. `public_contract_smoke` locks the normalized public-header hash,
-while deterministic C-boundary fault tests and Linux ASan/UBSan CI cover
-allocation and undefined-behavior edges.
+The current development header and consumers move together. A source API 1.2
+snapshot is created when the complete v1.2 milestone reaches its candidate
+gate; the source API 1.0 snapshot remains historical v1.0 evidence only. The
+full Windows/Linux/macOS x64/ARM64 SDK matrix is likewise run at the milestone
+gate instead of after every internal batch.
 
 Distribution licensing is Apache-2.0 with `Copyright 2026 Wang Xin`.
-Checksummed release archives include the public contract and schema and are
-validated only through their unpacked C/C++ SDK. Deterministic unsigned SLSA
-provenance binds each archive to its source and build inputs. The stable v1
-source contract and common versioning/deprecation policy are frozen in
-`docs/versioning-and-deprecation.md`; exact-tag authentication is retained in
-the final evidence set, and the published 32-asset Release has a retained
-canonical redownload audit.
+Candidate archives include the current headers, contract metadata, schema,
+examples, and notices and are validated through their unpacked C/C++ SDK.

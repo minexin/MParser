@@ -404,6 +404,86 @@ deleted(1) = [];
     verifyExactArrayResult(result.vm);
 }
 
+template <typename Result>
+void verifyTypedColonResult(const Result& result) {
+    require(result.diagnostics.empty(),
+            "typed colon execution emitted diagnostics");
+    constexpr std::uint64_t start = 9007199254740993ULL;
+    requireIntegerBits(variable(result, "uint_range"),
+                       {start, start + 1, start + 2},
+                       "uint64 colon rounded through double");
+    requireIntegerBits(
+        variable(result, "signed_range"),
+        {std::bit_cast<std::uint64_t>(std::int64_t{3}),
+         std::bit_cast<std::uint64_t>(std::int64_t{2}),
+         std::bit_cast<std::uint64_t>(std::int64_t{1})},
+        "signed integer colon lost exact values");
+    requireArray(variable(result, "single_range"),
+                 mparser::RuntimeNumericClass::Single,
+                 {1.0, 1.5, 2.0},
+                 "single colon lost its class");
+}
+
+void verifyTypedColon() {
+    const auto result = runBoth(R"(
+uint_start = uint64(9007199254740992) + uint64(1);
+uint_stop = uint_start + uint64(2);
+uint_range = uint_start:uint_stop;
+signed_range = int64(3):int64(-1):int64(1);
+single_range = single(1):single(0.5):single(2);
+)");
+    verifyTypedColonResult(result.interpreter);
+    verifyTypedColonResult(result.vm);
+
+    const auto mixed = runBoth("bad = int8(1):uint8(3);\n");
+    constexpr std::string_view message =
+        "integer colon operands must use the same integer class";
+    require(hasDiagnostic(mixed.interpreter, message),
+            "interpreter accepted mixed integer colon classes");
+    require(hasDiagnostic(mixed.vm, message),
+            "VM accepted mixed integer colon classes");
+}
+
+template <typename Result>
+void verifyNativeIntegerReductionResult(const Result& result) {
+    require(result.diagnostics.empty(),
+            "native integer reduction emitted diagnostics");
+    constexpr std::uint64_t beyondFlintmax = 9007199254740993ULL;
+    requireIntegerBits(variable(result, "uint_sum"),
+                       {beyondFlintmax + 2},
+                       "native uint64 sum rounded through double");
+    requireIntegerBits(variable(result, "uint_product"),
+                       {beyondFlintmax * 2},
+                       "native uint64 product rounded through double");
+    requireIntegerBits(
+        variable(result, "signed_sum"),
+        {std::bit_cast<std::uint64_t>(std::int64_t{-3})},
+        "native int64 sum lost its signed result");
+    requireIntegerBits(variable(result, "saturated_product"),
+                       {static_cast<std::uint64_t>(
+                           std::numeric_limits<std::int16_t>::max())},
+                       "native int16 product did not saturate");
+    requireIntegerBits(variable(result, "empty_sum"), {0},
+                       "native empty integer sum was not zero");
+    requireScalar(variable(result, "default_sum"),
+                  mparser::RuntimeNumericClass::Double, 3.0,
+                  "default integer sum did not return double");
+}
+
+void verifyNativeIntegerReductions() {
+    const auto result = runBoth(R"(
+base = uint64(9007199254740992) + uint64(1);
+uint_sum = sum([base, uint64(2)], "all", "native");
+uint_product = prod([base, uint64(2)], "all", "native");
+signed_sum = sum(int64([-5, 2]), "all", "native");
+saturated_product = prod(int16([200, 200]), "all", "native");
+empty_sum = sum(uint64([]), "all", "native");
+default_sum = sum(uint8([1, 2]), "all");
+)");
+    verifyNativeIntegerReductionResult(result.interpreter);
+    verifyNativeIntegerReductionResult(result.vm);
+}
+
 void verifyMixedClassDiagnostics() {
     const auto mixedClass = runBoth(R"(
 bad = int8([1, 2]) + single(1);
@@ -531,6 +611,8 @@ comparison = int8(5) == 5;
         verifyExactIntegerStorage();
         verifyExactIntegerArithmetic();
         verifyExactArrayPaths();
+        verifyTypedColon();
+        verifyNativeIntegerReductions();
         verifyMixedClassDiagnostics();
         verifyTypedFallback();
 
@@ -546,6 +628,9 @@ comparison = int8(5) == 5;
             mparser::RuntimeNumericClass::UInt64, {1, 2},
             {9007199254740993ULL,
              std::numeric_limits<std::uint64_t>::max()});
+        require(mparser::runtimeValueToString(exactProtocolValue) ==
+                    "[9007199254740993 18446744073709551615]",
+                "human-readable output rounded exact uint64 values");
         machineResult.variables = {
             {"single_value", variable(result.vm, "single_value")},
             {"int8_values", variable(result.vm, "int8_values")},

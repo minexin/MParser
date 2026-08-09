@@ -128,6 +128,39 @@ void runValueSmoke() {
     assert(single.numericClass() == NumericClass::Single);
     assert(single.numericData<float>().front() == 0.1F);
 
+    const std::array<float, 4> complexReal{
+        1.0F, -2.0F, 3.5F, 0.0F};
+    const std::array<float, 4> complexImaginary{
+        -1.0F, 0.5F, 8.0F, -3.0F};
+    const auto complexSingle = Value::numericArray(
+        NumericClass::Single, matrixShape,
+        std::span<const float>(complexReal),
+        std::optional<std::span<const float>>{
+            std::span<const float>(complexImaginary)});
+    assert(complexSingle.numericClass() == NumericClass::Single);
+    assert(complexSingle.isComplex());
+    assert(std::equal(
+        complexSingle.numericData<float>().begin(),
+        complexSingle.numericData<float>().end(),
+        complexReal.begin()));
+    assert(std::equal(
+        complexSingle.numericImaginaryData<float>().begin(),
+        complexSingle.numericImaginaryData<float>().end(),
+        complexImaginary.begin()));
+
+    bool rejectedComplexLogical = false;
+    try {
+        static_cast<void>(Value::numericArray(
+            NumericClass::Logical, matrixShape,
+            std::span<const std::uint8_t>(logicalData),
+            std::optional<std::span<const std::uint8_t>>{
+                std::span<const std::uint8_t>(logicalData)}));
+    } catch (const ApiError& error) {
+        rejectedComplexLogical =
+            error.status() == MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    assert(rejectedComplexLogical);
+
     const std::array<std::int8_t, 4> int8Data{-128, -1, 2, 127};
     const auto int8Array = Value::numericArray(
         NumericClass::Int8, matrixShape,
@@ -356,8 +389,8 @@ int main(int argc, char** argv) {
     assert(argc == 3);
     constexpr auto sourceApiVersion =
         mparser::sdk::sourceApiVersion();
-    static_assert(sourceApiVersion.major == 2);
-    static_assert(sourceApiVersion.minor == 0);
+    static_assert(sourceApiVersion.major == 1);
+    static_assert(sourceApiVersion.minor == 2);
     assert(mparser::sdk::abiMajor() == 2);
     assert(mparser::sdk::abiRevision() == 0);
     runValueSmoke();

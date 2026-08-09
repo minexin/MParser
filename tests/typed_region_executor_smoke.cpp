@@ -4,6 +4,7 @@
 #include "mparser/native_scalar_jit.h"
 #include "mparser/optimization_plan.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/semantic.h"
 #include "mparser/typed_ir.h"
 #include "mparser/typed_region_executor.h"
@@ -108,11 +109,54 @@ const mparser::BytecodeTypedRegionExecutionProfile* findExecution(
 
 bool runtimeValueEqual(const mparser::RuntimeValue& left,
                        const mparser::RuntimeValue& right) {
+    if (mparser::isRuntimeNumericValue(left) ||
+        mparser::isRuntimeNumericValue(right)) {
+        return mparser::runtimeNumericValuesIdentical(left, right);
+    }
     return left.kind == right.kind && left.number == right.number &&
            left.text == right.text && left.elements == right.elements &&
            left.rows == right.rows && left.columns == right.columns &&
            left.dimensions == right.dimensions &&
            left.numericClass == right.numericClass;
+}
+
+void assertVariablesEqual(
+    const std::vector<mparser::RuntimeVariable>& expected,
+    const std::vector<mparser::RuntimeVariable>& actual);
+
+void runComplexResultFallbackSmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + sqrt(-1);
+end
+end
+)");
+    const auto optimized = runTyped(pipeline, backend);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+
+    const auto* output = findVariable(optimized.variables, "y");
+    assert(output != nullptr);
+    const auto element =
+        mparser::runtimeNumericElementValue(*output, 0);
+    assert(element.has_value());
+    assert(element->complex);
+    assert(element->real == 0.0);
+    assert(element->imaginary == 12.0);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 0);
+    assert(execution->fallbackCount == 1);
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::RuntimeFailed);
+    assert(execution->lastReason.find("complex result") !=
+           std::string::npos);
 }
 
 void assertVariablesEqual(
@@ -1156,9 +1200,13 @@ int main() {
         }
         runTypedLogicalResultSmoke();
         runTypedPureMathBuiltinSmoke();
+        runComplexResultFallbackSmoke(
+            mparser::TypedRegionBackend::Portable);
         runPredecodedOperationCoverageSmoke(
             mparser::TypedRegionBackend::Portable);
         if (mparser::nativeScalarJitAvailable()) {
+            runComplexResultFallbackSmoke(
+                mparser::TypedRegionBackend::Native);
             runPredecodedOperationCoverageSmoke(
                 mparser::TypedRegionBackend::Native);
         }

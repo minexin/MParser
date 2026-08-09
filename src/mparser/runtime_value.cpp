@@ -8,6 +8,9 @@
 #include "mparser/runtime_text.h"
 
 #include <atomic>
+#include <bit>
+#include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <limits>
 #include <set>
@@ -741,6 +744,58 @@ RuntimeValue runtimeFunctionHandleMetadata(const RuntimeValue& value) {
     return result;
 }
 
+void writeRuntimeNumericComponent(
+    std::ostringstream& output,
+    const RuntimeNumericElementValue& element, bool imaginary,
+    bool magnitude) {
+    if (runtimeNumericClassIsInteger(element.numericClass)) {
+        const std::uint64_t bits =
+            imaginary ? element.integerImaginaryBits
+                      : element.integerRealBits;
+        if (runtimeNumericClassIsSignedInteger(element.numericClass)) {
+            const std::int64_t value =
+                std::bit_cast<std::int64_t>(bits);
+            if (magnitude && value < 0) {
+                output << (std::uint64_t{0} -
+                           static_cast<std::uint64_t>(value));
+            } else {
+                output << value;
+            }
+            return;
+        }
+        output << bits;
+        return;
+    }
+
+    const double value = imaginary ? element.imaginary : element.real;
+    output << (magnitude ? std::fabs(value) : value);
+}
+
+void writeRuntimeNumericElement(std::ostringstream& output,
+                                const RuntimeValue& value,
+                                size_t storageOffset) {
+    const auto element =
+        runtimeNumericStorageElementValue(value, storageOffset);
+    if (!element) {
+        output << "<invalid-numeric>";
+        return;
+    }
+
+    writeRuntimeNumericComponent(output, *element, false, false);
+    if (!element->complex) {
+        return;
+    }
+
+    bool negative = std::signbit(element->imaginary);
+    if (runtimeNumericClassIsSignedInteger(element->numericClass)) {
+        negative = std::bit_cast<std::int64_t>(
+                       element->integerImaginaryBits) < 0;
+    }
+    output << (negative ? '-' : '+');
+    writeRuntimeNumericComponent(output, *element, true, negative);
+    output << 'i';
+}
+
 std::string runtimeValueToString(const RuntimeValue& value) {
     std::ostringstream output;
     output << std::setprecision(15);
@@ -749,7 +804,7 @@ std::string runtimeValueToString(const RuntimeValue& value) {
     case RuntimeValueKind::Missing:
         return "<missing>";
     case RuntimeValueKind::Number:
-        output << value.number;
+        writeRuntimeNumericElement(output, value, 0);
         return output.str();
     case RuntimeValueKind::CharacterArray: {
         const auto dimensions = runtimeDimensions(value);
@@ -836,7 +891,7 @@ std::string runtimeValueToString(const RuntimeValue& value) {
             if (index > 0) {
                 output << " ";
             }
-            output << value.elements[index];
+            writeRuntimeNumericElement(output, value, index);
         }
         output << "]";
         return output.str();
@@ -858,7 +913,8 @@ std::string runtimeValueToString(const RuntimeValue& value) {
                 }
                 const auto storageOffset =
                     runtimeColumnMajorLinearToStorageOffset(value, index);
-                output << value.elements[*storageOffset];
+                writeRuntimeNumericElement(
+                    output, value, *storageOffset);
             }
             output << "]";
             return output.str();
@@ -872,8 +928,9 @@ std::string runtimeValueToString(const RuntimeValue& value) {
                 if (column > 0) {
                     output << " ";
                 }
-                output << value.elements[
-                    row * value.columns + column];
+                writeRuntimeNumericElement(
+                    output, value,
+                    row * value.columns + column);
             }
         }
         output << "]";

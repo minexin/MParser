@@ -1,10 +1,12 @@
 #include "mparser/runtime_argument_validation.h"
 
+#include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdlib>
 #include <optional>
@@ -251,14 +253,12 @@ RuntimeArgumentValidationResult coerceClass(
     if (type.empty()) {
         return success(std::move(value));
     }
-    if (type == "double" || type == "logical") {
+    if (const auto numericClass = runtimeNumericClassFromName(type)) {
         if (!isNumeric(value)) {
             return failure("value must be numeric for class " + type);
         }
         auto converted = runtimeConvertNumericClass(
-            std::move(value), type == "logical"
-                                  ? RuntimeNumericClass::Logical
-                                  : RuntimeNumericClass::Double);
+            std::move(value), *numericClass);
         if (!converted) {
             return failure("value cannot be converted to class " + type);
         }
@@ -317,38 +317,27 @@ RuntimeArgumentValidationResult reshapeValue(
         return failure("argument dimensions are too large");
     }
     const size_t currentCount = valueCount(value, className);
-    if (value.kind == RuntimeValueKind::Number) {
-        if (*count == 1) {
-            return success(std::move(value));
+    if (isNumeric(value) && currentCount == 1 && *count > 1) {
+        const auto element = runtimeNumericElementValue(value, 0);
+        if (!element) {
+            return failure("numeric value cannot be expanded to the argument size");
         }
-        value.kind = dimensions.size() == 2 && dimensions[0] == 1
-                         ? RuntimeValueKind::Vector
-                         : RuntimeValueKind::Matrix;
-        value.elements.assign(*count, value.number);
-        value.number = 0.0;
-        setRuntimeDimensions(value, std::move(dimensions));
-        return success(std::move(value));
+        auto expanded = runtimeNumericValueFromElements(
+            dimensions,
+            std::vector<RuntimeNumericElementValue>(*count, *element),
+            value.numericClass);
+        return expanded
+                   ? success(std::move(*expanded))
+                   : failure("numeric value cannot be expanded to the argument size");
     }
     if (currentCount != *count) {
         return failure("value element count does not match the argument size");
     }
-    if (isArray(value)) {
-        if (*count == 1) {
-            value.kind = RuntimeValueKind::Number;
-            value.number = value.elements.front();
-            value.elements.clear();
-            setRuntimeDimensions(value, {1, 1});
-            return success(std::move(value));
-        }
-        value.kind = dimensions.size() == 2 && dimensions[0] == 1
-                         ? RuntimeValueKind::Vector
-                         : RuntimeValueKind::Matrix;
-        setRuntimeDimensions(value, std::move(dimensions));
-        return success(std::move(value));
-    }
-    if (isCell(value) || isRuntimeTextValue(value)) {
-        setRuntimeDimensions(value, std::move(dimensions));
-        return success(std::move(value));
+    if (isNumeric(value) || isCell(value) || isRuntimeTextValue(value)) {
+        auto reshaped = runtimeReshapeValue(value, std::move(dimensions));
+        return reshaped.succeeded
+                   ? success(std::move(reshaped.value))
+                   : failure(std::move(reshaped.error));
     }
     return failure("value cannot be reshaped to the argument size");
 }
@@ -416,11 +405,61 @@ RuntimeArgumentValidationResult coerceSize(RuntimeValue value,
 
 template <typename Predicate>
 bool allNumeric(const RuntimeValue& value, Predicate predicate) {
-    if (value.kind == RuntimeValueKind::Number) {
-        return predicate(value.number);
+    if (!isNumeric(value)) {
+        return false;
     }
-    return isArray(value) &&
-           std::all_of(value.elements.begin(), value.elements.end(), predicate);
+    const size_t count = runtimeShapeElementCount(value);
+    for (size_t index = 0; index < count; ++index) {
+        const auto element = runtimeNumericElementValue(value, index);
+        if (!element || !predicate(*element)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+long double numericRealValue(
+    const RuntimeNumericElementValue& value) {
+    if (!runtimeNumericClassIsInteger(value.numericClass)) {
+        return static_cast<long double>(value.real);
+    }
+    if (runtimeNumericClassIsSignedInteger(value.numericClass)) {
+        return static_cast<long double>(
+            std::bit_cast<std::int64_t>(value.integerRealBits));
+    }
+    return static_cast<long double>(value.integerRealBits);
+}
+
+bool numericElementIsFinite(
+    const RuntimeNumericElementValue& value) {
+    return runtimeNumericClassIsInteger(value.numericClass) ||
+           (std::isfinite(value.real) &&
+            (!value.complex || std::isfinite(value.imaginary)));
+}
+
+bool numericElementIsNotNan(
+    const RuntimeNumericElementValue& value) {
+    return runtimeNumericClassIsInteger(value.numericClass) ||
+           (!std::isnan(value.real) &&
+            (!value.complex || !std::isnan(value.imaginary)));
+}
+
+bool numericElementIsNonzero(
+    const RuntimeNumericElementValue& value) {
+    if (runtimeNumericClassIsInteger(value.numericClass)) {
+        return value.integerRealBits != 0 ||
+               (value.complex && value.integerImaginaryBits != 0);
+    }
+    return value.real != 0.0 ||
+           (value.complex && value.imaginary != 0.0);
+}
+
+bool numericElementIsInteger(
+    const RuntimeNumericElementValue& value) {
+    return !value.complex &&
+           (runtimeNumericClassIsInteger(value.numericClass) ||
+            (std::isfinite(value.real) &&
+             std::floor(value.real) == value.real));
 }
 
 std::optional<double> comparisonValue(
@@ -444,28 +483,72 @@ std::optional<std::string> applyValidator(
                    ? std::nullopt
                    : std::optional<std::string>(std::move(message));
     };
+    const auto realNumeric = [&](auto predicate, std::string message)
+        -> std::optional<std::string> {
+        if (!isNumeric(value)) {
+            return name + " requires numeric data";
+        }
+        if (value.numericComplex) {
+            return "value must be real";
+        }
+        return allNumeric(value, predicate)
+                   ? std::nullopt
+                   : std::optional<std::string>(std::move(message));
+    };
     if (name == "mustBePositive")
-        return numeric([](double x) { return x > 0; }, "value must be positive");
+        return realNumeric(
+            [](const RuntimeNumericElementValue& x) {
+                return numericRealValue(x) > 0.0L;
+            },
+            "value must be positive");
     if (name == "mustBeNonpositive")
-        return numeric([](double x) { return x <= 0; }, "value must be nonpositive");
+        return realNumeric(
+            [](const RuntimeNumericElementValue& x) {
+                return numericRealValue(x) <= 0.0L;
+            },
+            "value must be nonpositive");
     if (name == "mustBeNonnegative")
-        return numeric([](double x) { return x >= 0; }, "value must be nonnegative");
+        return realNumeric(
+            [](const RuntimeNumericElementValue& x) {
+                return numericRealValue(x) >= 0.0L;
+            },
+            "value must be nonnegative");
     if (name == "mustBeNegative")
-        return numeric([](double x) { return x < 0; }, "value must be negative");
+        return realNumeric(
+            [](const RuntimeNumericElementValue& x) {
+                return numericRealValue(x) < 0.0L;
+            },
+            "value must be negative");
     if (name == "mustBeFinite")
-        return numeric([](double x) { return std::isfinite(x); }, "value must be finite");
+        return numeric(numericElementIsFinite, "value must be finite");
     if (name == "mustBeNonNan")
-        return numeric([](double x) { return !std::isnan(x); }, "value must not contain NaN");
+        return numeric(numericElementIsNotNan,
+                       "value must not contain NaN");
     if (name == "mustBeNonzero")
-        return numeric([](double x) { return x != 0; }, "value must be nonzero");
+        return numeric(numericElementIsNonzero, "value must be nonzero");
     if (name == "mustBeInteger")
-        return numeric([](double x) { return std::isfinite(x) && std::floor(x) == x; },
-                       "value must contain integers");
-    if (name == "mustBeReal" || name == "mustBeFloat" ||
-        name == "mustBeNumeric" || name == "mustBeNumericOrLogical") {
-        return isNumeric(value) ? std::nullopt
-                                : std::optional<std::string>(name + " requires numeric data");
-    }
+        return realNumeric(numericElementIsInteger,
+                           "value must contain integers");
+    if (name == "mustBeReal")
+        return isNumeric(value) && !value.numericComplex
+                   ? std::nullopt
+                   : std::optional<std::string>("value must be real");
+    if (name == "mustBeFloat")
+        return isNumeric(value) &&
+                       runtimeNumericClassIsFloating(value.numericClass)
+                   ? std::nullopt
+                   : std::optional<std::string>(
+                         "value must be a floating-point array");
+    if (name == "mustBeNumeric")
+        return isNumeric(value) &&
+                       value.numericClass != RuntimeNumericClass::Logical
+                   ? std::nullopt
+                   : std::optional<std::string>("value must be numeric");
+    if (name == "mustBeNumericOrLogical")
+        return isNumeric(value)
+                   ? std::nullopt
+                   : std::optional<std::string>(
+                         "value must be numeric or logical");
     if (name == "mustBeNonsparse") return std::nullopt;
     if (name == "mustBeSparse") return "sparse values are not represented by the current runtime";
 
@@ -488,20 +571,35 @@ std::optional<std::string> applyValidator(
     }
     if (name == "mustBeNonmissing") {
         const bool present = value.kind != RuntimeValueKind::Missing &&
-            (!isNumeric(value) || allNumeric(value, [](double x) { return !std::isnan(x); }));
+            (!isNumeric(value) ||
+             allNumeric(value, numericElementIsNotNan));
         return present ? std::nullopt : std::optional<std::string>("value must not be missing");
     }
     if (name == "mustBeGreaterThan" || name == "mustBeLessThan" ||
         name == "mustBeGreaterThanOrEqual" ||
         name == "mustBeLessThanOrEqual") {
         if (!isNumeric(value)) return name + " requires numeric data";
+        if (value.numericComplex) return "value must be real";
         const auto limit = comparisonValue(validator);
         if (!limit) return name + " requires one literal comparison value";
+        const long double threshold = static_cast<long double>(*limit);
         bool valid = false;
-        if (name == "mustBeGreaterThan") valid = allNumeric(value, [&](double x) { return x > *limit; });
-        else if (name == "mustBeLessThan") valid = allNumeric(value, [&](double x) { return x < *limit; });
-        else if (name == "mustBeGreaterThanOrEqual") valid = allNumeric(value, [&](double x) { return x >= *limit; });
-        else valid = allNumeric(value, [&](double x) { return x <= *limit; });
+        if (name == "mustBeGreaterThan")
+            valid = allNumeric(value, [&](const auto& x) {
+                return numericRealValue(x) > threshold;
+            });
+        else if (name == "mustBeLessThan")
+            valid = allNumeric(value, [&](const auto& x) {
+                return numericRealValue(x) < threshold;
+            });
+        else if (name == "mustBeGreaterThanOrEqual")
+            valid = allNumeric(value, [&](const auto& x) {
+                return numericRealValue(x) >= threshold;
+            });
+        else
+            valid = allNumeric(value, [&](const auto& x) {
+                return numericRealValue(x) <= threshold;
+            });
         return valid ? std::nullopt : std::optional<std::string>("value does not satisfy " + name);
     }
     return "validator is not executable yet: " + name;
