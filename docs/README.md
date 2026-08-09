@@ -122,9 +122,12 @@ post-publication audit.
 
 ## Historical Milestones
 
-Files named `v0.xx.md` record the contract and evidence at each pre-v1
-milestone. They explain design history but do not override the current
-compatibility matrix, public contract, or v1 manuals.
+Milestones v0.77 through v0.90.1 remain beside the current documentation
+because the v1 compatibility matrix cites their contract-boundary evidence.
+Earlier notes are retained in the
+[v0.1-v0.76 milestone archive](history/v0.1-v0.76/README.md). Historical
+milestones do not override the current compatibility matrix, public contract,
+or v1 manuals.
 
 The source repository's top-level `README.md` remains the project overview
 and sample catalog.
