@@ -108,6 +108,8 @@ struct HirNode {
     SourceSpan nameValueSourceSpan;
     std::vector<std::string> superclasses;
     PropertySpec property;
+    bool capturesExpressionResult = false;
+    bool outputSuppressed = false;
     std::vector<std::unique_ptr<HirNode>> children;
 };
 

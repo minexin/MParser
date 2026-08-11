@@ -312,6 +312,103 @@ void runCompilationAndScriptSmoke() {
             "script arguments were not rejected");
 }
 
+void runHostIntegrationSmoke() {
+    const auto module = mparser::CompiledModule::compile(
+        std::vector<mparser::SourceUnit>{{
+            "host_output.m",
+            R"(formatted = sprintf("value=%d", 42);
+disp(formatted)
+written = fprintf("pi=%.1f\n", 3.14);
+40 + 2
+41 + 2;
+)"}});
+    require(module.valid(), "host integration script did not compile");
+    require(module.sourceInfo().size() == 1,
+            "source metadata count mismatch");
+    const auto* source = module.sourceInfo(0);
+    require(source && source->name == "host_output.m" &&
+                source->kind == mparser::CompiledSourceKind::Script &&
+                source->hasTopLevelStatements &&
+                !source->pureFunctionFile(),
+            "script source metadata mismatch");
+
+    const std::vector<mparser::ModuleExecutionBackend> backends{
+        mparser::ModuleExecutionBackend::Bytecode,
+        mparser::ModuleExecutionBackend::Portable,
+        mparser::ModuleExecutionBackend::Native};
+    for (const auto backend : backends) {
+        std::vector<mparser::ModuleOutputEvent> observed;
+        mparser::ModuleInvocationRequest request;
+        request.backend = backend;
+        request.outputSink = [&observed](
+                                 const mparser::ModuleOutputEvent& event) {
+            observed.push_back(event);
+            return true;
+        };
+        const auto result = module.execute(request);
+        require(result.succeeded(),
+                "host integration execution failed");
+        require(result.outputEvents.size() == 2 &&
+                    observed.size() == result.outputEvents.size(),
+                "host output event count mismatch");
+        require(result.outputEvents[0].kind ==
+                        mparser::ModuleOutputKind::Display &&
+                    result.outputEvents[0].text == "value=42\n" &&
+                    result.outputEvents[0].source.available &&
+                    result.outputEvents[0].source.sourceName ==
+                        "host_output.m" &&
+                    result.outputEvents[0].sequence == 0,
+                "display event projection mismatch");
+        require(result.outputEvents[1].kind ==
+                        mparser::ModuleOutputKind::StandardOutput &&
+                    result.outputEvents[1].text == "pi=3.1\n",
+                "formatted output projection mismatch");
+        require(result.outputEvents[1].sequence == 1,
+                "formatted output sequence mismatch");
+        require(result.topLevelExpressions.size() == 2,
+                "top-level expression count mismatch");
+        requireScalar(result.topLevelExpressions[0].value, 42,
+                      "visible top-level expression");
+        require(!result.topLevelExpressions[0].outputSuppressed &&
+                    result.topLevelExpressions[0].source.available &&
+                    result.topLevelExpressions[0].source.sourceName ==
+                        "host_output.m" &&
+                    result.topLevelExpressions[0].sequence == 2,
+                "visible expression metadata mismatch");
+        requireScalar(result.topLevelExpressions[1].value, 43,
+                      "suppressed top-level expression");
+        require(result.topLevelExpressions[1].outputSuppressed,
+                "suppressed expression metadata mismatch");
+        require(result.topLevelExpressions[1].sequence == 3,
+                "suppressed expression sequence mismatch");
+        const auto* answer = findVariable(result, "ans");
+        require(answer != nullptr, "script did not publish ans");
+        requireScalar(*answer, 43, "script ans");
+    }
+
+    const auto functionModule = mparser::CompiledModule::compile(
+        std::vector<mparser::SourceUnit>{{
+            "primary.m",
+            "function y = primary(x)\ny = x + 1;\nend\n"}});
+    require(functionModule.valid(), "function metadata source did not compile");
+    const auto* functionSource = functionModule.sourceInfo(0);
+    require(functionSource &&
+                functionSource->kind ==
+                    mparser::CompiledSourceKind::Function &&
+                functionSource->primaryFunction == "primary" &&
+                functionSource->pureFunctionFile(),
+            "function source metadata mismatch");
+
+    mparser::ModuleInvocationRequest rejectedRequest;
+    rejectedRequest.outputSink = [](const mparser::ModuleOutputEvent&) {
+        return false;
+    };
+    const auto rejected = module.execute(rejectedRequest);
+    require(!rejected.succeeded() &&
+                findDiagnostic(rejected, "MParser:OutputSinkRejected"),
+            "output sink rejection was not projected");
+}
+
 void runSessionSmoke(const mparser::CompiledModule& module) {
     auto session = module.createSession();
     mparser::ModuleInvocationRequest request;
@@ -361,6 +458,10 @@ void runNameSmoke() {
                 mparser::ModuleDiagnosticSeverity::Warning) ==
                 "warning",
             "diagnostic severity name is unstable");
+    require(mparser::moduleOutputKindName(
+                mparser::ModuleOutputKind::StandardOutput) ==
+                "stdout",
+            "output kind name is unstable");
 }
 
 } // namespace
@@ -373,6 +474,7 @@ int main() {
         runBackendSmoke(module);
         runDiagnosticSmoke(module);
         runCompilationAndScriptSmoke();
+        runHostIntegrationSmoke();
         runSessionSmoke(module);
         runNameSmoke();
         std::cout << "module execution smoke tests passed\n";

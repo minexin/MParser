@@ -4,7 +4,8 @@ Current development milestone: v1.2. The source tree, product metadata, and
 installed SDK now share development version `1.2.0`; this is not yet a tagged
 release. This active line extends the runtime with exact core numeric classes,
 dense complex double/single values, typed constructors and elementary math,
-C/C++ source API 1.2, C ABI generation 2 revision 0, and machine result
+C/C++ source API 1.2, C ABI generation 2 revision 0, in-memory source metadata,
+host-routed output and top-level expression results, and machine result
 protocol 1.1. The released v1.0 contracts remain archived evidence;
 unreleased interfaces may be simplified without compatibility adapters. See
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) and the
@@ -1048,12 +1049,19 @@ cmake --build build --target mparser_c_embedding_demo
 build\mparser_c_embedding_demo.exe
 ```
 
+The example now also compiles an in-memory script with source-load options,
+receives `disp`/`fprintf` through a host callback, and reads retained
+top-level-expression results.
+
 Build and run the C++20 embedding example:
 
 ```powershell
 cmake --build build --target mparser_cpp_embedding_demo
 build\mparser_cpp_embedding_demo.exe
 ```
+
+The C++ example exercises the equivalent `SourceMetadata`, `OutputSink`,
+`OutputEvent`, and `TopLevelExpression` RAII surface.
 
 Build and run the C ABI compatibility example:
 
@@ -1264,6 +1272,18 @@ boundary. Exit codes are respectively `0`, `1`, `2`, `3`, and `4`; an output
 transport failure can make exit-4 stdout incomplete. See
 [docs/machine-result-protocol.md](docs/machine-result-protocol.md) for the
 complete schema and compatibility rules.
+
+Run the v1.2 host-console sample to observe `disp`, stdout-only formatted
+output, unsuppressed `ans`, and a suppressed expression that still updates the
+workspace:
+
+```powershell
+build\mparser.exe --run samples\host_integration_demo.m
+```
+
+Normal output events and top-level expressions preserve one execution-order
+sequence. JSON mode frames them in `output_events` and
+`top_level_expressions`; it never lets script output corrupt protocol stdout.
 
 The public and diagnostic execution modes have separate contracts:
 

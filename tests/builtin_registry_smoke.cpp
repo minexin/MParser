@@ -161,7 +161,7 @@ void runDefaultCatalogSmoke() {
     require(mparser::kBuiltinSourceContractMajor == 1 &&
                 mparser::kBuiltinSourceContractMinor == 1,
             "builtin source contract version changed");
-    require(registry->names().size() == 163,
+    require(registry->names().size() == 164,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");
@@ -258,11 +258,25 @@ void runDefaultCatalogSmoke() {
                     descriptor->purity == mparser::BuiltinPurity::Pure,
                 "shared array builtin metadata mismatch");
     }
-    const auto* unsupported = registry->find("disp");
-    require(unsupported &&
-                unsupported->implementation ==
-                    mparser::BuiltinImplementationKind::Unsupported,
-            "unsupported builtin boundary mismatch");
+    for (std::string_view name : {"disp", "fprintf"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Context &&
+                    descriptor->purity ==
+                        mparser::BuiltinPurity::Impure &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->requiredContext,
+                        mparser::BuiltinContextPermission::Output),
+                "host output builtin metadata mismatch");
+    }
+    const auto* formatted = registry->find("sprintf");
+    require(formatted &&
+                formatted->implementation ==
+                    mparser::BuiltinImplementationKind::Shared &&
+                formatted->purity == mparser::BuiltinPurity::Pure &&
+                formatted->outputs.maximum == 1,
+            "sprintf metadata mismatch");
 }
 
 void runRegistryBoundarySmoke() {

@@ -249,7 +249,7 @@ listener(box, 'Stable', 'PostSet', ...
     @(property, data) box.record(4, property, data));
 box.Sequence = 0;
 box.Stable = 13;
-discarded_listener_order = box.Sequence;
+expression_retained_listener_order = box.Sequence;
 
 recursive_listener = box.addlistener('Stable', 'PostSet', ...
     @(property, data) box.reenterStable(property, data));
@@ -305,7 +305,7 @@ discarded_coupled_order = coupled_box.Sequence;
     checkNumber(result, "abort_set_order", 0.0);
     checkNumber(result, "changed_set_order", 78.0);
     checkNumber(result, "retained_listener_order", 4.0);
-    checkNumber(result, "discarded_listener_order", 0.0);
+    checkNumber(result, "expression_retained_listener_order", 4.0);
     checkNumber(result, "nonrecursive_count", 1.0);
     checkNumber(result, "recursive_count", 2.0);
     checkNumber(result, "method_notify_count", 1.0);

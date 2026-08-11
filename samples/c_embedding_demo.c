@@ -22,6 +22,63 @@ static const char k_source[] =
     "out = value;\n"
     "end\n";
 
+static const char k_host_source[] =
+    "formatted = sprintf(\"value=%d\", 42);\n"
+    "disp(formatted)\n"
+    "written = fprintf(\"pi=%.1f\\n\", 3.14);\n"
+    "40 + 2\n"
+    "41 + 2;\n";
+
+typedef struct output_capture {
+    size_t count;
+} output_capture;
+
+static int bytes_equal(
+    const char* data, size_t size, const char* expected) {
+    const size_t expected_size = strlen(expected);
+    return size == expected_size &&
+           (size == 0 || memcmp(data, expected, size) == 0);
+}
+
+static int view_ends_with(
+    mparser_utf8_view view, const char* suffix) {
+    const size_t suffix_size = strlen(suffix);
+    return view.size >= suffix_size &&
+           memcmp(view.data + view.size - suffix_size,
+                  suffix, suffix_size) == 0;
+}
+
+static mparser_output_disposition print_output(
+    void* user_data,
+    uint64_t sequence,
+    mparser_output_kind kind,
+    const char* text,
+    size_t text_size,
+    const char* source_name,
+    size_t source_name_size,
+    mparser_source_position source_begin,
+    mparser_source_position source_end) {
+    output_capture* capture = (output_capture*)user_data;
+    const mparser_utf8_view source = {
+        source_name, source_name_size};
+    const int expected =
+        capture != NULL && sequence == capture->count &&
+        view_ends_with(source, "c_host_integration_demo.m") &&
+        source_begin.line > 0 && source_end.line > 0 &&
+        ((capture->count == 0 &&
+          kind == MPARSER_OUTPUT_DISPLAY &&
+          bytes_equal(text, text_size, "value=42\n")) ||
+         (capture->count == 1 &&
+          kind == MPARSER_OUTPUT_STANDARD &&
+          bytes_equal(text, text_size, "pi=3.1\n")));
+    if (!expected) {
+        return MPARSER_OUTPUT_REJECT;
+    }
+    ++capture->count;
+    fwrite(text, 1, text_size, stdout);
+    return MPARSER_OUTPUT_ACCEPT;
+}
+
 static int check_status(mparser_api_status status,
                         const char* operation) {
     if (status == MPARSER_API_STATUS_OK) {
@@ -55,23 +112,31 @@ static mparser_api_status create_double_scalar(
         dimensions, 2, &buffer, output);
 }
 
-static int read_scalar(const mparser_result* result, double* value) {
-    mparser_value* output = NULL;
+static int read_value_scalar(
+    const mparser_value* input, double* value) {
     mparser_numeric_buffer buffer = {0};
-    if (!mparser_result_succeeded(result) ||
-        mparser_result_output(result, 0, &output) !=
-            MPARSER_API_STATUS_OK ||
-        mparser_value_get_numeric_buffer(output, &buffer) !=
+    if (mparser_value_get_numeric_buffer(input, &buffer) !=
             MPARSER_API_STATUS_OK ||
         buffer.numeric_class != MPARSER_NUMERIC_DOUBLE ||
         buffer.is_complex != 0 ||
         buffer.element_count != 1) {
-        mparser_value_release(output);
         return 0;
     }
     *value = ((const double*)buffer.real_data)[0];
-    mparser_value_release(output);
     return 1;
+}
+
+static int read_scalar(const mparser_result* result, double* value) {
+    mparser_value* output = NULL;
+    int valid = 0;
+    if (!mparser_result_succeeded(result) ||
+        mparser_result_output(result, 0, &output) !=
+            MPARSER_API_STATUS_OK) {
+        return 0;
+    }
+    valid = read_value_scalar(output, value);
+    mparser_value_release(output);
+    return valid;
 }
 
 int main(void) {
@@ -82,8 +147,14 @@ int main(void) {
     mparser_invocation_options options;
     mparser_execution_summary summary;
     mparser_result* result = NULL;
+    mparser_module* host_module = NULL;
+    mparser_result* host_result = NULL;
+    mparser_value* host_expression = NULL;
+    mparser_source_load_options load_options;
+    output_capture capture = {0};
     double total = 0;
     double recovered = 0;
+    double host_answer = 0;
 
     if (!check_status(
             mparser_module_compile_utf8(
@@ -147,13 +218,65 @@ int main(void) {
         !read_scalar(result, &recovered)) {
         return 1;
     }
+    mparser_result_release(result);
+    result = NULL;
+
+    if (!check_status(
+            mparser_source_load_options_init(&load_options),
+            "source load options") ||
+        !check_status(
+            mparser_module_compile_utf8_with_options(
+                k_host_source, strlen(k_host_source),
+                "c_host_integration_demo.m",
+                strlen("c_host_integration_demo.m"),
+                &load_options, &host_module),
+            "compile host script") ||
+        !mparser_module_is_valid(host_module) ||
+        mparser_module_source_count(host_module) != 1 ||
+        mparser_module_source_kind(host_module, 0) !=
+            MPARSER_SOURCE_SCRIPT ||
+        !mparser_module_source_has_top_level_statements(
+            host_module, 0) ||
+        mparser_module_source_is_pure_function_file(host_module, 0)) {
+        return 1;
+    }
+
+    if (!check_status(
+            mparser_invocation_options_init(&options),
+            "host invocation options")) {
+        return 1;
+    }
+    options.output_sink = print_output;
+    options.output_user_data = &capture;
+    if (!check_status(
+            mparser_module_execute(
+                host_module, &options, &host_result),
+            "execute host script") ||
+        !mparser_result_succeeded(host_result) ||
+        capture.count != 2 ||
+        mparser_result_output_event_count(host_result) != 2 ||
+        mparser_result_top_level_expression_count(host_result) != 2 ||
+        !check_status(
+            mparser_result_top_level_expression_value(
+                host_result, 1, &host_expression),
+            "read host expression") ||
+        !read_value_scalar(host_expression, &host_answer) ||
+        !mparser_result_top_level_expression_output_suppressed(
+            host_result, 1) ||
+        mparser_result_top_level_expression_sequence(
+            host_result, 1) != 3) {
+        return 1;
+    }
 
     printf("sumTo(100) = %.0f\n", total);
     printf("limited stop = instruction-limit\n");
     printf("recovered = %.0f\n", recovered);
-    printf("summary = 5050,instruction-limit,42\n");
+    printf("host answer = %.0f\n", host_answer);
+    printf("summary = 5050,instruction-limit,42,host-output-2-2\n");
 
-    mparser_result_release(result);
+    mparser_value_release(host_expression);
+    mparser_result_release(host_result);
+    mparser_module_release(host_module);
     mparser_value_release(argument);
     mparser_session_release(session);
     mparser_module_release(module);

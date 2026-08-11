@@ -351,7 +351,7 @@ coupled_callback_count = coupledPulse.CallbackCount;
 uncoupledPulse = Pulse();
 listener(uncoupledPulse, 'Tick', @(src, evt) src.record(evt.EventName));
 uncoupledPulse.fire(0);
-discarded_listener_count = uncoupledPulse.CallbackCount;
+expression_retained_listener_count = uncoupledPulse.CallbackCount;
 manualListener = listener(uncoupledPulse, 'Tick', ...
     @(src, evt) src.record(evt.EventName));
 uncoupledPulse.fire(0);
@@ -394,9 +394,9 @@ custom_data_isa = isa(data, 'event.EventData');
     checkNumber(result, "nonrecursive_count", 1.0);
     checkNumber(result, "recursive_count", 2.0);
     checkNumber(result, "coupled_callback_count", 1.0);
-    checkNumber(result, "discarded_listener_count", 0.0);
-    checkNumber(result, "retained_listener_count", 1.0);
-    checkNumber(result, "deleted_manual_listener_count", 1.0);
+    checkNumber(result, "expression_retained_listener_count", 1.0);
+    checkNumber(result, "retained_listener_count", 3.0);
+    checkNumber(result, "deleted_manual_listener_count", 4.0);
     checkNumber(result, "custom_data_count", 9.0);
     checkNumber(result, "custom_data_isa", 1.0);
 }

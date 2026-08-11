@@ -140,10 +140,26 @@ file(READ "${SNAPSHOT}" snapshot_json)
 protocol_envelope_valid("${golden_json}" golden_valid)
 protocol_envelope_valid("${emergency_json}" emergency_valid)
 protocol_envelope_valid("${snapshot_json}" snapshot_valid)
-if(NOT golden_valid OR NOT emergency_valid OR NOT snapshot_valid OR
-   NOT golden_json STREQUAL snapshot_json)
+if(NOT golden_valid OR NOT emergency_valid OR NOT snapshot_valid)
     message(FATAL_ERROR
-        "Machine protocol golden/snapshot contract changed")
+        "Machine protocol golden or historical snapshot is invalid")
+endif()
+string(JSON output_event_count ERROR_VARIABLE output_event_error
+    LENGTH "${golden_json}" output_events)
+string(JSON expression_count ERROR_VARIABLE expression_error
+    LENGTH "${golden_json}" top_level_expressions)
+string(JSON first_event_kind ERROR_VARIABLE first_event_error
+    GET "${golden_json}" output_events 0 kind)
+string(JSON first_expression_suppressed
+    ERROR_VARIABLE first_expression_error
+    GET "${golden_json}" top_level_expressions 0 output_suppressed)
+if(output_event_error OR expression_error OR first_event_error OR
+   first_expression_error OR NOT output_event_count EQUAL 2 OR
+   NOT expression_count EQUAL 2 OR
+   NOT first_event_kind STREQUAL "display" OR
+   first_expression_suppressed)
+    message(FATAL_ERROR
+        "Current machine protocol golden lacks host-integration fields")
 endif()
 string(JSON emergency_version GET "${emergency_json}" engine version)
 string(JSON emergency_status GET "${emergency_json}" status)

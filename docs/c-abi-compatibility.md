@@ -46,7 +46,7 @@ The current ABI-generation library names are:
 - Windows: `mparser_c.dll` plus its import library.
 
 Internal compiler, VM, C++ facade, and SLJIT symbols have hidden visibility.
-The current public export set is the 89-name manifest in
+The current public export set is the 108-name manifest in
 `tests/c_api_generation2_symbols.txt`.
 
 ## Extensible Roots
@@ -109,6 +109,13 @@ Opaque module, session, result, value, cancellation, and diagnostic handles
 may change internally. Their retain/release, ownership, concurrency, and
 borrowed-view rules are documented in `embedding-c-api.md`.
 
+`mparser_output_sink_callback` is a function-pointer calling convention, not a
+structure layout. Its arguments are fixed-width values, borrowed byte ranges,
+and `mparser_source_position` records. The callback is invoked synchronously
+during execution and its borrowed text/source pointers are valid only for that
+call. `output_sink` and `output_user_data` are tail fields in the current
+caller-sized `mparser_invocation_options` root.
+
 ## Numeric Transport
 
 ABI 2 replaces the double-only numeric transport with
@@ -125,9 +132,10 @@ borrowed-input lifetime crosses the C boundary.
 ## Validation
 
 `c_api_smoke` validates ABI negotiation, caller-sized roots, sealed records,
-every numeric class, complex buffers, source graphs, sessions, ownership,
-resources, and failure boundaries. `c_api_layout_contract` checks current
-64-bit sizes, offsets, and constant values.
+every numeric class, complex buffers, source graphs and metadata, output
+callbacks/results, sessions, ownership, resources, and failure boundaries.
+`c_api_layout_contract` checks current 64-bit sizes, offsets, and constant
+values.
 
 `c_api_shared_library_abi` inspects the dynamic library with the platform
 toolchain, compares its exports with `tests/c_api_generation2_symbols.txt`, and checks

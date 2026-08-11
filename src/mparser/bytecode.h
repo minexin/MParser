@@ -40,6 +40,7 @@ enum class BytecodeOp {
     Return,
     ForBegin,
     ForNext,
+    CaptureExpression,
     Pop,
     DeclareGlobal,
     DeclarePersistent,
@@ -91,6 +92,8 @@ struct BytecodeInstruction {
     bool nullAssignment = false;
     std::vector<bool> colonSubscripts;
     bool nondeterministicAssignment = false;
+    bool outputSuppressed = false;
+    bool implicitExpressionOutput = false;
 };
 
 struct BytecodeProgram {

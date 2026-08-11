@@ -712,6 +712,21 @@ void writePosition(JsonWriter& writer,
     writer.endObject();
 }
 
+void writeSourceRange(JsonWriter& writer,
+                      const ModuleSourceRange& source) {
+    if (!source.available) {
+        writer.nullValue();
+        return;
+    }
+    writer.beginObject();
+    writer.field("name", source.sourceName);
+    writer.key("begin");
+    writePosition(writer, source.begin);
+    writer.key("end");
+    writePosition(writer, source.end);
+    writer.endObject();
+}
+
 void writeFrame(JsonWriter& writer,
                 const ModuleDiagnosticFrame& frame) {
     writer.beginObject();
@@ -757,17 +772,7 @@ void writeDiagnostic(JsonWriter& writer,
     writer.field("identifier", diagnostic.identifier);
     writer.field("message", diagnostic.message);
     writer.key("source");
-    if (!diagnostic.source.available) {
-        writer.nullValue();
-    } else {
-        writer.beginObject();
-        writer.field("name", diagnostic.source.sourceName);
-        writer.key("begin");
-        writePosition(writer, diagnostic.source.begin);
-        writer.key("end");
-        writePosition(writer, diagnostic.source.end);
-        writer.endObject();
-    }
+    writeSourceRange(writer, diagnostic.source);
     writer.key("stack");
     writer.beginArray();
     for (const auto& frame : diagnostic.stack) {
@@ -872,6 +877,31 @@ std::string serializeMachineResultJsonV1(
         }
         writer.key("value");
         writeRuntimeValue(writer, result.outputs[index], 0);
+        writer.endObject();
+    }
+    writer.endArray();
+    writer.key("output_events");
+    writer.beginArray();
+    for (const auto& event : result.outputEvents) {
+        writer.beginObject();
+        writer.field("sequence", event.sequence);
+        writer.field("kind", moduleOutputKindName(event.kind));
+        writer.field("text", event.text);
+        writer.key("source");
+        writeSourceRange(writer, event.source);
+        writer.endObject();
+    }
+    writer.endArray();
+    writer.key("top_level_expressions");
+    writer.beginArray();
+    for (const auto& expression : result.topLevelExpressions) {
+        writer.beginObject();
+        writer.field("sequence", expression.sequence);
+        writer.field("output_suppressed", expression.outputSuppressed);
+        writer.key("source");
+        writeSourceRange(writer, expression.source);
+        writer.key("value");
+        writeRuntimeValue(writer, expression.value, 0);
         writer.endObject();
     }
     writer.endArray();

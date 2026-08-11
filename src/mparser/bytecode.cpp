@@ -1,9 +1,13 @@
 #include "mparser/bytecode.h"
 
+#include "mparser/builtin_registry.h"
+#include "mparser/function_signature.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <cctype>
 #include <optional>
+#include <map>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -49,7 +53,11 @@ class BytecodeLoweringContext {
 public:
     BytecodeProgram lower(const SemanticResult& semantic) {
         program_.diagnostics = semantic.diagnostics;
+        builtinRegistry_ = semantic.builtinRegistry
+                               ? semantic.builtinRegistry.get()
+                               : defaultBuiltinRegistry().get();
         if (semantic.root) {
+            collectFunctionSignatures(*semantic.root);
             lowerNode(*semantic.root);
         }
         return std::move(program_);
@@ -86,8 +94,11 @@ private:
             emitBlock(BytecodeOp::EnterClass, BytecodeOp::LeaveClass, node);
             break;
         case HirKind::Function:
-            emitBlock(BytecodeOp::EnterFunction, BytecodeOp::LeaveFunction,
-                      node);
+            emit(BytecodeOp::EnterFunction, node);
+            ++functionDepth_;
+            lowerChildren(node);
+            --functionDepth_;
+            emit(BytecodeOp::LeaveFunction, node);
             break;
         case HirKind::Import:
             break;
@@ -201,6 +212,18 @@ private:
             }
             if (node.children.size() == 1) {
                 const auto& expression = *node.children.front();
+                if (node.capturesExpressionResult && functionDepth_ == 0) {
+                    if (!expressionProducesResult(expression)) {
+                        lowerExpression(expression, 0);
+                        break;
+                    }
+                    lowerExpression(expression, 1, true);
+                    const size_t capture = emit(
+                        BytecodeOp::CaptureExpression, node);
+                    program_.instructions[capture].outputSuppressed =
+                        node.outputSuppressed;
+                    break;
+                }
                 if (expression.kind == HirKind::CallOrIndex ||
                     expression.kind == HirKind::SuperclassCall ||
                     expression.kind == HirKind::MemberAccess) {
@@ -625,9 +648,11 @@ private:
         emit(BytecodeOp::BinaryOp, node, static_cast<int>(count));
     }
 
-    void lowerExpression(const HirNode& node, int resultCount = 1) {
+    void lowerExpression(const HirNode& node, int resultCount = 1,
+                         bool implicitExpressionOutput = false) {
         if (node.kind == HirKind::CallOrIndex) {
-            lowerCallOrIndex(node, resultCount);
+            lowerCallOrIndex(node, resultCount,
+                             implicitExpressionOutput);
             return;
         }
         if (node.kind == HirKind::SuperclassCall) {
@@ -647,10 +672,14 @@ private:
              resultCount);
     }
 
-    void lowerCallOrIndex(const HirNode& node, int resultCount) {
+    void lowerCallOrIndex(const HirNode& node, int resultCount,
+                          bool implicitExpressionOutput = false) {
         if (node.children.empty()) {
-            emit(BytecodeOp::CallOrIndex, node, argumentCount(node), -1,
-                 resultCount);
+            const size_t call =
+                emit(BytecodeOp::CallOrIndex, node,
+                     argumentCount(node), -1, resultCount);
+            program_.instructions[call].implicitExpressionOutput =
+                implicitExpressionOutput;
             return;
         }
 
@@ -666,6 +695,8 @@ private:
         const size_t call =
             emit(BytecodeOp::CallOrIndex, node, argumentCount(node), -1,
                  resultCount);
+        program_.instructions[call].implicitExpressionOutput =
+            implicitExpressionOutput;
         attachColonSubscripts(call, node);
         if ((node.binding.kind == BindingKind::Builtin ||
              node.binding.kind == BindingKind::Function) &&
@@ -999,8 +1030,40 @@ private:
         return false;
     }
 
+    void collectFunctionSignatures(const HirNode& node) {
+        if (node.kind == HirKind::Function) {
+            functionSignatures_[node.label] =
+                parseFunctionSignature(node);
+        }
+        for (const auto& child : node.children) {
+            collectFunctionSignatures(*child);
+        }
+    }
+
+    bool expressionProducesResult(const HirNode& expression) const {
+        if (expression.kind != HirKind::CallOrIndex ||
+            expression.children.empty()) {
+            return true;
+        }
+        const HirNode& callee = *expression.children.front();
+        if (expression.binding.kind == BindingKind::Builtin &&
+            builtinRegistry_) {
+            const auto* descriptor = builtinRegistry_->find(callee.label);
+            return !descriptor || descriptor->outputs.accepts(1);
+        }
+        if (expression.binding.kind == BindingKind::Function) {
+            const auto function = functionSignatures_.find(callee.label);
+            return function == functionSignatures_.end() ||
+                   functionOutputCountIsValid(function->second, 1);
+        }
+        return true;
+    }
+
     BytecodeProgram program_;
     std::vector<LoopPatch> loopStack_;
+    size_t functionDepth_ = 0;
+    const BuiltinRegistry* builtinRegistry_ = nullptr;
+    std::map<std::string, FunctionSignature> functionSignatures_;
 };
 
 } // namespace
@@ -1070,6 +1133,8 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "ForBegin";
     case BytecodeOp::ForNext:
         return "ForNext";
+    case BytecodeOp::CaptureExpression:
+        return "CaptureExpression";
     case BytecodeOp::Pop:
         return "Pop";
     case BytecodeOp::DeclareGlobal:

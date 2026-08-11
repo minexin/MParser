@@ -1822,9 +1822,15 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
     }
 
     const auto tokens = collectUntilSeparator(true);
+    const bool outputSuppressed = at(TokenKind::Semicolon);
+    auto statement = buildStatementLikeNode(
+        tokens, SyntaxKind::ExpressionStatement);
+    if (statement && statement->kind == SyntaxKind::ExpressionStatement) {
+        statement->capturesExpressionResult = true;
+        statement->outputSuppressed = outputSuppressed;
+    }
     consumeSeparator();
-
-    return buildStatementLikeNode(tokens, SyntaxKind::ExpressionStatement);
+    return statement;
 }
 
 std::unique_ptr<SyntaxNode> Parser::parseWorkspaceDeclaration() {

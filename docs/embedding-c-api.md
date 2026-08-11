@@ -123,6 +123,14 @@ queued invocation enters the runtime.
 `mparser_module_compile_utf8` compiles one owned copy of a UTF-8 source buffer
 and source name. It remains the one-source convenience API.
 
+`mparser_module_compile_utf8_with_options` combines an in-memory entry source
+with the production `SourceLoader`. The source name acts as the entry path,
+its directory and ordered `mparser_source_load_options.search_paths` define
+dependency lookup, and discovered package/private/class-folder/function files
+join the graph. A relative source name is resolved from the host process's
+current directory and returned loaded names are normalized UTF-8 filesystem
+paths. The module owns a copy of the entry text before the call returns.
+
 `mparser_module_compile_sources` accepts one or more versioned
 `mparser_source_unit` descriptors. Initialize each descriptor with
 `mparser_source_unit_init`. The module copies every name and source buffer,
@@ -146,6 +154,9 @@ Paths are length-delimited UTF-8 and are converted directly to native
 filesystem paths. Loaded source names remain UTF-8. The host can inspect the
 ordered graph through `mparser_module_source_count` and
 `mparser_module_source_name`; returned names are borrowed from the module.
+Each unit also exposes `mparser_module_source_kind`, primary-function name,
+top-level-statement presence, and pure-function-file classification. Unknown
+or out-of-range units return neutral values rather than borrowed storage.
 Empty paths, embedded nulls, and malformed UTF-8 return
 `MPARSER_API_STATUS_INVALID_ARGUMENT` without creating a module.
 
@@ -167,7 +178,8 @@ request can select:
 - profile collection;
 - instruction, wall-time, call-depth, per-value array-payload, and diagnostic
   limits;
-- a cross-thread cancellation token.
+- a cross-thread cancellation token;
+- an optional synchronous host output callback and opaque user pointer.
 
 Zero means unlimited for every numeric resource limit. The execution behavior
 and JIT suppression rules are the same as the v0.82 C++ contract.
@@ -181,6 +193,49 @@ An API status of `OK` means the host request was accepted and a result was
 created. It does not by itself mean that MATLAB-like execution succeeded.
 Inspect `mparser_result_status` or `mparser_result_succeeded`, then inspect
 outputs, variables, diagnostics, and the execution summary.
+
+## Output And Top-Level Expressions
+
+`disp` emits a display event. The current `fprintf(format, ...)` form emits a
+standard-output event and, when requested, returns the emitted UTF-8 byte
+count. `sprintf(format, ...)` returns a character row vector without emitting
+an event. File identifiers and file ownership are not part of this v1.2
+slice.
+
+The `fprintf`/`sprintf` formatter accepts static flags/width/precision and
+`d`, `i`, `u`, `f`, `F`, `e`, `E`, `g`, `G`, `s`, and `c` conversions. It
+formats numeric arrays in column-major order by repeating the format, treats
+text precision/counting by Unicode code point, and accepts a valid Unicode
+scalar value for numeric `%c`. Dynamic `*` width/precision, length modifiers,
+complex numeric conversions, and unsupported conversions produce
+`MParser:InvalidFormattedOutput`. Width is capped at 1 MiB, precision at 4096,
+and one formatted result at 16 MiB.
+
+Set `mparser_invocation_options.output_sink` to receive events as they occur.
+The callback's text and source pointers are borrowed only for the call. Return
+`MPARSER_OUTPUT_ACCEPT` to continue or `MPARSER_OUTPUT_REJECT` to produce a
+runtime failure with `MParser:OutputSinkRejected`. The callback runs
+synchronously while the module/session execution lock is held; it must return
+promptly and must not re-enter the executing module or session. Every event is
+also retained in the result and can be read through the
+`mparser_result_output_event_*` getters.
+
+Script expression statements are retained through
+`mparser_result_top_level_expression_*`. Both unsuppressed and semicolon-
+suppressed expressions update `ans`; the suppression bit controls human
+display but does not remove the value from the result. Assignments remain
+available through result workspace variables rather than this expression
+list. Output events and top-level expressions share a zero-based monotonically
+increasing `uint64_t sequence`, so a host can merge the two arrays in original
+execution order. Source names/ranges remain borrowed from the result; values
+returned by the expression getter are owned handles.
+
+Top-level expression values use the same strong ownership as ordinary result
+values. Object and function-handle expressions retain their runtime graphs
+until the result and any derived value handles are released; this can extend
+handle/listener lifetimes across later script statements. Release results
+promptly, or use explicit language-level `delete`, when deterministic handle
+teardown matters.
 
 ## Values
 
@@ -299,8 +354,11 @@ covers:
   source-linked diagnostics;
 - copied host source-buffer ownership and versioned load options;
 - package/class-folder/search-path loading and stable load failures;
+- in-memory source loading with search paths and source classification;
 - non-ASCII entry/search paths and retained UTF-8 source names;
 - scalar and multiple-output invocation;
+- bounded formatting, synchronous output callbacks, retained ordered events,
+  and suppressed/unsuppressed top-level expression values;
 - MATLAB column-major numeric, character, and string round trips;
 - exact single/integer buffers and complex real/imaginary round trips;
 - Cell and Struct construction with independent child lifetimes;
@@ -314,7 +372,8 @@ covers:
   sealed source-unit rejection.
 
 `c_api_utf8_source_graph_smoke` creates non-ASCII entry and library
-directories. `c_embedding_demo_smoke` runs the single-source C host and
+directories. `c_embedding_demo_smoke` runs the C host, including output and
+top-level result handling, and
 `c_source_graph_demo_smoke` loads a real `+package/@Class` graph.
 `c_abi_compat_demo_smoke` exercises current caller-sized future-tail storage;
 it does not test an older SDK. `c_api_layout_contract` checks the current
@@ -341,8 +400,9 @@ visibility. Windows x64, Linux x64, macOS x64/ARM64, and focused Linux
 AArch64 jobs execute the applicable ABI and stress evidence.
 
 `installed_c_consumer_smoke` installs the SDK, moves its prefix, configures a
-separate C11 project through `find_package`, and verifies C ABI execution plus
-the imported CLI on Windows x64 and Linux x64. The AArch64 job independently
+separate C11 project through `find_package`, and verifies C ABI execution,
+in-memory source metadata, output callbacks/results, top-level expressions,
+and the imported CLI on Windows x64 and Linux x64. The AArch64 job independently
 installs and cross-consumes both native-JIT and portable packages, then runs
 the installed consumer and CLI under QEMU.
 

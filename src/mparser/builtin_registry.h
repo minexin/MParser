@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mparser/diagnostic.h"
+#include "mparser/runtime_output.h"
 #include "mparser/runtime_value.h"
 
 #include <cstddef>
@@ -98,6 +99,7 @@ enum class BuiltinContextPermission : std::uint32_t {
     ObjectArrayPolicy = 1U << 2U,
     DynamicCall = 1U << 3U,
     ExecutionControl = 1U << 4U,
+    Output = 1U << 5U,
 };
 
 BuiltinSideEffect operator|(BuiltinSideEffect left,
@@ -145,6 +147,7 @@ struct BuiltinCallContext {
     RuntimeWarningState* warningState = nullptr;
     const RuntimeObjectArrayPolicy* objectArrayPolicy = nullptr;
     RuntimeExecutionControl* executionControl = nullptr;
+    RuntimeOutputSink* outputSink = nullptr;
     BuiltinDynamicInvoker dynamicInvoker;
 };
 

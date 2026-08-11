@@ -1136,6 +1136,43 @@ void printFunctionOutputs(const mparser::BytecodeVmResult& runtime) {
     }
 }
 
+void printRuntimeConsole(
+    const std::vector<mparser::RuntimeOutputEvent>& outputEvents,
+    const std::vector<mparser::RuntimeExpressionResult>& expressions) {
+    size_t outputIndex = 0;
+    size_t expressionIndex = 0;
+    while (outputIndex < outputEvents.size() ||
+           expressionIndex < expressions.size()) {
+        const bool emitOutput =
+            expressionIndex >= expressions.size() ||
+            (outputIndex < outputEvents.size() &&
+             outputEvents[outputIndex].sequence <=
+                 expressions[expressionIndex].sequence);
+        if (emitOutput) {
+            const auto& event = outputEvents[outputIndex++];
+            std::cout.write(
+                event.text.data(),
+                static_cast<std::streamsize>(event.text.size()));
+            continue;
+        }
+
+        const auto& expression = expressions[expressionIndex++];
+        if (!expression.outputSuppressed) {
+            std::cout << "ans = "
+                      << mparser::runtimeValueToString(expression.value)
+                      << "\n";
+        }
+    }
+}
+
+void printRuntimeConsole(const mparser::BytecodeVmResult& runtime) {
+    printRuntimeConsole(runtime.outputEvents, runtime.expressionResults);
+}
+
+void printRuntimeConsole(const mparser::InterpreterResult& runtime) {
+    printRuntimeConsole(runtime.outputEvents, runtime.expressionResults);
+}
+
 void printNameList(const std::vector<std::string>& names,
                    std::string_view open, std::string_view close) {
     std::cout << open;
@@ -1756,6 +1793,7 @@ int main(int argc, char** argv) {
                         result.adaptive.runtime.diagnostics)) {
                     return 1;
                 }
+                printRuntimeConsole(result.adaptive.runtime);
                 printFunctionOutputs(result.adaptive.runtime);
             }
 
@@ -1836,6 +1874,7 @@ int main(int argc, char** argv) {
                                 adaptive.runtime.diagnostics)) {
                             return 1;
                         }
+                        printRuntimeConsole(adaptive.runtime);
                         lastRuntime = std::move(adaptive.runtime);
                     }
                     printAdaptiveEvents(session.events());
@@ -1939,6 +1978,7 @@ int main(int argc, char** argv) {
                         baselineVariables, runtime.variables,
                         nondeterministicTargets);
                 }
+                printRuntimeConsole(runtime);
                 std::cout << "Variables:\n";
                 for (const auto& variable : runtime.variables) {
                     std::cout << "  " << variable.name << " = "
@@ -1993,6 +2033,7 @@ int main(int argc, char** argv) {
             } else if (runHir) {
                 mparser::Interpreter interpreter;
                 const auto runtime = interpreter.run(semantic);
+                printRuntimeConsole(runtime);
                 std::cout << "Variables:\n";
                 for (const auto& variable : runtime.variables) {
                     std::cout << "  " << variable.name << " = "

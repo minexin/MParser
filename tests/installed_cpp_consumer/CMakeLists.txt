@@ -81,7 +81,7 @@ add_test(NAME installed_cpp_api_runtime
     COMMAND mparser_installed_cpp_consumer)
 set_tests_properties(installed_cpp_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-generation-2-revision-0,cpp-api-1.2")
+        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-generation-2-revision-0,cpp-api-1.2,host-output-2-2")
 
 add_test(NAME installed_cpp_cli_version
     COMMAND MParser::cli --version)

@@ -73,6 +73,8 @@ must treat JSON object member order as insignificant:
   "entry_function": "",
   "requested_output_count": 0,
   "outputs": [],
+  "output_events": [],
+  "top_level_expressions": [],
   "workspace": [],
   "diagnostics": [],
   "execution": {}
@@ -82,6 +84,49 @@ must treat JSON object member order as insignificant:
 `outputs` contains `{ "name", "value" }` entries. `name` is null when the
 runtime has no declared name for that output. `workspace` contains
 `{ "name", "value" }` entries in the runtime result order.
+
+`output_events` contains retained `disp`/stdout records:
+
+```json
+{
+  "sequence": 0,
+  "kind": "display",
+  "text": "value=42\n",
+  "source": {
+    "name": "script.m",
+    "begin": {"offset": 0, "line": 1, "column": 1},
+    "end": {"offset": 15, "line": 1, "column": 16}
+  }
+}
+```
+
+`kind` is `display` for `disp` and `stdout` for the current `fprintf` form.
+The text is framed inside JSON and therefore never writes unstructured bytes
+to protocol stdout. `source` may be null when no language source range exists.
+
+`top_level_expressions` contains script expression-statement results:
+
+```json
+{
+  "sequence": 1,
+  "output_suppressed": false,
+  "source": null,
+  "value": {"kind":"numeric","class":"double","dimensions":[1,1],"data":[42]}
+}
+```
+
+Semicolon-suppressed expressions remain present with
+`output_suppressed: true` and still update `ans`; assignments are represented
+through `workspace`. Both arrays use the same zero-based monotonically
+increasing unsigned 64-bit sequence. Sequences are strictly increasing inside
+each array and unique across both arrays, so consumers recover original
+execution order with a two-way merge. Array order alone does not establish
+cross-array order.
+
+Current ordinary producer documents emit both arrays, including when empty.
+The tolerant major-1 schema makes them optional so the earlier protocol-1.1
+snapshot and the allocation-free emergency document remain valid; a consumer
+must treat an absent array as empty.
 
 `execution` projects every `ModuleExecutionSummary` field:
 
@@ -252,9 +297,11 @@ The normative machine-readable shape is
 is the tolerant Draft-7 major-1 consumer profile. It permits additive object
 members while preserving all current required members, field types, and
 recursive value/diagnostic shapes. The current protocol-1.1 producer shape is
-checked by the golden and current contract snapshot. A future minor that adds enum
-values or value kinds must publish a revised major-1 schema; consumers apply a
-schema only up to the minor they support.
+checked by the golden document and semantic/schema validators. The earlier
+protocol-1.1 snapshot remains an accepted minimal document rather than being
+rewritten for additive optional members. A future minor that adds enum values
+or value kinds must publish a revised major-1 schema; consumers apply a schema
+only up to the minor they support.
 
 - A minor revision may add optional object members or new enum values.
 - Consumers must ignore unknown members and preserve unknown enum values as
@@ -265,11 +312,12 @@ schema only up to the minor they support.
 - `engine.version` identifies runtime behavior; it is not the protocol
   negotiation field.
 
-`tests/golden/machine_result_v1.json` freezes producer spelling and ordering
+`tests/golden/machine_result_v1.json` freezes current producer spelling and ordering
 for all RuntimeValue kinds, diagnostic trees, non-finite numbers, UTF
-replacement, exact integer and complex values, and execution fields. The
-current protocol 1.1 copy lives under `tests/public_contract/protocol/1.1`;
-the 1.0 directory is retained only as historical release evidence.
+replacement, exact integer and complex values, ordered output/expression
+records, and execution fields. The earlier protocol 1.1 snapshot under
+`tests/public_contract/protocol/1.1` remains unchanged and schema-valid; the
+1.0 directory is retained only as historical release evidence.
 `tests/golden/machine_result_emergency_v1.json` independently freezes the
 allocation-free exit-4 document used while stdout remains writable.
 `machine_protocol_contract_smoke` validates the schema from an independent

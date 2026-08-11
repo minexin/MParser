@@ -14,10 +14,13 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
-mparser::InterpreterResult run(std::string_view source) {
+mparser::InterpreterResult run(
+    std::string_view source,
+    const mparser::InterpreterOptions& options = {}) {
     mparser::Lexer lexer(source);
     mparser::Parser parser(lexer.lex());
     auto parseResult = parser.parse();
@@ -28,7 +31,7 @@ mparser::InterpreterResult run(std::string_view source) {
     assert(semantic.diagnostics.empty());
 
     mparser::Interpreter interpreter;
-    return interpreter.run(semantic);
+    return interpreter.run(semantic, options);
 }
 
 const mparser::RuntimeValue* findVariable(const mparser::InterpreterResult& result,
@@ -809,6 +812,69 @@ end
     assertNumber(result, "summary", 188.0);
 }
 
+void runHostOutputAndExpressionSmoke() {
+    std::vector<mparser::RuntimeOutputEvent> observed;
+    mparser::InterpreterOptions options;
+    options.outputSink = [&observed](
+                             const mparser::RuntimeOutputEvent& event) {
+        observed.push_back(event);
+        return true;
+    };
+    const auto result = run(R"(formatted = sprintf("value=%d", 42);
+disp(formatted)
+written = fprintf("pi=%.1f\n", 3.14);
+40 + 2
+41 + 2;
+zero_handle = @no_output;
+one_handle = @one_output;
+zero_handle()
+one_handle()
+
+function no_output()
+end
+
+function value = one_output()
+value = 44;
+end
+)", options);
+
+    assert(result.diagnostics.empty());
+    assertString(result, "formatted", "value=42");
+    assertNumber(result, "written", 7.0);
+    assertNumber(result, "ans", 44.0);
+    assert(result.outputEvents.size() == 2);
+    assert(observed.size() == result.outputEvents.size());
+    assert(result.outputEvents[0].kind ==
+           mparser::RuntimeOutputKind::Display);
+    assert(result.outputEvents[0].text == "value=42\n");
+    assert(result.outputEvents[0].sequence == 0);
+    assert(result.outputEvents[1].kind ==
+           mparser::RuntimeOutputKind::StandardOutput);
+    assert(result.outputEvents[1].text == "pi=3.1\n");
+    assert(result.outputEvents[1].sequence == 1);
+    assert(result.expressionResults.size() == 3);
+    assert(result.expressionResults[0].value.kind ==
+           mparser::RuntimeValueKind::Number);
+    assert(result.expressionResults[0].value.number == 42.0);
+    assert(!result.expressionResults[0].outputSuppressed);
+    assert(result.expressionResults[0].sequence == 2);
+    assert(result.expressionResults[1].value.number == 43.0);
+    assert(result.expressionResults[1].outputSuppressed);
+    assert(result.expressionResults[1].sequence == 3);
+    assert(result.expressionResults[2].value.number == 44.0);
+    assert(!result.expressionResults[2].outputSuppressed);
+    assert(result.expressionResults[2].sequence == 4);
+
+    options.outputSink = [](const mparser::RuntimeOutputEvent&) {
+        return false;
+    };
+    const auto rejected = run("disp(1);", options);
+    assert(rejected.outputEvents.size() == 1);
+    assert(rejected.diagnostics.size() == 1);
+    assert(rejected.diagnostics.front().identifier ==
+           "MParser:OutputSinkRejected");
+}
+
 } // namespace
 
 int main() {
@@ -839,6 +905,7 @@ int main() {
     runReturnSmoke();
     runSessionCommandSmoke();
     runV11CoreCompatibilitySmoke();
+    runHostOutputAndExpressionSmoke();
     std::cout << "interpreter smoke tests passed\n";
     return 0;
 }

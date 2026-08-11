@@ -104,6 +104,8 @@ struct SyntaxNode {
     std::string nameValueSourceClass;
     SourceSpan nameValueSourceSpan;
     PropertySpec property;
+    bool capturesExpressionResult = false;
+    bool outputSuppressed = false;
     std::vector<std::unique_ptr<SyntaxNode>> children;
 };
 

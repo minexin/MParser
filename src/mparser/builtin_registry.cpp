@@ -160,6 +160,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "size",
     "sqrt",
     "squeeze",
+    "sprintf",
     "str2func",
     "strcmp",
     "strcmpi",
@@ -834,6 +835,96 @@ BuiltinDescriptor warningDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor outputDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = name == "disp" ? BuiltinArity::fixed(1)
+                                        : BuiltinArity::variadic(1);
+    descriptor.outputs = name == "disp" ? BuiltinArity::fixed(0)
+                                        : BuiltinArity::range(0, 1);
+    if (name != "disp") {
+        descriptor.outputConstraints = {{
+            name == "sprintf" ? BuiltinValueConstraint::Text
+                              : BuiltinValueConstraint::Numeric,
+            name == "sprintf" ? BuiltinShapeConstraint::Any
+                              : BuiltinShapeConstraint::Scalar,
+        }};
+    }
+    descriptor.implementation =
+        name == "sprintf" ? BuiltinImplementationKind::Shared
+                          : BuiltinImplementationKind::Context;
+    descriptor.purity =
+        name == "sprintf" ? BuiltinPurity::Pure
+                          : BuiltinPurity::Impure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety =
+        name == "sprintf" ? BuiltinThreadSafety::Reentrant
+                          : BuiltinThreadSafety::ContextBound;
+    if (name != "sprintf") {
+        descriptor.sideEffects = BuiltinSideEffect::Console;
+        descriptor.contextPermissions = BuiltinContextPermission::Output;
+        descriptor.requiredContext = BuiltinContextPermission::Output;
+    }
+    descriptor.errorIdentifier = "MParser:InvalidFormattedOutput";
+    descriptor.summary =
+        name == "disp"
+            ? "Display one value through the host-owned output sink."
+            : name == "fprintf"
+                  ? "Format values and write through the host-owned output sink."
+                  : "Format values into a character row vector.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        RuntimeFormatResult formatted;
+        if (builtin == "disp") {
+            formatted = runtimeFormatDisplay(call.arguments.front());
+        } else {
+            formatted = runtimeFormatPrintf(call.arguments);
+        }
+        if (!formatted.succeeded) {
+            return helperFailure(
+                call.span, std::move(formatted.error),
+                "MParser:InvalidFormattedOutput");
+        }
+        if (builtin == "sprintf") {
+            return call.requestedOutputCount == 0
+                       ? BuiltinResult::success()
+                       : BuiltinResult::success({
+                             makeRuntimeCharacterVectorUtf8(formatted.text)});
+        }
+
+        const RuntimeOutputEvent event{
+            builtin == "disp" ? RuntimeOutputKind::Display
+                              : RuntimeOutputKind::StandardOutput,
+            formatted.text,
+            call.span};
+        if (!(*call.context->outputSink)(event)) {
+            return helperFailure(
+                call.span,
+                "host output sink rejected the emitted text",
+                "MParser:OutputSinkRejected");
+        }
+        if (builtin == "fprintf" && call.requestedOutputCount == 1) {
+            return BuiltinResult::success({makeRuntimeNumberValue(
+                static_cast<double>(formatted.text.size()))});
+        }
+        return BuiltinResult::success();
+    };
+    return descriptor;
+}
+
+bool isZeroOutputIntrinsic(std::string_view name) {
+    return matches(name, {"assert", "clear", "clc", "delete",
+                          "error", "notify", "rethrow", "throw",
+                          "throwAsCaller"});
+}
+
+BuiltinDescriptor zeroOutputIntrinsicDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.outputs = BuiltinArity::fixed(0);
+    descriptor.summary =
+        "Engine intrinsic that does not return a value.";
+    return descriptor;
+}
+
 BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isNumericConversionBuiltin(name)) {
         return numericConversionDescriptor(name);
@@ -880,10 +971,16 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     if (name == "warning" || name == "lastwarn") {
         return warningDescriptor(name);
     }
+    if (name == "disp" || name == "fprintf" || name == "sprintf") {
+        return outputDescriptor(name);
+    }
+    if (isZeroOutputIntrinsic(name)) {
+        return zeroOutputIntrinsicDescriptor(name);
+    }
 
     BuiltinDescriptor descriptor = baseDescriptor(name);
     descriptor.sideEffects = BuiltinSideEffect::External;
-    if (matches(name, {"disp", "empty", "fprintf", "plot",
+    if (matches(name, {"empty", "plot",
                        "rand", "randn", "table"})) {
         descriptor.implementation =
             BuiltinImplementationKind::Unsupported;
@@ -968,6 +1065,9 @@ std::string missingContextName(
         BuiltinContextPermission::ExecutionControl) {
         return "execution control";
     }
+    if (permission == BuiltinContextPermission::Output) {
+        return "output sink";
+    }
     return "runtime context";
 }
 
@@ -992,6 +1092,10 @@ bool contextAvailable(const BuiltinCallContext* context,
     if (permission ==
         BuiltinContextPermission::ExecutionControl) {
         return context->executionControl != nullptr;
+    }
+    if (permission == BuiltinContextPermission::Output) {
+        return context->outputSink != nullptr &&
+               static_cast<bool>(*context->outputSink);
     }
     return true;
 }
@@ -1333,7 +1437,8 @@ BuiltinResult BuiltinRegistry::invoke(
              BuiltinContextPermission::WarningState,
              BuiltinContextPermission::ObjectArrayPolicy,
              BuiltinContextPermission::DynamicCall,
-             BuiltinContextPermission::ExecutionControl}) {
+             BuiltinContextPermission::ExecutionControl,
+             BuiltinContextPermission::Output}) {
         if (hasBuiltinContextPermission(
                 descriptor->requiredContext, permission) &&
             !contextAvailable(call.context, permission)) {

@@ -70,6 +70,16 @@ std::string_view moduleDiagnosticSeverityName(
     return "unknown";
 }
 
+std::string_view moduleOutputKindName(ModuleOutputKind kind) {
+    switch (kind) {
+    case ModuleOutputKind::Display:
+        return "display";
+    case ModuleOutputKind::StandardOutput:
+        return "stdout";
+    }
+    return "unknown";
+}
+
 bool ModuleInvocationResult::succeeded() const noexcept {
     return status == ModuleInvocationStatus::Succeeded;
 }

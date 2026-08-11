@@ -236,6 +236,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime_metadata.cpp
     src/mparser/runtime_numeric.cpp
     src/mparser/runtime_object.cpp
+    src/mparser/runtime_output.cpp
     src/mparser/runtime_range.cpp
     src/mparser/runtime_reduction.cpp
     src/mparser/runtime_scan.cpp
@@ -301,9 +302,9 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 89)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 108)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 89 symbols")
+            "C ABI symbol manifest must contain exactly 108 symbols")
     endif()
 
     if(APPLE)
@@ -1730,6 +1731,13 @@ target_link_libraries(builtin_registry_smoke_tests PRIVATE
 add_test(NAME builtin_registry_smoke
     COMMAND builtin_registry_smoke_tests)
 
+add_executable(runtime_output_smoke_tests
+    tests/runtime_output_smoke.cpp)
+target_link_libraries(runtime_output_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME runtime_output_smoke
+    COMMAND runtime_output_smoke_tests)
+
 add_executable(builtin_catalog_snapshot_tests
     tests/builtin_catalog_snapshot.cpp)
 target_link_libraries(builtin_catalog_snapshot_tests PRIVATE
@@ -1771,6 +1779,14 @@ target_link_libraries(module_resource_control_smoke_tests PRIVATE
 add_test(NAME module_resource_control_smoke
     COMMAND module_resource_control_smoke_tests)
 
+add_test(NAME host_integration_cli_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER_CLI=$<TARGET_FILE:mparser>
+        -DHOST_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/host_integration_demo.m
+        "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
+        -DMPARSER_NATIVE_JIT=${MPARSER_ENABLE_NATIVE_JIT}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_host_integration_cli.cmake)
+
 add_executable(machine_protocol_smoke_tests
     tests/machine_protocol_smoke.cpp)
 target_link_libraries(machine_protocol_smoke_tests PRIVATE
@@ -1811,6 +1827,7 @@ add_test(NAME machine_protocol_cli_smoke
         -DSCHEMA_VALIDATION_DIR=${CMAKE_CURRENT_BINARY_DIR}/machine-protocol-schema
         "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
         -DSUCCESS_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/machine_protocol_demo.m
+        -DHOST_OUTPUT_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/samples/host_integration_demo.m
         -DCOMPILE_FAILURE_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/machine_protocol_compile_failure.m
         -DRUNTIME_FAILURE_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/machine_protocol_runtime_failure.m
         -DEXPECTED_VERSION=${PROJECT_VERSION}
@@ -2057,7 +2074,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 89 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 108 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -2090,7 +2107,7 @@ add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp sdk = 5050,5,abi-generation-2-revision-0,cpp-api-1.2")
+        "cpp sdk = 5050,5,abi-generation-2-revision-0,cpp-api-1.2,host-output-2-2")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
@@ -2125,7 +2142,7 @@ add_test(NAME c_embedding_demo_smoke
     COMMAND mparser_c_embedding_demo)
 set_tests_properties(c_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "summary = 5050,instruction-limit,42")
+        "summary = 5050,instruction-limit,42,host-output-2-2")
 
 add_executable(mparser_c_abi_compat_demo
     samples/c_abi_compat_demo.c)
@@ -2389,6 +2406,7 @@ install(FILES
     samples/cpp_embedding_demo.cpp
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m
+    samples/host_integration_demo.m
     samples/numeric_types_demo.m
     samples/complex_numeric_demo.m
     samples/core_numeric_builtins_demo.m

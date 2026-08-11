@@ -31,6 +31,11 @@ _Static_assert(MPARSER_EXECUTION_TIER_MIXED == 3u,
                "execution tier range changed");
 _Static_assert(MPARSER_STOP_DIAGNOSTIC_LIMIT == 6u,
                "stop reason range changed");
+_Static_assert(MPARSER_SOURCE_CLASS == 3u,
+               "source kind range changed");
+_Static_assert(MPARSER_OUTPUT_STANDARD == 1u &&
+                   MPARSER_OUTPUT_REJECT == 1u,
+               "output contract range changed");
 _Static_assert(MPARSER_VALUE_FUNCTION_HANDLE == 7u,
                "value kind range changed");
 _Static_assert(MPARSER_NUMERIC_UINT64 == 10u,
@@ -83,7 +88,7 @@ REQUIRE_OFFSET(mparser_source_position, offset, 0);
 REQUIRE_OFFSET(mparser_source_position, line, 8);
 REQUIRE_OFFSET(mparser_source_position, column, 12);
 
-_Static_assert(sizeof(mparser_invocation_options) == 128,
+_Static_assert(sizeof(mparser_invocation_options) == 144,
                "mparser_invocation_options size changed");
 REQUIRE_OFFSET(mparser_invocation_options, struct_size, 0);
 REQUIRE_OFFSET(mparser_invocation_options, abi_generation, 4);
@@ -103,6 +108,8 @@ REQUIRE_OFFSET(mparser_invocation_options, max_call_depth, 96);
 REQUIRE_OFFSET(mparser_invocation_options, max_array_bytes, 104);
 REQUIRE_OFFSET(mparser_invocation_options, max_diagnostic_count, 112);
 REQUIRE_OFFSET(mparser_invocation_options, cancellation_token, 120);
+REQUIRE_OFFSET(mparser_invocation_options, output_sink, 128);
+REQUIRE_OFFSET(mparser_invocation_options, output_user_data, 136);
 
 _Static_assert(sizeof(mparser_execution_summary) == 128,
                "mparser_execution_summary size changed");

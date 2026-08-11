@@ -100,6 +100,7 @@ endif()
 set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/mparser/c_api.h"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/c_abi_compat_demo.c"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/host_integration_demo.m"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/machine_protocol_demo.m"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/v1_1_core_compatibility_demo.m"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/LICENSE"

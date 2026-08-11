@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -187,16 +188,24 @@ void validateRuntimeValueSemantics(
     }
 }
 
+void validateSourceRangeSemantics(const Json& source,
+                                  const std::string& path) {
+    if (source.is_null()) {
+        return;
+    }
+    const std::uint64_t begin = requireUint64(
+        source.at("begin").at("offset"), path + "/begin/offset");
+    const std::uint64_t end = requireUint64(
+        source.at("end").at("offset"), path + "/end/offset");
+    require(begin <= end, path + " begins after it ends");
+}
+
 void validateDiagnosticSemantics(
     const Json& diagnostic, const std::string& path) {
     if (diagnostic.contains("source") &&
         diagnostic.at("source").is_object()) {
-        requireUint64(
-            diagnostic.at("source").at("begin").at("offset"),
-            path + "/source/begin/offset");
-        requireUint64(
-            diagnostic.at("source").at("end").at("offset"),
-            path + "/source/end/offset");
+        validateSourceRangeSemantics(diagnostic.at("source"),
+                                     path + "/source");
     }
     size_t index = 0;
     for (const auto& cause : diagnostic.at("causes")) {
@@ -214,6 +223,48 @@ void validateProtocolSemantics(const Json& document) {
         validateRuntimeValueSemantics(
             output.at("value"),
             "/outputs/" + std::to_string(index++) + "/value");
+    }
+
+    std::set<std::uint64_t> consoleSequences;
+    auto validateSequences = [&consoleSequences](
+                                 const Json& entries,
+                                 const std::string& path,
+                                 auto&& validateEntry) {
+        bool hasPrevious = false;
+        std::uint64_t previous = 0;
+        size_t entryIndex = 0;
+        for (const auto& entry : entries) {
+            const std::string entryPath =
+                path + "/" + std::to_string(entryIndex++);
+            const std::uint64_t sequence = requireUint64(
+                entry.at("sequence"), entryPath + "/sequence");
+            require(!hasPrevious || sequence > previous,
+                    path + " sequence is not strictly increasing");
+            require(consoleSequences.insert(sequence).second,
+                    entryPath + "/sequence is duplicated");
+            hasPrevious = true;
+            previous = sequence;
+            validateEntry(entry, entryPath);
+        }
+    };
+    if (document.contains("output_events")) {
+        validateSequences(
+            document.at("output_events"), "/output_events",
+            [](const Json& event, const std::string& path) {
+                validateSourceRangeSemantics(event.at("source"),
+                                             path + "/source");
+            });
+    }
+    if (document.contains("top_level_expressions")) {
+        validateSequences(
+            document.at("top_level_expressions"),
+            "/top_level_expressions",
+            [](const Json& expression, const std::string& path) {
+                validateSourceRangeSemantics(expression.at("source"),
+                                             path + "/source");
+                validateRuntimeValueSemantics(expression.at("value"),
+                                              path + "/value");
+            });
     }
     index = 0;
     for (const auto& variable : document.at("workspace")) {
@@ -355,6 +406,35 @@ void runNegativeCases(const Validator& validator, const Json& golden) {
     (*uint64Value)["data"][0] = -1;
     require(documentRejected(validator, invalidUint64),
             "semantic validation accepted a negative uint64 element");
+
+    require(golden.contains("output_events") &&
+                golden.at("output_events").size() >= 2 &&
+                golden.contains("top_level_expressions") &&
+                golden.at("top_level_expressions").size() >= 2,
+            "golden fixture has no host-integration result payload");
+
+    Json invalidEventSequence = golden;
+    invalidEventSequence["output_events"][0]["sequence"] = -1;
+    require(documentRejected(validator, invalidEventSequence),
+            "semantic validation accepted a negative event sequence");
+
+    Json duplicateConsoleSequence = golden;
+    duplicateConsoleSequence["top_level_expressions"][0]["sequence"] =
+        duplicateConsoleSequence["output_events"][0]["sequence"];
+    require(documentRejected(validator, duplicateConsoleSequence),
+            "semantic validation accepted duplicate console sequences");
+
+    Json reversedEventSequence = golden;
+    reversedEventSequence["output_events"][1]["sequence"] =
+        reversedEventSequence["output_events"][0]["sequence"];
+    require(documentRejected(validator, reversedEventSequence),
+            "semantic validation accepted unordered output events");
+
+    Json invalidExpressionValue = golden;
+    invalidExpressionValue["top_level_expressions"][0]["value"]["data"] =
+        Json::array();
+    require(documentRejected(validator, invalidExpressionValue),
+            "semantic validation accepted a truncated expression value");
 }
 
 } // namespace

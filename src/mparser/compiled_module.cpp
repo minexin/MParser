@@ -9,6 +9,7 @@
 #include "mparser/runtime_argument_validation.h"
 #include "mparser/typed_ir.h"
 
+#include <algorithm>
 #include <exception>
 #include <filesystem>
 #include <map>
@@ -28,6 +29,7 @@ struct CompiledModuleData {
     BytecodeProgram bytecode;
     BytecodeTypedIrModule staticTypedModule;
     std::vector<CompiledFunctionInfo> functions;
+    std::vector<CompiledSourceInfo> sourceInfo;
     std::vector<Diagnostic> diagnostics;
 };
 
@@ -134,6 +136,33 @@ void applySourceIdentity(SyntaxNode& root, const SourceUnit& source) {
             child->label = owner + ">" + child->label;
         }
     }
+}
+
+CompiledSourceInfo inspectCompiledSource(
+    const SyntaxNode& root, const SourceUnit& source) {
+    CompiledSourceInfo info;
+    info.name = source.name;
+    if (root.children.empty()) {
+        info.kind = CompiledSourceKind::Script;
+        return info;
+    }
+
+    const auto& first = *root.children.front();
+    if (first.kind == SyntaxKind::FunctionDef) {
+        info.kind = CompiledSourceKind::Function;
+        info.primaryFunction = first.label;
+    } else if (first.kind == SyntaxKind::ClassDef) {
+        info.kind = CompiledSourceKind::Class;
+    } else {
+        info.kind = CompiledSourceKind::Script;
+    }
+    info.hasTopLevelStatements = std::any_of(
+        root.children.begin(), root.children.end(),
+        [](const std::unique_ptr<SyntaxNode>& child) {
+            return child && child->kind != SyntaxKind::FunctionDef &&
+                   child->kind != SyntaxKind::ClassDef;
+        });
+    return info;
 }
 
 struct PendingClassMethod {
@@ -333,6 +362,28 @@ ModuleSourceRange projectSourceRange(
     result.begin = projectSourcePosition(span.begin);
     result.end = projectSourcePosition(span.end);
     return result;
+}
+
+ModuleOutputEvent projectOutputEvent(
+    const RuntimeOutputEvent& event,
+    const std::vector<SourceUnit>& sources) {
+    return ModuleOutputEvent{
+        event.kind == RuntimeOutputKind::Display
+            ? ModuleOutputKind::Display
+            : ModuleOutputKind::StandardOutput,
+        event.text,
+        projectSourceRange(event.span, sources),
+        event.sequence};
+}
+
+ModuleTopLevelExpression projectExpressionResult(
+    RuntimeExpressionResult expression,
+    const std::vector<SourceUnit>& sources) {
+    return ModuleTopLevelExpression{
+        std::move(expression.value),
+        projectSourceRange(expression.span, sources),
+        expression.outputSuppressed,
+        expression.sequence};
 }
 
 ModuleDiagnosticFrame projectDiagnosticFrame(
@@ -654,6 +705,7 @@ CompiledModule CompiledModule::compile(
     }
 
     auto root = std::make_unique<SyntaxNode>(SyntaxKind::CompilationUnit);
+    module.data_->sourceInfo.reserve(module.data_->sources.size());
     bool rootSpanInitialized = false;
     std::map<std::string, SourceSpan> classDefinitions;
     std::vector<PendingClassMethod> pendingClassMethods;
@@ -670,10 +722,14 @@ CompiledModule CompiledModule::compile(
         appendDiagnostics(module.data_->diagnostics,
                           parse.diagnostics);
         if (!parse.root) {
+            module.data_->sourceInfo.push_back(CompiledSourceInfo{
+                source.name, CompiledSourceKind::Unknown, {}, false});
             continue;
         }
 
         if (!source.classMethodOwner.empty()) {
+            module.data_->sourceInfo.push_back(
+                inspectCompiledSource(*parse.root, source));
             if (auto method = extractClassMethod(
                     *parse.root, source, *root,
                     module.data_->diagnostics)) {
@@ -683,6 +739,8 @@ CompiledModule CompiledModule::compile(
         }
 
         applySourceIdentity(*parse.root, source);
+        module.data_->sourceInfo.push_back(
+            inspectCompiledSource(*parse.root, source));
         collectTopLevelClasses(*parse.root, classDefinitions,
                                module.data_->diagnostics);
         if (!rootSpanInitialized) {
@@ -772,6 +830,18 @@ std::string_view CompiledModule::sourceName(size_t sourceId) const {
 
 std::string_view CompiledModule::sourceName(SourceSpan span) const {
     return sourceName(span.begin.sourceId);
+}
+
+const std::vector<CompiledSourceInfo>&
+CompiledModule::sourceInfo() const {
+    return data_->sourceInfo;
+}
+
+const CompiledSourceInfo* CompiledModule::sourceInfo(
+    size_t sourceId) const {
+    return !data_ || sourceId >= data_->sourceInfo.size()
+               ? nullptr
+               : &data_->sourceInfo[sourceId];
 }
 
 const std::vector<Diagnostic>& CompiledModule::diagnostics() const {
@@ -956,6 +1026,14 @@ ModuleInvocationResult CompiledModule::execute(
         std::make_shared<RuntimeExecutionControl>(
             request.limits, request.cancellationToken);
     runtimeOptions.executionControl = executionControl;
+    if (request.outputSink) {
+        runtimeOptions.outputSink =
+            [&sink = request.outputSink,
+             &sources = data_->sources](
+                const RuntimeOutputEvent& event) {
+                return sink(projectOutputEvent(event, sources));
+            };
+    }
 
     BytecodeVmResult runtime;
     try {
@@ -1012,6 +1090,18 @@ ModuleInvocationResult CompiledModule::execute(
     result.requestedOutputCount = runtime.requestedOutputCount;
     result.outputNames = std::move(runtime.outputNames);
     result.outputs = std::move(runtime.outputs);
+    result.outputEvents.reserve(runtime.outputEvents.size());
+    for (const auto& event : runtime.outputEvents) {
+        result.outputEvents.push_back(
+            projectOutputEvent(event, data_->sources));
+    }
+    result.topLevelExpressions.reserve(
+        runtime.expressionResults.size());
+    for (auto& expression : runtime.expressionResults) {
+        result.topLevelExpressions.push_back(
+            projectExpressionResult(
+                std::move(expression), data_->sources));
+    }
     result.variables = std::move(runtime.variables);
     result.diagnostics = projectDiagnostics(
         runtime.diagnostics, ModuleDiagnosticPhase::Execution,

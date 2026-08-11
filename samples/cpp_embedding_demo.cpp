@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -67,13 +68,53 @@ end
             return 1;
         }
 
+        const auto hostModule = mparser::sdk::Module::compile(
+            R"(formatted = sprintf("value=%d", 42);
+disp(formatted)
+written = fprintf("pi=%.1f\n", 3.14);
+40 + 2
+41 + 2;
+)",
+            "cpp_host_integration_demo.m",
+            mparser::sdk::SourceLoadOptions{});
+        const auto metadata = hostModule.sourceMetadata();
+        if (!hostModule.isValid() || metadata.size() != 1 ||
+            metadata.front().kind != mparser::sdk::SourceKind::Script ||
+            !metadata.front().hasTopLevelStatements ||
+            metadata.front().pureFunctionFile) {
+            return 1;
+        }
+
+        std::vector<mparser::sdk::OutputEvent> observedOutput;
+        mparser::sdk::Invocation hostRequest;
+        hostRequest.outputSink = [&observedOutput](const auto& event) {
+            observedOutput.push_back(event);
+            std::cout << event.text;
+            return true;
+        };
+        const auto hostResult = hostModule.execute(hostRequest);
+        const auto outputEvents = hostResult.outputEvents();
+        const auto expressions = hostResult.topLevelExpressions();
+        if (!hostResult.succeeded() || observedOutput.size() != 2 ||
+            outputEvents.size() != 2 || expressions.size() != 2 ||
+            outputEvents[0].sequence != 0 ||
+            outputEvents[1].sequence != 1 ||
+            expressions[0].sequence != 2 ||
+            expressions[0].outputSuppressed ||
+            expressions[1].sequence != 3 ||
+            !expressions[1].outputSuppressed ||
+            std::abs(scalar(expressions[1].value) - 43.0) > 1e-9) {
+            return 1;
+        }
+
         std::cout << "cpp sdk = " << scalar(sumResult.output(0)) << ','
                   << scalar(counterResult.output(0))
                   << ",abi-generation-"
                   << mparser::sdk::abiGeneration() << "-revision-"
                   << mparser::sdk::abiRevision() << ",cpp-api-"
                   << sourceApiVersion.major << '.'
-                  << sourceApiVersion.minor << '\n';
+                  << sourceApiVersion.minor
+                  << ",host-output-2-2\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

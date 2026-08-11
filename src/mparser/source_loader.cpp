@@ -576,16 +576,17 @@ bool coveredByKnownSymbol(const std::string& dependency,
            (functionsAllowed && covered(knownFunctions));
 }
 
-} // namespace
-
-SourceLoaderResult SourceLoader::load(
+SourceLoaderResult loadSourceGraph(
     const std::filesystem::path& entryPath,
-    const SourceLoaderOptions& options) const {
+    const SourceLoaderOptions& options,
+    std::optional<std::string> inMemorySource) {
     const auto entry = normalizedPath(entryPath);
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(entry, error) || error) {
-        throw std::runtime_error("failed to open input file: " +
-                                 pathToUtf8(entry));
+    if (!inMemorySource) {
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(entry, error) || error) {
+            throw std::runtime_error("failed to open input file: " +
+                                     pathToUtf8(entry));
+        }
     }
 
     SourceLoaderResult result;
@@ -681,7 +682,9 @@ SourceLoaderResult SourceLoader::load(
         }
     };
 
-    std::string entryContent = readSourceFile(entry);
+    std::string entryContent = inMemorySource
+                                   ? std::move(*inMemorySource)
+                                   : readSourceFile(entry);
     const auto entryNamespace = sourceNamespaceLocation(entry).name;
     auto entryInspected =
         inspectSource(entryContent, result.sources.size());
@@ -800,6 +803,27 @@ SourceLoaderResult SourceLoader::load(
     }
 
     return result;
+}
+
+} // namespace
+
+SourceLoaderResult SourceLoader::load(
+    const std::filesystem::path& entryPath,
+    const SourceLoaderOptions& options) const {
+    return loadSourceGraph(entryPath, options, std::nullopt);
+}
+
+SourceLoaderResult SourceLoader::loadSource(
+    const std::filesystem::path& sourceName,
+    std::string source,
+    const SourceLoaderOptions& options) const {
+    if (sourceName.empty()) {
+        throw std::invalid_argument(
+            "in-memory source name cannot be empty");
+    }
+    return loadSourceGraph(
+        sourceName, options,
+        std::optional<std::string>(std::move(source)));
 }
 
 } // namespace mparser

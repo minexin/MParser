@@ -280,7 +280,8 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
                 builtinRegistry.find(instruction.calleeName);
             instruction.binding.kind == BindingKind::Builtin &&
             instruction.operandCount == 1 &&
-            instruction.resultCount == 1 && descriptor &&
+            instruction.resultCount == 1 &&
+            !instruction.implicitExpressionOutput && descriptor &&
             descriptor->purity == BuiltinPurity::Pure &&
             descriptor->typedLowering != BuiltinTypedLowering::None) {
             calls.insert(instruction.calleeName);
@@ -290,6 +291,7 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
             instruction.calleeName.empty() &&
             instruction.operandCount == 1 &&
             instruction.resultCount == 1 &&
+            !instruction.implicitExpressionOutput &&
             (instruction.colonSubscripts.empty() ||
              !instruction.colonSubscripts.front())) {
             ++contract.linearIndexReadCount;
@@ -356,6 +358,9 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
         contract.hasUnsupportedControlFlow = true;
         break;
     case BytecodeOp::Pop:
+        break;
+    case BytecodeOp::CaptureExpression:
+        contract.hasUnsupportedOperations = true;
         break;
     case BytecodeOp::DeclareGlobal:
     case BytecodeOp::DeclarePersistent:

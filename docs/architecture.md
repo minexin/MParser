@@ -1720,6 +1720,35 @@ snapshots remain unchanged, but they do not require compatibility adapters in
 the current kernel. The active contracts freeze together only after the full
 v1.2 numeric, function, sample, regression, and platform train is complete.
 
+The v1.2 host-console slice keeps one semantic authority across all engine and
+embedding projections. `runtime_output` owns bounded display/printf formatting
+and output records; `BuiltinRegistry` classifies `disp` and `fprintf` as
+context-bound console operations and `sprintf` as a pure formatter. The
+interpreter and bytecode VM inject an invocation-local sink. Each sink appends
+an immutable event and assigns a shared monotonically increasing sequence
+before calling an optional external host sink. Rejection becomes the ordinary
+`MParser:OutputSinkRejected` runtime diagnostic rather than an exception that
+crosses the engine boundary.
+
+Parser expression statements retain their semicolon-suppression bit. Semantic
+HIR preserves it, bytecode emits `CaptureExpression`, and both baseline engines
+capture only script-level expression statements, never function-body
+expressions. Captured values update `ans` whether suppressed or not and share
+the output-event sequence. `ModuleInvocationResult` therefore owns two stable
+arrays that the CLI and machine protocol merge/project without rerunning or
+reinterpreting source. Assignments continue through the workspace snapshot.
+
+`CompiledSourceInfo` classifies every source as script, function, class, or
+unknown and records primary-function, pure-function-file, and top-level flags.
+`SourceLoader::loadSource` combines an owned in-memory entry with the same
+normalized search/package/private/class-folder discovery as a filesystem
+entry. C API 1.2 exposes borrowed metadata views, synchronous callback fields,
+and owned expression values; the C++ facade copies metadata/events and contains
+callback exceptions. Machine protocol 1.1 frames optional event/expression
+arrays, while ordinary CLI mode prints the merged human stream. Typed/native
+regions remain guarded: output or capture semantics outside their eligibility
+continue through the bytecode authority.
+
 The v1.2 core numeric builtin tranche also removes tier-specific equality
 behavior. `BuiltinRegistry` routes `mod`/`rem` and `nextpow2` through shared
 numeric helpers, shape predicates through `runtime_shape`, and recursive

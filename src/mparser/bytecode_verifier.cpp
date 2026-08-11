@@ -128,6 +128,7 @@ bool requiresZeroOperandCount(BytecodeOp op) {
     case BytecodeOp::Return:
     case BytecodeOp::ForBegin:
     case BytecodeOp::ForNext:
+    case BytecodeOp::CaptureExpression:
     case BytecodeOp::Pop:
     case BytecodeOp::DeclareGlobal:
     case BytecodeOp::DeclarePersistent:
@@ -157,6 +158,7 @@ StackEffect stackEffect(const BytecodeInstruction& instruction) {
     case BytecodeOp::MakeFunctionHandle:
         return {0, 1};
     case BytecodeOp::StoreName:
+    case BytecodeOp::CaptureExpression:
     case BytecodeOp::Pop:
     case BytecodeOp::JumpIfFalse:
     case BytecodeOp::ForBegin:
@@ -480,6 +482,14 @@ private:
                        instructionCount) {
                 addDiagnostic(pc, "resultCount exceeds the instruction "
                                   "count");
+            }
+            if (instruction.implicitExpressionOutput &&
+                (instruction.op != BytecodeOp::CallOrIndex ||
+                 instruction.resultCount != 1)) {
+                addDiagnostic(
+                    pc,
+                    "implicit expression output requires a one-result "
+                    "CallOrIndex instruction");
             }
 
             if (!hasVariableResultCount(instruction.op) &&

@@ -116,6 +116,18 @@ mparser::ModuleInvocationResult makeResult() {
         mparser::makeRuntimeNumberValue(3.5),
         mparser::makeRuntimeMissingValue(),
     };
+    const mparser::ModuleSourceRange consoleSource{
+        true, "console_demo.m", {10, 2, 1}, {18, 2, 9}};
+    result.outputEvents = {
+        {mparser::ModuleOutputKind::Display,
+         "hello\n", consoleSource, 4},
+        {mparser::ModuleOutputKind::StandardOutput,
+         "value=42\n", consoleSource, 6}};
+    result.topLevelExpressions = {
+        {mparser::makeRuntimeNumberValue(42),
+         consoleSource, false, 5},
+        {mparser::makeRuntimeNumberValue(43),
+         consoleSource, true, 7}};
 
     result.variables.push_back({
         "matrix",

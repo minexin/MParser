@@ -384,6 +384,33 @@ bool validPathText(std::string_view value) noexcept {
            mparser::isValidUtf8(value);
 }
 
+mparser_api_status copySourceLoadOptions(
+    const mparser_source_load_options* options,
+    mparser::SourceLoaderOptions& loaderOptions) {
+    loaderOptions = {};
+    if (!options) {
+        return MPARSER_API_STATUS_OK;
+    }
+    if (options->struct_size < MPARSER_SOURCE_LOAD_OPTIONS_SIZE ||
+        options->abi_generation != MPARSER_C_ABI_GENERATION) {
+        return MPARSER_API_STATUS_ABI_MISMATCH;
+    }
+    if (!options->search_paths && options->search_path_count != 0) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+
+    loaderOptions.searchPaths.reserve(options->search_path_count);
+    for (size_t index = 0; index < options->search_path_count; ++index) {
+        const auto path = copyBytes(options->search_paths[index].data,
+                                    options->search_paths[index].size);
+        if (!path || !validPathText(*path)) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        loaderOptions.searchPaths.push_back(mparser::pathFromUtf8(*path));
+    }
+    return MPARSER_API_STATUS_OK;
+}
+
 mparser_api_status publishCompiledModule(
     mparser::CompiledModule compiled,
     mparser_module** out_module) {
@@ -1010,6 +1037,28 @@ std::optional<mparser::ModuleExecutionBackend> backend(
     }
 }
 
+mparser_source_kind externalSourceKind(
+    mparser::CompiledSourceKind value) noexcept {
+    switch (value) {
+    case mparser::CompiledSourceKind::Unknown:
+        return MPARSER_SOURCE_UNKNOWN;
+    case mparser::CompiledSourceKind::Script:
+        return MPARSER_SOURCE_SCRIPT;
+    case mparser::CompiledSourceKind::Function:
+        return MPARSER_SOURCE_FUNCTION;
+    case mparser::CompiledSourceKind::Class:
+        return MPARSER_SOURCE_CLASS;
+    }
+    return MPARSER_SOURCE_UNKNOWN;
+}
+
+mparser_output_kind externalOutputKind(
+    mparser::ModuleOutputKind value) noexcept {
+    return value == mparser::ModuleOutputKind::Display
+               ? MPARSER_OUTPUT_DISPLAY
+               : MPARSER_OUTPUT_STANDARD;
+}
+
 mparser_api_status buildRequest(
     const mparser_invocation_options* options,
     const std::shared_ptr<ModuleState>& module,
@@ -1114,6 +1163,29 @@ mparser_api_status buildRequest(
     if (options->cancellation_token) {
         request.cancellationToken =
             options->cancellation_token->token;
+    }
+    if (options->output_sink) {
+        const auto sink = options->output_sink;
+        void* const userData = options->output_user_data;
+        request.outputSink =
+            [sink, userData](const mparser::ModuleOutputEvent& event) {
+                const auto sourceName =
+                    event.source.available
+                        ? std::string_view(event.source.sourceName)
+                        : std::string_view{};
+                return sink(
+                           userData, event.sequence,
+                           externalOutputKind(event.kind),
+                           event.text.data(), event.text.size(),
+                           sourceName.data(), sourceName.size(),
+                           event.source.available
+                               ? sourcePosition(event.source.begin)
+                               : mparser_source_position{},
+                           event.source.available
+                               ? sourcePosition(event.source.end)
+                               : mparser_source_position{}) ==
+                       MPARSER_OUTPUT_ACCEPT;
+            };
     }
     return MPARSER_API_STATUS_OK;
 }
@@ -1496,6 +1568,62 @@ mparser_api_status mparser_module_compile_sources(
     }
 }
 
+mparser_api_status mparser_module_compile_utf8_with_options(
+    const char* source,
+    size_t source_size,
+    const char* source_name,
+    size_t source_name_size,
+    const mparser_source_load_options* options,
+    mparser_module** out_module) {
+    using namespace mparser_c_detail;
+    if (!out_module) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_module = nullptr;
+    try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::SourceCopy);
+        const auto sourceText = copyBytes(source, source_size);
+        const auto copiedSourceName =
+            copyBytes(source_name, source_name_size);
+        if (!sourceText || !copiedSourceName) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+
+        const std::string effectiveSourceName =
+            copiedSourceName->empty() ? "<memory>.m" : *copiedSourceName;
+        if (!validPathText(effectiveSourceName)) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        mparser::SourceLoaderOptions loaderOptions;
+        const auto optionsStatus =
+            copySourceLoadOptions(options, loaderOptions);
+        if (optionsStatus != MPARSER_API_STATUS_OK) {
+            return optionsStatus;
+        }
+
+        mparser::SourceLoaderResult loaded;
+        try {
+            loaded = mparser::SourceLoader{}.loadSource(
+                mparser::pathFromUtf8(effectiveSourceName),
+                *sourceText, loaderOptions);
+        } catch (const std::bad_alloc&) {
+            throw;
+        } catch (const std::exception& error) {
+            return publishSourceLoadFailure(
+                effectiveSourceName, error.what(), out_module);
+        }
+        return publishCompiledModule(
+            mparser::CompiledModule::compile(
+                std::move(loaded.sources)),
+            out_module);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
 mparser_api_status mparser_module_load_file_utf8(
     const char* entry_path,
     size_t entry_path_size,
@@ -1516,29 +1644,10 @@ mparser_api_status mparser_module_load_file_utf8(
         }
 
         mparser::SourceLoaderOptions loaderOptions;
-        if (options) {
-            if (options->struct_size <
-                    MPARSER_SOURCE_LOAD_OPTIONS_SIZE ||
-                options->abi_generation != MPARSER_C_ABI_GENERATION) {
-                return MPARSER_API_STATUS_ABI_MISMATCH;
-            }
-            if (!options->search_paths &&
-                options->search_path_count != 0) {
-                return MPARSER_API_STATUS_INVALID_ARGUMENT;
-            }
-            loaderOptions.searchPaths.reserve(
-                options->search_path_count);
-            for (size_t index = 0;
-                 index < options->search_path_count; ++index) {
-                const auto path = copyBytes(
-                    options->search_paths[index].data,
-                    options->search_paths[index].size);
-                if (!path || !validPathText(*path)) {
-                    return MPARSER_API_STATUS_INVALID_ARGUMENT;
-                }
-                loaderOptions.searchPaths.push_back(
-                    mparser::pathFromUtf8(*path));
-            }
+        const auto optionsStatus =
+            copySourceLoadOptions(options, loaderOptions);
+        if (optionsStatus != MPARSER_API_STATUS_OK) {
+            return optionsStatus;
         }
 
         mparser::SourceLoaderResult loaded;
@@ -1594,6 +1703,49 @@ mparser_module_source_name(
     }
     return mparser_c_detail::utf8View(
         module->state->module.sourceName(index));
+}
+
+mparser_source_kind
+mparser_module_source_kind(
+    const mparser_module* module, size_t index) {
+    if (!module || !module->state) {
+        return MPARSER_SOURCE_UNKNOWN;
+    }
+    const auto* info = module->state->module.sourceInfo(index);
+    return info ? mparser_c_detail::externalSourceKind(info->kind)
+                : MPARSER_SOURCE_UNKNOWN;
+}
+
+mparser_utf8_view
+mparser_module_source_primary_function(
+    const mparser_module* module, size_t index) {
+    if (!module || !module->state) {
+        return mparser_c_detail::emptyUtf8View();
+    }
+    const auto* info = module->state->module.sourceInfo(index);
+    return info
+               ? mparser_c_detail::utf8View(info->primaryFunction)
+               : mparser_c_detail::emptyUtf8View();
+}
+
+uint32_t
+mparser_module_source_has_top_level_statements(
+    const mparser_module* module, size_t index) {
+    if (!module || !module->state) {
+        return 0u;
+    }
+    const auto* info = module->state->module.sourceInfo(index);
+    return info && info->hasTopLevelStatements ? 1u : 0u;
+}
+
+uint32_t
+mparser_module_source_is_pure_function_file(
+    const mparser_module* module, size_t index) {
+    if (!module || !module->state) {
+        return 0u;
+    }
+    const auto* info = module->state->module.sourceInfo(index);
+    return info && info->pureFunctionFile() ? 1u : 0u;
 }
 
 size_t
@@ -1884,6 +2036,148 @@ mparser_api_status mparser_result_output(
     }
     return mparser_c_detail::makeValueHandle(
         result->value.outputs[index], result->owner, out_value);
+}
+
+size_t
+mparser_result_output_event_count(const mparser_result* result) {
+    return result ? result->value.outputEvents.size() : 0;
+}
+
+mparser_output_kind
+mparser_result_output_event_kind(
+    const mparser_result* result, size_t index) {
+    if (!result || index >= result->value.outputEvents.size()) {
+        return MPARSER_OUTPUT_STANDARD;
+    }
+    return mparser_c_detail::externalOutputKind(
+        result->value.outputEvents[index].kind);
+}
+
+uint64_t
+mparser_result_output_event_sequence(
+    const mparser_result* result, size_t index) {
+    return result && index < result->value.outputEvents.size()
+               ? result->value.outputEvents[index].sequence
+               : 0;
+}
+
+mparser_utf8_view
+mparser_result_output_event_text(
+    const mparser_result* result, size_t index) {
+    if (!result || index >= result->value.outputEvents.size()) {
+        return mparser_c_detail::emptyUtf8View();
+    }
+    return mparser_c_detail::utf8View(
+        result->value.outputEvents[index].text);
+}
+
+mparser_utf8_view
+mparser_result_output_event_source_name(
+    const mparser_result* result, size_t index) {
+    if (!result || index >= result->value.outputEvents.size() ||
+        !result->value.outputEvents[index].source.available) {
+        return mparser_c_detail::emptyUtf8View();
+    }
+    return mparser_c_detail::utf8View(
+        result->value.outputEvents[index].source.sourceName);
+}
+
+mparser_source_position
+mparser_result_output_event_source_begin(
+    const mparser_result* result, size_t index) {
+    if (!result || index >= result->value.outputEvents.size() ||
+        !result->value.outputEvents[index].source.available) {
+        return {};
+    }
+    return mparser_c_detail::sourcePosition(
+        result->value.outputEvents[index].source.begin);
+}
+
+mparser_source_position
+mparser_result_output_event_source_end(
+    const mparser_result* result, size_t index) {
+    if (!result || index >= result->value.outputEvents.size() ||
+        !result->value.outputEvents[index].source.available) {
+        return {};
+    }
+    return mparser_c_detail::sourcePosition(
+        result->value.outputEvents[index].source.end);
+}
+
+size_t
+mparser_result_top_level_expression_count(
+    const mparser_result* result) {
+    return result ? result->value.topLevelExpressions.size() : 0;
+}
+
+mparser_api_status
+mparser_result_top_level_expression_value(
+    const mparser_result* result,
+    size_t index,
+    mparser_value** out_value) {
+    if (!out_value) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_value = nullptr;
+    if (!result) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (index >= result->value.topLevelExpressions.size()) {
+        return MPARSER_API_STATUS_OUT_OF_RANGE;
+    }
+    return mparser_c_detail::makeValueHandle(
+        result->value.topLevelExpressions[index].value,
+        result->owner, out_value);
+}
+
+uint32_t
+mparser_result_top_level_expression_output_suppressed(
+    const mparser_result* result, size_t index) {
+    return result && index < result->value.topLevelExpressions.size() &&
+                   result->value.topLevelExpressions[index].outputSuppressed
+               ? 1u
+               : 0u;
+}
+
+uint64_t
+mparser_result_top_level_expression_sequence(
+    const mparser_result* result, size_t index) {
+    return result && index < result->value.topLevelExpressions.size()
+               ? result->value.topLevelExpressions[index].sequence
+               : 0;
+}
+
+mparser_utf8_view
+mparser_result_top_level_expression_source_name(
+    const mparser_result* result, size_t index) {
+    if (!result || index >= result->value.topLevelExpressions.size() ||
+        !result->value.topLevelExpressions[index].source.available) {
+        return mparser_c_detail::emptyUtf8View();
+    }
+    return mparser_c_detail::utf8View(
+        result->value.topLevelExpressions[index].source.sourceName);
+}
+
+mparser_source_position
+mparser_result_top_level_expression_source_begin(
+    const mparser_result* result, size_t index) {
+    if (!result || index >= result->value.topLevelExpressions.size() ||
+        !result->value.topLevelExpressions[index].source.available) {
+        return {};
+    }
+    return mparser_c_detail::sourcePosition(
+        result->value.topLevelExpressions[index].source.begin);
+}
+
+mparser_source_position
+mparser_result_top_level_expression_source_end(
+    const mparser_result* result, size_t index) {
+    if (!result || index >= result->value.topLevelExpressions.size() ||
+        !result->value.topLevelExpressions[index].source.available) {
+        return {};
+    }
+    return mparser_c_detail::sourcePosition(
+        result->value.topLevelExpressions[index].source.end);
 }
 
 size_t

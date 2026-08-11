@@ -139,6 +139,12 @@ int main() {
     assert(module != nullptr);
     assert(mparser_module_is_valid(module) == 1);
     assert(mparser_module_source_count(module) == 2);
+    assert(mparser_module_source_kind(module, 0) ==
+           MPARSER_SOURCE_SCRIPT);
+    assert(mparser_module_source_has_top_level_statements(module, 0) == 1);
+    assert(mparser_module_source_is_pure_function_file(module, 0) == 0);
+    assert(mparser_module_source_kind(module, 1) ==
+           MPARSER_SOURCE_CLASS);
     const auto retainedEntry =
         mparser_module_source_name(module, 0);
     assert(std::string_view(
@@ -166,6 +172,42 @@ int main() {
     assert(std::fabs(static_cast<const double*>(
                          buffer.real_data)[0] - 9.0) < 1e-9);
 
+    mparser_value_release(value);
+    mparser_result_release(result);
+    mparser_module_release(module);
+
+    const std::string memorySource =
+        "object = utfpkg.Value(11);\n"
+        "memory_result = object.get();\n";
+    const std::string memoryName =
+        pathToUtf8(entryDirectory / "memory_entry.m");
+    module = nullptr;
+    const auto compileStatus =
+        mparser_module_compile_utf8_with_options(
+            memorySource.data(), memorySource.size(),
+            memoryName.data(), memoryName.size(),
+            &loadOptions, &module);
+    if (compileStatus != MPARSER_API_STATUS_OK) {
+        printLoadFailure(compileStatus, module);
+    }
+    assert(compileStatus == MPARSER_API_STATUS_OK);
+    assert(module != nullptr && mparser_module_is_valid(module) == 1);
+    assert(mparser_module_source_count(module) == 2);
+    assert(mparser_module_source_kind(module, 0) ==
+           MPARSER_SOURCE_SCRIPT);
+
+    result = nullptr;
+    assert(mparser_module_execute(module, &invocation, &result) ==
+           MPARSER_API_STATUS_OK);
+    assert(result != nullptr && mparser_result_succeeded(result) == 1);
+    value = nullptr;
+    assert(findVariable(result, "memory_result", value) != nullptr);
+    buffer = {};
+    assert(mparser_value_get_numeric_buffer(value, &buffer) ==
+           MPARSER_API_STATUS_OK);
+    assert(buffer.element_count == 1);
+    assert(std::fabs(static_cast<const double*>(
+                         buffer.real_data)[0] - 11.0) < 1e-9);
     mparser_value_release(value);
     mparser_result_release(result);
     mparser_module_release(module);

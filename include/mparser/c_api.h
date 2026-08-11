@@ -76,6 +76,20 @@ typedef uint32_t mparser_diagnostic_severity;
 #define MPARSER_DIAGNOSTIC_ERROR 0u
 #define MPARSER_DIAGNOSTIC_WARNING 1u
 
+typedef uint32_t mparser_source_kind;
+#define MPARSER_SOURCE_UNKNOWN 0u
+#define MPARSER_SOURCE_SCRIPT 1u
+#define MPARSER_SOURCE_FUNCTION 2u
+#define MPARSER_SOURCE_CLASS 3u
+
+typedef uint32_t mparser_output_kind;
+#define MPARSER_OUTPUT_DISPLAY 0u
+#define MPARSER_OUTPUT_STANDARD 1u
+
+typedef uint32_t mparser_output_disposition;
+#define MPARSER_OUTPUT_ACCEPT 0u
+#define MPARSER_OUTPUT_REJECT 1u
+
 typedef uint32_t mparser_value_kind;
 #define MPARSER_VALUE_MISSING 0u
 #define MPARSER_VALUE_NUMERIC 1u
@@ -166,6 +180,17 @@ typedef struct mparser_source_position {
     int32_t column;
 } mparser_source_position;
 
+typedef mparser_output_disposition (*mparser_output_sink_callback)(
+    void* user_data,
+    uint64_t sequence,
+    mparser_output_kind kind,
+    const char* text,
+    size_t text_size,
+    const char* source_name,
+    size_t source_name_size,
+    mparser_source_position source_begin,
+    mparser_source_position source_end);
+
 typedef struct mparser_invocation_options {
     uint32_t struct_size;
     uint32_t abi_generation;
@@ -185,6 +210,8 @@ typedef struct mparser_invocation_options {
     uint64_t max_array_bytes;
     uint64_t max_diagnostic_count;
     const mparser_cancel_token* cancellation_token;
+    mparser_output_sink_callback output_sink;
+    void* output_user_data;
 } mparser_invocation_options;
 
 typedef struct mparser_execution_summary {
@@ -216,8 +243,8 @@ typedef struct mparser_execution_summary {
  * sealed because arrays use sizeof(mparser_source_unit) as their stride.
  */
 #define MPARSER_INVOCATION_OPTIONS_SIZE                                 \
-    ((uint32_t)(offsetof(mparser_invocation_options, cancellation_token) + \
-                sizeof(((mparser_invocation_options*)0)->cancellation_token)))
+    ((uint32_t)(offsetof(mparser_invocation_options, output_user_data) + \
+                sizeof(((mparser_invocation_options*)0)->output_user_data)))
 #define MPARSER_EXECUTION_SUMMARY_SIZE                                  \
     ((uint32_t)(offsetof(mparser_execution_summary, elapsed_nanoseconds) + \
                 sizeof(((mparser_execution_summary*)0)->elapsed_nanoseconds)))
@@ -277,6 +304,13 @@ MPARSER_C_API mparser_api_status mparser_module_compile_sources(
     const mparser_source_unit* sources,
     size_t source_count,
     mparser_module** out_module);
+MPARSER_C_API mparser_api_status mparser_module_compile_utf8_with_options(
+    const char* source,
+    size_t source_size,
+    const char* source_name,
+    size_t source_name_size,
+    const mparser_source_load_options* options,
+    mparser_module** out_module);
 MPARSER_C_API mparser_api_status mparser_module_load_file_utf8(
     const char* entry_path,
     size_t entry_path_size,
@@ -290,6 +324,17 @@ MPARSER_C_API size_t
 mparser_module_source_count(const mparser_module* module);
 MPARSER_C_API mparser_utf8_view
 mparser_module_source_name(const mparser_module* module, size_t index);
+MPARSER_C_API mparser_source_kind
+mparser_module_source_kind(const mparser_module* module, size_t index);
+MPARSER_C_API mparser_utf8_view
+mparser_module_source_primary_function(
+    const mparser_module* module, size_t index);
+MPARSER_C_API uint32_t
+mparser_module_source_has_top_level_statements(
+    const mparser_module* module, size_t index);
+MPARSER_C_API uint32_t
+mparser_module_source_is_pure_function_file(
+    const mparser_module* module, size_t index);
 MPARSER_C_API size_t
 mparser_module_diagnostic_count(const mparser_module* module);
 MPARSER_C_API const mparser_diagnostic*
@@ -339,6 +384,49 @@ MPARSER_C_API mparser_api_status mparser_result_output(
     const mparser_result* result,
     size_t index,
     mparser_value** out_value);
+MPARSER_C_API size_t
+mparser_result_output_event_count(const mparser_result* result);
+MPARSER_C_API mparser_output_kind
+mparser_result_output_event_kind(
+    const mparser_result* result, size_t index);
+MPARSER_C_API uint64_t
+mparser_result_output_event_sequence(
+    const mparser_result* result, size_t index);
+MPARSER_C_API mparser_utf8_view
+mparser_result_output_event_text(
+    const mparser_result* result, size_t index);
+MPARSER_C_API mparser_utf8_view
+mparser_result_output_event_source_name(
+    const mparser_result* result, size_t index);
+MPARSER_C_API mparser_source_position
+mparser_result_output_event_source_begin(
+    const mparser_result* result, size_t index);
+MPARSER_C_API mparser_source_position
+mparser_result_output_event_source_end(
+    const mparser_result* result, size_t index);
+MPARSER_C_API size_t
+mparser_result_top_level_expression_count(
+    const mparser_result* result);
+MPARSER_C_API mparser_api_status
+mparser_result_top_level_expression_value(
+    const mparser_result* result,
+    size_t index,
+    mparser_value** out_value);
+MPARSER_C_API uint32_t
+mparser_result_top_level_expression_output_suppressed(
+    const mparser_result* result, size_t index);
+MPARSER_C_API uint64_t
+mparser_result_top_level_expression_sequence(
+    const mparser_result* result, size_t index);
+MPARSER_C_API mparser_utf8_view
+mparser_result_top_level_expression_source_name(
+    const mparser_result* result, size_t index);
+MPARSER_C_API mparser_source_position
+mparser_result_top_level_expression_source_begin(
+    const mparser_result* result, size_t index);
+MPARSER_C_API mparser_source_position
+mparser_result_top_level_expression_source_end(
+    const mparser_result* result, size_t index);
 MPARSER_C_API size_t
 mparser_result_variable_count(const mparser_result* result);
 MPARSER_C_API mparser_api_status mparser_result_variable(

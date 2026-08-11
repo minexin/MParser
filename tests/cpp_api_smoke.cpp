@@ -8,6 +8,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,7 +24,9 @@ using mparser::sdk::InvocationStatus;
 using mparser::sdk::Module;
 using mparser::sdk::NamedValue;
 using mparser::sdk::NumericClass;
+using mparser::sdk::OutputKind;
 using mparser::sdk::Result;
+using mparser::sdk::SourceKind;
 using mparser::sdk::SourceLoadOptions;
 using mparser::sdk::SourceUnit;
 using mparser::sdk::StopReason;
@@ -241,6 +244,74 @@ void runValueSmoke() {
     assert(rejectedEmptyHandle);
 }
 
+void runHostOutputSmoke() {
+    const auto module = Module::compile(
+        R"(formatted = sprintf("value=%d", 42);
+disp(formatted)
+written = fprintf("pi=%.1f\n", 3.14);
+40 + 2
+41 + 2;
+)",
+        "host_output_cpp.m");
+    assert(module.isValid());
+    const auto metadata = module.sourceMetadata();
+    assert(metadata.size() == 1);
+    assert(metadata.front().name == "host_output_cpp.m");
+    assert(metadata.front().kind == SourceKind::Script);
+    assert(metadata.front().hasTopLevelStatements);
+    assert(!metadata.front().pureFunctionFile);
+
+    std::vector<mparser::sdk::OutputEvent> observed;
+    Invocation invocation;
+    invocation.outputSink = [&observed](const auto& event) {
+        observed.push_back(event);
+        return true;
+    };
+    const auto result = module.execute(invocation);
+    assert(result.succeeded());
+    const auto events = result.outputEvents();
+    assert(events.size() == 2 && observed.size() == events.size());
+    assert(events[0].kind == OutputKind::Display);
+    assert(events[0].text == "value=42\n");
+    assert(events[0].sequence == 0 && observed[0].sequence == 0);
+    assert(events[0].source &&
+           events[0].source->sourceName == "host_output_cpp.m");
+    assert(events[1].kind == OutputKind::StandardOutput);
+    assert(events[1].text == "pi=3.1\n");
+    assert(events[1].sequence == 1 && observed[1].sequence == 1);
+
+    const auto expressions = result.topLevelExpressions();
+    assert(expressions.size() == 2);
+    assert(std::abs(scalar(expressions[0].value) - 42.0) < kTolerance);
+    assert(!expressions[0].outputSuppressed && expressions[0].source);
+    assert(expressions[0].sequence == 2);
+    assert(std::abs(scalar(expressions[1].value) - 43.0) < kTolerance);
+    assert(expressions[1].outputSuppressed && expressions[1].source);
+    assert(expressions[1].sequence == 3);
+    const auto variables = result.variables();
+    const auto* answer = findVariable(variables, "ans");
+    assert(answer && std::abs(scalar(answer->value) - 43.0) < kTolerance);
+
+    Invocation rejected;
+    rejected.outputSink = [](const auto&) { return false; };
+    const auto rejectedResult = module.execute(rejected);
+    assert(!rejectedResult.succeeded());
+    assert(hasDiagnostic(
+        rejectedResult.diagnostics(), "MParser:OutputSinkRejected"));
+
+    Invocation throwing;
+    throwing.outputSink = [](const auto&) -> bool {
+        throw std::runtime_error("host sink failed");
+    };
+    bool propagated = false;
+    try {
+        (void)module.execute(throwing);
+    } catch (const std::runtime_error& error) {
+        propagated = std::string_view(error.what()) == "host sink failed";
+    }
+    assert(propagated);
+}
+
 Result invoke(
     const Module& module, std::string entry,
     std::vector<Value> arguments = {},
@@ -381,6 +452,21 @@ void runModuleSmoke(
     assert(std::abs(scalar(offset->value) - 12.0) < kTolerance);
     assert(std::abs(scalar(staticValue->value) - 12.0) <
            kTolerance);
+
+    const auto memoryGraph = Module::compile(
+        "counter = folderpkg.Counter(8);\n"
+        "memory_scaled = counter.scale(2);\n",
+        "memory_entry.m", SourceLoadOptions{{libraryPath}});
+    assert(memoryGraph.isValid());
+    const auto memoryMetadata = memoryGraph.sourceMetadata();
+    assert(memoryMetadata.size() > 1);
+    assert(memoryMetadata.front().kind == SourceKind::Script);
+    assert(memoryMetadata.front().hasTopLevelStatements);
+    const auto memoryVariables = memoryGraph.execute().variables();
+    const auto* memoryScaled =
+        findVariable(memoryVariables, "memory_scaled");
+    assert(memoryScaled &&
+           std::abs(scalar(memoryScaled->value) - 16.0) < kTolerance);
 }
 
 } // namespace
@@ -394,6 +480,7 @@ int main(int argc, char** argv) {
     assert(mparser::sdk::abiGeneration() == 2);
     assert(mparser::sdk::abiRevision() == 0);
     runValueSmoke();
+    runHostOutputSmoke();
     runModuleSmoke(argv[1], argv[2]);
     std::cout << "cpp api smoke = 5050,42,21,abi-generation-"
               << mparser::sdk::abiGeneration() << "-revision-"

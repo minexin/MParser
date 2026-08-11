@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://mparser.dev/schema/machine-result-v1.json",
   "title": "MParser machine result protocol major-1 consumer profile",
-  "description": "Tolerant major-1 consumer schema. Exact producer 1.0 output is frozen by the protocol snapshot and golden fixtures.",
+  "description": "Tolerant major-1 consumer schema. Historical producer shapes are frozen by protocol snapshots while the current golden fixture covers additive host-integration fields.",
   "type": "object",
   "required": [
     "protocol",
@@ -56,6 +56,14 @@
         },
         "additionalProperties": true
       }
+    },
+    "output_events": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/outputEvent"}
+    },
+    "top_level_expressions": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/topLevelExpression"}
     },
     "workspace": {
       "type": "array",
@@ -317,6 +325,43 @@
       },
       "additionalProperties": true
     },
+    "sourceRange": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["name", "begin", "end"],
+          "properties": {
+            "name": {"type": "string"},
+            "begin": {"$ref": "#/definitions/position"},
+            "end": {"$ref": "#/definitions/position"}
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "outputEvent": {
+      "type": "object",
+      "required": ["sequence", "kind", "text", "source"],
+      "properties": {
+        "sequence": {"$ref": "#/definitions/uint64"},
+        "kind": {"enum": ["display", "stdout"]},
+        "text": {"type": "string"},
+        "source": {"$ref": "#/definitions/sourceRange"}
+      },
+      "additionalProperties": true
+    },
+    "topLevelExpression": {
+      "type": "object",
+      "required": ["sequence", "output_suppressed", "source", "value"],
+      "properties": {
+        "sequence": {"$ref": "#/definitions/uint64"},
+        "output_suppressed": {"type": "boolean"},
+        "source": {"$ref": "#/definitions/sourceRange"},
+        "value": {"$ref": "#/definitions/runtimeValue"}
+      },
+      "additionalProperties": true
+    },
     "diagnostic": {
       "type": "object",
       "required": [
@@ -335,21 +380,7 @@
         "severity": {"enum": ["error", "warning"]},
         "identifier": {"type": "string"},
         "message": {"type": "string"},
-        "source": {
-          "oneOf": [
-            {"type": "null"},
-            {
-              "type": "object",
-              "required": ["name", "begin", "end"],
-              "properties": {
-                "name": {"type": "string"},
-                "begin": {"$ref": "#/definitions/position"},
-                "end": {"$ref": "#/definitions/position"}
-              },
-              "additionalProperties": true
-            }
-          ]
-        },
+        "source": {"$ref": "#/definitions/sourceRange"},
         "stack": {
           "type": "array",
           "items": {

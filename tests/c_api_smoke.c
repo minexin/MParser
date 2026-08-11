@@ -240,6 +240,49 @@ static int view_ends_with(mparser_utf8_view view, const char* suffix) {
            memcmp(view.data + view.size - size, suffix, size) == 0;
 }
 
+typedef struct output_probe {
+    size_t count;
+    int valid;
+    int reject;
+} output_probe;
+
+static mparser_output_disposition capture_output(
+    void* user_data,
+    uint64_t sequence,
+    mparser_output_kind kind,
+    const char* text,
+    size_t text_size,
+    const char* source_name,
+    size_t source_name_size,
+    mparser_source_position source_begin,
+    mparser_source_position source_end) {
+    output_probe* probe = (output_probe*)user_data;
+    const mparser_utf8_view source = {source_name, source_name_size};
+    if (probe == NULL) {
+        return MPARSER_OUTPUT_REJECT;
+    }
+    probe->valid = probe->valid && sequence == probe->count;
+    if (probe->count == 0) {
+        probe->valid = probe->valid &&
+                       kind == MPARSER_OUTPUT_DISPLAY &&
+                       text_size == strlen("value=42\n") &&
+                       memcmp(text, "value=42\n", text_size) == 0;
+    } else if (probe->count == 1) {
+        probe->valid = probe->valid &&
+                       kind == MPARSER_OUTPUT_STANDARD &&
+                       text_size == strlen("pi=3.1\n") &&
+                       memcmp(text, "pi=3.1\n", text_size) == 0;
+    } else {
+        probe->valid = 0;
+    }
+    probe->valid = probe->valid &&
+                   view_equals(source, "host_output_c.m") &&
+                   source_begin.line > 0 && source_end.line > 0;
+    ++probe->count;
+    return probe->reject ? MPARSER_OUTPUT_REJECT
+                         : MPARSER_OUTPUT_ACCEPT;
+}
+
 static mparser_invocation_options options_for(const char* entry) {
     mparser_invocation_options options;
     const mparser_api_status status =
@@ -1440,6 +1483,110 @@ static int run_module_metadata_smoke(mparser_module* module) {
     return 1;
 }
 
+static int run_host_output_smoke(void) {
+    static const char source[] =
+        "formatted = sprintf(\"value=%d\", 42);\n"
+        "disp(formatted)\n"
+        "written = fprintf(\"pi=%.1f\\n\", 3.14);\n"
+        "40 + 2\n"
+        "41 + 2;\n";
+    mparser_module* module = NULL;
+    mparser_invocation_options options;
+    mparser_result* result = NULL;
+    mparser_value* value = NULL;
+    const double* data = NULL;
+    size_t count = 0;
+    size_t index;
+    int found_rejection = 0;
+    output_probe probe = {0, 1, 0};
+
+    CHECK(compile_valid(source, "host_output_c.m", &module));
+    CHECK(mparser_module_source_count(module) == 1);
+    CHECK(mparser_module_source_kind(module, 0) ==
+          MPARSER_SOURCE_SCRIPT);
+    CHECK(mparser_module_source_has_top_level_statements(module, 0) == 1);
+    CHECK(mparser_module_source_is_pure_function_file(module, 0) == 0);
+    CHECK(view_equals(
+        mparser_module_source_primary_function(module, 0), ""));
+
+    CHECK(MPARSER_INVOCATION_OPTIONS_INIT(&options) ==
+          MPARSER_API_STATUS_OK);
+    options.output_sink = capture_output;
+    options.output_user_data = &probe;
+    CHECK(mparser_module_execute(module, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(result != NULL && mparser_result_succeeded(result) == 1);
+    CHECK(probe.valid && probe.count == 2);
+    CHECK(mparser_result_output_event_count(result) == 2);
+    CHECK(mparser_result_output_event_kind(result, 0) ==
+          MPARSER_OUTPUT_DISPLAY);
+    CHECK(mparser_result_output_event_sequence(result, 0) == 0);
+    CHECK(view_equals(
+        mparser_result_output_event_text(result, 0), "value=42\n"));
+    CHECK(mparser_result_output_event_kind(result, 1) ==
+          MPARSER_OUTPUT_STANDARD);
+    CHECK(mparser_result_output_event_sequence(result, 1) == 1);
+    CHECK(view_equals(
+        mparser_result_output_event_text(result, 1), "pi=3.1\n"));
+    CHECK(view_equals(
+        mparser_result_output_event_source_name(result, 0),
+        "host_output_c.m"));
+    CHECK(mparser_result_output_event_source_begin(result, 0).line > 0);
+
+    CHECK(mparser_result_top_level_expression_count(result) == 2);
+    CHECK(mparser_result_top_level_expression_value(
+              result, 0, &value) == MPARSER_API_STATUS_OK);
+    CHECK(get_test_double_data(value, &data, &count) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(count == 1 && data[0] == 42.0);
+    mparser_value_release(value);
+    value = NULL;
+    CHECK(mparser_result_top_level_expression_output_suppressed(
+              result, 0) == 0);
+    CHECK(mparser_result_top_level_expression_sequence(result, 0) == 2);
+    CHECK(mparser_result_top_level_expression_value(
+              result, 1, &value) == MPARSER_API_STATUS_OK);
+    CHECK(get_test_double_data(value, &data, &count) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(count == 1 && data[0] == 43.0);
+    mparser_value_release(value);
+    value = NULL;
+    CHECK(mparser_result_top_level_expression_output_suppressed(
+              result, 1) == 1);
+    CHECK(mparser_result_top_level_expression_sequence(result, 1) == 3);
+    CHECK(view_equals(
+        mparser_result_top_level_expression_source_name(result, 1),
+        "host_output_c.m"));
+    CHECK(variable_is_scalar(result, "written", 7.0));
+    CHECK(variable_is_scalar(result, "ans", 43.0));
+    CHECK(mparser_result_top_level_expression_value(
+              result, 2, &value) == MPARSER_API_STATUS_OUT_OF_RANGE);
+    CHECK(value == NULL);
+    mparser_result_release(result);
+    result = NULL;
+
+    probe.count = 0;
+    probe.valid = 1;
+    probe.reject = 1;
+    CHECK(mparser_module_execute(module, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(result != NULL && mparser_result_succeeded(result) == 0);
+    CHECK(probe.count == 1);
+    for (index = 0; index < mparser_result_diagnostic_count(result);
+         ++index) {
+        if (view_equals(
+                mparser_diagnostic_identifier(
+                    mparser_result_diagnostic(result, index)),
+                "MParser:OutputSinkRejected")) {
+            found_rejection = 1;
+        }
+    }
+    CHECK(found_rejection);
+    mparser_result_release(result);
+    mparser_module_release(module);
+    return 1;
+}
+
 int main(int argc, char** argv) {
     mparser_module* module = NULL;
 
@@ -1462,6 +1609,7 @@ int main(int argc, char** argv) {
     if (!run_multi_source_compilation_smoke() ||
         !run_file_source_graph_smoke(argv[1], argv[2]) ||
         !run_module_metadata_smoke(module) ||
+        !run_host_output_smoke() ||
         !run_versioned_structure_smoke(module, argv[1], argv[2]) ||
         !run_scalar_resource_and_session_smoke(module) ||
         !run_array_text_and_composite_smoke(module) ||

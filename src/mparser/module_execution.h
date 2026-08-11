@@ -1,10 +1,12 @@
 #pragma once
 
 #include "mparser/runtime_execution_control.h"
+#include "mparser/runtime_output.h"
 #include "mparser/runtime_value.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -54,6 +56,13 @@ std::string_view moduleDiagnosticPhaseName(
 std::string_view moduleDiagnosticSeverityName(
     ModuleDiagnosticSeverity severity);
 
+enum class ModuleOutputKind {
+    Display,
+    StandardOutput,
+};
+
+std::string_view moduleOutputKindName(ModuleOutputKind kind);
+
 struct ModuleSourcePosition {
     size_t offset = 0;
     int line = 1;
@@ -66,6 +75,23 @@ struct ModuleSourceRange {
     ModuleSourcePosition begin;
     ModuleSourcePosition end;
 };
+
+struct ModuleOutputEvent {
+    ModuleOutputKind kind = ModuleOutputKind::StandardOutput;
+    std::string text;
+    ModuleSourceRange source;
+    std::uint64_t sequence = 0;
+};
+
+struct ModuleTopLevelExpression {
+    RuntimeValue value;
+    ModuleSourceRange source;
+    bool outputSuppressed = false;
+    std::uint64_t sequence = 0;
+};
+
+using ModuleOutputSink =
+    std::function<bool(const ModuleOutputEvent& event)>;
 
 struct ModuleDiagnosticFrame {
     std::string sourceName;
@@ -101,6 +127,7 @@ struct ModuleInvocationRequest {
     bool collectProfile = false;
     RuntimeExecutionLimits limits;
     std::optional<RuntimeCancellationToken> cancellationToken;
+    ModuleOutputSink outputSink;
 };
 
 struct ModuleExecutionSummary {
@@ -134,6 +161,8 @@ struct ModuleInvocationResult {
     size_t requestedOutputCount = 0;
     std::vector<std::string> outputNames;
     std::vector<RuntimeValue> outputs;
+    std::vector<ModuleOutputEvent> outputEvents;
+    std::vector<ModuleTopLevelExpression> topLevelExpressions;
     std::vector<RuntimeVariable> variables;
     std::vector<ModuleDiagnostic> diagnostics;
     ModuleExecutionSummary execution;

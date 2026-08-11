@@ -110,6 +110,10 @@ not part of a request's wall-time budget.
 
 `Module::compile(source, name)` is the one-source convenience form.
 `Module::compile(span<SourceUnit>)` compiles an ordered in-memory source graph.
+`Module::compile(source, name, SourceLoadOptions)` treats the in-memory source
+as a production entry path and discovers dependencies through its directory
+and ordered search paths. Relative names are normalized from the host
+process's current directory.
 `Module::loadFile(path, SourceLoadOptions)` uses the production UTF-8
 filesystem loader for package, private, path, and class-folder semantics.
 
@@ -119,8 +123,10 @@ contains source-aware compilation diagnostics. Invalid API arguments,
 allocation failures, ownership mismatches, and internal boundary failures
 throw `ApiError` instead of returning a module.
 
-`sourceNames()` and `functionNames()` return copied strings. The module may be
-compiled once and used for any number of stateless or session invocations.
+`sourceNames()` and `functionNames()` return copied strings.
+`sourceMetadata()` additionally returns each unit's `SourceKind`, primary
+function, top-level-statement flag, and pure-function-file flag. The module may
+be compiled once and used for any number of stateless or session invocations.
 
 ## Invocation And Results
 
@@ -132,7 +138,8 @@ compiled once and used for any number of stateless or session invocations.
 - profile collection;
 - instruction, wall-time, call-depth, per-value array-byte, and diagnostic
   limits;
-- cooperative cancellation through `CancellationToken`.
+- cooperative cancellation through `CancellationToken`;
+- a synchronous `OutputSink` receiving copied `OutputEvent` records.
 
 All numeric limits use zero for unlimited. `Module::execute()` and
 `Session::execute()` without an explicit request execute the top-level script
@@ -147,6 +154,31 @@ validation/runtime errors and resource stops do not throw `ApiError`.
 profiling, typed/native counters, resource observations, stop reason, and
 elapsed time. Correct VM execution remains available when a request is not
 eligible for portable or native optimization.
+
+`Result::outputEvents()` returns the retained display/stdout records, while
+`Result::topLevelExpressions()` returns script expression values, source
+ranges, suppression flags, and sequence numbers. The two arrays share one
+zero-based sequence so they can be merged into original execution order.
+Semicolon-suppressed expressions update `ans` and remain available to the
+host, but ordinary human output omits them. Assignments are represented in
+`Result::variables()` rather than as expression records.
+
+Expression values follow normal strong `Result`/`Value` ownership. Object and
+function-handle expressions therefore retain their runtime graphs until the
+result and copied values are destroyed, which can extend handle/listener
+lifetimes across later statements. Use explicit language-level `delete` or
+short result lifetimes when deterministic teardown is required.
+
+Returning `false` from `Invocation::outputSink` produces
+`MParser:OutputSinkRejected`. If a C++ output sink throws, the facade catches
+the exception at the C callback boundary, rejects runtime output, and rethrows
+the original exception after the C call returns; no C++ exception crosses the
+shared-library ABI. A sink is invoked synchronously while execution owns its
+module/session lock and must not re-enter that module/session.
+
+The current `disp`, stdout-only `fprintf`, and pure `sprintf` formatter is the
+same bounded subset described in [C Embedding API](embedding-c-api.md). It is
+not a file I/O API or a claim of complete MATLAB formatting compatibility.
 
 ## Values
 
@@ -213,14 +245,15 @@ admission, so queue deadlines remain a host responsibility.
 Source-tree and relocated installed consumers exercise source API 1.2 through
 compile-once invocation, exact typed and complex numeric values, multi-output
 results, composite values, retained lifetimes, diagnostics, sessions,
-cancellation, resource limits, and UTF-8 source graphs. The installed
+cancellation, resource limits, UTF-8 source graphs and metadata, synchronous
+output sinks, and ordered output/expression results. The installed
 reference consumer spans multiple translation units and checks product, C ABI,
-C++ API, and protocol metadata after relocation.
+C++ API, host output behavior, and protocol metadata after relocation.
 
 Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared
 cancellation, isolated limits, and concurrent retain/release. The shared C
-library carries ABI generation 2 and an exact exported-symbol manifest; the
+library carries ABI generation 2 and an exact 108-symbol manifest; the
 C++ facade remains header-only rather than a C++ binary ABI.
 
 The current development header and consumers move together. A source API 1.2

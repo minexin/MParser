@@ -179,6 +179,12 @@ For ordinary human-readable commands:
 | stdout | Results or requested inspection output |
 | stderr | CLI, source, compilation, or runtime diagnostics |
 
+During script execution, `disp`/`fprintf` events and top-level expression
+results are merged by their runtime sequence. An unsuppressed expression is
+printed as `ans = value`; a semicolon-suppressed expression still updates
+`ans` but is not printed. The later diagnostic workspace listing remains
+human-readable and must not be parsed as an automation protocol.
+
 | Code | Meaning |
 | ---: | --- |
 | 0 | success |
@@ -191,6 +197,8 @@ For `--run --result-format=json-v1`:
 
 - stdout contains one `mparser.result` 1.x JSON document followed by one LF;
 - stderr is empty;
+- language output and top-level expression results are framed in the optional
+  `output_events` and `top_level_expressions` arrays;
 - consumers inspect both the process exit code and top-level `status`.
 
 | Code | Status class |

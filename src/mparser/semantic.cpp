@@ -1567,6 +1567,8 @@ private:
         node->nameValueSourceClass = syntax.nameValueSourceClass;
         node->nameValueSourceSpan = syntax.nameValueSourceSpan;
         node->property = syntax.property;
+        node->capturesExpressionResult = syntax.capturesExpressionResult;
+        node->outputSuppressed = syntax.outputSuppressed;
         return node;
     }
 

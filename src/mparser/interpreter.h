@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mparser/diagnostic.h"
+#include "mparser/runtime_output.h"
 #include "mparser/runtime_session_state.h"
 #include "mparser/runtime_value.h"
 #include "mparser/semantic.h"
@@ -13,12 +14,15 @@ namespace mparser {
 
 struct InterpreterResult {
     std::vector<RuntimeVariable> variables;
+    std::vector<RuntimeOutputEvent> outputEvents;
+    std::vector<RuntimeExpressionResult> expressionResults;
     std::vector<Diagnostic> diagnostics;
 };
 
 struct InterpreterOptions {
     std::shared_ptr<RuntimeSessionState> sessionState;
     std::shared_ptr<RuntimeCallableContext> callableContext;
+    RuntimeOutputSink outputSink;
 };
 
 class Interpreter {

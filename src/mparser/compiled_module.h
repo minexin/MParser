@@ -25,6 +25,25 @@ struct CompiledFunctionInfo {
     SourceSpan span;
 };
 
+enum class CompiledSourceKind {
+    Unknown,
+    Script,
+    Function,
+    Class,
+};
+
+struct CompiledSourceInfo {
+    std::string name;
+    CompiledSourceKind kind = CompiledSourceKind::Unknown;
+    std::string primaryFunction;
+    bool hasTopLevelStatements = false;
+
+    bool pureFunctionFile() const noexcept {
+        return kind == CompiledSourceKind::Function &&
+               !hasTopLevelStatements;
+    }
+};
+
 struct CompiledModuleCompileOptions {
     std::shared_ptr<const BuiltinRegistry> builtinRegistry;
 };
@@ -46,6 +65,8 @@ public:
     const std::vector<SourceUnit>& sources() const;
     std::string_view sourceName(size_t sourceId) const;
     std::string_view sourceName(SourceSpan span) const;
+    const std::vector<CompiledSourceInfo>& sourceInfo() const;
+    const CompiledSourceInfo* sourceInfo(size_t sourceId) const;
     const std::vector<Diagnostic>& diagnostics() const;
     const SemanticResult& semantic() const;
     const BytecodeProgram& bytecode() const;

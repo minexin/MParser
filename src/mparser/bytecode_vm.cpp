@@ -1083,6 +1083,7 @@ bool isTopLevelRuntimeOp(BytecodeOp op) {
     case BytecodeOp::Return:
     case BytecodeOp::ForBegin:
     case BytecodeOp::ForNext:
+    case BytecodeOp::CaptureExpression:
     case BytecodeOp::Pop:
     case BytecodeOp::DeclareGlobal:
     case BytecodeOp::DeclarePersistent:
@@ -1122,6 +1123,16 @@ public:
                                 : std::make_shared<
                                       RuntimeExecutionControl>();
         executionControlActive_ = executionControl_->active();
+        outputEvents_.clear();
+        expressionResults_.clear();
+        nextConsoleSequence_ = 0;
+        runtimeOutputSink_ = [this, external = options.outputSink](
+                                 const RuntimeOutputEvent& event) {
+            auto recorded = event;
+            recorded.sequence = nextConsoleSequence_++;
+            outputEvents_.push_back(recorded);
+            return !external || external(recorded);
+        };
         profilingEnabled_ =
             options.profiling == BytecodeVmProfilingMode::Full;
         typedRegionBackend_ = options.typedRegionBackend;
@@ -1221,6 +1232,8 @@ public:
         result.entryFunction = executedEntryFunction_;
         result.outputNames = entryOutputNames_;
         result.outputs = entryOutputs_;
+        result.outputEvents = std::move(outputEvents_);
+        result.expressionResults = std::move(expressionResults_);
         result.requestedOutputCount = executedRequestedOutputCount_;
         result.diagnostics = std::move(warnings_);
         result.diagnostics.insert(
@@ -4893,6 +4906,9 @@ private:
             return beginFor(instruction);
         case BytecodeOp::ForNext:
             return nextFor(instruction);
+        case BytecodeOp::CaptureExpression:
+            captureExpression(instruction);
+            break;
         case BytecodeOp::Pop:
             (void)popRuntime(instruction, "discard");
             break;
@@ -6020,6 +6036,21 @@ private:
         instruction.operand = std::move(name);
         instruction.binding = binding;
         storeVariable(instruction, std::move(value));
+    }
+
+    void captureExpression(
+        const BytecodeInstruction& instruction) {
+        auto value = popRuntime(instruction, "top-level expression");
+        if (!value || frames_.empty() ||
+            frames_.back().kind != RuntimeCallFrameKind::Script ||
+            value->kind == RuntimeValueKind::Missing) {
+            return;
+        }
+        currentFrame()["ans"] = *value;
+        expressionResults_.push_back(RuntimeExpressionResult{
+            std::move(*value), instruction.span,
+            instruction.outputSuppressed,
+            nextConsoleSequence_++});
     }
 
     void declareWorkspaceVariable(
@@ -9702,6 +9733,104 @@ private:
         recordAssignment(instruction, "cell", result.value);
     }
 
+    int preferredImplicitOutputCount(
+        const BuiltinDescriptor* descriptor) const {
+        if (!descriptor || descriptor->outputs.accepts(1)) {
+            return 1;
+        }
+        return descriptor->outputs.accepts(0) ? 0 : 1;
+    }
+
+    int preferredImplicitBuiltinOutputCount(
+        std::string_view name) const {
+        if (name == "validateValue") {
+            return 0;
+        }
+        return preferredImplicitOutputCount(
+            builtinRegistry().find(name));
+    }
+
+    int preferredImplicitOutputCount(
+        const FunctionSignature& signature) const {
+        if (functionOutputCountIsValid(signature, 1)) {
+            return 1;
+        }
+        return functionOutputCountIsValid(signature, 0) ? 0 : 1;
+    }
+
+    const FunctionInfo* implicitMethodInfo(
+        const std::string& className, const std::string& methodName,
+        const std::string& methodDeclaringClass) const {
+        if (!methodDeclaringClass.empty()) {
+            const auto owner = classesByName_.find(methodDeclaringClass);
+            if (owner == classesByName_.end()) {
+                return nullptr;
+            }
+            const auto declared =
+                owner->second.declaredMethods.find(methodName);
+            return declared == owner->second.declaredMethods.end()
+                       ? nullptr
+                       : &declared->second;
+        }
+        const auto klass = classesByName_.find(className);
+        return klass == classesByName_.end()
+                   ? nullptr
+                   : selectMethod(klass->second, methodName);
+    }
+
+    int preferredImplicitMethodOutputCount(
+        const std::string& className, const std::string& methodName,
+        const std::string& methodDeclaringClass) const {
+        const FunctionInfo* method = implicitMethodInfo(
+            className, methodName, methodDeclaringClass);
+        if (!method) {
+            return 1;
+        }
+        return method->classDestructor
+                   ? 0
+                   : preferredImplicitOutputCount(method->signature);
+    }
+
+    int preferredImplicitHandleOutputCount(
+        const RuntimeValue& handle) const {
+        if (!isFunctionHandle(handle)) {
+            return 1;
+        }
+        const RuntimeFunctionHandle& info = *handle.functionHandle;
+        if (info.targetName.rfind(
+                "__mparser_property_validator/", 0) == 0) {
+            return 0;
+        }
+        if (info.kind == RuntimeFunctionHandleKind::Anonymous) {
+            return 1;
+        }
+        if (info.kind == RuntimeFunctionHandleKind::Builtin) {
+            return preferredImplicitBuiltinOutputCount(
+                info.targetName);
+        }
+        if (info.kind == RuntimeFunctionHandleKind::Method) {
+            const auto declaring =
+                classesByName_.find(info.declaringClass);
+            if (declaring == classesByName_.end()) {
+                return 1;
+            }
+            const auto method =
+                declaring->second.declaredMethods.find(info.methodName);
+            if (method == declaring->second.declaredMethods.end()) {
+                return 1;
+            }
+            return method->second.classDestructor
+                       ? 0
+                       : preferredImplicitOutputCount(
+                             method->second.signature);
+        }
+        const auto function = functionsByName_.find(info.targetName);
+        return function == functionsByName_.end()
+                   ? 1
+                   : preferredImplicitOutputCount(
+                         function->second.signature);
+    }
+
     void callOrIndex(const BytecodeInstruction& instruction) {
         const auto rawArguments = popRuntimeValues(
             instruction, instruction.operandCount,
@@ -9713,26 +9842,42 @@ private:
         const auto arguments = runtimeExpandedValues(*rawArguments);
 
         if (callee->isClassReference) {
-            auto outputs = callClassConstructor(instruction, callee->className,
-                                                arguments,
-                                                instruction.resultCount);
+            BytecodeInstruction callInstruction = instruction;
+            if (callInstruction.implicitExpressionOutput) {
+                callInstruction.resultCount = 1;
+            }
+            auto outputs = callClassConstructor(
+                callInstruction, callee->className, arguments,
+                callInstruction.resultCount);
             finishIndexContext();
-            pushOutputValues(instruction, outputs);
+            pushOutputValues(callInstruction, outputs);
             return;
         }
 
         if (callee->isMethodReference) {
-            auto outputs = callClassMethod(instruction, callee->methodClassName,
-                                           callee->methodName,
-                                           callee->methodDeclaringClass,
-                                           callee->receiver,
-                                           arguments, instruction.resultCount);
+            BytecodeInstruction callInstruction = instruction;
+            if (callInstruction.implicitExpressionOutput) {
+                callInstruction.resultCount =
+                    preferredImplicitMethodOutputCount(
+                        callee->methodClassName, callee->methodName,
+                        callee->methodDeclaringClass);
+            }
+            auto outputs = callClassMethod(
+                callInstruction, callee->methodClassName,
+                callee->methodName, callee->methodDeclaringClass,
+                callee->receiver, arguments,
+                callInstruction.resultCount);
             finishIndexContext();
-            pushOutputValues(instruction, outputs);
+            pushOutputValues(callInstruction, outputs);
             return;
         }
 
         if (isFunctionHandle(callee->value)) {
+            BytecodeInstruction callInstruction = instruction;
+            if (callInstruction.implicitExpressionOutput) {
+                callInstruction.resultCount =
+                    preferredImplicitHandleOutputCount(callee->value);
+            }
             BytecodeCallSiteProfile* profile = nullptr;
             if (profilingEnabled_) {
                 profile = &recordCallSite(instruction, "function-handle",
@@ -9740,13 +9885,13 @@ private:
                 observeValues(profile->argumentObservations, arguments);
             }
             auto outputs = callFunctionHandle(
-                instruction, callee->value, arguments,
-                instruction.resultCount);
+                callInstruction, callee->value, arguments,
+                callInstruction.resultCount);
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
             }
             finishIndexContext();
-            pushOutputValues(instruction, outputs);
+            pushOutputValues(callInstruction, outputs);
             return;
         }
 
@@ -9754,17 +9899,27 @@ private:
             callee->isFunctionReference) {
             const std::string name = symbolName(instruction.binding)
                                          .value_or(callee->functionName);
+            BytecodeInstruction callInstruction = instruction;
+            if (callInstruction.implicitExpressionOutput) {
+                const auto function = functionsByName_.find(name);
+                callInstruction.resultCount =
+                    function == functionsByName_.end()
+                        ? 1
+                        : preferredImplicitOutputCount(
+                              function->second.signature);
+            }
             BytecodeCallSiteProfile* profile = nullptr;
             if (profilingEnabled_) {
                 profile = &recordCallSite(instruction, "function", name);
                 observeValues(profile->argumentObservations, arguments);
             }
-            auto outputs = callLocalFunction(instruction, name, arguments,
-                                             instruction.resultCount);
+            auto outputs = callLocalFunction(
+                callInstruction, name, arguments,
+                callInstruction.resultCount);
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
             }
-            pushOutputValues(instruction, outputs);
+            pushOutputValues(callInstruction, outputs);
             return;
         }
 
@@ -9772,6 +9927,11 @@ private:
             callee->isBuiltinReference) {
             const std::string name = symbolName(instruction.binding)
                                          .value_or(callee->builtinName);
+            BytecodeInstruction callInstruction = instruction;
+            if (callInstruction.implicitExpressionOutput) {
+                callInstruction.resultCount =
+                    preferredImplicitBuiltinOutputCount(name);
+            }
             std::vector<RuntimeValue> callArguments = arguments;
             if (callee->receiver) {
                 callArguments.insert(callArguments.begin(),
@@ -9784,12 +9944,12 @@ private:
                               callArguments);
             }
             auto outputs = callBuiltinOutputs(
-                instruction, name, callArguments,
-                instruction.resultCount);
+                callInstruction, name, callArguments,
+                callInstruction.resultCount);
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
             }
-            pushOutputValues(instruction, outputs);
+            pushOutputValues(callInstruction, outputs);
             return;
         }
 
@@ -11617,6 +11777,7 @@ private:
             context.objectArrayPolicy = &objectPolicy;
             context.executionControl =
                 executionControl_.get();
+            context.outputSink = &runtimeOutputSink_;
             BuiltinResult result = builtinRegistry().invoke(
                 name,
                 BuiltinCall{
@@ -12886,6 +13047,9 @@ private:
     void pushOutputValues(const BytecodeInstruction& instruction,
                           const std::vector<RuntimeValue>& outputs) {
         if (instruction.resultCount == 0) {
+            if (instruction.implicitExpressionOutput) {
+                pushRuntime(missingValue());
+            }
             return;
         }
         if (outputs.empty()) {
@@ -13713,6 +13877,10 @@ private:
     std::vector<Diagnostic> warnings_;
     std::optional<RuntimeValue> pendingException_;
     RuntimeWarningState warningState_;
+    RuntimeOutputSink runtimeOutputSink_;
+    std::vector<RuntimeOutputEvent> outputEvents_;
+    std::vector<RuntimeExpressionResult> expressionResults_;
+    std::uint64_t nextConsoleSequence_ = 0;
     std::optional<std::chrono::steady_clock::time_point> ticStart_;
     std::vector<size_t> instructionExecutionCounts_;
     std::map<std::string, BytecodeFunctionProfile> functionProfiles_;

@@ -2,6 +2,7 @@
 
 #include "mparser/bytecode.h"
 #include "mparser/runtime_execution_control.h"
+#include "mparser/runtime_output.h"
 #include "mparser/runtime_session_state.h"
 #include "mparser/runtime_value.h"
 #include "mparser/semantic.h"
@@ -120,6 +121,7 @@ struct BytecodeVmOptions {
     std::optional<size_t> requestedOutputCount;
     TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
     std::shared_ptr<RuntimeExecutionControl> executionControl;
+    RuntimeOutputSink outputSink;
 };
 
 struct BytecodeTypedRegionExecutionProfile {
@@ -157,6 +159,8 @@ struct BytecodeVmResult {
     std::string entryFunction;
     std::vector<std::string> outputNames;
     std::vector<RuntimeValue> outputs;
+    std::vector<RuntimeOutputEvent> outputEvents;
+    std::vector<RuntimeExpressionResult> expressionResults;
     size_t requestedOutputCount = 0;
     std::vector<Diagnostic> diagnostics;
     size_t executedInstructionCount = 0;

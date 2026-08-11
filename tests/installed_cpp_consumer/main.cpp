@@ -138,6 +138,62 @@ end
         require(std::abs(counterValue - 5.0) < kTolerance,
                 "persistent session invocation differs");
 
+        const auto hostModule = mparser::sdk::Module::compile(
+            R"(formatted = sprintf("value=%d", 42);
+disp(formatted)
+written = fprintf("pi=%.1f\n", 3.14);
+40 + 2
+41 + 2;
+)",
+            "installed_host_cpp.m",
+            mparser::sdk::SourceLoadOptions{});
+        require(hostModule.isValid(), "host script compilation failed");
+        const auto metadata = hostModule.sourceMetadata();
+        require(metadata.size() == 1 &&
+                    metadata.front().name.ends_with(
+                        "installed_host_cpp.m") &&
+                    metadata.front().kind ==
+                        mparser::sdk::SourceKind::Script &&
+                    metadata.front().hasTopLevelStatements &&
+                    !metadata.front().pureFunctionFile,
+                "host script metadata differs");
+
+        std::vector<mparser::sdk::OutputEvent> observedOutput;
+        mparser::sdk::Invocation hostInvocation;
+        hostInvocation.outputSink = [&observedOutput](const auto& event) {
+            observedOutput.push_back(event);
+            return true;
+        };
+        const auto hostResult = hostModule.execute(hostInvocation);
+        const auto outputEvents = hostResult.outputEvents();
+        const auto expressions = hostResult.topLevelExpressions();
+        require(hostResult.succeeded() && outputEvents.size() == 2 &&
+                    observedOutput.size() == 2 &&
+                    outputEvents[0].kind ==
+                        mparser::sdk::OutputKind::Display &&
+                    outputEvents[0].text == "value=42\n" &&
+                    outputEvents[0].sequence == 0 &&
+                    outputEvents[1].kind ==
+                        mparser::sdk::OutputKind::StandardOutput &&
+                    outputEvents[1].text == "pi=3.1\n" &&
+                    outputEvents[1].sequence == 1 &&
+                    observedOutput[0].text == outputEvents[0].text &&
+                    observedOutput[1].text == outputEvents[1].text,
+                "host output events differ");
+        require(expressions.size() == 2 &&
+                    std::abs(scalar(expressions[0].value) - 42.0) <
+                        kTolerance &&
+                    !expressions[0].outputSuppressed &&
+                    expressions[0].sequence == 2 &&
+                    std::abs(scalar(expressions[1].value) - 43.0) <
+                        kTolerance &&
+                    expressions[1].outputSuppressed &&
+                    expressions[1].sequence == 3 &&
+                    expressions[1].source &&
+                    expressions[1].source->sourceName.ends_with(
+                        "installed_host_cpp.m"),
+                "host top-level expressions differ");
+
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','
@@ -145,7 +201,8 @@ end
                   << mparser::sdk::abiGeneration() << "-revision-"
                   << mparser::sdk::abiRevision()
                   << ",cpp-api-" << sourceApiVersion.major << '.'
-                  << sourceApiVersion.minor << '\n';
+                  << sourceApiVersion.minor
+                  << ",host-output-2-2\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

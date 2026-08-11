@@ -121,13 +121,14 @@ statement_nargout = original.LastNargout;
     assert(valueParameterCount == 2);
     assert(foundMethodReceiver);
 
-    const auto zeroOutputCalls = std::count_if(
+    const auto implicitOutputCalls = std::count_if(
         compiled.bytecode.instructions.begin(),
         compiled.bytecode.instructions.end(), [](const auto& instruction) {
             return instruction.op == mparser::BytecodeOp::CallOrIndex &&
-                   instruction.resultCount == 0;
+                   instruction.resultCount == 1 &&
+                   instruction.implicitExpressionOutput;
         });
-    assert(zeroOutputCalls == 1);
+    assert(implicitOutputCalls == 1);
 
     const auto result = run(compiled);
     assert(result.diagnostics.empty());

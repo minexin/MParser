@@ -80,6 +80,13 @@ path that begins with `-`:
 mparser --run -- -generated-name.m
 ```
 
+The current v1.2 script console supports `disp`, stdout-only `fprintf`, and
+pure `sprintf`. Unsuppressed expression statements print `ans = value`;
+semicolon-suppressed expressions update `ans` without display. The formatter
+is a bounded MATLAB-like subset rather than file I/O: see
+[C Embedding API](embedding-c-api.md#output-and-top-level-expressions) for its
+supported conversions and limits.
+
 Local functions use isolated call frames. Script workspace, function local
 workspace, `global`, and per-function `persistent` bindings follow the
 supported subset recorded in the compatibility matrix. Reusable embedding
@@ -177,7 +184,9 @@ mparser --run --result-format=json-v1 script.m
 ```
 
 Machine mode writes one `mparser.result` 1.x JSON document followed by one LF
-to stdout and keeps stderr empty. Its exit classes are:
+to stdout and keeps stderr empty. Script output and top-level expression
+results are represented by ordered protocol arrays rather than unframed
+console bytes. Its exit classes are:
 
 | Code | Outcome |
 | ---: | --- |
@@ -202,7 +211,9 @@ Choose the narrowest boundary that fits the host:
 | Builtin compiled into the engine | Builtin source contract 1.0 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
-structured values, diagnostics, cancellation, limits, and execution summaries.
+structured values, diagnostics, cancellation, limits, execution summaries,
+source metadata, synchronous output sinks, retained output events, and
+top-level expression results.
 The builtin registry is a source-integration mechanism, not an external plugin
 ABI. Independently compiled native callbacks and borrowed zero-copy input
 arrays are Post-v1.0.

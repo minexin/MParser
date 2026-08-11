@@ -51,16 +51,21 @@ The current v1.2 train is building one end-to-end numeric foundation:
   `prod` behavior;
 - shared `mod`/`rem`, `nextpow2`, scalar/vector/row/column/matrix predicates,
   and recursive `isequal`/`isequaln` semantics;
+- `disp`, bounded `fprintf`/`sprintf`, host output sinks, ordered retained
+  output events, and suppressed/unsuppressed top-level expression results;
+- in-memory source compilation with search paths plus script/function/class,
+  primary-function, pure-function-file, and top-level-statement metadata;
 - guarded portable/native fallback for types not represented by Typed IR;
 - C/C++ source API 1.2, C ABI generation 2, and machine protocol 1.1
   transport.
 
 The runnable coverage is split between `samples/numeric_types_demo.m`,
 `samples/complex_numeric_demo.m`, and
-`samples/core_numeric_builtins_demo.m`. The source tree and installed SDK
+`samples/core_numeric_builtins_demo.m`; host behavior is exercised by
+`samples/host_integration_demo.m` and the C/C++ embedding demos. The source tree and installed SDK
 report development version `1.2.0`; ABI generation and protocol numbers are
 independent contract metadata, not SDK product versions. This is an internal
-milestone, so its active 163-descriptor catalog and public snapshots freeze
+milestone, so its active 164-descriptor catalog and public snapshots freeze
 only after the remaining v1.2 work is complete.
 
 ## Language And Runtime
@@ -104,14 +109,16 @@ script fail; it returns to a less specialized tier.
 | Boundary | Current development contract |
 | --- | --- |
 | CLI | Production `--run`, strict options, stable exit classes, JSON protocol selector |
-| Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, one document plus LF |
-| C API/ABI | C source API 1.2; ABI generation 2 revision 0, typed real/imaginary buffers, opaque retained handles, caller-sized roots |
-| C++ API | Header-only C++20 source API 1.2 over C ABI generation 2 |
+| Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
+| C API/ABI | C source API 1.2; ABI generation 2 revision 0, typed real/imaginary buffers, source metadata, output sink/results, opaque retained handles, caller-sized roots |
+| C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata and host output projection |
 | Builtin extension | Source contract 1.0 using registry/descriptors/call/results |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
-invocation, sessions, diagnostics, cancellation, and resource summaries.
+invocation, sessions, diagnostics, cancellation, resource summaries,
+synchronous output routing, retained output events, and top-level expression
+results.
 Host-created array payloads are copy-in. Returned views remain owned by their
 value/result handles.
 

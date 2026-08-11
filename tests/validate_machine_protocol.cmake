@@ -3,6 +3,7 @@ if(NOT DEFINED MPARSER_CLI OR
    NOT DEFINED SCHEMA OR
    NOT DEFINED SCHEMA_VALIDATION_DIR OR
    NOT DEFINED SUCCESS_SOURCE OR
+   NOT DEFINED HOST_OUTPUT_SOURCE OR
    NOT DEFINED COMPILE_FAILURE_SOURCE OR
    NOT DEFINED RUNTIME_FAILURE_SOURCE OR
    NOT DEFINED EXPECTED_VERSION)
@@ -154,6 +155,41 @@ require_json_equal(success_backend "${success_JSON}" bytecode
     execution requested_backend)
 require_json_equal(success_tier "${success_JSON}" bytecode
     execution effective_tier)
+
+run_machine_case(host_output 0 "${HOST_OUTPUT_SOURCE}")
+string(JSON host_event_count ERROR_VARIABLE json_error
+    LENGTH "${host_output_JSON}" output_events)
+string(JSON host_expression_count ERROR_VARIABLE json_error
+    LENGTH "${host_output_JSON}" top_level_expressions)
+if(json_error OR NOT host_event_count EQUAL 2 OR
+   NOT host_expression_count EQUAL 2)
+    message(FATAL_ERROR
+        "host_output: expected two events and two expressions: ${json_error}")
+endif()
+require_json_equal(host_display_sequence "${host_output_JSON}" 0
+    output_events 0 sequence)
+require_json_equal(host_display_kind "${host_output_JSON}" display
+    output_events 0 kind)
+require_json_equal(host_display_text "${host_output_JSON}" "value=42\n"
+    output_events 0 text)
+require_json_equal(host_fprintf_sequence "${host_output_JSON}" 1
+    output_events 1 sequence)
+require_json_equal(host_fprintf_kind "${host_output_JSON}" stdout
+    output_events 1 kind)
+require_json_equal(host_fprintf_text "${host_output_JSON}" "pi=3.1\n"
+    output_events 1 text)
+require_json_equal(host_visible_sequence "${host_output_JSON}" 2
+    top_level_expressions 0 sequence)
+require_json_equal(host_visible_suppressed "${host_output_JSON}" OFF
+    top_level_expressions 0 output_suppressed)
+require_json_equal(host_visible_value "${host_output_JSON}" 42
+    top_level_expressions 0 value data 0)
+require_json_equal(host_suppressed_sequence "${host_output_JSON}" 3
+    top_level_expressions 1 sequence)
+require_json_equal(host_suppressed "${host_output_JSON}" ON
+    top_level_expressions 1 output_suppressed)
+require_json_equal(host_suppressed_value "${host_output_JSON}" 43
+    top_level_expressions 1 value data 0)
 
 run_backend_case(backend_auto auto automatic)
 run_backend_case(backend_off off bytecode)

@@ -6,6 +6,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <functional>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -81,6 +83,18 @@ enum class DiagnosticPhase : std::uint32_t {
 enum class DiagnosticSeverity : std::uint32_t {
     Error = MPARSER_DIAGNOSTIC_ERROR,
     Warning = MPARSER_DIAGNOSTIC_WARNING,
+};
+
+enum class SourceKind : std::uint32_t {
+    Unknown = MPARSER_SOURCE_UNKNOWN,
+    Script = MPARSER_SOURCE_SCRIPT,
+    Function = MPARSER_SOURCE_FUNCTION,
+    Class = MPARSER_SOURCE_CLASS,
+};
+
+enum class OutputKind : std::uint32_t {
+    Display = MPARSER_OUTPUT_DISPLAY,
+    StandardOutput = MPARSER_OUTPUT_STANDARD,
 };
 
 enum class ValueKind : std::uint32_t {
@@ -171,6 +185,15 @@ struct SourceRange {
     SourcePosition end;
 };
 
+struct OutputEvent {
+    OutputKind kind = OutputKind::StandardOutput;
+    std::string text;
+    std::optional<SourceRange> source;
+    std::uint64_t sequence = 0;
+};
+
+using OutputSink = std::function<bool(const OutputEvent&)>;
+
 struct DiagnosticFrame {
     std::string sourceName;
     std::string functionName;
@@ -225,6 +248,14 @@ struct SourceLoadOptions {
     std::vector<std::string> searchPaths;
 };
 
+struct SourceMetadata {
+    std::string name;
+    SourceKind kind = SourceKind::Unknown;
+    std::string primaryFunction;
+    bool hasTopLevelStatements = false;
+    bool pureFunctionFile = false;
+};
+
 class Value;
 struct NamedValue;
 struct Invocation;
@@ -254,6 +285,17 @@ inline SourcePosition copyPosition(
     mparser_source_position position) noexcept {
     return SourcePosition{
         position.offset, position.line, position.column};
+}
+
+inline std::optional<SourceRange> copySourceRange(
+    mparser_utf8_view sourceName,
+    mparser_source_position begin,
+    mparser_source_position end) {
+    if (!sourceName.data || sourceName.size == 0) {
+        return std::nullopt;
+    }
+    return SourceRange{
+        copyUtf8(sourceName), copyPosition(begin), copyPosition(end)};
 }
 
 inline Diagnostic copyDiagnostic(
@@ -389,6 +431,24 @@ struct CancellationPolicy {
 };
 
 struct InvocationBridge;
+
+struct SourceLoadBridge {
+    explicit SourceLoadBridge(const SourceLoadOptions& source) {
+        searchPaths.reserve(source.searchPaths.size());
+        for (const auto& path : source.searchPaths) {
+            searchPaths.push_back(mparser_utf8_view{
+                path.data(), path.size()});
+        }
+        checkStatus(
+            MPARSER_SOURCE_LOAD_OPTIONS_INIT(&options),
+            "initialize source-load options");
+        options.search_paths = searchPaths.data();
+        options.search_path_count = searchPaths.size();
+    }
+
+    std::vector<mparser_utf8_view> searchPaths;
+    mparser_source_load_options options{};
+};
 
 } // namespace detail
 
@@ -749,6 +809,13 @@ struct NamedValue {
     Value value;
 };
 
+struct TopLevelExpression {
+    Value value;
+    std::optional<SourceRange> source;
+    bool outputSuppressed = false;
+    std::uint64_t sequence = 0;
+};
+
 inline Value Value::structure(
     std::span<const NamedValue> fields) {
     std::vector<mparser_named_value> descriptors;
@@ -821,6 +888,7 @@ struct Invocation {
     bool collectProfile = false;
     ExecutionLimits limits;
     std::optional<CancellationToken> cancellationToken;
+    OutputSink outputSink;
 };
 
 namespace detail {
@@ -867,11 +935,60 @@ struct InvocationBridge {
         options.cancellation_token = source.cancellationToken
             ? source.cancellationToken->raw()
             : nullptr;
+        outputSink = source.outputSink;
+        if (outputSink) {
+            options.output_sink = &InvocationBridge::emitOutput;
+            options.output_user_data = this;
+        }
     }
+
+    void rethrowOutputSinkException() const {
+        if (outputSinkException) {
+            std::rethrow_exception(outputSinkException);
+        }
+    }
+
+private:
+    static mparser_output_disposition emitOutput(
+        void* userData,
+        std::uint64_t sequence,
+        mparser_output_kind kind,
+        const char* text,
+        std::size_t textSize,
+        const char* sourceName,
+        std::size_t sourceNameSize,
+        mparser_source_position sourceBegin,
+        mparser_source_position sourceEnd) noexcept {
+        auto* self = static_cast<InvocationBridge*>(userData);
+        if (!self || !self->outputSink) {
+            return MPARSER_OUTPUT_REJECT;
+        }
+        try {
+            OutputEvent event;
+            event.sequence = sequence;
+            event.kind = static_cast<OutputKind>(kind);
+            if (text && textSize != 0) {
+                event.text.assign(text, textSize);
+            }
+            event.source = copySourceRange(
+                mparser_utf8_view{sourceName, sourceNameSize},
+                sourceBegin, sourceEnd);
+            return self->outputSink(event)
+                       ? MPARSER_OUTPUT_ACCEPT
+                       : MPARSER_OUTPUT_REJECT;
+        } catch (...) {
+            self->outputSinkException = std::current_exception();
+            return MPARSER_OUTPUT_REJECT;
+        }
+    }
+
+public:
 
     mparser_invocation_options options{};
     std::vector<const mparser_value*> arguments;
     std::vector<mparser_named_value> workspace;
+    OutputSink outputSink;
+    std::exception_ptr outputSinkException;
 };
 
 inline ExecutionSummary copyExecutionSummary(
@@ -964,6 +1081,74 @@ public:
         result.reserve(count);
         for (std::size_t index = 0; index < count; ++index) {
             result.push_back(output(index));
+        }
+        return result;
+    }
+
+    [[nodiscard]] OutputEvent outputEvent(std::size_t index) const {
+        const auto* result = requireRaw();
+        if (index >= mparser_result_output_event_count(result)) {
+            throw ApiError(
+                MPARSER_API_STATUS_OUT_OF_RANGE,
+                "read output event");
+        }
+        OutputEvent event;
+        event.kind = static_cast<OutputKind>(
+            mparser_result_output_event_kind(result, index));
+        event.text = detail::copyUtf8(
+            mparser_result_output_event_text(result, index));
+        event.source = detail::copySourceRange(
+            mparser_result_output_event_source_name(result, index),
+            mparser_result_output_event_source_begin(result, index),
+            mparser_result_output_event_source_end(result, index));
+        event.sequence =
+            mparser_result_output_event_sequence(result, index);
+        return event;
+    }
+
+    [[nodiscard]] std::vector<OutputEvent> outputEvents() const {
+        const auto count =
+            mparser_result_output_event_count(requireRaw());
+        std::vector<OutputEvent> result;
+        result.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            result.push_back(outputEvent(index));
+        }
+        return result;
+    }
+
+    [[nodiscard]] TopLevelExpression topLevelExpression(
+        std::size_t index) const {
+        const auto* result = requireRaw();
+        mparser_value* value = nullptr;
+        const auto status =
+            mparser_result_top_level_expression_value(
+                result, index, &value);
+        TopLevelExpression expression{
+            Value::takeCreated(
+                status, value, "read top-level expression"),
+            detail::copySourceRange(
+                mparser_result_top_level_expression_source_name(
+                    result, index),
+                mparser_result_top_level_expression_source_begin(
+                    result, index),
+                mparser_result_top_level_expression_source_end(
+                    result, index)),
+            mparser_result_top_level_expression_output_suppressed(
+                result, index) != 0,
+            mparser_result_top_level_expression_sequence(
+                result, index)};
+        return expression;
+    }
+
+    [[nodiscard]] std::vector<TopLevelExpression>
+    topLevelExpressions() const {
+        const auto count =
+            mparser_result_top_level_expression_count(requireRaw());
+        std::vector<TopLevelExpression> result;
+        result.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            result.push_back(topLevelExpression(index));
         }
         return result;
     }
@@ -1065,6 +1250,21 @@ public:
     }
 
     [[nodiscard]] static Module compile(
+        std::string_view source,
+        std::string_view sourceName,
+        const SourceLoadOptions& sourceOptions) {
+        detail::SourceLoadBridge bridge(sourceOptions);
+        mparser_module* module = nullptr;
+        const auto status =
+            mparser_module_compile_utf8_with_options(
+                source.data(), source.size(),
+                sourceName.data(), sourceName.size(),
+                &bridge.options, &module);
+        return takeCompiled(
+            status, module, "compile source graph from memory");
+    }
+
+    [[nodiscard]] static Module compile(
         std::span<const SourceUnit> sources) {
         std::vector<mparser_source_unit> descriptors;
         descriptors.reserve(sources.size());
@@ -1089,23 +1289,11 @@ public:
     [[nodiscard]] static Module loadFile(
         std::string_view entryPath,
         const SourceLoadOptions& sourceOptions = {}) {
-        std::vector<mparser_utf8_view> searchPaths;
-        searchPaths.reserve(sourceOptions.searchPaths.size());
-        for (const auto& path : sourceOptions.searchPaths) {
-            searchPaths.push_back(mparser_utf8_view{
-                path.data(), path.size()});
-        }
-
-        mparser_source_load_options options{};
-        detail::checkStatus(
-            MPARSER_SOURCE_LOAD_OPTIONS_INIT(&options),
-            "initialize source-load options");
-        options.search_paths = searchPaths.data();
-        options.search_path_count = searchPaths.size();
-
+        detail::SourceLoadBridge bridge(sourceOptions);
         mparser_module* module = nullptr;
         const auto status = mparser_module_load_file_utf8(
-            entryPath.data(), entryPath.size(), &options, &module);
+            entryPath.data(), entryPath.size(),
+            &bridge.options, &module);
         return takeCompiled(status, module, "load source graph");
     }
 
@@ -1129,6 +1317,38 @@ public:
         for (std::size_t index = 0; index < count; ++index) {
             result.push_back(detail::copyUtf8(
                 mparser_module_source_name(module, index)));
+        }
+        return result;
+    }
+
+    [[nodiscard]] SourceMetadata sourceMetadata(
+        std::size_t index) const {
+        const auto* module = requireRaw();
+        if (index >= mparser_module_source_count(module)) {
+            throw ApiError(
+                MPARSER_API_STATUS_OUT_OF_RANGE,
+                "read source metadata");
+        }
+        return SourceMetadata{
+            detail::copyUtf8(
+                mparser_module_source_name(module, index)),
+            static_cast<SourceKind>(
+                mparser_module_source_kind(module, index)),
+            detail::copyUtf8(
+                mparser_module_source_primary_function(module, index)),
+            mparser_module_source_has_top_level_statements(
+                module, index) != 0,
+            mparser_module_source_is_pure_function_file(
+                module, index) != 0};
+    }
+
+    [[nodiscard]] std::vector<SourceMetadata>
+    sourceMetadata() const {
+        const auto count = mparser_module_source_count(requireRaw());
+        std::vector<SourceMetadata> result;
+        result.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            result.push_back(sourceMetadata(index));
         }
         return result;
     }
@@ -1264,6 +1484,12 @@ inline Result Module::execute(
     mparser_result* result = nullptr;
     const auto status = mparser_module_execute(
         requireRaw(), &bridge.options, &result);
+    try {
+        bridge.rethrowOutputSinkException();
+    } catch (...) {
+        mparser_result_release(result);
+        throw;
+    }
     return Result::takeCreated(status, result, "execute module");
 }
 
@@ -1293,6 +1519,12 @@ inline Result Session::execute(
     mparser_result* result = nullptr;
     const auto status = mparser_session_execute(
         requireRaw(), &bridge.options, &result);
+    try {
+        bridge.rethrowOutputSinkException();
+    } catch (...) {
+        mparser_result_release(result);
+        throw;
+    }
     return Result::takeCreated(status, result, "execute session");
 }
 

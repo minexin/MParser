@@ -95,6 +95,16 @@ function growth:
   deoptimization, and VM equivalence for every newly legal class before wider
   typed lowering is attempted.
 
+The host-foundation slice is implemented in the current tree. One shared
+runtime output model now serves `disp`, `fprintf`, and `sprintf`; script-level
+output events and expression results carry one monotonic sequence; source
+metadata classifies script/function/class units; and in-memory source can use
+the production search-path loader. C API 1.2, the header-only C++ API, ordinary
+CLI output, and machine protocol 1.1 project that same authority. Focused
+interpreter/VM/module/API/protocol tests, runnable CLI and embedding samples,
+and relocated installed consumers cover the slice. It remains part of the
+larger v1.2 candidate gate rather than a separate release.
+
 Character/string, cell, struct, function-handle, and object values remain part
 of the stable value model. Missing strings are included in the v1.2 correctness
 inventory. Large domain families such as sparse arrays, datetime/duration,

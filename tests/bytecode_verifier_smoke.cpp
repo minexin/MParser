@@ -200,6 +200,17 @@ void runMetadataRejectionSmoke() {
     negativeResult.instructions.push_back(std::move(call));
     assertInvalid(negativeResult);
 
+    mparser::BytecodeProgram invalidImplicitOutput;
+    mparser::BytecodeInstruction literal;
+    literal.op = mparser::BytecodeOp::LoadLiteral;
+    literal.operand = "1";
+    literal.implicitExpressionOutput = true;
+    invalidImplicitOutput.instructions.push_back(std::move(literal));
+    assertInvalid(invalidImplicitOutput);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(invalidImplicitOutput).diagnostics,
+        "implicit expression output requires a one-result CallOrIndex"));
+
     mparser::BytecodeProgram duplicateCapture;
     mparser::BytecodeInstruction handle;
     handle.op = mparser::BytecodeOp::MakeFunctionHandle;

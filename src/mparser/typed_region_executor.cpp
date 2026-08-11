@@ -625,7 +625,8 @@ std::optional<ScalarKernel> compileKernel(
         case BytecodeOp::CallOrIndex: {
             if (instruction.binding.kind == BindingKind::Builtin) {
                 if (instruction.operandCount != 1 ||
-                    instruction.resultCount != 1) {
+                    instruction.resultCount != 1 ||
+                    instruction.implicitExpressionOutput) {
                     failureReason =
                         "typed region builtin call has an invalid arity";
                     return std::nullopt;
@@ -656,6 +657,7 @@ std::optional<ScalarKernel> compileKernel(
 
             if (instruction.operandCount != 1 ||
                 instruction.resultCount != 1 ||
+                instruction.implicitExpressionOutput ||
                 !instruction.calleeName.empty() ||
                 (!instruction.colonSubscripts.empty() &&
                  instruction.colonSubscripts.front())) {
@@ -773,6 +775,10 @@ std::optional<ScalarKernel> compileKernel(
             }
             stack.pop_back();
             break;
+        case BytecodeOp::CaptureExpression:
+            failureReason =
+                "typed region cannot publish a top-level expression result";
+            return std::nullopt;
         case BytecodeOp::Jump:
             if (!stack.empty() || instruction.target < 0) {
                 failureReason =
