@@ -60,6 +60,11 @@ RuntimeIndexOperationResult runtimeIndexNumeric(
     const std::vector<RuntimeValue>& subscripts,
     bool linearColon);
 
+RuntimeIndexOperationResult runtimeIndexMissingArray(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool linearColon = false);
+
 std::vector<size_t> runtimeLinearIndexResultDimensions(
     const RuntimeValue& target, const RuntimeValue& subscript,
     size_t resultElementCount, bool logicalMask);

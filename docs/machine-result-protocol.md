@@ -207,7 +207,7 @@ replacement policy for malformed surrogate input.
 Cells and transient comma-separated lists use recursive `data` arrays:
 
 ```json
-{"kind":"cell","dimensions":[1,2],"data":[{"kind":"missing"},{"kind":"missing"}]}
+{"kind":"cell","dimensions":[1,2],"data":[{"kind":"missing","dimensions":[1,1]},{"kind":"missing","dimensions":[1,1]}]}
 ```
 
 Structures declare field order once and emit one object per column-major
@@ -228,10 +228,15 @@ structure element:
 Name-value arguments use:
 
 ```json
-{"kind":"name-value-argument","name":"Scale","value":{"kind":"missing"}}
+{"kind":"name-value-argument","name":"Scale","value":{"kind":"missing","dimensions":[1,1]}}
 ```
 
-A missing runtime value is `{ "kind": "missing" }`.
+A language-visible missing value carries its logical shape, for example
+`{ "kind": "missing", "dimensions": [2,3] }`. The producer retains the
+dimensionless `{ "kind": "missing" }` form for an internal absent output and
+for compatibility with earlier major-1 documents. Consumers must therefore
+treat `dimensions` as optional; when present, it is authoritative and follows
+the same normalized shape rules as other arrays.
 
 ### Handles And Objects
 

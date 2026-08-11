@@ -61,11 +61,12 @@ The current v1.2 train is building one end-to-end numeric foundation:
 
 The runnable coverage is split between `samples/numeric_types_demo.m`,
 `samples/complex_numeric_demo.m`, and
-`samples/core_numeric_builtins_demo.m`; host behavior is exercised by
+`samples/core_numeric_builtins_demo.m`; shaped missing/text behavior is in
+`samples/text_runtime_demo.m`, and host behavior is exercised by
 `samples/host_integration_demo.m` and the C/C++ embedding demos. The source tree and installed SDK
 report development version `1.2.0`; ABI generation and protocol numbers are
 independent contract metadata, not SDK product versions. This is an internal
-milestone, so its active 164-descriptor catalog and public snapshots freeze
+milestone, so its active 165-descriptor/167-name catalog and public snapshots freeze
 only after the remaining v1.2 work is complete.
 
 ## Language And Runtime
@@ -78,6 +79,7 @@ only after the remaining v1.2 work is complete.
 | Source graph | Search paths, packages, private functions, and class folders | `SRC-001` |
 | Numeric/logical arrays | Dense core numeric classes and complex double/single through N-D shape/index rules, logical/colon/`end` indexing, growth, and deletion within recorded limits | `ARR-001`, `ARR-002` |
 | Text | Distinct UTF-16 character and string arrays with shared conversion/formatting rules | `TEXT-001` |
+| Missing values | First-class scalar and N-D `missing` arrays with shape-preserving transforms, indexing/mutation, floating/string promotion, and same-shape `ismissing` masks | `MISSING-001` |
 | Cell and Struct | N-D Cells, ordered structures, structure arrays, dynamic fields, and comma-separated field results | `CELL-001`, `STRUCT-001`, `STRUCT-002` |
 | Assignment | Transactional nested member/parenthesis/brace copy-back | `LVAL-001` |
 | Workspace | Scoped global/persistent bindings and reusable sessions | `WORKSPACE-001` |

@@ -115,6 +115,7 @@ void addCommonOperations(BytecodeTypedIrRegion& region,
 std::string runtimeKindName(const RuntimeValue& value) {
     switch (value.kind) {
     case RuntimeValueKind::Missing:
+    case RuntimeValueKind::MissingArray:
         return "missing";
     case RuntimeValueKind::Number:
         return "number";

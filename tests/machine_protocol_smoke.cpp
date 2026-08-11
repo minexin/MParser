@@ -327,6 +327,21 @@ int main(int argc, char** argv) {
                 mparser::machineResultExitCode(
                     mparser::ModuleInvocationStatus::RuntimeFailed) == 3,
             "machine protocol exit codes changed");
+
+        mparser::ModuleInvocationResult missingArrayResult;
+        missingArrayResult.status =
+            mparser::ModuleInvocationStatus::Succeeded;
+        missingArrayResult.variables.push_back(
+            {"missing_grid",
+             mparser::makeRuntimeMissingArrayValue({2, 3})});
+        const std::string missingArrayJson =
+            mparser::serializeMachineResultJsonV1(
+                missingArrayResult, "0.86.0-test");
+        require(
+            missingArrayJson.find(
+                R"("missing_grid","value":{"kind":"missing","dimensions":[2,3]})") !=
+                std::string::npos,
+            "machine protocol omitted missing-array dimensions");
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";

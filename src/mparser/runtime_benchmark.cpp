@@ -47,6 +47,7 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
 
     switch (left.kind) {
     case RuntimeValueKind::Missing:
+    case RuntimeValueKind::MissingArray:
         return true;
     case RuntimeValueKind::Number:
         return false;

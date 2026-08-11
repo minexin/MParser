@@ -174,6 +174,16 @@ void verifySuccess(const Result& result) {
     requireNumeric(variable(result, "next_logical"),
                    mparser::RuntimeNumericClass::Double, {1, 1},
                    {0.0}, "logical nextpow2 mismatch");
+    requireNumeric(variable(result, "signed_absolute"),
+                   mparser::RuntimeNumericClass::Double, {1, 3},
+                   {1.0, 2.0, 3.0},
+                   "whitespace-separated signed literal mismatch");
+    requireNumeric(variable(result, "spaced_subtraction"),
+                   mparser::RuntimeNumericClass::Double, {1, 1},
+                   {-1.0}, "spaced subtraction mismatch");
+    requireNumeric(variable(result, "spaced_unary_plus"),
+                   mparser::RuntimeNumericClass::Double, {1, 2},
+                   {1.0, 2.0}, "whitespace-separated unary plus mismatch");
 }
 
 template <typename Result>
@@ -231,6 +241,9 @@ next_single = nextpow2(single([0.5, 1, 7]));
 next_integer = nextpow2(int16([-8, 0, 7, 8]));
 next_complex = nextpow2(complex([3, -3], [4, -4]));
 next_logical = nextpow2(true);
+signed_absolute = abs([-1 2 -3]);
+spaced_subtraction = [1 - 2];
+spaced_unary_plus = [1 +2];
 )");
         verifySuccess(success.interpreter);
         verifySuccess(success.vm);

@@ -302,9 +302,9 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 108)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 109)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 108 symbols")
+            "C ABI symbol manifest must contain exactly 109 symbols")
     endif()
 
     if(APPLE)
@@ -1710,19 +1710,19 @@ add_test(NAME text_runtime_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
 set_tests_properties(text_runtime_interpreter_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 36")
+    PASS_REGULAR_EXPRESSION "summary = 47")
 
 add_test(NAME text_runtime_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
 set_tests_properties(text_runtime_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 36")
+    PASS_REGULAR_EXPRESSION "summary = 47")
 
 add_test(NAME text_runtime_production_cli_smoke
     COMMAND mparser --run
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
 set_tests_properties(text_runtime_production_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 36")
+    PASS_REGULAR_EXPRESSION "summary = 47")
 
 add_executable(builtin_registry_smoke_tests
     tests/builtin_registry_smoke.cpp)
@@ -2074,7 +2074,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 108 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 109 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)

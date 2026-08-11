@@ -269,6 +269,8 @@ private:
         case RuntimeValueKind::Missing:
             return count == 0 ||
                    fail(path, "missing value must have empty shape");
+        case RuntimeValueKind::MissingArray:
+            return true;
         case RuntimeValueKind::Number:
             return validateNumeric(value, path, count);
         case RuntimeValueKind::CharacterArray:
@@ -401,6 +403,7 @@ private:
     bool countValue(const RuntimeValue& value) {
         switch (value.kind) {
         case RuntimeValueKind::Missing:
+        case RuntimeValueKind::MissingArray:
             return true;
         case RuntimeValueKind::Number:
             return countNumeric(value);
@@ -465,6 +468,14 @@ private:
 
 RuntimeValue makeRuntimeMissingValue() {
     return RuntimeValue{};
+}
+
+RuntimeValue makeRuntimeMissingArrayValue(
+    std::vector<size_t> dimensions) {
+    RuntimeValue result;
+    result.kind = RuntimeValueKind::MissingArray;
+    setRuntimeDimensions(result, std::move(dimensions));
+    return result;
 }
 
 RuntimeValue makeRuntimeNumberValue(
@@ -607,6 +618,7 @@ RuntimeWorkspace captureRuntimeWorkspace(
 std::string_view runtimeValueKindName(RuntimeValueKind kind) {
     switch (kind) {
     case RuntimeValueKind::Missing:
+    case RuntimeValueKind::MissingArray:
         return "missing";
     case RuntimeValueKind::Number:
         return "number";
@@ -665,6 +677,8 @@ RuntimeValueOwnership runtimeValueOwnership(const RuntimeValue& value) {
     case RuntimeValueKind::CommaSeparatedList:
     case RuntimeValueKind::NameValueArgument:
         return RuntimeValueOwnership::Transient;
+    case RuntimeValueKind::MissingArray:
+        return RuntimeValueOwnership::Value;
     case RuntimeValueKind::CharacterArray:
     case RuntimeValueKind::StringArray:
     case RuntimeValueKind::Vector:
@@ -803,6 +817,21 @@ std::string runtimeValueToString(const RuntimeValue& value) {
     switch (value.kind) {
     case RuntimeValueKind::Missing:
         return "<missing>";
+    case RuntimeValueKind::MissingArray: {
+        const auto dimensions = runtimeDimensions(value);
+        if (dimensions == std::vector<size_t>{1, 1}) {
+            return "<missing>";
+        }
+        output << "missing(";
+        for (size_t index = 0; index < dimensions.size(); ++index) {
+            if (index != 0) {
+                output << 'x';
+            }
+            output << dimensions[index];
+        }
+        output << ')';
+        return output.str();
+    }
     case RuntimeValueKind::Number:
         writeRuntimeNumericElement(output, value, 0);
         return output.str();

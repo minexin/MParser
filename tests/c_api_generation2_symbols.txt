@@ -86,6 +86,7 @@ mparser_value_class_name
 mparser_value_create_cell
 mparser_value_create_character_array
 mparser_value_create_missing
+mparser_value_create_missing_array
 mparser_value_create_numeric
 mparser_value_create_string_array
 mparser_value_create_struct

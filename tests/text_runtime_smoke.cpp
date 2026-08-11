@@ -3,6 +3,9 @@
 #include "mparser/interpreter.h"
 #include "mparser/lexer.h"
 #include "mparser/parser.h"
+#include "mparser/runtime_assignment.h"
+#include "mparser/runtime_index.h"
+#include "mparser/runtime_numeric.h"
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
@@ -77,7 +80,7 @@ template <typename Result> void verify(const Result &result) {
   }
   const auto &summary = variable(result, "summary");
   require(summary.kind == mparser::RuntimeValueKind::Number &&
-              std::fabs(summary.number - 36.0) < 1e-9,
+              std::fabs(summary.number - 47.0) < 1e-9,
           "text runtime summary mismatch");
 
   const auto &characters = variable(result, "char_value");
@@ -110,6 +113,68 @@ template <typename Result> void verify(const Result &result) {
               mparser::runtimeUtf16ToUtf8(tail->value) == "tail",
           "string growth/deletion payload mismatch");
 
+  const auto &rawMissing = variable(result, "raw_missing");
+  require(rawMissing.kind == mparser::RuntimeValueKind::MissingArray &&
+              mparser::runtimeDimensions(rawMissing) ==
+                  std::vector<size_t>({1, 1}) &&
+              mparser::runtimeValueIsStorable(rawMissing),
+          "first-class missing scalar contract mismatch");
+  const auto &directMissing = variable(result, "direct_missing");
+  const auto *missingElement =
+      mparser::runtimeStringElement(directMissing, 0);
+  require(missingElement && missingElement->missing,
+          "string(missing) did not preserve missing state");
+
+  const auto &missingGrid = variable(result, "missing_grid");
+  require(missingGrid.kind == mparser::RuntimeValueKind::MissingArray &&
+              mparser::runtimeDimensions(missingGrid) ==
+                  std::vector<size_t>({2, 2}) &&
+              mparser::runtimeValueToString(missingGrid) ==
+                  "missing(2x2)",
+          "missing concatenation shape mismatch");
+  const auto &missingReplica = variable(result, "missing_replica");
+  require(missingReplica.kind ==
+                  mparser::RuntimeValueKind::MissingArray &&
+              mparser::runtimeDimensions(missingReplica) ==
+                  std::vector<size_t>({2, 3}),
+          "missing repmat shape mismatch");
+  const auto &mixedNumeric = variable(result, "mixed_missing_numeric");
+  require(mixedNumeric.kind == mparser::RuntimeValueKind::Vector &&
+              std::isnan(mparser::runtimeNumericElementValue(
+                             mixedNumeric, 1)->real),
+          "numeric/missing concatenation coercion mismatch");
+  const auto &mixedString = variable(result, "mixed_missing_string");
+  const auto *mixedMissing = mparser::runtimeStringElement(mixedString, 1);
+  require(mixedMissing && mixedMissing->missing,
+          "string/missing concatenation coercion mismatch");
+  const auto &missingGrown = variable(result, "missing_grown");
+  const auto &missingDeleted = variable(result, "missing_deleted");
+  require(missingGrown.kind == mparser::RuntimeValueKind::MissingArray &&
+              mparser::runtimeDimensions(missingGrown) ==
+                  std::vector<size_t>({1, 3}) &&
+              missingDeleted.kind ==
+                  mparser::RuntimeValueKind::MissingArray &&
+              mparser::runtimeDimensions(missingDeleted) ==
+                  std::vector<size_t>({1, 2}),
+          "missing growth/deletion shape mismatch");
+  const auto &numericAssigned =
+      variable(result, "numeric_assigned_missing");
+  require(std::isnan(mparser::runtimeNumericElementValue(
+                         numericAssigned, 1)->real),
+          "floating numeric missing assignment mismatch");
+  const auto &stringAssigned =
+      variable(result, "string_assigned_missing");
+  const auto *assignedMissing =
+      mparser::runtimeStringElement(stringAssigned, 1);
+  require(assignedMissing && assignedMissing->missing,
+          "string missing assignment mismatch");
+  const auto &genericMissingMask =
+      variable(result, "generic_missing_mask");
+  require(genericMissingMask.kind ==
+                  mparser::RuntimeValueKind::Number &&
+              genericMissingMask.number == 1.0,
+          "generic ismissing mask semantics mismatch");
+
   const auto &cells = variable(result, "string_cells");
   require(cells.kind == mparser::RuntimeValueKind::Cell &&
               mparser::runtimeDimensions(cells) == std::vector<size_t>({2, 2}),
@@ -129,6 +194,87 @@ int main(int argc, char **argv) {
     const RuntimePair result = runBoth(source);
     verify(result.interpreter);
     verify(result.vm);
+
+    auto missingTarget =
+        mparser::makeRuntimeMissingArrayValue({1, 2});
+    const auto incompatibleMissing =
+        mparser::runtimeAssignMissingIndexed(
+            missingTarget, {mparser::makeRuntimeNumberValue(1.0)},
+            mparser::makeRuntimeNumberValue(5.0));
+    require(!incompatibleMissing.succeeded,
+            "missing target accepted a numeric assignment");
+
+    auto integerTarget = mparser::makeRuntimeVectorValue(
+        {1.0, 2.0}, mparser::RuntimeNumericClass::Int8);
+    const auto incompatibleInteger =
+        mparser::runtimeAssignNumericIndexed(
+            integerTarget, {mparser::makeRuntimeNumberValue(2.0)},
+            mparser::makeRuntimeMissingArrayValue());
+    require(!incompatibleInteger.succeeded,
+            "integer target accepted a missing assignment");
+
+    auto shapeOnlyMissing =
+        mparser::makeRuntimeMissingArrayValue({1, 1000000000});
+    const auto largeGrowth = mparser::runtimeAssignMissingIndexed(
+        shapeOnlyMissing,
+        {mparser::makeRuntimeNumberValue(1000000001.0)},
+        mparser::makeRuntimeMissingArrayValue());
+    require(largeGrowth.succeeded &&
+                mparser::runtimeDimensions(shapeOnlyMissing) ==
+                    std::vector<size_t>({1, 1000000001}),
+            "large missing growth materialized or lost its shape");
+    const auto largeDeletion = mparser::runtimeDeleteMissingIndexed(
+        shapeOnlyMissing,
+        {mparser::makeRuntimeNumberValue(1000000001.0)}, {false});
+    require(largeDeletion.succeeded &&
+                mparser::runtimeDimensions(shapeOnlyMissing) ==
+                    std::vector<size_t>({1, 1000000000}),
+            "large missing deletion materialized or lost its shape");
+
+    auto missingCube =
+        mparser::makeRuntimeMissingArrayValue({2, 3, 4});
+    const auto cubeElement = mparser::runtimeIndexMissingArray(
+        missingCube,
+        {mparser::makeRuntimeNumberValue(2.0),
+         mparser::makeRuntimeNumberValue(3.0),
+         mparser::makeRuntimeNumberValue(4.0)});
+    require(cubeElement.succeeded &&
+                cubeElement.value.kind ==
+                    mparser::RuntimeValueKind::MissingArray &&
+                mparser::runtimeDimensions(cubeElement.value) ==
+                    std::vector<size_t>({1, 1}),
+            "N-dimensional missing indexing mismatch");
+    const auto cubeGrowth = mparser::runtimeAssignMissingIndexed(
+        missingCube,
+        {mparser::makeRuntimeNumberValue(2.0),
+         mparser::makeRuntimeNumberValue(3.0),
+         mparser::makeRuntimeNumberValue(5.0)},
+        mparser::makeRuntimeMissingArrayValue());
+    require(cubeGrowth.succeeded &&
+                mparser::runtimeDimensions(missingCube) ==
+                    std::vector<size_t>({2, 3, 5}),
+            "N-dimensional missing growth mismatch");
+    const auto cubeDeletion = mparser::runtimeDeleteMissingIndexed(
+        missingCube,
+        {mparser::makeRuntimeVectorValue({1.0, 2.0}),
+         mparser::makeRuntimeVectorValue({1.0, 2.0, 3.0}),
+         mparser::makeRuntimeNumberValue(2.0)},
+        {true, true, false});
+    require(cubeDeletion.succeeded &&
+                mparser::runtimeDimensions(missingCube) ==
+                    std::vector<size_t>({2, 3, 4}),
+            "N-dimensional missing slice deletion mismatch");
+
+    auto shapedMissing =
+        mparser::makeRuntimeMissingArrayValue({2, 2});
+    const auto incompatibleShape =
+        mparser::runtimeAssignMissingIndexed(
+            shapedMissing,
+            {mparser::makeRuntimeVectorValue({1.0, 2.0}),
+             mparser::makeRuntimeVectorValue({1.0, 2.0})},
+            mparser::makeRuntimeMissingArrayValue({1, 4}));
+    require(!incompatibleShape.succeeded,
+            "missing assignment accepted an incompatible RHS shape");
 
     const std::string emoji = "\xF0\x9F\x98\x80";
     const auto units = mparser::runtimeUtf8ToUtf16(emoji);

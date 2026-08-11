@@ -386,6 +386,7 @@ static int run_header_and_diagnostic_smoke(void) {
     const mparser_diagnostic* diagnostic;
     mparser_source_position begin;
     mparser_api_status status;
+    size_t dimension = 0;
 
     CHECK(mparser_c_abi_generation() == MPARSER_C_ABI_GENERATION);
     CHECK(mparser_c_abi_revision() == MPARSER_C_ABI_REVISION);
@@ -425,7 +426,52 @@ static int run_header_and_diagnostic_smoke(void) {
     CHECK(mparser_value_create_missing(&missing) ==
           MPARSER_API_STATUS_OK);
     CHECK(mparser_value_get_kind(missing) == MPARSER_VALUE_MISSING);
+    CHECK(mparser_value_rank(missing) == 2);
+    CHECK(mparser_value_element_count(missing) == 1);
+    CHECK(mparser_value_dimension(missing, 0, &dimension) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(dimension == 1);
     mparser_value_release(missing);
+
+    {
+        const size_t missing_shape[2] = {2, 3};
+        CHECK(mparser_value_create_missing_array(
+                  missing_shape, 2, &missing) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(mparser_value_get_kind(missing) ==
+              MPARSER_VALUE_MISSING);
+        CHECK(mparser_value_rank(missing) == 2);
+        CHECK(mparser_value_element_count(missing) == 6);
+        CHECK(mparser_value_dimension(missing, 0, &dimension) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(dimension == 2);
+        CHECK(mparser_value_dimension(missing, 1, &dimension) ==
+              MPARSER_API_STATUS_OK);
+        CHECK(dimension == 3);
+        mparser_value_release(missing);
+    }
+    {
+        const size_t invalid_shape[1] = {1};
+        const size_t overflow_shape[2] = {SIZE_MAX, 2};
+        missing = (mparser_value*)(uintptr_t)1;
+        CHECK(mparser_value_create_missing_array(
+                  NULL, 2, &missing) ==
+              MPARSER_API_STATUS_INVALID_ARGUMENT);
+        CHECK(missing == NULL);
+        missing = (mparser_value*)(uintptr_t)1;
+        CHECK(mparser_value_create_missing_array(
+                  invalid_shape, 1, &missing) ==
+              MPARSER_API_STATUS_INVALID_ARGUMENT);
+        CHECK(missing == NULL);
+        missing = (mparser_value*)(uintptr_t)1;
+        CHECK(mparser_value_create_missing_array(
+                  overflow_shape, 2, &missing) ==
+              MPARSER_API_STATUS_INVALID_ARGUMENT);
+        CHECK(missing == NULL);
+        CHECK(mparser_value_create_missing_array(
+                  invalid_shape, 1, NULL) ==
+              MPARSER_API_STATUS_INVALID_ARGUMENT);
+    }
 
     status = mparser_module_compile_utf8(
         invalid_source, strlen(invalid_source),

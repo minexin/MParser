@@ -1580,10 +1580,27 @@ private:
             return;
         }
 
-        if (!isNumeric(targetValue) || !isNumeric(value)) {
+        if (targetValue.kind == RuntimeValueKind::MissingArray) {
+            const auto result =
+                nullAssignment
+                    ? runtimeDeleteMissingIndexed(
+                          targetValue, arguments, colonSubscripts)
+                    : runtimeAssignMissingIndexed(
+                          targetValue, arguments, value);
+            if (!result.succeeded) {
+                addDiagnostic(target, result.error);
+                return;
+            }
+            storeVariable(callee, std::move(targetValue));
+            return;
+        }
+
+        if (!isNumeric(targetValue) ||
+            (!isNumeric(value) &&
+             value.kind != RuntimeValueKind::MissingArray)) {
             addDiagnostic(target,
                           "indexed assignment requires compatible numeric, "
-                          "Cell, or structure values");
+                          "missing, text, Cell, or structure values");
             return;
         }
 
@@ -2133,10 +2150,11 @@ private:
             }
             return std::move(result.value);
         }
-        if (isRuntimeTextValue(value)) {
+        if (value.kind == RuntimeValueKind::MissingArray ||
+            isRuntimeTextValue(value)) {
             if (runtimeDimensionCount(value) > 2) {
                 addDiagnostic(node,
-                              "transpose requires a two-dimensional text array");
+                              "transpose requires a two-dimensional array");
                 return missingValue();
             }
             auto result = runtimeArrayOperationBuiltin(
@@ -2148,7 +2166,9 @@ private:
             return std::move(result.value);
         }
 
-        addDiagnostic(node, "transpose requires numeric input");
+        addDiagnostic(
+            node,
+            "transpose requires missing, numeric, or text input");
         return missingValue();
     }
 
@@ -2164,29 +2184,37 @@ private:
         }
 
         if (node.binding.kind == BindingKind::Builtin) {
-            if (node.label == "clear" || node.label == "clc" ||
-                node.label == "tic" || node.label == "toc") {
+            const BuiltinDescriptor* descriptor =
+                builtinRegistry().find(node.label);
+            const std::string_view builtinName =
+                descriptor ? std::string_view(descriptor->name)
+                           : std::string_view(node.label);
+            if (builtinName == "clear" || builtinName == "clc" ||
+                builtinName == "tic" || builtinName == "toc") {
                 return firstOutput(callBuiltin(node, node.label, {}, 1));
             }
-            if (node.label == "pi") {
+            if (builtinName == "missing") {
+                return firstOutput(callBuiltin(node, node.label, {}, 1));
+            }
+            if (builtinName == "pi") {
                 return numberValue(3.14159265358979323846);
             }
-            if (node.label == "i" || node.label == "j") {
+            if (builtinName == "i" || builtinName == "j") {
                 return *runtimeParseNumericLiteral("1i");
             }
-            if (node.label == "eps") {
+            if (builtinName == "eps") {
                 return numberValue(std::numeric_limits<double>::epsilon());
             }
-            if (node.label == "inf") {
+            if (builtinName == "inf") {
                 return numberValue(std::numeric_limits<double>::infinity());
             }
-            if (node.label == "nan") {
+            if (builtinName == "nan") {
                 return numberValue(std::numeric_limits<double>::quiet_NaN());
             }
-            if (node.label == "true") {
+            if (builtinName == "true") {
                 return logicalValue(true);
             }
-            if (node.label == "false") {
+            if (builtinName == "false") {
                 return logicalValue(false);
             }
         }
@@ -2951,6 +2979,15 @@ private:
         }
         if (isRuntimeTextValue(target)) {
             auto result = runtimeIndexText(target, arguments, linearColon);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (target.kind == RuntimeValueKind::MissingArray) {
+            auto result = runtimeIndexMissingArray(
+                target, arguments, linearColon);
             if (!result.succeeded) {
                 addDiagnostic(node, std::move(result.error));
                 return missingValue();

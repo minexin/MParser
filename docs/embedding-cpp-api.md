@@ -192,7 +192,12 @@ not a file I/O API or a claim of complete MATLAB formatting compatibility.
 - N-dimensional Cell arrays;
 - scalar Struct construction and returned Struct arrays;
 - returned opaque object arrays and function handles;
-- an explicit missing value.
+- scalar and N-dimensional missing values.
+
+`Value::missing()` creates a 1-by-1 language value. Use
+`Value::missingArray(dimensions)` for a shaped missing array; `dimensions()`
+and `elementCount()` report its logical shape even though it has no per-element
+payload exposed to the host.
 
 Dimensions, numeric payloads, text payloads, and Cell/Struct children are
 copied on construction. Array payload and linear element order is MATLAB
@@ -253,7 +258,7 @@ C++ API, host output behavior, and protocol metadata after relocation.
 Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared
 cancellation, isolated limits, and concurrent retain/release. The shared C
-library carries ABI generation 2 and an exact 108-symbol manifest; the
+library carries ABI generation 2 and an exact 109-symbol manifest; the
 C++ facade remains header-only rather than a C++ binary ABI.
 
 The current development header and consumers move together. A source API 1.2

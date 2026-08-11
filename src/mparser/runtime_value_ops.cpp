@@ -78,7 +78,9 @@ bool runtimeValuesEqual(
 
     switch (left.kind) {
     case RuntimeValueKind::Missing:
-        return true;
+    case RuntimeValueKind::MissingArray:
+        return runtimeShapeElementCount(left) == 0 ||
+               nanEquality == RuntimeNaNEquality::Equal;
     case RuntimeValueKind::Number:
     case RuntimeValueKind::CharacterArray:
     case RuntimeValueKind::StringArray:

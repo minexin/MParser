@@ -209,6 +209,15 @@ bool isPrefixOperator(TokenKind kind) {
            kind == TokenKind::Tilde;
 }
 
+bool hasLeadingWhitespace(const Token& token) {
+    return std::any_of(
+        token.leadingTrivia.begin(), token.leadingTrivia.end(),
+        [](const Trivia& trivia) {
+            return trivia.kind == TriviaKind::Whitespace &&
+                   !trivia.text.empty();
+        });
+}
+
 bool isTopLevelSeparator(TokenKind kind) {
     return kind == TokenKind::Comma || kind == TokenKind::Semicolon;
 }
@@ -260,13 +269,19 @@ private:
         return tokens_[cursor_++];
     }
 
-    std::unique_ptr<SyntaxNode> parseExpression(int minimumPrecedence) {
-        auto left = parsePrefix();
+    std::unique_ptr<SyntaxNode> parseExpression(
+        int minimumPrecedence,
+        bool stopAtWhitespaceSignedElement = false) {
+        auto left = parsePrefix(stopAtWhitespaceSignedElement);
         if (!left) {
             return nullptr;
         }
 
         while (!isAtEnd()) {
+            if (stopAtWhitespaceSignedElement &&
+                isWhitespaceSignedElementBoundary()) {
+                break;
+            }
             const int precedence = binaryPrecedence(current().kind);
             if (precedence == 0 || precedence < minimumPrecedence) {
                 break;
@@ -274,7 +289,8 @@ private:
 
             const Token op = advance();
             const int nextMinimum = precedence + 1;
-            auto right = parseExpression(nextMinimum);
+            auto right = parseExpression(
+                nextMinimum, stopAtWhitespaceSignedElement);
             if (!right) {
                 right = makeError(op.span, "expected right-hand expression");
             }
@@ -291,7 +307,17 @@ private:
         return left;
     }
 
-    std::unique_ptr<SyntaxNode> parsePrefix() {
+    bool isWhitespaceSignedElementBoundary() const {
+        if ((!at(TokenKind::Plus) && !at(TokenKind::Minus)) ||
+            cursor_ + 1 >= tokens_.size()) {
+            return false;
+        }
+        return hasLeadingWhitespace(current()) &&
+               !hasLeadingWhitespace(tokens_[cursor_ + 1]);
+    }
+
+    std::unique_ptr<SyntaxNode> parsePrefix(
+        bool stopAtWhitespaceSignedElement) {
         if (!isAtEnd() && isPrefixOperator(current().kind)) {
             const Token op = advance();
             if (op.kind == TokenKind::Tilde && isAtEnd()) {
@@ -302,7 +328,8 @@ private:
                 return ignored;
             }
 
-            auto operand = parseExpression(9);
+            auto operand = parseExpression(
+                9, stopAtWhitespaceSignedElement);
             if (!operand) {
                 operand = makeError(op.span, "expected unary operand");
             }
@@ -504,7 +531,7 @@ private:
                 continue;
             }
 
-            auto expression = parseExpression(0);
+            auto expression = parseExpression(0, true);
             if (expression) {
                 if (row->children.empty()) {
                     row->span = expression->span;
@@ -546,7 +573,8 @@ private:
                 continue;
             }
 
-            auto expression = parseExpression(0);
+            auto expression = parseExpression(
+                0, kind == SyntaxKind::CellExpr);
             if (expression) {
                 node->children.push_back(std::move(expression));
                 continue;

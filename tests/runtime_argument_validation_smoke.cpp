@@ -246,6 +246,41 @@ void shapeTextAndComparisonSmoke() {
     assert(!mparser::validateRuntimeArgument(number(3), malformed).succeeded);
 }
 
+void missingArgumentSmoke() {
+    auto missingSpec = spec(
+        "missing", {"mustBeMatrix", "mustBeNonempty"});
+    missingSpec.dimensions = {
+        mparser::PropertyDimensionSpec{"3", {}},
+        mparser::PropertyDimensionSpec{"2", {}}};
+    const auto reshaped = mparser::validateRuntimeArgument(
+        mparser::makeRuntimeMissingArrayValue({2, 3}), missingSpec);
+    assert(reshaped.succeeded);
+    assert(reshaped.value.kind ==
+           mparser::RuntimeValueKind::MissingArray);
+    assert(mparser::runtimeDimensions(reshaped.value) ==
+           std::vector<size_t>({3, 2}));
+
+    assert(!mparser::validateRuntimeArgument(
+                mparser::makeRuntimeMissingArrayValue({2, 3}),
+                spec("missing", {"mustBeScalarOrEmpty"}))
+                .succeeded);
+    assert(!mparser::validateRuntimeArgument(
+                mparser::makeRuntimeMissingArrayValue(),
+                spec("missing", {"mustBeNonmissing"}))
+                .succeeded);
+
+    auto missingString = mparser::makeRuntimeStringArray(
+        {1, 2}, {{u"value", false}, {u"", true}});
+    assert(!mparser::validateRuntimeArgument(
+                missingString,
+                spec("string", {"mustBeNonmissing"}))
+                .succeeded);
+    assert(mparser::validateRuntimeArgument(
+               mparser::makeRuntimeStringScalarUtf8("value"),
+               spec("string", {"mustBeNonmissing"}))
+               .succeeded);
+}
+
 void objectConstraintSmoke() {
     mparser::RuntimeValue object;
     object.kind = mparser::RuntimeValueKind::Object;
@@ -273,6 +308,7 @@ int main() {
     complexAndNumericClassValidatorSmoke();
     numericShapePreservationSmoke();
     shapeTextAndComparisonSmoke();
+    missingArgumentSmoke();
     objectConstraintSmoke();
     std::cout << "runtime argument validation smoke tests passed\n";
     return 0;

@@ -50,6 +50,7 @@ void runValueFactoryContractSmoke() {
 
     std::vector<mparser::RuntimeValue> values{
         mparser::makeRuntimeMissingValue(),
+        mparser::makeRuntimeMissingArrayValue(),
         mparser::makeRuntimeNumberValue(3.0),
         mparser::makeRuntimeLogicalValue(true),
         mparser::makeRuntimeVectorValue({1.0, 2.0}),
@@ -82,8 +83,12 @@ void runValueFactoryContractSmoke() {
     assert(mparser::runtimeValueOwnership(values[0]) ==
            mparser::RuntimeValueOwnership::Transient);
     assert(mparser::runtimeValueOwnership(values[1]) ==
+           mparser::RuntimeValueOwnership::Value);
+    assert(mparser::runtimeDimensions(values[1]) ==
+           std::vector<size_t>({1, 1}));
+    assert(mparser::runtimeValueOwnership(values[2]) ==
            mparser::RuntimeValueOwnership::Immediate);
-    assert(mparser::runtimeValueOwnership(values[5]) ==
+    assert(mparser::runtimeValueOwnership(values[6]) ==
            mparser::RuntimeValueOwnership::Value);
     assert(mparser::runtimeValueOwnershipName(
                mparser::RuntimeValueOwnership::SharedHandle) ==

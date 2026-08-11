@@ -657,6 +657,13 @@ void writeRuntimeValue(JsonWriter& writer, const RuntimeValue& value,
         writer.field("kind", "missing");
         writer.endObject();
         return;
+    case RuntimeValueKind::MissingArray:
+        writer.beginObject();
+        writer.field("kind", "missing");
+        writer.key("dimensions");
+        writeDimensions(writer, value);
+        writer.endObject();
+        return;
     case RuntimeValueKind::Number:
     case RuntimeValueKind::Vector:
     case RuntimeValueKind::Matrix:

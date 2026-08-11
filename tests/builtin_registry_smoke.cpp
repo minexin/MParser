@@ -161,7 +161,9 @@ void runDefaultCatalogSmoke() {
     require(mparser::kBuiltinSourceContractMajor == 1 &&
                 mparser::kBuiltinSourceContractMinor == 1,
             "builtin source contract version changed");
-    require(registry->names().size() == 164,
+    require(registry->descriptors().size() == 165,
+            "default builtin descriptor catalog changed unexpectedly");
+    require(registry->names().size() == 167,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");
@@ -234,6 +236,24 @@ void runDefaultCatalogSmoke() {
                 epsilon->implementation ==
                     mparser::BuiltinImplementationKind::Shared,
             "eps descriptor metadata mismatch");
+    const auto* missing = registry->find("missing");
+    require(missing && missing->inputs.minimum == 0 &&
+                missing->inputs.maximum == 0 &&
+                missing->outputs.maximum == 1 &&
+                missing->implementation ==
+                    mparser::BuiltinImplementationKind::Shared &&
+                missing->purity == mparser::BuiltinPurity::Pure,
+            "missing descriptor metadata mismatch");
+    std::vector<mparser::RuntimeValue> noArguments;
+    const auto missingResult = registry->invoke(
+        "missing", mparser::BuiltinCall{noArguments, 1, {}, nullptr});
+    require(missingResult.succeeded &&
+                missingResult.outputs.size() == 1 &&
+                missingResult.outputs.front().kind ==
+                    mparser::RuntimeValueKind::MissingArray &&
+                mparser::runtimeValueIsStorable(
+                    missingResult.outputs.front()),
+            "missing builtin result mismatch");
     const auto* warning = registry->find("warning");
     require(warning &&
                 warning->implementation ==
@@ -258,6 +278,9 @@ void runDefaultCatalogSmoke() {
                     descriptor->purity == mparser::BuiltinPurity::Pure,
                 "shared array builtin metadata mismatch");
     }
+    require(registry->find("Inf") == registry->find("inf") &&
+                registry->find("NaN") == registry->find("nan"),
+            "MATLAB special-value aliases are not canonicalized");
     for (std::string_view name : {"disp", "fprintf"}) {
         const auto* descriptor = registry->find(name);
         require(descriptor &&

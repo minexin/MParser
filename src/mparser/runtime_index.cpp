@@ -233,6 +233,29 @@ RuntimeIndexOperationResult runtimeIndexNumeric(
     return operationSuccess(*result);
 }
 
+RuntimeIndexOperationResult runtimeIndexMissingArray(
+    const RuntimeValue& target,
+    const std::vector<RuntimeValue>& subscripts,
+    bool linearColon) {
+    if (target.kind != RuntimeValueKind::MissingArray) {
+        return operationFailure(
+            "missing-array indexing requires a missing target");
+    }
+    const auto selections = runtimeResolveIndexSelections(
+        target, subscripts, false, linearColon);
+    if (!selections.succeeded) {
+        return operationFailure(selections.error);
+    }
+    const auto resultCount = checkedRuntimeDimensionProduct(
+        selections.resultDimensions);
+    if (!resultCount) {
+        return operationFailure(
+            "indexed missing-array dimensions are too large");
+    }
+    return operationSuccess(makeRuntimeMissingArrayValue(
+        selections.resultDimensions));
+}
+
 std::vector<size_t> runtimeLinearIndexResultDimensions(
     const RuntimeValue& target, const RuntimeValue& subscript,
     size_t resultElementCount, bool logicalMask) {

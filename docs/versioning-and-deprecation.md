@@ -96,9 +96,10 @@ are not an installed plugin ABI and do not expose stable C++ object layouts.
 Contract 1.0 defines naming, aliases, registry freezing, arity, value/shape
 constraints, context permissions, side effects, determinism, exception
 conversion, diagnostics, ownership, and typed-lowering eligibility. The
-archived v1 catalog contains 118 descriptors. The active v1.2 catalog has 164
-descriptors and remains intentionally unsnapshotted until the complete
-milestone function surface settles.
+archived v1 catalog contains 118 descriptors. The active v1.2 catalog has 165
+descriptors and 167 registered names, including the `Inf` and `NaN` aliases,
+and remains intentionally unsnapshotted until the complete milestone function
+surface settles.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry

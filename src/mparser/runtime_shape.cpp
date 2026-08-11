@@ -28,6 +28,7 @@ std::vector<size_t> runtimeDimensions(const RuntimeValue& value) {
     switch (value.kind) {
     case RuntimeValueKind::Missing:
         return {0, 0};
+    case RuntimeValueKind::MissingArray:
     case RuntimeValueKind::Number:
     case RuntimeValueKind::FunctionHandle:
     case RuntimeValueKind::Struct:

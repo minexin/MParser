@@ -41,6 +41,15 @@ particular, `A(...)` becomes `CallOrIndexExpr` because only semantic analysis
 can decide whether `A` is a variable, function, constructor, or overloaded
 object.
 
+Matrix and Cell concatenation also use retained whitespace as syntax. Inside
+`[...]` or `{...}`, whitespace before `+` or `-` with no whitespace after the
+sign starts a new unary-signed element: `[1 -2]` has two elements. Whitespace
+on both sides keeps the binary operator inside one element, so `[1 - 2]`
+contains the scalar expression `1-2`. Parenthesized expressions and ordinary
+calls retain normal binary precedence. This distinction is made in the parser
+and carried through neutral expression nodes; neither HIR nor the runtime
+reconstructs it from source text.
+
 `SourceLoader` builds the executable multi-file boundary without coupling path
 lookup to semantic lowering. It starts with the requested entry file, inspects
 structured syntax for class/function references and imports, and recursively
@@ -396,6 +405,21 @@ row-major physical representation, while `runtime_shape` maps every logical
 linear or multidimensional access through MATLAB column-major coordinates.
 This isolates storage compatibility from language semantics and provides one
 shape contract for both baseline runtimes and optimization metadata.
+
+`RuntimeValueKind::MissingArray` is the storable MATLAB-like `missing` value.
+It carries the same normalized N-dimensional shape contract without one
+payload object per element. The zero-argument `missing` builtin produces a
+1-by-1 seed; concatenation, indexing, transpose, growth, deletion, `reshape`,
+`permute`, `squeeze`, and `repmat` preserve the missing class and shape.
+Assignment follows the measured directional conversion rules: floating
+numeric targets receive NaN, string targets receive missing string elements,
+integer/logical/character targets reject conversion, and a missing target
+accepts only missing values. `ismissing` returns a same-shape logical mask for
+missing, numeric, character, and string inputs. The older
+`RuntimeValueKind::Missing`
+remains an internal 0-by-0 transient sentinel for absent execution results and
+must not be stored as a language value. Typed/native regions do not speculate
+on missing arrays and return to the VM before mutation.
 
 Text has a separate engine-facing contract in `runtime_value.h` and
 `runtime_text`. `CharacterArray` stores a rectangular UTF-16 code-unit payload;

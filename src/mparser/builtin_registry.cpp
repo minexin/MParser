@@ -130,6 +130,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "metaclass",
     "metafunction",
     "methods",
+    "missing",
     "min",
     "mod",
     "nan",
@@ -356,6 +357,28 @@ BuiltinDescriptor epsilonDescriptor() {
     return descriptor;
 }
 
+BuiltinDescriptor missingDescriptor() {
+    BuiltinDescriptor descriptor = baseDescriptor("missing");
+    descriptor.inputs = BuiltinArity::fixed(0);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Scalar,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary = "MATLAB-like scalar missing value.";
+    descriptor.handler = [](const BuiltinCall& call) {
+        return call.requestedOutputCount == 0
+                   ? BuiltinResult::success()
+                   : BuiltinResult::success(
+                         {makeRuntimeMissingArrayValue()});
+    };
+    return descriptor;
+}
+
 bool isNumericConversionBuiltin(std::string_view name) {
     return matches(name, {"double", "logical", "single", "int8",
                           "uint8", "int16", "uint16", "int32",
@@ -382,6 +405,13 @@ BuiltinDescriptor numericConversionDescriptor(std::string_view name) {
         "MATLAB-like numeric class conversion with class-specific rounding.";
     descriptor.handler = [builtin = std::string(name)](
                              const BuiltinCall& call) {
+        const auto target = runtimeNumericClassFromName(builtin);
+        if (!target) {
+            return helperFailure(
+                call.span,
+                builtin + " is not a supported numeric class",
+                "MParser:UnsupportedNumericClass");
+        }
         if (builtin == "double" &&
             isRuntimeCharacterArray(call.arguments.front())) {
             auto result = runtimeCharacterCodes(call.arguments.front());
@@ -395,17 +425,35 @@ BuiltinDescriptor numericConversionDescriptor(std::string_view name) {
                        : BuiltinResult::success(
                              {std::move(result.value)});
         }
+        if (call.arguments.front().kind ==
+            RuntimeValueKind::MissingArray) {
+            if (!runtimeNumericClassIsFloating(*target)) {
+                return helperFailure(
+                    call.span,
+                    "missing cannot convert to class " + builtin,
+                    "MParser:InvalidNumericConversion");
+            }
+            auto converted = runtimeNumericValueFromLogicalOrder(
+                runtimeDimensions(call.arguments.front()),
+                std::vector<double>(
+                    runtimeShapeElementCount(call.arguments.front()),
+                    std::numeric_limits<double>::quiet_NaN()),
+                *target);
+            if (!converted) {
+                return helperFailure(
+                    call.span,
+                    "missing value could not convert to class " + builtin,
+                    "MParser:InvalidNumericConversion");
+            }
+            return call.requestedOutputCount == 0
+                       ? BuiltinResult::success()
+                       : BuiltinResult::success(
+                             {std::move(*converted)});
+        }
         if (!isRuntimeNumericValue(call.arguments.front())) {
             return helperFailure(
                 call.span, builtin + " expects one numeric argument",
                 "MParser:InvalidNumericConversion");
-        }
-        const auto target = runtimeNumericClassFromName(builtin);
-        if (!target) {
-            return helperFailure(
-                call.span,
-                builtin + " is not a supported numeric class",
-                "MParser:UnsupportedNumericClass");
         }
         auto converted = runtimeConvertNumericClass(
             call.arguments.front(), *target);
@@ -689,6 +737,11 @@ BuiltinDescriptor arrayDescriptor(std::string_view name) {
 
 BuiltinDescriptor arrayConstructorDescriptor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "inf") {
+        descriptor.aliases = {"Inf"};
+    } else if (name == "nan") {
+        descriptor.aliases = {"NaN"};
+    }
     descriptor.inputs = BuiltinArity::variadic();
     descriptor.outputs = BuiltinArity::range(0, 1);
     descriptor.outputConstraints = {{
@@ -926,6 +979,9 @@ BuiltinDescriptor zeroOutputIntrinsicDescriptor(std::string_view name) {
 }
 
 BuiltinDescriptor descriptorFor(std::string_view name) {
+    if (name == "missing") {
+        return missingDescriptor();
+    }
     if (isNumericConversionBuiltin(name)) {
         return numericConversionDescriptor(name);
     }

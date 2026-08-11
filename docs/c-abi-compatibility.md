@@ -46,7 +46,7 @@ The current ABI-generation library names are:
 - Windows: `mparser_c.dll` plus its import library.
 
 Internal compiler, VM, C++ facade, and SLJIT symbols have hidden visibility.
-The current public export set is the 108-name manifest in
+The current public export set is the 109-name manifest in
 `tests/c_api_generation2_symbols.txt`.
 
 ## Extensible Roots

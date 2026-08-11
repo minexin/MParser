@@ -232,7 +232,26 @@ void runValueSmoke() {
     assert(structure.structField(0, 1).stringElement(0) ==
            std::u16string(u"record"));
 
-    assert(Value::missing().kind() == ValueKind::Missing);
+    const auto missing = Value::missing();
+    assert(missing.kind() == ValueKind::Missing);
+    assert(missing.dimensions() ==
+           std::vector<std::size_t>({1, 1}));
+    assert(missing.elementCount() == 1);
+    const std::array<std::size_t, 3> missingShape{2, 3, 4};
+    const auto missingArray = Value::missingArray(missingShape);
+    assert(missingArray.kind() == ValueKind::Missing);
+    assert(missingArray.dimensions() ==
+           std::vector<std::size_t>({2, 3, 4}));
+    assert(missingArray.elementCount() == 24);
+    bool rejectedMissingShape = false;
+    try {
+        const std::array<std::size_t, 1> invalidShape{1};
+        (void)Value::missingArray(invalidShape);
+    } catch (const ApiError& error) {
+        rejectedMissingShape =
+            error.status() == MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    assert(rejectedMissingShape);
 
     bool rejectedEmptyHandle = false;
     try {

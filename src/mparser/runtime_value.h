@@ -17,6 +17,7 @@ struct HirNode;
 
 enum class RuntimeValueKind {
   Missing,
+  MissingArray,
   Number,
   CharacterArray,
   StringArray,
@@ -143,6 +144,8 @@ struct RuntimeValueContractResult {
 };
 
 RuntimeValue makeRuntimeMissingValue();
+RuntimeValue makeRuntimeMissingArrayValue(
+    std::vector<size_t> dimensions = {1, 1});
 RuntimeValue makeRuntimeNumberValue(
     double value,
     RuntimeNumericClass numericClass = RuntimeNumericClass::Double);

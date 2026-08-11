@@ -534,6 +534,7 @@ bool runtimeValueRequiresModule(
         }
         return false;
     case mparser::RuntimeValueKind::Missing:
+    case mparser::RuntimeValueKind::MissingArray:
     case mparser::RuntimeValueKind::Number:
     case mparser::RuntimeValueKind::CharacterArray:
     case mparser::RuntimeValueKind::StringArray:
@@ -1292,6 +1293,7 @@ mparser_value_kind valueKind(
     const mparser::RuntimeValue& value) noexcept {
     switch (value.kind) {
     case mparser::RuntimeValueKind::Missing:
+    case mparser::RuntimeValueKind::MissingArray:
         return MPARSER_VALUE_MISSING;
     case mparser::RuntimeValueKind::Number:
     case mparser::RuntimeValueKind::Vector:
@@ -2400,7 +2402,32 @@ mparser_diagnostic_cause(
 mparser_api_status
 mparser_value_create_missing(mparser_value** out_value) {
     return mparser_c_detail::makeValueHandle(
-        mparser::makeRuntimeMissingValue(), {}, out_value);
+        mparser::makeRuntimeMissingArrayValue(), {}, out_value);
+}
+
+mparser_api_status mparser_value_create_missing_array(
+    const size_t* dimensions, size_t rank,
+    mparser_value** out_value) {
+    if (!out_value) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_value = nullptr;
+    if (!dimensions || rank < 2) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::vector<size_t> shape(dimensions, dimensions + rank);
+        if (!mparser::checkedRuntimeDimensionProduct(shape)) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        return mparser_c_detail::makeValueHandle(
+            mparser::makeRuntimeMissingArrayValue(std::move(shape)), {},
+            out_value);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
 }
 
 mparser_api_status mparser_value_create_numeric(

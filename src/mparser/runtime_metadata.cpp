@@ -454,6 +454,7 @@ bool runtimeMetadataIsa(const RuntimeValue& value,
 std::string runtimeValueClassName(const RuntimeValue& value) {
     switch (value.kind) {
     case RuntimeValueKind::Missing:
+    case RuntimeValueKind::MissingArray:
         return "missing";
     case RuntimeValueKind::Number:
     case RuntimeValueKind::Vector:

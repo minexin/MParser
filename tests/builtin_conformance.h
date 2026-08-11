@@ -111,6 +111,7 @@ inline bool builtinRuntimeValueEqual(
 
     switch (left.kind) {
     case RuntimeValueKind::Missing:
+    case RuntimeValueKind::MissingArray:
         return true;
     case RuntimeValueKind::Number:
         return builtinNumberEqual(left.number, right.number);

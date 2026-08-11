@@ -250,7 +250,7 @@ The external value model supports:
 - scalar structures;
 - returned object arrays;
 - named, anonymous, and builtin function handles;
-- the explicit missing transport value.
+- scalar and N-dimensional missing values.
 
 Array constructors require a rank of at least two and a dimension product
 equal to the supplied element count. Dimensions and payloads are copied.
@@ -260,6 +260,13 @@ Numeric values use `mparser_numeric_buffer`. `numeric_class` selects `double`,
 limited to double/single and carry equal-length real and imaginary buffers;
 integer and logical values must be real. Character and string payloads use
 Unicode code units represented by `uint16_t`.
+
+`mparser_value_create_missing()` creates the language-visible 1-by-1 missing
+value. `mparser_value_create_missing_array(dimensions, rank, ...)` creates a
+shape-only missing array with rank at least two; its checked dimension product
+is exposed by the ordinary rank/dimension/element-count accessors. Both return
+`MPARSER_VALUE_MISSING`. The internal absent-result sentinel is not exposed by
+either constructor.
 
 All external array payloads and linear element indexes use MATLAB column-major
 order. MParser converts to and from its internal storage without exposing that

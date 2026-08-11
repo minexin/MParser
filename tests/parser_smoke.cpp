@@ -315,6 +315,40 @@ end
     assert(matrix->children[1]->children.size() == 2);
 }
 
+void parseConcatenationSignedElementSmoke() {
+    auto signedElements = parse("value = [-1 2 -3];\n");
+    assert(signedElements.diagnostics.empty());
+    const auto* signedMatrix = firstChild(
+        *signedElements.root->children.front(),
+        mparser::SyntaxKind::MatrixExpr);
+    assert(signedMatrix != nullptr);
+    assert(signedMatrix->children.size() == 1);
+    assert(signedMatrix->children.front()->children.size() == 3);
+
+    auto binary = parse("value = [1 - 2];\n");
+    assert(binary.diagnostics.empty());
+    const auto* binaryMatrix = firstChild(
+        *binary.root->children.front(), mparser::SyntaxKind::MatrixExpr);
+    assert(binaryMatrix != nullptr);
+    assert(binaryMatrix->children.front()->children.size() == 1);
+    assert(binaryMatrix->children.front()->children.front()->kind ==
+           mparser::SyntaxKind::BinaryExpr);
+
+    auto unaryPlus = parse("value = [1 +2];\n");
+    assert(unaryPlus.diagnostics.empty());
+    const auto* plusMatrix = firstChild(
+        *unaryPlus.root->children.front(), mparser::SyntaxKind::MatrixExpr);
+    assert(plusMatrix != nullptr);
+    assert(plusMatrix->children.front()->children.size() == 2);
+
+    auto cell = parse("value = {1 -2};\n");
+    assert(cell.diagnostics.empty());
+    const auto* cellExpression = firstChild(
+        *cell.root->children.front(), mparser::SyntaxKind::CellExpr);
+    assert(cellExpression != nullptr);
+    assert(cellExpression->children.size() == 2);
+}
+
 void parseV11CoreCompatibilitySmoke() {
     const std::string source = R"(power = 2^3^2;
 dotPower = 2.^3.^2;
@@ -397,6 +431,7 @@ int main() {
     parseSwitchSmoke();
     parseTryCatchSmoke();
     parseMatrixRowsSmoke();
+    parseConcatenationSignedElementSmoke();
     parseV11CoreCompatibilitySmoke();
     parseWorkspaceDeclarationSmoke();
     std::cout << "parser smoke tests passed\n";

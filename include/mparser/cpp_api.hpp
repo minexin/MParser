@@ -462,6 +462,14 @@ public:
         return takeCreated(status, value, "create missing value");
     }
 
+    [[nodiscard]] static Value missingArray(
+        std::span<const std::size_t> dimensions) {
+        mparser_value* value = nullptr;
+        const auto status = mparser_value_create_missing_array(
+            dimensions.data(), dimensions.size(), &value);
+        return takeCreated(status, value, "create missing array");
+    }
+
     [[nodiscard]] static Value scalar(double value) {
         return numericScalar(NumericClass::Double, value);
     }

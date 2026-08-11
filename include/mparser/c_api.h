@@ -474,6 +474,10 @@ mparser_diagnostic_cause(const mparser_diagnostic* diagnostic,
 
 MPARSER_C_API mparser_api_status
 mparser_value_create_missing(mparser_value** out_value);
+MPARSER_C_API mparser_api_status mparser_value_create_missing_array(
+    const size_t* dimensions,
+    size_t rank,
+    mparser_value** out_value);
 MPARSER_C_API mparser_api_status mparser_value_create_numeric(
     const size_t* dimensions,
     size_t rank,

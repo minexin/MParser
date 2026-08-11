@@ -20,4 +20,12 @@ RuntimeNumericAssignmentResult runtimeDeleteNumericIndexed(
     RuntimeValue& target, const std::vector<RuntimeValue>& subscripts,
     const std::vector<bool>& colonSubscripts);
 
+RuntimeNumericAssignmentResult runtimeAssignMissingIndexed(
+    RuntimeValue& target, const std::vector<RuntimeValue>& subscripts,
+    const RuntimeValue& value);
+
+RuntimeNumericAssignmentResult runtimeDeleteMissingIndexed(
+    RuntimeValue& target, const std::vector<RuntimeValue>& subscripts,
+    const std::vector<bool>& colonSubscripts);
+
 } // namespace mparser

@@ -128,6 +128,9 @@ protocol boundaries. The current target subset includes:
 - colon and `end` indexing, logical indexing, indexed growth, and deletion
   within the matrix's documented limits;
 - UTF-16 character arrays and string arrays;
+- scalar and N-dimensional `missing` arrays; `[missing missing]` is a 1-by-2
+  missing array, floating numeric combinations convert missing elements to
+  NaN, and string combinations retain per-element missing state;
 - N-dimensional Cell arrays;
 - ordered structures, structure arrays, dynamic fields, and comma-separated
   field results;

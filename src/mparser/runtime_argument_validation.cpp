@@ -28,6 +28,9 @@ size_t valueCount(const RuntimeValue& value, std::string_view className) {
     if (value.kind == RuntimeValueKind::Missing) {
         return 0;
     }
+    if (value.kind == RuntimeValueKind::MissingArray) {
+        return runtimeShapeElementCount(value);
+    }
     if (isRuntimeStringArray(value) && className == "string") {
         return runtimeShapeElementCount(value);
     }
@@ -286,6 +289,11 @@ RuntimeArgumentValidationResult coerceClass(
                    ? success(std::move(value))
                    : failure("value must be a handle object");
     }
+    if (type == "missing") {
+        return value.kind == RuntimeValueKind::MissingArray
+                   ? success(std::move(value))
+                   : failure("value must be a missing array");
+    }
     if (value.kind == RuntimeValueKind::Missing) {
         return success(std::move(value));
     }
@@ -328,7 +336,8 @@ RuntimeArgumentValidationResult reshapeValue(
     if (currentCount != *count) {
         return failure("value element count does not match the argument size");
     }
-    if (isNumeric(value) || isCell(value) || isRuntimeTextValue(value)) {
+    if (value.kind == RuntimeValueKind::MissingArray ||
+        isNumeric(value) || isCell(value) || isRuntimeTextValue(value)) {
         auto reshaped = runtimeReshapeValue(value, std::move(dimensions));
         return reshaped.succeeded
                    ? success(std::move(reshaped.value))
@@ -368,7 +377,8 @@ RuntimeArgumentValidationResult coerceSize(RuntimeValue value,
     if (exact) {
         return success(std::move(value));
     }
-    if (!isNumeric(value) && !isCell(value) &&
+    if (value.kind != RuntimeValueKind::MissingArray &&
+        !isNumeric(value) && !isCell(value) &&
         !isRuntimeTextValue(value)) {
         return failure("value shape does not match the argument size");
     }
@@ -565,9 +575,18 @@ std::optional<std::string> applyValidator(
         return (text && !text->empty()) ? std::nullopt : std::optional<std::string>("text value must have nonzero length");
     }
     if (name == "mustBeNonmissing") {
-        const bool present = value.kind != RuntimeValueKind::Missing &&
-            (!isNumeric(value) ||
-             allNumeric(value, numericElementIsNotNan));
+        bool present = value.kind != RuntimeValueKind::Missing;
+        if (value.kind == RuntimeValueKind::MissingArray) {
+            present = count == 0;
+        } else if (isNumeric(value)) {
+            present = allNumeric(value, numericElementIsNotNan);
+        } else if (isRuntimeStringArray(value)) {
+            present = std::none_of(
+                value.stringElements.begin(), value.stringElements.end(),
+                [](const RuntimeStringElement& element) {
+                    return element.missing;
+                });
+        }
         return present ? std::nullopt : std::optional<std::string>("value must not be missing");
     }
     if (name == "mustBeGreaterThan" || name == "mustBeLessThan" ||

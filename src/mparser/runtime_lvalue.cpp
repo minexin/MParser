@@ -97,6 +97,13 @@ RuntimeLvalueOperationResult readSegment(
                        ? success(std::move(result.value))
                        : failure(std::move(result.error));
         }
+        if (parent.kind == RuntimeValueKind::MissingArray) {
+            auto result = runtimeIndexMissingArray(
+                parent, segment.subscripts, linearColon);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
         if (isRuntimeClassObject(parent)) {
             auto result = runtimeIndexObject(
                 parent, segment.subscripts, hooks.objectArrays,
@@ -192,6 +199,17 @@ RuntimeLvalueOperationResult writeSegment(
                                     parent, segment.subscripts,
                                     segment.colonSubscripts)
                               : runtimeAssignTextIndexed(
+                                    parent, segment.subscripts, value);
+            return result.succeeded
+                       ? success(std::move(parent))
+                       : failure(std::move(result.error));
+        }
+        if (parent.kind == RuntimeValueKind::MissingArray) {
+            auto result = nullAssignment
+                              ? runtimeDeleteMissingIndexed(
+                                    parent, segment.subscripts,
+                                    segment.colonSubscripts)
+                              : runtimeAssignMissingIndexed(
                                     parent, segment.subscripts, value);
             return result.succeeded
                        ? success(std::move(parent))

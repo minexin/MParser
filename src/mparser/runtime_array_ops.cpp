@@ -32,8 +32,12 @@ bool isCell(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Cell;
 }
 
+bool isMissingArray(const RuntimeValue& value) {
+    return value.kind == RuntimeValueKind::MissingArray;
+}
+
 bool isSupportedArray(const RuntimeValue& value) {
-    return isNumeric(value) || isCell(value) ||
+    return isMissingArray(value) || isNumeric(value) || isCell(value) ||
            isRuntimeTextValue(value) || isRuntimeClassObject(value);
 }
 
@@ -104,6 +108,28 @@ RuntimeValue cellResult(std::vector<size_t> dimensions,
     result.cells = std::move(cells);
     setRuntimeDimensions(result, std::move(dimensions));
     return result;
+}
+
+std::optional<RuntimeValue> missingAsNumeric(
+    const RuntimeValue& value, RuntimeNumericClass numericClass) {
+    if (!isMissingArray(value) ||
+        !runtimeNumericClassIsFloating(numericClass)) {
+        return std::nullopt;
+    }
+    return runtimeNumericValueFromLogicalOrder(
+        runtimeDimensions(value),
+        std::vector<double>(
+            runtimeShapeElementCount(value),
+            std::numeric_limits<double>::quiet_NaN()),
+        numericClass);
+}
+
+RuntimeValue missingAsString(const RuntimeValue& value) {
+    return makeRuntimeStringArray(
+        runtimeDimensions(value),
+        std::vector<RuntimeStringElement>(
+            runtimeShapeElementCount(value),
+            RuntimeStringElement{u"", true}));
 }
 
 std::optional<std::vector<RuntimeNumericElementValue>>
@@ -322,7 +348,7 @@ RuntimeArrayOperationResult reshapeBuiltin(
     }
     if (!isSupportedArray(arguments.front())) {
         return failure(
-            "reshape supports numeric, text, cell, and object arrays");
+            "reshape supports missing, numeric, text, cell, and object arrays");
     }
 
     std::vector<std::optional<size_t>> requested;
@@ -451,7 +477,7 @@ RuntimeArrayOperationResult permuteValue(
     const RuntimeObjectArrayPolicy& objectPolicy) {
     if (!isSupportedArray(value)) {
         return failure(
-            "permute supports numeric, text, cell, and object arrays");
+            "permute supports missing, numeric, text, cell, and object arrays");
     }
 
     auto sourceDimensions = runtimeDimensions(value);
@@ -463,6 +489,11 @@ RuntimeArrayOperationResult permuteValue(
     const auto count = checkedRuntimeDimensionProduct(outputDimensions);
     if (!count || *count != runtimeShapeElementCount(value)) {
         return failure("permuted dimensions are too large");
+    }
+
+    if (isMissingArray(value)) {
+        return success(makeRuntimeMissingArrayValue(
+            std::move(outputDimensions)));
     }
 
     if (isNumeric(value)) {
@@ -610,7 +641,7 @@ RuntimeArrayOperationResult squeezeBuiltin(
     const RuntimeObjectArrayPolicy& objectPolicy) {
     if (arguments.size() != 1 || !isSupportedArray(arguments.front())) {
         return failure(
-            "squeeze expects one numeric, text, cell, or object array");
+            "squeeze expects one missing, numeric, text, cell, or object array");
     }
     const auto dimensions = runtimeDimensions(arguments.front());
     if (dimensions.size() <= 2) {
@@ -689,7 +720,7 @@ RuntimeArrayOperationResult repmatBuiltin(
     const RuntimeObjectArrayPolicy& objectPolicy) {
     if (arguments.empty() || !isSupportedArray(arguments.front())) {
         return failure(
-            "repmat supports numeric, text, cell, and object arrays");
+            "repmat supports missing, numeric, text, cell, and object arrays");
     }
     std::string error;
     const auto parsedFactors = repetitionFactors(arguments, error);
@@ -716,6 +747,11 @@ RuntimeArrayOperationResult repmatBuiltin(
         checkedRuntimeDimensionProduct(outputDimensions);
     if (!outputCount) {
         return failure("repmat dimensions are too large");
+    }
+
+    if (isMissingArray(arguments.front())) {
+        return success(makeRuntimeMissingArrayValue(
+            std::move(outputDimensions)));
     }
 
     if (isNumeric(arguments.front())) {
@@ -871,6 +907,70 @@ RuntimeArrayOperationResult concatenate(
             return concatenate(dimension, nonempty, objectPolicy);
         }
     }
+
+    const bool hasMissing = std::any_of(
+        values.begin(), values.end(), isMissingArray);
+    if (hasMissing) {
+        const bool hasString = std::any_of(
+            values.begin(), values.end(), isRuntimeStringArray);
+        const bool hasNumeric = std::any_of(
+            values.begin(), values.end(), isNumeric);
+        if (hasString) {
+            if (!std::all_of(
+                    values.begin(), values.end(),
+                    [](const RuntimeValue& value) {
+                        return isMissingArray(value) ||
+                               isRuntimeStringArray(value);
+                    })) {
+                return failure(
+                    "missing concatenation with text requires string inputs");
+            }
+            std::vector<RuntimeValue> converted;
+            converted.reserve(values.size());
+            for (const RuntimeValue& value : values) {
+                converted.push_back(
+                    isMissingArray(value) ? missingAsString(value) : value);
+            }
+            return concatenate(dimension, converted, objectPolicy);
+        }
+        if (hasNumeric) {
+            if (!std::all_of(
+                    values.begin(), values.end(),
+                    [](const RuntimeValue& value) {
+                        return isMissingArray(value) || isNumeric(value);
+                    })) {
+                return failure(
+                    "missing concatenation inputs have incompatible types");
+            }
+            const auto numeric = std::find_if(
+                values.begin(), values.end(), isNumeric);
+            if (numeric == values.end() ||
+                !runtimeNumericClassIsFloating(numeric->numericClass)) {
+                return failure(
+                    "missing cannot convert to a non-floating numeric class");
+            }
+            std::vector<RuntimeValue> converted;
+            converted.reserve(values.size());
+            for (const RuntimeValue& value : values) {
+                if (!isMissingArray(value)) {
+                    converted.push_back(value);
+                    continue;
+                }
+                auto convertedMissing = missingAsNumeric(
+                    value, numeric->numericClass);
+                if (!convertedMissing) {
+                    return failure(
+                        "missing could not convert to the numeric class");
+                }
+                converted.push_back(std::move(*convertedMissing));
+            }
+            return concatenate(dimension, converted, objectPolicy);
+        }
+        if (!std::all_of(values.begin(), values.end(), isMissingArray)) {
+            return failure(
+                "missing concatenation inputs have incompatible types");
+        }
+    }
     const bool text = isRuntimeTextValue(values.front());
     if (text || std::any_of(values.begin(), values.end(),
                             isRuntimeTextValue)) {
@@ -900,11 +1000,16 @@ RuntimeArrayOperationResult concatenate(
     }
     const bool cells = isCell(values.front());
     const bool numeric = isNumeric(values.front());
-    if (!cells && !numeric) {
-        return failure("concatenation supports numeric and cell arrays");
+    const bool missing = isMissingArray(values.front());
+    if (!cells && !numeric && !missing) {
+        return failure(
+            "concatenation supports missing, numeric, and cell arrays");
     }
     for (const auto& value : values) {
         if ((cells && !isCell(value)) || (numeric && !isNumeric(value))) {
+            return failure("concatenation inputs must have compatible types");
+        }
+        if (missing && !isMissingArray(value)) {
             return failure("concatenation inputs must have compatible types");
         }
     }
@@ -949,6 +1054,11 @@ RuntimeArrayOperationResult concatenate(
         checkedRuntimeDimensionProduct(outputDimensions);
     if (!outputCount) {
         return failure("concatenated dimensions are too large");
+    }
+
+    if (missing) {
+        return success(makeRuntimeMissingArrayValue(
+            std::move(outputDimensions)));
     }
 
     if (numeric) {
@@ -1253,7 +1363,7 @@ RuntimeArrayOperationResult runtimeReshapeValue(
     const RuntimeObjectArrayPolicy& objectPolicy) {
     if (!isSupportedArray(value)) {
         return failure(
-            "reshape supports numeric, text, cell, and object arrays");
+            "reshape supports missing, numeric, text, cell, and object arrays");
     }
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
     const auto count = checkedRuntimeDimensionProduct(dimensions);
@@ -1262,6 +1372,11 @@ RuntimeArrayOperationResult runtimeReshapeValue(
     }
     if (*count != runtimeShapeElementCount(value)) {
         return failure("reshape cannot change the number of elements");
+    }
+
+    if (isMissingArray(value)) {
+        return success(makeRuntimeMissingArrayValue(
+            std::move(dimensions)));
     }
 
     if (isNumeric(value)) {

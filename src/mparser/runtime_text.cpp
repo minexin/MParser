@@ -539,6 +539,15 @@ std::optional<RuntimeValue> assignmentTextValue(const RuntimeValue &target,
                 : std::nullopt;
   }
   if (isRuntimeStringArray(target)) {
+    if (value.kind == RuntimeValueKind::MissingArray) {
+      const size_t count = runtimeShapeElementCount(value);
+      std::vector<RuntimeStringElement> elements(count);
+      for (auto &element : elements) {
+        element.missing = true;
+      }
+      return makeRuntimeStringArray(runtimeDimensions(value),
+                                    std::move(elements));
+    }
     if (isRuntimeStringArray(value)) {
       return value;
     }
@@ -1256,6 +1265,13 @@ runtimeConvertToCharacter(const RuntimeValue &value) {
 }
 
 RuntimeTextOperationResult runtimeConvertToString(const RuntimeValue &value) {
+  if (value.kind == RuntimeValueKind::MissingArray) {
+    return textSuccess(makeRuntimeStringArray(
+        runtimeDimensions(value),
+        std::vector<RuntimeStringElement>(
+            runtimeShapeElementCount(value),
+            RuntimeStringElement{u"", true})));
+  }
   if (isRuntimeStringArray(value)) {
     return textSuccess(value);
   }
@@ -1345,8 +1361,38 @@ RuntimeTextOperationResult runtimeCharacterCodes(const RuntimeValue &value) {
 }
 
 RuntimeTextOperationResult runtimeTextMissingMask(const RuntimeValue &value) {
+  if (value.kind == RuntimeValueKind::MissingArray) {
+    return textSuccess(logicalArray(
+        runtimeDimensions(value),
+        std::vector<double>(runtimeShapeElementCount(value), 1.0)));
+  }
+  if (isRuntimeNumericValue(value)) {
+    const size_t count = runtimeShapeElementCount(value);
+    std::vector<double> elements(count, 0.0);
+    if (runtimeNumericClassIsFloating(value.numericClass)) {
+      for (size_t index = 0; index < count; ++index) {
+        const auto element = runtimeNumericElementValue(value, index);
+        if (!element) {
+          return textFailure("ismissing could not map a numeric element");
+        }
+        elements[index] =
+            std::isnan(element->real) ||
+                    (element->complex && std::isnan(element->imaginary))
+                ? 1.0
+                : 0.0;
+      }
+    }
+    return textSuccess(
+        logicalArray(runtimeDimensions(value), std::move(elements)));
+  }
+  if (isRuntimeCharacterArray(value)) {
+    return textSuccess(logicalArray(
+        runtimeDimensions(value),
+        std::vector<double>(runtimeShapeElementCount(value), 0.0)));
+  }
   if (!isRuntimeStringArray(value)) {
-    return textFailure("ismissing text input must be a string array");
+    return textFailure(
+        "ismissing requires missing, numeric, character, or string input");
   }
   const size_t count = runtimeShapeElementCount(value);
   std::vector<double> elements;

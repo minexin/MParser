@@ -342,6 +342,7 @@ size_t columnCount(const RuntimeValue& value) {
 std::string runtimeKindName(const RuntimeValue& value) {
     switch (value.kind) {
     case RuntimeValueKind::Missing:
+    case RuntimeValueKind::MissingArray:
         return "missing";
     case RuntimeValueKind::Number:
         return "number";
@@ -5651,14 +5652,15 @@ private:
                 missingValue(), static_cast<size_t>(instruction.operandCount), 0});
             return;
         }
-        if (!isNumeric(target.value) && !isCell(target.value) &&
+        if (target.value.kind != RuntimeValueKind::MissingArray &&
+            !isNumeric(target.value) && !isCell(target.value) &&
             !isRuntimeTextValue(target.value) &&
             target.value.kind != RuntimeValueKind::Struct &&
             !isRuntimeClassObject(target.value) &&
             !isRuntimeMetadataObject(target.value)) {
             addDiagnostic(instruction,
-                          "bytecode index context requires a numeric, text, "
-                          "cell, structure, object, or metadata target");
+                          "bytecode index context requires a missing, numeric, "
+                          "text, cell, structure, object, or metadata target");
             return;
         }
 
@@ -6095,44 +6097,55 @@ private:
         }
 
         if (instruction.binding.kind == BindingKind::Builtin) {
-            if (instruction.operand == "clear" ||
-                instruction.operand == "clc" ||
-                instruction.operand == "tic" ||
-                instruction.operand == "toc") {
+            const BuiltinDescriptor* descriptor =
+                builtinRegistry().find(instruction.operand);
+            const std::string_view builtinName =
+                descriptor ? std::string_view(descriptor->name)
+                           : std::string_view(instruction.operand);
+            if (builtinName == "clear" || builtinName == "clc" ||
+                builtinName == "tic" || builtinName == "toc") {
                 pushRuntime(callBuiltin(instruction, instruction.operand, {}));
                 return;
             }
-            if (instruction.operand == "pi") {
+            if (builtinName == "missing") {
+                auto outputs = callBuiltinOutputs(
+                    instruction, instruction.operand, {}, 1);
+                if (!outputs.empty()) {
+                    stack_.push_back(runtimeStackValue(
+                        std::move(outputs.front())));
+                }
+                return;
+            }
+            if (builtinName == "pi") {
                 stack_.push_back(
                     runtimeStackValue(numberValue(3.14159265358979323846)));
                 return;
             }
-            if (instruction.operand == "i" ||
-                instruction.operand == "j") {
+            if (builtinName == "i" || builtinName == "j") {
                 stack_.push_back(runtimeStackValue(
                     *runtimeParseNumericLiteral("1i")));
                 return;
             }
-            if (instruction.operand == "eps") {
+            if (builtinName == "eps") {
                 stack_.push_back(runtimeStackValue(
                     numberValue(std::numeric_limits<double>::epsilon())));
                 return;
             }
-            if (instruction.operand == "inf") {
+            if (builtinName == "inf") {
                 stack_.push_back(runtimeStackValue(numberValue(
                     std::numeric_limits<double>::infinity())));
                 return;
             }
-            if (instruction.operand == "nan") {
+            if (builtinName == "nan") {
                 stack_.push_back(runtimeStackValue(numberValue(
                     std::numeric_limits<double>::quiet_NaN())));
                 return;
             }
-            if (instruction.operand == "true") {
+            if (builtinName == "true") {
                 stack_.push_back(runtimeStackValue(logicalValue(true)));
                 return;
             }
-            if (instruction.operand == "false") {
+            if (builtinName == "false") {
                 stack_.push_back(runtimeStackValue(logicalValue(false)));
                 return;
             }
@@ -9393,6 +9406,24 @@ private:
             storeVariable(instruction, std::move(updated));
             return;
         }
+        if (target->kind == RuntimeValueKind::MissingArray) {
+            RuntimeValue updated = *target;
+            const auto result =
+                instruction.nullAssignment
+                    ? runtimeDeleteMissingIndexed(
+                          updated, arguments,
+                          instruction.colonSubscripts)
+                    : runtimeAssignMissingIndexed(
+                          updated, arguments, single.value);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return;
+            }
+            recordAssignment(instruction, "index", updated);
+            storeVariable(instruction, std::move(updated));
+            return;
+        }
         if (isRuntimeClassObject(*target)) {
             auto result = instruction.nullAssignment
                               ? runtimeDeleteObjectIndexed(
@@ -9413,11 +9444,13 @@ private:
             storeVariable(instruction, std::move(result.value));
             return;
         }
-        if (!isNumeric(*target) || !isNumeric(single.value)) {
+        if (!isNumeric(*target) ||
+            (!isNumeric(single.value) &&
+             single.value.kind != RuntimeValueKind::MissingArray)) {
             addDiagnostic(
                 instruction,
                 "bytecode indexed assignment requires compatible numeric, "
-                "Cell, structure, text, or object values");
+                "missing, Cell, structure, text, or object values");
             return;
         }
 
@@ -9592,7 +9625,8 @@ private:
             return;
         }
 
-        if (isRuntimeTextValue(*value) || isCell(*value) ||
+        if (value->kind == RuntimeValueKind::MissingArray ||
+            isRuntimeTextValue(*value) || isCell(*value) ||
             isRuntimeClassObject(*value)) {
             if (runtimeDimensionCount(*value) > 2) {
                 addDiagnostic(instruction,
@@ -9613,7 +9647,8 @@ private:
 
         addDiagnostic(
             instruction,
-            "bytecode transpose requires numeric, text, cell, or object input");
+            "bytecode transpose requires missing, numeric, text, cell, or "
+            "object input");
     }
 
     void makeMatrixRow(const BytecodeInstruction& instruction) {
@@ -9960,7 +9995,8 @@ private:
             return;
         }
 
-        if (!isNumeric(callee->value) &&
+        if (callee->value.kind != RuntimeValueKind::MissingArray &&
+            !isNumeric(callee->value) &&
             !isRuntimeTextValue(callee->value) &&
             callee->value.kind != RuntimeValueKind::Struct &&
             callee->value.kind != RuntimeValueKind::Cell &&
@@ -13530,10 +13566,19 @@ private:
             }
             return std::move(result.value);
         }
+        if (target.kind == RuntimeValueKind::MissingArray) {
+            auto result = runtimeIndexMissingArray(
+                target, arguments, linearColon);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
         if (!isNumeric(target)) {
             addDiagnostic(instruction,
-                          "bytecode indexing requires a numeric, cell, "
-                          "structure, text, or object target");
+                          "bytecode indexing requires a missing, numeric, "
+                          "cell, structure, text, or object target");
             return missingValue();
         }
         auto result = runtimeIndexNumeric(target, arguments, linearColon);
