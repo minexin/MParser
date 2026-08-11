@@ -506,29 +506,29 @@ runtimeApplyPureBinaryMathBuiltin(std::string_view name,
     for (size_t index = 0; index < *count; ++index) {
         const auto coordinates = runtimeColumnMajorCoordinates(
             index, *dimensions);
-        const auto leftOffset = coordinates
-                                    ? runtimeImplicitExpansionStorageOffset(
-                                          *coordinates, leftDimensions)
-                                    : std::nullopt;
-        const auto rightOffset = coordinates
-                                     ? runtimeImplicitExpansionStorageOffset(
-                                           *coordinates, rightDimensions)
-                                     : std::nullopt;
-        const auto leftValue = leftOffset
-                                   ? runtimeNumericStorageElementValue(
-                                         left, *leftOffset)
-                                   : std::nullopt;
-        const auto rightValue = rightOffset
-                                    ? runtimeNumericStorageElementValue(
-                                          right, *rightOffset)
-                                    : std::nullopt;
-        if (!leftValue || !rightValue) {
+        if (!coordinates) {
             return std::nullopt;
         }
+        const auto leftOffset = runtimeImplicitExpansionStorageOffset(
+            *coordinates, leftDimensions);
+        const auto rightOffset = runtimeImplicitExpansionStorageOffset(
+            *coordinates, rightDimensions);
+        if (!leftOffset || !rightOffset) {
+            return std::nullopt;
+        }
+        const auto leftValue = runtimeNumericStorageElementValue(
+            left, *leftOffset);
+        const auto rightValue = runtimeNumericStorageElementValue(
+            right, *rightOffset);
+        if (!leftValue.has_value() || !rightValue.has_value()) {
+            return std::nullopt;
+        }
+        const double leftReal = leftValue.value().real;
+        const double rightReal = rightValue.value().real;
         RuntimeNumericElementValue element;
         element.real = name == "atan2"
-                           ? std::atan2(leftValue->real, rightValue->real)
-                           : std::hypot(leftValue->real, rightValue->real);
+                           ? std::atan2(leftReal, rightReal)
+                           : std::hypot(leftReal, rightReal);
         elements.push_back(element);
     }
     return runtimeNumericValueFromElements(
