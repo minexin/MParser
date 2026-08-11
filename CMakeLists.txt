@@ -234,6 +234,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime_lvalue.cpp
     src/mparser/runtime_math.cpp
     src/mparser/runtime_metadata.cpp
+    src/mparser/runtime_mixed_integer.cpp
     src/mparser/runtime_numeric.cpp
     src/mparser/runtime_object.cpp
     src/mparser/runtime_output.cpp
@@ -825,19 +826,19 @@ add_test(NAME numeric_type_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
 set_tests_properties(numeric_type_interpreter_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 5")
+    PASS_REGULAR_EXPRESSION "summary = 6")
 
 add_test(NAME numeric_type_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
 set_tests_properties(numeric_type_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 5")
+    PASS_REGULAR_EXPRESSION "summary = 6")
 
 add_test(NAME numeric_type_production_cli_smoke
     COMMAND mparser --run
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
 set_tests_properties(numeric_type_production_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 5")
+    PASS_REGULAR_EXPRESSION "summary = 6")
 
 add_executable(array_deletion_smoke_tests
     tests/array_deletion_smoke.cpp)

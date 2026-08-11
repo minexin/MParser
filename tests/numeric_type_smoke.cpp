@@ -522,6 +522,123 @@ default_sum = sum(uint8([1, 2]), "all");
     verifyNativeIntegerReductionResult(result.vm);
 }
 
+template <typename Result>
+void verifyExactMixedIntegerResult(const Result& result) {
+    require(result.diagnostics.empty(),
+            "mixed 64-bit integer execution emitted diagnostics");
+    constexpr std::uint64_t base = 9007199254740993ULL;
+    requireIntegerBits(variable(result, "plus_one"), {base + 1},
+                       "uint64 plus scalar double lost one unit");
+    requireIntegerBits(variable(result, "one_plus"), {base + 1},
+                       "reversed scalar double addition lost one unit");
+    requireIntegerBits(variable(result, "plus_half"), {base + 1},
+                       "positive half tie did not round away from zero");
+    requireIntegerBits(variable(result, "minus_half"), {base},
+                       "subtracted half tie rounded the wrong way");
+    requireIntegerBits(variable(result, "scaled"),
+                       {13510798882111490ULL},
+                       "uint64 multiplication lost extended precision");
+    requireIntegerBits(variable(result, "divided"),
+                       {4503599627370497ULL},
+                       "uint64 division lost extended precision");
+    requireIntegerBits(variable(result, "reverse_subtract"), {0},
+                       "negative uint64 result did not saturate");
+    requireIntegerBits(variable(result, "reverse_divide"), {0},
+                       "fractional uint64 result did not round to zero");
+    requireIntegerBits(variable(result, "mod_integer"), {1},
+                       "exact uint64 modulus was rounded through double");
+    requireIntegerBits(variable(result, "mod_fraction"), {1},
+                       "dyadic uint64 modulus was incorrect");
+    requireIntegerBits(variable(result, "fraction_mod"), {3},
+                       "reversed dyadic modulus did not round correctly");
+    requireIntegerBits(variable(result, "rem_fraction"), {1},
+                       "dyadic uint64 remainder was incorrect");
+    requireIntegerBits(variable(result, "mixed_grid"),
+                       {base + 1, base + 3, base + 5, base + 7},
+                       "N-D mixed uint64 arithmetic lost shape or bits");
+    requireIntegerBits(variable(result, "nan_result"), {0},
+                       "NaN mixed arithmetic did not convert to zero");
+    requireIntegerBits(
+        variable(result, "positive_inf"),
+        {std::numeric_limits<std::uint64_t>::max()},
+        "positive infinity did not saturate uint64");
+    requireIntegerBits(variable(result, "negative_inf"), {0},
+                       "negative infinity did not saturate uint64");
+    requireIntegerBits(variable(result, "tiny_sum"), {base},
+                       "subnormal addition changed an exact uint64");
+    requireIntegerBits(variable(result, "tiny_product"), {0},
+                       "subnormal multiplication did not round to zero");
+    requireIntegerBits(
+        variable(result, "tiny_divisor"),
+        {std::numeric_limits<std::uint64_t>::max()},
+        "subnormal divisor did not saturate uint64");
+    requireIntegerBits(variable(result, "huge_sum"),
+                       {std::numeric_limits<std::uint64_t>::max()},
+                       "large double addition did not saturate uint64");
+    requireIntegerBits(variable(result, "huge_subtract"), {0},
+                       "large double subtraction did not saturate uint64");
+    requireIntegerBits(
+        variable(result, "max_plus_one"),
+        {std::numeric_limits<std::uint64_t>::max()},
+        "uint64 mixed addition did not saturate at intmax");
+    requireIntegerBits(variable(result, "extended_even_tie"),
+                       {0x8000000000000002ULL},
+                       "binary80 even tie was rounded away from even");
+    requireIntegerBits(variable(result, "extended_odd_tie"),
+                       {0x8000000000000002ULL},
+                       "binary80 odd tie did not round to even");
+    requireIntegerBits(variable(result, "extended_subtract_tie"),
+                       {0x8000000000000000ULL},
+                       "binary80 subtraction tie did not round to even");
+    requireIntegerBits(variable(result, "mod_infinity"), {base},
+                       "mod with an infinite divisor lost uint64 bits");
+    requireIntegerBits(variable(result, "rem_infinity"), {base},
+                       "rem with an infinite divisor lost uint64 bits");
+    requireIntegerBits(variable(result, "mod_zero"), {base},
+                       "mod with a zero divisor lost uint64 bits");
+    requireIntegerBits(variable(result, "rem_zero"), {0},
+                       "rem with a zero divisor did not convert NaN to zero");
+
+    const auto signedBits = [](std::int64_t value) {
+        return std::bit_cast<std::uint64_t>(value);
+    };
+    requireIntegerBits(variable(result, "negative_plus_half"),
+                       {signedBits(-3)},
+                       "negative half tie did not round away from zero");
+    requireIntegerBits(variable(result, "negative_plus_one_half"),
+                       {signedBits(-2)},
+                       "negative mixed addition rounded incorrectly");
+    requireIntegerBits(variable(result, "negative_times_half"),
+                       {signedBits(-2)},
+                       "negative mixed multiplication rounded incorrectly");
+    requireIntegerBits(variable(result, "negative_div_two"),
+                       {signedBits(-2)},
+                       "negative mixed division rounded incorrectly");
+    requireIntegerBits(variable(result, "two_div_negative"),
+                       {signedBits(-1)},
+                       "reversed negative division rounded incorrectly");
+    requireIntegerBits(
+        variable(result, "positive_negative_zero"),
+        {signedBits(std::numeric_limits<std::int64_t>::min())},
+        "negative-zero divisor lost its saturation sign");
+    requireIntegerBits(
+        variable(result, "negative_negative_zero"),
+        {signedBits(std::numeric_limits<std::int64_t>::max())},
+        "two negative division signs did not produce positive saturation");
+    requireIntegerBits(variable(result, "integer_power"), {8},
+                       "integer base and double exponent failed");
+    requireIntegerBits(variable(result, "double_power"), {16},
+                       "double base and integer exponent failed");
+    requireIntegerBits(
+        variable(result, "signed_max_plus_one"),
+        {signedBits(std::numeric_limits<std::int64_t>::max())},
+        "int64 mixed positive overflow did not saturate");
+    requireIntegerBits(
+        variable(result, "signed_min_minus_one"),
+        {signedBits(std::numeric_limits<std::int64_t>::min())},
+        "int64 mixed negative overflow did not saturate");
+}
+
 void verifyMixedClassDiagnostics() {
     const auto mixedClass = runBoth(R"(
 bad = int8([1, 2]) + single(1);
@@ -542,14 +659,61 @@ bad = int8([1, 2]) + [1, 2];
             "VM accepted integer plus a non-scalar double array");
 
     const auto exactMixed = runBoth(R"(
-bad = uint64(1) + 1;
+base = 0x0020000000000001u64;
+plus_one = base + 1;
+one_plus = 1 + base;
+plus_half = base + 0.5;
+minus_half = base - 0.5;
+scaled = base * 1.5;
+divided = base / 2;
+reverse_subtract = 0.5 - base;
+reverse_divide = 2 / base;
+mod_integer = mod(base, 2);
+mod_fraction = mod(base, 2.5);
+fraction_mod = mod(2.5, base);
+rem_fraction = rem(base, 2.5);
+mixed_grid = reshape([base, base + uint64(2), ...
+                      base + uint64(4), base + uint64(6)], 2, 2) + 0.5;
+nan_result = base + NaN;
+positive_inf = base + Inf;
+negative_inf = base - Inf;
+tiny_sum = base + 4.9406564584124654e-324;
+tiny_product = base * 4.9406564584124654e-324;
+tiny_divisor = base / 4.9406564584124654e-324;
+huge_sum = base + 1e300;
+huge_subtract = base - 1e300;
+max_plus_one = 0xFFFFFFFFFFFFFFFFu64 + 1;
+extended_even_tie = 0x8000000000000002u64 + 0.5;
+extended_odd_tie = 0x8000000000000001u64 + 0.5;
+extended_subtract_tie = 0x8000000000000001u64 - 0.5;
+mod_infinity = mod(base, Inf);
+rem_infinity = rem(base, Inf);
+mod_zero = mod(base, 0);
+rem_zero = rem(base, 0);
+negative_plus_half = int64(-3) + 0.5;
+negative_plus_one_half = int64(-3) + 1.5;
+negative_times_half = int64(-3) * 0.5;
+negative_div_two = int64(-3) / 2;
+two_div_negative = 2 / int64(-3);
+positive_negative_zero = int64(3) / (-0.0);
+negative_negative_zero = int64(-3) / (-0.0);
+integer_power = int64(2) ^ 3;
+double_power = 2.5 ^ int64(3);
+signed_max_plus_one = 0x7FFFFFFFFFFFFFFFs64 + 1;
+signed_min_minus_one = 0x8000000000000000s64 - 1;
 )");
-    constexpr std::string_view exactMixedMessage =
-        "64-bit integer arithmetic with scalar double is not implemented without precision loss";
-    require(hasDiagnostic(exactMixed.interpreter, exactMixedMessage),
-            "interpreter silently rounded uint64 plus scalar double");
-    require(hasDiagnostic(exactMixed.vm, exactMixedMessage),
-            "VM silently rounded uint64 plus scalar double");
+    verifyExactMixedIntegerResult(exactMixed.interpreter);
+    verifyExactMixedIntegerResult(exactMixed.vm);
+
+    for (const std::string_view invalidPower : {
+             "bad = int64(-3) ^ 2.5;\n",
+             "bad = int64(2) ^ NaN;\n",
+             "bad = 0.5 ^ int64(-3);\n"}) {
+        const auto invalid = runBoth(invalidPower);
+        require(!invalid.interpreter.diagnostics.empty() &&
+                    !invalid.vm.diagnostics.empty(),
+                "invalid mixed integer power was accepted");
+    }
 }
 
 void verifyTypedFallback() {

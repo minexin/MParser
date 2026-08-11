@@ -3,10 +3,11 @@
 Current development milestone: v1.2. The source tree, product metadata, and
 installed SDK now share development version `1.2.0`; this is not yet a tagged
 release. This active line extends the runtime with exact core numeric classes,
-dense complex double/single values, typed constructors and elementary math,
-C/C++ source API 1.2, C ABI generation 2 revision 0, in-memory source metadata,
-host-routed output and top-level expression results, and machine result
-protocol 1.1. The released v1.0 contracts remain archived evidence;
+including precision-preserving `int64`/`uint64` arithmetic with scalar
+`double`, dense complex double/single values, typed constructors and elementary
+math, C/C++ source API 1.2, C ABI generation 2 revision 0, in-memory source
+metadata, host-routed output and top-level expression results, and machine
+result protocol 1.1. The released v1.0 contracts remain archived evidence;
 unreleased interfaces may be simplified without compatibility adapters. See
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) and the
 [external gap plan](docs/v1.x-external-gap-plan.md).

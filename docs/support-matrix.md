@@ -45,6 +45,9 @@ The current v1.2 train is building one end-to-end numeric foundation:
 - dense `double`, `single`, logical, and all eight fixed-width integer classes;
 - exact `int64`/`uint64` storage and transport without conversion through
   `double`;
+- precision-preserving `int64`/`uint64` arithmetic with scalar `double`,
+  including both operand orders, N-D expansion, binary80 intermediate
+  rounding, integer conversion, non-finite values, and saturation;
 - dense complex `double` and `single` literals, operators, transpose,
   reductions, scans, predicates, and elementary math;
 - exact hexadecimal/binary integer literals with default-width inference and

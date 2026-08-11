@@ -108,6 +108,14 @@ interpreter/VM/module/API/protocol tests, runnable CLI and embedding samples,
 and relocated installed consumers cover the slice. It remains part of the
 larger v1.2 candidate gate rather than a separate release.
 
+The numeric audit also removed a previously accepted failure for mixed
+64-bit-integer arithmetic. `int64`/`uint64` arrays now combine with scalar
+`double` without first rounding the integer through binary64; a portable dyadic
+path owns operand order, implicit expansion, software-emulated binary80
+rounding, `mod`/`rem`, division, integer conversion, non-finite values, and
+saturation. Typed/native regions continue to reject these values before
+mutation and use VM fallback.
+
 Character/string, cell, struct, function-handle, and object values remain part
 of the stable value model. The v1.2 correctness inventory includes first-class
 shaped missing arrays and row-structured multidimensional cell literals, so

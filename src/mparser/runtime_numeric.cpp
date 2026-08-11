@@ -1,5 +1,7 @@
 #include "mparser/runtime_numeric.h"
 
+#include "mparser/runtime_mixed_integer.h"
+
 #include "mparser/runtime_shape.h"
 
 #include <algorithm>
@@ -1140,23 +1142,11 @@ std::optional<RuntimeNumericClass> arithmeticResultClass(
         if (leftInteger &&
             right.numericClass == RuntimeNumericClass::Double &&
             right.kind == RuntimeValueKind::Number) {
-            if (left.numericClass == RuntimeNumericClass::Int64 ||
-                left.numericClass == RuntimeNumericClass::UInt64) {
-                error = "64-bit integer arithmetic with scalar double is not "
-                        "implemented without precision loss";
-                return std::nullopt;
-            }
             return left.numericClass;
         }
         if (rightInteger &&
             left.numericClass == RuntimeNumericClass::Double &&
             left.kind == RuntimeValueKind::Number) {
-            if (right.numericClass == RuntimeNumericClass::Int64 ||
-                right.numericClass == RuntimeNumericClass::UInt64) {
-                error = "64-bit integer arithmetic with scalar double is not "
-                        "implemented without precision loss";
-                return std::nullopt;
-            }
             return right.numericClass;
         }
 
@@ -1729,6 +1719,15 @@ std::optional<RuntimeNumericElementValue> applyScalarElementOperation(
         runtimeNumericClassIsInteger(right.numericClass)) {
         return applyExactIntegerOperation(
             operation, left, right, resultClass);
+    }
+
+    const auto mixedInteger = runtimeApplyMixedIntegerDoubleOperation(
+        operation, left, right, resultClass);
+    if (mixedInteger.handled) {
+        return mixedInteger.succeeded
+                   ? std::optional<RuntimeNumericElementValue>(
+                         mixedInteger.value)
+                   : std::nullopt;
     }
 
     if (left.complex || right.complex) {

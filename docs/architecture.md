@@ -382,6 +382,16 @@ fixed-width integers without a double round trip, carries separate real and
 imaginary channels for complex floating values, applies checked MATLAB-like
 conversion and saturation, and centralizes scalar element operations used by
 operators, ranges, indexing, reductions, scans, embedding, and display.
+`runtime_mixed_integer` handles the precision-sensitive `int64`/`uint64` plus
+scalar-`double` path. It decomposes IEEE-754 binary64 values into exact dyadic
+components and uses a bounded, platform-independent unsigned-integer engine
+for addition, subtraction, multiplication, division, `mod`/`rem`, rounding,
+and saturation. Finite arithmetic is rounded in software to the 64-bit
+significand and ties-to-even behavior of MATLAB's specified binary80
+intermediate before integer conversion. This avoids relying on `long double`,
+whose precision differs between MSVC, x86 Linux, and ARM64 targets, and
+preserves integer bits above `flintmax` in both operand orders and across
+implicit array expansion.
 Typed/native regions currently specialize dense real doubles; numeric-class,
 shape, and complexity guards return unsupported values to the VM before an
 optimized region can publish mutation.

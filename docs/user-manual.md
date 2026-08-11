@@ -123,6 +123,10 @@ protocol boundaries. The current target subset includes:
 - dense `double`, `single`, logical, `int8`/`uint8`, `int16`/`uint16`,
   `int32`/`uint32`, and exact `int64`/`uint64` scalars and N-dimensional
   arrays;
+- scalar-`double` arithmetic with `int64`/`uint64` preserves integer bits above
+  `flintmax`, emulates MATLAB's binary80 intermediate rounding before the
+  nearest-with-ties-away integer conversion, and saturates at the target
+  bounds for scalar or implicitly expanded array operations;
 - dense complex `double` and `single` values with separate real and imaginary
   components;
 - colon and `end` indexing, logical indexing, indexed growth, and deletion
