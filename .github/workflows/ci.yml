@@ -184,8 +184,8 @@ jobs:
           - runner: macos-15
             arch: arm64
     runs-on: ${{ matrix.runner }}
-    # The Apple Silicon hosted runner can spend close to 30 minutes compiling
-    # the full warnings-as-errors tree before tests and SDK validation begin.
+    # Keep release/package headroom even though the bounded Ninja build should
+    # finish well below this limit on the 3-core standard ARM64 runner.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -193,14 +193,14 @@ jobs:
         run: test "$(uname -m)" = "${{ matrix.arch }}"
       - name: Configure
         run: >-
-          cmake -S . -B build-ci
+          cmake -S . -B build-ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
           -DMPARSER_WARNINGS_AS_ERRORS=ON
           -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
-        run: cmake --build build-ci --parallel
+        run: cmake --build build-ci --parallel 3
       - name: Test
         run: ctest --test-dir build-ci --output-on-failure
       - name: Collect native performance evidence
@@ -208,31 +208,26 @@ jobs:
         run: >-
           cmake --build build-ci
           --target mparser_performance_evidence
-      - name: Build and relocate production SDK
+          --parallel 3
+      - name: Install and relocate production SDK
         run: |
-          cmake -S . -B build-sdk \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DMPARSER_ENABLE_NATIVE_JIT=ON \
-            -DMPARSER_WARNINGS_AS_ERRORS=ON \
-            -DBUILD_TESTING=OFF \
-            -DCMAKE_INSTALL_PREFIX="$PWD/build-sdk/install-sdk"
-          cmake --build build-sdk --parallel
-          cmake --install build-sdk
-          mv build-sdk/install-sdk build-sdk/relocated-sdk
+          rm -rf build-sdk
+          cmake --install build-ci \
+            --prefix "$PWD/build-sdk/relocated-sdk"
       - name: Validate relocated C and C++ consumers
         run: |
-          cmake -S tests/installed_c_consumer -B build-c-consumer \
+          cmake -S tests/installed_c_consumer -B build-c-consumer -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$PWD/build-sdk/relocated-sdk" \
             -DMPARSER_REQUIRED_VERSION=1.2.0
-          cmake --build build-c-consumer --parallel
+          cmake --build build-c-consumer --parallel 3
           DYLD_LIBRARY_PATH="$PWD/build-sdk/relocated-sdk/lib" \
             ctest --test-dir build-c-consumer --output-on-failure
-          cmake -S tests/installed_cpp_consumer -B build-cpp-consumer \
+          cmake -S tests/installed_cpp_consumer -B build-cpp-consumer -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$PWD/build-sdk/relocated-sdk" \
             -DMPARSER_REQUIRED_VERSION=1.2.0
-          cmake --build build-cpp-consumer --parallel
+          cmake --build build-cpp-consumer --parallel 3
           DYLD_LIBRARY_PATH="$PWD/build-sdk/relocated-sdk/lib" \
             ctest --test-dir build-cpp-consumer --output-on-failure
       - name: Validate production architecture and version
@@ -242,7 +237,10 @@ jobs:
           build-sdk/relocated-sdk/bin/mparser --version | tee build-sdk/macos-sdk-version.txt
           grep -F "MParser 1.2.0" build-sdk/macos-sdk-version.txt
       - name: Build release archive and checksums
-        run: cmake --build build-ci --target mparser_release_package
+        run: >-
+          cmake --build build-ci
+          --target mparser_release_package
+          --parallel 3
       - name: Upload macOS release archive
         uses: actions/upload-artifact@v7
         with:
