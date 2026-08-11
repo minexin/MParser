@@ -137,7 +137,7 @@ require_text(release_milestone "MParser v${V1_RELEASE_VERSION}"
     "v1.0 milestone")
 
 foreach(required_ci_path IN ITEMS
-        "$PWD/build-sdk/install-sdk"
+        "cmake --install build-ci"
         "$PWD/build-sdk/relocated-sdk"
         "build-sdk/macos-sdk-version.txt"
         "$PWD/build-arm64-jit/install-sdk"
@@ -150,6 +150,7 @@ foreach(required_ci_path IN ITEMS
 endforeach()
 
 foreach(forbidden_ci_path IN ITEMS
+        "cmake -S . -B build-sdk"
         "$PWD/install-sdk"
         "$PWD/relocated-sdk"
         "mv install-sdk relocated-sdk"
@@ -262,9 +263,9 @@ require_text(release_process "id-token: write"
 string(REGEX MATCHALL "MPARSER_WARNINGS_AS_ERRORS=ON"
     warning_gate_matches "${ci_workflow}")
 list(LENGTH warning_gate_matches warning_gate_count)
-if(NOT warning_gate_count EQUAL 8)
+if(NOT warning_gate_count EQUAL 7)
     message(FATAL_ERROR
-        "all eight first-party CI configure paths must enable "
+        "all seven first-party CI configure paths must enable "
         "warnings-as-errors; found ${warning_gate_count}")
 endif()
 string(REGEX MATCHALL
