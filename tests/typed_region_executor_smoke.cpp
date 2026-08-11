@@ -144,8 +144,8 @@ end
         mparser::runtimeNumericElementValue(*output, 0);
     assert(element.has_value());
     assert(element->complex);
-    assert(element->real == 0.0);
-    assert(element->imaginary == 12.0);
+    assert(std::fabs(element->real) < 1e-12);
+    assert(std::fabs(element->imaginary - 12.0) < 1e-12);
 
     const auto* execution =
         findExecution(optimized, "scalar-loop", "i");

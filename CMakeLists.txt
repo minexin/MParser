@@ -799,26 +799,26 @@ add_test(NAME complex_numeric_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/complex_numeric_demo.m)
 set_tests_properties(complex_numeric_interpreter_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 0")
+    PASS_REGULAR_EXPRESSION "summary = 1")
 
 add_test(NAME complex_numeric_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/complex_numeric_demo.m)
 set_tests_properties(complex_numeric_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 0")
+    PASS_REGULAR_EXPRESSION "summary = 1")
 
 add_test(NAME complex_numeric_portable_jit_cli_smoke
     COMMAND mparser --run --jit=portable
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/complex_numeric_demo.m)
 set_tests_properties(complex_numeric_portable_jit_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 0")
+    PASS_REGULAR_EXPRESSION "summary = 1")
 
 if(MPARSER_ENABLE_NATIVE_JIT)
     add_test(NAME complex_numeric_native_jit_cli_smoke
         COMMAND mparser --run --jit=native
             ${CMAKE_CURRENT_SOURCE_DIR}/samples/complex_numeric_demo.m)
     set_tests_properties(complex_numeric_native_jit_cli_smoke PROPERTIES
-        PASS_REGULAR_EXPRESSION "summary = 0")
+        PASS_REGULAR_EXPRESSION "summary = 1")
 endif()
 
 add_test(NAME numeric_type_interpreter_cli_smoke

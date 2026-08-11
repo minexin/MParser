@@ -342,7 +342,7 @@ jobs:
             od -An -t x1 | tr -d ' \n')" = "0a"
           ! LC_ALL=C grep -q $'\r' "$RUNNER_TEMP/mparser-arm64-result.json"
           grep --fixed-strings \
-            '"protocol":{"name":"mparser.result","major":1,"minor":0}' \
+            '"protocol":{"name":"mparser.result","major":1,"minor":1}' \
             "$RUNNER_TEMP/mparser-arm64-result.json"
       - name: Upload Linux AArch64 release archive
         uses: actions/upload-artifact@v7
