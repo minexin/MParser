@@ -176,6 +176,26 @@ lane owns that evidence. Linux sanitizer coverage is retained despite its
 runtime overlap because it detects memory, undefined-behavior, and lifetime
 failures that ordinary release jobs cannot observe.
 
+### CI timing evidence
+
+The workflow split was validated on GitHub-hosted runners at commit `7151d5a`
+on 2026-08-11. These timings are operational evidence rather than performance
+guarantees because hosted-runner load can vary:
+
+| Validation | Actions run | Wall-clock result |
+| --- | --- | ---: |
+| Documentation-only cold run | `31459422967` | 1 min 24 sec |
+| Source-change matrix, cold cache | `31459422963`, attempt 1 | 6 min 29 sec |
+| Source-change matrix, warm cache | `31459422963`, attempt 2 | 2 min 53 sec |
+| Explicit performance/package/cross validation | `31459979312` | 2 min 40 sec |
+| Optional AArch64 cross/QEMU job inside the explicit run | `31459979312` | 1 min 55 sec |
+
+The warm source-change run reported C/C++ cache-hit rates from 67.30% on macOS
+ARM64 to 86.79% on Windows. For comparison, the previous duplicated AArch64
+cross/QEMU lane took 8 min 42 sec in run `31457836380`; the focused release
+smoke now compiles one configuration and validates all three JIT modes from
+that package.
+
 For an install-only SDK build:
 
 ```bash
