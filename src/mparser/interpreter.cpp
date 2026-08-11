@@ -118,10 +118,6 @@ bool isNumeric(const RuntimeValue& value) {
     return isNumber(value) || isVector(value) || isMatrix(value);
 }
 
-bool isArray(const RuntimeValue& value) {
-    return isVector(value) || isMatrix(value);
-}
-
 std::string trimAscii(std::string_view text) {
     const size_t begin = text.find_first_not_of(" \t\r\n\v\f");
     if (begin == std::string_view::npos) {
@@ -286,14 +282,6 @@ RuntimeValue oneBasedIndexRange(size_t length) {
         values.push_back(static_cast<double>(index));
     }
     return vectorValue(std::move(values));
-}
-
-size_t rowCount(const RuntimeValue& value) {
-    return runtimeDimension(value, 0);
-}
-
-size_t columnCount(const RuntimeValue& value) {
-    return runtimeDimension(value, 1);
 }
 
 size_t elementCount(const RuntimeValue& value) {
