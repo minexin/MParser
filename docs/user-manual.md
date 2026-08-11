@@ -1,11 +1,11 @@
 # MParser User Manual
 
 MParser is an embeddable MATLAB-like subset runtime. The published v1.0
-baseline and active v1.2 development line cover a documented language subset,
+baseline and frozen v1.2 candidate cover a documented language subset,
 a production bytecode VM, guarded typed/JIT execution, a command-line
 interface, and C/C++ embedding APIs. It does not claim complete MATLAB or toolbox compatibility.
-Current v1.2 interfaces may still change together
-before the milestone candidate is frozen.
+Later unreleased milestones may replace their own
+development interfaces without requiring adapters for superseded drafts.
 
 The machine-readable [compatibility matrix](compatibility-matrix.json) is the
 authority for individual support claims. This manual describes the normal
@@ -215,7 +215,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Builtin source contract 1.0 |
+| Builtin compiled into the engine | Builtin source contract 1.1 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

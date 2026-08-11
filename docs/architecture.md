@@ -1395,10 +1395,12 @@ ownership rules, diagnostics, threading, conformance tests, and the future C
 adapter boundary are specified in
 [extending-builtins.md](extending-builtins.md).
 
-The semantic source-integration boundary is versioned independently as builtin
-source contract 1.0. A normalized snapshot records all 118 default descriptors
-and every compatibility-relevant metadata field. A generator-backed smoke
-test compares the live registry to that snapshot; it does not serialize
+The semantic source-integration boundary is versioned independently. Builtin
+source contract 1.1 extends the archived 1.0 contract with host output and
+execution-context permissions. The v1.2 normalized snapshot records all 166
+default descriptors, 168 registered names, and every compatibility-relevant
+metadata field. A generator-backed smoke test compares the live registry to
+that snapshot; it does not serialize
 handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
 values and diagnostics across HIR and bytecode rather than comparing display
 strings.

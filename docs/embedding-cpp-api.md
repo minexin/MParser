@@ -34,7 +34,7 @@ executable. The package exports `MParser_CPP_FOUND`,
 `MParser_CPP_INCLUDE_DIR`, engine/C API version components, and C ABI
 generation/revision metadata. It also exports C++ source API `1.2`, machine
 result protocol `1.1`,
-CLI contract `1.0`, builtin source contract `1.0`, and checked paths to the
+CLI contract `1.0`, builtin source contract `1.1`, and checked paths to the
 public/CLI contracts, protocol schema, builtin catalog/author guide, and
 versioning policy. On Windows, deploy `mparser_c.dll` beside the host
 executable or add the installed `bin` directory to the runtime loader path.
@@ -261,9 +261,8 @@ cancellation, isolated limits, and concurrent retain/release. The shared C
 library carries ABI generation 2 and an exact 109-symbol manifest; the
 C++ facade remains header-only rather than a C++ binary ABI.
 
-The current development header and consumers move together. A source API 1.2
-snapshot is created when the complete v1.2 milestone reaches its candidate
-gate; the source API 1.0 snapshot remains historical v1.0 evidence only. The
+The current header and consumers move together. Source API 1.2 is frozen in
+the v1.2 candidate snapshot; source API 1.0 remains historical v1.0 evidence. The
 full Windows/Linux/macOS x64/ARM64 SDK matrix is likewise run at the milestone
 gate instead of after every internal batch.
 

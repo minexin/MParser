@@ -180,10 +180,10 @@ An embedding application remains responsible for:
 C source API 1.2 and ABI generation 2 ownership, sealed/extensible structure
 rules, and symbol meanings are checked against current headers and consumers.
 The C++ source API is 1.2 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
-typed and complex numeric values. Builtin source contract 1.0 is compiled with
-the engine and is not an external plugin ABI. These current interfaces may
-still move together before the v1.2 candidate freeze; archived v1.0 contracts
-are historical evidence rather than compatibility gates.
+typed and complex numeric values. Builtin source contract 1.1 is compiled with
+the engine and is not an external plugin ABI. These current interfaces are
+frozen by the v1.2 candidate snapshot; archived v1.0 contracts remain
+historical evidence rather than compatibility gates for development changes.
 
 See [Versioning And Deprecation](versioning-and-deprecation.md) for the common
 policy.

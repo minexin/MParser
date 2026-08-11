@@ -1,9 +1,8 @@
 # MParser C ABI Development Contract
 
 MParser and its installed SDK use one product version. The current source tree
-is the v1.2 development line and reports product/SDK version `1.2.0`. This is
-development metadata until the complete milestone reaches its tagged release
-gate.
+is the v1.2 candidate and reports product/SDK version `1.2.0`. It remains
+untagged until publication is explicitly selected.
 
 The embedding boundary has an independent technical contract level:
 
@@ -27,8 +26,9 @@ together. Superseded development headers and binaries are not compatibility
 targets, and no adapters are added solely to preserve them.
 
 At the v1.2 candidate gate, the current header, layouts, symbols, package
-metadata, and independent consumers will be frozen as one reviewed contract.
-After that freeze, an incompatible correction requires a new ABI generation.
+metadata, and independent consumers were frozen as one reviewed contract in
+`docs/public-contract-v1.2.json`. An incompatible correction after this
+candidate requires a new ABI generation.
 An additive change within one frozen ABI generation requires a revision
 increase and
 updated consumer evidence.
@@ -141,6 +141,6 @@ values.
 toolchain, compares its exports with `tests/c_api_generation2_symbols.txt`, and checks
 SONAME/install-name major 2. Lifecycle, unload, allocation-failure, named-fault,
 concurrency, and relocated C/C++ consumer tests exercise the same current
-headers. The complete platform matrix runs once the v1.2 train reaches its
-candidate gate; internal batches use focused local regression unless a change
+headers. The complete platform matrix runs at the v1.2 candidate gate;
+internal batches use focused local regression unless a change
 has unusual cross-platform risk.

@@ -257,13 +257,15 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify source contract 1.0. This version covers registration/freeze rules,
+identify source contract 1.1. Contract 1.0 established registration/freeze rules,
 descriptor meaning, call/result behavior, ownership, diagnostics, context,
 threading, resource cooperation, and typed-lowering eligibility. It does not
-promise a C++ binary ABI or stable class layout.
+promise a C++ binary ABI or stable class layout. Contract 1.1 adds the host
+output and execution-context permissions used by contextual v1.2 builtins.
 
-`tests/public_contract/builtin/1.0/default_catalog.json` is the normalized
-default descriptor snapshot. `builtin_catalog_snapshot_smoke` regenerates the
+`tests/public_contract/builtin/1.1/default_catalog.json` is the normalized
+v1.2 candidate descriptor snapshot; the 1.0 file remains historical evidence.
+`builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output
 constraint, behavioral classification, context permission, error identifier,
 and typed lowering. Review a catalog difference rather than refreshing the

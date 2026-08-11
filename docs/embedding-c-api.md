@@ -61,7 +61,7 @@ target_link_libraries(host PRIVATE MParser::c_api)
 exports project-version and C API version components,
 `MParser_C_ABI_GENERATION`, `MParser_C_ABI_REVISION`,
 `MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.2`, machine
-protocol `1.1`, CLI contract `1.0`, builtin source contract `1.0`, and checked
+protocol `1.1`, CLI contract `1.0`, builtin source contract `1.1`, and checked
 paths to the license, notices, public/CLI contracts, protocol schema, builtin
 catalog/author guide, and versioning policy. Its paths are relative to the
 package prefix, so the installed tree may be moved as a unit before consumer
@@ -434,12 +434,12 @@ Simplified BSD terms reproduced in the third-party notices.
 
 ## Current Development Boundary
 
-The active v1.2 host surface is C source API 1.2, C ABI generation 2 revision
+The v1.2 candidate host surface is C source API 1.2, C ABI generation 2 revision
 0, header-only C++ source API 1.2, and machine protocol 1.1. These contracts are versioned
 independently for technical checks, while the CLI, libraries, headers, and
-installed SDK report MParser development version 1.2.0. Current in-repository and
-relocated consumers are updated together; a new immutable contract snapshot
-is created only when the complete v1.2 milestone reaches its candidate gate.
+installed SDK report MParser version 1.2.0. Current in-repository and relocated
+consumers are updated together. The candidate snapshot is
+`docs/public-contract-v1.2.json`.
 
 The v1.0 contract, package, hashes, and authentication evidence remain
 available as a historical release record in `docs/public-contract-v1.json`

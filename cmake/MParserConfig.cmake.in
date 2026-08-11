@@ -19,7 +19,7 @@ set(MParser_MACHINE_PROTOCOL_NAME "mparser.result")
 set(MParser_MACHINE_PROTOCOL_MAJOR "1")
 set(MParser_MACHINE_PROTOCOL_MINOR "1")
 set(MParser_BUILTIN_SOURCE_CONTRACT_MAJOR "1")
-set(MParser_BUILTIN_SOURCE_CONTRACT_MINOR "0")
+set(MParser_BUILTIN_SOURCE_CONTRACT_MINOR "1")
 set(MParser_LICENSE "@MPARSER_PROJECT_LICENSE@")
 set(MParser_COPYRIGHT "@MPARSER_PROJECT_COPYRIGHT@")
 set(MParser_C_FOUND TRUE)
@@ -43,7 +43,7 @@ set_and_check(
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/THIRD_PARTY_NOTICES.md")
 set_and_check(
     MParser_PUBLIC_CONTRACT_FILE
-    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/public-contract-v1.json")
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/public-contract-v1.2.json")
 set_and_check(
     MParser_CLI_CONTRACT_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/cli-contract-v1.json")

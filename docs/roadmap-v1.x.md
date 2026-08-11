@@ -71,6 +71,10 @@ host contracts.
 
 ## v1.2: Core Runtime And Numeric Foundation
 
+**Status: implemented; candidate evidence and the frozen current contract are
+recorded in [v1.2.md](v1.2.md) and
+[public-contract-v1.2.json](public-contract-v1.2.json).**
+
 v1.2 is a broad vertical milestone, not one constructor per release. It closes
 the public host foundation and the core numeric representation needed by later
 function growth:
@@ -98,15 +102,14 @@ function growth:
   deoptimization, and VM equivalence for every newly legal class before wider
   typed lowering is attempted.
 
-The host-foundation slice is implemented in the current tree. One shared
+The host-foundation slice is implemented in the v1.2 candidate. One shared
 runtime output model now serves `disp`, `fprintf`, and `sprintf`; script-level
 output events and expression results carry one monotonic sequence; source
 metadata classifies script/function/class units; and in-memory source can use
 the production search-path loader. C API 1.2, the header-only C++ API, ordinary
 CLI output, and machine protocol 1.1 project that same authority. Focused
 interpreter/VM/module/API/protocol tests, runnable CLI and embedding samples,
-and relocated installed consumers cover the slice. It remains part of the
-larger v1.2 candidate gate rather than a separate release.
+and relocated installed consumers cover the slice.
 
 The numeric audit also removed a previously accepted failure for mixed
 64-bit-integer arithmetic. `int64`/`uint64` arrays now combine with scalar

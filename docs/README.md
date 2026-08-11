@@ -43,7 +43,7 @@ Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 
 ## Extend The Runtime
 
-- [Extending Builtins](extending-builtins.md): builtin source contract 1.0,
+- [Extending Builtins](extending-builtins.md): builtin source contract 1.1,
   descriptor rules, registry behavior, ownership, threading, resources, and
   conformance tests.
 - [Architecture](architecture.md): Lexer to Parser to semantic HIR to
@@ -78,17 +78,21 @@ These files are release contracts, not generated prose:
 | Artifact | Authority |
 | --- | --- |
 | [compatibility-matrix.json](compatibility-matrix.json) | Feature status, tier coverage, limits, executable evidence, and gaps |
+| [public-contract-v1.2.json](public-contract-v1.2.json) | Current v1.2 candidate API, ABI, protocol, catalog, and artifact hashes |
 | [public-contract-v1.json](public-contract-v1.json) | Archived v1.0 public contract hashes and versions |
 | [cli-contract-v1.json](cli-contract-v1.json) | CLI 1.0 modes, options, channels, and compatibility |
 | [machine-result-v1.schema.json](machine-result-v1.schema.json) | Tolerant `mparser.result` major-1 consumer schema |
 | [performance-baseline-v1.schema.json](performance-baseline-v1.schema.json) | Engineering baseline protocol schema |
-| `default_catalog.json` | Archived v1.0 normalized builtin catalog snapshot |
+| `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
-For the active development line, the implementation, compatibility matrix,
-current protocol snapshot, and milestone documentation move together. The v1
-public contract and catalog remain authorities only for their archived release.
+The v1.2 candidate contract freezes the current implementation, protocol,
+headers, and catalog. The earlier v1 contract and catalog remain authorities
+only for their archived release.
 
 ## Release Evidence
+
+- [v1.2 Candidate](v1.2.md): core numeric/data semantics, host integration,
+  current contract freeze, differential results, and validation evidence.
 
 - [v1.0 Release Freeze](v1.0.md): final engine/package version, frozen public
   contracts, release evidence, and publication outcome.

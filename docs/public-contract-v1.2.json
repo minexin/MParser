@@ -1,0 +1,140 @@
+{
+  "schema": {
+    "name": "mparser.public-contract",
+    "major": 1,
+    "minor": 1
+  },
+  "release": {
+    "engine_version": "1.2.0",
+    "milestone": "v1.2",
+    "state": "frozen-candidate"
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "copyright": "Copyright 2026 Wang Xin"
+  },
+  "milestone": {
+    "path": "docs/v1.2.md",
+    "sha256_lf": "301aaa87aebd1f0f87cc2eec43f23698b0945e35fe86975b7e771fea8cf67cac"
+  },
+  "cli": {
+    "major": 1,
+    "minor": 0,
+    "production_mode": "--run",
+    "machine_format": "json-v1",
+    "contract": {
+      "path": "docs/cli-contract-v1.json",
+      "sha256_lf": "c22a28d28d491e59011f9b82726720ce5102728f768948eb7149c76608cb0f35"
+    }
+  },
+  "c_api": {
+    "major": 1,
+    "minor": 2,
+    "patch": 0,
+    "header": {
+      "path": "include/mparser/c_api.h",
+      "sha256_lf": "aa2e3ef1d0312dfa2f49eb3d1eb9e37a3448df4e9beca53d9093614e04a27ecc"
+    }
+  },
+  "c_abi": {
+    "generation": 2,
+    "revision": 0,
+    "library_version": "1.2.0",
+    "soversion": 2,
+    "symbol_count": 109,
+    "snapshot": {
+      "path": "tests/public_contract/c_abi/2.0/c_api_snapshot.h",
+      "sha256_lf": "aa2e3ef1d0312dfa2f49eb3d1eb9e37a3448df4e9beca53d9093614e04a27ecc"
+    },
+    "symbols": {
+      "path": "tests/c_api_generation2_symbols.txt",
+      "sha256_lf": "3471bea72f3f3a6098174a922a8584dc7b4493e916f7cbb702ca139c808a0386"
+    }
+  },
+  "cpp_api": {
+    "major": 1,
+    "minor": 2,
+    "language": "C++20",
+    "delivery": "header-only facade over the C ABI",
+    "binary_abi": "none",
+    "header": {
+      "path": "include/mparser/cpp_api.hpp",
+      "sha256_lf": "c874be4947eef629b4d4a9da8289b668aa1518b6d1e436cc680f851e84e285d6"
+    },
+    "snapshot_header": {
+      "path": "tests/public_contract/cpp_api/1.2/mparser/cpp_api.hpp",
+      "sha256_lf": "c874be4947eef629b4d4a9da8289b668aa1518b6d1e436cc680f851e84e285d6"
+    },
+    "snapshot_c_header": {
+      "path": "tests/public_contract/cpp_api/1.2/mparser/c_api.h",
+      "sha256_lf": "aa2e3ef1d0312dfa2f49eb3d1eb9e37a3448df4e9beca53d9093614e04a27ecc"
+    }
+  },
+  "machine_result_protocol": {
+    "name": "mparser.result",
+    "major": 1,
+    "minor": 1,
+    "golden": {
+      "path": "tests/golden/machine_result_v1.json",
+      "sha256_lf": "88d1984589536419b820c60e9cd9371235ef27f36f604a47d2309cfca59ddb21"
+    },
+    "emergency": {
+      "path": "tests/golden/machine_result_emergency_v1.json",
+      "sha256_lf": "aa3e26c05d07bacb5c81dbb1dd2cf3ba0b6ee57d477f2f264fc096da9dbfb45a"
+    },
+    "compatibility_snapshot": {
+      "path": "tests/public_contract/protocol/1.1/machine_result_1_1.json",
+      "sha256_lf": "c199c3470c2ebd40fcfa20cc860845e6dffdf333cb2de864f7539f3473a0d6b7"
+    },
+    "schema": {
+      "path": "docs/machine-result-v1.schema.json",
+      "sha256_lf": "b62635b45b360d513dd1b291cffadd5031dc781c2d21d40b9b83573b9a5c27c3"
+    }
+  },
+  "builtin_source_contract": {
+    "major": 1,
+    "minor": 1,
+    "binary_abi": "none",
+    "integration": "compiled together with the engine",
+    "descriptor_count": 166,
+    "registered_name_count": 168,
+    "header": {
+      "path": "src/mparser/builtin_registry.h",
+      "sha256_lf": "4fb49b80804ec56dec051c64db88ec4c9cc98dfe12cd20951854f240d64a55cf"
+    },
+    "default_catalog": {
+      "path": "tests/public_contract/builtin/1.1/default_catalog.json",
+      "sha256_lf": "7ef24f45164c0142a1afb48a3cd513dd34b6e8118812a5b22fda9d334a99b543"
+    },
+    "author_guide": {
+      "path": "docs/extending-builtins.md",
+      "sha256_lf": "4c1bda8180fecc168f1e67a2c68f36bfcfd75343c7c070714e00300aa1299c38"
+    }
+  },
+  "versioning_and_deprecation": {
+    "path": "docs/versioning-and-deprecation.md",
+    "sha256_lf": "fae59f381bfa4f226bb9fe890e88a896736c71f3143c2a5e9ead69e71cab9c94"
+  },
+  "cmake_package": {
+    "config_template": {
+      "path": "cmake/MParserConfig.cmake.in",
+      "sha256_lf": "7174c095dc89b4a0ee43d65437e750225bdaa4a6d39f9d3f0a23c06e69d74e67"
+    },
+    "compatibility": "SameMajorVersion",
+    "current_contract_file": "public-contract-v1.2.json",
+    "current_builtin_catalog": "default_catalog.json"
+  },
+  "scope": {
+    "frozen": [
+      "current declarations, layouts, symbols, ownership, and error contracts",
+      "current CLI and machine protocol producer behavior",
+      "current builtin descriptor catalog and source integration metadata"
+    ],
+    "not_promised": [
+      "C++ binary ABI",
+      "external native builtin callback ABI",
+      "compatibility adapters for superseded unreleased development interfaces",
+      "complete MATLAB or toolbox compatibility"
+    ]
+  }
+}

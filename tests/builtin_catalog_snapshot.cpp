@@ -287,7 +287,10 @@ int main(int argc, char** argv) {
                 "default builtin catalog differs from the frozen "
                 "source-contract snapshot");
         }
-        std::cout << "builtin source contract 1.0 catalog validated: "
+        std::cout << "builtin source contract "
+                  << mparser::kBuiltinSourceContractMajor << '.'
+                  << mparser::kBuiltinSourceContractMinor
+                  << " catalog validated: "
                   << actual.at("descriptor_count") << " descriptors\n";
         return 0;
     } catch (const std::exception& error) {

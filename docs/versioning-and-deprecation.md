@@ -8,9 +8,9 @@ Those numbers are never SDK product versions.
 ## Product And SDK
 
 MParser uses semantic versions for release tags and packages. The active
-source tree, product metadata, and installed SDK report development version
-`1.2.0`. This identifies the in-progress v1.2 train; it is not a tagged
-release until the complete milestone reaches its release-candidate gate.
+source tree, product metadata, and installed SDK report candidate version
+`1.2.0`. The complete v1.2 train has reached its internal candidate gate, but
+it is not a tagged release until publication is explicitly selected.
 
 This project is not currently using the v1.2 interfaces in production.
 Implementation, in-repository consumers, tests, samples, and documentation may
@@ -26,13 +26,13 @@ requirement.
 
 | Boundary | Current identifier | Meaning |
 | --- | --- | --- |
-| MParser product and SDK | `1.2.0` development snapshot | User-facing release identity |
+| MParser product and SDK | `1.2.0` candidate snapshot | User-facing release identity |
 | Production CLI | 1.0 | Command, option, channel, and exit contract |
 | C source API | 1.2 | Header-level source contract for C hosts |
 | C ABI | generation 2, revision 0 | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.2 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
-| Builtin source contract | 1.0 | Registry/descriptor/call semantics compiled with the engine |
+| Builtin source contract | 1.1 | Registry/descriptor/call semantics compiled with the engine |
 
 ## CLI 1.0
 
@@ -71,9 +71,9 @@ generation 2. Its source API follows the v1.2 product line to avoid presenting
 an unrelated SDK 2.0 identity. It does not promise a C++ binary ABI, and no STL
 object or C++ class layout crosses the shared-library boundary.
 
-Before the milestone freeze, callers compile the current header. At the
-candidate gate, the header and relocated multi-translation-unit consumer are
-snapshotted together.
+The v1.2 candidate header and relocated multi-translation-unit consumer are
+snapshotted together. Later development lines may replace their own unreleased
+headers without adding compatibility wrappers.
 
 ## Machine Result Protocol 1.1
 
@@ -93,13 +93,13 @@ a protocol-major change.
 form a source-integration contract for builtins compiled with the engine. They
 are not an installed plugin ABI and do not expose stable C++ object layouts.
 
-Contract 1.0 defines naming, aliases, registry freezing, arity, value/shape
+Contract 1.0 defined naming, aliases, registry freezing, arity, value/shape
 constraints, context permissions, side effects, determinism, exception
-conversion, diagnostics, ownership, and typed-lowering eligibility. The
-archived v1 catalog contains 118 descriptors. The active v1.2 catalog has 166
-descriptors and 168 registered names, including the `Inf` and `NaN` aliases,
-and remains intentionally unsnapshotted until the complete milestone function
-surface settles.
+conversion, diagnostics, ownership, and typed-lowering eligibility. Contract
+1.1 adds the host output and execution-context permissions used by the v1.2
+runtime without creating an external binary ABI. The archived 1.0 catalog has
+118 descriptors. The frozen v1.2 catalog has 166 descriptors and 168
+registered names, including the `Inf` and `NaN` aliases.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry
@@ -108,7 +108,8 @@ classes, or VM pointers.
 ## Freeze And Deprecation
 
 A contract snapshot is created at a release-candidate gate, not after every
-internal batch. Once a contract is released, incompatible changes require an
+internal batch. The v1.2 candidate is frozen in
+`public-contract-v1.2.json`. Once a contract is released, incompatible changes require an
 explicit replacement contract and migration record. Unreleased development
 interfaces do not require a deprecation window; repository callers are simply
 updated to the cleaner current form.

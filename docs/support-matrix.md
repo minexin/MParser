@@ -73,10 +73,10 @@ The runnable coverage is split between `samples/numeric_types_demo.m`,
 `samples/core_numeric_builtins_demo.m`; shaped missing/text behavior is in
 `samples/text_runtime_demo.m`, and host behavior is exercised by
 `samples/host_integration_demo.m` and the C/C++ embedding demos. The source tree and installed SDK
-report development version `1.2.0`; ABI generation and protocol numbers are
-independent contract metadata, not SDK product versions. This is an internal
-milestone, so its active 166-descriptor/168-name catalog and public snapshots freeze
-only after the remaining v1.2 work is complete.
+report candidate version `1.2.0`; ABI generation and protocol numbers are
+independent contract metadata, not SDK product versions. Its
+166-descriptor/168-name catalog and current public surfaces are frozen by the
+v1.2 candidate contract.
 
 ## Language And Runtime
 
@@ -123,7 +123,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; ABI generation 2 revision 0, typed real/imaginary buffers, source metadata, output sink/results, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata and host output projection |
-| Builtin extension | Source contract 1.0 using registry/descriptors/call/results |
+| Builtin extension | Source contract 1.1 using registry/descriptors/call/results |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
@@ -190,7 +190,7 @@ test and one source artifact. `compatibility_matrix_smoke` rejects missing
 sources, missing test registrations, duplicate IDs, invalid states, and
 version drift.
 
-The v1.0 snapshots remain immutable historical evidence. During the current
-non-production milestone, implementation, in-repository consumers, tests, and
-documentation move together; a fresh contract snapshot is frozen at the v1.2
-candidate gate. See [v1.x Roadmap](roadmap-v1.x.md).
+The v1.0 snapshots remain immutable historical evidence. The current C API
+1.2, ABI generation 2, C++ API 1.2, protocol 1.1, and builtin contract 1.1
+snapshots are frozen separately at the v1.2 candidate gate. See
+[v1.x Roadmap](roadmap-v1.x.md).

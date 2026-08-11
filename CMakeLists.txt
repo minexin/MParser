@@ -620,6 +620,17 @@ set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
 
+add_test(NAME v1_2_public_contract_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DCONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.2.json
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_v1_2_public_contract.cmake)
+set_tests_properties(v1_2_public_contract_smoke PROPERTIES
+    LABELS "documentation;release"
+    PASS_REGULAR_EXPRESSION
+        "MParser v1.2 candidate contract validated: C API 1.2, ABI generation 2 revision 0, 109 symbols, C\\+\\+ API 1.2, mparser.result 1.1, builtin source contract 1.1, 166 descriptors and 168 names")
+
 add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
@@ -1745,8 +1756,12 @@ target_link_libraries(builtin_catalog_snapshot_tests PRIVATE
     mparser_core)
 target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
-# This remains the snapshot generation/comparison tool. The active v1.2
-# catalog is frozen after its numeric and complex builtin surface settles.
+add_test(NAME builtin_catalog_snapshot_smoke
+    COMMAND builtin_catalog_snapshot_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.1/default_catalog.json)
+set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "builtin source contract 1.1 catalog validated: 166 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2370,6 +2385,7 @@ install(FILES
     docs/release-authentication.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
+    docs/public-contract-v1.2.json
     docs/public-contract-v1.json
     docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
@@ -2380,6 +2396,7 @@ install(FILES
     docs/v0.90.1.md
     docs/v1.0.md
     docs/v1.1.md
+    docs/v1.2.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -2394,7 +2411,7 @@ install(FILES
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
-    tests/public_contract/builtin/1.0/default_catalog.json
+    tests/public_contract/builtin/1.1/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"

@@ -1,14 +1,16 @@
 # MParser
 
-Current development milestone: v1.2. The source tree, product metadata, and
-installed SDK now share development version `1.2.0`; this is not yet a tagged
-release. This active line extends the runtime with exact core numeric classes,
+Current development milestone: v1.2 candidate. The source tree, product
+metadata, and installed SDK share version `1.2.0`; this is not yet a tagged
+release. This completed train extends the runtime with exact core numeric classes,
 including precision-preserving `int64`/`uint64` arithmetic with scalar
 `double`, dense complex double/single values, typed constructors and elementary
 math, C/C++ source API 1.2, C ABI generation 2 revision 0, in-memory source
 metadata, host-routed output and top-level expression results, and machine
-result protocol 1.1. The released v1.0 contracts remain archived evidence;
-unreleased interfaces may be simplified without compatibility adapters. See
+result protocol 1.1. Its current C/C++/builtin surfaces are frozen in the
+[v1.2 candidate contract](docs/public-contract-v1.2.json). The released v1.0
+contracts remain archived evidence; unreleased interfaces may be simplified
+without compatibility adapters. See [docs/v1.2.md](docs/v1.2.md),
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) and the
 [external gap plan](docs/v1.x-external-gap-plan.md).
 
@@ -60,8 +62,10 @@ notes,
 [docs/release-process.md](docs/release-process.md) for checksums, provenance,
 and publication boundaries,
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) for current v1.x development,
+[docs/public-contract-v1.2.json](docs/public-contract-v1.2.json) for the
+current v1.2 candidate boundary,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
-machine-validated combined v1 freeze,
+archived v1.0-era combined freeze,
 [docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and
 diagnostic CLI stability,
 [docs/versioning-and-deprecation.md](docs/versioning-and-deprecation.md) for
