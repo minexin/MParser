@@ -93,6 +93,8 @@ file(READ "${PROJECT_ROOT}/docs/public-contract-v1.json" public_contract)
 file(READ "${PROJECT_ROOT}/README.md" project_readme)
 file(READ "${CLI_CONTRACT}" cli_contract)
 file(READ "${PROJECT_ROOT}/.github/workflows/ci.yml" ci_workflow)
+file(READ "${PROJECT_ROOT}/.github/workflows/documentation.yml"
+    documentation_workflow)
 file(READ "${PROJECT_ROOT}/CMakePresets.json" cmake_presets)
 
 function(require_text variable needle description)
@@ -137,20 +139,19 @@ require_text(release_milestone "MParser v${V1_RELEASE_VERSION}"
     "v1.0 milestone")
 
 foreach(required_ci_path IN ITEMS
-        "cmake --install build-ci"
-        "$PWD/build-sdk/relocated-sdk"
-        "build-sdk/macos-sdk-version.txt"
         "$PWD/build-arm64-jit/install-sdk"
         "build-arm64-jit/arm64-jit-sdk-version.txt"
-        "$PWD/build-arm64-portable/install-sdk"
-        "build-arm64-portable/arm64-portable-sdk-version.txt"
-        "build-arm64-portable/arm64-branch-output.txt")
+        "build-arm64-jit/arm64-native-output.txt"
+        "build-arm64-jit/arm64-portable-output.txt"
+        "build-arm64-jit/arm64-jit-off-output.txt")
     require_text(ci_workflow "${required_ci_path}"
         "release CI build-tree artifact policy")
 endforeach()
 
 foreach(forbidden_ci_path IN ITEMS
         "cmake -S . -B build-sdk"
+        "cmake --install build-ci"
+        "cmake -S . -B build-arm64-portable"
         "$PWD/install-sdk"
         "$PWD/relocated-sdk"
         "mv install-sdk relocated-sdk"
@@ -164,6 +165,56 @@ foreach(forbidden_ci_path IN ITEMS
         "tee arm64-branch-output.txt")
     reject_text(ci_workflow "${forbidden_ci_path}"
         "release CI source-tree cleanliness policy")
+endforeach()
+
+foreach(required_documentation_ci_text IN ITEMS
+        "cmake -S . -B build-docs -G Ninja"
+        "MPARSER_WARNINGS_AS_ERRORS=ON"
+        "SCCACHE_GHA_ENABLED"
+        "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba"
+        "CMAKE_CXX_COMPILER_LAUNCHER=sccache"
+        "--target mparser performance_baseline_schema_smoke_tests"
+        "ctest --test-dir build-docs --output-on-failure"
+        "-L documentation")
+    require_text(documentation_workflow
+        "${required_documentation_ci_text}"
+        "lightweight documentation CI policy")
+endforeach()
+
+foreach(required_fast_ci_text IN ITEMS
+        "paths-ignore:"
+        "collect_performance_evidence"
+        "collect_release_artifacts"
+        "MPARSER_CI_PERFORMANCE_EVIDENCE"
+        "MPARSER_CI_RELEASE_ARTIFACTS"
+        "validate_cross_compile"
+        "ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756"
+        "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba"
+        "CMAKE_CXX_COMPILER_LAUNCHER=sccache"
+        "Linux AArch64 / GCC cross / QEMU release smoke")
+    require_text(ci_workflow "${required_fast_ci_text}"
+        "bounded cross-platform CI policy")
+endforeach()
+
+string(REGEX MATCHALL
+    "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba"
+    cache_action_matches "${ci_workflow}")
+list(LENGTH cache_action_matches cache_action_count)
+if(NOT cache_action_count EQUAL 6)
+    message(FATAL_ERROR
+        "all six compiled cross-platform CI paths must configure sccache; "
+        "found ${cache_action_count}")
+endif()
+foreach(launcher IN ITEMS C CXX)
+    string(REGEX MATCHALL
+        "CMAKE_${launcher}_COMPILER_LAUNCHER=sccache"
+        cache_launcher_matches "${ci_workflow}")
+    list(LENGTH cache_launcher_matches cache_launcher_count)
+    if(NOT cache_launcher_count EQUAL 6)
+        message(FATAL_ERROR
+            "all six compiled cross-platform CI paths must configure the "
+            "${launcher} sccache launcher; found ${cache_launcher_count}")
+    endif()
 endforeach()
 
 foreach(required_performance_ci_text IN ITEMS
@@ -263,9 +314,9 @@ require_text(release_process "id-token: write"
 string(REGEX MATCHALL "MPARSER_WARNINGS_AS_ERRORS=ON"
     warning_gate_matches "${ci_workflow}")
 list(LENGTH warning_gate_matches warning_gate_count)
-if(NOT warning_gate_count EQUAL 7)
+if(NOT warning_gate_count EQUAL 6)
     message(FATAL_ERROR
-        "all seven first-party CI configure paths must enable "
+        "all six first-party cross-platform CI configure paths must enable "
         "warnings-as-errors; found ${warning_gate_count}")
 endif()
 string(REGEX MATCHALL

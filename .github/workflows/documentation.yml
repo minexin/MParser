@@ -1,0 +1,58 @@
+name: Documentation CI
+
+on:
+  push:
+    paths:
+      - "docs/**"
+      - "*.md"
+      - "**/*.md"
+      - LICENSE
+      - NOTICE
+  pull_request:
+    paths:
+      - "docs/**"
+      - "*.md"
+      - "**/*.md"
+      - LICENSE
+      - NOTICE
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+
+concurrency:
+  group: mparser-docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  documentation:
+    name: Documentation and release contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
+      - name: Configure documentation tests
+        run: >-
+          cmake -S . -B build-docs -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DMPARSER_ENABLE_NATIVE_JIT=ON
+          -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
+          -DMPARSER_WARNINGS_AS_ERRORS=ON
+      - name: Build documentation validators
+        run: >-
+          cmake --build build-docs
+          --target mparser performance_baseline_schema_smoke_tests
+          --parallel 4
+      - name: Validate documentation contracts
+        run: >-
+          ctest --test-dir build-docs --output-on-failure
+          -L documentation

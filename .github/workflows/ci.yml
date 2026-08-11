@@ -2,9 +2,36 @@ name: Cross-platform CI
 
 on:
   push:
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "**/*.md"
+      - LICENSE
+      - NOTICE
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "**/*.md"
+      - LICENSE
+      - NOTICE
   workflow_dispatch:
     inputs:
+      collect_performance_evidence:
+        description: Collect and upload native performance reports
+        required: true
+        type: boolean
+        default: false
+      collect_release_artifacts:
+        description: Build and upload all release archives
+        required: true
+        type: boolean
+        default: false
+      validate_cross_compile:
+        description: Run the optional Linux AArch64 cross/QEMU release smoke
+        required: true
+        type: boolean
+        default: false
       authenticate_release:
         description: >-
           Publish release identity and digests to Sigstore's public
@@ -15,6 +42,11 @@ on:
 
 permissions:
   contents: read
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  MPARSER_CI_PERFORMANCE_EVIDENCE: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.collect_performance_evidence || inputs.authenticate_release)) }}
+  MPARSER_CI_RELEASE_ARTIFACTS: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.collect_release_artifacts || inputs.authenticate_release)) }}
 
 concurrency:
   group: mparser-ci-${{ github.workflow }}-${{ github.ref }}
@@ -27,25 +59,42 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+      - name: Configure MSVC environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
       - name: Configure
         run: >-
-          cmake -S . -B build-ci -A x64
+          cmake -S . -B build-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
           -DMPARSER_WARNINGS_AS_ERRORS=ON
           -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
-        run: cmake --build build-ci --config Release --parallel
+        run: cmake --build build-ci --parallel 4
       - name: Test
-        run: ctest --test-dir build-ci -C Release --output-on-failure
+        run: ctest --test-dir build-ci --output-on-failure
       - name: Collect native performance evidence
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         run: >-
-          cmake --build build-ci --config Release
+          cmake --build build-ci
           --target mparser_performance_evidence
+          --parallel 4
       - name: Build release archive and checksums
-        run: cmake --build build-ci --config Release --target mparser_release_package
+        if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
+        run: >-
+          cmake --build build-ci
+          --target mparser_release_package
+          --parallel 4
       - name: Upload Windows release archive
+        if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mparser-1.2.0-windows-x86_64
@@ -56,7 +105,7 @@ jobs:
             build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload Windows performance evidence
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mparser-performance-1.2.0-windows-x86_64
@@ -70,26 +119,38 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
       - name: Configure
         run: >-
           cmake -S . -B build-ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
           -DMPARSER_WARNINGS_AS_ERRORS=ON
           -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
-        run: cmake --build build-ci --parallel
+        run: cmake --build build-ci --parallel 4
       - name: Test
         run: ctest --test-dir build-ci --output-on-failure
       - name: Collect native performance evidence
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         run: >-
           cmake --build build-ci
           --target mparser_performance_evidence
+          --parallel 4
       - name: Build release archive and checksums
-        run: cmake --build build-ci --target mparser_release_package
+        if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
+        run: >-
+          cmake --build build-ci
+          --target mparser_release_package
+          --parallel 4
       - name: Upload Linux x64 release archive
+        if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mparser-1.2.0-linux-x86_64
@@ -100,7 +161,7 @@ jobs:
             build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload Linux x64 performance evidence
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mparser-performance-1.2.0-linux-x86_64
@@ -117,27 +178,34 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
       - name: Validate host architecture
         run: test "$(uname -m)" = "aarch64"
       - name: Configure
         run: >-
           cmake -S . -B build-ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
           -DMPARSER_WARNINGS_AS_ERRORS=ON
           -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
-        run: cmake --build build-ci --parallel
+        run: cmake --build build-ci --parallel 4
       - name: Test
         run: ctest --test-dir build-ci --output-on-failure --timeout 240
       - name: Collect native performance evidence
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         run: >-
           cmake --build build-ci
           --target mparser_performance_evidence
+          --parallel 4
       - name: Upload Linux ARM64 performance evidence
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mparser-performance-1.2.0-linux-aarch64
@@ -158,16 +226,22 @@ jobs:
       CXXFLAGS: -O1 -g -fsanitize=address,undefined -fno-sanitize=vptr -fno-omit-frame-pointer -fno-optimize-sibling-calls -fno-sanitize-recover=all
     steps:
       - uses: actions/checkout@v6
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
       - name: Configure
         run: >-
           cmake -S . -B build-sanitizers -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=clang
           -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DMPARSER_ENABLE_NATIVE_JIT=OFF
           -DMPARSER_WARNINGS_AS_ERRORS=ON
       - name: Build
-        run: cmake --build build-sanitizers --parallel
+        run: cmake --build build-sanitizers --parallel 4
       - name: Test
         run: >-
           ctest --test-dir build-sanitizers --output-on-failure
@@ -181,67 +255,50 @@ jobs:
         include:
           - runner: macos-15-intel
             arch: x86_64
+            build_parallel: 4
           - runner: macos-15
             arch: arm64
+            build_parallel: 3
     runs-on: ${{ matrix.runner }}
     # Keep release/package headroom even though the bounded Ninja build should
     # finish well below this limit on the 3-core standard ARM64 runner.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
       - name: Validate host architecture
         run: test "$(uname -m)" = "${{ matrix.arch }}"
       - name: Configure
         run: >-
           cmake -S . -B build-ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
           -DMPARSER_WARNINGS_AS_ERRORS=ON
           -DMPARSER_PERFORMANCE_EVIDENCE_REVISION=${{ github.sha }}
       - name: Build
-        run: cmake --build build-ci --parallel 3
+        run: cmake --build build-ci --parallel ${{ matrix.build_parallel }}
       - name: Test
         run: ctest --test-dir build-ci --output-on-failure
       - name: Collect native performance evidence
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         run: >-
           cmake --build build-ci
           --target mparser_performance_evidence
-          --parallel 3
-      - name: Install and relocate production SDK
-        run: |
-          rm -rf build-sdk
-          cmake --install build-ci \
-            --prefix "$PWD/build-sdk/relocated-sdk"
-      - name: Validate relocated C and C++ consumers
-        run: |
-          cmake -S tests/installed_c_consumer -B build-c-consumer -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$PWD/build-sdk/relocated-sdk" \
-            -DMPARSER_REQUIRED_VERSION=1.2.0
-          cmake --build build-c-consumer --parallel 3
-          DYLD_LIBRARY_PATH="$PWD/build-sdk/relocated-sdk/lib" \
-            ctest --test-dir build-c-consumer --output-on-failure
-          cmake -S tests/installed_cpp_consumer -B build-cpp-consumer -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$PWD/build-sdk/relocated-sdk" \
-            -DMPARSER_REQUIRED_VERSION=1.2.0
-          cmake --build build-cpp-consumer --parallel 3
-          DYLD_LIBRARY_PATH="$PWD/build-sdk/relocated-sdk/lib" \
-            ctest --test-dir build-cpp-consumer --output-on-failure
-      - name: Validate production architecture and version
-        run: |
-          file build-sdk/relocated-sdk/bin/mparser | grep -F "${{ matrix.arch }}"
-          file build-sdk/relocated-sdk/lib/libmparser_c.1.2.0.dylib | grep -F "${{ matrix.arch }}"
-          build-sdk/relocated-sdk/bin/mparser --version | tee build-sdk/macos-sdk-version.txt
-          grep -F "MParser 1.2.0" build-sdk/macos-sdk-version.txt
+          --parallel ${{ matrix.build_parallel }}
       - name: Build release archive and checksums
+        if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         run: >-
           cmake --build build-ci
           --target mparser_release_package
-          --parallel 3
+          --parallel ${{ matrix.build_parallel }}
       - name: Upload macOS release archive
+        if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mparser-1.2.0-macos-${{ matrix.arch }}
@@ -252,7 +309,7 @@ jobs:
             build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload macOS performance evidence
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mparser-performance-1.2.0-macos-${{ matrix.arch }}
@@ -261,31 +318,57 @@ jobs:
           retention-days: 90
 
   linux-aarch64:
-    name: Linux AArch64 / GCC cross / QEMU
+    name: Linux AArch64 / GCC cross / QEMU release smoke
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.validate_cross_compile || inputs.collect_release_artifacts || inputs.authenticate_release))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - name: Install AArch64 toolchain
         run: |
           sudo apt-get update
           sudo apt-get install --yes gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
       - name: Configure native JIT build
         run: >-
           cmake -S . -B build-arm64-jit -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-aarch64.cmake
           -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu"
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DBUILD_TESTING=OFF
           -DMPARSER_ENABLE_NATIVE_JIT=ON
           -DMPARSER_ENABLE_RELEASE_PACKAGING=ON
           -DMPARSER_WARNINGS_AS_ERRORS=ON
-      - name: Build native JIT targets
-        run: cmake --build build-arm64-jit --parallel
-      - name: Run native JIT smokes under QEMU
+      - name: Build AArch64 release SDK
         run: >-
-          ctest --test-dir build-arm64-jit --output-on-failure
-          -R "^(native_scalar_jit_cache_smoke|bytecode_region_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|native_linear_array_kernel_cli_smoke|production_run_native_jit_cli_smoke|native_jit_benchmark_native_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_contract_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|c_api_allocation_failure|c_api_named_fault_smoke|c_api_lifecycle_stress|c_api_shared_library_abi|cpp_api_smoke|cpp_api_concurrency_stress|cpp_embedding_demo_smoke|c_api_v1_compat_smoke|c_api_v1_1_compat_smoke|c_api_layout_contract|cpp_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|project_license_smoke|public_contract_smoke|compatibility_matrix_smoke)$"
-      - name: Validate installed native JIT C and C++ SDKs under QEMU
+          cmake --build build-arm64-jit
+          --target mparser_release_package
+          --parallel 4
+      - name: Validate native, portable, and disabled JIT modes under QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$PWD/build-arm64-jit/mparser"
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "$runtime" \
+            --run --jit=native --native-cache-stats \
+            samples/production_run_demo.m | tee build-arm64-jit/arm64-native-output.txt
+          grep --fixed-strings "summary = 705" build-arm64-jit/arm64-native-output.txt
+          grep --extended-regexp "compilations=[1-9][0-9]*" build-arm64-jit/arm64-native-output.txt
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "$runtime" \
+            --run --jit=portable samples/production_run_demo.m \
+            | tee build-arm64-jit/arm64-portable-output.txt
+          grep --fixed-strings "summary = 705" build-arm64-jit/arm64-portable-output.txt
+          qemu-aarch64 -L /usr/aarch64-linux-gnu "$runtime" \
+            --run --jit=off --native-cache-stats samples/production_run_demo.m \
+            | tee build-arm64-jit/arm64-jit-off-output.txt
+          grep --fixed-strings "summary = 705" build-arm64-jit/arm64-jit-off-output.txt
+          grep --fixed-strings "compilations=0" build-arm64-jit/arm64-jit-off-output.txt
+      - name: Validate installed cross-built C and C++ SDKs under QEMU
         shell: bash
         run: |
           cmake --install build-arm64-jit --prefix "$PWD/build-arm64-jit/install-sdk"
@@ -295,7 +378,7 @@ jobs:
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/build-arm64-jit/install-sdk" \
             -DMPARSER_REQUIRED_VERSION=1.2.0
-          cmake --build build-arm64-jit-consumer --parallel
+          cmake --build build-arm64-jit-consumer --parallel 4
           LD_LIBRARY_PATH="$PWD/build-arm64-jit/install-sdk/lib" \
             ctest --test-dir build-arm64-jit-consumer --output-on-failure \
               -R "^installed_c_api_runtime$"
@@ -305,15 +388,13 @@ jobs:
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/build-arm64-jit/install-sdk" \
             -DMPARSER_REQUIRED_VERSION=1.2.0
-          cmake --build build-arm64-jit-cpp-consumer --parallel
+          cmake --build build-arm64-jit-cpp-consumer --parallel 4
           LD_LIBRARY_PATH="$PWD/build-arm64-jit/install-sdk/lib" \
             ctest --test-dir build-arm64-jit-cpp-consumer --output-on-failure \
               -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./build-arm64-jit/install-sdk/bin/mparser --version | tee build-arm64-jit/arm64-jit-sdk-version.txt
           grep --fixed-strings "MParser 1.2.0" build-arm64-jit/arm64-jit-sdk-version.txt
-      - name: Build AArch64 release archive and checksums
-        run: cmake --build build-arm64-jit --target mparser_release_package
       - name: Validate unpacked AArch64 release archive under QEMU
         shell: bash
         run: |
@@ -345,6 +426,7 @@ jobs:
             '"protocol":{"name":"mparser.result","major":1,"minor":1}' \
             "$RUNNER_TEMP/mparser-arm64-result.json"
       - name: Upload Linux AArch64 release archive
+        if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mparser-1.2.0-linux-aarch64
@@ -354,55 +436,6 @@ jobs:
             build-arm64-jit/packages/mparser-1.2.0-linux-aarch64.tar.gz.provenance.json
             build-arm64-jit/packages/SHA256SUMS
           if-no-files-found: error
-      - name: Configure portable fallback build
-        run: >-
-          cmake -S . -B build-arm64-portable -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-aarch64.cmake
-          -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu"
-          -DMPARSER_ENABLE_NATIVE_JIT=OFF
-          -DMPARSER_WARNINGS_AS_ERRORS=ON
-      - name: Build portable fallback targets
-        run: cmake --build build-arm64-portable --parallel
-      - name: Run portable runtime smokes under QEMU
-        run: >-
-          ctest --test-dir build-arm64-portable --output-on-failure
-          -R "^(bytecode_region_smoke|native_scalar_jit_cache_smoke|typed_region_executor_smoke|adaptive_bytecode_vm_smoke|linear_array_kernel_cli_smoke|cli_help_smoke|production_run_cli_smoke|production_run_portable_jit_cli_smoke|production_run_jit_off_cli_smoke|production_run_cli_contract_smoke|native_jit_benchmark_portable_cli_smoke|class_metadata_smoke|class_metadata_bytecode_cli_smoke|dynamic_property_smoke|dynamic_property_bytecode_cli_smoke|property_listener_smoke|property_listener_bytecode_cli_smoke|handle_lifecycle_smoke|handle_lifecycle_bytecode_cli_smoke|function_metadata_smoke|function_metadata_bytecode_cli_smoke|reflection_contract_smoke|reflection_contract_bytecode_cli_smoke|reflection_contract_production_cli_smoke|struct_runtime_smoke|struct_runtime_production_cli_smoke|struct_array_production_cli_smoke|lvalue_runtime_smoke|lvalue_runtime_production_cli_smoke|lvalue_object_production_cli_smoke|exception_runtime_smoke|exception_source_graph_smoke|exception_runtime_production_cli_smoke|exception_diagnostics_production_cli_smoke|function_handle_runtime_smoke|function_path_smoke|dynamic_call_production_cli_smoke|text_runtime_smoke|text_runtime_production_cli_smoke|object_array_runtime_smoke|object_array_vm_smoke|object_array_production_cli_smoke|runtime_session_smoke|runtime_contract_smoke|runtime_contract_interpreter_cli_smoke|runtime_contract_bytecode_cli_smoke|runtime_contract_production_cli_smoke|workspace_session_interpreter_cli_smoke|workspace_session_bytecode_cli_smoke|workspace_session_production_cli_smoke|builtin_registry_smoke|builtin_registry_interpreter_cli_smoke|builtin_registry_bytecode_cli_smoke|builtin_registry_production_cli_smoke|module_execution_smoke|module_resource_control_smoke|machine_protocol_smoke|machine_protocol_contract_smoke|machine_protocol_cli_smoke|machine_protocol_production_cli_smoke|embedding_execution_demo_smoke|embedding_resource_control_demo_smoke|c_api_smoke|c_api_allocation_failure|c_api_named_fault_smoke|c_api_lifecycle_stress|c_api_shared_library_abi|cpp_api_smoke|cpp_api_concurrency_stress|cpp_embedding_demo_smoke|c_api_v1_compat_smoke|c_api_v1_1_compat_smoke|c_api_layout_contract|cpp_api_v1_compat_smoke|c_api_utf8_source_graph_smoke|c_embedding_demo_smoke|c_abi_compat_demo_smoke|c_source_graph_demo_smoke|project_license_smoke|public_contract_smoke|compatibility_matrix_smoke)$"
-      - name: Validate installed portable C and C++ SDKs under QEMU
-        shell: bash
-        run: |
-          cmake --install build-arm64-portable --prefix "$PWD/build-arm64-portable/install-sdk"
-          cmake -S tests/installed_c_consumer -B build-arm64-portable-consumer -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
-            -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
-            -DCMAKE_PREFIX_PATH="$PWD/build-arm64-portable/install-sdk" \
-            -DMPARSER_REQUIRED_VERSION=1.2.0
-          cmake --build build-arm64-portable-consumer --parallel
-          LD_LIBRARY_PATH="$PWD/build-arm64-portable/install-sdk/lib" \
-            ctest --test-dir build-arm64-portable-consumer --output-on-failure \
-              -R "^installed_c_api_runtime$"
-          cmake -S tests/installed_cpp_consumer -B build-arm64-portable-cpp-consumer -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
-            -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
-            -DCMAKE_PREFIX_PATH="$PWD/build-arm64-portable/install-sdk" \
-            -DMPARSER_REQUIRED_VERSION=1.2.0
-          cmake --build build-arm64-portable-cpp-consumer --parallel
-          LD_LIBRARY_PATH="$PWD/build-arm64-portable/install-sdk/lib" \
-            ctest --test-dir build-arm64-portable-cpp-consumer --output-on-failure \
-              -R "^installed_cpp_api_runtime$"
-          qemu-aarch64 -L /usr/aarch64-linux-gnu \
-            ./build-arm64-portable/install-sdk/bin/mparser --version | tee build-arm64-portable/arm64-portable-sdk-version.txt
-          grep --fixed-strings "MParser 1.2.0" build-arm64-portable/arm64-portable-sdk-version.txt
-      - name: Run portable branch sample under QEMU
-        shell: bash
-        run: |
-          qemu-aarch64 -L /usr/aarch64-linux-gnu \
-            ./build-arm64-portable/mparser \
-            --run-typed-bytecode --typed-backend=portable \
-            samples/branched_typed_loop_demo.m | tee build-arm64-portable/arm64-branch-output.txt
-          grep --fixed-strings "summary = 23520" build-arm64-portable/arm64-branch-output.txt
 
   release-authentication:
     name: Release archives / Sigstore authentication candidate

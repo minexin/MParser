@@ -102,10 +102,12 @@ information for later diagnostics, formatting, semantic analysis, and JIT
 profiling.
 
 Cross-platform compatibility is a release constraint rather than a later
-porting task. CI builds and tests the SLJIT backend on Windows x64, Linux x64,
-native Linux ARM64, and macOS x64/ARM64. A separate Linux AArch64 lane
-cross-compiles the release package and exercises focused native and portable
-runtime paths under QEMU. Platform-specific machine-code and calling-convention
+porting task. Source-changing CI builds and tests the SLJIT backend on Windows
+x64, Linux x64, native Linux ARM64, and macOS x64/ARM64, with a separate Linux
+sanitizer lane. The checked-in Linux AArch64 cross toolchain is an optional
+release convenience rather than a core platform promise: tag and manual full
+validation cross-build the package and exercise native, portable, and disabled
+JIT modes under QEMU. Platform-specific machine-code and calling-convention
 details remain behind SLJIT's public API; the portable typed kernel stays
 available when native JIT support is disabled.
 
@@ -1180,11 +1182,12 @@ cmake -S . -B build-arm64 -G Ninja \
 cmake --build build-arm64 --parallel
 ```
 
-The CI workflow additionally runs the complete native-JIT suite and performance
-collector on an `ubuntu-24.04-arm` host. A separate cross-build lane runs
-focused AArch64 native-JIT and portable tests under QEMU and validates the
-Linux AArch64 release package. Only native, non-emulated reports are accepted
-as performance evidence.
+The CI workflow additionally runs the complete native-JIT suite on an
+`ubuntu-24.04-arm` host. Tag or manual full validation enables a separate
+cross-build release smoke that runs native, portable, and disabled JIT modes,
+installed C/C++ consumers, and the packaged SDK under QEMU. Native performance
+reports are collected only for explicit evidence runs and tags; emulated
+results are never accepted as performance evidence.
 
 Run the structured-branch sample with either backend:
 

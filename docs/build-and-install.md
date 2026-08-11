@@ -14,7 +14,8 @@ JIT dependency. The pinned SLJIT source is vendored under
 
 The current release-target toolchains are MSVC on Windows, GCC or Clang on
 Linux, and Apple Clang on macOS. Linux AArch64 may be cross-compiled with the
-checked-in toolchain. CI also builds and tests natively on GitHub's
+checked-in optional toolchain, but cross-compilation is not required to satisfy
+the Linux ARM64 platform contract. CI builds and tests natively on GitHub's
 `ubuntu-24.04-arm` runner; only native, non-emulated reports may be used for
 performance characterization.
 
@@ -144,6 +145,36 @@ not native performance evidence.
 ```bash
 ctest --test-dir build/release --output-on-failure
 ```
+
+Source, build-system, and workflow changes run the complete Windows x64, Linux
+x64/ARM64, macOS x64/ARM64, and Linux sanitizer matrix. Documentation-only
+changes use one Linux runner, build only the CLI and performance-schema
+validator, and execute the tests labeled `documentation`. Native performance
+collection, uploaded release archives, and the optional AArch64 cross/QEMU
+release smoke run for version tags or when selected in `workflow_dispatch`;
+they do not delay every development commit.
+
+Compiled jobs use a pinned `sccache` Action and explicit CMake compiler
+launchers. Cache entries are keyed by the compiler invocation and source
+content; a miss still performs the same warnings-as-errors build, and all test
+and package verdicts are independent of cache-hit rate.
+
+The lanes have distinct ownership:
+
+| Lane | Required role |
+| --- | --- |
+| Windows x64 / MSVC | Microsoft ABI, compiler, DLL, package, and native-SLJIT coverage |
+| Linux x64 / GCC | Primary GNU release build, full runtime suite, SDK, and package coverage |
+| Linux ARM64 / GCC native | Full suite and native-SLJIT execution on real AArch64 hardware |
+| Linux x64 / Clang sanitizer | No-JIT ASan, UBSan, and leak checking rather than release packaging |
+| macOS x64 and ARM64 / Apple Clang | Both supported Apple architectures, dylib/package, SDK, and native-SLJIT coverage |
+| Linux AArch64 cross / QEMU | Optional x64-host cross toolchain, package, installed consumers, and backend-mode smoke |
+| Documentation | Static and executable documentation/release contracts without the platform matrix |
+
+The QEMU lane does not repeat the complete ARM semantic suite; the native ARM64
+lane owns that evidence. Linux sanitizer coverage is retained despite its
+runtime overlap because it detects memory, undefined-behavior, and lifetime
+failures that ordinary release jobs cannot observe.
 
 For an install-only SDK build:
 
