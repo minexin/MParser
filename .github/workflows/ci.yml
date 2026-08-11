@@ -184,7 +184,9 @@ jobs:
           - runner: macos-15
             arch: arm64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    # The Apple Silicon hosted runner can spend close to 30 minutes compiling
+    # the full warnings-as-errors tree before tests and SDK validation begin.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - name: Validate host architecture
