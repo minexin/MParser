@@ -386,6 +386,7 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
     case BytecodeOp::MakeMatrix:
     case BytecodeOp::MakeMatrixRow:
     case BytecodeOp::MakeCell:
+    case BytecodeOp::MakeCellRow:
     case BytecodeOp::MakeFunctionHandle:
     case BytecodeOp::LoadMetaClass:
     case BytecodeOp::EnterModule:

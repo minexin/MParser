@@ -162,6 +162,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "sqrt",
     "squeeze",
     "sprintf",
+    "str2double",
     "str2func",
     "strcmp",
     "strcmpi",
@@ -425,6 +426,20 @@ BuiltinDescriptor numericConversionDescriptor(std::string_view name) {
                        : BuiltinResult::success(
                              {std::move(result.value)});
         }
+        if (builtin == "double" &&
+            isRuntimeStringArray(call.arguments.front())) {
+            auto result =
+                runtimeConvertStringToDouble(call.arguments.front());
+            if (!result.succeeded) {
+                return helperFailure(
+                    call.span, std::move(result.error),
+                    "MParser:InvalidNumericConversion");
+            }
+            return call.requestedOutputCount == 0
+                       ? BuiltinResult::success()
+                       : BuiltinResult::success(
+                             {std::move(result.value)});
+        }
         if (call.arguments.front().kind ==
             RuntimeValueKind::MissingArray) {
             if (!runtimeNumericClassIsFloating(*target)) {
@@ -470,6 +485,39 @@ BuiltinDescriptor numericConversionDescriptor(std::string_view name) {
                    ? BuiltinResult::success()
                    : BuiltinResult::success(
                          {std::move(*converted)});
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor str2doubleDescriptor() {
+    BuiltinDescriptor descriptor = baseDescriptor("str2double");
+    descriptor.inputs = BuiltinArity::fixed(1);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.summary =
+        "Convert string, character, or cell text to double values.";
+    descriptor.handler = [](const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        auto result = runtimeStr2Double(call.arguments.front());
+        if (!result.succeeded) {
+            return helperFailure(
+                call.span, std::move(result.error),
+                "MParser:InvalidNumericConversion");
+        }
+        return BuiltinResult::success({std::move(result.value)});
     };
     return descriptor;
 }
@@ -984,6 +1032,9 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isNumericConversionBuiltin(name)) {
         return numericConversionDescriptor(name);
+    }
+    if (name == "str2double") {
+        return str2doubleDescriptor();
     }
     if (isNumericPredicateBuiltin(name)) {
         return numericPredicateDescriptor(name);

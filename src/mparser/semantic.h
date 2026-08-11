@@ -48,6 +48,7 @@ enum class HirKind {
     BraceIndex,
     FunctionHandle,
     MetaClass,
+    CellRow,
     Unknown,
 };
 

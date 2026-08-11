@@ -6,9 +6,12 @@
 #include "mparser/runtime_value_ops.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
+#include <string>
 
 namespace mparser {
 namespace {
@@ -617,6 +620,280 @@ bool stringElementEqual(const RuntimeStringElement &left,
                     [](char16_t a, char16_t b) {
                       return foldAscii(a) == foldAscii(b);
                     });
+}
+
+std::string_view trimAsciiWhitespace(std::string_view text) {
+  while (!text.empty() &&
+         std::isspace(static_cast<unsigned char>(text.front())) != 0) {
+    text.remove_prefix(1);
+  }
+  while (!text.empty() &&
+         std::isspace(static_cast<unsigned char>(text.back())) != 0) {
+    text.remove_suffix(1);
+  }
+  return text;
+}
+
+std::optional<std::string>
+normalizeThousandsSeparators(std::string_view text) {
+  const size_t exponent = text.find_first_of("eE");
+  const size_t decimal = text.find('.');
+  const size_t integerEnd = std::min(
+      decimal == std::string_view::npos ? text.size() : decimal,
+      exponent == std::string_view::npos ? text.size() : exponent);
+  const size_t integerBegin =
+      !text.empty() && (text.front() == '+' || text.front() == '-') ? 1 : 0;
+  if (integerBegin > integerEnd) {
+    return std::nullopt;
+  }
+
+  const std::string_view integer =
+      text.substr(integerBegin, integerEnd - integerBegin);
+  if (text.find(',') == std::string_view::npos) {
+    return std::string(text);
+  }
+  if (integer.find(',') == std::string_view::npos ||
+      text.substr(integerEnd).find(',') != std::string_view::npos) {
+    return std::nullopt;
+  }
+
+  size_t groupStart = 0;
+  size_t groupIndex = 0;
+  while (groupStart <= integer.size()) {
+    const size_t comma = integer.find(',', groupStart);
+    const size_t groupEnd = comma == std::string_view::npos
+                                ? integer.size()
+                                : comma;
+    const size_t groupLength = groupEnd - groupStart;
+    if (groupLength == 0 ||
+        (groupIndex == 0 ? groupLength > 3 : groupLength != 3) ||
+        !std::all_of(integer.begin() +
+                         static_cast<std::ptrdiff_t>(groupStart),
+                     integer.begin() +
+                         static_cast<std::ptrdiff_t>(groupEnd),
+                     [](char value) {
+                       return value >= '0' && value <= '9';
+                     })) {
+      return std::nullopt;
+    }
+    ++groupIndex;
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    groupStart = comma + 1;
+  }
+
+  std::string normalized;
+  normalized.reserve(text.size());
+  for (const char value : text) {
+    if (value != ',') {
+      normalized.push_back(value);
+    }
+  }
+  return normalized;
+}
+
+std::optional<double> parseTextReal(std::string_view text,
+                                    bool allowHexadecimal) {
+  text = trimAsciiWhitespace(text);
+  const auto normalized = normalizeThousandsSeparators(text);
+  if (!normalized || normalized->empty()) {
+    return std::nullopt;
+  }
+  size_t prefix = ((*normalized)[0] == '+' || (*normalized)[0] == '-')
+                      ? 1
+                      : 0;
+  if (prefix + 2 <= normalized->size() && (*normalized)[prefix] == '0') {
+    const char marker = (*normalized)[prefix + 1];
+    if (marker == 'b' || marker == 'B' ||
+        (!allowHexadecimal && (marker == 'x' || marker == 'X'))) {
+      return std::nullopt;
+    }
+  }
+  char *end = nullptr;
+  const double value = std::strtod(normalized->c_str(), &end);
+  if (end == normalized->c_str() ||
+      end != normalized->c_str() + normalized->size()) {
+    return std::nullopt;
+  }
+  return value;
+}
+
+struct ParsedTextTerm {
+  double value = 0.0;
+  bool imaginary = false;
+};
+
+bool isImaginaryUnit(char value) {
+  return value == 'i' || value == 'j';
+}
+
+std::optional<double> parseImaginaryCoefficient(std::string_view term,
+                                                size_t unit,
+                                                bool allowHexadecimal) {
+  std::string_view prefix = trimAsciiWhitespace(term.substr(0, unit));
+  std::string_view suffix = trimAsciiWhitespace(term.substr(unit + 1));
+  if (suffix.empty()) {
+    if (!prefix.empty() && prefix.back() == '*') {
+      prefix = trimAsciiWhitespace(prefix.substr(0, prefix.size() - 1));
+    }
+    if (prefix.empty() || prefix == "+") {
+      return 1.0;
+    }
+    if (prefix == "-") {
+      return -1.0;
+    }
+    return parseTextReal(prefix, allowHexadecimal);
+  }
+
+  double sign = 1.0;
+  if (prefix == "-") {
+    sign = -1.0;
+  } else if (!prefix.empty() && prefix != "+") {
+    return std::nullopt;
+  }
+  if (suffix.front() != '*') {
+    return std::nullopt;
+  }
+  suffix = trimAsciiWhitespace(suffix.substr(1));
+  const auto coefficient = parseTextReal(suffix, allowHexadecimal);
+  return coefficient ? std::optional<double>(sign * *coefficient)
+                     : std::nullopt;
+}
+
+std::optional<ParsedTextTerm> parseTextTerm(std::string_view term,
+                                           bool allowHexadecimal) {
+  term = trimAsciiWhitespace(term);
+  if (term.empty()) {
+    return std::nullopt;
+  }
+
+  if (term.find('*') == std::string_view::npos) {
+    const auto real = parseTextReal(term, allowHexadecimal);
+    if (real) {
+      return ParsedTextTerm{*real, false};
+    }
+  }
+
+  std::optional<double> coefficient;
+  for (size_t index = 0; index < term.size(); ++index) {
+    if (!isImaginaryUnit(term[index])) {
+      continue;
+    }
+    const auto candidate =
+        parseImaginaryCoefficient(term, index, allowHexadecimal);
+    if (!candidate) {
+      continue;
+    }
+    if (coefficient) {
+      return std::nullopt;
+    }
+    coefficient = *candidate;
+  }
+  return coefficient
+             ? std::optional<ParsedTextTerm>(
+                   ParsedTextTerm{*coefficient, true})
+             : std::nullopt;
+}
+
+std::vector<size_t> textTermSeparators(std::string_view text) {
+  std::vector<size_t> separators;
+  for (size_t index = 1; index < text.size(); ++index) {
+    if (text[index] != '+' && text[index] != '-') {
+      continue;
+    }
+    size_t previous = index;
+    while (previous > 0 &&
+           std::isspace(static_cast<unsigned char>(text[previous - 1])) != 0) {
+      --previous;
+    }
+    if (previous == 0) {
+      continue;
+    }
+    const char previousValue = text[previous - 1];
+    if (previousValue != 'e' && previousValue != 'E' &&
+        previousValue != 'p' && previousValue != 'P' &&
+        previousValue != '*') {
+      separators.push_back(index);
+    }
+  }
+  return separators;
+}
+
+std::optional<RuntimeNumericElementValue>
+parseTextNumericElement(std::string_view input, bool allowBaseLiteral) {
+  input = trimAsciiWhitespace(input);
+  if (input.empty()) {
+    return std::nullopt;
+  }
+
+  const auto separators = textTermSeparators(input);
+  if (separators.size() > 1) {
+    return std::nullopt;
+  }
+  const auto first = parseTextTerm(
+      separators.empty() ? input : input.substr(0, separators.front()),
+      allowBaseLiteral);
+  if (!first) {
+    return std::nullopt;
+  }
+
+  RuntimeNumericElementValue result;
+  if (separators.empty()) {
+    if (first->imaginary) {
+      result.imaginary = first->value;
+      result.complex = true;
+    } else {
+      result.real = first->value;
+    }
+    return result;
+  }
+
+  auto second = parseTextTerm(input.substr(separators.front() + 1),
+                              allowBaseLiteral);
+  if (!second || first->imaginary == second->imaginary) {
+    return std::nullopt;
+  }
+  if (input[separators.front()] == '-') {
+    second->value = -second->value;
+  }
+  const ParsedTextTerm &real = first->imaginary ? *second : *first;
+  const ParsedTextTerm &imaginary = first->imaginary ? *first : *second;
+  result.real = real.value;
+  result.imaginary = imaginary.value;
+  result.complex = true;
+  return result;
+}
+
+RuntimeNumericElementValue invalidTextNumber() {
+  RuntimeNumericElementValue result;
+  result.real = std::numeric_limits<double>::quiet_NaN();
+  return result;
+}
+
+RuntimeTextOperationResult textNumbersFromStrings(const RuntimeValue &value,
+                                                  bool allowBaseLiteral) {
+  std::vector<RuntimeNumericElementValue> elements;
+  const size_t count = runtimeShapeElementCount(value);
+  elements.reserve(count);
+  for (size_t index = 0; index < count; ++index) {
+    const auto *element = runtimeStringElement(value, index);
+    if (!element) {
+      return textFailure("numeric text conversion could not map a string");
+    }
+    if (element->missing) {
+      elements.push_back(invalidTextNumber());
+      continue;
+    }
+    const auto parsed = parseTextNumericElement(
+        runtimeUtf16ToUtf8(element->value), allowBaseLiteral);
+    elements.push_back(parsed.value_or(invalidTextNumber()));
+  }
+  const auto result = runtimeNumericValueFromElements(
+      runtimeDimensions(value), std::move(elements),
+      RuntimeNumericClass::Double);
+  return result ? textSuccess(*result)
+                : textFailure("numeric text conversion result is invalid");
 }
 
 } // namespace
@@ -1358,6 +1635,61 @@ RuntimeTextOperationResult runtimeCharacterCodes(const RuntimeValue &value) {
   }
   return textSuccess(
       numericArray(runtimeDimensions(value), std::move(elements)));
+}
+
+RuntimeTextOperationResult
+runtimeConvertStringToDouble(const RuntimeValue &value) {
+  if (!isRuntimeStringArray(value)) {
+    return textFailure("double string conversion requires a string array");
+  }
+  return textNumbersFromStrings(value, false);
+}
+
+RuntimeTextOperationResult runtimeStr2Double(const RuntimeValue &value) {
+  if (isRuntimeStringArray(value)) {
+    return textNumbersFromStrings(value, true);
+  }
+  if (isRuntimeCharacterArray(value)) {
+    if (!isRuntimeCharacterVector(value)) {
+      return textSuccess(makeRuntimeNumberValue(
+          std::numeric_limits<double>::quiet_NaN()));
+    }
+    const auto text = runtimeTextScalarUtf8(value);
+    const auto parsed =
+        text ? parseTextNumericElement(*text, true) : std::nullopt;
+    const auto result = runtimeNumericValueFromElements(
+        {1, 1}, {parsed.value_or(invalidTextNumber())},
+        RuntimeNumericClass::Double);
+    return result ? textSuccess(*result)
+                  : textFailure("str2double result is invalid");
+  }
+  if (value.kind == RuntimeValueKind::Cell) {
+    const size_t count = runtimeShapeElementCount(value);
+    std::vector<RuntimeNumericElementValue> elements;
+    elements.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+      const auto offset =
+          runtimeColumnMajorLinearToStorageOffset(value, index);
+      if (!offset || *offset >= value.cells.size()) {
+        return textFailure("str2double could not map a cell element");
+      }
+      const RuntimeValue &cell = value.cells[*offset];
+      const auto text = isRuntimeCharacterArray(cell) &&
+                                isRuntimeCharacterVector(cell)
+                            ? runtimeTextScalarUtf8(cell)
+                            : std::nullopt;
+      const auto parsed =
+          text ? parseTextNumericElement(*text, true) : std::nullopt;
+      elements.push_back(parsed.value_or(invalidTextNumber()));
+    }
+    const auto result = runtimeNumericValueFromElements(
+        runtimeDimensions(value), std::move(elements),
+        RuntimeNumericClass::Double);
+    return result ? textSuccess(*result)
+                  : textFailure("str2double cell result is invalid");
+  }
+  return textSuccess(makeRuntimeNumberValue(
+      std::numeric_limits<double>::quiet_NaN()));
 }
 
 RuntimeTextOperationResult runtimeTextMissingMask(const RuntimeValue &value) {

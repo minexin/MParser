@@ -47,8 +47,14 @@ The current v1.2 train is building one end-to-end numeric foundation:
   `double`;
 - dense complex `double` and `single` literals, operators, transpose,
   reductions, scans, predicates, and elementary math;
+- exact hexadecimal/binary integer literals with default-width inference and
+  signed/unsigned width suffixes;
 - typed constructors and class-aware `colon`, `size`, `linspace`, `sum`, and
   `prod` behavior;
+- shape-preserving `double(string)` plus registry-backed `str2double` for
+  decimal, scientific, grouped, complex, Inf/NaN, and hexadecimal text;
+- first-class shaped missing arrays and row-structured cell literals through
+  parser, HIR, interpreter, bytecode, and VM fallback;
 - shared `mod`/`rem`, `nextpow2`, scalar/vector/row/column/matrix predicates,
   and recursive `isequal`/`isequaln` semantics;
 - `disp`, bounded `fprintf`/`sprintf`, host output sinks, ordered retained
@@ -66,7 +72,7 @@ The runnable coverage is split between `samples/numeric_types_demo.m`,
 `samples/host_integration_demo.m` and the C/C++ embedding demos. The source tree and installed SDK
 report development version `1.2.0`; ABI generation and protocol numbers are
 independent contract metadata, not SDK product versions. This is an internal
-milestone, so its active 165-descriptor/167-name catalog and public snapshots freeze
+milestone, so its active 166-descriptor/168-name catalog and public snapshots freeze
 only after the remaining v1.2 work is complete.
 
 ## Language And Runtime

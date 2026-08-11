@@ -825,19 +825,19 @@ add_test(NAME numeric_type_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
 set_tests_properties(numeric_type_interpreter_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 4")
+    PASS_REGULAR_EXPRESSION "summary = 5")
 
 add_test(NAME numeric_type_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
 set_tests_properties(numeric_type_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 4")
+    PASS_REGULAR_EXPRESSION "summary = 5")
 
 add_test(NAME numeric_type_production_cli_smoke
     COMMAND mparser --run
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/numeric_types_demo.m)
 set_tests_properties(numeric_type_production_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 4")
+    PASS_REGULAR_EXPRESSION "summary = 5")
 
 add_executable(array_deletion_smoke_tests
     tests/array_deletion_smoke.cpp)
@@ -1710,19 +1710,19 @@ add_test(NAME text_runtime_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
 set_tests_properties(text_runtime_interpreter_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 47")
+    PASS_REGULAR_EXPRESSION "summary = 49")
 
 add_test(NAME text_runtime_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
 set_tests_properties(text_runtime_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 47")
+    PASS_REGULAR_EXPRESSION "summary = 49")
 
 add_test(NAME text_runtime_production_cli_smoke
     COMMAND mparser --run
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/text_runtime_demo.m)
 set_tests_properties(text_runtime_production_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 47")
+    PASS_REGULAR_EXPRESSION "summary = 49")
 
 add_executable(builtin_registry_smoke_tests
     tests/builtin_registry_smoke.cpp)

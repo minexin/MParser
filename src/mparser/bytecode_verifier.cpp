@@ -173,6 +173,7 @@ StackEffect stackEffect(const BytecodeInstruction& instruction) {
     case BytecodeOp::MakeMatrix:
     case BytecodeOp::MakeMatrixRow:
     case BytecodeOp::MakeCell:
+    case BytecodeOp::MakeCellRow:
         return {operands, 1 - operands};
     case BytecodeOp::MemberAccess:
         return {operands, results - operands};
@@ -514,6 +515,7 @@ private:
             case BytecodeOp::MakeMatrix:
             case BytecodeOp::MakeMatrixRow:
             case BytecodeOp::MakeCell:
+            case BytecodeOp::MakeCellRow:
             case BytecodeOp::StoreIndex:
             case BytecodeOp::StoreBraceIndex:
             case BytecodeOp::LvalueDescendIndex:

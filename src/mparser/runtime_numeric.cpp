@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cctype>
 #include <cmath>
 #include <complex>
 #include <cstdint>
@@ -21,6 +22,158 @@ std::int64_t signedIntegerFromBits(std::uint64_t bits) {
 
 std::uint64_t signedIntegerBits(std::int64_t value) {
     return std::bit_cast<std::uint64_t>(value);
+}
+
+struct IntegerLiteralSuffix {
+    RuntimeNumericClass numericClass = RuntimeNumericClass::UInt8;
+    unsigned width = 8;
+    bool isSigned = false;
+};
+
+std::optional<IntegerLiteralSuffix>
+parseIntegerLiteralSuffix(std::string_view suffix) {
+    if (suffix.empty()) {
+        return std::nullopt;
+    }
+    std::string normalized(suffix);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char value) {
+                       return static_cast<char>(std::tolower(value));
+                   });
+
+    const bool isSigned = normalized.front() == 's';
+    if ((!isSigned && normalized.front() != 'u') ||
+        normalized.size() < 2) {
+        return std::nullopt;
+    }
+    const std::string_view widthText(normalized.data() + 1,
+                                     normalized.size() - 1);
+    unsigned width = 0;
+    if (widthText == "8") {
+        width = 8;
+    } else if (widthText == "16") {
+        width = 16;
+    } else if (widthText == "32") {
+        width = 32;
+    } else if (widthText == "64") {
+        width = 64;
+    } else {
+        return std::nullopt;
+    }
+
+    RuntimeNumericClass numericClass = RuntimeNumericClass::UInt8;
+    if (isSigned) {
+        numericClass = width == 8    ? RuntimeNumericClass::Int8
+                       : width == 16 ? RuntimeNumericClass::Int16
+                       : width == 32 ? RuntimeNumericClass::Int32
+                                     : RuntimeNumericClass::Int64;
+    } else {
+        numericClass = width == 8    ? RuntimeNumericClass::UInt8
+                       : width == 16 ? RuntimeNumericClass::UInt16
+                       : width == 32 ? RuntimeNumericClass::UInt32
+                                     : RuntimeNumericClass::UInt64;
+    }
+    return IntegerLiteralSuffix{numericClass, width, isSigned};
+}
+
+std::optional<std::uint64_t>
+parseBaseIntegerDigits(std::string_view digits, unsigned base) {
+    if (digits.empty()) {
+        return std::nullopt;
+    }
+    std::uint64_t value = 0;
+    for (const char raw : digits) {
+        unsigned digit = 0;
+        if (raw >= '0' && raw <= '9') {
+            digit = static_cast<unsigned>(raw - '0');
+        } else if (raw >= 'a' && raw <= 'f') {
+            digit = 10U + static_cast<unsigned>(raw - 'a');
+        } else if (raw >= 'A' && raw <= 'F') {
+            digit = 10U + static_cast<unsigned>(raw - 'A');
+        } else {
+            return std::nullopt;
+        }
+        if (digit >= base ||
+            value > (std::numeric_limits<std::uint64_t>::max() - digit) /
+                        base) {
+            return std::nullopt;
+        }
+        value = value * base + digit;
+    }
+    return value;
+}
+
+std::optional<RuntimeValue>
+parseBaseIntegerLiteral(std::string_view text) {
+    if (text.size() < 3 || text.front() != '0') {
+        return std::nullopt;
+    }
+    const char prefix = text[1];
+    const unsigned base = prefix == 'x' || prefix == 'X'
+                              ? 16U
+                              : prefix == 'b' || prefix == 'B' ? 2U : 0U;
+    if (base == 0) {
+        return std::nullopt;
+    }
+
+    size_t suffixOffset = text.size();
+    for (size_t index = 2; index < text.size(); ++index) {
+        if (text[index] == 'u' || text[index] == 'U' ||
+            text[index] == 's' || text[index] == 'S') {
+            suffixOffset = index;
+            break;
+        }
+    }
+    const auto magnitude = parseBaseIntegerDigits(
+        text.substr(2, suffixOffset - 2), base);
+    if (!magnitude) {
+        return std::nullopt;
+    }
+
+    IntegerLiteralSuffix suffix;
+    if (suffixOffset == text.size()) {
+        suffix = *magnitude <= std::numeric_limits<std::uint8_t>::max()
+                     ? IntegerLiteralSuffix{RuntimeNumericClass::UInt8, 8,
+                                            false}
+                 : *magnitude <= std::numeric_limits<std::uint16_t>::max()
+                     ? IntegerLiteralSuffix{RuntimeNumericClass::UInt16, 16,
+                                            false}
+                 : *magnitude <= std::numeric_limits<std::uint32_t>::max()
+                     ? IntegerLiteralSuffix{RuntimeNumericClass::UInt32, 32,
+                                            false}
+                     : IntegerLiteralSuffix{RuntimeNumericClass::UInt64, 64,
+                                            false};
+    } else {
+        const auto parsedSuffix =
+            parseIntegerLiteralSuffix(text.substr(suffixOffset));
+        if (!parsedSuffix) {
+            return std::nullopt;
+        }
+        suffix = *parsedSuffix;
+    }
+
+    const std::uint64_t mask =
+        suffix.width == 64
+            ? std::numeric_limits<std::uint64_t>::max()
+            : (std::uint64_t{1} << suffix.width) - 1;
+    if (*magnitude > mask) {
+        return std::nullopt;
+    }
+
+    std::uint64_t bits = *magnitude;
+    if (suffix.isSigned) {
+        const std::uint64_t signBit =
+            std::uint64_t{1} << (suffix.width - 1);
+        if ((bits & signBit) != 0 && suffix.width < 64) {
+            bits |= ~mask;
+        }
+    }
+
+    RuntimeNumericElementValue element;
+    element.numericClass = suffix.numericClass;
+    element.integerRealBits = bits;
+    return runtimeNumericValueFromElements(
+        {1, 1}, {element}, suffix.numericClass);
 }
 
 std::optional<std::uint64_t> integerBitsFromDouble(
@@ -379,6 +532,12 @@ bool runtimeNumericClassHasLegacyDoubleStorage(
 
 std::optional<RuntimeValue> runtimeParseNumericLiteral(
     std::string_view text) {
+    if (text.size() >= 2 && text.front() == '0' &&
+        (text[1] == 'x' || text[1] == 'X' ||
+         text[1] == 'b' || text[1] == 'B')) {
+        return parseBaseIntegerLiteral(text);
+    }
+
     bool imaginary = false;
     if (!text.empty() &&
         (text.back() == 'i' || text.back() == 'j')) {

@@ -374,9 +374,13 @@ private:
         case TokenKind::LParen:
             return parseParenthesized(token);
         case TokenKind::LBracket:
-            return parseMatrixDelimited(token);
+            return parseArrayDelimited(SyntaxKind::MatrixExpr,
+                                       SyntaxKind::MatrixRow, token,
+                                       TokenKind::RBracket, "matrix");
         case TokenKind::LBrace:
-            return parseDelimited(SyntaxKind::CellExpr, token, TokenKind::RBrace);
+            return parseArrayDelimited(SyntaxKind::CellExpr,
+                                       SyntaxKind::CellRow, token,
+                                       TokenKind::RBrace, "cell");
         case TokenKind::At:
             return parseFunctionHandle(token);
         case TokenKind::Question:
@@ -510,11 +514,13 @@ private:
         return node;
     }
 
-    std::unique_ptr<SyntaxNode> parseMatrixDelimited(const Token& open) {
-        auto node = makeNodeFromSpan(SyntaxKind::MatrixExpr, open.span);
-        auto row = makeNodeFromSpan(SyntaxKind::MatrixRow, open.span);
+    std::unique_ptr<SyntaxNode> parseArrayDelimited(
+        SyntaxKind arrayKind, SyntaxKind rowKind, const Token& open,
+        TokenKind closingKind, const char* literalName) {
+        auto node = makeNodeFromSpan(arrayKind, open.span);
+        auto row = makeNodeFromSpan(rowKind, open.span);
 
-        while (!isAtEnd() && !at(TokenKind::RBracket)) {
+        while (!isAtEnd() && !at(closingKind)) {
             if (at(TokenKind::Comma)) {
                 advance();
                 continue;
@@ -527,7 +533,7 @@ private:
                                            row->children.back()->span);
                     node->children.push_back(std::move(row));
                 }
-                row = makeNodeFromSpan(SyntaxKind::MatrixRow, separator.span);
+                row = makeNodeFromSpan(rowKind, separator.span);
                 continue;
             }
 
@@ -543,8 +549,9 @@ private:
             }
 
             const Token unexpected = advance();
-            row->children.push_back(
-                makeError(unexpected.span, "unexpected token in matrix literal"));
+            row->children.push_back(makeError(
+                unexpected.span,
+                std::string("unexpected token in ") + literalName + " literal"));
         }
 
         if (!row->children.empty()) {
@@ -553,7 +560,7 @@ private:
             node->children.push_back(std::move(row));
         }
 
-        if (at(TokenKind::RBracket)) {
+        if (at(closingKind)) {
             const Token close = advance();
             node->span = mergeSpans(open.span, close.span);
         } else if (!node->children.empty()) {

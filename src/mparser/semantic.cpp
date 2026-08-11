@@ -772,6 +772,8 @@ private:
             return lowerGeneric(syntax, HirKind::MatrixRow);
         case SyntaxKind::CellExpr:
             return lowerGeneric(syntax, HirKind::Cell);
+        case SyntaxKind::CellRow:
+            return lowerGeneric(syntax, HirKind::CellRow);
         case SyntaxKind::MemberAccessExpr:
             return lowerMemberAccess(syntax);
         case SyntaxKind::NameValueArgumentExpr:
@@ -2582,6 +2584,8 @@ const char* hirKindName(HirKind kind) {
         return "MatrixRow";
     case HirKind::Cell:
         return "Cell";
+    case HirKind::CellRow:
+        return "CellRow";
     case HirKind::MemberAccess:
         return "MemberAccess";
     case HirKind::NameValueArgument:

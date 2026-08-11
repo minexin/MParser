@@ -98,6 +98,8 @@ const char* syntaxKindName(SyntaxKind kind) {
         return "MatrixRow";
     case SyntaxKind::CellExpr:
         return "CellExpr";
+    case SyntaxKind::CellRow:
+        return "CellRow";
     case SyntaxKind::MemberAccessExpr:
         return "MemberAccessExpr";
     case SyntaxKind::NameValueArgumentExpr:

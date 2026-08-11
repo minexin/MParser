@@ -1782,17 +1782,19 @@ public functions; a computed function name does not implicitly load a new
 source file.
 
 Run the distinct UTF-16 character/string runtime, indexing and mutation,
-implicit expansion, conversions, array transforms, and validated text-property
-shape behavior through the production interface:
+implicit expansion, numeric conversion, multidimensional cell construction,
+shaped missing values, array transforms, and validated text-property shape
+behavior through the production interface:
 
 ```powershell
 build\mparser.exe --run samples\text_runtime_demo.m
 ```
 
-The demo reports `summary = 36` and is also checked through `--run-hir` and
+The demo reports `summary = 49` and is also checked through `--run-hir` and
 `--run-bytecode`. Single quotes create character arrays, double quotes create
-string scalars or arrays, and legal text code outside optimized regions falls
-back to the bytecode VM.
+string scalars or arrays, `double(stringArray)` and `str2double` preserve array
+shape, and legal text/cell/missing code outside optimized regions falls back
+to the bytecode VM.
 
 Run value, handle, and heterogeneous object arrays through the production
 interface:

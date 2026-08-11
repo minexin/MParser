@@ -84,6 +84,9 @@ function growth:
 - support real and complex `double`/`single` scalars and dense arrays,
   imaginary literals, conjugating versus nonconjugating transpose, and exact
   embedding/machine-protocol transport;
+- parse exact hexadecimal/binary integer literals with MATLAB class suffixes,
+  and share one strict decimal/complex text grammar across array-aware
+  `double(string)` and registry-backed `str2double`;
 - define conversion, rounding, saturation/overflow, mixed-class promotion,
   comparison, concatenation, indexing, assignment, reduction, and diagnostic
   rules against the selected MATLAB reference release;
@@ -106,10 +109,13 @@ and relocated installed consumers cover the slice. It remains part of the
 larger v1.2 candidate gate rather than a separate release.
 
 Character/string, cell, struct, function-handle, and object values remain part
-of the stable value model. Missing strings are included in the v1.2 correctness
-inventory. Large domain families such as sparse arrays, datetime/duration,
-categorical, table, and timetable remain separately staged because they add
-storage and container semantics beyond a numeric class tag.
+of the stable value model. The v1.2 correctness inventory includes first-class
+shaped missing arrays and row-structured multidimensional cell literals, so
+forms such as `[missing missing]` and `{'a'; 'b'}` use ordinary array/cell
+construction rather than scalar-only exceptions. Large domain families such
+as sparse arrays, datetime/duration, categorical, table, and timetable remain
+separately staged because they add storage and container semantics beyond a
+numeric class tag.
 
 ## v1.3: System And Broad Standard Library
 

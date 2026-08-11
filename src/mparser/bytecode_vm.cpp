@@ -1068,6 +1068,7 @@ bool isTopLevelRuntimeOp(BytecodeOp op) {
     case BytecodeOp::MakeMatrix:
     case BytecodeOp::MakeMatrixRow:
     case BytecodeOp::MakeCell:
+    case BytecodeOp::MakeCellRow:
     case BytecodeOp::MakeFunctionHandle:
     case BytecodeOp::LoadMetaClass:
     case BytecodeOp::EnterControl:
@@ -4861,6 +4862,9 @@ private:
             break;
         case BytecodeOp::MakeCell:
             makeCell(instruction);
+            break;
+        case BytecodeOp::MakeCellRow:
+            makeCellRow(instruction);
             break;
         case BytecodeOp::MemberAccess:
             memberAccess(instruction);
@@ -9689,8 +9693,28 @@ private:
     }
 
     void makeCell(const BytecodeInstruction& instruction) {
-        const auto rawValues = popRuntimeValues(
+        const auto rawRows = popRuntimeValues(
             instruction, instruction.operandCount, "cell literal");
+        if (!rawRows) {
+            return;
+        }
+        const auto rows = runtimeExpandedValues(*rawRows);
+        if (rows.empty()) {
+            pushRuntime(cellValueForDimensions({0, 0}, {}));
+            return;
+        }
+        auto result = runtimeArrayOperationBuiltin(
+            "vertcat", rows, objectArrayPolicy(instruction));
+        if (!result.succeeded) {
+            addDiagnostic(instruction, "bytecode " + result.error);
+            return;
+        }
+        pushRuntime(std::move(result.value));
+    }
+
+    void makeCellRow(const BytecodeInstruction& instruction) {
+        const auto rawValues = popRuntimeValues(
+            instruction, instruction.operandCount, "cell literal row");
         if (!rawValues) {
             return;
         }

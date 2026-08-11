@@ -161,9 +161,9 @@ void runDefaultCatalogSmoke() {
     require(mparser::kBuiltinSourceContractMajor == 1 &&
                 mparser::kBuiltinSourceContractMinor == 1,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 165,
+    require(registry->descriptors().size() == 166,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 167,
+    require(registry->names().size() == 168,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");
@@ -254,6 +254,14 @@ void runDefaultCatalogSmoke() {
                 mparser::runtimeValueIsStorable(
                     missingResult.outputs.front()),
             "missing builtin result mismatch");
+    const auto* str2double = registry->find("str2double");
+    require(str2double && str2double->inputs.minimum == 1 &&
+                str2double->inputs.maximum == 1 &&
+                str2double->outputs.maximum == 1 &&
+                str2double->implementation ==
+                    mparser::BuiltinImplementationKind::Shared &&
+                str2double->purity == mparser::BuiltinPurity::Pure,
+            "str2double descriptor metadata mismatch");
     const auto* warning = registry->find("warning");
     require(warning &&
                 warning->implementation ==

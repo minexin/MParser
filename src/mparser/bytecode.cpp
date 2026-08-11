@@ -171,6 +171,10 @@ private:
             lowerChildren(node);
             emit(BytecodeOp::MakeCell, node, childCount(node));
             break;
+        case HirKind::CellRow:
+            lowerChildren(node);
+            emit(BytecodeOp::MakeCellRow, node, childCount(node));
+            break;
         case HirKind::MemberAccess:
             lowerMemberAccess(node, 1);
             break;
@@ -237,6 +241,7 @@ private:
                     expression.kind == HirKind::Matrix ||
                     expression.kind == HirKind::MatrixRow ||
                     expression.kind == HirKind::Cell ||
+                    expression.kind == HirKind::CellRow ||
                     expression.kind == HirKind::NameValueArgument ||
                     expression.kind == HirKind::BraceIndex ||
                     expression.kind == HirKind::FunctionHandle ||
@@ -1195,6 +1200,8 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "MakeMatrixRow";
     case BytecodeOp::MakeCell:
         return "MakeCell";
+    case BytecodeOp::MakeCellRow:
+        return "MakeCellRow";
     case BytecodeOp::MakeFunctionHandle:
         return "MakeFunctionHandle";
     case BytecodeOp::LoadMetaClass:

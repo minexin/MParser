@@ -315,6 +315,26 @@ end
     assert(matrix->children[1]->children.size() == 2);
 }
 
+void parseCellRowsSmoke() {
+    const std::string source = R"(function y = f()
+y = {1, [2 3]; "four", missing};
+end
+)";
+
+    auto result = parse(source);
+    assert(result.diagnostics.empty());
+    const auto& function = *result.root->children.front();
+    const auto* assignment = function.children.front().get();
+    const auto* cell =
+        firstChild(*assignment, mparser::SyntaxKind::CellExpr);
+    assert(cell != nullptr);
+    assert(cell->children.size() == 2);
+    assert(cell->children[0]->kind == mparser::SyntaxKind::CellRow);
+    assert(cell->children[1]->kind == mparser::SyntaxKind::CellRow);
+    assert(cell->children[0]->children.size() == 2);
+    assert(cell->children[1]->children.size() == 2);
+}
+
 void parseConcatenationSignedElementSmoke() {
     auto signedElements = parse("value = [-1 2 -3];\n");
     assert(signedElements.diagnostics.empty());
@@ -346,7 +366,10 @@ void parseConcatenationSignedElementSmoke() {
     const auto* cellExpression = firstChild(
         *cell.root->children.front(), mparser::SyntaxKind::CellExpr);
     assert(cellExpression != nullptr);
-    assert(cellExpression->children.size() == 2);
+    assert(cellExpression->children.size() == 1);
+    assert(cellExpression->children.front()->kind ==
+           mparser::SyntaxKind::CellRow);
+    assert(cellExpression->children.front()->children.size() == 2);
 }
 
 void parseV11CoreCompatibilitySmoke() {
@@ -431,6 +454,7 @@ int main() {
     parseSwitchSmoke();
     parseTryCatchSmoke();
     parseMatrixRowsSmoke();
+    parseCellRowsSmoke();
     parseConcatenationSignedElementSmoke();
     parseV11CoreCompatibilitySmoke();
     parseWorkspaceDeclarationSmoke();

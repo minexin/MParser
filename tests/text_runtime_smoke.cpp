@@ -80,7 +80,7 @@ template <typename Result> void verify(const Result &result) {
   }
   const auto &summary = variable(result, "summary");
   require(summary.kind == mparser::RuntimeValueKind::Number &&
-              std::fabs(summary.number - 47.0) < 1e-9,
+              std::fabs(summary.number - 49.0) < 1e-9,
           "text runtime summary mismatch");
 
   const auto &characters = variable(result, "char_value");
@@ -183,6 +183,128 @@ template <typename Result> void verify(const Result &result) {
               mparser::runtimeTextScalarUtf8(cells.cells[1]) == "b" &&
               mparser::runtimeTextScalarUtf8(cells.cells[2]) == "c",
           "cellstr string-array storage layout mismatch");
+
+  const auto &parsedStrings = variable(result, "parsed_strings");
+  require(parsedStrings.numericClass ==
+                  mparser::RuntimeNumericClass::Double &&
+              parsedStrings.numericComplex &&
+              mparser::runtimeDimensions(parsedStrings) ==
+                  std::vector<size_t>({2, 2}),
+          "double(string array) shape or complexity mismatch");
+  const auto parsedComplex =
+      mparser::runtimeNumericElementValue(parsedStrings, 1);
+  const auto parsedMissing =
+      mparser::runtimeNumericElementValue(parsedStrings, 3);
+  require(parsedComplex && parsedComplex->complex &&
+              parsedComplex->real == 1.0 &&
+              parsedComplex->imaginary == 2.0 && parsedMissing &&
+              std::isnan(parsedMissing->real),
+          "double(string array) payload mismatch");
+
+  const auto &parsedCells = variable(result, "parsed_cells");
+  require(mparser::runtimeDimensions(parsedCells) ==
+                  std::vector<size_t>({2, 2}) &&
+              mparser::runtimeNumericElementValue(parsedCells, 0)->real ==
+                  31.0 &&
+              std::isnan(mparser::runtimeNumericElementValue(
+                             parsedCells, 1)->real) &&
+              mparser::runtimeNumericElementValue(parsedCells, 2)->real ==
+                  1234.5 &&
+              mparser::runtimeNumericElementValue(parsedCells, 3)
+                      ->imaginary == 3.0,
+          "str2double cell-array conversion mismatch");
+
+  const auto &numericTextEdges = variable(result, "numeric_text_edges");
+  const auto imaginaryFirst =
+      mparser::runtimeNumericElementValue(numericTextEdges, 0);
+  const auto imaginaryProduct =
+      mparser::runtimeNumericElementValue(numericTextEdges, 1);
+  const auto joinedDigits =
+      mparser::runtimeNumericElementValue(numericTextEdges, 2);
+  const auto misplacedComma =
+      mparser::runtimeNumericElementValue(numericTextEdges, 3);
+  const auto realInfinity =
+      mparser::runtimeNumericElementValue(numericTextEdges, 4);
+  const auto imaginaryInfinity =
+      mparser::runtimeNumericElementValue(numericTextEdges, 5);
+  const auto signedHex =
+      mparser::runtimeNumericElementValue(numericTextEdges, 6);
+  const auto hexFloat =
+      mparser::runtimeNumericElementValue(numericTextEdges, 7);
+  const auto negativeHexExponent =
+      mparser::runtimeNumericElementValue(numericTextEdges, 8);
+  const auto suffixedHex =
+      mparser::runtimeNumericElementValue(numericTextEdges, 9);
+  const auto binaryText =
+      mparser::runtimeNumericElementValue(numericTextEdges, 10);
+  require(imaginaryFirst && imaginaryFirst->real == 1.0 &&
+              imaginaryFirst->imaginary == 2.0 && imaginaryProduct &&
+              imaginaryProduct->real == 0.0 &&
+              imaginaryProduct->imaginary == 2.0 && joinedDigits &&
+              std::isnan(joinedDigits->real) && misplacedComma &&
+              std::isnan(misplacedComma->real) && realInfinity &&
+              std::isinf(realInfinity->real) && imaginaryInfinity &&
+              imaginaryInfinity->complex &&
+              std::isinf(imaginaryInfinity->imaginary) && signedHex &&
+              signedHex->real == -1.0 && hexFloat &&
+              hexFloat->real == 3.0 && negativeHexExponent &&
+              negativeHexExponent->real == 0.25 && suffixedHex &&
+              std::isnan(suffixedHex->real) && binaryText &&
+              std::isnan(binaryText->real),
+          "numeric text grammar accepted or rejected the wrong forms");
+
+  const auto &mixedCellText = variable(result, "mixed_cell_text");
+  require(mparser::runtimeDimensions(mixedCellText) ==
+                  std::vector<size_t>({2, 2}) &&
+              std::isnan(mparser::runtimeNumericElementValue(
+                             mixedCellText, 0)->real) &&
+              mparser::runtimeNumericElementValue(mixedCellText, 2)->real ==
+                  2.0 &&
+              std::isnan(mparser::runtimeNumericElementValue(
+                             mixedCellText, 1)->real) &&
+              std::isnan(mparser::runtimeNumericElementValue(
+                             mixedCellText, 3)->real),
+          "str2double cell invalid-element behavior mismatch");
+  const auto &nonTextNumber = variable(result, "non_text_number");
+  require(mparser::runtimeShapeElementCount(nonTextNumber) == 1 &&
+              std::isnan(mparser::runtimeNumericElementValue(
+                             nonTextNumber, 0)->real),
+          "str2double non-text input did not produce scalar NaN");
+}
+
+template <typename Result> void verifyCellLiteralRows(const Result &result) {
+  require(result.diagnostics.empty(), "cell literal row execution failed");
+  const auto &mixed = variable(result, "mixed");
+  require(mixed.kind == mparser::RuntimeValueKind::Cell &&
+              mparser::runtimeDimensions(mixed) ==
+                  std::vector<size_t>({2, 2}) &&
+              mixed.cells.size() == 4,
+          "two-dimensional cell literal shape mismatch");
+  require(mparser::runtimeDimensions(mixed.cells[0]) ==
+                  std::vector<size_t>({1, 2}) &&
+              mixed.cells[1].kind ==
+                  mparser::RuntimeValueKind::StringArray &&
+              mixed.cells[2].kind ==
+                  mparser::RuntimeValueKind::MissingArray &&
+              mixed.cells[3].kind == mparser::RuntimeValueKind::Number &&
+              mixed.cells[3].number == 4.0,
+          "cell literal elements were flattened or reordered");
+
+  const auto &empty = variable(result, "empty_cell");
+  require(empty.kind == mparser::RuntimeValueKind::Cell &&
+              mparser::runtimeDimensions(empty) ==
+                  std::vector<size_t>({0, 0}) &&
+              empty.cells.empty(),
+          "empty cell literal is not 0-by-0");
+}
+
+template <typename Result>
+void verifyRaggedCellLiteralRejected(const Result &result) {
+  require(!result.diagnostics.empty(),
+          "ragged cell literal unexpectedly succeeded");
+  require(result.diagnostics.front().message.find(
+              "dimensions must agree") != std::string::npos,
+          "ragged cell literal reported the wrong diagnostic");
 }
 
 } // namespace
@@ -194,6 +316,17 @@ int main(int argc, char **argv) {
     const RuntimePair result = runBoth(source);
     verify(result.interpreter);
     verify(result.vm);
+
+    const RuntimePair cellRows = runBoth(R"(
+mixed = {[1 2], "text"; missing, 4};
+empty_cell = {};
+)");
+    verifyCellLiteralRows(cellRows.interpreter);
+    verifyCellLiteralRows(cellRows.vm);
+
+    const RuntimePair ragged = runBoth("bad = {1, 2; 3};\n");
+    verifyRaggedCellLiteralRejected(ragged.interpreter);
+    verifyRaggedCellLiteralRejected(ragged.vm);
 
     auto missingTarget =
         mparser::makeRuntimeMissingArrayValue({1, 2});

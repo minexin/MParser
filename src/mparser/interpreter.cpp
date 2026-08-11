@@ -1088,6 +1088,7 @@ private:
         case HirKind::Matrix:
         case HirKind::MatrixRow:
         case HirKind::Cell:
+        case HirKind::CellRow:
         case HirKind::MemberAccess:
         case HirKind::NameValueArgument:
         case HirKind::CallOrIndex:
@@ -2012,6 +2013,8 @@ private:
             return evaluateMatrixRow(node);
         case HirKind::Cell:
             return evaluateCell(node);
+        case HirKind::CellRow:
+            return evaluateCellRow(node);
         case HirKind::MemberAccess:
             return evaluateMemberAccess(node);
         case HirKind::NameValueArgument:
@@ -2062,6 +2065,24 @@ private:
     }
 
     RuntimeValue evaluateCell(const HirNode& node) {
+        if (node.children.empty()) {
+            return cellValueForDimensions({0, 0}, {});
+        }
+
+        std::vector<RuntimeValue> rows;
+        rows.reserve(node.children.size());
+        for (const auto& child : node.children) {
+            appendRuntimeExpandedValues(rows, evaluate(*child));
+        }
+        auto result = runtimeArrayOperationBuiltin("vertcat", rows);
+        if (!result.succeeded) {
+            addDiagnostic(node, result.error);
+            return missingValue();
+        }
+        return std::move(result.value);
+    }
+
+    RuntimeValue evaluateCellRow(const HirNode& node) {
         std::vector<RuntimeValue> values;
         values.reserve(node.children.size());
         for (const auto& child : node.children) {

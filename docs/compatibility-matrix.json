@@ -10,9 +10,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "not-applicable", "bytecode": "not-applicable", "production": "supported", "typed": "not-applicable", "native": "not-applicable"},
-      "evidence": ["parser_smoke", "parser_semantic_fuzz", "cli_help_smoke"],
-      "sources": ["src/mparser/lexer.cpp", "src/mparser/token.cpp", "tests/parser_smoke.cpp", "tests/parser_semantic_fuzz.cpp"],
-      "limits": "Single and double quoted literals preserve distinct character-array and string-array runtime kinds; command-form syntax is outside the target subset."
+      "evidence": ["parser_smoke", "parser_semantic_fuzz", "numeric_type_smoke", "numeric_type_production_cli_smoke", "cli_help_smoke"],
+      "sources": ["src/mparser/lexer.cpp", "src/mparser/token.cpp", "src/mparser/runtime_numeric.cpp", "tests/parser_smoke.cpp", "tests/parser_semantic_fuzz.cpp", "tests/numeric_type_smoke.cpp", "samples/numeric_types_demo.m"],
+      "limits": "Single and double quoted literals preserve distinct character-array and string-array runtime kinds. Hexadecimal and binary integer literals are consumed as one token and support exact smallest-unsigned inference plus u8/u16/u32/u64 and s8/s16/s32/s64 suffixes with overflow and invalid-digit diagnostics. Command-form syntax is outside the target subset."
     },
     {
       "id": "SYN-001",
@@ -83,13 +83,13 @@
     {
       "id": "TEXT-001",
       "area": "types",
-      "feature": "Distinct UTF-16 character arrays and string arrays with shared shape, indexing, mutation, conversion, and formatting contracts",
+      "feature": "Distinct UTF-16 character arrays and string arrays with shared shape, indexing, mutation, numeric conversion, and formatting contracts",
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["text_runtime_smoke", "text_runtime_interpreter_cli_smoke", "text_runtime_bytecode_cli_smoke", "text_runtime_production_cli_smoke", "property_validation_smoke"],
-      "sources": ["src/mparser/runtime_value.h", "src/mparser/runtime_text.cpp", "src/mparser/runtime_array_ops.cpp", "tests/text_runtime_smoke.cpp", "samples/text_runtime_demo.m"],
-      "limits": "v0.75 covers quote/empty distinctions, UTF-8 boundaries, UTF-16 code-unit lengths, parenthesis and string-brace indexing, assignment/growth/deletion, concatenation, implicit expansion, transpose and array transforms, representative conversions and predicates, missing strings, class properties, and CLI formatting. Unicode normalization and non-ASCII case folding, complete text function families, tables/categorical values, and typed/native lowering remain open."
+      "evidence": ["text_runtime_smoke", "text_runtime_interpreter_cli_smoke", "text_runtime_bytecode_cli_smoke", "text_runtime_production_cli_smoke", "builtin_registry_smoke", "property_validation_smoke"],
+      "sources": ["src/mparser/runtime_value.h", "src/mparser/runtime_text.cpp", "src/mparser/runtime_text.h", "src/mparser/runtime_array_ops.cpp", "src/mparser/builtin_registry.cpp", "tests/text_runtime_smoke.cpp", "tests/builtin_registry_smoke.cpp", "samples/text_runtime_demo.m"],
+      "limits": "The current v1.2 tree covers quote/empty distinctions, UTF-8 boundaries, UTF-16 code-unit lengths, parenthesis and string-brace indexing, assignment/growth/deletion, concatenation, implicit expansion, transpose and array transforms, representative conversions and predicates, missing strings, class properties, and CLI formatting. double(stringArray) preserves shape and maps missing or invalid elements to NaN while rejecting base text. str2double additionally accepts signed hexadecimal integer/float text without MATLAB integer-class suffixes, preserves string/cell shape, maps non-character cell elements to NaN, and returns scalar NaN for other non-text inputs through the shared strict decimal/scientific/grouped/complex grammar. Binary text remains invalid. Unicode normalization and non-ASCII case folding, complete text function families, tables/categorical values, and typed/native lowering remain open."
     },
     {
       "id": "MISSING-001",
@@ -105,13 +105,13 @@
     {
       "id": "CELL-001",
       "area": "arrays",
-      "feature": "N-dimensional Cell construction, scalar brace reads/writes, varargin, and varargout-like values",
+      "feature": "Row-structured N-dimensional Cell construction, scalar brace reads/writes, varargin, and varargout-like values",
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "partial", "production": "partial", "typed": "fallback", "native": "fallback"},
-      "evidence": ["cell_varargs_smoke", "nd_array_smoke", "lvalue_runtime_smoke", "lvalue_runtime_production_cli_smoke"],
-      "sources": ["src/mparser/runtime_cell.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/lvalue_runtime_smoke.cpp"],
-      "limits": "v0.72 adds shared parenthesis indexing, assignment, common growth, linear vector deletion, brace content selection, and nested copy-back. Direct multi-output brace lowering and complete comma-separated-list contexts remain open."
+      "evidence": ["parser_smoke", "text_runtime_smoke", "text_runtime_interpreter_cli_smoke", "text_runtime_bytecode_cli_smoke", "text_runtime_production_cli_smoke", "cell_varargs_smoke", "nd_array_smoke", "lvalue_runtime_smoke", "lvalue_runtime_production_cli_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/syntax.h", "src/mparser/semantic.h", "src/mparser/bytecode.h", "src/mparser/bytecode.cpp", "src/mparser/runtime_cell.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/parser_smoke.cpp", "tests/text_runtime_smoke.cpp", "tests/lvalue_runtime_smoke.cpp", "samples/text_runtime_demo.m"],
+      "limits": "Semicolon-delimited cell literal rows remain explicit through Parser, HIR, bytecode, interpreter, and VM and are vertically concatenated under ordinary dimension checks; empty cells, array-valued elements, and ragged-row diagnostics are covered without flattening. Shared parenthesis indexing, assignment, common growth, linear vector deletion, brace content selection, and nested copy-back remain supported. Direct multi-output brace lowering and complete comma-separated-list contexts remain open."
     },
     {
       "id": "STRUCT-001",
@@ -276,7 +276,7 @@
       "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "partial", "bytecode": "partial", "production": "partial", "typed": "partial", "native": "partial"},
       "evidence": ["reduction_find_smoke", "scan_diff_smoke", "array_transform_smoke", "numeric_type_smoke", "complex_numeric_smoke", "core_numeric_builtin_smoke", "complex_numeric_interpreter_cli_smoke", "complex_numeric_bytecode_cli_smoke", "complex_numeric_portable_jit_cli_smoke", "complex_numeric_native_jit_cli_smoke", "core_numeric_builtin_interpreter_cli_smoke", "core_numeric_builtin_bytecode_cli_smoke", "core_numeric_builtin_portable_jit_cli_smoke", "core_numeric_builtin_native_jit_cli_smoke", "typed_region_executor_smoke", "builtin_registry_smoke", "builtin_registry_interpreter_cli_smoke", "builtin_registry_bytecode_cli_smoke", "builtin_registry_production_cli_smoke"],
       "sources": ["src/mparser/builtin_registry.h", "src/mparser/builtin_registry.cpp", "src/mparser/runtime_math.cpp", "src/mparser/runtime_numeric.cpp", "src/mparser/runtime_shape.cpp", "src/mparser/runtime_value_ops.cpp", "src/mparser/runtime_reduction.cpp", "src/mparser/runtime_scan.cpp", "src/mparser/runtime_array_ops.cpp", "tests/builtin_registry_smoke.cpp", "tests/numeric_type_smoke.cpp", "tests/complex_numeric_smoke.cpp", "tests/core_numeric_builtin_smoke.cpp", "samples/builtin_registry_demo.m", "samples/complex_numeric_demo.m", "samples/core_numeric_builtins_demo.m"],
-      "limits": "The active v1.2 development catalog has 165 descriptors and 167 registered names, including MATLAB-compatible Inf and NaN aliases. It covers representative elementary real/complex math, mod/rem, nextpow2, shape predicates, deep isequal/isequaln, typed constructors, missing, reductions, scans, find, array transforms, multi-output, output/formatting, and warning-state families through shared handlers. This is a coherent foundation and representative function tranche, not an unbounded MATLAB or toolbox function count; additional system, advanced numerical, rich-data, and long-tail families remain on the v1.x roadmap."
+      "limits": "The active v1.2 development catalog has 166 descriptors and 168 registered names, including MATLAB-compatible Inf and NaN aliases. It covers representative elementary real/complex math, mod/rem, nextpow2, shape predicates, deep isequal/isequaln, typed constructors, missing, str2double, reductions, scans, find, array transforms, multi-output, output/formatting, and warning-state families through shared handlers. This is a coherent foundation and representative function tranche, not an unbounded MATLAB or toolbox function count; additional system, advanced numerical, rich-data, and long-tail families remain on the v1.x roadmap."
     },
     {
       "id": "BUILTIN-002",
@@ -287,7 +287,7 @@
       "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
       "evidence": ["builtin_registry_smoke", "builtin_registry_interpreter_cli_smoke", "builtin_registry_bytecode_cli_smoke", "builtin_registry_production_cli_smoke", "typed_region_executor_smoke", "compatibility_matrix_smoke"],
       "sources": ["src/mparser/builtin_registry.h", "src/mparser/builtin_registry.cpp", "src/mparser/semantic.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "src/mparser/bytecode_region.cpp", "src/mparser/typed_region_executor.cpp", "src/mparser/compiled_module.cpp", "tests/builtin_conformance.h", "tests/builtin_registry_smoke.cpp", "tests/builtin_catalog_snapshot.cpp", "tests/public_contract/builtin/1.0/default_catalog.json", "docs/extending-builtins.md", "docs/versioning-and-deprecation.md", "docs/public-contract-v1.json", "docs/v0.80.md"],
-      "limits": "Builtin source contract 1.0 continues to define registry, descriptor, call/result, positional input/output constraint, ownership, diagnostic, context, and typed-lowering semantics. The archived v1 catalog snapshot contains 118 descriptors; the active v1.2 catalog has 165 descriptors and 167 registered names and remains intentionally unfrozen until the complete milestone function surface settles. This is a source-integration contract compiled with the engine, not a public C++ binary ABI or external native callback ABI. Intrinsics remain explicit engine operations; unsupported catalog entries remain deterministic."
+      "limits": "Builtin source contract 1.0 continues to define registry, descriptor, call/result, positional input/output constraint, ownership, diagnostic, context, and typed-lowering semantics. The archived v1 catalog snapshot contains 118 descriptors; the active v1.2 catalog has 166 descriptors and 168 registered names and remains intentionally unfrozen until the complete milestone function surface settles. This is a source-integration contract compiled with the engine, not a public C++ binary ABI or external native callback ABI. Intrinsics remain explicit engine operations; unsupported catalog entries remain deterministic."
     },
     {
       "id": "VM-001",
@@ -593,7 +593,7 @@
       "target": "v0.75",
       "framework_impact": "representation-change",
       "requirement": "Separate character arrays from string scalars/arrays and define concatenation, indexing, conversion, and formatting semantics.",
-      "exit_evidence": "text_runtime_smoke differentially runs one UTF-16 character/string script through HIR and bytecode, validates supplementary code units, shape, storage, indexing, mutation, implicit expansion, conversions, missing strings, Cell layout, formatting inputs, and the runnable sample; all three public CLI modes report summary 36, and property_validation_smoke covers fixed-shape char/string class properties."
+      "exit_evidence": "text_runtime_smoke differentially runs one UTF-16 character/string script through HIR and bytecode, validates supplementary code units, shape, storage, indexing, mutation, implicit expansion, conversions, shaped missing values, row-structured Cell layout, strict numeric text parsing, formatting inputs, and the runnable sample; all three public CLI modes report summary 49, and property_validation_smoke covers fixed-shape char/string class properties."
     },
     {
       "id": "G-CLASS-001",

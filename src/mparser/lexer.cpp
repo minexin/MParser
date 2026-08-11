@@ -339,6 +339,20 @@ Token Lexer::scanNumber(std::vector<Trivia> leadingTrivia) {
     const SourcePosition begin = position();
     std::string text;
 
+    if (peek() == '0' &&
+        (peek(1) == 'x' || peek(1) == 'X' ||
+         peek(1) == 'b' || peek(1) == 'B')) {
+        text.push_back(advance());
+        text.push_back(advance());
+        while (!isAtEnd() &&
+               (std::isalnum(static_cast<unsigned char>(peek())) != 0 ||
+                peek() == '_')) {
+            text.push_back(advance());
+        }
+        return makeToken(TokenKind::Number, begin, std::move(text),
+                         std::move(leadingTrivia));
+    }
+
     if (peek() == '.') {
         text.push_back(advance());
     }

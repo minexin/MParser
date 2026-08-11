@@ -73,6 +73,7 @@ enum class BytecodeOp {
     MakeCell,
     MakeFunctionHandle,
     LoadMetaClass,
+    MakeCellRow,
     Unknown,
 };
 

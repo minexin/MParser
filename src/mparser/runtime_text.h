@@ -84,6 +84,9 @@ RuntimeTextOperationResult runtimeConvertToCharacter(const RuntimeValue &value);
 RuntimeTextOperationResult runtimeConvertToString(const RuntimeValue &value);
 RuntimeTextOperationResult runtimeStringLengths(const RuntimeValue &value);
 RuntimeTextOperationResult runtimeCharacterCodes(const RuntimeValue &value);
+RuntimeTextOperationResult
+runtimeConvertStringToDouble(const RuntimeValue &value);
+RuntimeTextOperationResult runtimeStr2Double(const RuntimeValue &value);
 RuntimeTextOperationResult runtimeTextMissingMask(const RuntimeValue &value);
 RuntimeTextOperationResult runtimeCellstr(const RuntimeValue &value);
 

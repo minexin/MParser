@@ -171,6 +171,44 @@ void verify(const Result& result) {
                  mparser::RuntimeNumericClass::UInt32,
                  {0, 0, 4294967295.0, 4294967295.0},
                  "uint32 conversion did not saturate");
+    requireScalar(variable(result, "hex_default"),
+                  mparser::RuntimeNumericClass::UInt8, 42.0,
+                  "default hexadecimal literal class mismatch");
+    requireScalar(variable(result, "hex_widened"),
+                  mparser::RuntimeNumericClass::UInt16, 256.0,
+                  "widened hexadecimal literal class mismatch");
+    requireScalar(variable(result, "binary_default"),
+                  mparser::RuntimeNumericClass::UInt8, 42.0,
+                  "default binary literal class mismatch");
+    requireIntegerBits(
+        variable(result, "signed_hex"),
+        {std::numeric_limits<std::uint64_t>::max()},
+        "signed hexadecimal literal did not sign-extend");
+    requireIntegerBits(
+        variable(result, "signed_min8"),
+        {std::bit_cast<std::uint64_t>(std::int64_t{-128})},
+        "signed binary int8 literal did not sign-extend");
+    requireIntegerBits(
+        variable(result, "signed_min16"),
+        {std::bit_cast<std::uint64_t>(std::int64_t{-32768})},
+        "signed hexadecimal int16 literal did not sign-extend");
+    requireIntegerBits(
+        variable(result, "signed_min32"),
+        {std::bit_cast<std::uint64_t>(
+            std::int64_t{std::numeric_limits<std::int32_t>::min()})},
+        "signed hexadecimal int32 literal did not sign-extend");
+    requireIntegerBits(
+        variable(result, "signed_min64"),
+        {std::bit_cast<std::uint64_t>(
+            std::numeric_limits<std::int64_t>::min())},
+        "signed hexadecimal int64 literal mismatch");
+    requireIntegerBits(
+        variable(result, "maximum_hex"),
+        {std::numeric_limits<std::uint64_t>::max()},
+        "uint64 hexadecimal literal lost exact bits");
+    requireIntegerBits(variable(result, "base_vector"),
+                       {1, 2, 65535},
+                       "base-prefixed literal vector lost exact bits");
     requireIntegerBits(
         variable(result, "int64_values"),
         {std::bit_cast<std::uint64_t>(
@@ -581,6 +619,16 @@ uint16_values = uint16([-inf, -1, 70000, inf]);
   uint64_values = uint64([-inf, -1, 0.5, 18446744073709551615, inf, nan]);
   uint64_from_negative = uint64(int64(-1));
   int64_from_uintmax = int64(uint64(inf));
+  hex_default = 0x2A;
+  hex_widened = 0x100;
+  binary_default = 0B101010;
+  signed_hex = 0xFFs8;
+  signed_min8 = 0b10000000s8;
+  signed_min16 = 0x8000s16;
+  signed_min32 = 0x80000000s32;
+  signed_min64 = 0x8000000000000000s64;
+  maximum_hex = 0xFFFFFFFFFFFFFFFFu64;
+  base_vector = [0b1u16, 0X2U16, 0xFFFFu16];
   single_sum = single([0.1, 0.2]) + 0.25;
   int8_sum = int8([120, -120]) + 20;
   uint8_product = uint8([20, 200]) .* uint8([20, 2]);
@@ -615,6 +663,56 @@ comparison = int8(5) == 5;
         verifyNativeIntegerReductions();
         verifyMixedClassDiagnostics();
         verifyTypedFallback();
+
+        struct LiteralCase {
+            std::string_view text;
+            mparser::RuntimeNumericClass numericClass;
+            std::uint64_t bits;
+        };
+        const std::vector<LiteralCase> literalCases = {
+            {"0x01u8", mparser::RuntimeNumericClass::UInt8, 1},
+            {"0X0001U16", mparser::RuntimeNumericClass::UInt16, 1},
+            {"0x00000001u32", mparser::RuntimeNumericClass::UInt32, 1},
+            {"0x0000000000000001U64",
+             mparser::RuntimeNumericClass::UInt64, 1},
+            {"0xFFs8", mparser::RuntimeNumericClass::Int8,
+             std::numeric_limits<std::uint64_t>::max()},
+            {"0xFFFFS16", mparser::RuntimeNumericClass::Int16,
+             std::numeric_limits<std::uint64_t>::max()},
+            {"0xFFFFFFFFs32", mparser::RuntimeNumericClass::Int32,
+             std::numeric_limits<std::uint64_t>::max()},
+            {"0xFFFFFFFFFFFFFFFFS64",
+             mparser::RuntimeNumericClass::Int64,
+             std::numeric_limits<std::uint64_t>::max()},
+        };
+        for (const auto& literalCase : literalCases) {
+            const auto value =
+                mparser::runtimeParseNumericLiteral(literalCase.text);
+            const auto element = value
+                                     ? mparser::runtimeNumericElementValue(
+                                           *value, 0)
+                                     : std::nullopt;
+            require(value && element &&
+                        value->numericClass == literalCase.numericClass &&
+                        element->integerRealBits == literalCase.bits,
+                    "valid base-prefixed literal width or bits mismatch");
+        }
+
+        for (const std::string_view invalid : {
+                 "0x", "0b102", "0x100s8", "0x100u8",
+                 "0x10000u16", "0x100000000u32",
+                 "0b100000000s8", "0x10000000000000000",
+                 "0x1i", "0x1junk", "0x1_2"}) {
+            require(!mparser::runtimeParseNumericLiteral(invalid),
+                    "invalid base-prefixed literal was accepted");
+            const auto invalidResult = runBoth(
+                "bad = " + std::string(invalid) + ";\n");
+            require(hasDiagnostic(invalidResult.interpreter,
+                                  "unsupported literal") &&
+                        hasDiagnostic(invalidResult.vm,
+                                      "cannot load literal"),
+                    "invalid base-prefixed source did not fail consistently");
+        }
 
         require(mparser::runtimeNumericClassFromName("uint32") ==
                     mparser::RuntimeNumericClass::UInt32,

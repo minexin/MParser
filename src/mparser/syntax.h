@@ -64,6 +64,7 @@ enum class SyntaxKind {
     BraceIndexExpr,
     FunctionHandleExpr,
     MetaClassExpr,
+    CellRow,
     Error,
 };
 
