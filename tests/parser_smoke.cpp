@@ -372,6 +372,68 @@ void parseConcatenationSignedElementSmoke() {
     assert(cellExpression->children.front()->children.size() == 2);
 }
 
+void parseMultilineDelimitedSmoke() {
+    const std::string source = R"([first, second] = outer(...
+    inner(...
+        missing, ...
+        missing), ...
+    'mode');
+matrix_value = [missing missing
+                missing missing];
+cell_value = {missing missing
+              missing missing};
+indexed = matrix_value(...
+    2, ...
+    1);
+continued = outer(...
+    missing, ...
+    missing);
+)";
+
+    auto result = parse(source);
+    assert(result.diagnostics.empty());
+    assert(!containsKind(*result.root, mparser::SyntaxKind::Error));
+    assert(result.root->children.size() == 5);
+
+    const auto& callAssignment = *result.root->children[0];
+    assert(callAssignment.kind == mparser::SyntaxKind::AssignmentStatement);
+    assert(callAssignment.children.size() == 2);
+    const auto& outerCall = *callAssignment.children[1];
+    assert(outerCall.kind == mparser::SyntaxKind::CallOrIndexExpr);
+    assert(outerCall.children.size() == 3);
+    assert(outerCall.children[1]->kind ==
+           mparser::SyntaxKind::CallOrIndexExpr);
+    assert(outerCall.children[1]->children.size() == 3);
+
+    for (size_t assignmentIndex : {size_t{1}, size_t{2}}) {
+        const auto& assignment = *result.root->children[assignmentIndex];
+        const auto& literal = *assignment.children[1];
+        assert(literal.children.size() == 2);
+        assert(literal.children[0]->children.size() == 2);
+        assert(literal.children[1]->children.size() == 2);
+    }
+
+    const auto& indexCall = *result.root->children[3]->children[1];
+    assert(indexCall.kind == mparser::SyntaxKind::CallOrIndexExpr);
+    assert(indexCall.children.size() == 3);
+
+    const auto& continuedCall = *result.root->children[4]->children[1];
+    assert(continuedCall.kind == mparser::SyntaxKind::CallOrIndexExpr);
+    assert(continuedCall.children.size() == 3);
+
+    auto bareCall = parse(R"(value = outer(
+    missing, missing);
+)");
+    assert(!bareCall.diagnostics.empty());
+    assert(containsKind(*bareCall.root, mparser::SyntaxKind::Error));
+
+    auto brokenMatrix = parse(R"(value = [1 +
+    2];
+)");
+    assert(!brokenMatrix.diagnostics.empty());
+    assert(containsKind(*brokenMatrix.root, mparser::SyntaxKind::Error));
+}
+
 void parseV11CoreCompatibilitySmoke() {
     const std::string source = R"(power = 2^3^2;
 dotPower = 2.^3.^2;
@@ -443,6 +505,71 @@ end
     assert(!parse("persistent first,,second\n").diagnostics.empty());
 }
 
+void parseCommandFormSmoke() {
+    auto result = parse(R"(echo_fn 5
+disp 'hello world'
+ls ./d
+disp "hello world"
+a ./ d
+a./d
+format +
+format short E
+format
+)");
+    assert(result.diagnostics.empty());
+    assert(result.root->children.size() == 9);
+
+    const auto command = [&result](size_t index) {
+        const auto& statement = *result.root->children[index];
+        assert(statement.kind == mparser::SyntaxKind::ExpressionStatement);
+        assert(statement.children.size() == 1);
+        const auto* call = statement.children.front().get();
+        assert(call->kind == mparser::SyntaxKind::CallOrIndexExpr);
+        assert(call->label == "command");
+        return call;
+    };
+
+    const auto* echo = command(0);
+    assert(echo->children.size() == 2);
+    assert(echo->children[0]->label == "echo_fn");
+    assert(echo->children[1]->raw == "'5'");
+
+    const auto* quoted = command(1);
+    assert(quoted->children.size() == 2);
+    assert(quoted->children[1]->raw == "'hello world'");
+
+    const auto* path = command(2);
+    assert(path->children.size() == 2);
+    assert(path->children[1]->raw == "'./d'");
+
+    const auto* doubleQuoted = command(3);
+    assert(doubleQuoted->children.size() == 3);
+    assert(doubleQuoted->children[1]->raw == "'\"hello'");
+    assert(doubleQuoted->children[2]->raw == "'world\"'");
+
+    for (size_t index = 4; index < 6; ++index) {
+        const auto& statement = *result.root->children[index];
+        assert(statement.kind == mparser::SyntaxKind::ExpressionStatement);
+        assert(statement.children.size() == 1);
+        assert(statement.children.front()->kind ==
+               mparser::SyntaxKind::BinaryExpr);
+    }
+
+    const auto* plusFormat = command(6);
+    assert(plusFormat->children.size() == 2);
+    assert(plusFormat->children[1]->raw == "'+'");
+    const auto* splitFormat = command(7);
+    assert(splitFormat->children.size() == 3);
+    assert(splitFormat->children[1]->raw == "'short'");
+    assert(splitFormat->children[2]->raw == "'E'");
+
+    const auto& bareFormat = *result.root->children[8];
+    assert(bareFormat.kind == mparser::SyntaxKind::ExpressionStatement);
+    assert(bareFormat.children.size() == 1);
+    assert(bareFormat.children.front()->kind ==
+           mparser::SyntaxKind::IdentifierExpr);
+}
+
 } // namespace
 
 int main() {
@@ -456,8 +583,10 @@ int main() {
     parseMatrixRowsSmoke();
     parseCellRowsSmoke();
     parseConcatenationSignedElementSmoke();
+    parseMultilineDelimitedSmoke();
     parseV11CoreCompatibilitySmoke();
     parseWorkspaceDeclarationSmoke();
+    parseCommandFormSmoke();
     std::cout << "parser smoke tests passed\n";
     return 0;
 }

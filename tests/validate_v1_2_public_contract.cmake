@@ -1,12 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
 
-foreach(required_variable IN ITEMS CONTRACT PROJECT_ROOT EXPECTED_VERSION)
+foreach(required_variable IN ITEMS
+        CONTRACT PROJECT_ROOT EXPECTED_VERSION CONTRACT_STATE)
     if(NOT DEFINED ${required_variable} OR
        "${${required_variable}}" STREQUAL "")
         message(FATAL_ERROR
             "Missing v1.2 public-contract variable: ${required_variable}")
     endif()
 endforeach()
+
+set(contract_is_current FALSE)
+if(CONTRACT_STATE STREQUAL "current")
+    set(contract_is_current TRUE)
+elseif(NOT CONTRACT_STATE STREQUAL "archived")
+    message(FATAL_ERROR
+        "Invalid v1.2 contract state: ${CONTRACT_STATE}")
+endif()
 
 file(READ "${CONTRACT}" contract_json)
 
@@ -44,6 +53,26 @@ function(validate_contract_artifact description expected_path)
             "${description} candidate snapshot changed.\n"
             "Expected normalized SHA-256: ${expected_hash}\n"
             "Actual normalized SHA-256:   ${actual_hash}")
+    endif()
+endfunction()
+
+function(validate_live_contract_artifact description expected_path)
+    if(contract_is_current)
+        validate_contract_artifact("${description}" "${expected_path}"
+            ${ARGN})
+        return()
+    endif()
+    string(JSON artifact_path GET "${contract_json}" ${ARGN} path)
+    string(JSON expected_hash GET "${contract_json}" ${ARGN} sha256_lf)
+    if(NOT artifact_path STREQUAL expected_path)
+        message(FATAL_ERROR
+            "${description} path changed: expected '${expected_path}', "
+            "got '${artifact_path}'")
+    endif()
+    string(LENGTH "${expected_hash}" hash_length)
+    if(NOT hash_length EQUAL 64)
+        message(FATAL_ERROR
+            "${description} archived hash is not a SHA-256 digest")
     endif()
 endfunction()
 
@@ -91,13 +120,13 @@ validate_contract_artifact("v1.2 milestone" "docs/v1.2.md"
     milestone)
 validate_contract_artifact("CLI 1.0 contract" "docs/cli-contract-v1.json"
     cli contract)
-validate_contract_artifact("C API 1.2 header" "include/mparser/c_api.h"
+validate_live_contract_artifact("C API 1.2 header" "include/mparser/c_api.h"
     c_api header)
 validate_contract_artifact("C ABI generation-2 snapshot"
     "tests/public_contract/c_abi/2.0/c_api_snapshot.h" c_abi snapshot)
 validate_contract_artifact("C ABI generation-2 symbols"
     "tests/c_api_generation2_symbols.txt" c_abi symbols)
-validate_contract_artifact("C++ API 1.2 header"
+validate_live_contract_artifact("C++ API 1.2 header"
     "include/mparser/cpp_api.hpp" cpp_api header)
 validate_contract_artifact("C++ API 1.2 snapshot"
     "tests/public_contract/cpp_api/1.2/mparser/cpp_api.hpp"
@@ -115,16 +144,16 @@ validate_contract_artifact("machine protocol 1.1 compatibility snapshot"
     machine_result_protocol compatibility_snapshot)
 validate_contract_artifact("machine protocol schema"
     "docs/machine-result-v1.schema.json" machine_result_protocol schema)
-validate_contract_artifact("builtin contract header"
+validate_live_contract_artifact("builtin contract header"
     "src/mparser/builtin_registry.h" builtin_source_contract header)
 validate_contract_artifact("builtin 1.1 catalog"
     "tests/public_contract/builtin/1.1/default_catalog.json"
     builtin_source_contract default_catalog)
-validate_contract_artifact("builtin extension guide"
+validate_live_contract_artifact("builtin extension guide"
     "docs/extending-builtins.md" builtin_source_contract author_guide)
-validate_contract_artifact("versioning policy"
+validate_live_contract_artifact("versioning policy"
     "docs/versioning-and-deprecation.md" versioning_and_deprecation)
-validate_contract_artifact("CMake package template"
+validate_live_contract_artifact("CMake package template"
     "cmake/MParserConfig.cmake.in" cmake_package config_template)
 
 string(JSON c_header_hash GET "${contract_json}" c_api header sha256_lf)
@@ -143,53 +172,55 @@ if(NOT cpp_header_hash STREQUAL cpp_snapshot_hash)
     message(FATAL_ERROR "C++ API live and snapshot hashes differ")
 endif()
 
-file(READ "${PROJECT_ROOT}/include/mparser/c_api.h" c_header)
-foreach(version_pair IN ITEMS
-        "MPARSER_C_API_VERSION_MAJOR;1"
-        "MPARSER_C_API_VERSION_MINOR;2"
-        "MPARSER_C_API_VERSION_PATCH;0"
-        "MPARSER_C_ABI_GENERATION;2"
-        "MPARSER_C_ABI_REVISION;0")
-    list(GET version_pair 0 macro)
-    list(GET version_pair 1 expected)
-    string(REGEX MATCH
-        "#define[ \t]+${macro}[ \t]+([0-9]+)u"
-        macro_match "${c_header}")
-    if(NOT CMAKE_MATCH_1 STREQUAL expected)
-        message(FATAL_ERROR
-            "C header ${macro} changed: expected ${expected}")
-    endif()
-endforeach()
+if(contract_is_current)
+    file(READ "${PROJECT_ROOT}/include/mparser/c_api.h" c_header)
+    foreach(version_pair IN ITEMS
+            "MPARSER_C_API_VERSION_MAJOR;1"
+            "MPARSER_C_API_VERSION_MINOR;2"
+            "MPARSER_C_API_VERSION_PATCH;0"
+            "MPARSER_C_ABI_GENERATION;2"
+            "MPARSER_C_ABI_REVISION;0")
+        list(GET version_pair 0 macro)
+        list(GET version_pair 1 expected)
+        string(REGEX MATCH
+            "#define[ \t]+${macro}[ \t]+([0-9]+)u"
+            macro_match "${c_header}")
+        if(NOT CMAKE_MATCH_1 STREQUAL expected)
+            message(FATAL_ERROR
+                "C header ${macro} changed: expected ${expected}")
+        endif()
+    endforeach()
 
-file(READ "${PROJECT_ROOT}/include/mparser/cpp_api.hpp" cpp_header)
-foreach(version_pair IN ITEMS
-        "kSourceApiVersionMajor;1"
-        "kSourceApiVersionMinor;2")
-    list(GET version_pair 0 constant)
-    list(GET version_pair 1 expected)
-    string(REGEX MATCH
-        "${constant}[ \t]*=[ \t]*([0-9]+)"
-        constant_match "${cpp_header}")
-    if(NOT CMAKE_MATCH_1 STREQUAL expected)
-        message(FATAL_ERROR
-            "C++ header ${constant} changed: expected ${expected}")
-    endif()
-endforeach()
+    file(READ "${PROJECT_ROOT}/include/mparser/cpp_api.hpp" cpp_header)
+    foreach(version_pair IN ITEMS
+            "kSourceApiVersionMajor;1"
+            "kSourceApiVersionMinor;2")
+        list(GET version_pair 0 constant)
+        list(GET version_pair 1 expected)
+        string(REGEX MATCH
+            "${constant}[ \t]*=[ \t]*([0-9]+)"
+            constant_match "${cpp_header}")
+        if(NOT CMAKE_MATCH_1 STREQUAL expected)
+            message(FATAL_ERROR
+                "C++ header ${constant} changed: expected ${expected}")
+        endif()
+    endforeach()
 
-file(READ "${PROJECT_ROOT}/src/mparser/builtin_registry.h" builtin_header)
-foreach(version_pair IN ITEMS
-        "kBuiltinSourceContractMajor;1"
-        "kBuiltinSourceContractMinor;1")
-    list(GET version_pair 0 constant)
-    list(GET version_pair 1 expected)
-    string(REGEX MATCH
-        "${constant}[ \t]*=[ \t]*([0-9]+)"
-        constant_match "${builtin_header}")
-    if(NOT CMAKE_MATCH_1 STREQUAL expected)
-        message(FATAL_ERROR
-            "Builtin header ${constant} changed: expected ${expected}")
-    endif()
-endforeach()
+    file(READ "${PROJECT_ROOT}/src/mparser/builtin_registry.h" builtin_header)
+    foreach(version_pair IN ITEMS
+            "kBuiltinSourceContractMajor;1"
+            "kBuiltinSourceContractMinor;1")
+        list(GET version_pair 0 constant)
+        list(GET version_pair 1 expected)
+        string(REGEX MATCH
+            "${constant}[ \t]*=[ \t]*([0-9]+)"
+            constant_match "${builtin_header}")
+        if(NOT CMAKE_MATCH_1 STREQUAL expected)
+            message(FATAL_ERROR
+                "Builtin header ${constant} changed: expected ${expected}")
+        endif()
+    endforeach()
+endif()
 
 file(STRINGS "${PROJECT_ROOT}/tests/c_api_generation2_symbols.txt" symbols)
 list(FILTER symbols EXCLUDE REGEX "^[ \t]*$")
@@ -233,17 +264,19 @@ if(NOT protocol_name STREQUAL "mparser.result" OR
     message(FATAL_ERROR "Machine protocol producer golden changed")
 endif()
 
-file(READ "${PROJECT_ROOT}/cmake/MParserConfig.cmake.in" package_template)
-foreach(required_text IN ITEMS
-        "set(MParser_BUILTIN_SOURCE_CONTRACT_MINOR \"1\")"
-        "@PACKAGE_CMAKE_INSTALL_DOCDIR@/public-contract-v1.2.json"
-        "@PACKAGE_CMAKE_INSTALL_DOCDIR@/default_catalog.json")
-    string(FIND "${package_template}" "${required_text}" found_at)
-    if(found_at EQUAL -1)
-        message(FATAL_ERROR
-            "CMake package metadata is missing: ${required_text}")
-    endif()
-endforeach()
+if(contract_is_current)
+    file(READ "${PROJECT_ROOT}/cmake/MParserConfig.cmake.in" package_template)
+    foreach(required_text IN ITEMS
+            "set(MParser_BUILTIN_SOURCE_CONTRACT_MINOR \"1\")"
+            "@PACKAGE_CMAKE_INSTALL_DOCDIR@/public-contract-v1.2.json"
+            "@PACKAGE_CMAKE_INSTALL_DOCDIR@/default_catalog.json")
+        string(FIND "${package_template}" "${required_text}" found_at)
+        if(found_at EQUAL -1)
+            message(FATAL_ERROR
+                "CMake package metadata is missing: ${required_text}")
+        endif()
+    endforeach()
+endif()
 
 message(STATUS
     "MParser v1.2 candidate contract validated: C API 1.2, ABI generation "

@@ -383,7 +383,9 @@ ModuleTopLevelExpression projectExpressionResult(
         std::move(expression.value),
         projectSourceRange(expression.span, sources),
         expression.outputSuppressed,
-        expression.sequence};
+        expression.sequence,
+        std::move(expression.displayText),
+        expression.lineSpacing};
 }
 
 ModuleDiagnosticFrame projectDiagnosticFrame(
@@ -1014,7 +1016,10 @@ ModuleInvocationResult CompiledModule::execute(
             ? BytecodeVmProfilingMode::Full
             : BytecodeVmProfilingMode::Disabled;
     runtimeOptions.callableContext = callableContext_;
-    runtimeOptions.sessionState = state;
+    runtimeOptions.sessionState =
+        state ? state
+              : std::make_shared<RuntimeSessionState>(
+                    request.systemContext);
     runtimeOptions.initialWorkspace = request.initialWorkspace;
     runtimeOptions.entryFunction = request.entryFunction;
     runtimeOptions.arguments = request.arguments;

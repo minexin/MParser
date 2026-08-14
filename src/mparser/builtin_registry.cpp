@@ -7,6 +7,7 @@
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_system_builtins.h"
 #include "mparser/runtime_text.h"
 #include "mparser/runtime_value_ops.h"
 #include "mparser/runtime_warning.h"
@@ -31,6 +32,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "addCause",
     "addCorrection",
     "addlistener",
+    "addpath",
     "addprop",
     "all",
     "any",
@@ -43,12 +45,15 @@ constexpr std::string_view kBuiltinNames[] = {
     "cat",
     "cell",
     "cellstr",
+    "cd",
     "ceil",
     "char",
     "class",
     "clc",
     "clear",
+    "clock",
     "complex",
+    "computer",
     "conj",
     "cos",
     "cosh",
@@ -56,29 +61,42 @@ constexpr std::string_view kBuiltinNames[] = {
     "cummin",
     "cumprod",
     "cumsum",
+    "date",
     "delete",
     "disp",
     "diff",
+    "dir",
     "double",
     "empty",
     "enumeration",
     "eps",
     "error",
     "events",
+    "exist",
     "exp",
     "eye",
     "false",
     "fieldnames",
+    "filesep",
     "find",
     "feval",
     "findobj",
     "findprop",
     "fix",
     "floor",
+    "fclose",
+    "fopen",
+    "format",
     "fprintf",
+    "frewind",
+    "fscanf",
+    "fseek",
+    "ftell",
+    "fullfile",
     "func2str",
     "functions",
     "getReport",
+    "getenv",
     "horzcat",
     "hypot",
     "i",
@@ -141,18 +159,25 @@ constexpr std::string_view kBuiltinNames[] = {
     "notify",
     "numel",
     "ones",
+    "path",
+    "pathsep",
+    "pause",
     "permute",
     "pi",
     "plot",
     "prod",
     "properties",
+    "pwd",
     "rand",
+    "randi",
     "randn",
     "real",
     "rem",
     "repmat",
     "reshape",
     "rmfield",
+    "rmpath",
+    "rng",
     "round",
     "sign",
     "single",
@@ -171,6 +196,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "strlength",
     "struct",
     "sum",
+    "system",
     "table",
     "tan",
     "tanh",
@@ -178,6 +204,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "throwAsCaller",
     "tic",
     "toc",
+    "tempdir",
     "true",
     "rethrow",
     "uint16",
@@ -185,7 +212,11 @@ constexpr std::string_view kBuiltinNames[] = {
     "uint64",
     "uint8",
     "vertcat",
+    "version",
     "warning",
+    "which",
+    "who",
+    "whos",
     "zeros",
     "matlab.metadata.Class.fromName",
     "meta.class.fromName",
@@ -962,21 +993,29 @@ BuiltinDescriptor outputDescriptor(std::string_view name) {
                           : BuiltinThreadSafety::ContextBound;
     if (name != "sprintf") {
         descriptor.sideEffects = BuiltinSideEffect::Console;
-        descriptor.contextPermissions = BuiltinContextPermission::Output;
+        descriptor.contextPermissions =
+            BuiltinContextPermission::Output |
+            (name == "disp"
+                 ? BuiltinContextPermission::DisplayFormat
+                 : BuiltinContextPermission::None);
         descriptor.requiredContext = BuiltinContextPermission::Output;
     }
     descriptor.errorIdentifier = "MParser:InvalidFormattedOutput";
     descriptor.summary =
         name == "disp"
             ? "Display one value through the host-owned output sink."
-            : name == "fprintf"
-                  ? "Format values and write through the host-owned output sink."
-                  : "Format values into a character row vector.";
+            : "Format values into a character row vector.";
     descriptor.handler = [builtin = std::string(name)](
                              const BuiltinCall& call) {
         RuntimeFormatResult formatted;
         if (builtin == "disp") {
-            formatted = runtimeFormatDisplay(call.arguments.front());
+            RuntimeDisplayFormat displayFormat;
+            if (call.context && call.context->displayFormat &&
+                call.context->displayFormat->current) {
+                displayFormat = call.context->displayFormat->current();
+            }
+            formatted = runtimeFormatDisplay(call.arguments.front(),
+                                             displayFormat);
         } else {
             formatted = runtimeFormatPrintf(call.arguments);
         }
@@ -1003,17 +1042,13 @@ BuiltinDescriptor outputDescriptor(std::string_view name) {
                 "host output sink rejected the emitted text",
                 "MParser:OutputSinkRejected");
         }
-        if (builtin == "fprintf" && call.requestedOutputCount == 1) {
-            return BuiltinResult::success({makeRuntimeNumberValue(
-                static_cast<double>(formatted.text.size()))});
-        }
         return BuiltinResult::success();
     };
     return descriptor;
 }
 
 bool isZeroOutputIntrinsic(std::string_view name) {
-    return matches(name, {"assert", "clear", "clc", "delete",
+    return matches(name, {"assert", "clc", "delete",
                           "error", "notify", "rethrow", "throw",
                           "throwAsCaller"});
 }
@@ -1026,7 +1061,208 @@ BuiltinDescriptor zeroOutputIntrinsicDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor systemDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.implementation = BuiltinImplementationKind::Context;
+    descriptor.determinism = BuiltinDeterminism::ContextDependent;
+    descriptor.threadSafety = BuiltinThreadSafety::ContextBound;
+    descriptor.errorIdentifier = "MParser:InvalidSystemBuiltinCall";
+    descriptor.summary =
+        "Session-scoped MATLAB-like system and workspace operation.";
+
+    if (name == "clear") {
+        descriptor.inputs = BuiltinArity::variadic(0);
+        descriptor.outputs = BuiltinArity::fixed(0);
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::Workspace;
+        descriptor.contextPermissions = BuiltinContextPermission::Workspace;
+        descriptor.requiredContext = BuiltinContextPermission::Workspace;
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+    } else if (name == "format") {
+        descriptor.inputs = BuiltinArity::range(0, 2);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::DisplayState;
+        descriptor.contextPermissions =
+            BuiltinContextPermission::DisplayFormat;
+        descriptor.requiredContext =
+            BuiltinContextPermission::DisplayFormat;
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+    } else if (name == "fullfile" || name == "filesep" ||
+               name == "pathsep") {
+        descriptor.inputs = name == "fullfile"
+                                ? BuiltinArity::variadic(1)
+                                : BuiltinArity::fixed(0);
+        descriptor.outputs = BuiltinArity::fixed(1);
+        descriptor.implementation = BuiltinImplementationKind::Shared;
+        descriptor.purity = BuiltinPurity::Pure;
+        descriptor.determinism = BuiltinDeterminism::Deterministic;
+        descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+        descriptor.contextPermissions = BuiltinContextPermission::None;
+        descriptor.requiredContext = BuiltinContextPermission::None;
+        descriptor.sideEffects = BuiltinSideEffect::None;
+    } else if (name == "fprintf") {
+        descriptor.inputs = BuiltinArity::variadic(1);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects =
+            BuiltinSideEffect::External | BuiltinSideEffect::Console;
+        descriptor.contextPermissions =
+            BuiltinContextPermission::Output |
+            BuiltinContextPermission::SystemServices;
+        descriptor.requiredContext = BuiltinContextPermission::None;
+        descriptor.implicitOutputPolicy =
+            BuiltinImplicitOutputPolicy::None;
+    } else if (name == "who" || name == "whos") {
+        descriptor.inputs = BuiltinArity::variadic(0);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+        descriptor.purity = BuiltinPurity::ReadOnly;
+        descriptor.sideEffects = BuiltinSideEffect::Console;
+        descriptor.contextPermissions =
+            BuiltinContextPermission::Workspace |
+            BuiltinContextPermission::Output;
+        descriptor.requiredContext = BuiltinContextPermission::Workspace;
+        descriptor.implicitOutputPolicy =
+            BuiltinImplicitOutputPolicy::None;
+    } else if (name == "exist") {
+        descriptor.inputs = BuiltinArity::range(1, 2);
+        descriptor.outputs = BuiltinArity::fixed(1);
+        descriptor.purity = BuiltinPurity::ReadOnly;
+        descriptor.contextPermissions =
+            BuiltinContextPermission::Workspace |
+            BuiltinContextPermission::SystemServices;
+        descriptor.requiredContext = BuiltinContextPermission::Workspace;
+    } else {
+        descriptor.contextPermissions =
+            BuiltinContextPermission::SystemServices;
+        descriptor.requiredContext =
+            BuiltinContextPermission::SystemServices;
+        descriptor.purity = BuiltinPurity::ReadOnly;
+        descriptor.outputs = BuiltinArity::range(0, 1);
+
+        if (name == "fopen") {
+            descriptor.inputs = BuiltinArity::range(1, 2);
+            descriptor.outputs = BuiltinArity::range(0, 4);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "fclose") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::range(0, 1);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "fscanf") {
+            descriptor.inputs = BuiltinArity::range(2, 3);
+            descriptor.outputs = BuiltinArity::range(1, 2);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "fseek") {
+            descriptor.inputs = BuiltinArity::fixed(3);
+            descriptor.outputs = BuiltinArity::range(0, 1);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+        } else if (name == "ftell") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::fixed(1);
+        } else if (name == "frewind") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::fixed(0);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+        } else if (name == "path") {
+            descriptor.inputs = BuiltinArity::range(0, 1);
+            descriptor.purity = BuiltinPurity::Contextual;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "addpath" || name == "rmpath") {
+            descriptor.inputs = BuiltinArity::variadic(1);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+        } else if (name == "pwd" || name == "tempdir" ||
+                   name == "date" || name == "clock" ||
+                   name == "version") {
+            descriptor.inputs = BuiltinArity::fixed(0);
+        } else if (name == "computer") {
+            descriptor.inputs = BuiltinArity::fixed(0);
+            descriptor.outputs = BuiltinArity::range(0, 3);
+            descriptor.determinism = BuiltinDeterminism::Deterministic;
+        } else if (name == "cd" || name == "dir") {
+            descriptor.inputs = BuiltinArity::range(0, 1);
+            if (name == "cd") {
+                descriptor.purity = BuiltinPurity::Impure;
+                descriptor.sideEffects = BuiltinSideEffect::External;
+            } else {
+                descriptor.sideEffects = BuiltinSideEffect::Console;
+                descriptor.implicitOutputPolicy =
+                    BuiltinImplicitOutputPolicy::None;
+                descriptor.contextPermissions =
+                    descriptor.contextPermissions |
+                    BuiltinContextPermission::Output;
+            }
+        } else if (name == "getenv" || name == "which") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            if (name == "which") {
+                descriptor.contextPermissions =
+                    descriptor.contextPermissions |
+                    BuiltinContextPermission::Workspace;
+            }
+        } else if (name == "pause") {
+            descriptor.inputs = BuiltinArity::range(0, 1);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::Time;
+            descriptor.contextPermissions =
+                descriptor.contextPermissions |
+                BuiltinContextPermission::ExecutionControl;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+        } else if (name == "rand" || name == "randn") {
+            descriptor.inputs = BuiltinArity::variadic(0);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.determinism =
+                BuiltinDeterminism::Nondeterministic;
+            descriptor.sideEffects = BuiltinSideEffect::RandomState;
+        } else if (name == "randi") {
+            descriptor.inputs = BuiltinArity::variadic(1);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.determinism =
+                BuiltinDeterminism::Nondeterministic;
+            descriptor.sideEffects = BuiltinSideEffect::RandomState;
+        } else if (name == "rng") {
+            descriptor.inputs = BuiltinArity::range(0, 2);
+            descriptor.purity = BuiltinPurity::Contextual;
+            descriptor.sideEffects = BuiltinSideEffect::RandomState;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::FirstWhenNoArguments;
+        } else if (name == "system") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::range(0, 2);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects =
+                BuiltinSideEffect::External |
+                BuiltinSideEffect::Console;
+            descriptor.contextPermissions =
+                descriptor.contextPermissions |
+                BuiltinContextPermission::Output;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+        }
+    }
+
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeSystemBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor descriptorFor(std::string_view name) {
+    if (isRuntimeSystemBuiltin(name)) {
+        return systemDescriptor(name);
+    }
     if (name == "missing") {
         return missingDescriptor();
     }
@@ -1078,7 +1314,7 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     if (name == "warning" || name == "lastwarn") {
         return warningDescriptor(name);
     }
-    if (name == "disp" || name == "fprintf" || name == "sprintf") {
+    if (name == "disp" || name == "sprintf") {
         return outputDescriptor(name);
     }
     if (isZeroOutputIntrinsic(name)) {
@@ -1175,6 +1411,12 @@ std::string missingContextName(
     if (permission == BuiltinContextPermission::Output) {
         return "output sink";
     }
+    if (permission == BuiltinContextPermission::SystemServices) {
+        return "system-services context";
+    }
+    if (permission == BuiltinContextPermission::DisplayFormat) {
+        return "display-format state";
+    }
     return "runtime context";
 }
 
@@ -1184,7 +1426,8 @@ bool contextAvailable(const BuiltinCallContext* context,
         return false;
     }
     if (permission == BuiltinContextPermission::Workspace) {
-        return context->workspace != nullptr;
+        return context->workspace != nullptr &&
+               context->workspace->variables != nullptr;
     }
     if (permission == BuiltinContextPermission::WarningState) {
         return context->warningState != nullptr;
@@ -1203,6 +1446,14 @@ bool contextAvailable(const BuiltinCallContext* context,
     if (permission == BuiltinContextPermission::Output) {
         return context->outputSink != nullptr &&
                static_cast<bool>(*context->outputSink);
+    }
+    if (permission == BuiltinContextPermission::SystemServices) {
+        return context->systemContext != nullptr;
+    }
+    if (permission == BuiltinContextPermission::DisplayFormat) {
+        return context->displayFormat != nullptr &&
+               static_cast<bool>(context->displayFormat->current) &&
+               static_cast<bool>(context->displayFormat->replace);
     }
     return true;
 }
@@ -1279,6 +1530,29 @@ BuiltinResult BuiltinResult::failure(SourceSpan span,
                     std::move(identifier)}}};
 }
 
+size_t BuiltinCall::callerNargout() const {
+    return callerOutputCount.value_or(requestedOutputCount);
+}
+
+size_t BuiltinDescriptor::implicitOutputCount(
+    size_t suppliedInputCount) const {
+    switch (implicitOutputPolicy) {
+    case BuiltinImplicitOutputPolicy::None:
+        return 0;
+    case BuiltinImplicitOutputPolicy::FirstWhenNoArguments:
+        if (suppliedInputCount != 0) {
+            return 0;
+        }
+        break;
+    case BuiltinImplicitOutputPolicy::FirstAvailable:
+        break;
+    }
+    if (outputs.accepts(1)) {
+        return 1;
+    }
+    return outputs.accepts(0) ? 0 : 1;
+}
+
 BuiltinRegistrationResult BuiltinRegistry::registerBuiltin(
     BuiltinDescriptor descriptor) {
     if (frozen_) {
@@ -1296,6 +1570,20 @@ BuiltinRegistrationResult BuiltinRegistry::registerBuiltin(
         descriptor.outputs.minimum > *descriptor.outputs.maximum) {
         return {false, "builtin output arity is invalid: " +
                            descriptor.name};
+    }
+    if (descriptor.implicitOutputPolicy ==
+            BuiltinImplicitOutputPolicy::None &&
+        !descriptor.outputs.accepts(0)) {
+        return {false, "builtin implicit output policy requires zero-output "
+                       "support: " + descriptor.name};
+    }
+    if (descriptor.implicitOutputPolicy ==
+            BuiltinImplicitOutputPolicy::FirstWhenNoArguments &&
+        (!descriptor.inputs.accepts(0) ||
+         !descriptor.outputs.accepts(0) ||
+         !descriptor.outputs.accepts(1))) {
+        return {false, "builtin query/set implicit output policy is "
+                       "incompatible with its arity: " + descriptor.name};
     }
     if (descriptor.inputs.maximum &&
         descriptor.argumentConstraints.size() >
@@ -1545,7 +1833,9 @@ BuiltinResult BuiltinRegistry::invoke(
              BuiltinContextPermission::ObjectArrayPolicy,
              BuiltinContextPermission::DynamicCall,
              BuiltinContextPermission::ExecutionControl,
-             BuiltinContextPermission::Output}) {
+             BuiltinContextPermission::Output,
+             BuiltinContextPermission::SystemServices,
+             BuiltinContextPermission::DisplayFormat}) {
         if (hasBuiltinContextPermission(
                 descriptor->requiredContext, permission) &&
             !contextAvailable(call.context, permission)) {

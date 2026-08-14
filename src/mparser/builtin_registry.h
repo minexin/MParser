@@ -17,11 +17,26 @@
 namespace mparser {
 
 inline constexpr std::uint32_t kBuiltinSourceContractMajor = 1;
-inline constexpr std::uint32_t kBuiltinSourceContractMinor = 1;
+inline constexpr std::uint32_t kBuiltinSourceContractMinor = 3;
 
 struct RuntimeObjectArrayPolicy;
 class RuntimeExecutionControl;
+class RuntimeSystemContext;
 struct RuntimeWarningState;
+class BuiltinRegistry;
+
+struct BuiltinWorkspaceAccess {
+    RuntimeWorkspace* variables = nullptr;
+    std::function<void()> clearVariables;
+    std::function<bool(std::string_view)> eraseVariable;
+    std::function<bool(std::string_view)> functionExists;
+    std::function<bool(std::string_view)> classExists;
+};
+
+struct BuiltinDisplayFormatAccess {
+    std::function<RuntimeDisplayFormat()> current;
+    std::function<RuntimeDisplayFormat(RuntimeDisplayFormat)> replace;
+};
 
 struct BuiltinArity {
     size_t minimum = 0;
@@ -90,6 +105,8 @@ enum class BuiltinSideEffect : std::uint32_t {
     Time = 1U << 3U,
     ObjectState = 1U << 4U,
     External = 1U << 5U,
+    RandomState = 1U << 6U,
+    DisplayState = 1U << 7U,
 };
 
 enum class BuiltinContextPermission : std::uint32_t {
@@ -100,6 +117,8 @@ enum class BuiltinContextPermission : std::uint32_t {
     DynamicCall = 1U << 3U,
     ExecutionControl = 1U << 4U,
     Output = 1U << 5U,
+    SystemServices = 1U << 6U,
+    DisplayFormat = 1U << 7U,
 };
 
 BuiltinSideEffect operator|(BuiltinSideEffect left,
@@ -126,6 +145,12 @@ enum class BuiltinTypedLowering {
     Tangent,
 };
 
+enum class BuiltinImplicitOutputPolicy {
+    FirstAvailable,
+    None,
+    FirstWhenNoArguments,
+};
+
 struct BuiltinResult {
     bool succeeded = false;
     std::vector<RuntimeValue> outputs;
@@ -143,11 +168,14 @@ using BuiltinDynamicInvoker = std::function<BuiltinResult(
     size_t requestedOutputCount, SourceSpan span)>;
 
 struct BuiltinCallContext {
-    RuntimeWorkspace* workspace = nullptr;
+    BuiltinWorkspaceAccess* workspace = nullptr;
     RuntimeWarningState* warningState = nullptr;
     const RuntimeObjectArrayPolicy* objectArrayPolicy = nullptr;
     RuntimeExecutionControl* executionControl = nullptr;
     RuntimeOutputSink* outputSink = nullptr;
+    RuntimeSystemContext* systemContext = nullptr;
+    BuiltinDisplayFormatAccess* displayFormat = nullptr;
+    const BuiltinRegistry* registry = nullptr;
     BuiltinDynamicInvoker dynamicInvoker;
 };
 
@@ -156,6 +184,9 @@ struct BuiltinCall {
     size_t requestedOutputCount = 0;
     SourceSpan span;
     BuiltinCallContext* context = nullptr;
+    std::optional<size_t> callerOutputCount;
+
+    size_t callerNargout() const;
 };
 
 using BuiltinHandler =
@@ -181,9 +212,13 @@ struct BuiltinDescriptor {
     BuiltinContextPermission requiredContext =
         BuiltinContextPermission::None;
     BuiltinTypedLowering typedLowering = BuiltinTypedLowering::None;
+    BuiltinImplicitOutputPolicy implicitOutputPolicy =
+        BuiltinImplicitOutputPolicy::FirstAvailable;
     std::string errorIdentifier = "MParser:InvalidBuiltinCall";
     std::string summary;
     BuiltinHandler handler;
+
+    size_t implicitOutputCount(size_t suppliedInputCount) const;
 };
 
 struct BuiltinRegistrationResult {

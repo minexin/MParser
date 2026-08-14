@@ -1395,12 +1395,14 @@ ownership rules, diagnostics, threading, conformance tests, and the future C
 adapter boundary are specified in
 [extending-builtins.md](extending-builtins.md).
 
-The semantic source-integration boundary is versioned independently. Builtin
-source contract 1.1 extends the archived 1.0 contract with host output and
-execution-context permissions. The v1.2 normalized snapshot records all 166
-default descriptors, 168 registered names, and every compatibility-relevant
-metadata field. A generator-backed smoke test compares the live registry to
-that snapshot; it does not serialize
+The semantic source-integration boundary is versioned independently. Frozen
+builtin source contract 1.1 extends the archived 1.0 contract with host output
+and execution-context permissions. Its v1.2 normalized snapshot records all
+166 default descriptors and 168 registered names. Active contract 1.3 adds
+structured workspace access, caller output count, implicit-output policy,
+system/display contexts, and random/display side effects; its development
+snapshot records 196 descriptors and 198 registered names. A generator-backed
+smoke test compares the live registry to the active snapshot; it does not serialize
 handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
 values and diagnostics across HIR and bytecode rather than comparing display
 strings.
@@ -1784,6 +1786,30 @@ callback exceptions. Machine protocol 1.1 frames optional event/expression
 arrays, while ordinary CLI mode prints the merged human stream. Typed/native
 regions remain guarded: output or capture semantics outside their eligibility
 continue through the bytecode authority.
+
+The v1.3 system layer extends that invocation model with a session-owned
+`RuntimeSystemContext`. Capability bits and an abstract `RuntimeHostAdapter`
+separate path/current-directory state, filesystem read/write, environment,
+clock/sleep, process, and random behavior from the interpreter and bytecode
+VM. Both engines place the same context in `BuiltinCallContext`; no system
+builtin has a second engine-specific implementation. The production CLI uses
+the native adapter, while deterministic tests inject an in-memory adapter and
+isolated embedding requests can omit every process-facing capability.
+
+Text file identifiers and random state live in the context rather than global
+process state. File entries retain the requested name, resolved host path,
+canonical permission, unread scan suffix, and host file ownership. The
+context serializes access, enforces open/read bounds, and closes all handles on
+destruction. `runtime_file_io` owns one bounded format scanner shared by HIR
+and VM calls; it reapplies formats, preserves column-major output shape,
+handles exact 64-bit integer formats, and commits only the consumed prefix so
+the next call observes the correct file position.
+
+`fseek`, `ftell`, and `frewind` operate on physical byte positions even though
+the scanner prefetches. File entries retain sparse translation offsets for
+Windows CRLF text input, while binary and Unix paths retain no mapping. A
+successful positioning call clears the prefetch suffix and forms the required
+barrier between read and write directions on `+` update streams.
 
 The v1.2 core numeric builtin tranche also removes tier-specific equality
 behavior. `BuiltinRegistry` routes `mod`/`rem` and `nextpow2` through shared

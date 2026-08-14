@@ -7,12 +7,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace mparser {
+
+class RuntimeSystemContext;
 
 enum class ModuleExecutionBackend {
     Automatic,
@@ -88,6 +91,8 @@ struct ModuleTopLevelExpression {
     ModuleSourceRange source;
     bool outputSuppressed = false;
     std::uint64_t sequence = 0;
+    std::string displayText;
+    RuntimeLineSpacing lineSpacing = RuntimeLineSpacing::Loose;
 };
 
 using ModuleOutputSink =
@@ -128,6 +133,7 @@ struct ModuleInvocationRequest {
     RuntimeExecutionLimits limits;
     std::optional<RuntimeCancellationToken> cancellationToken;
     ModuleOutputSink outputSink;
+    std::shared_ptr<RuntimeSystemContext> systemContext;
 };
 
 struct ModuleExecutionSummary {

@@ -1,9 +1,10 @@
 # v1.x Support Matrix
 
 MParser v1.x is a MATLAB-like subset runtime, not a complete MATLAB
-replacement. This page summarizes the released v1.0 baseline plus the active
-v1.2 development line. Development interfaces are not production compatibility
-promises until their milestone candidate is frozen. The machine-readable
+replacement. This page summarizes the released v1.0 baseline, frozen v1.2
+candidate, and active v1.3 development line. Development interfaces are not
+production compatibility promises until their milestone candidate is frozen.
+The machine-readable
 [compatibility-matrix.json](compatibility-matrix.json) is authoritative and
 links every supported or partial claim to source and executable evidence.
 
@@ -38,7 +39,7 @@ The combined executable sample is
 `samples/v1_1_core_compatibility_demo.m`. Exact tier and limitation claims are
 recorded under `SYN-001`, `SYN-002`, `ARR-001`, and `ARR-002`.
 
-## v1.2 Development Additions
+## v1.2 Candidate Additions
 
 The current v1.2 train is building one end-to-end numeric foundation:
 
@@ -77,6 +78,38 @@ report candidate version `1.2.0`; ABI generation and protocol numbers are
 independent contract metadata, not SDK product versions. Its
 166-descriptor/168-name catalog and current public surfaces are frozen by the
 v1.2 candidate contract.
+
+## v1.3 Development Additions
+
+The current tree has the first end-to-end system/runtime batch:
+
+- one session-owned capability context and injectable host adapter for current
+  directory, search paths, environment, filesystem read/write, process,
+  clock, sleep, and random services;
+- command-form parsing and workspace-aware `clear`, `who`, `whos`, `exist`,
+  display `format`, and MATLAB-like implicit-output rules;
+- `pwd`, `cd`, `tempdir`, `path`, `addpath`, `rmpath`, `which`, `dir`,
+  `getenv`, `date`, `clock`, `computer`, `version`, `pause`, and `system`;
+- session-reproducible `rand`, `randn`, `randi`, and `rng`, including shaped
+  arrays, single output, state save/restore, and guarded VM fallback;
+- native-aware `fullfile`, `filesep`, and `pathsep`, including string-array
+  shape and missing-string-as-empty component behavior;
+- session-scoped `fopen`, `fclose`, `fseek`, `ftell`, `frewind`, file-targeted
+  `fprintf`, and repeated `fscanf` with update-stream barriers, translated
+  Windows text positions, bounded widths/output, scalar or matrix size,
+  column-major zero padding, mixed text/numeric conversion, and exact long
+  `int64`/`uint64` input;
+- parser diagnostics for illegal bare newlines in calls/indexing while matrix
+  and cell newlines remain row separators and `...` remains the legal
+  continuation form.
+
+The runnable evidence is `samples/system_services_demo.m`,
+`samples/random_runtime_demo.m`, and `samples/file_io_demo.m`. These are
+development capabilities, not a claim of complete MATLAB system or file I/O.
+Binary `fread`/`fwrite`, line reads, end/error queries, scansets, selectable
+encodings, remote files, MAT files, dynamic evaluation, and many broad
+standard-library families remain open. The product and public SDK still
+report `1.2.0` until the complete v1.3 milestone is ready to freeze.
 
 ## Language And Runtime
 
@@ -123,7 +156,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; ABI generation 2 revision 0, typed real/imaginary buffers, source metadata, output sink/results, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata and host output projection |
-| Builtin extension | Source contract 1.1 using registry/descriptors/call/results |
+| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.3 using registry/descriptors/call/results |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
@@ -192,5 +225,7 @@ version drift.
 
 The v1.0 snapshots remain immutable historical evidence. The current C API
 1.2, ABI generation 2, C++ API 1.2, protocol 1.1, and builtin contract 1.1
-snapshots are frozen separately at the v1.2 candidate gate. See
+snapshots are frozen separately at the v1.2 candidate gate. The in-tree
+builtin source contract has advanced to 1.3 for v1.3 development and is not a
+new frozen SDK release. See
 [v1.x Roadmap](roadmap-v1.x.md).

@@ -1,8 +1,9 @@
 # MParser
 
-Current development milestone: v1.2 candidate. The source tree, product
-metadata, and installed SDK share version `1.2.0`; this is not yet a tagged
-release. This completed train extends the runtime with exact core numeric classes,
+Current product and SDK candidate: v1.2.0. The active source development line
+is v1.3, while product metadata and the installed SDK remain `1.2.0` until that
+larger milestone is ready to freeze. The completed v1.2 train extends the
+runtime with exact core numeric classes,
 including precision-preserving `int64`/`uint64` arithmetic with scalar
 `double`, dense complex double/single values, typed constructors and elementary
 math, C/C++ source API 1.2, C ABI generation 2 revision 0, in-memory source
@@ -1800,6 +1801,23 @@ The demo reports `summary = 49` and is also checked through `--run-hir` and
 string scalars or arrays, `double(stringArray)` and `str2double` preserve array
 shape, and legal text/cell/missing code outside optimized regions falls back
 to the bytecode VM.
+
+Run the active v1.3 system, random-state, and bounded text-file slices with:
+
+```powershell
+build\mparser.exe --run samples\system_services_demo.m
+build\mparser.exe --run samples\random_runtime_demo.m
+build\mparser.exe --run samples\file_io_demo.m
+```
+
+The three samples are also checked through `--run-hir` and `--run-bytecode`.
+They cover session-local path/current-directory/workspace state, capability
+routing, reproducible shaped random arrays, native path separators, file
+open/query/append/close lifetime, `fseek`/`ftell`/`frewind`, update-stream
+barriers, Windows text-mode CRLF positioning, formatted output, bounded
+repeated input, finite-shape padding, and array-aware `fullfile`. This is the
+current v1.3 development slice; complete MATLAB system and low-level file I/O
+remain on the roadmap.
 
 Run value, handle, and heterogeneous object arrays through the production
 interface:

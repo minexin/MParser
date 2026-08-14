@@ -16,7 +16,7 @@ endif()
 list(APPEND mparser_command "${MPARSER_CLI}")
 
 set(expected_output
-    "value=42\npi=3.1\nans = 42\nVariables:\n  ans = 43\n  formatted = 'value=42'\n  written = 7\n")
+    "value=42\n\npi=3.1\nans = 42\n\nVariables:\n  ans = 43\n  formatted = 'value=42'\n  written = 7\n")
 
 function(run_host_case name)
     execute_process(

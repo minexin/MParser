@@ -331,14 +331,25 @@ if(NOT warning_gate_count EQUAL 6)
         "all six first-party cross-platform CI configure paths must enable "
         "warnings-as-errors; found ${warning_gate_count}")
 endif()
-string(REGEX MATCHALL
-    "\"MPARSER_WARNINGS_AS_ERRORS\": \"ON\""
-    preset_warning_matches "${cmake_presets}")
-list(LENGTH preset_warning_matches preset_warning_count)
-if(NOT preset_warning_count EQUAL 3)
+string(JSON configure_preset_count LENGTH
+    "${cmake_presets}" configurePresets)
+if(configure_preset_count EQUAL 0)
     message(FATAL_ERROR
-        "all checked-in configure presets must enable warnings-as-errors")
+        "at least one checked-in configure preset is required")
 endif()
+math(EXPR configure_preset_last "${configure_preset_count} - 1")
+foreach(preset_index RANGE 0 ${configure_preset_last})
+    string(JSON preset_name GET "${cmake_presets}"
+        configurePresets ${preset_index} name)
+    string(JSON preset_warning ERROR_VARIABLE preset_warning_error
+        GET "${cmake_presets}" configurePresets ${preset_index}
+        cacheVariables MPARSER_WARNINGS_AS_ERRORS)
+    if(preset_warning_error OR NOT preset_warning STREQUAL "ON")
+        message(FATAL_ERROR
+            "configure preset '${preset_name}' must enable "
+            "warnings-as-errors")
+    endif()
+endforeach()
 require_text(build_guide "MPARSER_WARNINGS_AS_ERRORS"
     "first-party compiler warning policy")
 require_text(release_process "MPARSER_WARNINGS_AS_ERRORS=ON"

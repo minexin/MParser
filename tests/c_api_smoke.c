@@ -265,8 +265,8 @@ static mparser_output_disposition capture_output(
     if (probe->count == 0) {
         probe->valid = probe->valid &&
                        kind == MPARSER_OUTPUT_DISPLAY &&
-                       text_size == strlen("value=42\n") &&
-                       memcmp(text, "value=42\n", text_size) == 0;
+                       text_size == strlen("value=42\n\n") &&
+                       memcmp(text, "value=42\n\n", text_size) == 0;
     } else if (probe->count == 1) {
         probe->valid = probe->valid &&
                        kind == MPARSER_OUTPUT_STANDARD &&
@@ -1568,7 +1568,7 @@ static int run_host_output_smoke(void) {
           MPARSER_OUTPUT_DISPLAY);
     CHECK(mparser_result_output_event_sequence(result, 0) == 0);
     CHECK(view_equals(
-        mparser_result_output_event_text(result, 0), "value=42\n"));
+        mparser_result_output_event_text(result, 0), "value=42\n\n"));
     CHECK(mparser_result_output_event_kind(result, 1) ==
           MPARSER_OUTPUT_STANDARD);
     CHECK(mparser_result_output_event_sequence(result, 1) == 1);

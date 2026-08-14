@@ -144,9 +144,20 @@ required properties.
 
 `contextPermissions` lists every context capability a handler may use.
 `requiredContext` is the subset that must be present for every invocation.
-The current context fields are workspace, warning state, object-array policy,
-execution control, and a reserved dynamic invoker. A context handler must not
-retain raw pointers from `BuiltinCallContext` after returning.
+The active context fields are structured workspace access, warning state,
+object-array policy, execution control, output, system services, display
+format, the current registry, and a reserved dynamic invoker. A context
+handler must not retain raw pointers or callbacks from `BuiltinCallContext`
+after returning. A descriptor such as `fprintf` that can use either output or
+system services lists both in `contextPermissions` but leaves
+`requiredContext` empty and validates the selected form in its handler.
+
+`call.callerNargout()` reports the caller-visible output request independently
+of the internal result slots used by an expression. `implicitOutputPolicy`
+controls statement calls with no explicit target: use `FirstAvailable` for an
+ordinary value-returning function, `None` for commands/setters, and
+`FirstWhenNoArguments` for query-or-set functions such as `rng`. Do not encode
+these distinctions in parser or VM name lists.
 
 `typedLowering` is optional. `None` means the legal call executes in the
 baseline VM. A non-`None` value may be used only when the custom function is
@@ -186,11 +197,12 @@ arguments and contexts. `ContextBound` means callers must respect the owning
 session's serialization rules. `Serialized` reserves behavior that requires a
 host-managed global lock; the v0.80 runtime does not insert one automatically.
 
-Workspace and warning state belong to one runtime invocation or session. Do
-not store their addresses globally. Object-array policy is immutable for one
-call. The dynamic invoker field is reserved and currently absent from engine
-calls, so declaring it as required produces a deterministic missing-context
-diagnostic.
+Workspace, display format, system services, and warning state belong to one
+runtime invocation or session. Do not store their addresses globally.
+Object-array policy is immutable for one call. System adapters are synchronous
+and context-bound; a callback must not re-enter the same context. The dynamic
+invoker field is reserved and currently absent from engine calls, so declaring
+it as required produces a deterministic missing-context diagnostic.
 
 ## Resource Cooperation
 
@@ -257,14 +269,19 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify source contract 1.1. Contract 1.0 established registration/freeze rules,
-descriptor meaning, call/result behavior, ownership, diagnostics, context,
-threading, resource cooperation, and typed-lowering eligibility. It does not
-promise a C++ binary ABI or stable class layout. Contract 1.1 adds the host
-output and execution-context permissions used by contextual v1.2 builtins.
+identify active source contract 1.3. Contract 1.0 established
+registration/freeze rules, descriptor meaning, call/result behavior,
+ownership, diagnostics, context, threading, resource cooperation, and
+typed-lowering eligibility. It does not promise a C++ binary ABI or stable
+class layout. Frozen contract 1.1 added host output and execution-context
+permissions for v1.2. The active 1.3 contract additionally records structured
+workspace access, caller `nargout`, implicit-output policy, system/display
+contexts, random/display side effects, and the expanded descriptor catalog.
 
-`tests/public_contract/builtin/1.1/default_catalog.json` is the normalized
-v1.2 candidate descriptor snapshot; the 1.0 file remains historical evidence.
+`tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
+v1.2 candidate snapshot. The active development snapshot is
+`tests/public_contract/builtin/1.3/default_catalog.json`; the 1.0 file remains
+historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output
 constraint, behavioral classification, context permission, error identifier,

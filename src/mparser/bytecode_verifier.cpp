@@ -93,7 +93,8 @@ bool hasControlTarget(const BytecodeInstruction& instruction) {
 }
 
 bool hasVariableResultCount(BytecodeOp op) {
-    return op == BytecodeOp::MemberAccess ||
+    return op == BytecodeOp::LoadName ||
+           op == BytecodeOp::MemberAccess ||
            op == BytecodeOp::CallOrIndex ||
            op == BytecodeOp::CallSuperclass;
 }
@@ -153,6 +154,7 @@ StackEffect stackEffect(const BytecodeInstruction& instruction) {
     const int64_t results = instruction.resultCount;
     switch (instruction.op) {
     case BytecodeOp::LoadName:
+        return {0, results};
     case BytecodeOp::LoadLiteral:
     case BytecodeOp::LoadMetaClass:
     case BytecodeOp::MakeFunctionHandle:
@@ -485,12 +487,13 @@ private:
                                   "count");
             }
             if (instruction.implicitExpressionOutput &&
-                (instruction.op != BytecodeOp::CallOrIndex ||
+                ((instruction.op != BytecodeOp::CallOrIndex &&
+                  instruction.op != BytecodeOp::LoadName) ||
                  instruction.resultCount != 1)) {
                 addDiagnostic(
                     pc,
                     "implicit expression output requires a one-result "
-                    "CallOrIndex instruction");
+                    "CallOrIndex or LoadName instruction");
             }
 
             if (!hasVariableResultCount(instruction.op) &&

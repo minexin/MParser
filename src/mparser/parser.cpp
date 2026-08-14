@@ -1,6 +1,7 @@
 #include "mparser/parser.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -218,6 +219,12 @@ bool hasLeadingWhitespace(const Token& token) {
         });
 }
 
+bool isPotentialCommandOperator(TokenKind kind) {
+    return binaryPrecedence(kind) != 0 || isPrefixOperator(kind) ||
+           kind == TokenKind::Apostrophe ||
+           kind == TokenKind::DotApostrophe;
+}
+
 bool isTopLevelSeparator(TokenKind kind) {
     return kind == TokenKind::Comma || kind == TokenKind::Semicolon;
 }
@@ -225,6 +232,7 @@ bool isTopLevelSeparator(TokenKind kind) {
 struct ExpressionParseResult {
     std::unique_ptr<SyntaxNode> root;
     bool consumedAll = false;
+    std::vector<Diagnostic> diagnostics;
 };
 
 class ExpressionParser {
@@ -236,7 +244,8 @@ public:
         if (!root && !tokens_.empty()) {
             root = makeError(tokens_.front().span, "unparsed expression");
         }
-        return ExpressionParseResult{std::move(root), isAtEnd()};
+        return ExpressionParseResult{
+            std::move(root), isAtEnd(), std::move(diagnostics_)};
     }
 
 private:
@@ -503,7 +512,6 @@ private:
                 node->children.push_back(std::move(expression));
             }
         }
-
         if (at(TokenKind::RParen)) {
             const Token close = advance();
             node->span = mergeSpans(open.span, close.span);
@@ -526,7 +534,7 @@ private:
                 continue;
             }
 
-            if (at(TokenKind::Semicolon)) {
+            if (atAny({TokenKind::Semicolon, TokenKind::Newline})) {
                 const Token separator = advance();
                 if (!row->children.empty()) {
                     row->span = mergeSpans(row->children.front()->span,
@@ -798,19 +806,33 @@ private:
     }
 
     std::unique_ptr<SyntaxNode> makeError(SourceSpan span,
-                                          std::string message) const {
+                                          std::string message) {
         auto node = makeNodeFromSpan(SyntaxKind::Error, span);
+        diagnostics_.push_back(Diagnostic{span, message});
         node->raw = std::move(message);
         return node;
     }
 
     std::vector<Token> tokens_;
     size_t cursor_ = 0;
+    std::vector<Diagnostic> diagnostics_;
 };
 
 ExpressionParseResult parseExpressionTokens(const std::vector<Token>& tokens) {
     ExpressionParser parser(tokens);
     return parser.parse();
+}
+
+void appendExpressionDiagnostics(
+    std::vector<Diagnostic>* destination,
+    ExpressionParseResult& expression) {
+    if (!destination) {
+        return;
+    }
+    for (auto& diagnostic : expression.diagnostics) {
+        destination->push_back(std::move(diagnostic));
+    }
+    expression.diagnostics.clear();
 }
 
 size_t findTopLevelAssignment(const std::vector<Token>& tokens) {
@@ -1142,7 +1164,9 @@ bool isBracketedOutputList(const std::vector<Token>& tokens) {
            tokens.back().kind == TokenKind::RBracket;
 }
 
-std::unique_ptr<SyntaxNode> buildOutputList(const std::vector<Token>& tokens) {
+std::unique_ptr<SyntaxNode> buildOutputList(
+    const std::vector<Token>& tokens,
+    std::vector<Diagnostic>* diagnostics) {
     auto node = makeNodeFromSpan(SyntaxKind::OutputList, spanFromTokens(tokens));
     node->raw = joinTokenTexts(tokens);
 
@@ -1157,6 +1181,7 @@ std::unique_ptr<SyntaxNode> buildOutputList(const std::vector<Token>& tokens) {
         }
 
         auto parsed = parseExpressionTokens(part);
+        appendExpressionDiagnostics(diagnostics, parsed);
         if (parsed.root) {
             node->children.push_back(std::move(parsed.root));
         }
@@ -1192,8 +1217,123 @@ bool isControlStatementKeyword(const std::vector<Token>& tokens) {
             tokens.front().kind == TokenKind::KeywordReturn);
 }
 
+std::string commandTailText(const std::vector<Token>& tokens) {
+    std::string result;
+    for (size_t index = 1; index < tokens.size(); ++index) {
+        for (const Trivia& trivia : tokens[index].leadingTrivia) {
+            if (trivia.kind == TriviaKind::Whitespace) {
+                result += trivia.text;
+            } else {
+                result.push_back(' ');
+            }
+        }
+        result += tokens[index].text;
+    }
+    return result;
+}
+
+std::optional<std::vector<std::string>> commandArguments(
+    std::string_view text) {
+    std::vector<std::string> arguments;
+    size_t cursor = 0;
+    while (cursor < text.size()) {
+        while (cursor < text.size() &&
+               std::isspace(static_cast<unsigned char>(text[cursor])) != 0) {
+            ++cursor;
+        }
+        if (cursor == text.size()) {
+            break;
+        }
+
+        std::string argument;
+        while (cursor < text.size() &&
+               std::isspace(static_cast<unsigned char>(text[cursor])) == 0) {
+            if (text[cursor] != '\'') {
+                argument.push_back(text[cursor++]);
+                continue;
+            }
+
+            ++cursor;
+            bool closed = false;
+            while (cursor < text.size()) {
+                if (text[cursor] != '\'') {
+                    argument.push_back(text[cursor++]);
+                    continue;
+                }
+                if (cursor + 1 < text.size() && text[cursor + 1] == '\'') {
+                    argument.push_back('\'');
+                    cursor += 2;
+                    continue;
+                }
+                ++cursor;
+                closed = true;
+                break;
+            }
+            if (!closed) {
+                return std::nullopt;
+            }
+        }
+        arguments.push_back(std::move(argument));
+    }
+    return arguments;
+}
+
+std::string characterLiteral(std::string_view value) {
+    std::string result{"'"};
+    for (const char character : value) {
+        result.push_back(character);
+        if (character == '\'') {
+            result.push_back('\'');
+        }
+    }
+    result.push_back('\'');
+    return result;
+}
+
+std::unique_ptr<SyntaxNode> buildCommandForm(
+    const std::vector<Token>& tokens) {
+    if (tokens.size() < 2 || tokens.front().kind != TokenKind::Identifier ||
+        tokens[1].kind == TokenKind::LParen ||
+        !hasLeadingWhitespace(tokens[1])) {
+        return nullptr;
+    }
+    if (isPotentialCommandOperator(tokens[1].kind) &&
+        tokens.size() > 2 && hasLeadingWhitespace(tokens[2])) {
+        return nullptr;
+    }
+
+    const std::string tail = commandTailText(tokens);
+    const auto arguments = commandArguments(tail);
+    if (!arguments) {
+        return nullptr;
+    }
+
+    auto call = makeNodeFromSpan(
+        SyntaxKind::CallOrIndexExpr, spanFromTokens(tokens));
+    call->label = "command";
+    call->raw = tokens.front().text + tail;
+
+    auto callee = makeNodeFromSpan(
+        SyntaxKind::IdentifierExpr, tokens.front().span);
+    callee->label = tokens.front().text;
+    callee->raw = tokens.front().text;
+    call->children.push_back(std::move(callee));
+
+    const SourceSpan argumentSpan = mergeSpans(
+        tokens[1].span, tokens.back().span);
+    for (const std::string& argument : *arguments) {
+        auto literal = makeNodeFromSpan(
+            SyntaxKind::StringLiteralExpr, argumentSpan);
+        literal->raw = characterLiteral(argument);
+        literal->label = literal->raw;
+        call->children.push_back(std::move(literal));
+    }
+    return call;
+}
+
 std::unique_ptr<SyntaxNode> buildStatementLikeNode(
-    const std::vector<Token>& tokens, SyntaxKind expressionWrapperKind) {
+    const std::vector<Token>& tokens, SyntaxKind expressionWrapperKind,
+    std::vector<Diagnostic>* diagnostics) {
     if (tokens.empty()) {
         return makeRawStatement(tokens);
     }
@@ -1214,14 +1354,16 @@ std::unique_ptr<SyntaxNode> buildStatementLikeNode(
         std::unique_ptr<SyntaxNode> left;
         bool leftConsumed = true;
         if (isBracketedOutputList(leftTokens)) {
-            left = buildOutputList(leftTokens);
+            left = buildOutputList(leftTokens, diagnostics);
         } else {
             auto parsedLeft = parseExpressionTokens(leftTokens);
+            appendExpressionDiagnostics(diagnostics, parsedLeft);
             leftConsumed = parsedLeft.consumedAll;
             left = std::move(parsedLeft.root);
         }
 
         auto parsedRight = parseExpressionTokens(rightTokens);
+        appendExpressionDiagnostics(diagnostics, parsedRight);
         if (left && parsedRight.root && leftConsumed && parsedRight.consumedAll &&
             isAssignableSyntax(*left)) {
             auto assignment =
@@ -1237,7 +1379,16 @@ std::unique_ptr<SyntaxNode> buildStatementLikeNode(
         return makeRawStatement(tokens);
     }
 
+    if (auto command = buildCommandForm(tokens)) {
+        auto expression = makeNodeFromSpan(
+            expressionWrapperKind, spanFromTokens(tokens));
+        expression->raw = command->raw;
+        expression->children.push_back(std::move(command));
+        return expression;
+    }
+
     auto parsedExpression = parseExpressionTokens(tokens);
+    appendExpressionDiagnostics(diagnostics, parsedExpression);
     if (parsedExpression.root && parsedExpression.consumedAll) {
         auto expression =
             makeNodeFromSpan(expressionWrapperKind, spanFromTokens(tokens));
@@ -1249,13 +1400,16 @@ std::unique_ptr<SyntaxNode> buildStatementLikeNode(
     return makeRawStatement(tokens);
 }
 
-std::unique_ptr<SyntaxNode> buildControlHeader(const std::vector<Token>& tokens) {
+std::unique_ptr<SyntaxNode> buildControlHeader(
+    const std::vector<Token>& tokens,
+    std::vector<Diagnostic>* diagnostics) {
     auto header = makeNodeFromSpan(SyntaxKind::ControlHeader, spanFromTokens(tokens));
     header->raw = joinTokenTexts(tokens);
 
     if (!tokens.empty()) {
         header->children.push_back(
-            buildStatementLikeNode(tokens, SyntaxKind::ExpressionStatement));
+            buildStatementLikeNode(
+                tokens, SyntaxKind::ExpressionStatement, diagnostics));
     }
 
     return header;
@@ -1458,9 +1612,12 @@ std::unique_ptr<SyntaxNode> Parser::parsePropertiesBlock() {
         if (declaration->property.hasExplicitDefault &&
             !parsed.defaultTokens.empty()) {
             auto expression = parseExpressionTokens(parsed.defaultTokens);
+            const bool expressionHadDiagnostics =
+                !expression.diagnostics.empty();
+            appendExpressionDiagnostics(&diagnostics_, expression);
             if (expression.root && expression.consumedAll) {
                 declaration->children.push_back(std::move(expression.root));
-            } else {
+            } else if (!expressionHadDiagnostics) {
                 diagnostics_.push_back(Diagnostic{
                     spanFromTokens(parsed.defaultTokens),
                     "unable to parse property default expression"});
@@ -1621,12 +1778,18 @@ std::unique_ptr<SyntaxNode> Parser::parseEnumerationBlock() {
                                 continue;
                             }
                             auto expression = parseExpressionTokens(argument);
+                            const bool expressionHadDiagnostics =
+                                !expression.diagnostics.empty();
+                            appendExpressionDiagnostics(
+                                &diagnostics_, expression);
                             if (!expression.root ||
                                 !expression.consumedAll) {
-                                diagnostics_.push_back(Diagnostic{
-                                    spanFromTokens(argument),
-                                    "unable to parse enumeration constructor "
-                                    "argument"});
+                                if (!expressionHadDiagnostics) {
+                                    diagnostics_.push_back(Diagnostic{
+                                        spanFromTokens(argument),
+                                        "unable to parse enumeration "
+                                        "constructor argument"});
+                                }
                                 continue;
                             }
                             member->children.push_back(
@@ -1770,9 +1933,12 @@ std::unique_ptr<SyntaxNode> Parser::parseArgumentsBlock() {
         if (declaration->property.hasExplicitDefault &&
             !parsed.defaultTokens.empty()) {
             auto expression = parseExpressionTokens(parsed.defaultTokens);
+            const bool expressionHadDiagnostics =
+                !expression.diagnostics.empty();
+            appendExpressionDiagnostics(&diagnostics_, expression);
             if (expression.root && expression.consumedAll) {
                 declaration->children.push_back(std::move(expression.root));
-            } else {
+            } else if (!expressionHadDiagnostics) {
                 diagnostics_.push_back(Diagnostic{
                     spanFromTokens(parsed.defaultTokens),
                     "unable to parse argument default expression"});
@@ -1797,7 +1963,8 @@ std::unique_ptr<SyntaxNode> Parser::parseControlBlock() {
     const auto header = collectUntilSeparator(true);
     node->raw = joinTokens(header);
     if (!header.empty()) {
-        node->children.push_back(buildControlHeader(header));
+        node->children.push_back(
+            buildControlHeader(header, &diagnostics_));
     }
     consumeSeparator();
 
@@ -1814,7 +1981,8 @@ std::unique_ptr<SyntaxNode> Parser::parseControlBlock() {
             const auto armHeader = collectUntilSeparator(true);
             arm->raw = joinTokens(armHeader);
             if (!armHeader.empty()) {
-                arm->children.push_back(buildControlHeader(armHeader));
+                arm->children.push_back(
+                    buildControlHeader(armHeader, &diagnostics_));
             }
             consumeSeparator();
             finishNode(*arm);
@@ -1859,7 +2027,7 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
     const auto tokens = collectUntilSeparator(true);
     const bool outputSuppressed = at(TokenKind::Semicolon);
     auto statement = buildStatementLikeNode(
-        tokens, SyntaxKind::ExpressionStatement);
+        tokens, SyntaxKind::ExpressionStatement, &diagnostics_);
     if (statement && statement->kind == SyntaxKind::ExpressionStatement) {
         statement->capturesExpressionResult = true;
         statement->outputSuppressed = outputSuppressed;

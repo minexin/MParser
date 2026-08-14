@@ -673,6 +673,8 @@ private:
             for (const auto& child : node.children) {
                 if (child->kind == HirKind::Function) {
                     functionsByName_[child->label] = child.get();
+                } else if (child->kind == HirKind::Class) {
+                    classNames_.insert(child->label);
                 }
             }
         }
@@ -727,6 +729,8 @@ private:
                                     std::optional<size_t> requestedOutputCount =
                                         std::nullopt,
                                     std::optional<SourceSpan> callSite =
+                                        std::nullopt,
+                                    std::optional<size_t> callerOutputCount =
                                         std::nullopt) {
         std::optional<RuntimeExceptionFrame> callerFrame;
         if (callSite) {
@@ -747,6 +751,8 @@ private:
         const FunctionSignature signature = parseFunctionSignature(node);
         const size_t outputCount =
             requestedOutputCount.value_or(signature.outputs.size());
+        const size_t reportedOutputCount =
+            callerOutputCount.value_or(outputCount);
         const auto missingOutputs = [&] {
             return FunctionCallResult{
                 std::vector<RuntimeValue>(outputCount, missingValue())};
@@ -815,7 +821,7 @@ private:
         frames_.push_back(makeRuntimeFunctionFrame(
             RuntimeCallFrameKind::Function,
             publicFunctionName(node.label), node.span,
-            normalized.positionalArgumentCount, outputCount));
+            normalized.positionalArgumentCount, reportedOutputCount));
         auto validateValue = [&](RuntimeValue value,
                                  const ResolvedArgumentContract* contract,
                                  std::optional<size_t> occurrence =
@@ -1039,18 +1045,31 @@ private:
                     values.size() == 1 &&
                     values.front().kind != RuntimeValueKind::Missing &&
                     !frames_.empty()) {
+                    const RuntimeDisplayFormat displayFormat =
+                        sessionState_->displayFormat();
+                    const std::string displayText =
+                        runtimeFormatConsoleValue(values.front(),
+                                                  displayFormat);
                     currentFrame()["ans"] = values.front();
                     expressionResults_.push_back(
                         RuntimeExpressionResult{
                             std::move(values.front()), node.span,
                             node.outputSuppressed,
-                            nextConsoleSequence_++});
+                            nextConsoleSequence_++, displayText,
+                            displayFormat.spacing});
                 }
                 break;
             }
             if (node.children.size() == 1 &&
                 node.children.front()->kind == HirKind::CallOrIndex) {
                 (void)evaluateValues(*node.children.front(), 0);
+                break;
+            }
+            if (node.children.size() == 1 &&
+                node.children.front()->kind == HirKind::NameRef &&
+                node.children.front()->binding.kind ==
+                    BindingKind::Builtin) {
+                (void)evaluateValues(*node.children.front(), 1, true);
                 break;
             }
             executeChildren(node);
@@ -1179,7 +1198,8 @@ private:
     }
 
     std::optional<FunctionCallResult> callRuntimeExceptionMethod(
-        const HirNode& node, size_t requestedOutputCount) {
+        const HirNode& node, size_t requestedOutputCount,
+        std::optional<size_t> callerOutputCount = std::nullopt) {
         if (node.kind != HirKind::CallOrIndex || node.children.empty()) {
             return std::nullopt;
         }
@@ -1202,19 +1222,41 @@ private:
         std::vector<RuntimeValue> arguments = evaluateArguments(node);
         arguments.insert(arguments.begin(), std::move(receiver));
         return callBuiltin(node, callee.label, arguments,
-                           requestedOutputCount);
+                           requestedOutputCount, callerOutputCount);
     }
 
     std::vector<RuntimeValue> evaluateValues(
         const HirNode& node, size_t requestedOutputCount,
         bool implicitExpressionOutput = false) {
+        if (node.kind == HirKind::NameRef &&
+            node.binding.kind == BindingKind::Builtin) {
+            const BuiltinDescriptor* descriptor =
+                builtinRegistry().find(node.label);
+            if (descriptor && descriptor->handler &&
+                descriptor->inputs.accepts(0)) {
+                const size_t outputCount =
+                    implicitExpressionOutput
+                        ? preferredImplicitOutputCount(descriptor)
+                        : requestedOutputCount;
+                return callBuiltin(
+                           node, node.label, {}, outputCount,
+                           implicitExpressionOutput
+                               ? std::optional<size_t>{0}
+                               : std::nullopt)
+                    .outputs;
+            }
+        }
         if (node.kind == HirKind::CallOrIndex) {
             return evaluateCallOrIndexValues(
                 node, requestedOutputCount,
                 implicitExpressionOutput);
         }
         if (const auto method =
-                callRuntimeExceptionMethod(node, requestedOutputCount)) {
+                callRuntimeExceptionMethod(
+                    node, requestedOutputCount,
+                    implicitExpressionOutput
+                        ? std::optional<size_t>{0}
+                        : std::nullopt)) {
             return method->outputs;
         }
 
@@ -1224,6 +1266,13 @@ private:
     }
 
     bool expressionProducesResult(const HirNode& expression) const {
+        if (expression.kind == HirKind::NameRef &&
+            expression.binding.kind == BindingKind::Builtin) {
+            const auto* descriptor =
+                builtinRegistry().find(expression.label);
+            return !descriptor ||
+                   descriptor->implicitOutputCount(0) != 0;
+        }
         if (expression.kind != HirKind::CallOrIndex ||
             expression.children.empty()) {
             return true;
@@ -1243,11 +1292,11 @@ private:
     }
 
     size_t preferredImplicitOutputCount(
-        const BuiltinDescriptor* descriptor) const {
-        if (!descriptor || descriptor->outputs.accepts(1)) {
-            return 1;
-        }
-        return descriptor->outputs.accepts(0) ? 0 : 1;
+        const BuiltinDescriptor* descriptor,
+        size_t suppliedInputCount = 0) const {
+        return descriptor
+                   ? descriptor->implicitOutputCount(suppliedInputCount)
+                   : 1;
     }
 
     size_t preferredImplicitOutputCount(
@@ -1259,7 +1308,8 @@ private:
     }
 
     size_t preferredImplicitHandleOutputCount(
-        const RuntimeValue& handle) const {
+        const RuntimeValue& handle,
+        size_t suppliedInputCount = 0) const {
         if (!isFunctionHandle(handle)) {
             return 1;
         }
@@ -1269,7 +1319,8 @@ private:
         }
         if (info.kind == RuntimeFunctionHandleKind::Builtin) {
             return preferredImplicitOutputCount(
-                builtinRegistry().find(info.targetName));
+                builtinRegistry().find(info.targetName),
+                suppliedInputCount);
         }
         if (info.kind != RuntimeFunctionHandleKind::Function) {
             return 1;
@@ -2210,11 +2261,14 @@ private:
             const std::string_view builtinName =
                 descriptor ? std::string_view(descriptor->name)
                            : std::string_view(node.label);
-            if (builtinName == "clear" || builtinName == "clc" ||
-                builtinName == "tic" || builtinName == "toc") {
-                return firstOutput(callBuiltin(node, node.label, {}, 1));
+            if (descriptor && descriptor->handler &&
+                descriptor->inputs.accepts(0)) {
+                auto result = callBuiltin(
+                    node, node.label, {}, 1);
+                return firstOutput(std::move(result));
             }
-            if (builtinName == "missing") {
+            if (builtinName == "clc" ||
+                builtinName == "tic" || builtinName == "toc") {
                 return firstOutput(callBuiltin(node, node.label, {}, 1));
             }
             if (builtinName == "pi") {
@@ -2764,7 +2818,8 @@ private:
     FunctionCallResult callFunctionHandle(
         const HirNode& node, const RuntimeValue& handle,
         const std::vector<RuntimeValue>& arguments,
-        size_t requestedOutputCount) {
+        size_t requestedOutputCount,
+        std::optional<size_t> callerOutputCount = std::nullopt) {
         const auto missingOutputs = [&] {
             return FunctionCallResult{std::vector<RuntimeValue>(
                 requestedOutputCount, missingValue())};
@@ -2786,7 +2841,7 @@ private:
         }
         if (info.kind == RuntimeFunctionHandleKind::Builtin) {
             return callBuiltin(node, info.targetName, arguments,
-                               requestedOutputCount);
+                               requestedOutputCount, callerOutputCount);
         }
         if (info.kind == RuntimeFunctionHandleKind::Method) {
             addDiagnostic(
@@ -2805,7 +2860,8 @@ private:
                 return missingOutputs();
             }
             return callFunction(*function->second, arguments, false,
-                                requestedOutputCount, node.span);
+                                requestedOutputCount, node.span,
+                                callerOutputCount);
         }
 
         if (arguments.size() != info.parameters.size()) {
@@ -2831,7 +2887,8 @@ private:
             RuntimeCallFrameKind::AnonymousFunction,
             info.display.empty() ? std::string("<anonymous>")
                                  : info.display,
-            info.span, arguments.size(), requestedOutputCount,
+            info.span, arguments.size(),
+            callerOutputCount.value_or(requestedOutputCount),
             info.capturedVariables));
         for (size_t index = 0; index < info.parameters.size(); ++index) {
             if (info.parameters[index] != "~") {
@@ -2872,18 +2929,27 @@ private:
                       builtinRegistry().find(callee.label))
                 : requestedOutputCount;
         if (const auto method =
-                callRuntimeExceptionMethod(node, methodOutputCount)) {
+                callRuntimeExceptionMethod(
+                    node, methodOutputCount,
+                    implicitExpressionOutput
+                        ? std::optional<size_t>{0}
+                        : std::nullopt)) {
             return method->outputs;
         }
 
         if (node.binding.kind == BindingKind::Builtin) {
+            std::vector<RuntimeValue> arguments = evaluateArguments(node);
             const size_t outputCount =
                 implicitExpressionOutput
                     ? preferredImplicitOutputCount(
-                          builtinRegistry().find(callee.label))
+                          builtinRegistry().find(callee.label),
+                          arguments.size())
                     : requestedOutputCount;
-            return callBuiltin(node, callee.label, evaluateArguments(node),
-                               outputCount)
+            return callBuiltin(
+                       node, callee.label, arguments, outputCount,
+                       implicitExpressionOutput
+                           ? std::optional<size_t>{0}
+                           : std::nullopt)
                 .outputs;
         }
         if (node.binding.kind == BindingKind::Function) {
@@ -2897,18 +2963,26 @@ private:
             }
             return callLocalFunction(node, callee.label,
                                      evaluateArguments(node),
-                                     outputCount)
+                                     outputCount,
+                                     implicitExpressionOutput
+                                         ? std::optional<size_t>{0}
+                                         : std::nullopt)
                 .outputs;
         }
 
         const RuntimeValue target = evaluate(callee);
         if (isFunctionHandle(target)) {
+            std::vector<RuntimeValue> arguments = evaluateArguments(node);
             const size_t outputCount =
                 implicitExpressionOutput
-                    ? preferredImplicitHandleOutputCount(target)
+                    ? preferredImplicitHandleOutputCount(
+                          target, arguments.size())
                     : requestedOutputCount;
-            return callFunctionHandle(node, target, evaluateArguments(node),
-                                      outputCount)
+            return callFunctionHandle(
+                       node, target, arguments, outputCount,
+                       implicitExpressionOutput
+                           ? std::optional<size_t>{0}
+                           : std::nullopt)
                 .outputs;
         }
 
@@ -2934,7 +3008,9 @@ private:
     FunctionCallResult
     callLocalFunction(const HirNode& node, const std::string& name,
                       const std::vector<RuntimeValue>& arguments,
-                      size_t requestedOutputCount = 1) {
+                      size_t requestedOutputCount = 1,
+                      std::optional<size_t> callerOutputCount =
+                          std::nullopt) {
         const auto function = functionsByName_.find(name);
         if (function == functionsByName_.end()) {
             addDiagnostic(node, "local function is not available: " + name);
@@ -2942,7 +3018,8 @@ private:
         }
 
         return callFunction(*function->second, arguments, false,
-                            requestedOutputCount, node.span);
+                            requestedOutputCount, node.span,
+                            callerOutputCount);
     }
 
     RuntimeValue evaluateBraceIndex(const HirNode& node) {
@@ -3026,7 +3103,8 @@ private:
     FunctionCallResult
     callBuiltin(const HirNode& node, const std::string& name,
                 const std::vector<RuntimeValue>& arguments,
-                size_t requestedOutputCount) {
+                size_t requestedOutputCount,
+                std::optional<size_t> callerOutputCount = std::nullopt) {
         const auto missingOutputs = [&] {
             return FunctionCallResult{std::vector<RuntimeValue>(
                 requestedOutputCount, missingValue())};
@@ -3037,13 +3115,50 @@ private:
             descriptor &&
             descriptor->implementation !=
                 BuiltinImplementationKind::Intrinsic) {
+            BuiltinWorkspaceAccess workspace;
+            workspace.variables = &currentFrame();
+            workspace.clearVariables = [this] {
+                currentFrame().clear();
+                if (frames_.size() == 1) {
+                    baseGlobalNames_.clear();
+                }
+            };
+            workspace.eraseVariable = [this](std::string_view variable) {
+                if (frames_.size() == 1) {
+                    baseGlobalNames_.erase(std::string(variable));
+                }
+                return currentFrame().erase(std::string(variable)) != 0;
+            };
+            workspace.functionExists = [this](std::string_view name) {
+                return std::any_of(
+                    functionsByName_.begin(), functionsByName_.end(),
+                    [this, name](const auto& entry) {
+                        return entry.first == name ||
+                               publicFunctionName(entry.first) == name;
+                    });
+            };
+            workspace.classExists = [this](std::string_view name) {
+                return classNames_.contains(std::string(name));
+            };
+            BuiltinDisplayFormatAccess displayFormat;
+            displayFormat.current = [this] {
+                return sessionState_->displayFormat();
+            };
+            displayFormat.replace = [this](RuntimeDisplayFormat value) {
+                return sessionState_->replaceDisplayFormat(value);
+            };
             BuiltinCallContext context;
-            context.workspace = &currentFrame();
+            context.workspace = &workspace;
             context.warningState = &warningState_;
             context.outputSink = &runtimeOutputSink_;
+            context.systemContext =
+                sessionState_->systemContext().get();
+            context.displayFormat = &displayFormat;
+            context.registry = &builtinRegistry();
             BuiltinResult result = builtinRegistry().invoke(
                 name, BuiltinCall{arguments, requestedOutputCount,
-                                  node.span, &context});
+                                  node.span, &context,
+                                  callerOutputCount});
             appendBuiltinDiagnostics(
                 node, std::move(result.diagnostics));
             if (!result.succeeded) {
@@ -3081,7 +3196,7 @@ private:
                 node, handle,
                 std::vector<RuntimeValue>(arguments.begin() + 1,
                                           arguments.end()),
-                requestedOutputCount);
+                requestedOutputCount, callerOutputCount);
         }
 
         if (name == "str2func" || name == "func2str" ||
@@ -3280,17 +3395,10 @@ private:
                            RuntimeExceptionStackPolicy::Replace);
             return FunctionCallResult{{missingValue()}};
         }
-        if (name == "clear" || name == "clc" || name == "tic" ||
+        if (name == "clc" || name == "tic" ||
             name == "toc") {
             if (!arguments.empty()) {
                 addDiagnostic(node, name + " currently expects no arguments");
-                return FunctionCallResult{{missingValue()}};
-            }
-            if (name == "clear") {
-                currentFrame().clear();
-                if (frames_.size() == 1) {
-                    baseGlobalNames_.clear();
-                }
                 return FunctionCallResult{{missingValue()}};
             }
             if (name == "clc") {
@@ -3527,6 +3635,7 @@ private:
     std::set<std::string> baseGlobalNames_;
     std::vector<RuntimeExceptionFrame> exceptionCallerFrames_;
     std::map<std::string, const HirNode*> functionsByName_;
+    std::set<std::string> classNames_;
     ArgumentContractCatalog argumentCatalog_;
     RuntimeWorkspace resultFrame_;
     RuntimeOutputSink runtimeOutputSink_;

@@ -228,6 +228,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime_cell.cpp
     src/mparser/runtime_exception.cpp
     src/mparser/runtime_execution_control.cpp
+    src/mparser/runtime_file_io.cpp
     src/mparser/runtime_fallback.cpp
     src/mparser/runtime_warning.cpp
     src/mparser/runtime_index.cpp
@@ -244,6 +245,8 @@ add_library(mparser_core STATIC
     src/mparser/runtime_session_state.cpp
     src/mparser/runtime_shape.cpp
     src/mparser/runtime_struct.cpp
+    src/mparser/runtime_system.cpp
+    src/mparser/runtime_system_builtins.cpp
     src/mparser/runtime_text.cpp
     src/mparser/runtime_value.cpp
     src/mparser/runtime_value_ops.cpp
@@ -264,6 +267,8 @@ set_target_properties(mparser_core PROPERTIES
     VISIBILITY_INLINES_HIDDEN YES)
 target_include_directories(mparser_core PUBLIC src)
 target_link_libraries(mparser_core PRIVATE Threads::Threads)
+target_compile_definitions(mparser_core PRIVATE
+    MPARSER_VERSION="${PROJECT_VERSION}")
 
 if(MPARSER_ENABLE_NATIVE_JIT)
     target_link_libraries(mparser_core PRIVATE mparser_sljit)
@@ -614,8 +619,8 @@ add_test(NAME project_license_smoke
         -DTHIRD_PARTY_NOTICES_FILE=${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_project_license.cmake)
 
-# The v1 contract remains archived under docs/tests. The active API 1.2 / ABI
-# generation 2 contract freezes only after the v1.2 surface is complete.
+# The v1.0 and v1.2 contracts remain archived under docs/tests while the next
+# source-contract milestone evolves independently in the worktree.
 set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
@@ -624,7 +629,8 @@ add_test(NAME v1_2_public_contract_smoke
     COMMAND ${CMAKE_COMMAND}
         -DCONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.2.json
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_VERSION=1.2.0
+        -DCONTRACT_STATE=archived
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_v1_2_public_contract.cmake)
 set_tests_properties(v1_2_public_contract_smoke PROPERTIES
     LABELS "documentation;release"
@@ -1099,6 +1105,68 @@ add_executable(runtime_session_smoke_tests
     tests/runtime_session_smoke.cpp)
 target_link_libraries(runtime_session_smoke_tests PRIVATE mparser_core)
 add_test(NAME runtime_session_smoke COMMAND runtime_session_smoke_tests)
+
+add_executable(runtime_system_smoke_tests
+    tests/runtime_system_smoke.cpp)
+target_link_libraries(runtime_system_smoke_tests PRIVATE mparser_core)
+add_test(NAME runtime_system_smoke COMMAND runtime_system_smoke_tests)
+
+add_test(NAME file_io_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_io_demo.m)
+set_tests_properties(file_io_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 17"
+    RESOURCE_LOCK mparser_file_io_demo)
+
+add_test(NAME file_io_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_io_demo.m)
+set_tests_properties(file_io_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 17"
+    RESOURCE_LOCK mparser_file_io_demo)
+
+add_test(NAME file_io_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_io_demo.m)
+set_tests_properties(file_io_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 17"
+    RESOURCE_LOCK mparser_file_io_demo)
+
+add_test(NAME system_services_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/system_services_demo.m)
+set_tests_properties(system_services_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
+
+add_test(NAME system_services_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/system_services_demo.m)
+set_tests_properties(system_services_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
+
+add_test(NAME system_services_production_cli_smoke
+    COMMAND mparser --run --jit=auto
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/system_services_demo.m)
+set_tests_properties(system_services_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
+
+add_test(NAME random_runtime_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/random_runtime_demo.m)
+set_tests_properties(random_runtime_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
+
+add_test(NAME random_runtime_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/random_runtime_demo.m)
+set_tests_properties(random_runtime_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
+
+add_test(NAME random_runtime_production_cli_smoke
+    COMMAND mparser --run --jit=auto
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/random_runtime_demo.m)
+set_tests_properties(random_runtime_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
 
 add_executable(runtime_soak_smoke_tests
     tests/runtime_soak_smoke.cpp)
@@ -1758,10 +1826,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.1/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.3/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.1 catalog validated: 166 descriptors")
+        "builtin source contract 1.3 catalog validated: 196 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir

@@ -1,8 +1,34 @@
 #include "mparser/runtime_session_state.h"
 
+#include "mparser/runtime_system.h"
+
 #include <utility>
 
 namespace mparser {
+
+RuntimeSessionState::RuntimeSessionState(
+    std::shared_ptr<RuntimeSystemContext> systemContext)
+    : systemContext_(systemContext
+                         ? std::move(systemContext)
+                         : makeIsolatedRuntimeSystemContext()) {}
+
+std::shared_ptr<RuntimeSystemContext>
+RuntimeSessionState::systemContext() const {
+    return systemContext_;
+}
+
+RuntimeDisplayFormat RuntimeSessionState::displayFormat() const {
+    std::scoped_lock lock(mutex_);
+    return displayFormat_;
+}
+
+RuntimeDisplayFormat RuntimeSessionState::replaceDisplayFormat(
+    RuntimeDisplayFormat format) {
+    std::scoped_lock lock(mutex_);
+    RuntimeDisplayFormat previous = displayFormat_;
+    displayFormat_ = format;
+    return previous;
+}
 namespace {
 
 RuntimeValue emptyNumericMatrix() {
@@ -151,6 +177,7 @@ void RuntimeSessionState::reset() {
     std::scoped_lock lock(mutex_);
     globals_.clear();
     persistentByFunction_.clear();
+    displayFormat_ = {};
 }
 
 std::vector<RuntimeVariable> RuntimeSessionState::globals() const {

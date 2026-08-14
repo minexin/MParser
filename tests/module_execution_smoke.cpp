@@ -353,7 +353,7 @@ written = fprintf("pi=%.1f\n", 3.14);
                 "host output event count mismatch");
         require(result.outputEvents[0].kind ==
                         mparser::ModuleOutputKind::Display &&
-                    result.outputEvents[0].text == "value=42\n" &&
+                    result.outputEvents[0].text == "value=42\n\n" &&
                     result.outputEvents[0].source.available &&
                     result.outputEvents[0].source.sourceName ==
                         "host_output.m" &&
@@ -373,7 +373,9 @@ written = fprintf("pi=%.1f\n", 3.14);
                     result.topLevelExpressions[0].source.available &&
                     result.topLevelExpressions[0].source.sourceName ==
                         "host_output.m" &&
-                    result.topLevelExpressions[0].sequence == 2,
+                    result.topLevelExpressions[0].sequence == 2 &&
+                    result.topLevelExpressions[0].lineSpacing ==
+                        mparser::RuntimeLineSpacing::Loose,
                 "visible expression metadata mismatch");
         requireScalar(result.topLevelExpressions[1].value, 43,
                       "suppressed top-level expression");

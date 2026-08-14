@@ -51,6 +51,9 @@ AdaptiveModuleInvocationResult AdaptiveModuleRuntime::invoke(
         sessionOptions.fallbackInvalidationThreshold =
             options_.fallbackInvalidationThreshold;
         sessionOptions.preserveWorkspace = options_.preserveWorkspace;
+        sessionOptions.sessionState =
+            std::make_shared<RuntimeSessionState>(
+                options_.systemContext);
         sessionOptions.initialWorkspace = options_.initialWorkspace;
         sessionOptions.typedRegionBackend = options_.typedRegionBackend;
         sessionOptions.entryFunction = entryFunction;

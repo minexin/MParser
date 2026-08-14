@@ -74,4 +74,11 @@ std::string pathToUtf8(const std::filesystem::path& path) {
         encoded.size());
 }
 
+std::string pathToNativeUtf8(const std::filesystem::path& path) {
+    const auto encoded = path.u8string();
+    return std::string(
+        reinterpret_cast<const char*>(encoded.data()),
+        encoded.size());
+}
+
 } // namespace mparser

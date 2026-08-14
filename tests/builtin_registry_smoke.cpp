@@ -72,10 +72,36 @@ mparser::BuiltinDescriptor customAbsoluteDescriptor() {
     return descriptor;
 }
 
+mparser::BuiltinDescriptor customArityDescriptor() {
+    mparser::BuiltinDescriptor descriptor;
+    descriptor.name = "custom_arity";
+    descriptor.inputs = mparser::BuiltinArity::fixed(0);
+    descriptor.outputs = mparser::BuiltinArity::range(0, 1);
+    descriptor.implementation =
+        mparser::BuiltinImplementationKind::Shared;
+    descriptor.purity = mparser::BuiltinPurity::Pure;
+    descriptor.determinism =
+        mparser::BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety =
+        mparser::BuiltinThreadSafety::Reentrant;
+    descriptor.handler = [](const mparser::BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return mparser::BuiltinResult::success();
+        }
+        return mparser::BuiltinResult::success({
+            mparser::makeRuntimeNumberValue(
+                static_cast<double>(call.requestedOutputCount * 10 +
+                                    call.callerNargout()))});
+    };
+    return descriptor;
+}
+
 std::shared_ptr<mparser::BuiltinRegistry> makeCustomRegistry() {
     auto registry = mparser::createBuiltinRegistryWithDefaults();
     auto registration =
         registry->registerBuiltin(customAbsoluteDescriptor());
+    require(registration.succeeded, registration.error);
+    registration = registry->registerBuiltin(customArityDescriptor());
     require(registration.succeeded, registration.error);
 
     mparser::BuiltinDescriptor throwing;
@@ -159,11 +185,11 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 1,
+                mparser::kBuiltinSourceContractMinor == 3,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 166,
+    require(registry->descriptors().size() == 196,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 168,
+    require(registry->names().size() == 198,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");
@@ -254,6 +280,19 @@ void runDefaultCatalogSmoke() {
                 mparser::runtimeValueIsStorable(
                     missingResult.outputs.front()),
             "missing builtin result mismatch");
+    const auto* randomState = registry->find("rng");
+    require(randomState &&
+                randomState->implicitOutputPolicy ==
+                    mparser::BuiltinImplicitOutputPolicy::FirstWhenNoArguments &&
+                randomState->implicitOutputCount(0) == 1 &&
+                randomState->implicitOutputCount(1) == 0,
+            "rng implicit query/set output metadata mismatch");
+    for (std::string_view name : {"who", "whos", "dir", "pause",
+                                  "system", "fprintf"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor && descriptor->implicitOutputCount(1) == 0,
+                "command-style implicit output metadata mismatch");
+    }
     const auto* str2double = registry->find("str2double");
     require(str2double && str2double->inputs.minimum == 1 &&
                 str2double->inputs.maximum == 1 &&
@@ -289,17 +328,40 @@ void runDefaultCatalogSmoke() {
     require(registry->find("Inf") == registry->find("inf") &&
                 registry->find("NaN") == registry->find("nan"),
             "MATLAB special-value aliases are not canonicalized");
-    for (std::string_view name : {"disp", "fprintf"}) {
+    const auto* display = registry->find("disp");
+    require(display &&
+                display->implementation ==
+                    mparser::BuiltinImplementationKind::Context &&
+                display->purity == mparser::BuiltinPurity::Impure &&
+                mparser::hasBuiltinContextPermission(
+                    display->requiredContext,
+                    mparser::BuiltinContextPermission::Output),
+            "display output builtin metadata mismatch");
+    const auto* print = registry->find("fprintf");
+    require(print &&
+                print->implementation ==
+                    mparser::BuiltinImplementationKind::Context &&
+                print->purity == mparser::BuiltinPurity::Impure &&
+                mparser::hasBuiltinContextPermission(
+                    print->contextPermissions,
+                    mparser::BuiltinContextPermission::Output) &&
+                mparser::hasBuiltinContextPermission(
+                    print->contextPermissions,
+                    mparser::BuiltinContextPermission::SystemServices) &&
+                print->requiredContext ==
+                    mparser::BuiltinContextPermission::None,
+            "formatted output builtin metadata mismatch");
+    for (std::string_view name : {"filesep", "pathsep"}) {
         const auto* descriptor = registry->find(name);
-        require(descriptor &&
+        require(descriptor && descriptor->inputs.maximum == 0 &&
+                    descriptor->outputs.maximum == 1 &&
                     descriptor->implementation ==
-                        mparser::BuiltinImplementationKind::Context &&
+                        mparser::BuiltinImplementationKind::Shared &&
                     descriptor->purity ==
-                        mparser::BuiltinPurity::Impure &&
-                    mparser::hasBuiltinContextPermission(
-                        descriptor->requiredContext,
-                        mparser::BuiltinContextPermission::Output),
-                "host output builtin metadata mismatch");
+                        mparser::BuiltinPurity::Pure &&
+                    descriptor->contextPermissions ==
+                        mparser::BuiltinContextPermission::None,
+                "platform separator builtin metadata mismatch");
     }
     const auto* formatted = registry->find("sprintf");
     require(formatted &&
@@ -456,6 +518,14 @@ void runCrossEngineExtensionSmoke() {
 alias_value = custom_abs_alias(-5);
 f = @custom_abs;
 handle_value = f(-4);
+custom_arity();
+implicit_arity = ans;
+explicit_arity = custom_arity();
+arity_handle = @custom_arity;
+arity_handle();
+handle_arity = ans;
+feval(arity_handle);
+feval_arity = ans;
 summary = direct + alias_value + handle_value;
 )",
         registry);
@@ -463,10 +533,23 @@ summary = direct + alias_value + handle_value;
     mparser::test::requireBuiltinVariableParity(run, "direct");
     mparser::test::requireBuiltinVariableParity(run, "alias_value");
     mparser::test::requireBuiltinVariableParity(run, "handle_value");
+    mparser::test::requireBuiltinVariableParity(run, "implicit_arity");
+    mparser::test::requireBuiltinVariableParity(run, "explicit_arity");
+    mparser::test::requireBuiltinVariableParity(run, "handle_arity");
+    mparser::test::requireBuiltinVariableParity(run, "feval_arity");
     mparser::test::requireBuiltinVariableParity(run, "summary");
     requireNumber(
         mparser::test::findVariable(run.vm.variables, "summary"),
         12.0, "custom builtin cross-engine result mismatch");
+    for (std::string_view name : {"implicit_arity", "handle_arity",
+                                  "feval_arity"}) {
+        requireNumber(
+            mparser::test::findVariable(run.vm.variables, name), 10.0,
+            "implicit builtin nargout mismatch");
+    }
+    requireNumber(
+        mparser::test::findVariable(run.vm.variables, "explicit_arity"),
+        11.0, "explicit builtin nargout mismatch");
     require(run.module.semantic().builtinRegistry.get() ==
                 registry.get(),
             "compiled module did not retain its registry");

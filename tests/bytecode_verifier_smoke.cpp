@@ -137,6 +137,37 @@ end
     assert(validation.diagnostics.empty());
 }
 
+void runMultilineDelimitedLoweringSmoke() {
+    auto compiled = compile(R"(matrix_value = [1 2
+                3 4];
+reshaped = reshape(...
+    matrix_value, ...
+    1, ...
+    4);
+total = sum(...
+    abs(...
+        reshaped), ...
+    'all');
+indexed = matrix_value(...
+    2, ...
+    1);
+summary = total + indexed;
+)");
+
+    const auto validation = mparser::validateBytecodeProgram(
+        compiled.bytecode, &compiled.semantic);
+    assert(validation.succeeded);
+    assert(validation.diagnostics.empty());
+
+    mparser::BytecodeVm vm;
+    const auto result = vm.run(compiled.bytecode, compiled.semantic);
+    assert(result.diagnostics.empty());
+    const auto* summary = findVariable(result, "summary");
+    assert(summary != nullptr);
+    assert(summary->kind == mparser::RuntimeValueKind::Number);
+    assert(summary->number == 13.0);
+}
+
 void runStructuredTransferSmoke() {
     auto compiled = compile(R"(total = 0;
 for i = 1:5
@@ -209,7 +240,8 @@ void runMetadataRejectionSmoke() {
     assertInvalid(invalidImplicitOutput);
     assert(hasDiagnosticMessage(
         mparser::validateBytecodeProgram(invalidImplicitOutput).diagnostics,
-        "implicit expression output requires a one-result CallOrIndex"));
+        "implicit expression output requires a one-result CallOrIndex or "
+        "LoadName"));
 
     mparser::BytecodeProgram duplicateCapture;
     mparser::BytecodeInstruction handle;
@@ -771,6 +803,7 @@ end
 
 int main() {
     runValidLoweringSmoke();
+    runMultilineDelimitedLoweringSmoke();
     runStructuredTransferSmoke();
     runMetadataRejectionSmoke();
     runControlStructureRejectionSmoke();

@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <numeric>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -507,14 +508,413 @@ RuntimeFormatResult formatOnePass(
     return RuntimeFormatResult{true, std::move(output), {}};
 }
 
+size_t numericClassBitWidth(RuntimeNumericClass numericClass) {
+    switch (numericClass) {
+    case RuntimeNumericClass::Logical:
+    case RuntimeNumericClass::Int8:
+    case RuntimeNumericClass::UInt8:
+        return 8;
+    case RuntimeNumericClass::Int16:
+    case RuntimeNumericClass::UInt16:
+        return 16;
+    case RuntimeNumericClass::Single:
+    case RuntimeNumericClass::Int32:
+    case RuntimeNumericClass::UInt32:
+        return 32;
+    case RuntimeNumericClass::Double:
+    case RuntimeNumericClass::Int64:
+    case RuntimeNumericClass::UInt64:
+        return 64;
+    }
+    return 64;
+}
+
+std::string exactIntegerText(const RuntimeNumericElementValue& element,
+                             bool imaginary, bool magnitude) {
+    const std::uint64_t bits = imaginary
+                                   ? element.integerImaginaryBits
+                                   : element.integerRealBits;
+    if (element.numericClass == RuntimeNumericClass::Logical) {
+        return bits == 0 ? "0" : "1";
+    }
+    if (!runtimeNumericClassIsSignedInteger(element.numericClass)) {
+        return std::to_string(bits);
+    }
+    const std::int64_t value = std::bit_cast<std::int64_t>(bits);
+    if (!magnitude || value >= 0) {
+        return std::to_string(value);
+    }
+    return std::to_string(std::uint64_t{0} -
+                          static_cast<std::uint64_t>(value));
+}
+
+std::string hexadecimalText(const RuntimeNumericElementValue& element,
+                            bool imaginary) {
+    std::uint64_t bits = 0;
+    if (runtimeNumericClassIsInteger(element.numericClass) ||
+        element.numericClass == RuntimeNumericClass::Logical) {
+        bits = imaginary ? element.integerImaginaryBits
+                         : element.integerRealBits;
+    } else if (element.numericClass == RuntimeNumericClass::Single) {
+        const float value = static_cast<float>(
+            imaginary ? element.imaginary : element.real);
+        bits = std::bit_cast<std::uint32_t>(value);
+    } else {
+        bits = std::bit_cast<std::uint64_t>(
+            imaginary ? element.imaginary : element.real);
+    }
+    const size_t width = numericClassBitWidth(element.numericClass);
+    if (width < 64) {
+        bits &= (std::uint64_t{1} << width) - 1U;
+    }
+    std::ostringstream output;
+    output.imbue(std::locale::classic());
+    output << std::hex << std::nouppercase << std::setfill('0')
+           << std::setw(static_cast<int>(width / 4)) << bits;
+    return output.str();
+}
+
+std::string rationalText(double value) {
+    if (std::isnan(value)) {
+        return "NaN";
+    }
+    if (std::isinf(value)) {
+        return std::signbit(value) ? "-Inf" : "Inf";
+    }
+    if (value == 0.0) {
+        return "0";
+    }
+
+    const bool negative = std::signbit(value);
+    const long double target =
+        std::fabs(static_cast<long double>(value));
+    long double remaining = target;
+    constexpr std::int64_t kMaximumDenominator = 1'000'000;
+    std::int64_t numeratorPrevious = 0;
+    std::int64_t numerator = 1;
+    std::int64_t denominatorPrevious = 1;
+    std::int64_t denominator = 0;
+    for (size_t iteration = 0; iteration < 32; ++iteration) {
+        const long double whole = std::floor(remaining);
+        const long double candidateNumerator =
+            whole * static_cast<long double>(numerator) +
+            static_cast<long double>(numeratorPrevious);
+        const long double candidateDenominator =
+            whole * static_cast<long double>(denominator) +
+            static_cast<long double>(denominatorPrevious);
+        if (candidateNumerator >
+                static_cast<long double>(
+                    std::numeric_limits<std::int64_t>::max()) ||
+            candidateDenominator >
+                static_cast<long double>(kMaximumDenominator)) {
+            break;
+        }
+        const auto nextNumerator =
+            static_cast<std::int64_t>(candidateNumerator);
+        const auto nextDenominator =
+            static_cast<std::int64_t>(candidateDenominator);
+        numeratorPrevious = numerator;
+        numerator = nextNumerator;
+        denominatorPrevious = denominator;
+        denominator = nextDenominator;
+
+        const long double approximation =
+            static_cast<long double>(numerator) /
+            static_cast<long double>(denominator);
+        if (std::fabs(approximation - target) <=
+            1.0e-6L * std::max(1.0L, target)) {
+            break;
+        }
+
+        const long double fraction = remaining - whole;
+        if (fraction <= std::numeric_limits<long double>::epsilon()) {
+            break;
+        }
+        remaining = 1.0L / fraction;
+    }
+    if (denominator == 0) {
+        std::ostringstream fallback;
+        fallback << std::setprecision(15) << value;
+        return fallback.str();
+    }
+    std::ostringstream output;
+    if (negative) {
+        output << '-';
+    }
+    output << numerator;
+    if (denominator != 1) {
+        output << '/' << denominator;
+    }
+    return output.str();
+}
+
+std::string engineeringText(double value, int significantDigits,
+                            int shortFractionDigits) {
+    if (!std::isfinite(value) || value == 0.0) {
+        std::ostringstream output;
+        output.imbue(std::locale::classic());
+        output << std::fixed << std::setprecision(shortFractionDigits)
+               << value << "e+000";
+        return output.str();
+    }
+    const int exponent = static_cast<int>(
+        std::floor(std::log10(std::fabs(value)) / 3.0) * 3.0);
+    const double mantissa = value / std::pow(10.0, exponent);
+    const int digitsBeforeDecimal =
+        std::max(1, static_cast<int>(
+                        std::floor(std::log10(std::fabs(mantissa))) + 1.0));
+    const int fractionDigits = significantDigits == 0
+                                   ? shortFractionDigits
+                                   : std::max(0, significantDigits -
+                                                     digitsBeforeDecimal);
+    std::ostringstream output;
+    output.imbue(std::locale::classic());
+    output << std::fixed << std::setprecision(fractionDigits) << mantissa
+           << 'e' << (exponent < 0 ? '-' : '+') << std::setfill('0')
+           << std::setw(3) << std::abs(exponent);
+    return output.str();
+}
+
+std::string floatingText(double value, RuntimeNumericClass numericClass,
+                         RuntimeNumericDisplayFormat format,
+                         bool magnitude = false,
+                         bool forceFractional = false) {
+    if (magnitude) {
+        value = std::fabs(value);
+    }
+    if (std::isnan(value)) {
+        return "NaN";
+    }
+    if (std::isinf(value)) {
+        return std::signbit(value) ? "-Inf" : "Inf";
+    }
+    if (format == RuntimeNumericDisplayFormat::Rational) {
+        return rationalText(value);
+    }
+    if (format == RuntimeNumericDisplayFormat::Plus) {
+        return value > 0.0 ? "+" : value < 0.0 ? "-" : " ";
+    }
+    if (format == RuntimeNumericDisplayFormat::ShortEng) {
+        return engineeringText(value, 0, 4);
+    }
+    if (format == RuntimeNumericDisplayFormat::LongEng) {
+        return engineeringText(
+            value,
+            numericClass == RuntimeNumericClass::Single ? 7 : 15, 0);
+    }
+
+    const int longPrecision =
+        numericClass == RuntimeNumericClass::Single ? 7 : 15;
+    std::ostringstream output;
+    output.imbue(std::locale::classic());
+    switch (format) {
+    case RuntimeNumericDisplayFormat::Short:
+        if (!forceFractional && std::trunc(value) == value &&
+            std::fabs(value) < 1.0e9) {
+            output << std::fixed << std::setprecision(0);
+        } else {
+            output << std::fixed << std::setprecision(4);
+        }
+        break;
+    case RuntimeNumericDisplayFormat::Long:
+        if (!forceFractional && std::trunc(value) == value &&
+            std::fabs(value) < 1.0e9) {
+            output << std::fixed << std::setprecision(0);
+        } else {
+            output << std::fixed << std::setprecision(longPrecision);
+        }
+        break;
+    case RuntimeNumericDisplayFormat::ShortE:
+        output << std::scientific << std::setprecision(4);
+        break;
+    case RuntimeNumericDisplayFormat::LongE:
+        output << std::scientific << std::setprecision(longPrecision);
+        break;
+    case RuntimeNumericDisplayFormat::ShortG:
+        output << std::defaultfloat << std::setprecision(5);
+        break;
+    case RuntimeNumericDisplayFormat::LongG:
+        output << std::defaultfloat << std::setprecision(longPrecision);
+        break;
+    case RuntimeNumericDisplayFormat::Bank:
+        output << std::fixed << std::setprecision(2);
+        break;
+    case RuntimeNumericDisplayFormat::ShortEng:
+    case RuntimeNumericDisplayFormat::LongEng:
+    case RuntimeNumericDisplayFormat::Plus:
+    case RuntimeNumericDisplayFormat::Hex:
+    case RuntimeNumericDisplayFormat::Rational:
+        break;
+    }
+    output << value;
+    return output.str();
+}
+
+std::string numericComponentText(
+    const RuntimeNumericElementValue& element, bool imaginary,
+    bool magnitude, RuntimeNumericDisplayFormat format,
+    bool forceFractional = false) {
+    if (format == RuntimeNumericDisplayFormat::Hex) {
+        return hexadecimalText(element, imaginary);
+    }
+    if (runtimeNumericClassIsInteger(element.numericClass) ||
+        element.numericClass == RuntimeNumericClass::Logical) {
+        if (format == RuntimeNumericDisplayFormat::Plus) {
+            const std::string exact =
+                exactIntegerText(element, imaginary, false);
+            return exact == "0" ? " "
+                                : exact.front() == '-' ? "-" : "+";
+        }
+        return exactIntegerText(element, imaginary, magnitude);
+    }
+    return floatingText(imaginary ? element.imaginary : element.real,
+                        element.numericClass, format, magnitude,
+                        forceFractional);
+}
+
+std::string numericElementText(
+    const RuntimeNumericElementValue& element,
+    RuntimeNumericDisplayFormat format) {
+    if (format == RuntimeNumericDisplayFormat::Plus) {
+        return numericComponentText(element, false, false, format);
+    }
+    if (element.complex &&
+        format == RuntimeNumericDisplayFormat::Bank) {
+        return numericComponentText(element, false, false, format);
+    }
+    if (element.complex &&
+        format == RuntimeNumericDisplayFormat::Hex) {
+        return numericComponentText(element, false, false, format) +
+               "   " +
+               numericComponentText(element, true, false, format) + "i";
+    }
+    const bool forceFractional =
+        element.complex &&
+        (format == RuntimeNumericDisplayFormat::Short ||
+         format == RuntimeNumericDisplayFormat::Long);
+    std::string result =
+        numericComponentText(element, false, false, format,
+                             forceFractional);
+    if (!element.complex) {
+        return result;
+    }
+    bool negative = std::signbit(element.imaginary);
+    if (runtimeNumericClassIsSignedInteger(element.numericClass)) {
+        negative = std::bit_cast<std::int64_t>(
+                       element.integerImaginaryBits) < 0;
+    }
+    result += negative ? " - " : " + ";
+    result += numericComponentText(element, true, negative, format,
+                                   forceFractional);
+    result += 'i';
+    return result;
+}
+
+std::string numericValueText(const RuntimeValue& value,
+                             RuntimeDisplayFormat format) {
+    const auto elementText = [&value, format](size_t logicalIndex) {
+        const auto element = runtimeNumericElementValue(value, logicalIndex);
+        return element ? numericElementText(*element, format.numeric)
+                       : std::string("<invalid-numeric>");
+    };
+    if (value.kind == RuntimeValueKind::Number) {
+        return elementText(0);
+    }
+
+    const auto dimensions = runtimeDimensions(value);
+    if (runtimeDimensionCount(value) > 2) {
+        std::ostringstream output;
+        output << "array(";
+        for (size_t index = 0; index < dimensions.size(); ++index) {
+            if (index != 0) {
+                output << 'x';
+            }
+            output << dimensions[index];
+        }
+        output << ")[";
+        const size_t count = runtimeShapeElementCount(value);
+        for (size_t index = 0; index < count; ++index) {
+            if (index != 0) {
+                output << ' ';
+            }
+            output << elementText(index);
+        }
+        output << ']';
+        return output.str();
+    }
+
+    const size_t rows = dimensions.empty() ? 0 : dimensions[0];
+    const size_t columns = dimensions.size() < 2 ? 0 : dimensions[1];
+    std::ostringstream output;
+    output << '[';
+    for (size_t row = 0; row < rows; ++row) {
+        if (row != 0) {
+            output << "; ";
+        }
+        for (size_t column = 0; column < columns; ++column) {
+            if (column != 0) {
+                output << ' ';
+            }
+            output << elementText(row + column * rows);
+        }
+    }
+    output << ']';
+    return output.str();
+}
+
 } // namespace
 
-RuntimeFormatResult runtimeFormatDisplay(const RuntimeValue& value) {
+std::string_view runtimeNumericDisplayFormatName(
+    RuntimeNumericDisplayFormat format) {
+    switch (format) {
+    case RuntimeNumericDisplayFormat::Short:
+        return "short";
+    case RuntimeNumericDisplayFormat::Long:
+        return "long";
+    case RuntimeNumericDisplayFormat::ShortE:
+        return "shortE";
+    case RuntimeNumericDisplayFormat::LongE:
+        return "longE";
+    case RuntimeNumericDisplayFormat::ShortG:
+        return "shortG";
+    case RuntimeNumericDisplayFormat::LongG:
+        return "longG";
+    case RuntimeNumericDisplayFormat::ShortEng:
+        return "shortEng";
+    case RuntimeNumericDisplayFormat::LongEng:
+        return "longEng";
+    case RuntimeNumericDisplayFormat::Plus:
+        return "+";
+    case RuntimeNumericDisplayFormat::Bank:
+        return "bank";
+    case RuntimeNumericDisplayFormat::Hex:
+        return "hex";
+    case RuntimeNumericDisplayFormat::Rational:
+        return "rational";
+    }
+    return "short";
+}
+
+std::string_view runtimeLineSpacingName(RuntimeLineSpacing spacing) {
+    return spacing == RuntimeLineSpacing::Compact ? "compact" : "loose";
+}
+
+std::string runtimeFormatConsoleValue(
+    const RuntimeValue& value, RuntimeDisplayFormat format) {
+    return isRuntimeNumericValue(value)
+               ? numericValueText(value, format)
+               : runtimeValueToString(value);
+}
+
+RuntimeFormatResult runtimeFormatDisplay(
+    const RuntimeValue& value, RuntimeDisplayFormat format) {
+    const std::string suffix =
+        format.spacing == RuntimeLineSpacing::Loose ? "\n\n" : "\n";
     if (const auto text = runtimeTextScalarUtf8(value)) {
-        return RuntimeFormatResult{true, *text + "\n", {}};
+        return RuntimeFormatResult{true, *text + suffix, {}};
     }
     return RuntimeFormatResult{
-        true, runtimeValueToString(value) + "\n", {}};
+        true, runtimeFormatConsoleValue(value, format) + suffix, {}};
 }
 
 RuntimeFormatResult runtimeFormatPrintf(

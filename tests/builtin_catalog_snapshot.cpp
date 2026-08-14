@@ -135,6 +135,20 @@ std::string_view typedLoweringName(
     return "unknown";
 }
 
+std::string_view implicitOutputPolicyName(
+    mparser::BuiltinImplicitOutputPolicy value) {
+    using Policy = mparser::BuiltinImplicitOutputPolicy;
+    switch (value) {
+    case Policy::FirstAvailable:
+        return "first-available";
+    case Policy::None:
+        return "none";
+    case Policy::FirstWhenNoArguments:
+        return "first-when-no-arguments";
+    }
+    return "unknown";
+}
+
 Json arityJson(const mparser::BuiltinArity& arity) {
     return Json{
         {"minimum", arity.minimum},
@@ -165,7 +179,9 @@ Json sideEffectsJson(mparser::BuiltinSideEffect effects) {
              std::pair{Effect::WarningState, "warning-state"},
              std::pair{Effect::Time, "time"},
              std::pair{Effect::ObjectState, "object-state"},
-             std::pair{Effect::External, "external"}}) {
+             std::pair{Effect::External, "external"},
+             std::pair{Effect::RandomState, "random-state"},
+             std::pair{Effect::DisplayState, "display-state"}}) {
         if (mparser::hasBuiltinSideEffect(effects, effect)) {
             result.push_back(name);
         }
@@ -184,7 +200,12 @@ Json permissionsJson(
                        "object-array-policy"},
              std::pair{Permission::DynamicCall, "dynamic-call"},
              std::pair{Permission::ExecutionControl,
-                       "execution-control"}}) {
+                       "execution-control"},
+             std::pair{Permission::Output, "output"},
+             std::pair{Permission::SystemServices,
+                       "system-services"},
+             std::pair{Permission::DisplayFormat,
+                       "display-format"}}) {
         if (mparser::hasBuiltinContextPermission(
                 permissions, permission)) {
             result.push_back(name);
@@ -217,6 +238,8 @@ Json descriptorJson(const mparser::BuiltinDescriptor& descriptor) {
          permissionsJson(descriptor.requiredContext)},
         {"typed_lowering",
          typedLoweringName(descriptor.typedLowering)},
+        {"implicit_output_policy",
+         implicitOutputPolicyName(descriptor.implicitOutputPolicy)},
         {"error_identifier", descriptor.errorIdentifier},
     };
 }
@@ -231,7 +254,7 @@ Json catalogJson() {
         {"schema",
          {{"name", "mparser.builtin-catalog"},
           {"major", 1},
-          {"minor", 0}}},
+          {"minor", 1}}},
         {"source_contract",
          {{"major", mparser::kBuiltinSourceContractMajor},
           {"minor", mparser::kBuiltinSourceContractMinor}}},

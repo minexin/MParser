@@ -60,7 +60,7 @@ static mparser_output_disposition capture_output(
     if (capture->count == 0) {
         capture->valid = capture->valid &&
                          kind == MPARSER_OUTPUT_DISPLAY &&
-                         bytes_equal(text, text_size, "value=42\n");
+                         bytes_equal(text, text_size, "value=42\n\n");
     } else if (capture->count == 1) {
         capture->valid = capture->valid &&
                          kind == MPARSER_OUTPUT_STANDARD &&
@@ -156,7 +156,7 @@ static int run_host_contract(void) {
         !bytes_equal(
             mparser_result_output_event_text(result, 0).data,
             mparser_result_output_event_text(result, 0).size,
-            "value=42\n") ||
+            "value=42\n\n") ||
         mparser_result_output_event_kind(result, 1) !=
             MPARSER_OUTPUT_STANDARD ||
         mparser_result_output_event_sequence(result, 1) != 1 ||

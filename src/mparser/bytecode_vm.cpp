@@ -6052,11 +6052,16 @@ private:
             value->kind == RuntimeValueKind::Missing) {
             return;
         }
+        const RuntimeDisplayFormat displayFormat =
+            sessionState_->displayFormat();
+        const std::string displayText = runtimeFormatConsoleValue(
+            *value, displayFormat);
         currentFrame()["ans"] = *value;
         expressionResults_.push_back(RuntimeExpressionResult{
             std::move(*value), instruction.span,
             instruction.outputSuppressed,
-            nextConsoleSequence_++});
+            nextConsoleSequence_++, displayText,
+            displayFormat.spacing});
     }
 
     void declareWorkspaceVariable(
@@ -6106,18 +6111,23 @@ private:
             const std::string_view builtinName =
                 descriptor ? std::string_view(descriptor->name)
                            : std::string_view(instruction.operand);
-            if (builtinName == "clear" || builtinName == "clc" ||
-                builtinName == "tic" || builtinName == "toc") {
-                pushRuntime(callBuiltin(instruction, instruction.operand, {}));
+            if (!instruction.calleeReference && descriptor &&
+                descriptor->handler &&
+                descriptor->inputs.accepts(0)) {
+                BytecodeInstruction callInstruction = instruction;
+                if (callInstruction.implicitExpressionOutput) {
+                    callInstruction.resultCount = static_cast<int>(
+                        descriptor->implicitOutputCount(0));
+                }
+                auto outputs = callBuiltinOutputs(
+                    callInstruction, instruction.operand, {},
+                    callInstruction.resultCount);
+                pushOutputValues(callInstruction, outputs);
                 return;
             }
-            if (builtinName == "missing") {
-                auto outputs = callBuiltinOutputs(
-                    instruction, instruction.operand, {}, 1);
-                if (!outputs.empty()) {
-                    stack_.push_back(runtimeStackValue(
-                        std::move(outputs.front())));
-                }
+            if (builtinName == "clc" ||
+                builtinName == "tic" || builtinName == "toc") {
+                pushRuntime(callBuiltin(instruction, instruction.operand, {}));
                 return;
             }
             if (builtinName == "pi") {
@@ -9793,20 +9803,22 @@ private:
     }
 
     int preferredImplicitOutputCount(
-        const BuiltinDescriptor* descriptor) const {
-        if (!descriptor || descriptor->outputs.accepts(1)) {
-            return 1;
-        }
-        return descriptor->outputs.accepts(0) ? 0 : 1;
+        const BuiltinDescriptor* descriptor,
+        size_t suppliedInputCount = 0) const {
+        return descriptor
+                   ? static_cast<int>(descriptor->implicitOutputCount(
+                         suppliedInputCount))
+                   : 1;
     }
 
     int preferredImplicitBuiltinOutputCount(
-        std::string_view name) const {
+        std::string_view name,
+        size_t suppliedInputCount = 0) const {
         if (name == "validateValue") {
             return 0;
         }
         return preferredImplicitOutputCount(
-            builtinRegistry().find(name));
+            builtinRegistry().find(name), suppliedInputCount);
     }
 
     int preferredImplicitOutputCount(
@@ -9851,7 +9863,8 @@ private:
     }
 
     int preferredImplicitHandleOutputCount(
-        const RuntimeValue& handle) const {
+        const RuntimeValue& handle,
+        size_t suppliedInputCount = 0) const {
         if (!isFunctionHandle(handle)) {
             return 1;
         }
@@ -9865,7 +9878,7 @@ private:
         }
         if (info.kind == RuntimeFunctionHandleKind::Builtin) {
             return preferredImplicitBuiltinOutputCount(
-                info.targetName);
+                info.targetName, suppliedInputCount);
         }
         if (info.kind == RuntimeFunctionHandleKind::Method) {
             const auto declaring =
@@ -9935,7 +9948,8 @@ private:
             BytecodeInstruction callInstruction = instruction;
             if (callInstruction.implicitExpressionOutput) {
                 callInstruction.resultCount =
-                    preferredImplicitHandleOutputCount(callee->value);
+                    preferredImplicitHandleOutputCount(
+                        callee->value, arguments.size());
             }
             BytecodeCallSiteProfile* profile = nullptr;
             if (profilingEnabled_) {
@@ -9986,15 +10000,16 @@ private:
             callee->isBuiltinReference) {
             const std::string name = symbolName(instruction.binding)
                                          .value_or(callee->builtinName);
-            BytecodeInstruction callInstruction = instruction;
-            if (callInstruction.implicitExpressionOutput) {
-                callInstruction.resultCount =
-                    preferredImplicitBuiltinOutputCount(name);
-            }
             std::vector<RuntimeValue> callArguments = arguments;
             if (callee->receiver) {
                 callArguments.insert(callArguments.begin(),
                                      *callee->receiver);
+            }
+            BytecodeInstruction callInstruction = instruction;
+            if (callInstruction.implicitExpressionOutput) {
+                callInstruction.resultCount =
+                    preferredImplicitBuiltinOutputCount(
+                        name, callArguments.size());
             }
             BytecodeCallSiteProfile* profile = nullptr;
             if (profilingEnabled_) {
@@ -10098,7 +10113,9 @@ private:
             info.display.empty() ? std::string("<anonymous>")
                                  : info.display,
             info.span, arguments.size(),
-            static_cast<size_t>(requestedCount),
+            instruction.implicitExpressionOutput
+                ? 0
+                : static_cast<size_t>(requestedCount),
             info.capturedVariables));
         for (size_t index = 0; index < info.parameters.size(); ++index) {
             if (info.parameters[index] != "~") {
@@ -11817,7 +11834,8 @@ private:
 
     std::vector<RuntimeValue> callBuiltinOutputs(
         const BytecodeInstruction& instruction, const std::string& name,
-        const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        const std::vector<RuntimeValue>& arguments, int requestedCount,
+        std::optional<size_t> callerOutputCount = std::nullopt) {
         if (requestedCount < 0) {
             addDiagnostic(instruction,
                           "bytecode call result count cannot be negative");
@@ -11831,20 +11849,57 @@ private:
                 BuiltinImplementationKind::Intrinsic) {
             RuntimeObjectArrayPolicy objectPolicy =
                 objectArrayPolicy(instruction);
+            BuiltinWorkspaceAccess workspace;
+            workspace.variables = &currentFrame();
+            workspace.clearVariables = [this] {
+                currentFrame().clear();
+                if (frames_.size() == 1) {
+                    baseGlobalNames_.clear();
+                }
+            };
+            workspace.eraseVariable = [this](std::string_view variable) {
+                if (frames_.size() == 1) {
+                    baseGlobalNames_.erase(std::string(variable));
+                }
+                return currentFrame().erase(std::string(variable)) != 0;
+            };
+            workspace.functionExists = [this](std::string_view name) {
+                return functionsByName_.contains(std::string(name)) ||
+                       functionForPublicMetadataIdentifier(name) != nullptr;
+            };
+            workspace.classExists = [this](std::string_view name) {
+                return classesByName_.contains(std::string(name));
+            };
+            BuiltinDisplayFormatAccess displayFormat;
+            displayFormat.current = [this] {
+                return sessionState_->displayFormat();
+            };
+            displayFormat.replace = [this](RuntimeDisplayFormat value) {
+                return sessionState_->replaceDisplayFormat(value);
+            };
             BuiltinCallContext context;
-            context.workspace = &currentFrame();
+            context.workspace = &workspace;
             context.warningState = &warningState_;
             context.objectArrayPolicy = &objectPolicy;
             context.executionControl =
                 executionControl_.get();
             context.outputSink = &runtimeOutputSink_;
+            context.systemContext =
+                sessionState_->systemContext().get();
+            context.displayFormat = &displayFormat;
+            context.registry = &builtinRegistry();
             BuiltinResult result = builtinRegistry().invoke(
                 name,
                 BuiltinCall{
                     arguments,
                     static_cast<size_t>(requestedCount),
                     instruction.span,
-                    &context});
+                    &context,
+                    callerOutputCount
+                        ? callerOutputCount
+                        : instruction.implicitExpressionOutput
+                        ? std::optional<size_t>{0}
+                        : std::nullopt});
             appendBuiltinDiagnostics(
                 instruction, std::move(result.diagnostics));
             if (!result.succeeded) {
@@ -13029,13 +13084,17 @@ private:
                 : info.metadataIdentifier;
         ExceptionFunctionGuard exceptionTrace(*this, traceName,
                                               instruction.span);
+        const size_t callerOutputCount =
+            instruction.implicitExpressionOutput
+                ? 0
+                : static_cast<size_t>(requestedCount);
 
         frames_.push_back(makeRuntimeFunctionFrame(
             RuntimeCallFrameKind::Function, traceName, info.span,
-            arguments.size(), static_cast<size_t>(requestedCount)));
+            arguments.size(), callerOutputCount));
         auto validatedArguments =
             validateFunctionArguments(instruction, name, info, arguments,
-                                      static_cast<size_t>(requestedCount));
+                                      callerOutputCount);
         frames_.pop_back();
         if (!validatedArguments) {
             return missingOutputs(requestedCount);
@@ -13055,9 +13114,9 @@ private:
         frames_.push_back(makeRuntimeFunctionFrame(
             RuntimeCallFrameKind::Function, traceName, info.span,
             validatedArguments->positionalArgumentCount,
-            static_cast<size_t>(requestedCount)));
+            callerOutputCount));
         initializeFunctionFrame(info.signature, validatedArguments->values,
-                                static_cast<size_t>(requestedCount),
+                                callerOutputCount,
                                 validatedArguments->positionalArgumentCount);
         if (constructorObject && !info.signature.outputs.empty()) {
             currentFrame()[info.signature.outputs.front()] = *constructorObject;
@@ -13217,19 +13276,12 @@ private:
                            RuntimeExceptionStackPolicy::Replace);
             return missingValue();
         }
-        if (name == "clear" || name == "clc" || name == "tic" ||
+        if (name == "clc" || name == "tic" ||
             name == "toc") {
             if (!arguments.empty()) {
                 addDiagnostic(instruction,
                               "bytecode " + name +
                                   " currently expects no arguments");
-                return missingValue();
-            }
-            if (name == "clear") {
-                currentFrame().clear();
-                if (frames_.size() == 1) {
-                    baseGlobalNames_.clear();
-                }
                 return missingValue();
             }
             if (name == "clc") {

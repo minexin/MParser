@@ -1,8 +1,9 @@
 # MParser Documentation
 
 MParser is a documented, embeddable, and sustainably extensible MATLAB-like
-subset runtime. The published baseline is v1.0; the active source tree is the
-v1.2 development train and does not claim complete MATLAB compatibility.
+subset runtime. The published baseline is v1.0, v1.2 is the frozen current
+candidate, and the source tree is now the v1.3 development train. It does not
+claim complete MATLAB compatibility.
 
 Start with the task that matches your role.
 
@@ -43,9 +44,9 @@ Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 
 ## Extend The Runtime
 
-- [Extending Builtins](extending-builtins.md): builtin source contract 1.1,
-  descriptor rules, registry behavior, ownership, threading, resources, and
-  conformance tests.
+- [Extending Builtins](extending-builtins.md): frozen v1.2 builtin source
+  contract 1.1 plus active in-tree contract 1.3, descriptor rules, registry
+  behavior, ownership, threading, resources, and conformance tests.
 - [Architecture](architecture.md): Lexer to Parser to semantic HIR to
   verified bytecode to VM/typed/native execution.
 
@@ -85,9 +86,10 @@ These files are release contracts, not generated prose:
 | [performance-baseline-v1.schema.json](performance-baseline-v1.schema.json) | Engineering baseline protocol schema |
 | `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
-The v1.2 candidate contract freezes the current implementation, protocol,
-headers, and catalog. The earlier v1 contract and catalog remain authorities
-only for their archived release.
+The v1.2 candidate contract freezes that milestone's protocol, headers, and
+catalog. Active v1.3 implementation and builtin-catalog changes are not folded
+back into the frozen artifact. The earlier v1 contract and catalog remain
+authorities only for their archived release.
 
 ## Release Evidence
 

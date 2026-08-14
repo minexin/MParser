@@ -170,7 +170,7 @@ require_json_equal(host_display_sequence "${host_output_JSON}" 0
     output_events 0 sequence)
 require_json_equal(host_display_kind "${host_output_JSON}" display
     output_events 0 kind)
-require_json_equal(host_display_text "${host_output_JSON}" "value=42\n"
+require_json_equal(host_display_text "${host_output_JSON}" "value=42\n\n"
     output_events 0 text)
 require_json_equal(host_fprintf_sequence "${host_output_JSON}" 1
     output_events 1 sequence)

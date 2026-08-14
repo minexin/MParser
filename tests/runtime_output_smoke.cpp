@@ -17,6 +17,12 @@
 
 namespace {
 
+void require(bool condition, const char* message) {
+    if (!condition) {
+        throw std::runtime_error(message);
+    }
+}
+
 mparser::RuntimeValue format(std::string text) {
     return mparser::makeRuntimeCharacterVectorUtf8(text);
 }
@@ -65,7 +71,72 @@ void runFormattingSmoke() {
     requireSuccess(
         mparser::runtimeFormatDisplay(
             mparser::makeRuntimeStringScalarUtf8("hello")),
+        "hello\n\n");
+    mparser::RuntimeDisplayFormat compact;
+    compact.spacing = mparser::RuntimeLineSpacing::Compact;
+    requireSuccess(
+        mparser::runtimeFormatDisplay(
+            mparser::makeRuntimeStringScalarUtf8("hello"), compact),
         "hello\n");
+
+    const auto console = [](const mparser::RuntimeValue& value,
+                            mparser::RuntimeNumericDisplayFormat numeric) {
+        mparser::RuntimeDisplayFormat display;
+        display.numeric = numeric;
+        display.spacing = mparser::RuntimeLineSpacing::Compact;
+        return mparser::runtimeFormatConsoleValue(value, display);
+    };
+    const auto pi = number(3.14159265358979323846);
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::Short) ==
+                "3.1416",
+            "short numeric display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::Long) ==
+                "3.141592653589793",
+            "long numeric display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::ShortE) ==
+                "3.1416e+00",
+            "short-E numeric display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::LongG) ==
+                "3.14159265358979",
+            "long-G numeric display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::ShortEng) ==
+                "3.1416e+000",
+            "short engineering display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::LongEng) ==
+                "3.14159265358979e+000",
+            "long engineering display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::Bank) ==
+                "3.14",
+            "bank numeric display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::Hex) ==
+                "400921fb54442d18",
+            "hex numeric display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::Rational) ==
+                "355/113",
+            "rational numeric display mismatch");
+    require(console(pi, mparser::RuntimeNumericDisplayFormat::Plus) == "+",
+            "plus numeric display mismatch");
+
+    mparser::RuntimeNumericElementValue complexElement;
+    complexElement.real = 1.0;
+    complexElement.imaginary = -2.0;
+    complexElement.complex = true;
+    const auto complexValue = requireNumeric(
+        mparser::runtimeNumericValueFromElements(
+            {1, 1}, {complexElement},
+            mparser::RuntimeNumericClass::Double),
+        "complex display");
+    require(console(complexValue,
+                    mparser::RuntimeNumericDisplayFormat::Short) ==
+                "1.0000 - 2.0000i",
+            "short complex display mismatch");
+    require(console(complexValue,
+                    mparser::RuntimeNumericDisplayFormat::Bank) == "1.00",
+            "bank complex display mismatch");
+    require(console(complexValue,
+                    mparser::RuntimeNumericDisplayFormat::Hex) ==
+                "3ff0000000000000   c000000000000000i",
+            "hex complex display mismatch");
 
     requireSuccess(
         mparser::runtimeFormatPrintf({
@@ -91,6 +162,10 @@ void runFormattingSmoke() {
         mparser::RuntimeNumericClass::Int64,
         std::bit_cast<std::uint64_t>(
             std::numeric_limits<std::int64_t>::min()));
+    require(console(uint64Maximum,
+                    mparser::RuntimeNumericDisplayFormat::Long) ==
+                "18446744073709551615",
+            "integer display lost exactness");
     requireSuccess(
         mparser::runtimeFormatPrintf({
             format("%u|%d"), uint64Maximum, int64Minimum}),
@@ -108,6 +183,21 @@ void runFormattingSmoke() {
     requireSuccess(
         mparser::runtimeFormatPrintf({format("%d,"), array}),
         "1,2,3,");
+
+    std::vector<mparser::RuntimeNumericElementValue> matrixElements;
+    for (double value : {1.0, 3.0, 2.0, 4.0}) {
+        mparser::RuntimeNumericElementValue element;
+        element.real = value;
+        matrixElements.push_back(element);
+    }
+    const auto matrix = requireNumeric(
+        mparser::runtimeNumericValueFromElements(
+            {2, 2}, std::move(matrixElements),
+            mparser::RuntimeNumericClass::Double),
+        "matrix display");
+    require(console(matrix, mparser::RuntimeNumericDisplayFormat::Short) ==
+                "[1 2; 3 4]",
+            "matrix display lost column-major order");
     requireSuccess(
         mparser::runtimeFormatPrintf({format("line\\n%%")}),
         "line\n%");

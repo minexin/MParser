@@ -67,7 +67,7 @@ static mparser_output_disposition print_output(
         source_begin.line > 0 && source_end.line > 0 &&
         ((capture->count == 0 &&
           kind == MPARSER_OUTPUT_DISPLAY &&
-          bytes_equal(text, text_size, "value=42\n")) ||
+          bytes_equal(text, text_size, "value=42\n\n")) ||
          (capture->count == 1 &&
           kind == MPARSER_OUTPUT_STANDARD &&
           bytes_equal(text, text_size, "pi=3.1\n")));

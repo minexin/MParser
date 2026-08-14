@@ -859,6 +859,122 @@ elapsed = toc;
     assert(missingTimer.diagnostics.size() == 1);
     assert(missingTimer.diagnostics.front().message.find(
                "preceding tic") != std::string::npos);
+
+    const auto selective = run(R"(keep = 11;
+drop = 22;
+tempOne = 1;
+tempTwo = 2;
+clear drop
+clear -regexp ^temp
+all = 9;
+clear all
+echo_fn 5
+
+function echo_fn(value)
+assert(strcmp(value, '5'));
+end
+)");
+    assert(selective.diagnostics.empty());
+    assertNumber(selective, "keep", 11.0);
+    assert(findVariable(selective, "drop") == nullptr);
+    assert(findVariable(selective, "tempOne") == nullptr);
+    assert(findVariable(selective, "tempTwo") == nullptr);
+    assert(findVariable(selective, "all") == nullptr);
+
+    const auto clearVariables = run(R"(first = 1;
+second = 2;
+clear variables
+after = 3;
+)");
+    assert(clearVariables.diagnostics.empty());
+    assert(findVariable(clearVariables, "first") == nullptr);
+    assert(findVariable(clearVariables, "second") == nullptr);
+    assertNumber(clearVariables, "after", 3.0);
+
+    const auto existence = run(R"(shadowed = 4;
+variable_code = exist('shadowed');
+variable_filter = exist('shadowed', 'var');
+builtin_code = exist('sin', 'builtin');
+builtin_not_variable = exist('sin', 'var');
+local_function_code = exist('exist_probe', 'file');
+missing_code = exist('definitely_absent_mparser_name');
+clear shadowed
+cleared_code = exist('shadowed', 'var');
+
+function value = exist_probe()
+value = 1;
+end
+)");
+    assert(existence.diagnostics.empty());
+    assertNumber(existence, "variable_code", 1.0);
+    assertNumber(existence, "variable_filter", 1.0);
+    assertNumber(existence, "builtin_code", 5.0);
+    assertNumber(existence, "builtin_not_variable", 0.0);
+    assertNumber(existence, "local_function_code", 2.0);
+    assertNumber(existence, "missing_code", 0.0);
+    assertNumber(existence, "cleared_code", 0.0);
+
+    const auto formatting = run(R"(format long
+pi
+format short
+pi
+format shortE
+pi
+format bank
+pi
+format rational
+pi
+format default
+previous = format('long');
+previous_numeric = previous.NumericFormat;
+current = format();
+current_numeric = current.NumericFormat;
+format(previous);
+restored = format();
+restored_numeric = restored.NumericFormat;
+format compact
+compact_state = format;
+compact_spacing = compact_state.LineSpacing;
+pi
+disp(pi)
+format loose
+loose_state = format;
+loose_spacing = loose_state.LineSpacing;
+pi
+disp(pi)
+format long
+bare_state = format;
+bare_numeric = bare_state.NumericFormat;
+format
+reset_state = format();
+reset_numeric = reset_state.NumericFormat;
+reset_spacing = reset_state.LineSpacing;
+)");
+    assert(formatting.diagnostics.empty());
+    assert(formatting.expressionResults.size() == 7);
+    assert(formatting.expressionResults[0].displayText ==
+           "3.141592653589793");
+    assert(formatting.expressionResults[1].displayText == "3.1416");
+    assert(formatting.expressionResults[2].displayText == "3.1416e+00");
+    assert(formatting.expressionResults[3].displayText == "3.14");
+    assert(formatting.expressionResults[4].displayText == "355/113");
+    assert(formatting.expressionResults[5].displayText == "3.1416");
+    assert(formatting.expressionResults[5].lineSpacing ==
+           mparser::RuntimeLineSpacing::Compact);
+    assert(formatting.expressionResults[6].displayText == "3.1416");
+    assert(formatting.expressionResults[6].lineSpacing ==
+           mparser::RuntimeLineSpacing::Loose);
+    assertString(formatting, "previous_numeric", "short");
+    assertString(formatting, "current_numeric", "long");
+    assertString(formatting, "restored_numeric", "short");
+    assertString(formatting, "compact_spacing", "compact");
+    assertString(formatting, "loose_spacing", "loose");
+    assertString(formatting, "bare_numeric", "long");
+    assertString(formatting, "reset_numeric", "short");
+    assertString(formatting, "reset_spacing", "loose");
+    assert(formatting.outputEvents.size() == 2);
+    assert(formatting.outputEvents[0].text == "3.1416\n");
+    assert(formatting.outputEvents[1].text == "3.1416\n\n");
 }
 
 void runV11CoreCompatibilitySmoke() {
@@ -928,7 +1044,7 @@ end
     assert(observed.size() == result.outputEvents.size());
     assert(result.outputEvents[0].kind ==
            mparser::RuntimeOutputKind::Display);
-    assert(result.outputEvents[0].text == "value=42\n");
+    assert(result.outputEvents[0].text == "value=42\n\n");
     assert(result.outputEvents[0].sequence == 0);
     assert(result.outputEvents[1].kind ==
            mparser::RuntimeOutputKind::StandardOutput);
@@ -955,6 +1071,43 @@ end
     assert(rejected.diagnostics.size() == 1);
     assert(rejected.diagnostics.front().identifier ==
            "MParser:OutputSinkRejected");
+}
+
+void runImplicitStatementNargoutSmoke() {
+    const auto result = run(R"(ans = 999;
+probe();
+suppressed_value = ans;
+ans = 999;
+probe()
+visible_value = ans;
+probe_handle = @probe;
+ans = 999;
+probe_handle();
+handle_value = ans;
+ans = 999;
+feval(probe_handle);
+feval_value = ans;
+
+function value = probe()
+value = 10 + nargout;
+end
+)");
+
+    assert(result.diagnostics.empty());
+    assertNumber(result, "suppressed_value", 10.0);
+    assertNumber(result, "visible_value", 10.0);
+    assertNumber(result, "handle_value", 10.0);
+    assertNumber(result, "feval_value", 10.0);
+    assertNumber(result, "ans", 10.0);
+    assert(result.expressionResults.size() == 4);
+    assert(result.expressionResults[0].outputSuppressed);
+    assert(result.expressionResults[0].value.number == 10.0);
+    assert(!result.expressionResults[1].outputSuppressed);
+    assert(result.expressionResults[1].value.number == 10.0);
+    assert(result.expressionResults[2].outputSuppressed);
+    assert(result.expressionResults[2].value.number == 10.0);
+    assert(result.expressionResults[3].outputSuppressed);
+    assert(result.expressionResults[3].value.number == 10.0);
 }
 
 } // namespace
@@ -988,6 +1141,7 @@ int main() {
     runSessionCommandSmoke();
     runV11CoreCompatibilitySmoke();
     runHostOutputAndExpressionSmoke();
+    runImplicitStatementNargoutSmoke();
     std::cout << "bytecode VM smoke tests passed\n";
     return 0;
 }

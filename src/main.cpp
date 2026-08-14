@@ -12,6 +12,7 @@
 #include "mparser/parser.h"
 #include "mparser/runtime_benchmark.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_system.h"
 #include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 #include "mparser/semantic_dump.h"
@@ -1159,8 +1160,15 @@ void printRuntimeConsole(
         const auto& expression = expressions[expressionIndex++];
         if (!expression.outputSuppressed) {
             std::cout << "ans = "
-                      << mparser::runtimeValueToString(expression.value)
+                      << (expression.displayText.empty()
+                              ? mparser::runtimeValueToString(
+                                    expression.value)
+                              : expression.displayText)
                       << "\n";
+            if (expression.lineSpacing ==
+                mparser::RuntimeLineSpacing::Loose) {
+                std::cout << "\n";
+            }
         }
     }
 }
@@ -1687,6 +1695,8 @@ int main(int argc, char** argv) {
         }
 
         cliValidationActive = false;
+        const auto cliSystemContext =
+            mparser::makeNativeRuntimeSystemContext(searchPaths);
         const auto compileSourceGraph = [&]() {
             mparser::SourceLoaderOptions loaderOptions;
             loaderOptions.searchPaths = searchPaths;
@@ -1703,6 +1713,7 @@ int main(int argc, char** argv) {
             request.requestedOutputCount = requestedOutputCount;
             request.backend = productionModuleBackend(
                 productionJit.enabled, typedRegionBackend);
+            request.systemContext = cliSystemContext;
 
             mparser::ModuleInvocationResult result;
             try {
@@ -1770,6 +1781,7 @@ int main(int argc, char** argv) {
             runtimeOptions.preserveWorkspace = adaptivePersistWorkspace;
             runtimeOptions.initialWorkspace = adaptiveInitialWorkspace;
             runtimeOptions.typedRegionBackend = typedRegionBackend;
+            runtimeOptions.systemContext = cliSystemContext;
             mparser::AdaptiveModuleRuntime runtime(module, runtimeOptions);
 
             std::cout << "Adaptive module runtime:\n";
@@ -1856,6 +1868,9 @@ int main(int argc, char** argv) {
                         requestedOutputCount;
                     adaptiveOptions.typedRegionBackend =
                         typedRegionBackend;
+                    adaptiveOptions.sessionState =
+                        std::make_shared<mparser::RuntimeSessionState>(
+                            cliSystemContext);
                     mparser::AdaptiveBytecodeVmSession session(
                         bytecode, semantic, adaptiveOptions);
                     mparser::BytecodeVmResult lastRuntime;
@@ -1935,6 +1950,9 @@ int main(int argc, char** argv) {
                 vmOptions.arguments = entryArguments;
                 vmOptions.requestedOutputCount = requestedOutputCount;
                 vmOptions.typedRegionBackend = typedRegionBackend;
+                vmOptions.sessionState =
+                    std::make_shared<mparser::RuntimeSessionState>(
+                        cliSystemContext);
                 const bool needsProfile =
                     profileBytecode || planBytecode || typedIrBytecode ||
                     checkTypedIrBytecode || runTypedBytecode;
@@ -2032,7 +2050,12 @@ int main(int argc, char** argv) {
                 }
             } else if (runHir) {
                 mparser::Interpreter interpreter;
-                const auto runtime = interpreter.run(semantic);
+                mparser::InterpreterOptions interpreterOptions;
+                interpreterOptions.sessionState =
+                    std::make_shared<mparser::RuntimeSessionState>(
+                        cliSystemContext);
+                const auto runtime = interpreter.run(
+                    semantic, interpreterOptions);
                 printRuntimeConsole(runtime);
                 std::cout << "Variables:\n";
                 for (const auto& variable : runtime.variables) {

@@ -151,6 +151,28 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
+The first v1.3 implementation batch is present in the development tree. A
+session-owned `RuntimeSystemContext` now separates current-directory, path,
+environment, filesystem read/write, process, clock, sleep, and random
+capabilities behind an injectable host adapter. The CLI supplies the native
+adapter; engine tests use a deterministic in-memory adapter. Implemented
+vertical slices currently include command-form `clear`/workspace queries,
+`pwd`/`cd`/`tempdir`, `path`/`addpath`/`rmpath`, `which`/`dir`/`exist`/`getenv`,
+date/platform queries, `pause`/`system`, `rand`/`randn`/`randi`/`rng`, display
+format state, and the bounded `fullfile`/`filesep`/`pathsep` plus
+`fopen`/`fclose`/`fprintf`/`fscanf`/`fseek`/`ftell`/`frewind` file tranche. The
+same tests cover HIR, bytecode, production fallback, denied capabilities,
+deterministic adapters, resource limits, file lifetime, update-stream
+barriers, Windows text translation positions, multidimensional results, and
+exact 64-bit formatted input.
+
+This batch does not close v1.3. Dynamic evaluation, broader workspace and
+filesystem operations, ordering/set/array/number-theory families, public
+embedding configuration for host capabilities, and the external differential
+rerun remain milestone work. Binary I/O, line reads, end/error queries,
+scansets, selectable encodings, remote URLs, and MAT-file persistence are also
+not implied by the first text-file slice.
+
 ## v1.4: Advanced Mathematics And Typed Performance
 
 v1.4 groups the heavier numerical families with the optimization work needed

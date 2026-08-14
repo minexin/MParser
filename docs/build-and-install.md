@@ -43,9 +43,26 @@ ctest --preset windows-msvc-release
 The preset uses Ninja, Release, the bundled native JIT, and
 `build/windows-msvc-release`.
 
+The wrapper accepts another Windows preset as its first argument. Use it for
+the ordinary no-JIT validation build too:
+
+```powershell
+.\cmake\configure-windows-msvc.cmd windows-msvc-release-nojit
+cmake --build --preset windows-msvc-release-nojit
+ctest --preset windows-msvc-release-nojit
+```
+
+Localized MSVC installations must configure Ninja build trees through this
+wrapper. Without its UTF-8 console setting, CMake can misread localized
+`/showIncludes` output and Ninja can silently retain zero header dependencies;
+an internal header layout change may then mix stale and current object files.
 If an old build tree was configured with another compiler, generator, or code
 page, configure a new directory. CMake 3.24 or newer may instead use
-`cmake --fresh --preset windows-msvc-release`.
+`cmake --fresh --preset windows-msvc-release` through the wrapper:
+
+```powershell
+.\cmake\configure-windows-msvc.cmd --fresh
+```
 
 ### Windows MSVC AddressSanitizer
 
@@ -53,7 +70,7 @@ The checked-in local validation preset instruments the complete no-JIT build
 with MSVC AddressSanitizer:
 
 ```powershell
-cmake --preset windows-msvc-asan-nojit
+.\cmake\configure-windows-msvc.cmd windows-msvc-asan-nojit
 cmake --build --preset windows-msvc-asan-nojit --parallel
 ctest --preset windows-msvc-asan-nojit
 ```

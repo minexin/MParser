@@ -232,6 +232,15 @@ private:
                     expression.kind == HirKind::SuperclassCall ||
                     expression.kind == HirKind::MemberAccess) {
                     lowerExpression(expression, 0);
+                } else if (expression.kind == HirKind::NameRef &&
+                           expression.binding.kind ==
+                               BindingKind::Builtin) {
+                    if (expressionProducesResult(expression)) {
+                        lowerExpression(expression, 1, true);
+                        emit(BytecodeOp::Pop, node);
+                    } else {
+                        lowerExpression(expression, 0);
+                    }
                 } else if (
                     expression.kind == HirKind::NameRef ||
                     expression.kind == HirKind::Literal ||
@@ -655,6 +664,13 @@ private:
 
     void lowerExpression(const HirNode& node, int resultCount = 1,
                          bool implicitExpressionOutput = false) {
+        if (node.kind == HirKind::NameRef) {
+            const size_t load = emit(BytecodeOp::LoadName, node);
+            program_.instructions[load].resultCount = resultCount;
+            program_.instructions[load].implicitExpressionOutput =
+                implicitExpressionOutput;
+            return;
+        }
         if (node.kind == HirKind::CallOrIndex) {
             lowerCallOrIndex(node, resultCount,
                              implicitExpressionOutput);
@@ -688,7 +704,13 @@ private:
             return;
         }
 
-        lowerNode(*node.children.front());
+        if (node.children.front()->kind == HirKind::NameRef) {
+            const size_t callee = emit(
+                BytecodeOp::LoadName, *node.children.front());
+            program_.instructions[callee].calleeReference = true;
+        } else {
+            lowerNode(*node.children.front());
+        }
         if (node.binding.kind == BindingKind::Builtin ||
             node.binding.kind == BindingKind::Function) {
             for (size_t index = 1; index < node.children.size(); ++index) {
@@ -1046,6 +1068,14 @@ private:
     }
 
     bool expressionProducesResult(const HirNode& expression) const {
+        if (expression.kind == HirKind::NameRef &&
+            expression.binding.kind == BindingKind::Builtin &&
+            builtinRegistry_) {
+            const auto* descriptor =
+                builtinRegistry_->find(expression.label);
+            return !descriptor ||
+                   descriptor->implicitOutputCount(0) != 0;
+        }
         if (expression.kind != HirKind::CallOrIndex ||
             expression.children.empty()) {
             return true;

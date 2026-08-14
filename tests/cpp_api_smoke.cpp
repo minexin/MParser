@@ -291,7 +291,7 @@ written = fprintf("pi=%.1f\n", 3.14);
     const auto events = result.outputEvents();
     assert(events.size() == 2 && observed.size() == events.size());
     assert(events[0].kind == OutputKind::Display);
-    assert(events[0].text == "value=42\n");
+    assert(events[0].text == "value=42\n\n");
     assert(events[0].sequence == 0 && observed[0].sequence == 0);
     assert(events[0].source &&
            events[0].source->sourceName == "host_output_cpp.m");

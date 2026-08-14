@@ -67,6 +67,37 @@ Resource accounting cooperates with builtins through the builtin call context.
 An extension must not claim bounded behavior if it performs uninterruptible
 work or allocates unreported payloads.
 
+## System Capabilities And Files
+
+The active v1.3 engine keeps process-facing state in one
+`RuntimeSystemContext` per reusable session. Current-directory, path,
+environment, filesystem read, filesystem write, process, clock, sleep, and
+random rights are separate capability bits. An isolated context grants none;
+the CLI creates a native context for ordinary local script execution; tests
+can inject a deterministic `RuntimeHostAdapter` without touching the process.
+
+Open file identifiers begin at 3, belong to one context, and cannot be reused
+across sessions. The context defaults to 256 open files and a 16 MiB read
+window; formatted scanning independently caps output at 16 million elements.
+Closing the context closes every retained host file. A failed parse restores
+the unread suffix, and a read-limit failure attempts to restore the native
+stream position before reporting an error.
+
+Formatted reads may prefetch beyond the value they return. Each entry keeps a
+logical unread suffix plus sparse physical-byte correction points, so `ftell`
+and current-relative `fseek` observe consumed bytes rather than the prefetch
+cursor. The correction list is empty for binary streams and Unix text streams;
+on Windows it records CRLF contractions without allocating a byte-sized map.
+Read/write update streams require an explicit successful `fseek` or `frewind`
+between operation directions.
+
+Host adapter calls are synchronous and serialized by the owning context.
+Adapters must not re-enter that same context. Process execution and native
+filesystem access are capabilities, not sandboxing: an embedding host should
+grant them only when its own isolation policy allows the operation. Public
+C/C++ configuration of these capabilities is still v1.3 milestone work; the
+frozen v1.2 APIs remain isolated from the new native CLI services.
+
 ## Cancellation
 
 Cancellation tokens use cooperative observation. A token may be cancelled
@@ -180,10 +211,11 @@ An embedding application remains responsible for:
 C source API 1.2 and ABI generation 2 ownership, sealed/extensible structure
 rules, and symbol meanings are checked against current headers and consumers.
 The C++ source API is 1.2 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
-typed and complex numeric values. Builtin source contract 1.1 is compiled with
-the engine and is not an external plugin ABI. These current interfaces are
-frozen by the v1.2 candidate snapshot; archived v1.0 contracts remain
-historical evidence rather than compatibility gates for development changes.
+typed and complex numeric values. Builtin source contract 1.1 is frozen with
+the v1.2 candidate; the active in-tree descriptor contract is 1.3 and remains
+a compiled-in source extension surface, not an external plugin ABI. Archived
+v1.0 and frozen v1.2 contracts remain historical evidence rather than
+compatibility gates for development changes.
 
 See [Versioning And Deprecation](versioning-and-deprecation.md) for the common
 policy.

@@ -80,12 +80,59 @@ path that begins with `-`:
 mparser --run -- -generated-name.m
 ```
 
-The current v1.2 script console supports `disp`, stdout-only `fprintf`, and
-pure `sprintf`. Unsuppressed expression statements print `ans = value`;
-semicolon-suppressed expressions update `ans` without display. The formatter
-is a bounded MATLAB-like subset rather than file I/O: see
-[C Embedding API](embedding-c-api.md#output-and-top-level-expressions) for its
-supported conversions and limits.
+The script console supports `disp`, `fprintf`, and pure `sprintf`.
+Unsuppressed expression statements print `ans = value` using the session's
+`format` and line-spacing state; semicolon-suppressed expressions update `ans`
+without display. The frozen v1.2 embedding surface routes console output only.
+The active v1.3 CLI additionally gives each invocation a native system context
+and allows `fprintf(fid,...)` for a file opened in that same session.
+
+The first v1.3 text-file slice is:
+
+```matlab
+name = fullfile(tempdir, 'values.txt');
+fid = fopen(name, 'w');
+fprintf(fid, '%d %d %d', 1, 2, 3);
+fclose(fid);
+
+fid = fopen(name, 'r');
+[values, count] = fscanf(fid, '%d', [2 2]);
+fclose(fid);
+
+fid = fopen(name, 'r+');
+[value, count] = fscanf(fid, '%d', 1);
+position = ftell(fid);
+fseek(fid, 0, 'cof');
+fprintf(fid, '%d', value + 1);
+frewind(fid);
+fclose(fid);
+```
+
+`fopen` currently accepts `r`, `w`, or `a`, optional `+`, and optional `b` or
+`t`; UTF-8 is the fixed encoding. `fscanf` supports `%c`, `%s`, `%d`, `%i`,
+`%u`, `%o`, `%x`, `%e`, `%f`, `%g`, the corresponding documented long integer
+forms, assignment suppression, field widths, literals, repeated formats, and
+scalar or two-dimensional sizes. Finite numeric shapes are zero padded in
+column order. Reads are bounded to 16 MiB, scan output to 16 million elements,
+and one session defaults to 256 open files. `fclose('all')` and `fopen('all')`
+operate only on that session.
+
+`fseek` accepts signed integer byte offsets with `bof`/`cof`/`eof` or numeric
+origins `-1`/`0`/`1`; `ftell` reports a zero-based byte position and `frewind`
+is `fseek(fid,0,'bof')`. As in MATLAB, a `+` update stream requires `fseek` or
+`frewind` between a read and a write. Scanner prefetch remains invisible to
+`ftell`; Windows text streams retain a compact CRLF-to-byte mapping so a
+current-relative seek uses the physical file position rather than the
+translated string length.
+
+This does not yet include `feof`, `ferror`, `fgetl`, `fgets`, `fread`,
+`fwrite`, scansets, selectable encodings, remote URLs, or MAT-file persistence.
+See [C Embedding API](embedding-c-api.md#output-and-top-level-expressions) for
+the frozen host-output conversions and limits.
+
+Within `(...)`, split an expression across physical lines with `...`; a bare
+newline ends the statement and is a parser error if the call is unfinished.
+Within `[...]` and `{...}`, a bare newline is a row separator, just like `;`.
 
 Local functions use isolated call frames. Script workspace, function local
 workspace, `global`, and per-function `persistent` bindings follow the
@@ -215,7 +262,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Builtin source contract 1.1 |
+| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.3 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

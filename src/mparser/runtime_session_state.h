@@ -1,9 +1,10 @@
 #pragma once
 
-#include "mparser/runtime_value.h"
+#include "mparser/runtime_output.h"
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -11,6 +12,8 @@
 #include <vector>
 
 namespace mparser {
+
+class RuntimeSystemContext;
 
 struct RuntimePersistentVariable {
     size_t contextIdentity = 0;
@@ -21,6 +24,15 @@ struct RuntimePersistentVariable {
 
 class RuntimeSessionState {
 public:
+    explicit RuntimeSessionState(
+        std::shared_ptr<RuntimeSystemContext> systemContext = {});
+
+    std::shared_ptr<RuntimeSystemContext> systemContext() const;
+
+    RuntimeDisplayFormat displayFormat() const;
+    RuntimeDisplayFormat replaceDisplayFormat(
+        RuntimeDisplayFormat format);
+
     RuntimeValue declareGlobal(std::string_view name);
     RuntimeValue declarePersistent(std::string_view function,
                                    std::string_view name);
@@ -62,6 +74,8 @@ private:
     using PersistentFunctionKey = std::pair<size_t, std::string>;
 
     mutable std::mutex mutex_;
+    std::shared_ptr<RuntimeSystemContext> systemContext_;
+    RuntimeDisplayFormat displayFormat_;
     std::map<std::string, RuntimeValue> globals_;
     std::map<PersistentFunctionKey,
              std::map<std::string, RuntimeValue>>

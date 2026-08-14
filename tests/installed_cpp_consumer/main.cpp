@@ -171,7 +171,7 @@ written = fprintf("pi=%.1f\n", 3.14);
                     observedOutput.size() == 2 &&
                     outputEvents[0].kind ==
                         mparser::sdk::OutputKind::Display &&
-                    outputEvents[0].text == "value=42\n" &&
+                    outputEvents[0].text == "value=42\n\n" &&
                     outputEvents[0].sequence == 0 &&
                     outputEvents[1].kind ==
                         mparser::sdk::OutputKind::StandardOutput &&
