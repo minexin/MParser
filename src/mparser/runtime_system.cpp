@@ -40,8 +40,10 @@ class NativeRuntimeHostFile final : public RuntimeHostFile {
 public:
     NativeRuntimeHostFile(const std::filesystem::path& path,
                           const RuntimeFileOpenOptions& options)
-        : readable_(options.readable), writable_(options.writable),
-          binary_(options.binary) {
+        : readable_(options.readable), writable_(options.writable) {
+#ifdef _WIN32
+        binary_ = options.binary;
+#endif
         std::ios::openmode mode = std::ios::openmode{};
         if (options.readable) {
             mode |= std::ios::in;
@@ -345,7 +347,9 @@ private:
     std::fstream stream_;
     bool readable_ = false;
     bool writable_ = false;
+#ifdef _WIN32
     bool binary_ = true;
+#endif
     Operation lastOperation_ = Operation::None;
 };
 
