@@ -164,8 +164,9 @@ ParsedFormat parseFormat(std::string_view encoded) {
             while (index < format.size() && inputWhitespace(format[index])) {
                 ++index;
             }
-            result.tokens.push_back(
-                ScanToken{ScanTokenKind::Whitespace});
+            ScanToken token;
+            token.kind = ScanTokenKind::Whitespace;
+            result.tokens.push_back(std::move(token));
             continue;
         }
         if (format[index] != '%') {

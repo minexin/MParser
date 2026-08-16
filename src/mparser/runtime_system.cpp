@@ -1021,11 +1021,11 @@ RuntimeSystemResult<int> RuntimeSystemContext::openFile(
     nextFileIdentifier_ = identifier == std::numeric_limits<int>::max()
                               ? 3
                               : identifier + 1;
-    openFiles_.emplace(
-        identifier,
-        OpenFileEntry{RuntimeOpenFileInfo{identifier, path,
-                                          std::move(target), options},
-                      std::move(opened.value), {}});
+    OpenFileEntry entry;
+    entry.info = RuntimeOpenFileInfo{
+        identifier, path, std::move(target), options};
+    entry.file = std::move(opened.value);
+    openFiles_.emplace(identifier, std::move(entry));
     return RuntimeSystemResult<int>::success(identifier);
 }
 

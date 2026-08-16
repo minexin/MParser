@@ -125,8 +125,11 @@ BuiltinResult emit(const BuiltinCall& call, RuntimeOutputKind kind,
         return failure(call, "system builtin requires an output sink",
                        "MParser:MissingBuiltinContext");
     }
-    if (!(*call.context->outputSink)(
-            RuntimeOutputEvent{kind, std::move(text), call.span})) {
+    RuntimeOutputEvent event;
+    event.kind = kind;
+    event.text = std::move(text);
+    event.span = call.span;
+    if (!(*call.context->outputSink)(event)) {
         return failure(call, "host output sink rejected system output",
                        "MParser:OutputSinkRejected");
     }
