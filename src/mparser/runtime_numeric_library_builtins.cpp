@@ -689,7 +689,10 @@ BuiltinResult logspaceBuiltin(const BuiltinCall& call) {
                                        static_cast<double>(*count - 1);
         const std::complex<double> exponent =
             begin + (end - begin) * ratio;
-        std::complex<double> value = std::pow(10.0, exponent);
+        std::complex<double> value =
+            exponent.imag() == 0.0
+                ? std::complex<double>(std::pow(10.0, exponent.real()), 0.0)
+                : std::pow(std::complex<double>(10.0, 0.0), exponent);
         if (piEndpoint && index + 1 == *count) {
             value = {std::acos(-1.0), 0.0};
         }

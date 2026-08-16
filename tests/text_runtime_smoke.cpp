@@ -307,6 +307,16 @@ void verifyRaggedCellLiteralRejected(const Result &result) {
           "ragged cell literal reported the wrong diagnostic");
 }
 
+template <typename Result> void verifyMissingRow(const Result &result) {
+  require(result.diagnostics.empty(),
+          "missing row construction produced a runtime diagnostic");
+  const auto &value = variable(result, "a");
+  require(value.kind == mparser::RuntimeValueKind::MissingArray &&
+              mparser::runtimeDimensions(value) ==
+                  std::vector<size_t>({1, 2}),
+          "[missing missing] did not produce a 1-by-2 missing array");
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -327,6 +337,10 @@ empty_cell = {};
     const RuntimePair ragged = runBoth("bad = {1, 2; 3};\n");
     verifyRaggedCellLiteralRejected(ragged.interpreter);
     verifyRaggedCellLiteralRejected(ragged.vm);
+
+    const RuntimePair missingRow = runBoth("a = [missing missing];\n");
+    verifyMissingRow(missingRow.interpreter);
+    verifyMissingRow(missingRow.vm);
 
     auto missingTarget =
         mparser::makeRuntimeMissingArrayValue({1, 2});
