@@ -1400,8 +1400,9 @@ builtin source contract 1.1 extends the archived 1.0 contract with host output
 and execution-context permissions. Its v1.2 normalized snapshot records all
 166 default descriptors and 168 registered names. Active contract 1.3 adds
 structured workspace access, caller output count, implicit-output policy,
-system/display contexts, and random/display side effects; its development
-snapshot records 196 descriptors and 198 registered names. A generator-backed
+system/display contexts, random/display side effects, and synchronous dynamic
+invocation; its development snapshot records 208 descriptors and 210
+registered names. A generator-backed
 smoke test compares the live registry to the active snapshot; it does not serialize
 handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
 values and diagnostics across HIR and bytecode rather than comparing display
@@ -1810,6 +1811,17 @@ the scanner prefetches. File entries retain sparse translation offsets for
 Windows CRLF text input, while binary and Unix paths retain no mapping. A
 successful positioning call clears the prefetch suffix and forms the required
 barrier between read and write directions on `+` update streams.
+
+The second v1.3 library batch adds `runtime_text_builtins` and
+`runtime_collection_builtins` as engine-neutral registry handlers. Text case,
+trim, numeric formatting, splitting, regex matching, ordering, uniqueness,
+Cell callbacks, and Struct/Cell conversion therefore have one implementation
+for HIR and bytecode. The dynamic invoker receives a `RuntimeValue` callable,
+enters the owning engine synchronously, captures nested diagnostics, and
+returns through `BuiltinResult`; `cellfun` never bypasses function-handle,
+call-frame, output-count, or execution-control contracts. Missing arrays stay
+shape-only through sort/unique, and uniqueness uses sorted grouping rather
+than quadratic pairwise scans.
 
 The v1.2 core numeric builtin tranche also removes tier-specific equality
 behavior. `BuiltinRegistry` routes `mod`/`rem` and `nextpow2` through shared

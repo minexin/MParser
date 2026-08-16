@@ -187,9 +187,9 @@ void runDefaultCatalogSmoke() {
     require(mparser::kBuiltinSourceContractMajor == 1 &&
                 mparser::kBuiltinSourceContractMinor == 3,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 196,
+    require(registry->descriptors().size() == 208,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 198,
+    require(registry->names().size() == 210,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");
@@ -301,6 +301,31 @@ void runDefaultCatalogSmoke() {
                     mparser::BuiltinImplementationKind::Shared &&
                 str2double->purity == mparser::BuiltinPurity::Pure,
             "str2double descriptor metadata mismatch");
+    for (std::string_view name : {"lower", "upper", "strtrim",
+                                  "num2str", "strsplit", "regexp",
+                                  "sort", "unique", "iscell",
+                                  "struct2cell", "cell2struct"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Shared &&
+                    descriptor->purity == mparser::BuiltinPurity::Pure &&
+                    descriptor->determinism ==
+                        mparser::BuiltinDeterminism::Deterministic,
+                "standard-library descriptor metadata mismatch");
+    }
+    const auto* cellfun = registry->find("cellfun");
+    require(cellfun &&
+                cellfun->implementation ==
+                    mparser::BuiltinImplementationKind::Context &&
+                cellfun->purity == mparser::BuiltinPurity::Impure &&
+                mparser::hasBuiltinContextPermission(
+                    cellfun->requiredContext,
+                    mparser::BuiltinContextPermission::DynamicCall) &&
+                mparser::hasBuiltinContextPermission(
+                    cellfun->contextPermissions,
+                    mparser::BuiltinContextPermission::ExecutionControl),
+            "cellfun dynamic-call metadata mismatch");
     const auto* warning = registry->find("warning");
     require(warning &&
                 warning->implementation ==

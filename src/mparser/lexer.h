@@ -42,6 +42,7 @@ private:
     int line_ = 1;
     int column_ = 1;
     bool previousCanEndExpression_ = false;
+    size_t arrayDelimiterDepth_ = 0;
 };
 
 } // namespace mparser

@@ -146,7 +146,9 @@ required properties.
 `requiredContext` is the subset that must be present for every invocation.
 The active context fields are structured workspace access, warning state,
 object-array policy, execution control, output, system services, display
-format, the current registry, and a reserved dynamic invoker. A context
+format, the current registry, and a synchronous dynamic invoker. The invoker
+accepts a function handle or text function name and returns the exact requested
+outputs plus nested diagnostics through the normal call-frame rules. A context
 handler must not retain raw pointers or callbacks from `BuiltinCallContext`
 after returning. A descriptor such as `fprintf` that can use either output or
 system services lists both in `contextPermissions` but leaves
@@ -200,9 +202,12 @@ host-managed global lock; the v0.80 runtime does not insert one automatically.
 Workspace, display format, system services, and warning state belong to one
 runtime invocation or session. Do not store their addresses globally.
 Object-array policy is immutable for one call. System adapters are synchronous
-and context-bound; a callback must not re-enter the same context. The dynamic
-invoker field is reserved and currently absent from engine calls, so declaring
-it as required produces a deterministic missing-context diagnostic.
+and context-bound. The dynamic invoker is the deliberate path for controlled
+synchronous language re-entry: `cellfun` uses it on the owning execution
+thread, extracts nested outputs and diagnostics transactionally, and never
+retains the callable or callback. Calling a descriptor that requires
+`DynamicCall` without an engine context still produces a deterministic
+missing-context diagnostic.
 
 ## Resource Cooperation
 
@@ -277,6 +282,9 @@ class layout. Frozen contract 1.1 added host output and execution-context
 permissions for v1.2. The active 1.3 contract additionally records structured
 workspace access, caller `nargout`, implicit-output policy, system/display
 contexts, random/display side effects, and the expanded descriptor catalog.
+The current v1.3 development catalog additionally exercises callable-based
+dynamic invocation through `cellfun` and contains 208 descriptors and 210
+registered names.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The active development snapshot is

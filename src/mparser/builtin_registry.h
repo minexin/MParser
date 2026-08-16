@@ -164,7 +164,8 @@ struct BuiltinResult {
 };
 
 using BuiltinDynamicInvoker = std::function<BuiltinResult(
-    std::string_view name, const std::vector<RuntimeValue>& arguments,
+    const RuntimeValue& callable,
+    const std::vector<RuntimeValue>& arguments,
     size_t requestedOutputCount, SourceSpan span)>;
 
 struct BuiltinCallContext {

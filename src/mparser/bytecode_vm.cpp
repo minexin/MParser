@@ -11888,6 +11888,80 @@ private:
                 sessionState_->systemContext().get();
             context.displayFormat = &displayFormat;
             context.registry = &builtinRegistry();
+            if (hasBuiltinContextPermission(
+                    descriptor->contextPermissions,
+                    BuiltinContextPermission::DynamicCall)) {
+                context.dynamicInvoker =
+                    [this, &instruction](
+                    const RuntimeValue& callable,
+                    const std::vector<RuntimeValue>& callbackArguments,
+                    size_t callbackOutputCount, SourceSpan callbackSpan) {
+                    if (callbackOutputCount >
+                        static_cast<size_t>(
+                            std::numeric_limits<int>::max())) {
+                        return BuiltinResult::failure(
+                            callbackSpan,
+                            "dynamic builtin callback requested too many "
+                            "outputs",
+                            "MParser:InvalidDynamicCall");
+                    }
+
+                    const size_t diagnosticStart = diagnostics_.size();
+                    const size_t warningStart = warnings_.size();
+                    auto savedPendingException =
+                        std::move(pendingException_);
+                    pendingException_.reset();
+
+                    std::vector<RuntimeValue> outputs;
+                    std::optional<RuntimeValue> handle;
+                    if (isFunctionHandle(callable)) {
+                        handle = callable;
+                    } else if (const auto text =
+                                   runtimeTextScalarUtf8(callable)) {
+                        handle = functionHandleFromText(instruction,
+                                                        *text);
+                    } else {
+                        addDiagnostic(
+                            instruction,
+                            "dynamic builtin callback expects a function "
+                            "handle or function name string");
+                    }
+                    if (handle) {
+                        outputs = callFunctionHandle(
+                            instruction, *handle, callbackArguments,
+                            static_cast<int>(callbackOutputCount));
+                    }
+
+                    std::vector<Diagnostic> nestedDiagnostics;
+                    nestedDiagnostics.reserve(
+                        diagnostics_.size() - diagnosticStart +
+                        warnings_.size() - warningStart);
+                    std::move(warnings_.begin() +
+                                  static_cast<std::ptrdiff_t>(warningStart),
+                              warnings_.end(),
+                              std::back_inserter(nestedDiagnostics));
+                    std::move(
+                        diagnostics_.begin() +
+                            static_cast<std::ptrdiff_t>(diagnosticStart),
+                        diagnostics_.end(),
+                        std::back_inserter(nestedDiagnostics));
+                    warnings_.resize(warningStart);
+                    diagnostics_.resize(diagnosticStart);
+                    pendingException_ =
+                        std::move(savedPendingException);
+
+                    const bool failed = std::any_of(
+                        nestedDiagnostics.begin(),
+                        nestedDiagnostics.end(), isErrorDiagnostic);
+                    return failed
+                               ? BuiltinResult{
+                                     false, {},
+                                     std::move(nestedDiagnostics)}
+                               : BuiltinResult::success(
+                                     std::move(outputs),
+                                     std::move(nestedDiagnostics));
+                };
+            }
             BuiltinResult result = builtinRegistry().invoke(
                 name,
                 BuiltinCall{

@@ -226,6 +226,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime_benchmark.cpp
     src/mparser/runtime_call_frame.cpp
     src/mparser/runtime_cell.cpp
+    src/mparser/runtime_collection_builtins.cpp
     src/mparser/runtime_exception.cpp
     src/mparser/runtime_execution_control.cpp
     src/mparser/runtime_file_io.cpp
@@ -248,6 +249,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime_system.cpp
     src/mparser/runtime_system_builtins.cpp
     src/mparser/runtime_text.cpp
+    src/mparser/runtime_text_builtins.cpp
     src/mparser/runtime_value.cpp
     src/mparser/runtime_value_ops.cpp
     src/mparser/semantic.cpp
@@ -1804,6 +1806,32 @@ add_test(NAME text_runtime_production_cli_smoke
 set_tests_properties(text_runtime_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 49")
 
+add_executable(standard_library_smoke_tests
+    tests/standard_library_smoke.cpp)
+target_link_libraries(standard_library_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME standard_library_smoke
+    COMMAND standard_library_smoke_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/standard_library_demo.m)
+
+add_test(NAME standard_library_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/standard_library_demo.m)
+set_tests_properties(standard_library_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
+
+add_test(NAME standard_library_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/standard_library_demo.m)
+set_tests_properties(standard_library_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
+
+add_test(NAME standard_library_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/standard_library_demo.m)
+set_tests_properties(standard_library_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 12")
+
 add_executable(builtin_registry_smoke_tests
     tests/builtin_registry_smoke.cpp)
 target_link_libraries(builtin_registry_smoke_tests PRIVATE
@@ -1829,7 +1857,7 @@ add_test(NAME builtin_catalog_snapshot_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.3/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.3 catalog validated: 196 descriptors")
+        "builtin source contract 1.3 catalog validated: 208 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir

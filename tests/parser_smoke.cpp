@@ -570,6 +570,47 @@ format
            mparser::SyntaxKind::IdentifierExpr);
 }
 
+void parseSpaceSeparatedCharacterLiteralSmoke() {
+    auto tokens = mparser::Lexer("a = ['ab' 'cd'];\n").lex();
+    size_t strings = 0;
+    size_t transposes = 0;
+    for (const auto& token : tokens) {
+        strings += token.kind == mparser::TokenKind::String ? 1 : 0;
+        transposes += token.kind == mparser::TokenKind::Apostrophe ? 1 : 0;
+    }
+    assert(strings == 2);
+    assert(transposes == 0);
+
+    auto concatenation = parse("a = ['ab' 'cd'];\n");
+    assert(concatenation.diagnostics.empty());
+
+    auto cellTokens = mparser::Lexer("a = {'ab' 'cd'};\n").lex();
+    strings = 0;
+    transposes = 0;
+    for (const auto& token : cellTokens) {
+        strings += token.kind == mparser::TokenKind::String ? 1 : 0;
+        transposes += token.kind == mparser::TokenKind::Apostrophe ? 1 : 0;
+    }
+    assert(strings == 2);
+    assert(transposes == 0);
+    assert(parse("a = {'ab' 'cd'};\n").diagnostics.empty());
+
+    auto adjacentTranspose = parse("a = [x' y];\n");
+    assert(adjacentTranspose.diagnostics.empty());
+    assert(containsKind(*adjacentTranspose.root,
+                        mparser::SyntaxKind::PostfixExpr));
+
+    auto outsideArrayTranspose = parse("a = x ';\n");
+    assert(outsideArrayTranspose.diagnostics.empty());
+    assert(containsKind(*outsideArrayTranspose.root,
+                        mparser::SyntaxKind::PostfixExpr));
+
+    auto repeatedTranspose = parse("a = x'';\n");
+    assert(repeatedTranspose.diagnostics.empty());
+    auto repeatedNonconjugate = parse("a = x.'';\n");
+    assert(repeatedNonconjugate.diagnostics.empty());
+}
+
 } // namespace
 
 int main() {
@@ -587,6 +628,7 @@ int main() {
     parseV11CoreCompatibilitySmoke();
     parseWorkspaceDeclarationSmoke();
     parseCommandFormSmoke();
+    parseSpaceSeparatedCharacterLiteralSmoke();
     std::cout << "parser smoke tests passed\n";
     return 0;
 }

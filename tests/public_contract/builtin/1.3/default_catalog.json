@@ -9,7 +9,7 @@
     "minor": 3
   },
   "catalog": "default",
-  "descriptor_count": 196,
+  "descriptor_count": 208,
   "descriptors": [
     {
       "name": "MException",
@@ -662,6 +662,67 @@
       "typed_lowering": "none",
       "implicit_output_policy": "first-available",
       "error_identifier": "MParser:InvalidArrayConstructor"
+    },
+    {
+      "name": "cell2struct",
+      "aliases": [],
+      "inputs": {
+        "minimum": 2,
+        "maximum": 3
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidCollectionBuiltinCall"
+    },
+    {
+      "name": "cellfun",
+      "aliases": [],
+      "inputs": {
+        "minimum": 2,
+        "maximum": null
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": null
+      },
+      "argument_constraints": [],
+      "output_constraints": [],
+      "implementation": "context",
+      "purity": "impure",
+      "determinism": "context-dependent",
+      "thread_safety": "context-bound",
+      "side_effects": [
+        "external"
+      ],
+      "context_permissions": [
+        "object-array-policy",
+        "dynamic-call",
+        "execution-control"
+      ],
+      "required_context": [
+        "dynamic-call"
+      ],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidCollectionBuiltinCall"
     },
     {
       "name": "cellstr",
@@ -2576,6 +2637,35 @@
       "error_identifier": "MParser:InvalidBuiltinCall"
     },
     {
+      "name": "iscell",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidCollectionBuiltinCall"
+    },
+    {
       "name": "ischar",
       "aliases": [],
       "inputs": {
@@ -3631,6 +3721,40 @@
       "error_identifier": "MParser:InvalidBuiltinCall"
     },
     {
+      "name": "lower",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "text",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidTextBuiltinCall"
+    },
+    {
       "name": "matlab.metadata.Class.fromName",
       "aliases": [],
       "inputs": {
@@ -4105,6 +4229,40 @@
       "error_identifier": "MParser:InvalidBuiltinCall"
     },
     {
+      "name": "num2str",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 2
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidTextBuiltinCall"
+    },
+    {
       "name": "numel",
       "aliases": [],
       "inputs": {
@@ -4538,6 +4696,56 @@
       "error_identifier": "MParser:InvalidBuiltinCall"
     },
     {
+      "name": "regexp",
+      "aliases": [],
+      "inputs": {
+        "minimum": 2,
+        "maximum": null
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 5
+      },
+      "argument_constraints": [
+        {
+          "value": "text",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidTextBuiltinCall"
+    },
+    {
       "name": "rem",
       "aliases": [],
       "inputs": {
@@ -4942,6 +5150,39 @@
       "error_identifier": "MParser:InvalidSize"
     },
     {
+      "name": "sort",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": null
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 2
+      },
+      "argument_constraints": [],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidCollectionBuiltinCall"
+    },
+    {
       "name": "sprintf",
       "aliases": [],
       "inputs": {
@@ -5229,6 +5470,78 @@
       "error_identifier": "MParser:InvalidBuiltinCall"
     },
     {
+      "name": "strsplit",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": null
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 2
+      },
+      "argument_constraints": [
+        {
+          "value": "text",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidTextBuiltinCall"
+    },
+    {
+      "name": "strtrim",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "text",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidTextBuiltinCall"
+    },
+    {
       "name": "struct",
       "aliases": [],
       "inputs": {
@@ -5253,6 +5566,35 @@
       "typed_lowering": "none",
       "implicit_output_policy": "first-available",
       "error_identifier": "MParser:InvalidBuiltinCall"
+    },
+    {
+      "name": "struct2cell",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidCollectionBuiltinCall"
     },
     {
       "name": "sum",
@@ -5704,6 +6046,77 @@
       "typed_lowering": "none",
       "implicit_output_policy": "first-available",
       "error_identifier": "MParser:InvalidBuiltinCall"
+    },
+    {
+      "name": "unique",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": null
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 3
+      },
+      "argument_constraints": [],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidCollectionBuiltinCall"
+    },
+    {
+      "name": "upper",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "text",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidTextBuiltinCall"
     },
     {
       "name": "version",

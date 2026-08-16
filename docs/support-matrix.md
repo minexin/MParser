@@ -81,7 +81,7 @@ v1.2 candidate contract.
 
 ## v1.3 Development Additions
 
-The current tree has the first end-to-end system/runtime batch:
+The current tree has two end-to-end system and standard-library batches:
 
 - one session-owned capability context and injectable host adapter for current
   directory, search paths, environment, filesystem read/write, process,
@@ -101,14 +101,26 @@ The current tree has the first end-to-end system/runtime batch:
   `int64`/`uint64` input;
 - parser diagnostics for illegal bare newlines in calls/indexing while matrix
   and cell newlines remain row separators and `...` remains the legal
-  continuation form.
+  continuation form;
+- whitespace-aware single-quote disambiguation in array literals, so
+  `['ab' 'cd']` constructs `'abcd'` while adjacent `x'` remains transpose;
+- shape-preserving case conversion and trimming, numeric-to-character
+  conversion, splitting, and a documented regular-expression subset;
+- numeric, complex, exact-integer, text, Cell-text, and shape-only missing
+  ordering/set operations, including N-dimensional `sort`, up to three
+  `unique` outputs, row mode, stable/first/last choices, and missing policy;
+- `iscell`, dimension-aware `struct2cell`/`cell2struct`, and synchronous
+  `cellfun` callbacks with multiple inputs/outputs, `UniformOutput`, and
+  `ErrorHandler` through the shared dynamic-call context.
 
 The runnable evidence is `samples/system_services_demo.m`,
-`samples/random_runtime_demo.m`, and `samples/file_io_demo.m`. These are
+`samples/random_runtime_demo.m`, `samples/file_io_demo.m`, and
+`samples/standard_library_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
 Binary `fread`/`fwrite`, line reads, end/error queries, scansets, selectable
-encodings, remote files, MAT files, dynamic evaluation, and many broad
-standard-library families remain open. The product and public SDK still
+encodings, remote files, MAT files, dynamic evaluation, many broad
+standard-library families, and full MATLAB regexp/Unicode behavior remain
+open. The product and public SDK still
 report `1.2.0` until the complete v1.3 milestone is ready to freeze.
 
 ## Language And Runtime

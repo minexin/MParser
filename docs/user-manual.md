@@ -162,6 +162,17 @@ vectors, quoted UTF-8 string scalars, and `name=value` arguments. Rich values,
 initial workspaces, reusable modules, cancellation, and resource limits are
 available through the C or C++ embedding API.
 
+The active v1.3 development library includes `lower`, `upper`, `strtrim`,
+`num2str`, `strsplit`, a portable `regexp` subset, `sort`, `unique`, `iscell`,
+`cellfun`, `struct2cell`, and `cell2struct`. Ordering preserves dense numeric
+classes and supports N-dimensional dimensions; missing arrays remain
+shape-only. `cellfun` accepts function handles or text names and supports
+multiple Cell inputs/outputs, `UniformOutput`, and `ErrorHandler` through the
+same call-frame rules used by direct invocation. See
+`samples/standard_library_demo.m` for executable examples. Locale-wide Unicode
+case conversion, the complete MATLAB regular-expression dialect, and all
+long-tail overloads remain outside this development slice.
+
 ## Arrays And Values
 
 MParser uses MATLAB column-major linear order at language, C, C++, and machine

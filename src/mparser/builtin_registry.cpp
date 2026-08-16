@@ -1,6 +1,7 @@
 #include "mparser/builtin_registry.h"
 
 #include "mparser/runtime_array_ops.h"
+#include "mparser/runtime_collection_builtins.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_object.h"
@@ -9,6 +10,7 @@
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_system_builtins.h"
 #include "mparser/runtime_text.h"
+#include "mparser/runtime_text_builtins.h"
 #include "mparser/runtime_value_ops.h"
 #include "mparser/runtime_warning.h"
 
@@ -44,6 +46,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "atanh",
     "cat",
     "cell",
+    "cell2struct",
+    "cellfun",
     "cellstr",
     "cd",
     "ceil",
@@ -108,6 +112,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "int8",
     "ipermute",
     "isa",
+    "iscell",
     "isenum",
     "isempty",
     "ischar",
@@ -143,6 +148,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "log10",
     "log2",
     "logical",
+    "lower",
     "max",
     "mean",
     "metaclass",
@@ -157,6 +163,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "ndims",
     "nextpow2",
     "notify",
+    "num2str",
     "numel",
     "ones",
     "path",
@@ -172,6 +179,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "randi",
     "randn",
     "real",
+    "regexp",
     "rem",
     "repmat",
     "reshape",
@@ -184,6 +192,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "sin",
     "sinh",
     "size",
+    "sort",
     "sqrt",
     "squeeze",
     "sprintf",
@@ -191,10 +200,13 @@ constexpr std::string_view kBuiltinNames[] = {
     "str2func",
     "strcmp",
     "strcmpi",
+    "strsplit",
+    "strtrim",
     "string",
     "strings",
     "strlength",
     "struct",
+    "struct2cell",
     "sum",
     "system",
     "table",
@@ -211,6 +223,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "uint32",
     "uint64",
     "uint8",
+    "unique",
+    "upper",
     "vertcat",
     "version",
     "warning",
@@ -1259,9 +1273,106 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor textLibraryDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "lower" || name == "upper" || name == "strtrim") {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    } else if (name == "num2str") {
+        descriptor.inputs = BuiltinArity::range(1, 2);
+    } else if (name == "regexp") {
+        descriptor.inputs = BuiltinArity::variadic(2);
+    } else {
+        descriptor.inputs = BuiltinArity::variadic(1);
+    }
+    descriptor.outputs = BuiltinArity::range(
+        0, name == "strsplit" ? 2 : name == "regexp" ? 5 : 1);
+    descriptor.argumentConstraints = {{
+        name == "num2str" ? BuiltinValueConstraint::Numeric
+                           : BuiltinValueConstraint::Text,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.outputConstraints.assign(
+        *descriptor.outputs.maximum,
+        BuiltinOutputConstraint{BuiltinValueConstraint::Any,
+                                BuiltinShapeConstraint::Any});
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidTextBuiltinCall";
+    descriptor.summary =
+        "MATLAB-like text transformation, conversion, splitting, or "
+        "regular-expression operation.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeTextLibraryBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor collectionLibraryDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "iscell" || name == "struct2cell") {
+        descriptor.inputs = BuiltinArity::fixed(1);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+    } else if (name == "cell2struct") {
+        descriptor.inputs = BuiltinArity::range(2, 3);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+    } else if (name == "sort") {
+        descriptor.inputs = BuiltinArity::variadic(1);
+        descriptor.outputs = BuiltinArity::range(0, 2);
+    } else if (name == "unique") {
+        descriptor.inputs = BuiltinArity::variadic(1);
+        descriptor.outputs = BuiltinArity::range(0, 3);
+    } else {
+        descriptor.inputs = BuiltinArity::variadic(2);
+        descriptor.outputs = BuiltinArity::variadic(0);
+    }
+    descriptor.implementation = name == "cellfun"
+                                    ? BuiltinImplementationKind::Context
+                                    : BuiltinImplementationKind::Shared;
+    descriptor.purity = name == "cellfun" ? BuiltinPurity::Impure
+                                           : BuiltinPurity::Pure;
+    descriptor.determinism =
+        name == "cellfun" ? BuiltinDeterminism::ContextDependent
+                          : BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety =
+        name == "cellfun" ? BuiltinThreadSafety::ContextBound
+                          : BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidCollectionBuiltinCall";
+    descriptor.summary =
+        "MATLAB-like sorting, uniqueness, Cell, or structure operation.";
+    if (descriptor.outputs.maximum) {
+        descriptor.outputConstraints.assign(
+            *descriptor.outputs.maximum,
+            BuiltinOutputConstraint{BuiltinValueConstraint::Any,
+                                    BuiltinShapeConstraint::Any});
+    }
+    if (name == "cellfun") {
+        descriptor.sideEffects = BuiltinSideEffect::External;
+        descriptor.contextPermissions =
+            BuiltinContextPermission::DynamicCall |
+            BuiltinContextPermission::ObjectArrayPolicy |
+            BuiltinContextPermission::ExecutionControl;
+        descriptor.requiredContext =
+            BuiltinContextPermission::DynamicCall;
+    }
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeCollectionLibraryBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isRuntimeSystemBuiltin(name)) {
         return systemDescriptor(name);
+    }
+    if (isRuntimeTextLibraryBuiltin(name)) {
+        return textLibraryDescriptor(name);
+    }
+    if (isRuntimeCollectionLibraryBuiltin(name)) {
+        return collectionLibraryDescriptor(name);
     }
     if (name == "missing") {
         return missingDescriptor();

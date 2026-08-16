@@ -151,7 +151,7 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first v1.3 implementation batch is present in the development tree. A
+The first two v1.3 implementation batches are present in the development tree. A
 session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
@@ -166,12 +166,26 @@ deterministic adapters, resource limits, file lifetime, update-stream
 barriers, Windows text translation positions, multidimensional results, and
 exact 64-bit formatted input.
 
+The second batch adds one shared text/ordering/collection layer rather than
+engine-specific cases. It covers space-separated character literals,
+`lower`/`upper`/`strtrim`, array-aware `num2str`, portable `strsplit` and
+`regexp` subsets, N-dimensional `sort`, O(n log n) numeric/text `unique`,
+shape-only missing sorting/set behavior, `iscell`, `cellfun`, `struct2cell`,
+and `cell2struct`. `cellfun` uses the registry's synchronous dynamic invoker,
+so anonymous, named, and builtin handles, multiple inputs/outputs,
+`UniformOutput`, callback diagnostics, and `ErrorHandler` share HIR/VM call
+semantics. `samples/standard_library_demo.m` and `standard_library_smoke`
+cover exact integer, complex, N-dimensional, text, Cell, Struct,
+callback-failure, 20,000-element ordering, and billion-element shape-only
+missing boundaries.
+
 This batch does not close v1.3. Dynamic evaluation, broader workspace and
-filesystem operations, ordering/set/array/number-theory families, public
+filesystem operations, broader array/number-theory families, public
 embedding configuration for host capabilities, and the external differential
 rerun remain milestone work. Binary I/O, line reads, end/error queries,
-scansets, selectable encodings, remote URLs, and MAT-file persistence are also
-not implied by the first text-file slice.
+scansets, selectable encodings, remote URLs, MAT-file persistence, full
+MATLAB regular-expression syntax, locale-wide Unicode case conversion, and
+long-tail collection overloads are also not implied by these slices.
 
 ## v1.4: Advanced Mathematics And Typed Performance
 

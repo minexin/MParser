@@ -1802,6 +1802,18 @@ string scalars or arrays, `double(stringArray)` and `str2double` preserve array
 shape, and legal text/cell/missing code outside optimized regions falls back
 to the bytecode VM.
 
+Run the active v1.3 text, ordering, Cell, and Struct library batch with:
+
+```powershell
+build\mparser.exe --run samples\standard_library_demo.m
+```
+
+The demo reports `summary = 12` through HIR, bytecode, and production modes.
+It covers character-literal concatenation, case/trim/number conversion,
+splitting and regex matching, N-dimensional and missing-aware `sort`/`unique`,
+`cellfun` callback contracts, and Struct/Cell conversion. The regex layer is a
+documented portable subset, not a claim of complete MATLAB regexp syntax.
+
 Run the active v1.3 system, random-state, and bounded text-file slices with:
 
 ```powershell

@@ -1,5 +1,6 @@
 #include "mparser/lexer.h"
 
+#include <algorithm>
 #include <cctype>
 #include <string>
 #include <unordered_map>
@@ -60,6 +61,8 @@ bool canEndExpression(TokenKind kind) {
     case TokenKind::RParen:
     case TokenKind::RBracket:
     case TokenKind::RBrace:
+    case TokenKind::DotApostrophe:
+    case TokenKind::Apostrophe:
     case TokenKind::KeywordEnd:
         return true;
     default:
@@ -417,7 +420,13 @@ Token Lexer::scanString(char quote, std::vector<Trivia> leadingTrivia) {
 }
 
 Token Lexer::scanSingleQuoteOrTranspose(std::vector<Trivia> leadingTrivia) {
-    if (previousCanEndExpression_) {
+    const bool separatedArrayElement =
+        arrayDelimiterDepth_ != 0 &&
+        std::any_of(leadingTrivia.begin(), leadingTrivia.end(),
+                    [](const Trivia& trivia) {
+                        return trivia.kind == TriviaKind::Whitespace;
+                    });
+    if (previousCanEndExpression_ && !separatedArrayElement) {
         const SourcePosition begin = position();
         advance();
         return makeToken(TokenKind::Apostrophe, begin, "'",
@@ -447,6 +456,14 @@ Token Lexer::scanNewline(std::vector<Trivia> leadingTrivia) {
 }
 
 void Lexer::updatePreviousSignificant(TokenKind kind) {
+    if (kind == TokenKind::LBracket || kind == TokenKind::LBrace) {
+        ++arrayDelimiterDepth_;
+    } else if ((kind == TokenKind::RBracket ||
+                kind == TokenKind::RBrace) &&
+               arrayDelimiterDepth_ != 0) {
+        --arrayDelimiterDepth_;
+    }
+
     switch (kind) {
     case TokenKind::Newline:
     case TokenKind::Semicolon:
