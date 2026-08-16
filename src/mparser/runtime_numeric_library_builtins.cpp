@@ -352,32 +352,37 @@ BuiltinResult gcdLcmBuiltin(std::string_view name,
                                         ? exactMagnitude(*rightElement,
                                                          name == "gcd")
                                         : std::nullopt;
-        if (!leftMagnitude || !rightMagnitude ||
-            (name == "lcm" &&
-             (*leftMagnitude == 0 || *rightMagnitude == 0))) {
+        if (!leftMagnitude || !rightMagnitude) {
             return failure(call,
                            std::string(name) +
                                " inputs must be integer-valued" +
                                (name == "lcm" ? " and positive" : ""),
                            "MParser:InvalidIntegerPair");
         }
+        const std::uint64_t leftValue = leftMagnitude.value();
+        const std::uint64_t rightValue = rightMagnitude.value();
+        if (name == "lcm" && (leftValue == 0 || rightValue == 0)) {
+            return failure(call,
+                           "lcm inputs must be integer-valued and positive",
+                           "MParser:InvalidIntegerPair");
+        }
         const std::uint64_t divisor =
-            std::gcd(*leftMagnitude, *rightMagnitude);
+            std::gcd(leftValue, rightValue);
         RuntimeNumericElementValue output;
         if (name == "lcm") {
-            const std::uint64_t reduced = *leftMagnitude / divisor;
+            const std::uint64_t reduced = leftValue / divisor;
             if (runtimeNumericClassIsInteger(spec->outputClass)) {
                 const std::uint64_t maximum =
                     integerClassMaximum(spec->outputClass);
                 const std::uint64_t result =
-                    reduced > maximum / *rightMagnitude
+                    reduced > maximum / rightValue
                         ? maximum
-                        : reduced * *rightMagnitude;
+                        : reduced * rightValue;
                 output = exactRealElement(result, spec->outputClass);
             } else {
                 const long double result =
                     static_cast<long double>(reduced) *
-                    static_cast<long double>(*rightMagnitude);
+                    static_cast<long double>(rightValue);
                 output = floatingRealElement(
                     static_cast<double>(result), spec->outputClass);
             }
