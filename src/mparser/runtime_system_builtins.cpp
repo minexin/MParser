@@ -1,6 +1,7 @@
 #include "mparser/runtime_system_builtins.h"
 
 #include "mparser/filesystem_utf8.h"
+#include "mparser/runtime_execution_control.h"
 #include "mparser/runtime_file_io.h"
 #include "mparser/runtime_metadata.h"
 #include "mparser/runtime_numeric.h"
@@ -25,6 +26,7 @@
 #include <regex>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -1782,6 +1784,86 @@ BuiltinResult randiBuiltin(const BuiltinCall& call) {
     return selectedOutputs(call, {std::move(*result)});
 }
 
+BuiltinResult randpermBuiltin(const BuiltinCall& call) {
+    if (runtimeShapeElementCount(call.arguments[0]) != 1 ||
+        (call.arguments.size() == 2 &&
+         runtimeShapeElementCount(call.arguments[1]) != 1)) {
+        return failure(call,
+                       "randperm n and optional k must be numeric scalars");
+    }
+    const auto rawCount = integerBound(call.arguments[0], 0);
+    const auto rawSelection = call.arguments.size() == 2
+        ? integerBound(call.arguments[1], 0)
+        : rawCount;
+    if (!rawCount || !rawSelection || *rawCount < 0.0 ||
+        *rawSelection < 0.0 || *rawSelection > *rawCount ||
+        *rawCount > 9007199254740992.0 ||
+        static_cast<long double>(*rawCount) >
+            static_cast<long double>(
+                std::numeric_limits<size_t>::max())) {
+        return failure(
+            call,
+            "randperm expects n and optional k as exact nonnegative "
+            "integers with k no greater than n");
+    }
+    const size_t count = static_cast<size_t>(*rawCount);
+    const size_t selection = static_cast<size_t>(*rawSelection);
+    if (call.context && call.context->executionControl) {
+        if (!call.context->executionControl->checkpoint() ||
+            selection > std::numeric_limits<size_t>::max() /
+                            sizeof(double) ||
+            !call.context->executionControl->observeArrayBytes(
+                selection * sizeof(double))) {
+            return failure(
+                call,
+                "randperm execution was stopped by runtime control",
+                "MParser:ExecutionStopped");
+        }
+    }
+    auto generated = systemContext(call)->randomUniform(selection);
+    if (!generated.succeeded) {
+        return failure(call, std::move(generated.error),
+                       "MParser:SystemOperationFailed");
+    }
+
+    std::unordered_map<size_t, size_t> substitutions;
+    if (selection <= substitutions.max_size() / 2U) {
+        substitutions.reserve(selection * 2U);
+    }
+    std::vector<double> values;
+    values.reserve(selection);
+    const auto valueAt = [&substitutions](size_t position) {
+        const auto found = substitutions.find(position);
+        return found == substitutions.end() ? position : found->second;
+    };
+    for (size_t index = 0; index < selection; ++index) {
+        if (call.context && call.context->executionControl &&
+            index % 16384U == 0 &&
+            !call.context->executionControl->checkpoint()) {
+            return failure(
+                call,
+                "randperm execution was stopped by runtime control",
+                "MParser:ExecutionStopped");
+        }
+        const size_t remaining = count - index;
+        const double unit = std::clamp(
+            generated.value[index], 0.0,
+            std::nextafter(1.0, 0.0));
+        const size_t selected = index + static_cast<size_t>(
+            std::floor(unit * static_cast<double>(remaining)));
+        const size_t selectedValue = valueAt(selected);
+        const size_t currentValue = valueAt(index);
+        substitutions[selected] = currentValue;
+        values.push_back(static_cast<double>(selectedValue + 1U));
+    }
+    auto result = runtimeNumericValueFromLogicalOrder(
+        {1, selection}, std::move(values), RuntimeNumericClass::Double);
+    if (!result) {
+        return failure(call, "randperm result could not be represented");
+    }
+    return selectedOutputs(call, {std::move(*result)});
+}
+
 std::optional<RuntimeValue> randomStateWords(std::string_view state) {
     std::istringstream input{std::string(state)};
     std::vector<RuntimeNumericElementValue> words;
@@ -2052,11 +2134,12 @@ BuiltinResult systemBuiltin(const BuiltinCall& call) {
 } // namespace
 
 bool isRuntimeSystemBuiltin(std::string_view name) {
-    static constexpr std::array<std::string_view, 34> names = {
+    static constexpr std::array<std::string_view, 35> names = {
         "addpath", "cd", "clear", "clock", "computer", "date", "dir",
         "exist", "fclose", "filesep", "fopen", "format", "fprintf",
         "frewind", "fscanf", "fseek", "ftell", "fullfile", "getenv",
         "path", "pathsep", "pause", "pwd", "rand", "randi", "randn",
+        "randperm",
         "rmpath", "rng", "system", "tempdir", "version", "which", "who",
         "whos"};
     return std::find(names.begin(), names.end(), name) != names.end();
@@ -2132,6 +2215,9 @@ BuiltinResult invokeRuntimeSystemBuiltin(
     }
     if (name == "randi") {
         return randiBuiltin(call);
+    }
+    if (name == "randperm") {
+        return randpermBuiltin(call);
     }
     if (name == "rng") {
         return rngBuiltin(call);

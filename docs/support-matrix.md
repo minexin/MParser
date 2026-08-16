@@ -81,7 +81,7 @@ v1.2 candidate contract.
 
 ## v1.3 Development Additions
 
-The current tree has two end-to-end system and standard-library batches:
+The current tree has three end-to-end system and standard-library batches:
 
 - one session-owned capability context and injectable host adapter for current
   directory, search paths, environment, filesystem read/write, process,
@@ -111,16 +111,27 @@ The current tree has two end-to-end system and standard-library batches:
   `unique` outputs, row mode, stable/first/last choices, and missing policy;
 - `iscell`, dimension-aware `struct2cell`/`cell2struct`, and synchronous
   `cellfun` callbacks with multiple inputs/outputs, `UniformOutput`, and
-  `ErrorHandler` through the shared dynamic-call context.
+  `ErrorHandler` through the shared dynamic-call context;
+- class- and shape-aware `factorial`, `gcd`, `lcm`, `isprime`, `primes`, and
+  `logspace`, including integer-only prime limits and MATLAB-like fractional
+  or nonpositive `logspace` point counts, plus one- to three-dimensional
+  `meshgrid`;
+- generic N-dimensional `flip`, `flipud`, and `fliplr` across supported dense
+  values, including payload-free shaped missing arrays;
+- UTF-16 `strfind`/`strrep` with overlapping matches and string-array/Cell
+  mapping, plus reproducible O(k) `randperm(n,k)` using session random state
+  and preflight resource checks.
 
 The runnable evidence is `samples/system_services_demo.m`,
 `samples/random_runtime_demo.m`, `samples/file_io_demo.m`, and
-`samples/standard_library_demo.m`. These are
+`samples/standard_library_demo.m`, plus
+`samples/utility_library_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
 Binary `fread`/`fwrite`, line reads, end/error queries, scansets, selectable
-encodings, remote files, MAT files, dynamic evaluation, many broad
-standard-library families, and full MATLAB regexp/Unicode behavior remain
-open. The product and public SDK still
+encodings, remote files, MAT files, dynamic evaluation, extended GCD
+coefficients, arbitrary-rank mesh generation, many broad standard-library
+families, and full MATLAB regexp/Unicode behavior remain open. The product and
+public SDK still
 report `1.2.0` until the complete v1.3 milestone is ready to freeze.
 
 ## Language And Runtime

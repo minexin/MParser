@@ -660,6 +660,153 @@ RuntimeValue numericRow(const std::vector<double>& values) {
         .value_or(RuntimeValue{});
 }
 
+std::vector<double> substringPositions(std::u16string_view input,
+                                       std::u16string_view pattern) {
+    std::vector<double> positions;
+    if (pattern.empty() || pattern.size() > input.size()) {
+        return positions;
+    }
+    size_t cursor = 0;
+    while (cursor + pattern.size() <= input.size()) {
+        const size_t found = input.find(pattern, cursor);
+        if (found == std::u16string_view::npos) {
+            break;
+        }
+        positions.push_back(static_cast<double>(found + 1));
+        cursor = found + 1;
+    }
+    return positions;
+}
+
+std::u16string replaceSubstrings(std::u16string_view input,
+                                 std::u16string_view pattern,
+                                 std::u16string_view replacement) {
+    if (pattern.empty() || pattern.size() > input.size()) {
+        return std::u16string(input);
+    }
+    std::u16string output;
+    size_t copiedThrough = 0;
+    size_t cursor = 0;
+    while (cursor + pattern.size() <= input.size()) {
+        const size_t found = input.find(pattern, cursor);
+        if (found == std::u16string_view::npos) {
+            break;
+        }
+        if (found > copiedThrough) {
+            output.append(input.substr(copiedThrough,
+                                       found - copiedThrough));
+        }
+        output.append(replacement);
+        copiedThrough = std::max(copiedThrough,
+                                 found + pattern.size());
+        cursor = found + 1;
+    }
+    output.append(input.substr(copiedThrough));
+    return output;
+}
+
+BuiltinResult strfindBuiltin(const BuiltinCall& call) {
+    const auto pattern = runtimeTextScalarCodeUnits(call.arguments[1]);
+    if (!pattern) {
+        return failure(call, "strfind pattern must be a text scalar",
+                       "MParser:InvalidTextPattern");
+    }
+    const RuntimeValue& input = call.arguments.front();
+    if (const auto scalar = runtimeTextScalarCodeUnits(input)) {
+        return returnOutputs(
+            call, {numericRow(substringPositions(*scalar, *pattern))});
+    }
+
+    std::vector<RuntimeValue> cells;
+    const auto dimensions = runtimeDimensions(input);
+    if (isRuntimeStringArray(input)) {
+        cells.reserve(input.stringElements.size());
+        for (const auto& element : input.stringElements) {
+            cells.push_back(numericRow(
+                element.missing
+                    ? std::vector<double>{}
+                    : substringPositions(element.value, *pattern)));
+        }
+    } else if (input.kind == RuntimeValueKind::Cell) {
+        cells.reserve(input.cells.size());
+        for (const RuntimeValue& element : input.cells) {
+            const auto text = runtimeTextScalarCodeUnits(element);
+            if (!text) {
+                return failure(
+                    call,
+                    "strfind Cell inputs must contain text scalars",
+                    "MParser:InvalidTextInput");
+            }
+            cells.push_back(numericRow(
+                substringPositions(*text, *pattern)));
+        }
+    } else {
+        return failure(
+            call,
+            "strfind input must be a text scalar, string array, or Cell "
+            "text array",
+            "MParser:InvalidTextInput");
+    }
+    return returnOutputs(
+        call, {makeRuntimeCellValue(dimensions, std::move(cells))});
+}
+
+BuiltinResult strrepBuiltin(const BuiltinCall& call) {
+    const auto pattern = runtimeTextScalarCodeUnits(call.arguments[1]);
+    const auto replacement = runtimeTextScalarCodeUnits(call.arguments[2]);
+    if (!pattern || !replacement) {
+        return failure(
+            call,
+            "strrep pattern and replacement must be text scalars",
+            "MParser:InvalidTextPattern");
+    }
+    const RuntimeValue& input = call.arguments.front();
+    if (isRuntimeCharacterVector(input)) {
+        const auto text = runtimeTextScalarCodeUnits(input);
+        return text
+                   ? returnOutputs(
+                         call,
+                         {makeRuntimeCharacterVector(
+                             replaceSubstrings(*text, *pattern,
+                                               *replacement))})
+                   : failure(call, "strrep could not read character input",
+                             "MParser:InvalidTextInput");
+    }
+    if (isRuntimeStringArray(input)) {
+        RuntimeValue output = input;
+        for (auto& element : output.stringElements) {
+            if (!element.missing) {
+                element.value = replaceSubstrings(
+                    element.value, *pattern, *replacement);
+            }
+        }
+        return returnOutputs(call, {std::move(output)});
+    }
+    if (input.kind == RuntimeValueKind::Cell) {
+        RuntimeValue output = input;
+        for (RuntimeValue& element : output.cells) {
+            const auto text = runtimeTextScalarCodeUnits(element);
+            if (!text) {
+                return failure(
+                    call,
+                    "strrep Cell inputs must contain text scalars",
+                    "MParser:InvalidTextInput");
+            }
+            const auto replaced = replaceSubstrings(
+                *text, *pattern, *replacement);
+            element = isRuntimeStringScalar(element)
+                          ? makeRuntimeStringScalar(replaced)
+                          : makeRuntimeCharacterVector(replaced);
+        }
+        return returnOutputs(call, {std::move(output)});
+    }
+    return failure(
+        call,
+        "strrep input must be a character vector, string array, or Cell "
+        "text array",
+        "MParser:InvalidTextInput");
+}
+
 BuiltinResult regexpBuiltin(const BuiltinCall& call) {
     const auto input = runtimeTextScalarUtf8(call.arguments[0]);
     const auto pattern = runtimeTextScalarUtf8(call.arguments[1]);
@@ -813,6 +960,7 @@ BuiltinResult regexpBuiltin(const BuiltinCall& call) {
 bool isRuntimeTextLibraryBuiltin(std::string_view name) {
     return name == "lower" || name == "num2str" ||
            name == "regexp" || name == "strsplit" ||
+           name == "strfind" || name == "strrep" ||
            name == "strtrim" || name == "upper";
 }
 
@@ -829,6 +977,12 @@ BuiltinResult invokeRuntimeTextLibraryBuiltin(
     }
     if (name == "strsplit") {
         return strsplitBuiltin(call);
+    }
+    if (name == "strfind") {
+        return strfindBuiltin(call);
+    }
+    if (name == "strrep") {
+        return strrepBuiltin(call);
     }
     if (name == "regexp") {
         return regexpBuiltin(call);

@@ -636,6 +636,171 @@ RuntimeArrayOperationResult permutationBuiltin(
     return permuteValue(arguments.front(), *order, objectPolicy);
 }
 
+size_t firstNonsingletonDimension(const RuntimeValue& value) {
+    const auto dimensions = runtimeDimensions(value);
+    for (size_t index = 0; index < dimensions.size(); ++index) {
+        if (dimensions[index] != 1) {
+            return index + 1;
+        }
+    }
+    return 1;
+}
+
+RuntimeArrayOperationResult flipValue(
+    const RuntimeValue& value, size_t dimension,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
+    if (!isSupportedArray(value)) {
+        return failure(
+            "flip supports missing, numeric, text, cell, and object arrays");
+    }
+    auto dimensions = runtimeDimensions(value);
+    dimensions.resize(std::max(dimensions.size(), dimension), 1);
+    const size_t axis = dimension - 1;
+    const size_t count = runtimeShapeElementCount(value);
+    if (dimensions[axis] <= 1 || count == 0 || isMissingArray(value)) {
+        return success(value);
+    }
+
+    const auto sourceLogicalIndex =
+        [&dimensions, axis](size_t outputLogical) -> std::optional<size_t> {
+        auto coordinates = runtimeColumnMajorCoordinates(
+            outputLogical, dimensions);
+        if (!coordinates) {
+            return std::nullopt;
+        }
+        (*coordinates)[axis] =
+            dimensions[axis] - 1 - (*coordinates)[axis];
+        return runtimeColumnMajorLinearIndex(*coordinates, dimensions);
+    };
+
+    if (isNumeric(value)) {
+        RuntimeValue output = value;
+        for (size_t logical = 0; logical < count; ++logical) {
+            const auto source = sourceLogicalIndex(logical);
+            const auto element = source
+                                     ? runtimeNumericElementValue(value,
+                                                                  *source)
+                                     : std::nullopt;
+            if (!source || !element ||
+                !runtimeStoreNumericElementValue(output, logical,
+                                                 *element)) {
+                return failure("flip could not map a numeric element");
+            }
+        }
+        return success(std::move(output));
+    }
+
+    if (isRuntimeCharacterArray(value)) {
+        RuntimeValue output = value;
+        for (size_t logical = 0; logical < count; ++logical) {
+            const auto source = sourceLogicalIndex(logical);
+            const auto targetOffset =
+                runtimeColumnMajorLinearToStorageOffset(output, logical);
+            const auto element = source
+                                     ? runtimeCharacterElement(value,
+                                                               *source)
+                                     : std::nullopt;
+            if (!source || !targetOffset || !element ||
+                *targetOffset >= output.characterElements.size()) {
+                return failure("flip could not map a character element");
+            }
+            output.characterElements[*targetOffset] = *element;
+        }
+        return success(std::move(output));
+    }
+
+    if (isRuntimeStringArray(value)) {
+        RuntimeValue output = value;
+        for (size_t logical = 0; logical < count; ++logical) {
+            const auto source = sourceLogicalIndex(logical);
+            const auto targetOffset =
+                runtimeColumnMajorLinearToStorageOffset(output, logical);
+            const auto* element = source
+                                      ? runtimeStringElement(value, *source)
+                                      : nullptr;
+            if (!source || !targetOffset || !element ||
+                *targetOffset >= output.stringElements.size()) {
+                return failure("flip could not map a string element");
+            }
+            output.stringElements[*targetOffset] = *element;
+        }
+        return success(std::move(output));
+    }
+
+    if (isRuntimeClassObject(value)) {
+        std::vector<RuntimeValue> elements(count);
+        for (size_t logical = 0; logical < count; ++logical) {
+            const auto source = sourceLogicalIndex(logical);
+            const auto sourceOffset = source
+                ? runtimeColumnMajorLinearToStorageOffset(value, *source)
+                : std::nullopt;
+            const auto targetOffset =
+                runtimeColumnMajorLinearToStorageOffset(value, logical);
+            const auto* element = sourceOffset
+                                      ? runtimeObjectElement(value,
+                                                             *sourceOffset)
+                                      : nullptr;
+            if (!source || !sourceOffset || !targetOffset || !element ||
+                *targetOffset >= elements.size()) {
+                return failure("flip could not map an object element");
+            }
+            elements[*targetOffset] = *element;
+        }
+        auto result = runtimeMakeObjectArrayFromStorageOrder(
+            std::move(elements), runtimeDimensions(value), value.className,
+            value.handleObject, objectPolicy, value.className);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+
+    RuntimeValue output = value;
+    for (size_t logical = 0; logical < count; ++logical) {
+        const auto source = sourceLogicalIndex(logical);
+        const auto sourceOffset = source
+            ? runtimeColumnMajorLinearToStorageOffset(value, *source)
+            : std::nullopt;
+        const auto targetOffset =
+            runtimeColumnMajorLinearToStorageOffset(output, logical);
+        if (!source || !sourceOffset || !targetOffset ||
+            *sourceOffset >= value.cells.size() ||
+            *targetOffset >= output.cells.size()) {
+            return failure("flip could not map a cell element");
+        }
+        output.cells[*targetOffset] = value.cells[*sourceOffset];
+    }
+    return success(std::move(output));
+}
+
+RuntimeArrayOperationResult flipBuiltin(
+    std::string_view name, const std::vector<RuntimeValue>& arguments,
+    const RuntimeObjectArrayPolicy& objectPolicy) {
+    const bool generic = name == "flip";
+    if (arguments.empty() || arguments.size() > (generic ? 2U : 1U)) {
+        return failure(std::string(name) +
+                       (generic
+                            ? " expects an array and optional dimension"
+                            : " expects one array"));
+    }
+    size_t dimension = name == "flipud"
+                           ? 1
+                           : name == "fliplr"
+                               ? 2
+                               : firstNonsingletonDimension(
+                                     arguments.front());
+    if (generic && arguments.size() == 2) {
+        const auto rawDimension = realNumericScalar(arguments[1]);
+        const auto selected = rawDimension
+                                  ? positiveDimension(*rawDimension)
+                                  : std::nullopt;
+        if (!selected) {
+            return failure("flip dimension must be a positive integer scalar");
+        }
+        dimension = *selected;
+    }
+    return flipValue(arguments.front(), dimension, objectPolicy);
+}
+
 RuntimeArrayOperationResult squeezeBuiltin(
     const std::vector<RuntimeValue>& arguments,
     const RuntimeObjectArrayPolicy& objectPolicy) {
@@ -1152,8 +1317,9 @@ RuntimeArrayOperationResult concatenateBuiltin(
 bool isRuntimeArrayOperationBuiltin(std::string_view name) {
     return name == "reshape" || name == "permute" ||
            name == "ipermute" || name == "squeeze" ||
-           name == "repmat" || name == "cat" || name == "horzcat" ||
-           name == "vertcat";
+           name == "repmat" || name == "flip" ||
+           name == "flipud" || name == "fliplr" ||
+           name == "cat" || name == "horzcat" || name == "vertcat";
 }
 
 RuntimeArrayOperationResult runtimeArrayOperationBuiltin(
@@ -1164,6 +1330,9 @@ RuntimeArrayOperationResult runtimeArrayOperationBuiltin(
     }
     if (name == "permute" || name == "ipermute") {
         return permutationBuiltin(name, arguments, objectPolicy);
+    }
+    if (name == "flip" || name == "flipud" || name == "fliplr") {
+        return flipBuiltin(name, arguments, objectPolicy);
     }
     if (name == "squeeze") {
         return squeezeBuiltin(arguments, objectPolicy);

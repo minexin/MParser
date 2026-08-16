@@ -4,6 +4,7 @@
 #include "mparser/runtime_collection_builtins.h"
 #include "mparser/runtime_math.h"
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_numeric_library_builtins.h"
 #include "mparser/runtime_object.h"
 #include "mparser/runtime_reduction.h"
 #include "mparser/runtime_scan.h"
@@ -79,6 +80,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "exist",
     "exp",
     "eye",
+    "factorial",
     "false",
     "fieldnames",
     "filesep",
@@ -87,6 +89,9 @@ constexpr std::string_view kBuiltinNames[] = {
     "findobj",
     "findprop",
     "fix",
+    "flip",
+    "fliplr",
+    "flipud",
     "floor",
     "fclose",
     "fopen",
@@ -99,6 +104,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "fullfile",
     "func2str",
     "functions",
+    "gcd",
     "getReport",
     "getenv",
     "horzcat",
@@ -126,6 +132,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "ismatrix",
     "ismethod",
     "isnumeric",
+    "isprime",
     "isnan",
     "isreal",
     "isrow",
@@ -141,16 +148,19 @@ constexpr std::string_view kBuiltinNames[] = {
     "isvector",
     "j",
     "lastwarn",
+    "lcm",
     "length",
     "linspace",
     "listener",
     "log",
     "log10",
     "log2",
+    "logspace",
     "logical",
     "lower",
     "max",
     "mean",
+    "meshgrid",
     "metaclass",
     "metafunction",
     "methods",
@@ -174,10 +184,12 @@ constexpr std::string_view kBuiltinNames[] = {
     "plot",
     "prod",
     "properties",
+    "primes",
     "pwd",
     "rand",
     "randi",
     "randn",
+    "randperm",
     "real",
     "regexp",
     "rem",
@@ -200,6 +212,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "str2func",
     "strcmp",
     "strcmpi",
+    "strfind",
+    "strrep",
     "strsplit",
     "strtrim",
     "string",
@@ -415,7 +429,8 @@ BuiltinDescriptor missingDescriptor() {
     descriptor.purity = BuiltinPurity::Pure;
     descriptor.determinism = BuiltinDeterminism::Deterministic;
     descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
-    descriptor.summary = "MATLAB-like scalar missing value.";
+    descriptor.summary =
+        "MATLAB-like scalar missing constructor for shaped missing arrays.";
     descriptor.handler = [](const BuiltinCall& call) {
         return call.requestedOutputCount == 0
                    ? BuiltinResult::success()
@@ -785,8 +800,11 @@ BuiltinDescriptor arrayDescriptor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
     if (name == "permute" || name == "ipermute") {
         descriptor.inputs = BuiltinArity::fixed(2);
-    } else if (name == "squeeze") {
+    } else if (name == "squeeze" || name == "flipud" ||
+               name == "fliplr") {
         descriptor.inputs = BuiltinArity::fixed(1);
+    } else if (name == "flip") {
+        descriptor.inputs = BuiltinArity::range(1, 2);
     } else if (name == "reshape" || name == "repmat" ||
                name == "cat") {
         descriptor.inputs = BuiltinArity::variadic(2);
@@ -1245,6 +1263,15 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
             descriptor.determinism =
                 BuiltinDeterminism::Nondeterministic;
             descriptor.sideEffects = BuiltinSideEffect::RandomState;
+        } else if (name == "randperm") {
+            descriptor.inputs = BuiltinArity::range(1, 2);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.determinism =
+                BuiltinDeterminism::Nondeterministic;
+            descriptor.sideEffects = BuiltinSideEffect::RandomState;
+            descriptor.contextPermissions =
+                descriptor.contextPermissions |
+                BuiltinContextPermission::ExecutionControl;
         } else if (name == "rng") {
             descriptor.inputs = BuiltinArity::range(0, 2);
             descriptor.purity = BuiltinPurity::Contextual;
@@ -1281,16 +1308,29 @@ BuiltinDescriptor textLibraryDescriptor(std::string_view name) {
         descriptor.inputs = BuiltinArity::range(1, 2);
     } else if (name == "regexp") {
         descriptor.inputs = BuiltinArity::variadic(2);
+    } else if (name == "strfind") {
+        descriptor.inputs = BuiltinArity::fixed(2);
+    } else if (name == "strrep") {
+        descriptor.inputs = BuiltinArity::fixed(3);
     } else {
         descriptor.inputs = BuiltinArity::variadic(1);
     }
     descriptor.outputs = BuiltinArity::range(
         0, name == "strsplit" ? 2 : name == "regexp" ? 5 : 1);
-    descriptor.argumentConstraints = {{
-        name == "num2str" ? BuiltinValueConstraint::Numeric
-                           : BuiltinValueConstraint::Text,
-        BuiltinShapeConstraint::Any,
-    }};
+    if (name == "strfind" || name == "strrep") {
+        descriptor.argumentConstraints.assign(
+            *descriptor.inputs.maximum,
+            BuiltinArgumentConstraint{BuiltinValueConstraint::Text,
+                                      BuiltinShapeConstraint::Any});
+        descriptor.argumentConstraints.front().value =
+            BuiltinValueConstraint::Any;
+    } else {
+        descriptor.argumentConstraints = {{
+            name == "num2str" ? BuiltinValueConstraint::Numeric
+                               : BuiltinValueConstraint::Text,
+            BuiltinShapeConstraint::Any,
+        }};
+    }
     descriptor.outputConstraints.assign(
         *descriptor.outputs.maximum,
         BuiltinOutputConstraint{BuiltinValueConstraint::Any,
@@ -1306,6 +1346,43 @@ BuiltinDescriptor textLibraryDescriptor(std::string_view name) {
     descriptor.handler = [builtin = std::string(name)](
                              const BuiltinCall& call) {
         return invokeRuntimeTextLibraryBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor numericLibraryDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "factorial" || name == "isprime" || name == "primes") {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    } else if (name == "gcd" || name == "lcm") {
+        descriptor.inputs = BuiltinArity::fixed(2);
+    } else if (name == "logspace") {
+        descriptor.inputs = BuiltinArity::range(2, 3);
+    } else {
+        descriptor.inputs = BuiltinArity::range(1, 3);
+    }
+    descriptor.outputs = BuiltinArity::range(
+        0, name == "meshgrid" ? 3 : 1);
+    descriptor.argumentConstraints.assign(
+        *descriptor.inputs.maximum,
+        BuiltinArgumentConstraint{BuiltinValueConstraint::Numeric,
+                                  BuiltinShapeConstraint::Any});
+    descriptor.outputConstraints.assign(
+        *descriptor.outputs.maximum,
+        BuiltinOutputConstraint{BuiltinValueConstraint::Numeric,
+                                BuiltinShapeConstraint::Any});
+    descriptor.implementation = BuiltinImplementationKind::Context;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidNumericLibraryCall";
+    descriptor.summary =
+        "MATLAB-like number theory, logarithmic spacing, or grid operation.";
+    descriptor.contextPermissions =
+        BuiltinContextPermission::ExecutionControl;
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeNumericLibraryBuiltin(builtin, call);
     };
     return descriptor;
 }
@@ -1373,6 +1450,9 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isRuntimeCollectionLibraryBuiltin(name)) {
         return collectionLibraryDescriptor(name);
+    }
+    if (isRuntimeNumericLibraryBuiltin(name)) {
+        return numericLibraryDescriptor(name);
     }
     if (name == "missing") {
         return missingDescriptor();

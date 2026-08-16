@@ -283,8 +283,9 @@ permissions for v1.2. The active 1.3 contract additionally records structured
 workspace access, caller `nargout`, implicit-output policy, system/display
 contexts, random/display side effects, and the expanded descriptor catalog.
 The current v1.3 development catalog additionally exercises callable-based
-dynamic invocation through `cellfun` and contains 208 descriptors and 210
-registered names.
+dynamic invocation through `cellfun`, execution-controlled numeric utilities,
+and session-random `randperm`; it contains 221 descriptors and 223 registered
+names.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The active development snapshot is

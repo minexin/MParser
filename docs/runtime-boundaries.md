@@ -110,6 +110,14 @@ external adapter must poll at documented boundaries. Hosts that need queue
 deadlines or admission limits enforce those outside MParser because module
 graph lock wait is not part of the request wall-time budget.
 
+The active v1.3 numeric utility handlers poll during long sieve and output
+construction work and preflight result payloads before allocation. The sparse
+`randperm(n,k)` path performs the same preflight before consuming session
+random state, so a cancellation or resource rejection does not silently
+advance the reproducible random sequence. These checks bound observable
+runtime behavior; they do not promise hard preemption inside arbitrary host
+adapter calls.
+
 ## Ownership
 
 C ABI modules, sessions, values, results, and cancellation tokens are opaque

@@ -168,10 +168,26 @@ The active v1.3 development library includes `lower`, `upper`, `strtrim`,
 classes and supports N-dimensional dimensions; missing arrays remain
 shape-only. `cellfun` accepts function handles or text names and supports
 multiple Cell inputs/outputs, `UniformOutput`, and `ErrorHandler` through the
-same call-frame rules used by direct invocation. See
-`samples/standard_library_demo.m` for executable examples. Locale-wide Unicode
-case conversion, the complete MATLAB regular-expression dialect, and all
-long-tail overloads remain outside this development slice.
+same call-frame rules used by direct invocation.
+
+The next utility slice adds `factorial`, `gcd`, `lcm`, `isprime`, `primes`,
+`logspace`, one- to three-dimensional `meshgrid`, generic N-dimensional
+`flip`, `flipud`, `fliplr`, UTF-16 `strfind`/`strrep`, and session-random
+`randperm`. Numeric utilities preserve supported input classes and shapes
+where MATLAB does; `gcd` currently returns only the common divisor, and
+`meshgrid` accepts at most three inputs. `primes` requires a real integer
+scalar; `logspace` floors a finite fractional point count and produces an
+empty row for a nonpositive count. Text search reports UTF-16 code-unit
+positions, including overlaps. A `missing` call constructs the scalar seed,
+but the runtime value is shape-carrying: concatenation, `repmat`, indexing,
+and transforms such as `flip` operate on arbitrary N-dimensional missing
+arrays without allocating an element payload.
+
+See `samples/standard_library_demo.m` and
+`samples/utility_library_demo.m` for executable examples. Locale-wide Unicode
+case conversion, the complete MATLAB regular-expression dialect, extended
+GCD coefficients, and all long-tail overloads remain outside this development
+slice.
 
 ## Arrays And Values
 

@@ -151,7 +151,7 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first two v1.3 implementation batches are present in the development tree. A
+The first three v1.3 implementation batches are present in the development tree. A
 session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
@@ -179,13 +179,27 @@ cover exact integer, complex, N-dimensional, text, Cell, Struct,
 callback-failure, 20,000-element ordering, and billion-element shape-only
 missing boundaries.
 
+The third batch adds one shared utility layer for `factorial`, `gcd`, `lcm`,
+`isprime`, `primes`, `logspace`, one- to three-dimensional `meshgrid`, generic
+N-dimensional `flip`/`flipud`/`fliplr`, UTF-16 `strfind`/`strrep`, and
+session-random `randperm`. It generalizes beyond the originating differential
+examples: dense class and documented scalar-expansion rules, exact 64-bit primality and
+GCD paths, shape-only missing transforms, overlapping supplementary-character
+search, string-array/Cell mapping, billion-range sparse permutations, and
+cooperative resource/cancellation boundaries are tested in both baseline
+engines. Integer-only `primes` limits and fractional/nonpositive `logspace`
+point-count rules are covered independently of the imported examples.
+`samples/utility_library_demo.m` exercises the same surface through HIR,
+bytecode, and production modes.
+
 This batch does not close v1.3. Dynamic evaluation, broader workspace and
-filesystem operations, broader array/number-theory families, public
+filesystem operations, remaining standard-library families, public
 embedding configuration for host capabilities, and the external differential
 rerun remain milestone work. Binary I/O, line reads, end/error queries,
 scansets, selectable encodings, remote URLs, MAT-file persistence, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and
-long-tail collection overloads are also not implied by these slices.
+long-tail overloads such as extended GCD coefficients are also not implied by
+these slices.
 
 ## v1.4: Advanced Mathematics And Typed Performance
 

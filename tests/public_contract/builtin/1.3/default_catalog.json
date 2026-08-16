@@ -9,7 +9,7 @@
     "minor": 3
   },
   "catalog": "default",
-  "descriptor_count": 208,
+  "descriptor_count": 221,
   "descriptors": [
     {
       "name": "MException",
@@ -1623,6 +1623,42 @@
       "error_identifier": "MParser:InvalidArrayConstructor"
     },
     {
+      "name": "factorial",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "execution-control"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidNumericLibraryCall"
+    },
+    {
       "name": "false",
       "aliases": [],
       "inputs": {
@@ -1880,6 +1916,99 @@
       "thread_safety": "reentrant",
       "side_effects": [],
       "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidBuiltinCall"
+    },
+    {
+      "name": "flip",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 2
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "object-array-policy"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidBuiltinCall"
+    },
+    {
+      "name": "fliplr",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "object-array-policy"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidBuiltinCall"
+    },
+    {
+      "name": "flipud",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "object-array-policy"
+      ],
       "required_context": [],
       "typed_lowering": "none",
       "implicit_output_policy": "first-available",
@@ -2202,6 +2331,46 @@
       "typed_lowering": "none",
       "implicit_output_policy": "first-available",
       "error_identifier": "MParser:InvalidBuiltinCall"
+    },
+    {
+      "name": "gcd",
+      "aliases": [],
+      "inputs": {
+        "minimum": 2,
+        "maximum": 2
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        },
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "execution-control"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidNumericLibraryCall"
     },
     {
       "name": "getReport",
@@ -3186,6 +3355,42 @@
       "error_identifier": "MParser:InvalidBuiltinCall"
     },
     {
+      "name": "isprime",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "execution-control"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidNumericLibraryCall"
+    },
+    {
       "name": "isprop",
       "aliases": [],
       "inputs": {
@@ -3491,6 +3696,46 @@
       "error_identifier": "MParser:InvalidWarning"
     },
     {
+      "name": "lcm",
+      "aliases": [],
+      "inputs": {
+        "minimum": 2,
+        "maximum": 2
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        },
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "execution-control"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidNumericLibraryCall"
+    },
+    {
       "name": "length",
       "aliases": [],
       "inputs": {
@@ -3721,6 +3966,50 @@
       "error_identifier": "MParser:InvalidBuiltinCall"
     },
     {
+      "name": "logspace",
+      "aliases": [],
+      "inputs": {
+        "minimum": 2,
+        "maximum": 3
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        },
+        {
+          "value": "numeric",
+          "shape": "any"
+        },
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "execution-control"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidNumericLibraryCall"
+    },
+    {
       "name": "lower",
       "aliases": [],
       "inputs": {
@@ -3851,6 +4140,58 @@
       "typed_lowering": "none",
       "implicit_output_policy": "first-available",
       "error_identifier": "MParser:InvalidBuiltinCall"
+    },
+    {
+      "name": "meshgrid",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 3
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 3
+      },
+      "argument_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        },
+        {
+          "value": "numeric",
+          "shape": "any"
+        },
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        },
+        {
+          "value": "numeric",
+          "shape": "any"
+        },
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "execution-control"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidNumericLibraryCall"
     },
     {
       "name": "meta.class.fromName",
@@ -4484,6 +4825,42 @@
       "error_identifier": "MParser:UnsupportedBuiltin"
     },
     {
+      "name": "primes",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "numeric",
+          "shape": "any"
+        }
+      ],
+      "implementation": "context",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [
+        "execution-control"
+      ],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidNumericLibraryCall"
+    },
+    {
       "name": "prod",
       "aliases": [],
       "inputs": {
@@ -4652,6 +5029,37 @@
         "random-state"
       ],
       "context_permissions": [
+        "system-services"
+      ],
+      "required_context": [
+        "system-services"
+      ],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidSystemBuiltinCall"
+    },
+    {
+      "name": "randperm",
+      "aliases": [],
+      "inputs": {
+        "minimum": 1,
+        "maximum": 2
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [],
+      "output_constraints": [],
+      "implementation": "context",
+      "purity": "impure",
+      "determinism": "nondeterministic",
+      "thread_safety": "context-bound",
+      "side_effects": [
+        "random-state"
+      ],
+      "context_permissions": [
+        "execution-control",
         "system-services"
       ],
       "required_context": [
@@ -5389,6 +5797,44 @@
       "error_identifier": "MParser:InvalidBuiltinCall"
     },
     {
+      "name": "strfind",
+      "aliases": [],
+      "inputs": {
+        "minimum": 2,
+        "maximum": 2
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "text",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidTextBuiltinCall"
+    },
+    {
       "name": "string",
       "aliases": [],
       "inputs": {
@@ -5468,6 +5914,48 @@
       "typed_lowering": "none",
       "implicit_output_policy": "first-available",
       "error_identifier": "MParser:InvalidBuiltinCall"
+    },
+    {
+      "name": "strrep",
+      "aliases": [],
+      "inputs": {
+        "minimum": 3,
+        "maximum": 3
+      },
+      "outputs": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        },
+        {
+          "value": "text",
+          "shape": "any"
+        },
+        {
+          "value": "text",
+          "shape": "any"
+        }
+      ],
+      "output_constraints": [
+        {
+          "value": "any",
+          "shape": "any"
+        }
+      ],
+      "implementation": "shared",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "thread_safety": "reentrant",
+      "side_effects": [],
+      "context_permissions": [],
+      "required_context": [],
+      "typed_lowering": "none",
+      "implicit_output_policy": "first-available",
+      "error_identifier": "MParser:InvalidTextBuiltinCall"
     },
     {
       "name": "strsplit",

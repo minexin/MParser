@@ -187,9 +187,9 @@ void runDefaultCatalogSmoke() {
     require(mparser::kBuiltinSourceContractMajor == 1 &&
                 mparser::kBuiltinSourceContractMinor == 3,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 208,
+    require(registry->descriptors().size() == 221,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 210,
+    require(registry->names().size() == 223,
             "default builtin name catalog changed unexpectedly");
 
     const auto* absolute = registry->find("abs");
@@ -326,6 +326,48 @@ void runDefaultCatalogSmoke() {
                     cellfun->contextPermissions,
                     mparser::BuiltinContextPermission::ExecutionControl),
             "cellfun dynamic-call metadata mismatch");
+    for (std::string_view name : {
+             "factorial", "gcd", "isprime", "lcm", "logspace",
+             "meshgrid", "primes"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->purity == mparser::BuiltinPurity::Pure &&
+                    descriptor->determinism ==
+                        mparser::BuiltinDeterminism::Deterministic &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->contextPermissions,
+                        mparser::BuiltinContextPermission::ExecutionControl),
+                "numeric utility metadata mismatch");
+    }
+    for (std::string_view name : {"flip", "fliplr", "flipud"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Context &&
+                    descriptor->purity == mparser::BuiltinPurity::Pure &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->contextPermissions,
+                        mparser::BuiltinContextPermission::ObjectArrayPolicy),
+                "flip-family metadata mismatch");
+    }
+    for (std::string_view name : {"strfind", "strrep"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Shared &&
+                    descriptor->purity == mparser::BuiltinPurity::Pure,
+                "text utility metadata mismatch");
+    }
+    const auto* randperm = registry->find("randperm");
+    require(randperm &&
+                randperm->purity == mparser::BuiltinPurity::Impure &&
+                mparser::hasBuiltinSideEffect(
+                    randperm->sideEffects,
+                    mparser::BuiltinSideEffect::RandomState) &&
+                mparser::hasBuiltinContextPermission(
+                    randperm->contextPermissions,
+                    mparser::BuiltinContextPermission::ExecutionControl),
+            "randperm metadata mismatch");
     const auto* warning = registry->find("warning");
     require(warning &&
                 warning->implementation ==

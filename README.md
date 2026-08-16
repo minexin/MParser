@@ -1814,6 +1814,24 @@ splitting and regex matching, N-dimensional and missing-aware `sort`/`unique`,
 `cellfun` callback contracts, and Struct/Cell conversion. The regex layer is a
 documented portable subset, not a claim of complete MATLAB regexp syntax.
 
+Run the active v1.3 numeric, array, text-search, and random utility batch with:
+
+```powershell
+build\mparser.exe --run samples\utility_library_demo.m
+```
+
+The demo reports `summary = 13` through HIR, bytecode, and production modes.
+It covers class- and shape-aware `factorial`, `gcd`, `lcm`, `isprime`,
+`primes`, `logspace`, and one- to three-dimensional `meshgrid`; generic
+N-dimensional `flip` plus `flipud`/`fliplr`; UTF-16 `strfind`/`strrep` with
+overlapping matches and array/Cell inputs; and reproducible sparse
+`randperm(n,k)`. Large shape-only missing arrays stay payload-free through
+`flip`, while long numeric work and random allocation cooperate with request
+cancellation and resource limits. `primes` requires an integer scalar;
+`logspace` floors a finite fractional point count and returns an empty row for
+a nonpositive count. Extended GCD coefficients, arbitrary-rank `meshgrid`, and
+every MATLAB overload are not implied by this batch.
+
 Run the active v1.3 system, random-state, and bounded text-file slices with:
 
 ```powershell

@@ -1401,7 +1401,7 @@ and execution-context permissions. Its v1.2 normalized snapshot records all
 166 default descriptors and 168 registered names. Active contract 1.3 adds
 structured workspace access, caller output count, implicit-output policy,
 system/display contexts, random/display side effects, and synchronous dynamic
-invocation; its development snapshot records 208 descriptors and 210
+invocation; its development snapshot records 221 descriptors and 223
 registered names. A generator-backed
 smoke test compares the live registry to the active snapshot; it does not serialize
 handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
@@ -1822,6 +1822,19 @@ returns through `BuiltinResult`; `cellfun` never bypasses function-handle,
 call-frame, output-count, or execution-control contracts. Missing arrays stay
 shape-only through sort/unique, and uniqueness uses sorted grouping rather
 than quadratic pairwise scans.
+
+The third v1.3 library batch adds `runtime_numeric_library_builtins` and
+extends the shared text, array, and system helpers. Numeric utilities retain
+exact-integer metadata, input class, N-dimensional shape, and documented
+scalar expansion where applicable. Deterministic Miller-Rabin primality uses
+overflow-safe 64-bit modular arithmetic without compiler-specific wide
+integers. Generic flip routes every supported dense value family through the
+same column-major coordinate mapping and changes only the shape of a
+`MissingArray`. UTF-16 search and replacement share overlapping code-unit
+matching across scalar, string-array, and Cell inputs. `randperm(n,k)` uses a
+sparse virtual Fisher-Yates map, so work and auxiliary storage scale with `k`;
+it checks cancellation and output limits before consuming session random
+state. Long numeric loops use the same cooperative execution-control boundary.
 
 The v1.2 core numeric builtin tranche also removes tier-specific equality
 behavior. `BuiltinRegistry` routes `mod`/`rem` and `nextpow2` through shared
