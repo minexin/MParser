@@ -184,7 +184,7 @@ struct BuiltinCall {
     size_t requestedOutputCount = 0;
     SourceSpan span;
     BuiltinCallContext* context = nullptr;
-    std::optional<size_t> callerOutputCount;
+    std::optional<size_t> callerOutputCount = std::nullopt;
 
     size_t callerNargout() const;
 };

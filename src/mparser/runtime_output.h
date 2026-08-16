@@ -63,7 +63,7 @@ struct RuntimeExpressionResult {
     SourceSpan span;
     bool outputSuppressed = false;
     std::uint64_t sequence = 0;
-    std::string displayText;
+    std::string displayText = {};
     RuntimeLineSpacing lineSpacing = RuntimeLineSpacing::Loose;
 };
 

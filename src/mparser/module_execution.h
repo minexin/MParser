@@ -91,7 +91,7 @@ struct ModuleTopLevelExpression {
     ModuleSourceRange source;
     bool outputSuppressed = false;
     std::uint64_t sequence = 0;
-    std::string displayText;
+    std::string displayText = {};
     RuntimeLineSpacing lineSpacing = RuntimeLineSpacing::Loose;
 };
 
@@ -133,7 +133,7 @@ struct ModuleInvocationRequest {
     RuntimeExecutionLimits limits;
     std::optional<RuntimeCancellationToken> cancellationToken;
     ModuleOutputSink outputSink;
-    std::shared_ptr<RuntimeSystemContext> systemContext;
+    std::shared_ptr<RuntimeSystemContext> systemContext = {};
 };
 
 struct ModuleExecutionSummary {
