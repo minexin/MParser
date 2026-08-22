@@ -1076,13 +1076,14 @@ BuiltinResult dotBuiltin(const BuiltinCall& call) {
             *coordinates, runtimeDimensions(left));
         const auto rightOffset = runtimeImplicitExpansionStorageOffset(
             *coordinates, runtimeDimensions(right));
+        if (!leftOffset || !rightOffset) {
+            return failure(call, "dot could not map an input element",
+                           "MParser:InvalidDotShape");
+        }
         const auto leftValue =
-            leftOffset ? runtimeNumericStorageElementValue(left, *leftOffset)
-                       : std::nullopt;
+            runtimeNumericStorageElementValue(left, *leftOffset);
         const auto rightValue =
-            rightOffset ? runtimeNumericStorageElementValue(right,
-                                                            *rightOffset)
-                        : std::nullopt;
+            runtimeNumericStorageElementValue(right, *rightOffset);
         (*coordinates)[dimension] = 0;
         coordinates->resize(outputDimensions.size(), 0);
         const auto outputIndex = runtimeColumnMajorLinearIndex(
@@ -1217,12 +1218,13 @@ BuiltinResult crossBuiltin(const BuiltinCall& call) {
                 leftCoordinates, leftDimensions);
             const auto rightIndex = runtimeColumnMajorLinearIndex(
                 rightCoordinates, rightDimensions);
-            const auto leftValue = leftIndex
-                                       ? numericElement(left, *leftIndex)
-                                       : std::nullopt;
-            const auto rightValue = rightIndex
-                                        ? numericElement(right, *rightIndex)
-                                        : std::nullopt;
+            if (!leftIndex || !rightIndex) {
+                return failure(call,
+                               "cross could not read an input element",
+                               "MParser:InvalidCrossShape");
+            }
+            const auto leftValue = numericElement(left, *leftIndex);
+            const auto rightValue = numericElement(right, *rightIndex);
             if (!leftValue || !rightValue) {
                 return failure(call,
                                "cross could not read an input element",
@@ -1347,9 +1349,13 @@ BuiltinResult fftBuiltin(std::string_view name, const BuiltinCall& call) {
             (*coordinates)[dimension] = index;
             const auto inputIndex = runtimeColumnMajorLinearIndex(
                 *coordinates, inputDimensions);
-            const auto element = inputIndex
-                                     ? numericElement(input, *inputIndex)
-                                     : std::nullopt;
+            if (!inputIndex) {
+                return failure(call,
+                               std::string(name) +
+                                   " could not read an input element",
+                               "MParser:InvalidFftInput");
+            }
+            const auto element = numericElement(input, *inputIndex);
             if (!element) {
                 return failure(call,
                                std::string(name) +
@@ -1562,10 +1568,12 @@ BuiltinResult trapzBuiltin(const BuiltinCall& call) {
             (*coordinates)[dimension] = index + 1;
             const auto rightIndex = runtimeColumnMajorLinearIndex(
                 *coordinates, inputDimensions);
-            const auto leftValue =
-                leftIndex ? numericElement(*y, *leftIndex) : std::nullopt;
-            const auto rightValue =
-                rightIndex ? numericElement(*y, *rightIndex) : std::nullopt;
+            if (!leftIndex || !rightIndex) {
+                return failure(call, "trapz could not read an input element",
+                               "MParser:InvalidTrapzInput");
+            }
+            const auto leftValue = numericElement(*y, *leftIndex);
+            const auto rightValue = numericElement(*y, *rightIndex);
             if (!leftValue || !rightValue) {
                 return failure(call, "trapz could not read an input element",
                                "MParser:InvalidTrapzInput");
