@@ -9,6 +9,7 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -185,11 +186,11 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 7,
+                mparser::kBuiltinSourceContractMinor == 8,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 257,
+    require(registry->descriptors().size() == 259,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 259,
+    require(registry->names().size() == 261,
             "default builtin name catalog changed unexpectedly");
 
     for (std::string_view name : {"eval", "evalc", "evalin"}) {
@@ -217,6 +218,27 @@ void runDefaultCatalogSmoke() {
                     assignin->requiredContext,
                     mparser::BuiltinContextPermission::Workspace),
             "assignin metadata mismatch");
+    for (std::string_view name : {"load", "save"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor && descriptor->inputs.minimum == 0 &&
+                    !descriptor->inputs.maximum &&
+                    descriptor->outputs.minimum == 0 &&
+                    descriptor->outputs.maximum ==
+                        std::optional<size_t>(name == "load" ? 1 : 0) &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Context &&
+                    descriptor->purity ==
+                        mparser::BuiltinPurity::Impure &&
+                    descriptor->implicitOutputPolicy ==
+                        mparser::BuiltinImplicitOutputPolicy::None &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->requiredContext,
+                        mparser::BuiltinContextPermission::Workspace) &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->requiredContext,
+                        mparser::BuiltinContextPermission::SystemServices),
+                "MAT-file builtin metadata mismatch");
+    }
     for (std::string_view name : {"fgetl", "fgets", "fread", "fwrite",
                                   "feof", "ferror"}) {
         const auto* descriptor = registry->find(name);

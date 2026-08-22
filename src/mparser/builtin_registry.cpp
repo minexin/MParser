@@ -4,6 +4,7 @@
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_collection_builtins.h"
 #include "mparser/runtime_math.h"
+#include "mparser/runtime_mat_builtins.h"
 #include "mparser/runtime_numeric.h"
 #include "mparser/runtime_numeric_library_builtins.h"
 #include "mparser/runtime_object.h"
@@ -175,6 +176,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "lcm",
     "length",
     "linspace",
+    "load",
     "listener",
     "log",
     "log10",
@@ -231,6 +233,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "rmpath",
     "rng",
     "round",
+    "save",
     "sign",
     "single",
     "sin",
@@ -1443,6 +1446,34 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor matFileDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::variadic(0);
+    descriptor.outputs = name == "save" ? BuiltinArity::fixed(0)
+                                        : BuiltinArity::range(0, 1);
+    descriptor.implementation = BuiltinImplementationKind::Context;
+    descriptor.purity = BuiltinPurity::Impure;
+    descriptor.determinism = BuiltinDeterminism::ContextDependent;
+    descriptor.threadSafety = BuiltinThreadSafety::ContextBound;
+    descriptor.sideEffects = BuiltinSideEffect::External |
+                             (name == "load"
+                                  ? BuiltinSideEffect::Workspace
+                                  : BuiltinSideEffect::None);
+    descriptor.contextPermissions =
+        BuiltinContextPermission::Workspace |
+        BuiltinContextPermission::SystemServices;
+    descriptor.requiredContext = descriptor.contextPermissions;
+    descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+    descriptor.errorIdentifier = "MParser:InvalidMatFileCall";
+    descriptor.summary =
+        "Session-scoped MATLAB MAT v5 workspace persistence operation.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeMatBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor textLibraryDescriptor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
     if (name == "lower" || name == "upper" || name == "strtrim") {
@@ -1634,6 +1665,9 @@ BuiltinDescriptor collectionLibraryDescriptor(std::string_view name) {
 BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isRuntimeSystemBuiltin(name)) {
         return systemDescriptor(name);
+    }
+    if (isRuntimeMatBuiltin(name)) {
+        return matFileDescriptor(name);
     }
     if (isRuntimeTextLibraryBuiltin(name)) {
         return textLibraryDescriptor(name);

@@ -1,8 +1,8 @@
 # Build And Install
 
 MParser builds from the checked-in source tree without downloading its native
-JIT dependency. The pinned SLJIT source is vendored under
-`third_party/sljit`.
+JIT or MAT-file compression dependencies. Pinned SLJIT and miniz sources are
+vendored under `third_party/sljit` and `third_party/miniz` respectively.
 
 ## Requirements
 
@@ -23,8 +23,8 @@ All checked-in presets and CI configure paths set
 `MPARSER_WARNINGS_AS_ERRORS=ON`. This applies `/W4 /WX` or
 `-Wall -Wextra -Wpedantic -Werror` to first-party compiled targets. The option
 defaults to `OFF` for ad hoc consumer builds so a newer compiler warning does
-not unexpectedly become a downstream build failure. Bundled SLJIT retains its
-upstream warning policy. Optimized test targets force-include
+not unexpectedly become a downstream build failure. Bundled SLJIT and miniz
+retain their upstream warning policies. Optimized test targets force-include
 `tests/test_assertions_enabled.h`, which keeps standard `assert` checks active
 without passing conflicting `NDEBUG` command-line definitions.
 

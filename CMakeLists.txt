@@ -200,6 +200,24 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     endif()
 endif()
 
+add_library(mparser_miniz STATIC
+    third_party/miniz/miniz.c
+    third_party/miniz/miniz_tdef.c
+    third_party/miniz/miniz_tinfl.c)
+set_target_properties(mparser_miniz PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    C_VISIBILITY_PRESET hidden)
+target_include_directories(mparser_miniz SYSTEM PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniz")
+target_compile_definitions(mparser_miniz PUBLIC
+    MINIZ_NO_ARCHIVE_APIS
+    MINIZ_NO_STDIO)
+if(MSVC)
+    target_compile_options(mparser_miniz PRIVATE /W0)
+else()
+    target_compile_options(mparser_miniz PRIVATE -w)
+endif()
+
 add_library(mparser_core STATIC
     src/mparser/adaptive_module_runtime.cpp
     src/mparser/adaptive_bytecode_vm.cpp
@@ -236,6 +254,8 @@ add_library(mparser_core STATIC
     src/mparser/runtime_warning.cpp
     src/mparser/runtime_index.cpp
     src/mparser/runtime_lvalue.cpp
+    src/mparser/runtime_mat_builtins.cpp
+    src/mparser/runtime_mat_file.cpp
     src/mparser/runtime_math.cpp
     src/mparser/runtime_metadata.cpp
     src/mparser/runtime_mixed_integer.cpp
@@ -272,7 +292,7 @@ set_target_properties(mparser_core PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES)
 target_include_directories(mparser_core PUBLIC src)
-target_link_libraries(mparser_core PRIVATE Threads::Threads)
+target_link_libraries(mparser_core PRIVATE Threads::Threads mparser_miniz)
 target_compile_definitions(mparser_core PRIVATE
     MPARSER_VERSION="${PROJECT_VERSION}")
 
@@ -1116,6 +1136,35 @@ add_executable(runtime_system_smoke_tests
     tests/runtime_system_smoke.cpp)
 target_link_libraries(runtime_system_smoke_tests PRIVATE mparser_core)
 add_test(NAME runtime_system_smoke COMMAND runtime_system_smoke_tests)
+
+add_executable(runtime_mat_file_smoke_tests
+    tests/runtime_mat_file_smoke.cpp)
+target_link_libraries(runtime_mat_file_smoke_tests PRIVATE
+    mparser_core mparser_miniz)
+add_test(NAME runtime_mat_file_smoke COMMAND runtime_mat_file_smoke_tests)
+
+add_executable(mat_file_builtin_smoke_tests
+    tests/mat_file_builtin_smoke.cpp)
+target_link_libraries(mat_file_builtin_smoke_tests PRIVATE mparser_core)
+add_test(NAME mat_file_builtin_smoke COMMAND mat_file_builtin_smoke_tests)
+
+add_test(NAME mat_file_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/mat_file_demo.m)
+set_tests_properties(mat_file_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "mat_file_summary = 69")
+
+add_test(NAME mat_file_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/mat_file_demo.m)
+set_tests_properties(mat_file_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "mat_file_summary = 69")
+
+add_test(NAME mat_file_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/mat_file_demo.m)
+set_tests_properties(mat_file_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "mat_file_summary = 69")
 
 add_executable(dynamic_workspace_smoke_tests
     tests/dynamic_workspace_smoke.cpp)
@@ -1995,10 +2044,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.7/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.8/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.7 catalog validated: 257 descriptors")
+        "builtin source contract 1.8 catalog validated: 259 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2592,6 +2641,7 @@ get_property(mparser_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(mparser_target IN LISTS mparser_directory_targets)
     get_target_property(mparser_target_type ${mparser_target} TYPE)
     if(NOT mparser_target STREQUAL "mparser_sljit" AND
+       NOT mparser_target STREQUAL "mparser_miniz" AND
        mparser_target_type MATCHES
            "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
         mparser_enable_project_warnings(${mparser_target})
@@ -2668,7 +2718,7 @@ install(FILES
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
-    tests/public_contract/builtin/1.7/default_catalog.json
+    tests/public_contract/builtin/1.8/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
@@ -2692,6 +2742,7 @@ install(FILES
     samples/reliability_boundary_demo.m
     samples/v1_1_core_compatibility_demo.m
     samples/filesystem_management_demo.m
+    samples/mat_file_demo.m
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
 install(DIRECTORY samples/class_folders/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples/class_folders"

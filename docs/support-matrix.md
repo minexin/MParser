@@ -109,6 +109,10 @@ batches:
   translated Windows text positions, CR/LF line boundaries, per-file EOF/error
   state, scalar or matrix sizes, column-major zero padding, exact 64-bit
   payloads, precision blocks/skips, and native/little/big-endian conversion;
+- capability-bound MAT v5 `save`/`load` in function and command forms, with
+  selected or whole-workspace persistence, zero-output transactional import,
+  one-output Struct results, compressed/uncompressed dense numeric, logical,
+  complex, UTF-16 char, Cell, and Struct interoperability with MATLAB R2024b;
 - parser diagnostics for illegal bare newlines in calls/indexing while matrix
   and cell newlines remain row separators and `...` remains the legal
   continuation form;
@@ -156,15 +160,15 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/utility_library_demo.m`, `samples/dynamic_workspace_demo.m`, and
 `samples/system_command_demo.m` and
 `samples/filesystem_management_demo.m`, plus
-`samples/advanced_numeric_demo.m`. These are
+`samples/advanced_numeric_demo.m` and `samples/mat_file_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
-The latest 2026-08-22 MATLAB R2024b differential rerun records 218 matches and
-5 gaps across its 223 accepted cases. It closes literal class-name enumeration,
-events and metadata/member reflection after the preceding 214-match run, with
-no prior match regressing. The remaining observed gaps are MAT-file save/load,
-`datetime`, `table`, `sparse`, and graphics.
+The latest 2026-08-23 MATLAB R2024b differential rerun records 219 matches and
+4 gaps across its 223 accepted cases. It closes MAT-file save/load after the
+preceding 218-match class/reflection/event run, with no prior match regressing.
+The remaining observed gaps are `datetime`, `table`, `sparse`, and graphics.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
-encodings, remote files, MAT files, file deletion/recycle/attribute helpers,
+encodings, remote files, MAT v4/v7.3, strict v6/append/ASCII MAT modes,
+file deletion/recycle/attribute helpers,
 wildcards in parent path components, symbolic-link policy selection (rooted
 write paths reject links rather than selecting preserve/resolve), dynamic declarations and parent-module
 function lookup from evaluated text, extended GCD coefficients, arbitrary-rank
@@ -217,7 +221,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; frozen v1.2 ABI generation 2 revision 0 plus live additive revision 1, typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.7 using registry/descriptors/call/results/source-evaluation, stream-I/O, filesystem-management, and advanced-numeric context |
+| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.8 using registry/descriptors/call/results/source-evaluation, stream-I/O, filesystem/MAT persistence, and advanced-numeric context |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once

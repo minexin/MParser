@@ -25,11 +25,13 @@ shared active-frame captures, direct Cell brace comma-list outputs, and
 implicit indexed Struct creation. The latest in-tree batch adds literal
 class-name source discovery for reflection queries, column enumeration object
 arrays, output-context-aware anonymous callbacks, and Cell-text
-`strcmp`/`strcmpi`. Its 2026-08-22 MATLAB R2024b differential
-run records 218 matches and 5 gaps across 223 accepted cases, closing the four
-class/reflection/event gaps after the preceding 214-match run with no prior
-match regressing. The observed remainder is MAT-file save/load, `datetime`,
-`table`, `sparse`, and graphics.
+`strcmp`/`strcmpi`, followed by resource-bounded compressed and uncompressed
+MAT v5 `save`/`load` for dense numeric, logical, complex, UTF-16 character,
+Cell, and Struct values. Its 2026-08-23 MATLAB R2024b differential run records
+219 matches and 4 gaps across 223 accepted cases. It closes
+`cap_271_io_save_load` after the preceding 218-match run with no prior match
+regressing. The observed remainder is `datetime`, `table`, `sparse`, and
+graphics.
 
 The published release baseline remains v1.0.0. Its reliability and
 release-documentation gates were cross-platform confirmed at revision
@@ -1902,11 +1904,12 @@ build\mparser.exe --run samples\system_services_demo.m
 build\mparser.exe --run samples\random_runtime_demo.m
 build\mparser.exe --run samples\file_io_demo.m
 build\mparser.exe --run samples\filesystem_management_demo.m
+build\mparser.exe --run samples\mat_file_demo.m
 build\mparser.exe --run samples\dynamic_workspace_demo.m
 build\mparser.exe --run samples\system_command_demo.m
 ```
 
-The six samples are also checked through `--run-hir` and `--run-bytecode`.
+The seven samples are also checked through `--run-hir` and `--run-bytecode`.
 They cover session-local path/current-directory/workspace state, capability
 routing, reproducible shaped random arrays, native path separators, file
 open/query/append/close lifetime, `fseek`/`ftell`/`frewind`, `feof`/`ferror`,
@@ -1918,6 +1921,9 @@ array-aware `fullfile`, shaped `isfile`/`isfolder`, container-preserving
 `mkdir`/`rmdir`/`copyfile`/`movefile`, permission-preserving `'f'` destination
 overrides, rooted write-path link rejection, current/caller/
 base dynamic workspaces, `evalc` capture, multi-output dynamic expressions,
+compressed and uncompressed MAT v5 persistence for dense numeric, logical,
+complex, UTF-16 char, Cell, and Struct values, zero-output workspace import,
+one-output Struct loading,
 catch expressions, late workspace-value shadowing of builtin call targets,
 and the non-shadowable `!command` shell escape. Dynamic source is compiled
 through the ordinary frontend and bytecode authority; typed loops guard
@@ -1925,8 +1931,9 @@ shadowed call targets and fall back to the VM, while process execution still
 requires the session's
 process capability. This is the current v1.3
 development slice; dynamic function/class declarations, escaping handles from
-temporary dynamic modules, complete MATLAB system behavior, MAT persistence,
-remote files, non-UTF-8 encodings, file deletion/attributes/recycle,
+temporary dynamic modules, complete MATLAB system behavior, MAT v4/v7.3,
+strict v6/append/ASCII MAT modes, remote files, non-UTF-8 encodings,
+file deletion/attributes/recycle,
 parent-component wildcards, selectable symbolic-link behavior, and
 bit/character/complex binary I/O corners
 remain on the roadmap.

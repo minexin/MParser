@@ -1437,8 +1437,10 @@ invocation. Active contract 1.4 adds current/caller/base workspace resolution
 and a source-evaluation callback. Active contract 1.5 records the expanded
 stream-I/O family and warning implicit-output corrections. Active contract
 1.6 adds capability-bound filesystem query, path, whole-file text, temporary
-name, and mutation descriptors; its development snapshot records 240
-descriptors and 242 registered names. A generator-backed
+name, and mutation descriptors. Active contract 1.7 adds the shared advanced
+numeric family, and active contract 1.8 adds capability-bound MAT workspace
+persistence; its development snapshot records 259 descriptors and 261
+registered names. A generator-backed
 smoke test compares the live registry to the active snapshot; it does not serialize
 handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
 values and diagnostics across HIR and bytecode rather than comparing display
@@ -1761,7 +1763,7 @@ the broader lifecycle, fuzz, bytecode, soak, and embedding regressions run.
 First-party compiler diagnostics use one CMake policy across libraries, the
 CLI, tools, demos, and test executables. Checked-in presets and every CI
 configure path enable `MPARSER_WARNINGS_AS_ERRORS`; ad hoc builds leave it off
-by default, and bundled SLJIT remains outside the policy. Optimized tests
+by default, and bundled SLJIT and miniz remain outside the policy. Optimized tests
 force-include a tiny `NDEBUG` cleanup header before `<cassert>`, preserving
 their contracts without MSVC's conflicting-option `D9025` noise.
 
@@ -1885,6 +1887,16 @@ barrier between read and write directions on `+` update streams. It also clears
 the logical EOF indicator. Failed host operations remain queryable through
 per-entry `ferror` state; line, formatted, and binary reads all update EOF only
 after their logical unread suffix is empty.
+
+MAT persistence is layered beside, rather than inside, low-level file-ID I/O.
+`runtime_mat_file` owns the endian-neutral MAT v5 element parser and writer;
+`runtime_mat_builtins` maps complete workspace values and variable selections
+to that codec through `RuntimeSystemContext`. Encoding completes before the
+destination is opened, and decoding plus selection completes before a
+zero-output load updates the workspace. Input, inflated data, aggregate bytes,
+and recursive containers are bounded. The vendored miniz target provides only
+DEFLATE compression, is compiled privately with ZIP and stdio interfaces
+disabled, and does not enter public runtime or numeric APIs.
 
 The dynamic-workspace slice adds one engine-neutral source re-entry path.
 `BuiltinWorkspaceAccess` resolves current, caller, and base frames, while the

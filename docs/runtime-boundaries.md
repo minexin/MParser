@@ -84,6 +84,28 @@ Closing the context closes every retained host file. A failed parse restores
 the unread suffix, and a read-limit failure attempts to restore the native
 stream position before reporting an error.
 
+`save` and `load` use the same filesystem capabilities and host adapter rather
+than bypassing the session. `save` requires write authority; `load` requires
+read authority and searches the current directory followed by the session
+search path for a simple relative name. A missing extension becomes `.mat`.
+Encoding completes before the destination is opened, and decoding plus
+variable filtering completes before a zero-output `load` replaces workspace
+entries. An explicitly assigned `loaded = load(path)` returns a scalar Struct
+and does not mutate the caller workspace.
+
+The MAT v5 codec defaults to a 256 MiB aggregate input, expansion, and decoded
+allocation bound, plus 64 levels of Cell/Struct or compressed-element nesting.
+The context's file-read window is enforced before decode; shape-driven
+allocations and compressed expansion are separately checked by the codec.
+Supported persisted
+values are dense numeric arrays in every runtime numeric class, complex
+`double`/`single`, logical arrays, UTF-16 character arrays, N-dimensional Cell arrays, and
+ordered Struct arrays. String/missing values, objects, function handles,
+sparse arrays, tables, and unknown MAT classes fail explicitly. The current
+writer accepts default v7-style output, `-v7`, `-mat`, and
+`-nocompression`; `-v6`, `-append`, `-ascii`, object serialization, and MAT
+v7.3/HDF5 are not silently approximated.
+
 Formatted reads may prefetch beyond the value they return. Each entry keeps a
 logical unread suffix plus sparse physical-byte correction points, so `ftell`
 and current-relative `fseek` observe consumed bytes rather than the prefetch
@@ -284,7 +306,7 @@ C source API 1.2 and ABI generation 2 ownership, sealed/extensible structure
 rules, and symbol meanings are checked against current headers and consumers.
 The C++ source API is 1.2 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
 typed and complex numeric values. Builtin source contract 1.1 is frozen with
-the v1.2 candidate; the active in-tree descriptor contract is 1.6 and remains
+the v1.2 candidate; the active in-tree descriptor contract is 1.8 and remains
 a compiled-in source extension surface, not an external plugin ABI. Archived
 v1.0 and frozen v1.2 contracts remain historical evidence rather than
 compatibility gates for development changes.

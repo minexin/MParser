@@ -151,7 +151,7 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first nine v1.3 implementation batches are present in the development tree. A
+The first eleven v1.3 implementation batches are present in the development tree. A
 session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
@@ -288,17 +288,32 @@ HIR and bytecode. Focused tests and runnable enumeration/event samples cover
 the generalized mechanisms; full differential results remain the closure
 authority.
 
+The eleventh batch closes the first portable workspace-persistence vertical
+slice through `save` and `load`. One repository-owned MAT v5 codec preserves
+all dense numeric classes, logical values, complex double/single arrays,
+UTF-16 character arrays, N-dimensional Cell arrays, and Struct arrays. The
+zero-output `load` form commits a fully decoded selection transactionally to
+the current workspace, while one-output `load` returns a scalar Struct without
+mutating that workspace. Compressed and uncompressed files share the same
+resource-bounded parser; checked-in miniz supplies only DEFLATE compression
+and is not a numeric or runtime dependency. Hand-built endian fixtures,
+malformed/resource-limit tests, HIR/bytecode/production samples, and two-way
+MATLAB R2024b compressed/uncompressed interchange validate the format boundary.
+Builtin source contract 1.8 records 259 descriptors and 261 registered names.
+MAT v4/v7.3, strict v6 output, append/ASCII modes, sparse/table/object values,
+and arbitrary object persistence remain explicit later boundaries.
+
 The latest MATLAB R2024b external differential rerun at
-`MParserV1.0Test/results/20260822-224831-v1.3-class-reflection` records 218
-matches and 5 gaps across all 223 accepted cases. It closes `cap_195`,
-`cap_196`, `cap_198b`, and `cap_199` after the preceding 214-match run with no
-regression. The remaining observed gaps are MAT-file save/load, `datetime`,
-`table`, `sparse`, and graphics. These batches
-do not close v1.3. File deletion and metadata conveniences, dynamic
+`MParserV1.0Test/results/20260823-003606-v1.3-mat-v5` records 219 matches
+and 4 gaps across all 223 MATLAB-accepted cases. It closes
+`cap_271_io_save_load` after the preceding 218-match run with no prior match
+regressing. The remaining observed gaps are `datetime`, `table`, `sparse`,
+and graphics. These batches do not close v1.3. File deletion and metadata
+conveniences, dynamic
 parent-module function lookup/declarations, and remaining standard-library
 families remain milestone work. Scansets,
 bit/character/complex binary-I/O corners,
-selectable non-UTF-8 encodings, remote URLs, MAT-file persistence, full
+selectable non-UTF-8 encodings, remote URLs, extended MAT variants, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and
 long-tail overloads such as extended GCD coefficients are also not implied by
 these slices.
@@ -340,7 +355,7 @@ inspection remains an additive, separately gated public contract.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 
-Remaining in-scope parser, nested-function, persistence, dynamic-source-graph,
+Remaining in-scope parser, extended-persistence, nested-function, dynamic-source-graph,
 data-family, and standard-library gaps continue in complete functional bundles.
 After the v1.4 baseline, later optimization candidates are numeric-type-aware
 lowering, copy-on-write/alias and temporary-buffer reuse, x86 SIMD/ARM NEON,

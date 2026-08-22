@@ -341,6 +341,41 @@ independent implementation. See
 the same RuntimeValue and diagnostic contract, while optimized-ineligible
 calls fall back to the VM.
 
+## System, Files, And MAT Persistence
+
+Ordinary CLI execution uses a native session context. Embedded hosts choose
+current-directory, search-path, filesystem, process, clock, sleep, random, and
+dynamic-evaluation capabilities explicitly. File identifiers and current/path
+state belong to that context rather than process-global interpreter state.
+
+MAT v5 workspace persistence supports both function and command forms:
+
+```matlab
+x = reshape(1:8, [2 2 2]);
+z = single([1 + 2i 3 - 4i]);
+save('state', 'x', 'z');
+
+snapshot = load('state');      % returns a Struct; workspace is unchanged
+clear x z;
+load state x z                 % imports selected variables into this frame
+
+save('plain.mat', 'x', '-nocompression');
+```
+
+The `.mat` suffix is added when absent. With no variable names, `save` writes
+the current workspace; with selectors, every selected name must exist. A
+zero-output `load` overwrites matching variables only after the complete file
+has decoded successfully. An assigned one-output call returns a scalar Struct
+and does not import fields. Dense numeric/logical arrays of every supported
+class, real/complex `double` and `single`, UTF-16 char, N-dimensional Cell, and
+ordered Struct arrays interoperate with MATLAB R2024b in compressed and
+uncompressed MAT v5 files.
+
+Default v7-style output, `-v7`, `-mat`, and `-nocompression` are supported.
+MAT v4, strict `-v6`, `-append`, `-ascii`, MAT v7.3/HDF5, sparse, String,
+missing, object, table, and function-handle persistence currently report a
+diagnostic. `samples/mat_file_demo.m` is the runnable end-to-end example.
+
 ## Arrays And Values
 
 MParser uses MATLAB column-major linear order at language, C, C++, and machine
@@ -450,7 +485,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.7 |
+| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.8 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

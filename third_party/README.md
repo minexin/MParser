@@ -14,3 +14,17 @@ The default CMake build uses this copy and performs no dependency download.
 `MPARSER_SLJIT_SOURCE_DIR` may point to another source tree for backend update
 testing. Keep the pinned revision and `THIRD_PARTY_NOTICES.md` synchronized
 when updating the bundled source.
+
+## miniz
+
+MParser vendors the zlib-compatible compression subset used to read and write
+compressed MAT v5 elements. ZIP APIs are disabled and not compiled.
+
+- Upstream: https://github.com/richgel999/miniz
+- Version: `3.1.2`
+- Revision: `77d0dce8627735138c51770d1799a1ef48f2117d`
+- License: MIT
+- Local path: `third_party/miniz`
+
+The default build uses this pinned local copy and performs no dependency
+download.
