@@ -768,7 +768,10 @@ CompiledModule CompiledModule::compile(
     SemanticAnalyzer analyzer(options.builtinRegistry,
                               options.externalFunctionNames);
     module.data_->semantic =
-        analyzer.analyze(*root, module.data_->sources);
+        analyzer.analyze(
+            *root, module.data_->sources,
+            SemanticAnalysisOptions{
+                options.allowTopLevelPersistentDeclarations});
     appendDiagnostics(module.data_->diagnostics,
                       module.data_->semantic.diagnostics);
     if (!module.data_->semantic.root ||

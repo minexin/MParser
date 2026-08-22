@@ -48,6 +48,7 @@ struct CompiledSourceInfo {
 struct CompiledModuleCompileOptions {
     std::shared_ptr<const BuiltinRegistry> builtinRegistry;
     std::vector<std::string> externalFunctionNames;
+    bool allowTopLevelPersistentDeclarations = false;
 };
 
 class CompiledModule {

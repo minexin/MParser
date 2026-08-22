@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mparser/runtime/builtins/builtin_registry.h"
+#include "mparser/runtime/core/runtime_call_frame.h"
 #include "mparser/runtime/core/runtime_execution_control.h"
 #include "mparser/runtime/core/runtime_session_state.h"
 #include "mparser/execution/jit/typed_region_executor.h"
@@ -8,7 +9,9 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mparser {
@@ -39,6 +42,36 @@ using RuntimeSourceCallableInvoker = std::function<
         size_t requestedOutputCount, SourceSpan span,
         RuntimeWorkspace* ownerWorkspace)>;
 
+enum class RuntimeSourceStorageKind {
+    Global,
+    Persistent,
+};
+
+struct RuntimeSourceStorageBinding {
+    RuntimeSourceStorageKind kind = RuntimeSourceStorageKind::Global;
+    std::optional<RuntimePersistentScope> persistentScope;
+};
+
+struct RuntimeSourceStorageDeclarationResult {
+    bool succeeded = false;
+    std::optional<RuntimeSourceStorageBinding> binding;
+    RuntimeValue value;
+    std::vector<Diagnostic> diagnostics;
+};
+
+using RuntimeSourceStorageResolver = std::function<
+    std::optional<RuntimeSourceStorageBinding>(
+        RuntimeWorkspace* ownerWorkspace, std::string_view name)>;
+
+using RuntimeSourceStorageDeclarer = std::function<
+    RuntimeSourceStorageDeclarationResult(
+        RuntimeWorkspace* ownerWorkspace, RuntimeSourceStorageKind kind,
+        std::string_view name, const RuntimeValue* localValue,
+        SourceSpan span)>;
+
+using RuntimeSourceStorageClearer = std::function<void(
+    RuntimeWorkspace* ownerWorkspace, std::string_view name)>;
+
 struct RuntimeSourceEvaluationOptions {
     std::shared_ptr<const BuiltinRegistry> builtinRegistry;
     std::shared_ptr<RuntimeSessionState> sessionState;
@@ -51,6 +84,10 @@ struct RuntimeSourceEvaluationOptions {
     std::vector<RuntimeSourceCallableScope> inheritedCallableScopes;
     RuntimeSourceCallableInvoker inheritedCallableInvoker;
     RuntimeWorkspace* inheritedCallableWorkspace = nullptr;
+    RuntimeSourceStorageResolver inheritedStorageResolver;
+    RuntimeSourceStorageDeclarer inheritedStorageDeclarer;
+    RuntimeSourceStorageClearer inheritedStorageClearer;
+    RuntimeWorkspace* inheritedStorageWorkspace = nullptr;
 };
 
 BuiltinSourceEvaluationResult evaluateRuntimeSource(

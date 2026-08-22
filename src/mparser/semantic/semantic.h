@@ -148,6 +148,10 @@ struct SemanticResult {
     std::shared_ptr<const BuiltinRegistry> builtinRegistry;
 };
 
+struct SemanticAnalysisOptions {
+    bool allowTopLevelPersistentDeclarations = false;
+};
+
 class SemanticAnalyzer {
 public:
     SemanticAnalyzer();
@@ -157,7 +161,8 @@ public:
 
     SemanticResult analyze(
         const SyntaxNode& root,
-        const std::vector<SourceUnit>& sources = {});
+        const std::vector<SourceUnit>& sources = {},
+        const SemanticAnalysisOptions& options = {});
 
 private:
     std::shared_ptr<const BuiltinRegistry> builtinRegistry_;

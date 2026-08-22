@@ -262,11 +262,13 @@ class AnalyzerContext {
 public:
     explicit AnalyzerContext(
         std::shared_ptr<const BuiltinRegistry> builtinRegistry,
-        std::vector<std::string> externalFunctionNames)
+        std::vector<std::string> externalFunctionNames,
+        SemanticAnalysisOptions options)
         : builtinRegistry_(builtinRegistry
                                ? std::move(builtinRegistry)
                                : defaultBuiltinRegistry()),
-          externalFunctionNames_(std::move(externalFunctionNames)) {
+          externalFunctionNames_(std::move(externalFunctionNames)),
+          options_(options) {
         result_.builtinRegistry = builtinRegistry_;
     }
 
@@ -286,7 +288,8 @@ public:
         result_.root = makeNode(HirKind::Module, root);
         pushScope(ScopeKind::Module, "module");
         predeclareModuleSymbols(root);
-        predeclareWorkspaceDeclarations(root, false);
+        predeclareWorkspaceDeclarations(
+            root, options_.allowTopLevelPersistentDeclarations);
         predeclareExternalFunctions();
         registerExternalFunctionBindings(sources);
         predeclareClassScopes(root);
@@ -2444,6 +2447,7 @@ private:
     std::vector<RegisteredImport> registeredImports_;
     std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
     std::vector<std::string> externalFunctionNames_;
+    SemanticAnalysisOptions options_;
 };
 
 bool isAnonymousCaptureBinding(BindingKind kind) {
@@ -2628,8 +2632,10 @@ SemanticAnalyzer::SemanticAnalyzer(
       externalFunctionNames_(std::move(externalFunctionNames)) {}
 
 SemanticResult SemanticAnalyzer::analyze(
-    const SyntaxNode& root, const std::vector<SourceUnit>& sources) {
-    AnalyzerContext context(builtinRegistry_, externalFunctionNames_);
+    const SyntaxNode& root, const std::vector<SourceUnit>& sources,
+    const SemanticAnalysisOptions& options) {
+    AnalyzerContext context(builtinRegistry_, externalFunctionNames_,
+                            options);
     return context.analyze(root, sources);
 }
 

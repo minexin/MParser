@@ -1932,14 +1932,19 @@ catch expressions, late workspace-value shadowing of builtin call targets,
 source-graph-visible parent local/nested/path/package/private function calls,
 pre-existing module-bound handle invocation, parent-handle creation and return,
 captured workspace updates, source-scoped private isolation, and the
-non-shadowable `!command` shell escape. Dynamic source is compiled
+non-shadowable `!command` shell escape. Dynamic `global` declarations bind the
+selected frame to session storage, while dynamic `persistent` declarations
+bind an ordinary non-static function frame and survive repeated compiled
+session invocation; caller/base routing, ordinary-error side effects, and
+`clear` association removal use the same HIR/VM contract. Dynamic source is compiled
 through the ordinary frontend and bytecode authority; typed loops guard
 shadowed call targets and fall back to the VM, while process execution still
 requires the session's
 process capability. This is the current v1.3
 development slice; MATLAB R2024b itself rejects function/class definitions in
-`eval`, while dynamic `global`/`persistent` declarations and escaping handles
-whose implementation belongs to temporary dynamic modules remain unsupported.
+`eval`, and MParser likewise rejects them. Handles whose implementation belongs
+to temporary dynamic modules cannot escape through workspaces, session
+global/persistent storage, outputs, or reachable shared object fields.
 Complete MATLAB system behavior, MAT v4/v7.3,
 strict v6/append/ASCII MAT modes, remote files, non-UTF-8 encodings,
 filesystem recycle, parent-component wildcards, selectable symbolic-link

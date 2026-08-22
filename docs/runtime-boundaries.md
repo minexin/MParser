@@ -182,8 +182,19 @@ on bytecode, while production execution supplies the compiled static Typed IR
 and selected portable/native backend. Cancellation, instruction/time/array
 limits, system capabilities, random state, and open-file ownership therefore
 do not reset at an `eval` boundary. MATLAB R2024b rejects function and class
-definitions in evaluated text; dynamic `global` and `persistent` declarations
-remain unsupported in this development slice.
+definitions in evaluated text, and MParser rejects the same category.
+
+The selected parent call frame also owns a short-lived storage bridge. Dynamic
+`global` declarations associate that frame with session global storage;
+dynamic `persistent` declarations use the selected ordinary function's compiled
+callable identity. Caller/base routing therefore binds the requested real frame,
+not the temporary VM script. Persistent declaration is rejected when the target
+is a value-bearing script workspace or a static workspace created by nested
+functions. A declaration after a local global candidate emits a deterministic
+warning and preserves MATLAB-like existing-global precedence. `clear name` and
+`clear` remove runtime associations but do not erase the underlying global or
+persistent session value. Ordinary runtime failures retain completed storage
+writes and associations.
 
 The temporary module receives a read-only callable catalog for the selected
 parent frame. Source-graph-visible local, nested, path, package, and private
@@ -201,7 +212,10 @@ Inherited owner handles may be invoked or returned and remain valid in their
 owner. Pre-existing shared object fields are snapshotted; if a temporary
 handle is written into one, those fields are restored in place before the
 escape diagnostic is returned. Ancestor workspaces reachable through
-`assignin` are included in the same escape scan and restore rule.
+`assignin` are included in the same escape scan and restore rule. Session
+globals and persistent variables are snapshotted as well, including values not
+initially visible in the selected workspace, so temporary handles cannot remain
+hidden in session storage after the diagnostic.
 
 ## Cancellation
 

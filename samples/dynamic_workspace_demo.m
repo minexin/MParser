@@ -26,11 +26,17 @@ parent_handle_value = eval('parent_handle(5)');
 dynamic_parent_handle = eval('@parent_increment');
 dynamic_parent_handle_value = dynamic_parent_handle(6);
 [nested_parent_value, nested_parent_count] = nested_parent_roundtrip();
+dynamic_global_first = dynamic_global_step();
+dynamic_global_second = dynamic_global_step();
+dynamic_persistent_first = dynamic_persistent_step();
+dynamic_persistent_second = dynamic_persistent_step();
 summary = value + rows + columns + numel(missing_row) + ...
     recovered + caller_value + shadowed_last + ...
     eval_caller_value + scope_marker + parent_direct + ...
     parent_handle_value + dynamic_parent_handle_value + ...
-    nested_parent_value + nested_parent_count
+    nested_parent_value + nested_parent_count + ...
+    dynamic_global_first + dynamic_global_second + ...
+    dynamic_persistent_first + dynamic_persistent_second
 
 function [result, caller_seen] = caller_roundtrip()
     caller_seen = eval( ...
@@ -60,4 +66,21 @@ function [value, counter] = nested_parent_roundtrip()
         counter = counter + 1;
         result = input + counter;
     end
+end
+
+function value = dynamic_global_step()
+    eval(['global DEMO_DYNAMIC_GLOBAL; ' ...
+        'if isempty(DEMO_DYNAMIC_GLOBAL), DEMO_DYNAMIC_GLOBAL = 0; end; ' ...
+        'DEMO_DYNAMIC_GLOBAL = DEMO_DYNAMIC_GLOBAL + 1;']);
+    DEMO_DYNAMIC_GLOBAL = DEMO_DYNAMIC_GLOBAL + 10;
+    value = DEMO_DYNAMIC_GLOBAL;
+end
+
+function value = dynamic_persistent_step()
+    eval(['persistent demo_dynamic_persistent; ' ...
+        'if isempty(demo_dynamic_persistent), ' ...
+        'demo_dynamic_persistent = 0; end; ' ...
+        'demo_dynamic_persistent = demo_dynamic_persistent + 1;']);
+    demo_dynamic_persistent = demo_dynamic_persistent + 10;
+    value = demo_dynamic_persistent;
 end

@@ -16,6 +16,7 @@
 #include "mparser/runtime/core/runtime_range.h"
 #include "mparser/runtime/core/runtime_shape.h"
 #include "mparser/execution/runtime_source_evaluation.h"
+#include "mparser/execution/runtime_source_storage.h"
 #include "mparser/runtime/core/runtime_struct.h"
 #include "mparser/runtime/core/runtime_text.h"
 #include "mparser/runtime/core/runtime_value_ops.h"
@@ -810,12 +811,21 @@ struct FunctionInfo {
     bool hasInputArgumentBlock = false;
     bool hasOutputArgumentBlock = false;
     bool classDestructor = false;
+    bool hasNestedFunctions = false;
     size_t entry = 0;
     size_t end = 0;
     SourceSpan span;
     std::vector<ArgumentContract> argumentContracts;
     std::vector<std::string> captureNames;
 };
+
+bool hasDirectNestedFunction(const HirNode& function) {
+    return std::any_of(
+        function.children.begin(), function.children.end(),
+        [](const auto& child) {
+            return child->kind == HirKind::Function;
+        });
+}
 
 struct ReflectedArgument {
     std::string name;
@@ -1169,6 +1179,14 @@ public:
             options.inheritedCallableInvoker;
         inheritedSourceCallableWorkspace_ =
             options.inheritedCallableWorkspace;
+        inheritedSourceStorageResolver_ =
+            options.inheritedStorageResolver;
+        inheritedSourceStorageDeclarer_ =
+            options.inheritedStorageDeclarer;
+        inheritedSourceStorageClearer_ =
+            options.inheritedStorageClearer;
+        inheritedSourceStorageWorkspace_ =
+            options.inheritedStorageWorkspace;
         requestedEntryFunction_ = options.entryFunction;
         entryArguments_ = options.arguments;
         requestedEntryOutputCount_ = options.requestedOutputCount;
@@ -2285,6 +2303,8 @@ private:
                 info.captureNames =
                     semantic_ ? nestedFunctionCaptureNames(*hirNode, *semantic_)
                               : std::vector<std::string>{};
+                info.hasNestedFunctions =
+                    hasDirectNestedFunction(*hirNode);
                 populateFunctionMetadata(info, hirNode);
             } else {
                 populateFunctionMetadata(info, nullptr);
@@ -4772,6 +4792,7 @@ private:
             instruction.span, entryArguments_.size(),
             requestedOutputCount,
             std::move(entryWorkspace));
+        configurePersistentScope(frames_.front(), function->second);
         auto validated = validateFunctionArguments(
             instruction, instruction.operand, function->second,
             entryArguments_, requestedOutputCount);
@@ -6292,6 +6313,84 @@ private:
         return scopes;
     }
 
+    RuntimeCallFrame* sourceStorageFrame(
+        RuntimeWorkspace* workspace) {
+        if (!workspace) {
+            return nullptr;
+        }
+        const auto frame = std::find_if(
+            frames_.begin(), frames_.end(),
+            [workspace](RuntimeCallFrame& candidate) {
+                return &candidate.workspace == workspace;
+            });
+        return frame == frames_.end() ? nullptr : &*frame;
+    }
+
+    const RuntimeCallFrame* sourceStorageFrame(
+        const RuntimeWorkspace* workspace) const {
+        if (!workspace) {
+            return nullptr;
+        }
+        const auto frame = std::find_if(
+            frames_.begin(), frames_.end(),
+            [workspace](const RuntimeCallFrame& candidate) {
+                return &candidate.workspace == workspace;
+            });
+        return frame == frames_.end() ? nullptr : &*frame;
+    }
+
+    std::optional<RuntimeSourceStorageBinding>
+    sourceStorageBinding(const RuntimeWorkspace* workspace,
+                         std::string_view name) const {
+        const RuntimeCallFrame* frame = sourceStorageFrame(workspace);
+        return frame ? runtimeSourceStorageBinding(*frame, name)
+                     : std::nullopt;
+    }
+
+    RuntimeSourceStorageDeclarationResult declareSourceStorage(
+        RuntimeWorkspace* workspace, RuntimeSourceStorageKind kind,
+        std::string_view name, const RuntimeValue* localValue,
+        SourceSpan span) {
+        RuntimeCallFrame* frame = sourceStorageFrame(workspace);
+        if (!frame) {
+            RuntimeSourceStorageDeclarationResult result;
+            result.diagnostics.push_back(Diagnostic{
+                span, "dynamic storage owner workspace is unavailable",
+                "MParser:MissingDynamicStorageContext"});
+            return result;
+        }
+        auto result = runtimeDeclareSourceStorage(
+            *frame, *sessionState_, kind, name, localValue, span);
+        if (result.succeeded &&
+            kind == RuntimeSourceStorageKind::Global &&
+            frame == &frames_.front() &&
+            frame->kind == RuntimeCallFrameKind::Script) {
+            baseGlobalNames_.insert(std::string(name));
+        }
+        return result;
+    }
+
+    void clearSourceStorage(RuntimeWorkspace* workspace,
+                            std::string_view name) {
+        RuntimeCallFrame* frame = sourceStorageFrame(workspace);
+        if (!frame) {
+            return;
+        }
+        runtimeClearSourceStorage(*frame, name);
+        if (name.empty()) {
+            if (frame == &frames_.front() &&
+                frame->kind == RuntimeCallFrameKind::Script) {
+                baseGlobalNames_.clear();
+            }
+            return;
+        }
+        const std::string variable(name);
+        if (frame == &frames_.front() &&
+            frame->kind == RuntimeCallFrameKind::Script) {
+            baseGlobalNames_.erase(variable);
+        }
+    }
+
     const RuntimeSourceCallable* inheritedSourceCallable(
         std::string_view name) const {
         const auto callable = std::find_if(
@@ -6357,32 +6456,108 @@ private:
                    : persistentFunctionKey(function->second);
     }
 
-    std::optional<RuntimeValue> loadStoredVariable(
-        const BytecodeInstruction& instruction) {
+    void configurePersistentScope(RuntimeCallFrame& frame,
+                                  const FunctionInfo& info) const {
+        frame.persistentScope = RuntimePersistentScope{
+            callableContext_->identity, persistentFunctionKey(info)};
+        frame.dynamicPersistentDeclarationsAllowed =
+            info.lexicalParent.empty() && !info.hasNestedFunctions;
+    }
+
+    std::optional<RuntimeSourceStorageBinding>
+    dynamicStorageBinding(std::string_view name) const {
+        if (!frames_.empty()) {
+            if (const auto local = sourceStorageBinding(
+                    &frames_.back().workspace, name)) {
+                return local;
+            }
+        }
+        if (inheritedSourceStorageResolver_ &&
+            inheritedSourceStorageWorkspace_) {
+            return inheritedSourceStorageResolver_(
+                inheritedSourceStorageWorkspace_, name);
+        }
+        return std::nullopt;
+    }
+
+    std::optional<RuntimeSourceStorageBinding> storageBinding(
+        const BytecodeInstruction& instruction) const {
         if (instruction.binding.kind == BindingKind::GlobalVariable) {
+            return RuntimeSourceStorageBinding{
+                RuntimeSourceStorageKind::Global, std::nullopt};
+        }
+        if (instruction.binding.kind ==
+            BindingKind::PersistentVariable) {
+            if (const auto dynamic =
+                    dynamicStorageBinding(instruction.operand);
+                dynamic && dynamic->kind ==
+                               RuntimeSourceStorageKind::Persistent) {
+                return dynamic;
+            }
+            if (!frames_.empty() && frames_.back().persistentScope) {
+                return RuntimeSourceStorageBinding{
+                    RuntimeSourceStorageKind::Persistent,
+                    frames_.back().persistentScope};
+            }
+            if (!activePersistentFunctionKeys_.empty()) {
+                return RuntimeSourceStorageBinding{
+                    RuntimeSourceStorageKind::Persistent,
+                    RuntimePersistentScope{
+                        callableContext_->identity,
+                        activePersistentFunctionKeys_.back()}};
+            }
+            return RuntimeSourceStorageBinding{
+                RuntimeSourceStorageKind::Persistent, std::nullopt};
+        }
+        return dynamicStorageBinding(instruction.operand);
+    }
+
+    void recordStorageBinding(
+        std::string_view name,
+        const RuntimeSourceStorageBinding& binding) {
+        const std::string variable(name);
+        if (binding.kind == RuntimeSourceStorageKind::Global) {
+            frames_.back().globalBindings.insert(variable);
+            return;
+        }
+        frames_.back().persistentBindings.insert(variable);
+        if (!frames_.back().persistentScope && binding.persistentScope) {
+            frames_.back().persistentScope = binding.persistentScope;
+        }
+    }
+
+    std::optional<RuntimeValue> loadStoredVariable(
+        const BytecodeInstruction& instruction,
+        const RuntimeSourceStorageBinding& binding) {
+        recordStorageBinding(instruction.operand, binding);
+        if (binding.kind == RuntimeSourceStorageKind::Global) {
             RuntimeValue value =
                 sessionState_->declareGlobal(instruction.operand);
             currentFrame()[instruction.operand] = value;
             return value;
         }
-        if (instruction.binding.kind ==
-            BindingKind::PersistentVariable) {
-            if (activePersistentFunctionKeys_.empty()) {
-                addDiagnostic(
-                    instruction,
-                    "persistent variable has no active function: " +
-                        instruction.operand);
-                return std::nullopt;
-            }
-            RuntimeValue value = sessionState_->declarePersistent(
-                callableContext_->identity,
-                activePersistentFunctionKeys_.back(),
-                instruction.operand);
-            currentFrame()[instruction.operand] = value;
-            return value;
+        if (!binding.persistentScope) {
+            addDiagnostic(
+                instruction,
+                "persistent variable has no active function: " +
+                    instruction.operand,
+                "MParser:PersistentNotInFunction");
+            return std::nullopt;
         }
-        const auto variable =
-            currentFrame().find(instruction.operand);
+        RuntimeValue value = sessionState_->declarePersistent(
+            binding.persistentScope->contextIdentity,
+            binding.persistentScope->function,
+            instruction.operand);
+        currentFrame()[instruction.operand] = value;
+        return value;
+    }
+
+    std::optional<RuntimeValue> loadStoredVariable(
+        const BytecodeInstruction& instruction) {
+        if (const auto binding = storageBinding(instruction)) {
+            return loadStoredVariable(instruction, *binding);
+        }
+        const auto variable = currentFrame().find(instruction.operand);
         return variable == currentFrame().end()
                    ? std::nullopt
                    : std::optional<RuntimeValue>(variable->second);
@@ -6390,27 +6565,29 @@ private:
 
     void storeVariable(const BytecodeInstruction& instruction,
                        RuntimeValue value) {
-        if (instruction.binding.kind == BindingKind::GlobalVariable) {
+        const auto binding = storageBinding(instruction);
+        if (!binding) {
+            currentFrame()[instruction.operand] = std::move(value);
+            return;
+        }
+        recordStorageBinding(instruction.operand, *binding);
+        if (binding->kind == RuntimeSourceStorageKind::Global) {
             sessionState_->storeGlobal(instruction.operand, value);
             currentFrame()[instruction.operand] = std::move(value);
             return;
         }
-        if (instruction.binding.kind ==
-            BindingKind::PersistentVariable) {
-            if (activePersistentFunctionKeys_.empty()) {
-                addDiagnostic(
-                    instruction,
-                    "persistent variable has no active function: " +
-                        instruction.operand);
-                return;
-            }
-            sessionState_->storePersistent(
-                callableContext_->identity,
-                activePersistentFunctionKeys_.back(),
-                instruction.operand, value);
-            currentFrame()[instruction.operand] = std::move(value);
+        if (!binding->persistentScope) {
+            addDiagnostic(
+                instruction,
+                "persistent variable has no active function: " +
+                    instruction.operand,
+                "MParser:PersistentNotInFunction");
             return;
         }
+        sessionState_->storePersistent(
+            binding->persistentScope->contextIdentity,
+            binding->persistentScope->function,
+            instruction.operand, value);
         currentFrame()[instruction.operand] = std::move(value);
     }
 
@@ -6445,32 +6622,61 @@ private:
 
     void declareWorkspaceVariable(
         const BytecodeInstruction& instruction) {
+        if (inheritedSourceStorageDeclarer_ &&
+            inheritedSourceStorageWorkspace_) {
+            const auto local =
+                currentFrame().find(instruction.operand);
+            const RuntimeValue* localValue =
+                local == currentFrame().end() ? nullptr : &local->second;
+            auto result = inheritedSourceStorageDeclarer_(
+                inheritedSourceStorageWorkspace_,
+                instruction.op == BytecodeOp::DeclareGlobal
+                    ? RuntimeSourceStorageKind::Global
+                    : RuntimeSourceStorageKind::Persistent,
+                instruction.operand, localValue, instruction.span);
+            appendBuiltinDiagnostics(
+                instruction, std::move(result.diagnostics));
+            if (!result.succeeded) {
+                return;
+            }
+            currentFrame()[instruction.operand] = result.value;
+            if (result.binding) {
+                recordStorageBinding(instruction.operand,
+                                     *result.binding);
+            }
+            return;
+        }
         if (instruction.op == BytecodeOp::DeclareGlobal) {
             RuntimeValue value =
                 sessionState_->declareGlobal(instruction.operand);
             currentFrame()[instruction.operand] = std::move(value);
+            frames_.back().globalBindings.insert(instruction.operand);
             if (frames_.size() == 1) {
                 baseGlobalNames_.insert(instruction.operand);
             }
             return;
         }
-        if (activePersistentFunctionKeys_.empty()) {
+        const auto binding = storageBinding(instruction);
+        if (!binding || !binding->persistentScope) {
             addDiagnostic(
                 instruction,
                 "persistent declaration has no active function: " +
-                    instruction.operand);
+                    instruction.operand,
+                "MParser:PersistentNotInFunction");
             return;
         }
+        recordStorageBinding(instruction.operand, *binding);
         currentFrame()[instruction.operand] =
             sessionState_->declarePersistent(
-                callableContext_->identity,
-                activePersistentFunctionKeys_.back(),
+                binding->persistentScope->contextIdentity,
+                binding->persistentScope->function,
                 instruction.operand);
     }
 
     void loadName(const BytecodeInstruction& instruction) {
-        if (isSessionBinding(instruction.binding)) {
-            const auto variable = loadStoredVariable(instruction);
+        if (const auto binding = storageBinding(instruction)) {
+            const auto variable =
+                loadStoredVariable(instruction, *binding);
             if (variable) {
                 stack_.push_back(runtimeStackValue(*variable));
             }
@@ -12491,14 +12697,20 @@ private:
                 return workspaceFor(scope);
             };
             workspace.clearVariables = [this] {
-                currentFrame().clear();
-                if (frames_.size() == 1) {
-                    baseGlobalNames_.clear();
+                clearSourceStorage(&currentFrame(), {});
+                if (inheritedSourceStorageClearer_ &&
+                    inheritedSourceStorageWorkspace_) {
+                    inheritedSourceStorageClearer_(
+                        inheritedSourceStorageWorkspace_, {});
                 }
+                currentFrame().clear();
             };
             workspace.eraseVariable = [this](std::string_view variable) {
-                if (frames_.size() == 1) {
-                    baseGlobalNames_.erase(std::string(variable));
+                clearSourceStorage(&currentFrame(), variable);
+                if (inheritedSourceStorageClearer_ &&
+                    inheritedSourceStorageWorkspace_) {
+                    inheritedSourceStorageClearer_(
+                        inheritedSourceStorageWorkspace_, variable);
                 }
                 return currentFrame().erase(std::string(variable)) != 0;
             };
@@ -12676,6 +12888,42 @@ private:
                             inheritedSourceCallableScopes_;
                         options.inheritedCallableInvoker =
                             inheritedSourceCallableInvoker_;
+                    }
+                    if (!inheritedSourceStorageResolver_ ||
+                        !inheritedSourceStorageDeclarer_) {
+                        options.inheritedStorageResolver =
+                            [this](RuntimeWorkspace* ownerWorkspace,
+                                   std::string_view name) {
+                                return sourceStorageBinding(
+                                    ownerWorkspace, name);
+                            };
+                        options.inheritedStorageDeclarer =
+                            [this](RuntimeWorkspace* ownerWorkspace,
+                                   RuntimeSourceStorageKind kind,
+                                   std::string_view name,
+                                   const RuntimeValue* localValue,
+                                   SourceSpan span) {
+                                return declareSourceStorage(
+                                    ownerWorkspace, kind, name,
+                                    localValue, span);
+                            };
+                        options.inheritedStorageClearer =
+                            [this](RuntimeWorkspace* ownerWorkspace,
+                                   std::string_view name) {
+                                clearSourceStorage(ownerWorkspace, name);
+                            };
+                        options.inheritedStorageWorkspace = target;
+                    } else {
+                        options.inheritedStorageResolver =
+                            inheritedSourceStorageResolver_;
+                        options.inheritedStorageDeclarer =
+                            inheritedSourceStorageDeclarer_;
+                        options.inheritedStorageClearer =
+                            inheritedSourceStorageClearer_;
+                        options.inheritedStorageWorkspace =
+                            target == &currentFrame()
+                                ? inheritedSourceStorageWorkspace_
+                                : target;
                     }
                     return evaluateRuntimeSource(request, *target, options);
                 };
@@ -13944,6 +14192,7 @@ private:
         frames_.push_back(makeRuntimeFunctionFrame(
             RuntimeCallFrameKind::Function, traceName, info.span,
             arguments.size(), callerOutputCount));
+        configurePersistentScope(frames_.back(), info);
         auto validatedArguments =
             validateFunctionArguments(instruction, name, info, arguments,
                                       callerOutputCount);
@@ -13967,6 +14216,7 @@ private:
             RuntimeCallFrameKind::Function, traceName, info.span,
             validatedArguments->positionalArgumentCount,
             callerOutputCount, std::move(capturedWorkspace)));
+        configurePersistentScope(frames_.back(), info);
         activeFunctionFrames_.push_back(ActiveFunctionFrame{
             callableKey, frames_.size() - 1});
         initializeFunctionFrame(info.signature, validatedArguments->values,
@@ -14976,6 +15226,10 @@ private:
         inheritedSourceCallableScopes_;
     RuntimeSourceCallableInvoker inheritedSourceCallableInvoker_;
     RuntimeWorkspace* inheritedSourceCallableWorkspace_ = nullptr;
+    RuntimeSourceStorageResolver inheritedSourceStorageResolver_;
+    RuntimeSourceStorageDeclarer inheritedSourceStorageDeclarer_;
+    RuntimeSourceStorageClearer inheritedSourceStorageClearer_;
+    RuntimeWorkspace* inheritedSourceStorageWorkspace_ = nullptr;
     std::string requestedEntryFunction_;
     std::vector<RuntimeValue> entryArguments_;
     std::optional<size_t> requestedEntryOutputCount_;

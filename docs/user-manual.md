@@ -250,6 +250,12 @@ assignin('base', 'row', [missing missing]);
 row = evalin('base', 'row');
 sin = [10 20 30];
 last = eval('sin(end)');
+
+function value = nextValue()
+    eval(['persistent count; if isempty(count), count = 0; end; ' ...
+        'count = count + 1;']);
+    value = count;
+end
 ```
 
 Dynamic source is limited to 16 MiB and 1024 requested outputs and is always
@@ -257,15 +263,19 @@ compiled through the normal frontend and production bytecode VM. The owning
 system context must grant `DynamicEvaluation`; isolated sessions grant no
 such capability, while the local CLI native context does. Explicit HIR and
 bytecode modes keep evaluated source on bytecode; production mode may run
-eligible loops through its guarded portable/native backend. Dynamic declarations
-of functions, classes, `global`, or `persistent` values are not yet accepted,
-and a function handle created by the temporary dynamic module cannot escape
-it. Parent-module local/path/package functions and module-bound workspace
-handles are not callable from the temporary source graph yet. Pre-existing
-handles may pass through unchanged and remain callable after control returns;
-builtins and other selected workspace values remain available. If new dynamic
-handles are written into a pre-existing shared object, its fields are restored
-before the escape error is reported.
+eligible loops through its guarded portable/native backend. Dynamic `global`
+declarations associate the selected current/caller/base frame with session
+global storage. Dynamic `persistent` declarations associate an ordinary
+function frame with that compiled function's persistent identity; they are
+rejected for scripts that use the value and for static nested workspaces.
+`clear name` and `clear` remove the frame association without erasing the
+underlying session value. MATLAB R2024b rejects function and class definitions
+inside `eval`, and MParser reports the same category as an unsupported dynamic
+definition. Parent-module local/nested/path/package/private functions and
+pre-existing module-bound handles are synchronously delegated to their owner.
+A handle implemented by the temporary dynamic module cannot escape through an
+output, workspace, session global/persistent value, or reachable shared object;
+the affected value is restored before the escape error is reported.
 
 A system command may also be written in MATLAB shell-escape form at the start
 of a statement:

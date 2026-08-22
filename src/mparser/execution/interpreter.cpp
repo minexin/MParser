@@ -16,6 +16,7 @@
 #include "mparser/runtime/core/runtime_range.h"
 #include "mparser/runtime/core/runtime_shape.h"
 #include "mparser/execution/runtime_source_evaluation.h"
+#include "mparser/execution/runtime_source_storage.h"
 #include "mparser/runtime/core/runtime_struct.h"
 #include "mparser/runtime/core/runtime_text.h"
 #include "mparser/runtime/core/runtime_value_ops.h"
@@ -49,6 +50,14 @@ RuntimeValue numberValue(
 
 RuntimeValue logicalValue(bool value) {
     return makeRuntimeLogicalValue(value);
+}
+
+bool hasDirectNestedFunction(const HirNode& function) {
+    return std::any_of(
+        function.children.begin(), function.children.end(),
+        [](const auto& child) {
+            return child->kind == HirKind::Function;
+        });
 }
 
 RuntimeValue characterValue(std::string value) {
@@ -727,52 +736,58 @@ private:
 
     std::optional<RuntimeValue> loadStoredVariable(
         const HirNode& node) {
-        if (node.binding.kind == BindingKind::GlobalVariable) {
+        const auto binding = storageBinding(node);
+        if (!binding) {
+            const auto variable = currentFrame().find(node.label);
+            return variable == currentFrame().end()
+                       ? std::nullopt
+                       : std::optional<RuntimeValue>(variable->second);
+        }
+        recordStorageBinding(node.label, *binding);
+        if (binding->kind == RuntimeSourceStorageKind::Global) {
             RuntimeValue value =
                 sessionState_->declareGlobal(node.label);
             currentFrame()[node.label] = value;
             return value;
         }
-        if (node.binding.kind == BindingKind::PersistentVariable) {
-            if (activePersistentFunctionKeys_.empty()) {
-                addDiagnostic(
-                    node,
-                    "persistent variable has no active function: " +
-                        node.label);
-                return std::nullopt;
-            }
-            RuntimeValue value = sessionState_->declarePersistent(
-                callableContext_->identity,
-                activePersistentFunctionKeys_.back(), node.label);
-            currentFrame()[node.label] = value;
-            return value;
+        if (!binding->persistentScope) {
+            addDiagnostic(
+                node,
+                "persistent variable has no active function: " +
+                    node.label,
+                "MParser:PersistentNotInFunction");
+            return std::nullopt;
         }
-        const auto variable = currentFrame().find(node.label);
-        return variable == currentFrame().end()
-                   ? std::nullopt
-                   : std::optional<RuntimeValue>(variable->second);
+        RuntimeValue value = sessionState_->declarePersistent(
+            binding->persistentScope->contextIdentity,
+            binding->persistentScope->function, node.label);
+        currentFrame()[node.label] = value;
+        return value;
     }
 
     void storeVariable(const HirNode& node, RuntimeValue value) {
-        if (node.binding.kind == BindingKind::GlobalVariable) {
+        const auto binding = storageBinding(node);
+        if (!binding) {
+            currentFrame()[node.label] = std::move(value);
+            return;
+        }
+        recordStorageBinding(node.label, *binding);
+        if (binding->kind == RuntimeSourceStorageKind::Global) {
             sessionState_->storeGlobal(node.label, value);
             currentFrame()[node.label] = std::move(value);
             return;
         }
-        if (node.binding.kind == BindingKind::PersistentVariable) {
-            if (activePersistentFunctionKeys_.empty()) {
-                addDiagnostic(
-                    node,
-                    "persistent variable has no active function: " +
-                        node.label);
-                return;
-            }
-            sessionState_->storePersistent(
-                callableContext_->identity,
-                activePersistentFunctionKeys_.back(), node.label, value);
-            currentFrame()[node.label] = std::move(value);
+        if (!binding->persistentScope) {
+            addDiagnostic(
+                node,
+                "persistent variable has no active function: " +
+                    node.label,
+                "MParser:PersistentNotInFunction");
             return;
         }
+        sessionState_->storePersistent(
+            binding->persistentScope->contextIdentity,
+            binding->persistentScope->function, node.label, value);
         currentFrame()[node.label] = std::move(value);
     }
 
@@ -781,22 +796,25 @@ private:
             if (node.kind == HirKind::GlobalDeclaration) {
                 currentFrame()[name->label] =
                     sessionState_->declareGlobal(name->label);
+                frames_.back().globalBindings.insert(name->label);
                 if (frames_.size() == 1) {
                     baseGlobalNames_.insert(name->label);
                 }
                 continue;
             }
-            if (activePersistentFunctionKeys_.empty()) {
+            if (!frames_.back().persistentScope) {
                 addDiagnostic(
                     *name,
                     "persistent declaration has no active function: " +
-                        name->label);
+                        name->label,
+                    "MParser:PersistentNotInFunction");
                 return;
             }
+            frames_.back().persistentBindings.insert(name->label);
             currentFrame()[name->label] =
                 sessionState_->declarePersistent(
-                    callableContext_->identity,
-                    activePersistentFunctionKeys_.back(),
+                    frames_.back().persistentScope->contextIdentity,
+                    frames_.back().persistentScope->function,
                     name->label);
         }
     }
@@ -1019,6 +1037,131 @@ private:
         return scopes;
     }
 
+    RuntimeCallFrame* sourceStorageFrame(
+        RuntimeWorkspace* workspace) {
+        if (!workspace) {
+            return nullptr;
+        }
+        const auto frame = std::find_if(
+            frames_.begin(), frames_.end(),
+            [workspace](RuntimeCallFrame& candidate) {
+                return &candidate.workspace == workspace;
+            });
+        return frame == frames_.end() ? nullptr : &*frame;
+    }
+
+    const RuntimeCallFrame* sourceStorageFrame(
+        const RuntimeWorkspace* workspace) const {
+        if (!workspace) {
+            return nullptr;
+        }
+        const auto frame = std::find_if(
+            frames_.begin(), frames_.end(),
+            [workspace](const RuntimeCallFrame& candidate) {
+                return &candidate.workspace == workspace;
+            });
+        return frame == frames_.end() ? nullptr : &*frame;
+    }
+
+    std::optional<RuntimeSourceStorageBinding>
+    sourceStorageBinding(const RuntimeWorkspace* workspace,
+                         std::string_view name) const {
+        const RuntimeCallFrame* frame = sourceStorageFrame(workspace);
+        return frame ? runtimeSourceStorageBinding(*frame, name)
+                     : std::nullopt;
+    }
+
+    RuntimeSourceStorageDeclarationResult declareSourceStorage(
+        RuntimeWorkspace* workspace, RuntimeSourceStorageKind kind,
+        std::string_view name, const RuntimeValue* localValue,
+        SourceSpan span) {
+        RuntimeCallFrame* frame = sourceStorageFrame(workspace);
+        if (!frame) {
+            RuntimeSourceStorageDeclarationResult result;
+            result.diagnostics.push_back(Diagnostic{
+                span, "dynamic storage owner workspace is unavailable",
+                "MParser:MissingDynamicStorageContext"});
+            return result;
+        }
+        auto result = runtimeDeclareSourceStorage(
+            *frame, *sessionState_, kind, name, localValue, span);
+        if (result.succeeded &&
+            kind == RuntimeSourceStorageKind::Global &&
+            frame == &frames_.front() &&
+            frame->kind == RuntimeCallFrameKind::Script) {
+            baseGlobalNames_.insert(std::string(name));
+        }
+        return result;
+    }
+
+    void clearSourceStorage(RuntimeWorkspace* workspace,
+                            std::string_view name) {
+        RuntimeCallFrame* frame = sourceStorageFrame(workspace);
+        if (!frame) {
+            return;
+        }
+        runtimeClearSourceStorage(*frame, name);
+        if (frame == &frames_.front() &&
+            frame->kind == RuntimeCallFrameKind::Script) {
+            if (name.empty()) {
+                baseGlobalNames_.clear();
+            } else {
+                baseGlobalNames_.erase(std::string(name));
+            }
+        }
+    }
+
+    std::optional<RuntimeSourceStorageBinding>
+    dynamicStorageBinding(std::string_view name) const {
+        return frames_.empty()
+                   ? std::nullopt
+                   : runtimeSourceStorageBinding(frames_.back(), name);
+    }
+
+    std::optional<RuntimeSourceStorageBinding> storageBinding(
+        const HirNode& node) const {
+        if (node.binding.kind == BindingKind::GlobalVariable) {
+            return RuntimeSourceStorageBinding{
+                RuntimeSourceStorageKind::Global, std::nullopt};
+        }
+        if (node.binding.kind == BindingKind::PersistentVariable) {
+            if (const auto dynamic = dynamicStorageBinding(node.label);
+                dynamic && dynamic->kind ==
+                               RuntimeSourceStorageKind::Persistent) {
+                return dynamic;
+            }
+            if (!frames_.empty() && frames_.back().persistentScope) {
+                return RuntimeSourceStorageBinding{
+                    RuntimeSourceStorageKind::Persistent,
+                    frames_.back().persistentScope};
+            }
+            if (!activePersistentFunctionKeys_.empty()) {
+                return RuntimeSourceStorageBinding{
+                    RuntimeSourceStorageKind::Persistent,
+                    RuntimePersistentScope{
+                        callableContext_->identity,
+                        activePersistentFunctionKeys_.back()}};
+            }
+            return RuntimeSourceStorageBinding{
+                RuntimeSourceStorageKind::Persistent, std::nullopt};
+        }
+        return dynamicStorageBinding(node.label);
+    }
+
+    void recordStorageBinding(
+        std::string_view name,
+        const RuntimeSourceStorageBinding& binding) {
+        const std::string variable(name);
+        if (binding.kind == RuntimeSourceStorageKind::Global) {
+            frames_.back().globalBindings.insert(variable);
+            return;
+        }
+        frames_.back().persistentBindings.insert(variable);
+        if (!frames_.back().persistentScope && binding.persistentScope) {
+            frames_.back().persistentScope = binding.persistentScope;
+        }
+    }
+
     void executeModule(const HirNode& node) {
         const HirNode* firstFunction = nullptr;
         bool hasTopLevelExecutable = false;
@@ -1207,6 +1350,12 @@ private:
             publicFunctionName(node.label), node.span,
             normalized.positionalArgumentCount, reportedOutputCount,
             std::move(capturedWorkspace)));
+        frames_.back().persistentScope = RuntimePersistentScope{
+            callableContext_->identity, persistentFunctionKey(node)};
+        frames_.back().dynamicPersistentDeclarationsAllowed =
+            lexicalParent != functionLexicalParents_.end() &&
+            lexicalParent->second.empty() &&
+            !hasDirectNestedFunction(node);
         ActiveFunctionFrameGuard activeFunctionFrame(
             activeFunctionFrames_, callableKey, frames_.size() - 1);
         auto validateValue = [&](RuntimeValue value,
@@ -3627,15 +3776,11 @@ private:
                 return workspaceFor(scope);
             };
             workspace.clearVariables = [this] {
+                clearSourceStorage(&currentFrame(), {});
                 currentFrame().clear();
-                if (frames_.size() == 1) {
-                    baseGlobalNames_.clear();
-                }
             };
             workspace.eraseVariable = [this](std::string_view variable) {
-                if (frames_.size() == 1) {
-                    baseGlobalNames_.erase(std::string(variable));
-                }
+                clearSourceStorage(&currentFrame(), variable);
                 return currentFrame().erase(std::string(variable)) != 0;
             };
             workspace.functionExists = [this](std::string_view name) {
@@ -3775,6 +3920,29 @@ private:
                                 requestedOutputCount, callbackSpan,
                                 ownerWorkspace);
                         };
+                    options.inheritedStorageResolver =
+                        [this](RuntimeWorkspace* ownerWorkspace,
+                               std::string_view storageName) {
+                            return sourceStorageBinding(
+                                ownerWorkspace, storageName);
+                        };
+                    options.inheritedStorageDeclarer =
+                        [this](RuntimeWorkspace* ownerWorkspace,
+                               RuntimeSourceStorageKind kind,
+                               std::string_view storageName,
+                               const RuntimeValue* localValue,
+                               SourceSpan span) {
+                            return declareSourceStorage(
+                                ownerWorkspace, kind, storageName,
+                                localValue, span);
+                        };
+                    options.inheritedStorageClearer =
+                        [this](RuntimeWorkspace* ownerWorkspace,
+                               std::string_view storageName) {
+                            clearSourceStorage(
+                                ownerWorkspace, storageName);
+                        };
+                    options.inheritedStorageWorkspace = target;
                     return evaluateRuntimeSource(request, *target, options);
                 };
             }

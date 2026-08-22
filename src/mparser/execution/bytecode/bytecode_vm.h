@@ -128,6 +128,10 @@ struct BytecodeVmOptions {
     std::vector<RuntimeSourceCallableScope> inheritedCallableScopes;
     RuntimeSourceCallableInvoker inheritedCallableInvoker;
     RuntimeWorkspace* inheritedCallableWorkspace = nullptr;
+    RuntimeSourceStorageResolver inheritedStorageResolver;
+    RuntimeSourceStorageDeclarer inheritedStorageDeclarer;
+    RuntimeSourceStorageClearer inheritedStorageClearer;
+    RuntimeWorkspace* inheritedStorageWorkspace = nullptr;
 };
 
 struct BytecodeTypedRegionExecutionProfile {

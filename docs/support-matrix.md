@@ -144,6 +144,10 @@ batches:
   caller, and base workspace routing, multiple outputs, captured output,
   catch expressions, runtime-error side-effect preservation, and late
   workspace-variable precedence over same-named callables;
+- dynamic `global` and function-scoped `persistent` declarations with real
+  current/caller/base frame association, repeated-session persistence,
+  static-workspace guards, clear-association semantics, and transactional
+  temporary-handle escape protection across workspace and session storage;
 - MATLAB-style `!command` statements routed to the same capability-gated
   `system` implementation without allowing a workspace name to intercept the
   syntax-level shell escape;
@@ -170,8 +174,8 @@ Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT v4/v7.3, strict v6/append/ASCII MAT modes,
 filesystem recycle integration and broader platform-specific attributes,
 wildcards in parent path components, symbolic-link policy selection (rooted
-write paths reject links rather than selecting preserve/resolve), dynamic
-`global`/`persistent` declarations, extended GCD coefficients, arbitrary-rank
+write paths reject links rather than selecting preserve/resolve), extended
+GCD coefficients, arbitrary-rank
 mesh generation, many broad standard-library families, and full MATLAB
 regexp/Unicode behavior remain open. The product and public SDK still
 report `1.2.0` until the complete v1.3 milestone is ready to freeze.

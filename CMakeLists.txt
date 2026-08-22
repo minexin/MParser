@@ -269,6 +269,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/core/runtime_session_state.cpp
     src/mparser/runtime/core/runtime_shape.cpp
     src/mparser/execution/runtime_source_evaluation.cpp
+    src/mparser/execution/runtime_source_storage.cpp
     src/mparser/runtime/core/runtime_struct.cpp
     src/mparser/runtime/io/runtime_system.cpp
     src/mparser/runtime/builtins/runtime_system_builtins.cpp
@@ -1172,23 +1173,29 @@ target_link_libraries(dynamic_workspace_smoke_tests PRIVATE mparser_core)
 add_test(NAME dynamic_workspace_smoke
     COMMAND dynamic_workspace_smoke_tests)
 
+add_executable(dynamic_storage_smoke_tests
+    tests/dynamic_storage_smoke.cpp)
+target_link_libraries(dynamic_storage_smoke_tests PRIVATE mparser_core)
+add_test(NAME dynamic_storage_smoke
+    COMMAND dynamic_storage_smoke_tests)
+
 add_test(NAME dynamic_workspace_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
 set_tests_properties(dynamic_workspace_interpreter_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 173")
+    PASS_REGULAR_EXPRESSION "summary = 239")
 
 add_test(NAME dynamic_workspace_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
 set_tests_properties(dynamic_workspace_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 173")
+    PASS_REGULAR_EXPRESSION "summary = 239")
 
 add_test(NAME dynamic_workspace_production_cli_smoke
     COMMAND mparser --run
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
 set_tests_properties(dynamic_workspace_production_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 173")
+    PASS_REGULAR_EXPRESSION "summary = 239")
 
 add_test(NAME system_command_interpreter_cli_smoke
     COMMAND mparser --run-hir

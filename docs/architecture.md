@@ -1960,8 +1960,15 @@ Returned expression values use collision-free generated bindings that avoid
 both existing workspace names and source identifiers. Dynamic diagnostics map
 their first-line wrapper offset back to the supplied source and then project
 onto the outer call span. MATLAB R2024b rejects function/class definitions in
-evaluated text, while dynamic global/persistent declarations remain unsupported
-in this slice. Any newly created temporary-module handle is removed from
+evaluated text, and MParser rejects the same dynamic definitions. A borrowed
+storage bridge resolves, declares, and clears runtime global/persistent
+associations on the selected real call frame. Global declarations use shared
+session storage. Persistent declarations use the ordinary function frame's
+compiled callable identity and are denied for value-bearing scripts and static
+nested workspaces. The bridge is recursively forwarded across nested eval and
+evalin calls; completed associations and stores survive ordinary runtime errors,
+while clear removes only the frame association. Any newly created
+temporary-module handle is removed from
 outputs/workspace before reporting a deterministic escape diagnostic. Parent
 handles represented by the inherited catalog and handles already present in
 the selected workspace are allow-listed by callable-context identity; they can
@@ -1971,6 +1978,9 @@ Shared object-field maps reachable before evaluation are snapshotted and
 restored in place on escape, including when dynamic source clears the original
 workspace variable after storing a temporary callback. The same scan covers
 borrowed ancestor workspaces that dynamic source can mutate through `assignin`.
+Pre-execution session global/persistent values and their reachable shared fields
+are included, so rollback also covers storage that was not initially visible in
+the selected workspace.
 
 The lexer also recognizes `!` at statement start as one physical-line system
 command token. The parser lowers it directly to a suppressed zero-output

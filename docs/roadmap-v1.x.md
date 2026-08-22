@@ -327,12 +327,27 @@ and bytecode parents, including recursive evaluation, output capture, captured
 workspace updates, and source-scoped private isolation. MATLAB R2024b reference
 probes confirm that function and class definitions are themselves illegal in
 `eval`; dynamic `global` and context-sensitive `persistent` declarations and
-remaining standard-library families remain v1.3 milestone work. Scansets,
+remaining standard-library families were the next v1.3 milestone work. Scansets,
 bit/character/complex binary-I/O corners,
 selectable non-UTF-8 encodings, remote URLs, extended MAT variants, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and
 long-tail overloads such as extended GCD coefficients are also not implied by
 these slices.
+
+The fourteenth batch closes the dynamic storage-declaration gap without
+creating a second execution model. A short-lived source-storage bridge binds
+`global` and `persistent` declarations in evaluated text to the selected real
+current/caller/base frame. Persistent state uses compiled callable identity,
+survives compile-once/invoke-many sessions, and rejects script use or static
+nested workspaces; global-after-local behavior is warning-bearing and preserves
+existing-global precedence. Nested eval, ordinary-error side effects, named and
+whole-workspace clear association, and HIR/bytecode parent equivalence have
+focused coverage. Temporary-module handle rollback now includes session
+globals, persistent variables, and shared objects reachable only through those
+stores. `samples/dynamic_workspace_demo.m` exercises the supported path in HIR,
+bytecode, and production modes. Remaining v1.3 work is standard-library breadth
+and explicitly recorded system/text/I/O boundaries rather than this workspace
+contract.
 
 ## v1.4: Advanced Mathematics And Typed Performance
 

@@ -129,19 +129,13 @@ PreparedSource prepareSource(const BuiltinSourceEvaluationRequest& request,
     return prepared;
 }
 
-bool hasDynamicDeclaration(const CompiledModule& module) {
+bool hasIllegalDynamicDefinition(const CompiledModule& module) {
     if (!module.functions().empty()) {
         return true;
     }
     for (const auto& info : module.sourceInfo()) {
         if (info.kind == CompiledSourceKind::Function ||
             info.kind == CompiledSourceKind::Class) {
-            return true;
-        }
-    }
-    for (const auto& instruction : module.bytecode().instructions) {
-        if (instruction.op == BytecodeOp::DeclareGlobal ||
-            instruction.op == BytecodeOp::DeclarePersistent) {
             return true;
         }
     }
@@ -161,6 +155,11 @@ struct SharedFieldSnapshot {
 struct BorrowedWorkspaceSnapshot {
     RuntimeWorkspace* workspace = nullptr;
     RuntimeWorkspace values;
+};
+
+struct RuntimeSessionSnapshot {
+    std::vector<RuntimeVariable> globals;
+    std::vector<RuntimePersistentVariable> persistentVariables;
 };
 
 void collectSharedFieldSnapshots(
@@ -318,6 +317,56 @@ bool valueContainsUnsafeHandle(
     return containsUnsafeHandle(value, allowedContexts, traversal);
 }
 
+bool restoreUnsafeSessionValues(
+    RuntimeSessionState& session,
+    const RuntimeSessionSnapshot& original,
+    const std::set<const RuntimeCallableContext*>& allowedContexts) {
+    bool restored = false;
+    for (const auto& current : session.globals()) {
+        if (!valueContainsUnsafeHandle(current.value,
+                                       allowedContexts)) {
+            continue;
+        }
+        restored = true;
+        const auto previous = std::find_if(
+            original.globals.begin(), original.globals.end(),
+            [&current](const RuntimeVariable& candidate) {
+                return candidate.name == current.name;
+            });
+        if (previous == original.globals.end()) {
+            session.clearGlobal(current.name);
+        } else {
+            session.storeGlobal(previous->name, previous->value);
+        }
+    }
+    for (const auto& current : session.persistentVariables()) {
+        if (!valueContainsUnsafeHandle(current.value,
+                                       allowedContexts)) {
+            continue;
+        }
+        restored = true;
+        const auto previous = std::find_if(
+            original.persistentVariables.begin(),
+            original.persistentVariables.end(),
+            [&current](const RuntimePersistentVariable& candidate) {
+                return candidate.contextIdentity ==
+                           current.contextIdentity &&
+                       candidate.function == current.function &&
+                       candidate.name == current.name;
+            });
+        if (previous == original.persistentVariables.end()) {
+            session.clearPersistent(
+                current.contextIdentity, current.function,
+                current.name);
+        } else {
+            session.storePersistent(
+                previous->contextIdentity, previous->function,
+                previous->name, previous->value);
+        }
+    }
+    return restored;
+}
+
 bool workspaceContainsUnsafeHandle(
     const RuntimeWorkspace& workspace,
     const std::set<const RuntimeCallableContext*>& allowedContexts) {
@@ -387,6 +436,12 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     }
 
     const RuntimeWorkspace originalWorkspace = workspace;
+    RuntimeSessionSnapshot originalSession;
+    if (options.sessionState) {
+        originalSession.globals = options.sessionState->globals();
+        originalSession.persistentVariables =
+            options.sessionState->persistentVariables();
+    }
     std::vector<BorrowedWorkspaceSnapshot> borrowedWorkspaces;
     std::unordered_set<const RuntimeWorkspace*> seenWorkspaces{&workspace};
     for (RuntimeWorkspace* inherited :
@@ -413,6 +468,15 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
         collectCallableContexts(
             inherited.callable, allowedContexts, contextTraversal);
     }
+    for (const auto& variable : originalSession.globals) {
+        collectCallableContexts(
+            variable.value, allowedContexts, contextTraversal);
+    }
+    for (const auto& variable :
+         originalSession.persistentVariables) {
+        collectCallableContexts(
+            variable.value, allowedContexts, contextTraversal);
+    }
     std::vector<SharedFieldSnapshot> sharedFieldSnapshots;
     HandleTraversal snapshotTraversal;
     for (const auto& [name, value] : originalWorkspace) {
@@ -427,6 +491,15 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
                 value, sharedFieldSnapshots, snapshotTraversal);
         }
     }
+    for (const auto& variable : originalSession.globals) {
+        collectSharedFieldSnapshots(
+            variable.value, sharedFieldSnapshots, snapshotTraversal);
+    }
+    for (const auto& variable :
+         originalSession.persistentVariables) {
+        collectSharedFieldSnapshots(
+            variable.value, sharedFieldSnapshots, snapshotTraversal);
+    }
 
     const PreparedSource prepared = prepareSource(request, workspace);
     CompiledModuleCompileOptions compileOptions;
@@ -435,6 +508,7 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
                                 : defaultBuiltinRegistry();
     compileOptions.externalFunctionNames.reserve(
         options.inheritedCallables.size());
+    compileOptions.allowTopLevelPersistentDeclarations = true;
     for (const auto& inherited : options.inheritedCallables) {
         compileOptions.externalFunctionNames.push_back(inherited.name);
     }
@@ -450,11 +524,10 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
         }
         return result;
     }
-    if (hasDynamicDeclaration(module)) {
+    if (hasIllegalDynamicDefinition(module)) {
         result.diagnostics.push_back(dynamicDiagnostic(
             request.span,
-            "dynamic source cannot declare functions, classes, global "
-            "variables, or persistent variables yet",
+            "dynamic source cannot define functions or classes",
             "MParser:UnsupportedDynamicDeclaration"));
         return result;
     }
@@ -475,6 +548,16 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     vmOptions.inheritedCallableWorkspace =
         options.inheritedCallableWorkspace
             ? options.inheritedCallableWorkspace
+            : &workspace;
+    vmOptions.inheritedStorageResolver =
+        options.inheritedStorageResolver;
+    vmOptions.inheritedStorageDeclarer =
+        options.inheritedStorageDeclarer;
+    vmOptions.inheritedStorageClearer =
+        options.inheritedStorageClearer;
+    vmOptions.inheritedStorageWorkspace =
+        options.inheritedStorageWorkspace
+            ? options.inheritedStorageWorkspace
             : &workspace;
     BytecodeVmResult runtime =
         options.enableTypedRegions
@@ -499,6 +582,12 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
                 *inherited.workspace, inherited.values,
                 allowedContexts) ||
             unsafeHandle;
+    }
+    if (options.sessionState) {
+        unsafeHandle = restoreUnsafeSessionValues(
+                           *options.sessionState, originalSession,
+                           allowedContexts) ||
+                       unsafeHandle;
     }
     for (const auto& output : result.outputs) {
         unsafeHandle = unsafeHandle ||

@@ -320,6 +320,32 @@ void verifySharedObjectHandleRollback() {
                     mparser::RuntimeValueKind::Number &&
                 fields->at("Callback").number == 7,
             "shared object retained a temporary-module handle");
+
+    auto globalBox = mparser::makeRuntimeObjectScalar(
+        "HandleBox",
+        {{"Callback", mparser::makeRuntimeNumberValue(9)}}, true);
+    const auto globalFields = globalBox.sharedFields;
+    options.sessionState->storeGlobal("global_box", std::move(globalBox));
+    mparser::RuntimeWorkspace hiddenGlobalWorkspace;
+    request.source =
+        "global global_box; stash_handle(global_box, @(x) x + 1);";
+    const auto hiddenGlobalResult = mparser::evaluateRuntimeSource(
+        request, hiddenGlobalWorkspace, options);
+    require(!hiddenGlobalResult.succeeded,
+            "dynamic handle escaped through a session-only global object");
+    bool foundGlobalEscape = false;
+    for (const auto& diagnostic : hiddenGlobalResult.diagnostics) {
+        foundGlobalEscape = foundGlobalEscape ||
+            diagnostic.identifier ==
+                "MParser:DynamicEvaluationHandleEscape";
+    }
+    require(foundGlobalEscape,
+            "session-only global handle escape diagnostic is missing");
+    require(globalFields && globalFields->contains("Callback") &&
+                globalFields->at("Callback").kind ==
+                    mparser::RuntimeValueKind::Number &&
+                globalFields->at("Callback").number == 9,
+            "session-only global object retained a temporary handle");
 }
 
 void verifyTypedDynamicShadowFallback() {
@@ -476,7 +502,7 @@ evalin_parent_assignment = evalin_parent_assignment_roundtrip();
 
 declaration_caught = false;
 try
-    eval('global dynamic_global');
+    eval('function value = dynamic_definition(); value = 1; end');
 catch err
     declaration_caught = ...
         strcmp(err.identifier, 'MParser:UnsupportedDynamicDeclaration');
