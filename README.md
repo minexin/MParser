@@ -1856,18 +1856,22 @@ Run the active v1.3 system, random-state, and bounded text-file slices with:
 build\mparser.exe --run samples\system_services_demo.m
 build\mparser.exe --run samples\random_runtime_demo.m
 build\mparser.exe --run samples\file_io_demo.m
+build\mparser.exe --run samples\filesystem_management_demo.m
 build\mparser.exe --run samples\dynamic_workspace_demo.m
 build\mparser.exe --run samples\system_command_demo.m
 ```
 
-The five samples are also checked through `--run-hir` and `--run-bytecode`.
+The six samples are also checked through `--run-hir` and `--run-bytecode`.
 They cover session-local path/current-directory/workspace state, capability
 routing, reproducible shaped random arrays, native path separators, file
 open/query/append/close lifetime, `fseek`/`ftell`/`frewind`, `feof`/`ferror`,
 `fgetl`/`fgets`, update-stream barriers, Windows text-mode CRLF positioning,
 formatted output, bounded repeated input, numeric `fread`/`fwrite`, finite-shape
 padding, exact 64-bit payloads, precision skips, byte-order conversion,
-array-aware `fullfile`, current/caller/
+array-aware `fullfile`, shaped `isfile`/`isfolder`, container-preserving
+`fileparts`, bounded `fileread`, `tempname`, status-returning
+`mkdir`/`rmdir`/`copyfile`/`movefile`, permission-preserving `'f'` destination
+overrides, rooted write-path link rejection, current/caller/
 base dynamic workspaces, `evalc` capture, multi-output dynamic expressions,
 catch expressions, late workspace-value shadowing of builtin call targets,
 and the non-shadowable `!command` shell escape. Dynamic source is compiled
@@ -1877,7 +1881,9 @@ requires the session's
 process capability. This is the current v1.3
 development slice; dynamic function/class declarations, escaping handles from
 temporary dynamic modules, complete MATLAB system behavior, MAT persistence,
-remote files, non-UTF-8 encodings, and bit/character/complex binary I/O corners
+remote files, non-UTF-8 encodings, file deletion/attributes/recycle,
+parent-component wildcards, selectable symbolic-link behavior, and
+bit/character/complex binary I/O corners
 remain on the roadmap.
 
 Run value, handle, and heterogeneous object arrays through the production

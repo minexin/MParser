@@ -1415,8 +1415,10 @@ structured workspace access, caller output count, implicit-output policy,
 system/display contexts, random/display side effects, and synchronous dynamic
 invocation. Active contract 1.4 adds current/caller/base workspace resolution
 and a source-evaluation callback. Active contract 1.5 records the expanded
-stream-I/O family and warning implicit-output corrections; its development
-snapshot records 231 descriptors and 233 registered names. A generator-backed
+stream-I/O family and warning implicit-output corrections. Active contract
+1.6 adds capability-bound filesystem query, path, whole-file text, temporary
+name, and mutation descriptors; its development snapshot records 240
+descriptors and 242 registered names. A generator-backed
 smoke test compares the live registry to the active snapshot; it does not serialize
 handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
 values and diagnostics across HIR and bytecode rather than comparing display
@@ -1823,6 +1825,17 @@ handle and entry-point contracts, leaving the frozen revision-0 layouts and
 exports intact. Environment/process capabilities remain explicitly host-wide,
 and the rooted adapter documents filesystem-link TOCTOU as an OS sandboxing
 concern rather than claiming process isolation.
+
+Filesystem management remains behind that same adapter. `isfile`, `isfolder`,
+`fileread`, and `tempname` use session-relative paths and read capability;
+`mkdir`, `rmdir`, `copyfile`, and `movefile` additionally require write
+capability and return MATLAB-style status/message/message-ID triples when the
+caller requests outputs. `fileparts` is the pure exception and only parses
+text. The native adapter handles recursive creation/removal, directory-copy
+contents, directory-move nesting, and cross-device move fallback. The rooted
+adapter validates source and destination independently, rejects root/current
+directory removal or movement, and keeps all operations on the canonical
+context path rather than letting handlers call `std::filesystem` directly.
 
 Low-level file identifiers and random state live in the context rather than global
 process state. File entries retain the requested name, resolved host path,

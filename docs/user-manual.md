@@ -122,6 +122,45 @@ frewind(fid);
 fclose(fid);
 ```
 
+The same capability context provides local path and filesystem management:
+
+```matlab
+root = tempname;
+[ok, message, messageId] = mkdir(root);
+file = fullfile(root, 'value.txt');
+fid = fopen(file, 'w');
+fprintf(fid, '%s', 'hello');
+fclose(fid);
+
+present = isfile([string(file), string(fullfile(root, 'missing.txt'))]);
+[folder, name, extension] = fileparts(file);
+text = fileread(file);
+copyfile(file, fullfile(root, 'copy.txt'));
+movefile(fullfile(root, 'copy.txt'), fullfile(root, 'moved.txt'));
+rmdir(root, 's');
+```
+
+`isfile` and `isfolder` accept character vectors, string arrays, or cell
+arrays of character vectors and return a same-shaped logical result; missing
+string elements map to false. `fileparts` preserves the input
+character/string/cell container. `mkdir`, `rmdir`, `copyfile`, and `movefile`
+produce no value when called as commands, or return up to
+`[status,message,messageId]`; requesting outputs converts host-operation
+failure into `status=false`. `copyfile` copies a source directory's contents
+into an existing destination, while `movefile` nests the source directory.
+The optional `'f'` input temporarily overrides a non-writable destination and
+restores every pre-existing destination permission after the operation.
+Rooted contexts reject all filesystem writes through symbolic links or path
+aliases; unrestricted native contexts retain operating-system behavior.
+Basename `*` and `?` source patterns are supported. Parent-component
+wildcards, remote URLs, selectable symbolic-link behavior, file deletion and
+attribute/recycle operations remain outside this slice. `fileread` is bounded
+by the context file-read limit and currently decodes UTF-8 only.
+
+Run the complete path through
+`mparser --run samples/filesystem_management_demo.m`; the same sample is a
+HIR and bytecode CTest and reports `filesystem_management_summary = 91`.
+
 `fopen` currently accepts `r`, `w`, or `a`, optional `+`, and optional `b` or
 `t`. Its optional machine format accepts native, little-endian, and big-endian
 spellings; UTF-8 is the only accepted encoding. `fscanf` supports `%c`, `%s`, `%d`, `%i`,
@@ -376,7 +415,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.5 |
+| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.6 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

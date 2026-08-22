@@ -163,6 +163,16 @@ public:
     regularFileExists(const std::filesystem::path& path) const = 0;
     virtual RuntimeSystemResult<bool>
     directoryExists(const std::filesystem::path& path) const = 0;
+    virtual RuntimeSystemResult<bool>
+    createDirectories(const std::filesystem::path& path) const = 0;
+    virtual RuntimeSystemStatus removeDirectory(
+        const std::filesystem::path& path, bool recursive) const = 0;
+    virtual RuntimeSystemStatus copyPath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination, bool force) const = 0;
+    virtual RuntimeSystemStatus movePath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination, bool force) const = 0;
     virtual RuntimeSystemResult<std::shared_ptr<RuntimeHostFile>>
     openFile(const std::filesystem::path& path,
              const RuntimeFileOpenOptions& options) const = 0;
@@ -233,6 +243,19 @@ public:
         const std::filesystem::path& path) const;
     RuntimeSystemResult<bool> directoryExists(
         const std::filesystem::path& path) const;
+    RuntimeSystemResult<bool> createDirectories(
+        const std::filesystem::path& path);
+    RuntimeSystemStatus removeDirectory(
+        const std::filesystem::path& path, bool recursive);
+    RuntimeSystemStatus copyPath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination, bool force);
+    RuntimeSystemStatus movePath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination, bool force);
+    RuntimeSystemResult<std::filesystem::path> temporaryName(
+        const std::optional<std::filesystem::path>& directory =
+            std::nullopt) const;
     RuntimeSystemResult<int> openFile(
         const std::filesystem::path& path,
         const RuntimeFileOpenOptions& options);

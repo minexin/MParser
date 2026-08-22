@@ -45,7 +45,7 @@ Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 ## Extend The Runtime
 
 - [Extending Builtins](extending-builtins.md): frozen v1.2 builtin source
-  contract 1.1 plus active in-tree contract 1.5, descriptor rules, registry
+  contract 1.1 plus active in-tree contract 1.6, descriptor rules, registry
   behavior, ownership, threading, resources, and conformance tests.
 - [Architecture](architecture.md): Lexer to Parser to semantic HIR to
   verified bytecode to VM/typed/native execution.

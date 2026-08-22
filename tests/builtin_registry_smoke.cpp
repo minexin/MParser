@@ -185,11 +185,11 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 5,
+                mparser::kBuiltinSourceContractMinor == 6,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 231,
+    require(registry->descriptors().size() == 240,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 233,
+    require(registry->names().size() == 242,
             "default builtin name catalog changed unexpectedly");
 
     for (std::string_view name : {"eval", "evalc", "evalin"}) {
@@ -234,6 +234,44 @@ void runDefaultCatalogSmoke() {
                 registry->find("fwrite")->outputs.maximum == 1 &&
                 registry->find("fgets")->outputs.maximum == 2,
             "stream I/O arity metadata mismatch");
+
+    const auto* fileparts = registry->find("fileparts");
+    require(fileparts && fileparts->inputs.minimum == 1 &&
+                fileparts->inputs.maximum == 1 &&
+                fileparts->outputs.minimum == 1 &&
+                fileparts->outputs.maximum == 3 &&
+                fileparts->implementation ==
+                    mparser::BuiltinImplementationKind::Shared &&
+                fileparts->purity == mparser::BuiltinPurity::Pure &&
+                fileparts->requiredContext ==
+                    mparser::BuiltinContextPermission::None,
+            "fileparts metadata mismatch");
+    for (std::string_view name : {"isfile", "isfolder", "fileread",
+                                  "tempname"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Context &&
+                    descriptor->purity ==
+                        mparser::BuiltinPurity::ReadOnly &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->requiredContext,
+                        mparser::BuiltinContextPermission::SystemServices),
+                "filesystem query builtin metadata mismatch");
+    }
+    for (std::string_view name : {"mkdir", "rmdir", "copyfile",
+                                  "movefile"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor && descriptor->outputs.minimum == 0 &&
+                    descriptor->outputs.maximum == 3 &&
+                    descriptor->purity ==
+                        mparser::BuiltinPurity::Impure &&
+                    descriptor->sideEffects ==
+                        mparser::BuiltinSideEffect::External &&
+                    descriptor->implicitOutputPolicy ==
+                        mparser::BuiltinImplicitOutputPolicy::None,
+                "filesystem mutation builtin metadata mismatch");
+    }
 
     const auto* absolute = registry->find("abs");
     require(absolute &&

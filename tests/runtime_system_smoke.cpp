@@ -6,6 +6,7 @@
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_system.h"
 #include "mparser/runtime_text.h"
+#include "mparser/runtime_warning.h"
 
 #include <algorithm>
 #include <chrono>
@@ -17,6 +18,7 @@
 #include <memory>
 #include <map>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -171,7 +173,9 @@ class FakeHostAdapter final : public mparser::RuntimeHostAdapter {
 public:
     FakeHostAdapter()
         : root(virtualRoot()), child(root / "child"), tools(root / "tools"),
-          library(root / "library"), temporary(root / "temporary") {}
+          library(root / "library"), temporary(root / "temporary") {
+        directories = {root, child, tools, library, temporary};
+    }
 
     mparser::RuntimeSystemResult<std::filesystem::path>
     processCurrentDirectory() const override {
@@ -191,8 +195,7 @@ public:
                        const std::filesystem::path& candidate) const override {
         const auto combined = normalize(
             candidate.is_absolute() ? candidate : base / candidate);
-        if (combined != root && combined != child && combined != tools &&
-            combined != library && combined != temporary) {
+        if (!directories.contains(combined)) {
             return mparser::RuntimeSystemResult<
                 std::filesystem::path>::failure(
                 "fake directory does not exist");
@@ -233,10 +236,119 @@ public:
 
     mparser::RuntimeSystemResult<bool>
     directoryExists(const std::filesystem::path& path) const override {
-        const auto normalized = normalize(path);
         return mparser::RuntimeSystemResult<bool>::success(
-            normalized == root || normalized == child || normalized == tools ||
-            normalized == library || normalized == temporary);
+            directories.contains(normalize(path)));
+    }
+
+    mparser::RuntimeSystemResult<bool>
+    createDirectories(const std::filesystem::path& path) const override {
+        const auto normalized = normalize(path);
+        if (files.contains(normalized)) {
+            return mparser::RuntimeSystemResult<bool>::failure(
+                "fake path is a file");
+        }
+        const bool created = directories.insert(normalized).second;
+        auto parent = normalized.parent_path();
+        while (!parent.empty() && isWithin(root, parent)) {
+            directories.insert(parent);
+            if (parent == root) {
+                break;
+            }
+            parent = parent.parent_path();
+        }
+        return mparser::RuntimeSystemResult<bool>::success(created);
+    }
+
+    mparser::RuntimeSystemStatus removeDirectory(
+        const std::filesystem::path& path,
+        bool recursive) const override {
+        const auto normalized = normalize(path);
+        if (!directories.contains(normalized)) {
+            return mparser::RuntimeSystemStatus::failure(
+                "fake path is not a directory");
+        }
+        const auto hasChildDirectory = std::any_of(
+            directories.begin(), directories.end(),
+            [&normalized](const auto& candidate) {
+                return candidate != normalized &&
+                       isWithin(normalized, candidate);
+            });
+        const auto hasChildFile = std::any_of(
+            files.begin(), files.end(),
+            [&normalized](const auto& entry) {
+                return isWithin(normalized, entry.first);
+            });
+        if (!recursive && (hasChildDirectory || hasChildFile)) {
+            return mparser::RuntimeSystemStatus::failure(
+                "fake directory is not empty");
+        }
+        std::erase_if(directories, [&normalized](const auto& candidate) {
+            return candidate == normalized ||
+                   isWithin(normalized, candidate);
+        });
+        std::erase_if(files, [&normalized](const auto& entry) {
+            return isWithin(normalized, entry.first);
+        });
+        return mparser::RuntimeSystemStatus::success();
+    }
+
+    mparser::RuntimeSystemStatus copyPath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination,
+        bool force) const override {
+        (void)force;
+        const auto normalizedSource = normalize(source);
+        auto normalizedDestination = normalize(destination);
+        if (const auto found = files.find(normalizedSource);
+            found != files.end()) {
+            if (directories.contains(normalizedDestination)) {
+                normalizedDestination /= normalizedSource.filename();
+            }
+            files[normalizedDestination] =
+                std::make_shared<std::string>(*found->second);
+            return mparser::RuntimeSystemStatus::success();
+        }
+        if (!directories.contains(normalizedSource)) {
+            return mparser::RuntimeSystemStatus::failure(
+                "fake copy source does not exist");
+        }
+        directories.insert(normalizedDestination);
+        const auto originalDirectories = directories;
+        const auto originalFiles = files;
+        for (const auto& candidate : originalDirectories) {
+            if (candidate != normalizedSource &&
+                isWithin(normalizedSource, candidate)) {
+                directories.insert(normalizedDestination /
+                    candidate.lexically_relative(normalizedSource));
+            }
+        }
+        for (const auto& [path, contents] : originalFiles) {
+            if (isWithin(normalizedSource, path)) {
+                files[normalizedDestination /
+                      path.lexically_relative(normalizedSource)] =
+                    std::make_shared<std::string>(*contents);
+            }
+        }
+        return mparser::RuntimeSystemStatus::success();
+    }
+
+    mparser::RuntimeSystemStatus movePath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination,
+        bool force) const override {
+        const auto normalizedSource = normalize(source);
+        auto normalizedDestination = normalize(destination);
+        if (directories.contains(normalizedDestination)) {
+            normalizedDestination /= normalizedSource.filename();
+        }
+        auto copied = copyPath(normalizedSource, normalizedDestination, force);
+        if (!copied.succeeded) {
+            return copied;
+        }
+        if (files.erase(normalizedSource) != 0) {
+            return mparser::RuntimeSystemStatus::success();
+        }
+        return removeDirectory(normalizedSource, true);
     }
 
     mparser::RuntimeSystemResult<std::shared_ptr<mparser::RuntimeHostFile>>
@@ -309,8 +421,22 @@ public:
     std::shared_ptr<size_t> closeCount = std::make_shared<size_t>(0);
     mutable std::map<std::filesystem::path,
                      std::shared_ptr<std::string>> files;
+    mutable std::set<std::filesystem::path> directories;
 
 private:
+    static bool isWithin(const std::filesystem::path& rootPath,
+                         const std::filesystem::path& candidate) {
+        auto rootPart = rootPath.begin();
+        auto candidatePart = candidate.begin();
+        for (; rootPart != rootPath.end(); ++rootPart, ++candidatePart) {
+            if (candidatePart == candidate.end() ||
+                *rootPart != *candidatePart) {
+                return false;
+            }
+        }
+        return candidatePart != candidate.end();
+    }
+
     static std::filesystem::path normalize(
         const std::filesystem::path& path) {
         auto result = path.lexically_normal();
@@ -1414,6 +1540,220 @@ void fileBuiltinSmoke() {
             "console fprintf routing regressed");
 }
 
+void filesystemManagementBuiltinSmoke() {
+    auto adapter = std::make_shared<FakeHostAdapter>();
+    adapter->files[adapter->root / "alpha.txt"] =
+        std::make_shared<std::string>("alpha contents");
+    adapter->files[adapter->tools / "lookup.txt"] =
+        std::make_shared<std::string>("path contents");
+    auto system = makeContext(adapter);
+    auto registry = mparser::createBuiltinRegistryWithDefaults();
+    mparser::RuntimeWarningContext warningContext;
+    mparser::BuiltinCallContext context;
+    context.systemContext = system.get();
+    context.registry = registry.get();
+    context.warningContext = &warningContext;
+    const auto text = [](std::string_view value) {
+        return mparser::makeRuntimeCharacterVectorUtf8(value);
+    };
+    const auto invoke = [&](std::string_view name,
+                            std::vector<mparser::RuntimeValue> arguments,
+                            size_t outputs) {
+        return registry->invoke(
+            name, mparser::BuiltinCall{arguments, outputs, {}, &context});
+    };
+    const auto numeric = [](const mparser::RuntimeValue& value,
+                            size_t index = 0) {
+        const auto result = mparser::runtimeNumericElement(value, index);
+        require(result.has_value(),
+                "filesystem builtin output is not numeric");
+        return *result;
+    };
+
+    auto result = invoke(
+        "isfile",
+        {mparser::makeRuntimeStringArray(
+            {1, 3}, {{u"alpha.txt", false}, {u"", true},
+                     {u"child", false}})},
+        1);
+    require(result.succeeded && result.outputs.size() == 1 &&
+                mparser::runtimeDimensions(result.outputs[0]) ==
+                    std::vector<size_t>({1, 3}) &&
+                numeric(result.outputs[0], 0) == 1.0 &&
+                numeric(result.outputs[0], 1) == 0.0 &&
+                numeric(result.outputs[0], 2) == 0.0,
+            "isfile did not preserve string-array shape or missing values");
+    result = invoke(
+        "isfolder",
+        {mparser::makeRuntimeCellValue(
+            {2, 2}, {text("child"), text("alpha.txt"),
+                     text("tools"), text("absent")})},
+        1);
+    require(result.succeeded &&
+                mparser::runtimeDimensions(result.outputs[0]) ==
+                    std::vector<size_t>({2, 2}) &&
+                numeric(result.outputs[0], 0) == 1.0 &&
+                numeric(result.outputs[0], 1) == 0.0 &&
+                numeric(result.outputs[0], 2) == 1.0 &&
+                numeric(result.outputs[0], 3) == 0.0,
+            "isfolder did not preserve cell-array shape");
+
+    result = invoke(
+        "fileparts",
+        {mparser::makeRuntimeStringArray(
+            {1, 2}, {{u"folder/archive.tar.gz", false},
+                     {u".profile", false}})},
+        3);
+    const auto stringAt = [](const mparser::RuntimeValue& value,
+                             size_t index) {
+        const auto* element = mparser::runtimeStringElement(value, index);
+        return element && !element->missing
+                   ? std::optional<std::string>(
+                         mparser::runtimeUtf16ToUtf8(element->value))
+                   : std::nullopt;
+    };
+    require(result.succeeded && result.outputs.size() == 3 &&
+                stringAt(result.outputs[0], 0) == "folder" &&
+                stringAt(result.outputs[1], 0) == "archive.tar" &&
+                stringAt(result.outputs[2], 0) == ".gz" &&
+                stringAt(result.outputs[1], 1) == "" &&
+                stringAt(result.outputs[2], 1) == ".profile",
+            "fileparts string-array projection mismatch");
+    result = invoke(
+        "fileparts",
+        {mparser::makeRuntimeCellValue(
+            {1, 2}, {text("one.m"), text("dir/two.txt")})},
+        3);
+    require(result.succeeded &&
+                result.outputs[0].kind == mparser::RuntimeValueKind::Cell &&
+                mparser::runtimeTextScalarUtf8(
+                    result.outputs[0].cells[1]) == "dir" &&
+                mparser::runtimeTextScalarUtf8(
+                    result.outputs[1].cells[1]) == "two",
+            "fileparts did not preserve cell-array output type");
+    result = invoke(
+        "fileparts",
+        {mparser::makeRuntimeStringArray(
+            {1, 1}, {{u"", true}})},
+        3);
+    require(!result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics[0].identifier ==
+                    "MParser:MissingFileName",
+            "fileparts accepted a missing string");
+
+    result = invoke("fileread", {text("alpha.txt")}, 1);
+    require(result.succeeded &&
+                mparser::runtimeTextScalarUtf8(result.outputs[0]) ==
+                    "alpha contents",
+            "fileread current-directory lookup mismatch");
+    result = invoke("fileread", {text("lookup.txt")}, 1);
+    require(result.succeeded &&
+                mparser::runtimeTextScalarUtf8(result.outputs[0]) ==
+                    "path contents",
+            "fileread search-path lookup mismatch");
+
+    const auto firstTemporary = invoke("tempname", {}, 1);
+    const auto secondTemporary = invoke("tempname", {}, 1);
+    const auto relativeTemporary = invoke(
+        "tempname", {text("child")}, 1);
+    const auto firstName = firstTemporary.succeeded
+                               ? mparser::runtimeTextScalarUtf8(
+                                     firstTemporary.outputs[0])
+                               : std::nullopt;
+    const auto secondName = secondTemporary.succeeded
+                                ? mparser::runtimeTextScalarUtf8(
+                                      secondTemporary.outputs[0])
+                                : std::nullopt;
+    const auto relativeName = relativeTemporary.succeeded
+                                  ? mparser::runtimeTextScalarUtf8(
+                                        relativeTemporary.outputs[0])
+                                  : std::nullopt;
+    require(firstName && secondName && relativeName &&
+                *firstName != *secondName &&
+                std::filesystem::path(*firstName).parent_path() ==
+                    adapter->temporary &&
+                std::filesystem::path(*relativeName).parent_path() ==
+                    std::filesystem::path("child"),
+            "tempname uniqueness or directory projection mismatch");
+
+    result = invoke("mkdir", {text("managed/deep")}, 3);
+    require(result.succeeded && result.outputs.size() == 3 &&
+                numeric(result.outputs[0]) == 1.0 &&
+                adapter->directories.contains(
+                    adapter->root / "managed" / "deep") &&
+                mparser::runtimeTextScalarUtf8(result.outputs[1]) == "",
+            "mkdir recursive creation or status outputs mismatch");
+    result = invoke("mkdir", {text("managed/deep")}, 3);
+    require(result.succeeded && numeric(result.outputs[0]) == 1.0 &&
+                mparser::runtimeTextScalarUtf8(result.outputs[2]) ==
+                    "MATLAB:MKDIR:DirectoryExists",
+            "mkdir existing-directory status mismatch");
+    result = invoke("mkdir", {text("managed/deep")}, 0);
+    require(result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics[0].severity ==
+                    mparser::DiagnosticSeverity::Warning &&
+                warningContext.snapshot().lastIdentifier ==
+                    "MATLAB:MKDIR:DirectoryExists",
+            "mkdir no-output warning contract mismatch");
+    const auto disabledWarning = warningContext.warning(
+        {text("off"), text("MATLAB:MKDIR:DirectoryExists")}, 0);
+    require(disabledWarning.succeeded,
+            "mkdir warning identifier could not be disabled");
+    result = invoke("mkdir", {text("managed/deep")}, 0);
+    require(result.succeeded && result.diagnostics.empty() &&
+                warningContext.snapshot().lastIdentifier ==
+                    "MATLAB:MKDIR:DirectoryExists",
+            "mkdir warning did not honor session warning state");
+
+    result = invoke("copyfile",
+                    {text("alpha.txt"), text("child/copied.txt")}, 3);
+    require(result.succeeded && numeric(result.outputs[0]) == 1.0 &&
+                adapter->files.contains(adapter->child / "copied.txt") &&
+                *adapter->files[adapter->child / "copied.txt"] ==
+                    "alpha contents",
+            "copyfile file-copy status mismatch");
+    result = invoke("movefile",
+                    {text("child/copied.txt"), text("library")}, 3);
+    require(result.succeeded && numeric(result.outputs[0]) == 1.0 &&
+                !adapter->files.contains(adapter->child / "copied.txt") &&
+                adapter->files.contains(adapter->library / "copied.txt"),
+            "movefile directory destination mismatch");
+
+    adapter->directories.insert(adapter->root / "tree");
+    adapter->files[adapter->root / "tree" / "inside.txt"] =
+        std::make_shared<std::string>("inside");
+    result = invoke("rmdir", {text("tree")}, 3);
+    require(result.succeeded && numeric(result.outputs[0]) == 0.0 &&
+                mparser::runtimeTextScalarUtf8(result.outputs[2]) ==
+                    "MATLAB:RMDIR:DirectoryNotRemoved" &&
+                adapter->directories.contains(adapter->root / "tree"),
+            "rmdir nonempty status mismatch");
+    result = invoke("rmdir", {text("tree"), text("s")}, 3);
+    require(result.succeeded && numeric(result.outputs[0]) == 1.0 &&
+                !adapter->directories.contains(adapter->root / "tree") &&
+                !adapter->files.contains(
+                    adapter->root / "tree" / "inside.txt"),
+            "rmdir recursive removal mismatch");
+
+    auto limited = makeContext(adapter, 1234U, 256, 4);
+    context.systemContext = limited.get();
+    result = invoke("fileread", {text("alpha.txt")}, 1);
+    require(!result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics[0].identifier ==
+                    "MParser:FileReadFailed" &&
+                limited->openFileIdentifiers().succeeded &&
+                limited->openFileIdentifiers().value.empty(),
+            "fileread limit failure leaked an open file");
+
+    auto isolated = mparser::makeIsolatedRuntimeSystemContext();
+    context.systemContext = isolated.get();
+    result = invoke("isfile", {text("alpha.txt")}, 1);
+    require(!result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics[0].identifier ==
+                    "MParser:SystemOperationFailed",
+            "filesystem query bypassed an isolated system context");
+}
+
 void formatBuiltinSmoke() {
     auto registry = mparser::createBuiltinRegistryWithDefaults();
     mparser::RuntimeDisplayFormat state;
@@ -1516,6 +1856,7 @@ int main() {
         randomSmoke();
         existBuiltinSmoke();
         fileBuiltinSmoke();
+        filesystemManagementBuiltinSmoke();
         formatBuiltinSmoke();
         return 0;
     } catch (const std::exception& error) {

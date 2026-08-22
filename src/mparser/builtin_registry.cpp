@@ -61,6 +61,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "complex",
     "computer",
     "conj",
+    "copyfile",
     "cos",
     "cosh",
     "cummax",
@@ -87,6 +88,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "factorial",
     "false",
     "fieldnames",
+    "fileparts",
+    "fileread",
     "filesep",
     "find",
     "feval",
@@ -134,8 +137,10 @@ constexpr std::string_view kBuiltinNames[] = {
     "ischar",
     "iscolumn",
     "isfield",
+    "isfile",
     "isfinite",
     "isfloat",
+    "isfolder",
     "isinf",
     "isinteger",
     "islogical",
@@ -176,7 +181,9 @@ constexpr std::string_view kBuiltinNames[] = {
     "methods",
     "missing",
     "min",
+    "mkdir",
     "mod",
+    "movefile",
     "nan",
     "nargin",
     "nargout",
@@ -205,6 +212,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "rem",
     "repmat",
     "reshape",
+    "rmdir",
     "rmfield",
     "rmpath",
     "rng",
@@ -241,6 +249,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "tic",
     "toc",
     "tempdir",
+    "tempname",
     "true",
     "rethrow",
     "uint16",
@@ -1175,6 +1184,16 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
         descriptor.requiredContext =
             BuiltinContextPermission::DisplayFormat;
         descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+    } else if (name == "fileparts") {
+        descriptor.inputs = BuiltinArity::fixed(1);
+        descriptor.outputs = BuiltinArity::range(1, 3);
+        descriptor.implementation = BuiltinImplementationKind::Shared;
+        descriptor.purity = BuiltinPurity::Pure;
+        descriptor.determinism = BuiltinDeterminism::Deterministic;
+        descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+        descriptor.contextPermissions = BuiltinContextPermission::None;
+        descriptor.requiredContext = BuiltinContextPermission::None;
+        descriptor.sideEffects = BuiltinSideEffect::None;
     } else if (name == "fullfile" || name == "filesep" ||
                name == "pathsep") {
         descriptor.inputs = name == "fullfile"
@@ -1227,7 +1246,30 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
         descriptor.purity = BuiltinPurity::ReadOnly;
         descriptor.outputs = BuiltinArity::range(0, 1);
 
-        if (name == "fopen") {
+        if (name == "isfile" || name == "isfolder") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::fixed(1);
+        } else if (name == "fileread") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::fixed(1);
+        } else if (name == "tempname") {
+            descriptor.inputs = BuiltinArity::range(0, 1);
+            descriptor.outputs = BuiltinArity::fixed(1);
+        } else if (name == "mkdir" || name == "rmdir") {
+            descriptor.inputs = BuiltinArity::range(1, 2);
+            descriptor.outputs = BuiltinArity::range(0, 3);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+        } else if (name == "copyfile" || name == "movefile") {
+            descriptor.inputs = BuiltinArity::range(1, 3);
+            descriptor.outputs = BuiltinArity::range(0, 3);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+        } else if (name == "fopen") {
             descriptor.inputs = BuiltinArity::range(1, 4);
             descriptor.outputs = BuiltinArity::range(0, 4);
             descriptor.purity = BuiltinPurity::Impure;

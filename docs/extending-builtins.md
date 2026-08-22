@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.5. Contract 1.0 established
+identify active source contract 1.6. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -299,15 +299,17 @@ contexts, random/display side effects, and the expanded descriptor catalog.
 Active contract 1.4 adds current/caller/base workspace resolution and
 synchronous source evaluation. Contract 1.5 adds the generalized stream-I/O
 descriptor family and corrects warning/`lastwarn` implicit-output metadata.
+Contract 1.6 adds the capability-bound filesystem query, path decomposition,
+whole-file text read, temporary-name, and status-returning mutation families.
 The current v1.3 development catalog exercises
 callable-based dynamic invocation through `cellfun`, execution-controlled
 numeric utilities, session-random `randperm`, and the `eval`/`evalc`/`evalin`/
-`assignin` family plus shared text/binary file operations; it contains 231
-descriptors and 233 registered names.
+`assignin` family plus shared text/binary and managed filesystem operations;
+it contains 240 descriptors and 242 registered names.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The active development snapshot is
-`tests/public_contract/builtin/1.5/default_catalog.json`; earlier files remain
+`tests/public_contract/builtin/1.6/default_catalog.json`; earlier files remain
 historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output

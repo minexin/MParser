@@ -108,7 +108,11 @@ Path-oriented adapter calls canonicalize the longest existing ancestor and
 reject `..` or existing symbolic-link targets that leave the configured root.
 Directory listings omit entries whose resolved targets escape. Environment and
 process capabilities remain host-wide, and a launched command is not confined
-to the root. Filesystem checks followed by open remain susceptible to a
+to the root. Rooted write operations also reject a path whose canonical form
+differs from its lexical form, so `mkdir`, writable `fopen`, `copyfile`
+destinations, and `movefile`/`rmdir` sources cannot silently mutate through an
+existing symbolic link or path alias. Read-only operations may resolve an
+in-root link. Filesystem checks followed by open remain susceptible to a
 hostile local process racing link changes, so this is a deterministic host
 policy boundary rather than a complete OS security sandbox.
 
@@ -280,7 +284,7 @@ C source API 1.2 and ABI generation 2 ownership, sealed/extensible structure
 rules, and symbol meanings are checked against current headers and consumers.
 The C++ source API is 1.2 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
 typed and complex numeric values. Builtin source contract 1.1 is frozen with
-the v1.2 candidate; the active in-tree descriptor contract is 1.5 and remains
+the v1.2 candidate; the active in-tree descriptor contract is 1.6 and remains
 a compiled-in source extension surface, not an external plugin ABI. Archived
 v1.0 and frozen v1.2 contracts remain historical evidence rather than
 compatibility gates for development changes.

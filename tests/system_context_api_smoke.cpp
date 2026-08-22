@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -57,6 +58,14 @@ double scalar(const Value& value) {
     const auto data = value.numericData<double>();
     assert(data.size() == 1);
     return data.front();
+}
+
+bool logicalScalar(const Value& value) {
+    assert(value.kind() == ValueKind::Numeric);
+    assert(value.numericClass() == mparser::sdk::NumericClass::Logical);
+    const auto data = value.numericData<std::uint8_t>();
+    assert(data.size() == 1);
+    return data.front() != 0;
 }
 
 std::string asciiText(const Value& value) {
@@ -172,6 +181,90 @@ end
 function [fid, message] = escape_link()
     [fid, message] = fopen('link/escaped.bin', 'wb');
 end
+
+function score = filesystem_management()
+    [made, message, message_id] = mkdir('managed/deep/');
+    assert(made && isempty(message) && isempty(message_id));
+    filename = fullfile('managed', 'deep', 'value.txt');
+    fid = fopen(filename, 'w');
+    assert(fid >= 3);
+    assert(fprintf(fid, '%s', 'rooted-data') == 11);
+    assert(fclose(fid) == 0);
+    assert(isfile(filename) && isfolder('managed/deep'));
+    assert(strcmp(fileread(filename), 'rooted-data'));
+    [copied, ignored, ignored_id] = copyfile(filename, 'managed/copy.txt');
+    assert(copied && isempty(ignored) && isempty(ignored_id));
+    [moved, ignored, ignored_id] = movefile('managed/copy.txt', 'sub');
+    assert(moved && isfile('sub/copy.txt'));
+    [removed_nonempty, ignored, ignored_id] = rmdir('managed');
+    assert(~removed_nonempty);
+    [removed, ignored, ignored_id] = rmdir('managed', 's');
+    assert(removed && ~isfolder('managed'));
+    candidate = tempname('tmp');
+    assert(strcmp(fileparts(candidate), 'tmp') && ~isfile(candidate));
+    score = made + copied + moved + removed + length(fileread('sub/copy.txt'));
+end
+
+function [status, message] = escape_mkdir()
+    [status, message] = mkdir('../outside/new-directory');
+end
+
+function [status, message] = escape_copy()
+    [status, message] = copyfile('tmp/context.bin', '../outside/copied.bin');
+end
+
+function [status, message] = escape_move()
+    [status, message] = movefile('tmp/context.bin', '../outside/moved.bin');
+end
+
+function [status, message] = remove_root()
+    [status, message] = rmdir('.', 's');
+end
+
+function [status, message] = copy_into_self()
+    [status, message] = copyfile('sub', 'sub/nested-copy');
+end
+
+function [status, message] = move_into_self()
+    [status, message] = movefile('sub', 'sub/nested-move');
+end
+
+function status = force_copy()
+    [status, message, message_id] = copyfile( ...
+        'force-copy.txt', 'restricted-copy', 'f');
+    assert(status && isempty(message) && isempty(message_id));
+    assert(strcmp(fileread('restricted-copy/force-copy.txt'), ...
+                  'copy-force'));
+end
+
+function status = force_move()
+    [status, message, message_id] = movefile( ...
+        'force-move.txt', 'restricted-move', 'f');
+    assert(status && isempty(message) && isempty(message_id));
+    assert(strcmp(fileread('restricted-move/force-move.txt'), ...
+                  'move-force'));
+end
+
+function [status, message] = link_mkdir()
+    [status, message] = mkdir('internal-link/new-directory');
+end
+
+function [fid, message] = link_open()
+    [fid, message] = fopen('internal-link/new.bin', 'wb');
+end
+
+function [status, message] = link_copy()
+    [status, message] = copyfile( ...
+        'tmp/context.bin', 'internal-link/copied.bin');
+end
+
+function [status, message] = link_move()
+    [status, message] = movefile('internal-link', 'moved-link');
+end
+
+function [status, message] = link_remove()
+    [status, message] = rmdir('internal-link', 's');
+end
 )MATLAB";
 
 } // namespace
@@ -258,6 +351,114 @@ int main() {
     assert(std::filesystem::file_size(tree.root / "tmp" / "context.bin") ==
            4);
 
+    auto managed = module.execute(
+        request("filesystem_management", 1), context);
+    if (managed.status() != InvocationStatus::Succeeded) {
+        printDiagnostics(managed);
+    }
+    assert(managed.status() == InvocationStatus::Succeeded);
+    assert(scalar(managed.output(0)) == 15.0);
+    assert(std::filesystem::is_regular_file(tree.root / "sub" / "copy.txt"));
+    assert(!std::filesystem::exists(tree.root / "managed"));
+
+    const auto restrictedCopy = tree.root / "restricted-copy";
+    const auto restrictedMove = tree.root / "restricted-move";
+    std::filesystem::create_directories(restrictedCopy);
+    std::filesystem::create_directories(restrictedMove);
+    {
+        std::ofstream(tree.root / "force-copy.txt") << "copy-force";
+        std::ofstream(tree.root / "force-move.txt") << "move-force";
+        std::ofstream(restrictedCopy / "force-copy.txt") << "old-copy";
+        std::ofstream(restrictedMove / "force-move.txt") << "old-move";
+    }
+    std::error_code permissionError;
+    std::filesystem::permissions(
+        restrictedCopy, std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::remove, permissionError);
+    assert(!permissionError);
+    std::filesystem::permissions(
+        restrictedMove, std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::remove, permissionError);
+    assert(!permissionError);
+    std::filesystem::permissions(
+        restrictedCopy / "force-copy.txt",
+        std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::remove, permissionError);
+    assert(!permissionError);
+    std::filesystem::permissions(
+        restrictedMove / "force-move.txt",
+        std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::remove, permissionError);
+    assert(!permissionError);
+    const auto copyPermissions =
+        std::filesystem::status(restrictedCopy).permissions();
+    const auto movePermissions =
+        std::filesystem::status(restrictedMove).permissions();
+    const auto copyTargetPermissions = std::filesystem::status(
+        restrictedCopy / "force-copy.txt").permissions();
+    const auto moveTargetPermissions = std::filesystem::status(
+        restrictedMove / "force-move.txt").permissions();
+
+    auto forceCopy = module.execute(request("force_copy", 1), context);
+    if (forceCopy.status() != InvocationStatus::Succeeded) {
+        printDiagnostics(forceCopy);
+    }
+    assert(forceCopy.status() == InvocationStatus::Succeeded);
+    assert(logicalScalar(forceCopy.output(0)));
+    assert(std::filesystem::status(restrictedCopy).permissions() ==
+           copyPermissions);
+    assert(std::filesystem::status(
+               restrictedCopy / "force-copy.txt").permissions() ==
+           copyTargetPermissions);
+
+    auto forceMove = module.execute(request("force_move", 1), context);
+    if (forceMove.status() != InvocationStatus::Succeeded) {
+        printDiagnostics(forceMove);
+    }
+    assert(forceMove.status() == InvocationStatus::Succeeded);
+    assert(logicalScalar(forceMove.output(0)));
+    assert(std::filesystem::status(restrictedMove).permissions() ==
+           movePermissions);
+    assert(std::filesystem::status(
+               restrictedMove / "force-move.txt").permissions() ==
+           moveTargetPermissions);
+    assert(!std::filesystem::exists(tree.root / "force-move.txt"));
+    std::filesystem::permissions(
+        restrictedCopy, std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::add, permissionError);
+    assert(!permissionError);
+    std::filesystem::permissions(
+        restrictedMove, std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::add, permissionError);
+    assert(!permissionError);
+    std::filesystem::permissions(
+        restrictedCopy / "force-copy.txt",
+        std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::add, permissionError);
+    assert(!permissionError);
+    std::filesystem::permissions(
+        restrictedMove / "force-move.txt",
+        std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::add, permissionError);
+    assert(!permissionError);
+
+    for (const auto* entry : {"escape_mkdir", "escape_copy",
+                              "escape_move", "remove_root",
+                              "copy_into_self", "move_into_self"}) {
+        auto operation = module.execute(request(entry, 2), context);
+        assert(operation.status() == InvocationStatus::Succeeded);
+        assert(!logicalScalar(operation.output(0)));
+        assert(!asciiText(operation.output(1)).empty());
+    }
+    assert(!std::filesystem::exists(tree.outside / "new-directory"));
+    assert(!std::filesystem::exists(tree.outside / "copied.bin"));
+    assert(!std::filesystem::exists(tree.outside / "moved.bin"));
+    assert(!std::filesystem::exists(tree.root / "sub" / "nested-copy"));
+    assert(!std::filesystem::exists(tree.root / "sub" / "nested-move"));
+    assert(std::filesystem::is_directory(tree.root));
+    assert(std::filesystem::is_regular_file(tree.root / "tmp" /
+                                            "context.bin"));
+
     auto escaped = module.execute(request("escape_root", 2), context);
     assert(escaped.status() == InvocationStatus::Succeeded);
     assert(scalar(escaped.output(0)) == -1.0);
@@ -277,6 +478,31 @@ int main() {
         assert(linkEscape.status() == InvocationStatus::Succeeded);
         assert(scalar(linkEscape.output(0)) == -1.0);
         assert(!std::filesystem::exists(tree.outside / "escaped.bin"));
+    }
+
+    linkError.clear();
+    std::filesystem::create_directory_symlink(
+        tree.root / "sub", tree.root / "internal-link", linkError);
+    if (!linkError) {
+        for (const auto* entry : {"link_mkdir", "link_copy", "link_move",
+                                  "link_remove"}) {
+            auto operation = module.execute(request(entry, 2), context);
+            assert(operation.status() == InvocationStatus::Succeeded);
+            assert(!logicalScalar(operation.output(0)));
+            assert(asciiText(operation.output(1)).find("symbolic links") !=
+                   std::string::npos);
+        }
+        auto linkOpen = module.execute(request("link_open", 2), context);
+        assert(linkOpen.status() == InvocationStatus::Succeeded);
+        assert(scalar(linkOpen.output(0)) == -1.0);
+        assert(asciiText(linkOpen.output(1)).find("symbolic links") !=
+               std::string::npos);
+        assert(std::filesystem::is_directory(tree.root / "sub"));
+        assert(std::filesystem::is_symlink(tree.root / "internal-link"));
+        assert(!std::filesystem::exists(tree.root / "sub" / "new-directory"));
+        assert(!std::filesystem::exists(tree.root / "sub" / "new.bin"));
+        assert(!std::filesystem::exists(tree.root / "sub" / "copied.bin"));
+        assert(!std::filesystem::exists(tree.root / "moved-link"));
     }
 
     Session retainedSession;

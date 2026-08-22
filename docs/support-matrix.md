@@ -81,7 +81,7 @@ v1.2 candidate contract.
 
 ## v1.3 Development Additions
 
-The current tree has six end-to-end system, standard-library, and embedding
+The current tree has seven end-to-end system, standard-library, and embedding
 batches:
 
 - one session-owned capability context and injectable host adapter for current
@@ -99,6 +99,10 @@ batches:
   arrays, single output, state save/restore, and guarded VM fallback;
 - native-aware `fullfile`, `filesep`, and `pathsep`, including string-array
   shape and missing-string-as-empty component behavior;
+- `isfile`, `isfolder`, and `fileparts` with shaped string/character-cell
+  inputs; bounded UTF-8 `fileread`; nonmaterializing `tempname`; and
+  status-returning `mkdir`, `rmdir`, `copyfile`, and `movefile`, including
+  recursive removal, basename wildcards, and rooted source/destination checks;
 - session-scoped `fopen`, `fclose`, `fseek`, `ftell`, `frewind`, `feof`,
   `ferror`, `fgetl`, `fgets`, file-targeted `fprintf`, repeated `fscanf`, and
   common numeric `fread`/`fwrite`; this includes update-stream barriers,
@@ -139,13 +143,16 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/random_runtime_demo.m`, `samples/file_io_demo.m`, and
 `samples/standard_library_demo.m`, plus
 `samples/utility_library_demo.m`, `samples/dynamic_workspace_demo.m`, and
-`samples/system_command_demo.m`. These are
+`samples/system_command_demo.m` and
+`samples/filesystem_management_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
 The 2026-08-22 MATLAB R2024b differential rerun records 202 matches and 21 gaps
 across its 223 accepted cases; all syntax, array, ecosystem, exception, system,
 text, and workspace cases in that finite catalog match.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
-encodings, remote files, MAT files, dynamic declarations and parent-module
+encodings, remote files, MAT files, file deletion/recycle/attribute helpers,
+wildcards in parent path components, symbolic-link policy selection (rooted
+write paths reject links rather than selecting preserve/resolve), dynamic declarations and parent-module
 function lookup from evaluated text, extended GCD coefficients, arbitrary-rank
 mesh generation, many broad standard-library families, and full MATLAB
 regexp/Unicode behavior remain open. The product and public SDK still
@@ -196,7 +203,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; frozen v1.2 ABI generation 2 revision 0 plus live additive revision 1, typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.5 using registry/descriptors/call/results/source-evaluation and stream-I/O context |
+| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.6 using registry/descriptors/call/results/source-evaluation, stream-I/O, and filesystem-management context |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once

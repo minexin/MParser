@@ -151,7 +151,7 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first six v1.3 implementation batches are present in the development tree. A
+The first seven v1.3 implementation batches are present in the development tree. A
 session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
@@ -240,11 +240,27 @@ C/C++ consumers, exact 117-symbol validation, allocation-failure translation,
 and a runnable C++ sample cover the public boundary without changing the
 frozen v1.2 revision-0 snapshots.
 
+The seventh batch closes the general local-filesystem management slice through
+the same capability boundary. `isfile` and `isfolder` preserve string-array or
+character-cell shape and map missing strings to false; `fileparts` preserves
+character/string/cell container type without touching the host; `fileread`
+performs bounded UTF-8 reads from the current directory or search path; and
+`tempname` creates a nonmaterialized session-safe candidate. `mkdir`, `rmdir`,
+`copyfile`, and `movefile` share zero-output diagnostic behavior and up to
+three MATLAB-style status outputs, including recursive removal, source
+wildcards, directory-copy contents, and directory-move nesting. Rooted tests
+cover normal operations, independent source/destination escape rejection,
+root/current-directory protection, and retained context state. The runnable
+`samples/filesystem_management_demo.m` agrees through HIR, bytecode, and
+production entry points. Builtin source contract 1.6 records 240 descriptors
+and 242 registered names while preserving every earlier snapshot.
+
 The fresh MATLAB R2024b external differential rerun records 202 matches and 21
 gaps across all 223 accepted cases; `eval`, `evalc`, and `evalin`/`assignin`
 are measured closures and the existing `!command` case remains green. This
-batch does not close v1.3. Broader workspace and filesystem operations,
-dynamic parent-module function lookup/declarations, and remaining
+batch does not close v1.3. Broader workspace operations, file deletion and
+metadata conveniences, dynamic parent-module function lookup/declarations,
+and remaining
 standard-library families remain milestone work. Scansets,
 bit/character/complex binary-I/O corners,
 selectable non-UTF-8 encodings, remote URLs, MAT-file persistence, full

@@ -10,6 +10,7 @@
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_system.h"
 #include "mparser/runtime_text.h"
+#include "mparser/runtime_warning.h"
 
 #include <algorithm>
 #include <array>
@@ -701,6 +702,578 @@ BuiltinResult fullfileBuiltin(const BuiltinCall& call) {
     }
     return BuiltinResult::success({makeRuntimeStringArray(
         std::move(outputDimensions), std::move(output))});
+}
+
+enum class PathTextContainer {
+    Character,
+    String,
+    Cell,
+};
+
+struct PathTextInput {
+    PathTextContainer container = PathTextContainer::Character;
+    std::vector<size_t> dimensions{1, 1};
+    std::vector<std::string> elements;
+    std::vector<bool> missing;
+};
+
+RuntimeSystemResult<PathTextInput> pathTextInput(
+    const RuntimeValue& value) {
+    PathTextInput result;
+    if (isRuntimeCharacterVector(value)) {
+        result.elements.push_back(
+            runtimeTextScalarUtf8(value).value_or(std::string{}));
+        result.missing.push_back(false);
+        return RuntimeSystemResult<PathTextInput>::success(
+            std::move(result));
+    }
+    if (isRuntimeStringArray(value)) {
+        result.container = PathTextContainer::String;
+        result.dimensions = runtimeDimensions(value);
+        const size_t count = runtimeShapeElementCount(value);
+        result.elements.reserve(count);
+        result.missing.reserve(count);
+        for (size_t index = 0; index < count; ++index) {
+            const RuntimeStringElement* element =
+                runtimeStringElement(value, index);
+            if (!element) {
+                return RuntimeSystemResult<PathTextInput>::failure(
+                    "string path input is malformed");
+            }
+            result.elements.push_back(
+                element->missing
+                    ? std::string{}
+                    : runtimeUtf16ToUtf8(element->value));
+            result.missing.push_back(element->missing);
+        }
+        return RuntimeSystemResult<PathTextInput>::success(
+            std::move(result));
+    }
+    if (value.kind == RuntimeValueKind::Cell) {
+        result.container = PathTextContainer::Cell;
+        result.dimensions = runtimeDimensions(value);
+        const size_t count = runtimeShapeElementCount(value);
+        if (value.cells.size() != count) {
+            return RuntimeSystemResult<PathTextInput>::failure(
+                "cell path input is malformed");
+        }
+        result.elements.reserve(count);
+        result.missing.assign(count, false);
+        for (const RuntimeValue& element : value.cells) {
+            if (!isRuntimeCharacterVector(element)) {
+                return RuntimeSystemResult<PathTextInput>::failure(
+                    "cell path input must contain character vectors");
+            }
+            result.elements.push_back(
+                runtimeTextScalarUtf8(element).value_or(std::string{}));
+        }
+        return RuntimeSystemResult<PathTextInput>::success(
+            std::move(result));
+    }
+    return RuntimeSystemResult<PathTextInput>::failure(
+        "path input must be a character vector, string array, or cell "
+        "array of character vectors");
+}
+
+RuntimeValue pathTextOutput(const PathTextInput& input,
+                            std::vector<std::string> elements) {
+    if (input.container == PathTextContainer::Character) {
+        return makeRuntimeCharacterVectorUtf8(
+            elements.empty() ? std::string_view{} : elements.front());
+    }
+    if (input.container == PathTextContainer::String) {
+        std::vector<RuntimeStringElement> strings;
+        strings.reserve(elements.size());
+        for (const auto& element : elements) {
+            strings.push_back(
+                {runtimeUtf8ToUtf16(element), false});
+        }
+        return makeRuntimeStringArray(input.dimensions,
+                                      std::move(strings));
+    }
+    std::vector<RuntimeValue> cells;
+    cells.reserve(elements.size());
+    for (const auto& element : elements) {
+        cells.push_back(makeRuntimeCharacterVectorUtf8(element));
+    }
+    return makeRuntimeCellValue(input.dimensions, std::move(cells));
+}
+
+RuntimeValue logicalPathResults(const PathTextInput& input,
+                                std::vector<double> values) {
+    const auto dimensions =
+        input.container == PathTextContainer::Character
+            ? std::vector<size_t>{1, 1}
+            : input.dimensions;
+    auto result = runtimeNumericValueFromLogicalOrder(
+        dimensions, std::move(values), RuntimeNumericClass::Logical);
+    return result ? std::move(*result)
+                  : makeRuntimeMatrixValue(0, 0, {},
+                                           RuntimeNumericClass::Logical);
+}
+
+BuiltinResult pathExistenceBuiltin(std::string_view name,
+                                   const BuiltinCall& call) {
+    auto input = pathTextInput(call.arguments.front());
+    if (!input.succeeded) {
+        return failure(call, std::move(input.error),
+                       "MParser:InvalidPathInput");
+    }
+    std::vector<double> values;
+    values.reserve(input.value.elements.size());
+    RuntimeSystemContext* context = systemContext(call);
+    for (size_t index = 0; index < input.value.elements.size(); ++index) {
+        if (input.value.missing[index]) {
+            values.push_back(0.0);
+            continue;
+        }
+        const auto& text = input.value.elements[index];
+        if (text.find('\0') != std::string::npos) {
+            return failure(call, "path input contains a null byte",
+                           "MParser:InvalidPathInput");
+        }
+        const auto result =
+            name == "isfile"
+                ? context->regularFileExists(pathFromUtf8(text))
+                : context->directoryExists(pathFromUtf8(text));
+        if (!result.succeeded) {
+            return failure(call, std::move(result.error),
+                           "MParser:SystemOperationFailed");
+        }
+        values.push_back(result.value ? 1.0 : 0.0);
+    }
+    return selectedOutputs(call, {
+        logicalPathResults(input.value, std::move(values))});
+}
+
+struct FileParts {
+    std::string path;
+    std::string name;
+    std::string extension;
+};
+
+FileParts splitFileParts(std::string_view value) {
+    size_t separator = std::string_view::npos;
+    for (size_t index = 0; index < value.size(); ++index) {
+        if (isFileSeparator(value[index])) {
+            separator = index;
+        }
+    }
+
+    FileParts result;
+    std::string_view leaf = value;
+    if (separator != std::string_view::npos) {
+        leaf = value.substr(separator + 1);
+        size_t pathLength = separator;
+        if (separator == 0 ||
+            (separator == 1 && isFileSeparator(value[0]))) {
+            pathLength = separator + 1;
+        }
+#ifdef _WIN32
+        if (separator == 2 && value.size() >= 3 && value[1] == ':') {
+            pathLength = 3;
+        }
+#endif
+        result.path.assign(value.substr(0, pathLength));
+    }
+
+    const size_t dot = leaf.rfind('.');
+    if (dot == std::string_view::npos) {
+        result.name.assign(leaf);
+    } else {
+        result.name.assign(leaf.substr(0, dot));
+        result.extension.assign(leaf.substr(dot));
+    }
+    return result;
+}
+
+BuiltinResult filepartsBuiltin(const BuiltinCall& call) {
+    auto input = pathTextInput(call.arguments.front());
+    if (!input.succeeded) {
+        return failure(call, std::move(input.error),
+                       "MParser:InvalidFileName");
+    }
+    std::vector<std::string> paths;
+    std::vector<std::string> names;
+    std::vector<std::string> extensions;
+    paths.reserve(input.value.elements.size());
+    names.reserve(input.value.elements.size());
+    extensions.reserve(input.value.elements.size());
+    for (size_t index = 0; index < input.value.elements.size(); ++index) {
+        if (input.value.missing[index]) {
+            return failure(call,
+                           "fileparts does not accept missing strings",
+                           "MParser:MissingFileName");
+        }
+        if (input.value.elements[index].find('\0') != std::string::npos) {
+            return failure(call, "file name contains a null byte",
+                           "MParser:InvalidFileName");
+        }
+        auto parts = splitFileParts(input.value.elements[index]);
+        paths.push_back(std::move(parts.path));
+        names.push_back(std::move(parts.name));
+        extensions.push_back(std::move(parts.extension));
+    }
+    std::vector<RuntimeValue> outputs;
+    outputs.push_back(pathTextOutput(input.value, std::move(paths)));
+    outputs.push_back(pathTextOutput(input.value, std::move(names)));
+    outputs.push_back(pathTextOutput(input.value, std::move(extensions)));
+    outputs.resize(call.requestedOutputCount);
+    return BuiltinResult::success(std::move(outputs));
+}
+
+RuntimeSystemResult<std::filesystem::path> readableFilePath(
+    RuntimeSystemContext& context, const std::filesystem::path& requested) {
+    auto exists = context.regularFileExists(requested);
+    if (!exists.succeeded) {
+        return RuntimeSystemResult<std::filesystem::path>::failure(
+            std::move(exists.error));
+    }
+    if (exists.value) {
+        return RuntimeSystemResult<std::filesystem::path>::success(
+            requested);
+    }
+    if (requested.is_absolute() || requested.has_parent_path() ||
+        !context.hasCapability(RuntimeSystemCapability::SearchPaths)) {
+        return RuntimeSystemResult<std::filesystem::path>::failure(
+            "file does not exist: " + pathToNativeUtf8(requested));
+    }
+    const auto paths = context.searchPaths();
+    if (!paths.succeeded) {
+        return RuntimeSystemResult<std::filesystem::path>::failure(
+            std::move(paths.error));
+    }
+    for (const auto& path : paths.value) {
+        const auto candidate = path / requested;
+        exists = context.regularFileExists(candidate);
+        if (!exists.succeeded) {
+            return RuntimeSystemResult<std::filesystem::path>::failure(
+                std::move(exists.error));
+        }
+        if (exists.value) {
+            return RuntimeSystemResult<std::filesystem::path>::success(
+                candidate);
+        }
+    }
+    return RuntimeSystemResult<std::filesystem::path>::failure(
+        "file does not exist: " + pathToNativeUtf8(requested));
+}
+
+BuiltinResult filereadBuiltin(const BuiltinCall& call) {
+    const auto fileName = textArgument(call.arguments.front());
+    if (!fileName || fileName->find('\0') != std::string::npos) {
+        return failure(call,
+                       "fileread file name must be a text scalar without "
+                       "null bytes",
+                       "MParser:InvalidFileName");
+    }
+    RuntimeSystemContext* context = systemContext(call);
+    auto path = readableFilePath(*context, pathFromUtf8(*fileName));
+    if (!path.succeeded) {
+        const bool missing = path.error.starts_with("file does not exist");
+        return failure(call, std::move(path.error),
+                       missing ? "MParser:FileNotFound"
+                               : "MParser:SystemOperationFailed");
+    }
+    RuntimeFileOpenOptions options;
+    options.readable = true;
+    options.binary = false;
+    options.permission = "rt";
+    options.machineFormat = std::string(runtimeFileByteOrderName(
+        runtimeNativeFileByteOrder()));
+    options.encoding = "UTF-8";
+    auto opened = context->openFile(path.value, options);
+    if (!opened.succeeded) {
+        return failure(call, std::move(opened.error),
+                       "MParser:FileReadFailed");
+    }
+    auto contents = context->readFileRemaining(opened.value);
+    const auto closed = context->closeFile(opened.value);
+    if (!contents.succeeded) {
+        return failure(call, std::move(contents.error),
+                       "MParser:FileReadFailed");
+    }
+    if (!closed.succeeded) {
+        return failure(call, std::move(closed.error),
+                       "MParser:FileReadFailed");
+    }
+    if (contents.value.starts_with("\xef\xbb\xbf")) {
+        contents.value.erase(0, 3);
+    }
+    return selectedOutputs(call, {
+        makeRuntimeCharacterVectorUtf8(contents.value)});
+}
+
+BuiltinResult tempnameBuiltin(const BuiltinCall& call) {
+    std::optional<std::filesystem::path> directory;
+    if (!call.arguments.empty()) {
+        const auto text = textArgument(call.arguments.front());
+        if (!text || text->find('\0') != std::string::npos) {
+            return failure(call,
+                           "tempname directory must be a text scalar without "
+                           "null bytes",
+                           "MParser:InvalidDirectoryName");
+        }
+        directory = pathFromUtf8(*text);
+    }
+    auto path = systemContext(call)->temporaryName(directory);
+    return path.succeeded
+               ? selectedOutputs(call, {makeRuntimeCharacterVectorUtf8(
+                     pathToNativeUtf8(path.value))})
+               : failure(call, std::move(path.error),
+                         "MParser:SystemOperationFailed");
+}
+
+BuiltinResult filesystemStatusResult(
+    const BuiltinCall& call, bool succeeded, std::string message,
+    std::string identifier, bool warning = false) {
+    if (call.requestedOutputCount == 0) {
+        if (!succeeded) {
+            return failure(call, std::move(message),
+                           std::move(identifier));
+        }
+        if (warning) {
+            if (call.context && call.context->warningContext) {
+                auto result = call.context->warningContext->warning(
+                    {makeRuntimeCharacterVectorUtf8(identifier),
+                     makeRuntimeCharacterVectorUtf8(message)},
+                    0);
+                if (!result.succeeded) {
+                    return failure(call, std::move(result.error),
+                                   "MParser:InvalidWarning");
+                }
+                if (!result.emitted) {
+                    return BuiltinResult::success();
+                }
+                return BuiltinResult::success(
+                    {}, {Diagnostic{call.span,
+                                    std::move(result.emitted->message),
+                                    std::move(result.emitted->identifier),
+                                    DiagnosticSeverity::Warning}});
+            }
+            return BuiltinResult::success(
+                {}, {Diagnostic{call.span, std::move(message),
+                                std::move(identifier),
+                                DiagnosticSeverity::Warning}});
+        }
+        return BuiltinResult::success();
+    }
+    std::vector<RuntimeValue> outputs = {
+        makeRuntimeLogicalValue(succeeded),
+        makeRuntimeCharacterVectorUtf8(message),
+        makeRuntimeCharacterVectorUtf8(identifier),
+    };
+    outputs.resize(call.requestedOutputCount);
+    return BuiltinResult::success(std::move(outputs));
+}
+
+BuiltinResult mkdirBuiltin(const BuiltinCall& call) {
+    const auto first = textArgument(call.arguments.front());
+    if (!first || first->empty() || first->find('\0') != std::string::npos) {
+        return failure(call, "mkdir folder name must be a nonempty text scalar",
+                       "MParser:InvalidDirectoryName");
+    }
+    std::filesystem::path path = pathFromUtf8(*first);
+    if (call.arguments.size() == 2) {
+        const auto second = textArgument(call.arguments[1]);
+        if (!second || second->empty() ||
+            second->find('\0') != std::string::npos) {
+            return failure(call,
+                           "mkdir child name must be a nonempty text scalar",
+                           "MParser:InvalidDirectoryName");
+        }
+        const auto child = pathFromUtf8(*second);
+        if (child.is_absolute()) {
+            return failure(call,
+                           "mkdir child name must be relative to its parent",
+                           "MParser:InvalidDirectoryName");
+        }
+        path /= child;
+    }
+    auto created = systemContext(call)->createDirectories(path);
+    if (!created.succeeded) {
+        return filesystemStatusResult(
+            call, false, std::move(created.error),
+            "MATLAB:MKDIR:OSError");
+    }
+    if (!created.value) {
+        return filesystemStatusResult(
+            call, true, "Directory already exists.",
+            "MATLAB:MKDIR:DirectoryExists", true);
+    }
+    return filesystemStatusResult(call, true, {}, {});
+}
+
+BuiltinResult rmdirBuiltin(const BuiltinCall& call) {
+    const auto folder = textArgument(call.arguments.front());
+    if (!folder || folder->empty() ||
+        folder->find('\0') != std::string::npos) {
+        return failure(call, "rmdir folder name must be a nonempty text scalar",
+                       "MParser:InvalidDirectoryName");
+    }
+    bool recursive = false;
+    if (call.arguments.size() == 2) {
+        const auto option = textArgument(call.arguments[1]);
+        if (!option || *option != "s") {
+            return failure(call, "rmdir option must be 's'",
+                           "MParser:InvalidDirectoryOption");
+        }
+        recursive = true;
+    }
+    auto removed = systemContext(call)->removeDirectory(
+        pathFromUtf8(*folder), recursive);
+    if (!removed.succeeded) {
+        const bool missing =
+            removed.error.find("not a directory") != std::string::npos;
+        return filesystemStatusResult(
+            call, false, std::move(removed.error),
+            missing ? "MATLAB:RMDIR:NotADirectory"
+                    : "MATLAB:RMDIR:DirectoryNotRemoved");
+    }
+    return filesystemStatusResult(call, true, {}, {});
+}
+
+bool pathHasWildcard(const std::filesystem::path& path) {
+    const auto text = pathToUtf8(path);
+    return text.find('*') != std::string::npos ||
+           text.find('?') != std::string::npos;
+}
+
+RuntimeSystemResult<std::vector<std::filesystem::path>> expandPathPattern(
+    RuntimeSystemContext& context, const std::filesystem::path& source) {
+    if (!pathHasWildcard(source)) {
+        return RuntimeSystemResult<
+            std::vector<std::filesystem::path>>::success({source});
+    }
+    const auto parent = source.parent_path();
+    if (pathHasWildcard(parent)) {
+        return RuntimeSystemResult<
+            std::vector<std::filesystem::path>>::failure(
+                "wildcards in parent directory components are unsupported");
+    }
+    const auto directory = parent.empty()
+                               ? std::filesystem::path(".")
+                               : parent;
+    auto listing = context.listDirectory(directory);
+    if (!listing.succeeded) {
+        return RuntimeSystemResult<
+            std::vector<std::filesystem::path>>::failure(
+                std::move(listing.error));
+    }
+    const std::string pattern = pathToUtf8(source.filename());
+    std::vector<std::filesystem::path> paths;
+    for (const auto& entry : listing.value) {
+        if (wildcardMatch(pattern, entry.name)) {
+            paths.push_back(parent.empty()
+                                ? pathFromUtf8(entry.name)
+                                : parent / pathFromUtf8(entry.name));
+        }
+    }
+    if (paths.empty()) {
+        return RuntimeSystemResult<
+            std::vector<std::filesystem::path>>::failure(
+                "no files match source pattern: " +
+                pathToNativeUtf8(source));
+    }
+    return RuntimeSystemResult<
+        std::vector<std::filesystem::path>>::success(std::move(paths));
+}
+
+BuiltinResult copyMoveBuiltin(std::string_view name,
+                              const BuiltinCall& call) {
+    const auto sourceText = textArgument(call.arguments.front());
+    if (!sourceText || sourceText->empty() ||
+        sourceText->find('\0') != std::string::npos) {
+        return failure(call,
+                       std::string(name) +
+                           " source must be a nonempty text scalar",
+                       "MParser:InvalidFileName");
+    }
+    std::string destinationText = ".";
+    if (call.arguments.size() >= 2) {
+        const auto destination = textArgument(call.arguments[1]);
+        if (!destination || destination->empty() ||
+            destination->find('\0') != std::string::npos) {
+            return failure(call,
+                           std::string(name) +
+                               " destination must be a nonempty text scalar",
+                           "MParser:InvalidFileName");
+        }
+        destinationText = *destination;
+    }
+    bool force = false;
+    if (call.arguments.size() == 3) {
+        const auto option = textArgument(call.arguments[2]);
+        if (!option || *option != "f") {
+            return failure(call,
+                           std::string(name) + " option must be 'f'",
+                           "MParser:InvalidFileOption");
+        }
+        force = true;
+    }
+
+    RuntimeSystemContext* context = systemContext(call);
+    const auto source = pathFromUtf8(*sourceText);
+    const auto destination = pathFromUtf8(destinationText);
+    if (pathHasWildcard(destination)) {
+        return failure(call,
+                       std::string(name) +
+                           " destination cannot contain wildcards",
+                       "MParser:InvalidFileName");
+    }
+    auto sources = expandPathPattern(*context, source);
+    if (!sources.succeeded) {
+        return filesystemStatusResult(
+            call, false, std::move(sources.error),
+            name == "copyfile" ? "MATLAB:COPYFILE:FileNotFound"
+                               : "MATLAB:MOVEFILE:FileNotFound");
+    }
+
+    const bool wildcard = pathHasWildcard(source);
+    if (wildcard) {
+        auto destinationDirectory = context->directoryExists(destination);
+        if (!destinationDirectory.succeeded) {
+            return filesystemStatusResult(
+                call, false, std::move(destinationDirectory.error),
+                "MParser:SystemOperationFailed");
+        }
+        if (!destinationDirectory.value) {
+            auto created = context->createDirectories(destination);
+            if (!created.succeeded) {
+                return filesystemStatusResult(
+                    call, false, std::move(created.error),
+                    "MParser:SystemOperationFailed");
+            }
+        }
+    }
+
+    for (const auto& expandedSource : sources.value) {
+        RuntimeSystemStatus status;
+        if (name == "copyfile") {
+            const auto sourceDirectory =
+                context->directoryExists(expandedSource);
+            if (!sourceDirectory.succeeded) {
+                return filesystemStatusResult(
+                    call, false, std::move(sourceDirectory.error),
+                    "MParser:SystemOperationFailed");
+            }
+            const auto target = wildcard && sourceDirectory.value
+                                    ? destination /
+                                          expandedSource.filename()
+                                    : destination;
+            status = context->copyPath(expandedSource, target, force);
+        } else {
+            status = context->movePath(
+                expandedSource, destination, force);
+        }
+        if (!status.succeeded) {
+            return filesystemStatusResult(
+                call, false, std::move(status.error),
+                name == "copyfile" ? "MATLAB:COPYFILE:OSError"
+                                   : "MATLAB:MOVEFILE:OSError");
+        }
+    }
+    return filesystemStatusResult(call, true, {}, {});
 }
 
 std::optional<RuntimeFileOpenOptions> fileOpenOptions(
@@ -2692,15 +3265,16 @@ BuiltinResult systemBuiltin(const BuiltinCall& call) {
 } // namespace
 
 bool isRuntimeSystemBuiltin(std::string_view name) {
-    static constexpr std::array<std::string_view, 45> names = {
+    static constexpr std::array<std::string_view, 54> names = {
         "addpath", "assignin", "cd", "clear", "clock", "computer",
-        "date", "dir", "eval", "evalc", "evalin", "exist", "fclose",
-        "feof", "ferror", "fgetl", "fgets", "filesep", "fopen",
-        "format", "fprintf", "fread", "frewind", "fscanf", "fseek",
-        "ftell", "fullfile", "fwrite", "getenv", "path", "pathsep",
-        "pause", "pwd", "rand", "randi", "randn", "randperm",
-        "rmpath", "rng", "system", "tempdir", "version", "which",
-        "who", "whos"};
+        "copyfile", "date", "dir", "eval", "evalc", "evalin", "exist",
+        "fclose", "feof", "ferror", "fgetl", "fgets", "fileparts",
+        "fileread", "filesep", "fopen", "format", "fprintf", "fread",
+        "frewind", "fscanf", "fseek", "ftell", "fullfile", "fwrite",
+        "getenv", "isfile", "isfolder", "mkdir", "movefile", "path",
+        "pathsep", "pause", "pwd", "rand", "randi", "randn",
+        "randperm", "rmdir", "rmpath", "rng", "system", "tempdir",
+        "tempname", "version", "which", "who", "whos"};
     return std::find(names.begin(), names.end(), name) != names.end();
 }
 
@@ -2723,6 +3297,27 @@ BuiltinResult invokeRuntimeSystemBuiltin(
     }
     if (name == "fullfile") {
         return fullfileBuiltin(call);
+    }
+    if (name == "fileparts") {
+        return filepartsBuiltin(call);
+    }
+    if (name == "isfile" || name == "isfolder") {
+        return pathExistenceBuiltin(name, call);
+    }
+    if (name == "fileread") {
+        return filereadBuiltin(call);
+    }
+    if (name == "tempname") {
+        return tempnameBuiltin(call);
+    }
+    if (name == "mkdir") {
+        return mkdirBuiltin(call);
+    }
+    if (name == "rmdir") {
+        return rmdirBuiltin(call);
+    }
+    if (name == "copyfile" || name == "movefile") {
+        return copyMoveBuiltin(name, call);
     }
     if (name == "filesep" || name == "pathsep") {
         return separatorBuiltin(name, call);

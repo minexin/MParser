@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
@@ -37,6 +38,11 @@ namespace mparser {
 namespace {
 
 constexpr size_t kMaximumProcessOutputBytes = 16U * 1024U * 1024U;
+
+bool pathIsWithinRoot(const std::filesystem::path& root,
+                      const std::filesystem::path& candidate);
+RuntimeSystemResult<std::filesystem::path>
+canonicalizeForRootBoundary(std::filesystem::path candidate);
 
 class NativeRuntimeHostFile final : public RuntimeHostFile {
 public:
@@ -360,6 +366,132 @@ std::string errorMessage(std::string_view operation,
     return std::string(operation) + " failed: " + error.message();
 }
 
+bool isMissingPathError(const std::error_code& error) {
+    return error == std::errc::no_such_file_or_directory ||
+           error == std::errc::not_a_directory;
+}
+
+class ScopedWritablePaths {
+public:
+    ~ScopedWritablePaths() {
+        (void)restore();
+    }
+
+    RuntimeSystemStatus add(const std::filesystem::path& path) {
+        if (path.empty() ||
+            std::any_of(entries_.begin(), entries_.end(),
+                        [&path](const Entry& entry) {
+                            return entry.path == path;
+                        })) {
+            return RuntimeSystemStatus::success();
+        }
+
+        std::error_code error;
+        const auto status = std::filesystem::status(path, error);
+        if (isMissingPathError(error) ||
+            status.type() == std::filesystem::file_type::not_found) {
+            return RuntimeSystemStatus::success();
+        }
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("destination permission query", error));
+        }
+        entries_.push_back({path, status.permissions()});
+        std::filesystem::permissions(
+            path, std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::add, error);
+        if (error) {
+            entries_.pop_back();
+            return RuntimeSystemStatus::failure(
+                errorMessage("destination write override", error));
+        }
+        return RuntimeSystemStatus::success();
+    }
+
+    RuntimeSystemStatus addTree(const std::filesystem::path& path) {
+        auto added = add(path);
+        if (!added.succeeded) {
+            return added;
+        }
+
+        std::error_code error;
+        const bool directory = std::filesystem::is_directory(path, error);
+        if (isMissingPathError(error)) {
+            return RuntimeSystemStatus::success();
+        }
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("destination directory query", error));
+        }
+        if (!directory) {
+            return RuntimeSystemStatus::success();
+        }
+
+        std::filesystem::recursive_directory_iterator iterator(path, error);
+        const std::filesystem::recursive_directory_iterator end;
+        while (!error && iterator != end) {
+            const auto linkStatus = iterator->symlink_status(error);
+            if (error) {
+                break;
+            }
+            if (!std::filesystem::is_symlink(linkStatus)) {
+                added = add(iterator->path());
+                if (!added.succeeded) {
+                    return added;
+                }
+            }
+            iterator.increment(error);
+        }
+        return error
+                   ? RuntimeSystemStatus::failure(
+                         errorMessage("destination traversal", error))
+                   : RuntimeSystemStatus::success();
+    }
+
+    RuntimeSystemStatus restore() {
+        if (restored_) {
+            return RuntimeSystemStatus::success();
+        }
+        restored_ = true;
+        std::string firstError;
+        for (auto iterator = entries_.rbegin(); iterator != entries_.rend();
+             ++iterator) {
+            std::error_code error;
+            std::filesystem::permissions(
+                iterator->path, iterator->permissions,
+                std::filesystem::perm_options::replace, error);
+            if (error && !isMissingPathError(error) && firstError.empty()) {
+                firstError = errorMessage(
+                    "destination permission restoration", error);
+            }
+        }
+        return firstError.empty()
+                   ? RuntimeSystemStatus::success()
+                   : RuntimeSystemStatus::failure(std::move(firstError));
+    }
+
+private:
+    struct Entry {
+        std::filesystem::path path;
+        std::filesystem::perms permissions;
+    };
+
+    std::vector<Entry> entries_;
+    bool restored_ = false;
+};
+
+RuntimeSystemStatus finishWithPermissionRestore(
+    RuntimeSystemStatus operation, ScopedWritablePaths& writablePaths) {
+    auto restored = writablePaths.restore();
+    if (!restored.succeeded) {
+        if (operation.succeeded) {
+            return restored;
+        }
+        operation.error += "; " + restored.error;
+    }
+    return operation;
+}
+
 RuntimeSystemResult<RuntimeCalendarTime>
 calendarTime(std::chrono::system_clock::time_point value) {
     const auto seconds =
@@ -546,6 +678,303 @@ public:
                    ? RuntimeSystemResult<bool>::failure(
                          errorMessage("directory query", error))
                    : RuntimeSystemResult<bool>::success(result);
+    }
+
+    RuntimeSystemResult<bool>
+    createDirectories(const std::filesystem::path& path) const override {
+        std::error_code error;
+        if (std::filesystem::is_directory(path, error)) {
+            return RuntimeSystemResult<bool>::success(false);
+        }
+        if (error && error != std::errc::no_such_file_or_directory &&
+            error != std::errc::not_a_directory) {
+            return RuntimeSystemResult<bool>::failure(
+                errorMessage("directory query", error));
+        }
+        error.clear();
+        if (std::filesystem::exists(path, error)) {
+            return RuntimeSystemResult<bool>::failure(
+                "path exists and is not a directory: " +
+                pathToNativeUtf8(path));
+        }
+        if (error && error != std::errc::no_such_file_or_directory &&
+            error != std::errc::not_a_directory) {
+            return RuntimeSystemResult<bool>::failure(
+                errorMessage("path query", error));
+        }
+        error.clear();
+        const bool created = std::filesystem::create_directories(path, error);
+        return error
+                   ? RuntimeSystemResult<bool>::failure(
+                         errorMessage("directory creation", error))
+                   : RuntimeSystemResult<bool>::success(created);
+    }
+
+    RuntimeSystemStatus removeDirectory(
+        const std::filesystem::path& path,
+        bool recursive) const override {
+        std::error_code error;
+        if (!std::filesystem::is_directory(path, error)) {
+            if (!error || error == std::errc::no_such_file_or_directory ||
+                error == std::errc::not_a_directory) {
+                return RuntimeSystemStatus::failure(
+                    "path is not a directory: " +
+                    pathToNativeUtf8(path));
+            }
+            return RuntimeSystemStatus::failure(
+                errorMessage("directory query", error));
+        }
+        error.clear();
+        if (recursive) {
+            const auto removed = std::filesystem::remove_all(path, error);
+            if (error) {
+                return RuntimeSystemStatus::failure(
+                    errorMessage("directory removal", error));
+            }
+            return removed == 0
+                       ? RuntimeSystemStatus::failure(
+                             "directory was not removed: " +
+                             pathToNativeUtf8(path))
+                       : RuntimeSystemStatus::success();
+        }
+        const bool removed = std::filesystem::remove(path, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("directory removal", error));
+        }
+        return removed
+                   ? RuntimeSystemStatus::success()
+                   : RuntimeSystemStatus::failure(
+                         "directory was not removed: " +
+                         pathToNativeUtf8(path));
+    }
+
+    RuntimeSystemStatus copyPath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination,
+        bool force) const override {
+        std::error_code error;
+        const bool sourceDirectory =
+            std::filesystem::is_directory(source, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("copy source query", error));
+        }
+        const bool sourceFile = !sourceDirectory &&
+            std::filesystem::is_regular_file(source, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("copy source query", error));
+        }
+        if (!sourceDirectory && !sourceFile) {
+            return RuntimeSystemStatus::failure(
+                "copy source does not exist: " +
+                pathToNativeUtf8(source));
+        }
+
+        const bool destinationDirectory =
+            std::filesystem::is_directory(destination, error);
+        if (error && error != std::errc::no_such_file_or_directory &&
+            error != std::errc::not_a_directory) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("copy destination query", error));
+        }
+        error.clear();
+
+        if (sourceFile) {
+            const auto target = destinationDirectory
+                                    ? destination / source.filename()
+                                    : destination;
+            ScopedWritablePaths writablePaths;
+            if (force) {
+                auto prepared = writablePaths.add(target.parent_path());
+                if (prepared.succeeded) {
+                    prepared = writablePaths.add(target);
+                }
+                if (!prepared.succeeded) {
+                    return finishWithPermissionRestore(
+                        std::move(prepared), writablePaths);
+                }
+            }
+            std::filesystem::copy_file(
+                source, target,
+                std::filesystem::copy_options::overwrite_existing,
+                error);
+            return finishWithPermissionRestore(
+                error ? RuntimeSystemStatus::failure(
+                            errorMessage("file copy", error))
+                      : RuntimeSystemStatus::success(),
+                writablePaths);
+        }
+
+        const auto normalizedSource =
+            canonicalizeForRootBoundary(source);
+        const auto normalizedDestination =
+            canonicalizeForRootBoundary(destination);
+        if (!normalizedSource.succeeded ||
+            !normalizedDestination.succeeded) {
+            return RuntimeSystemStatus::failure(
+                !normalizedSource.succeeded
+                    ? std::move(normalizedSource.error)
+                    : std::move(normalizedDestination.error));
+        }
+        if (pathIsWithinRoot(normalizedSource.value,
+                             normalizedDestination.value)) {
+            return RuntimeSystemStatus::failure(
+                "directory copy destination is inside the source");
+        }
+
+        ScopedWritablePaths writablePaths;
+        if (force) {
+            auto prepared = destinationDirectory
+                                ? writablePaths.addTree(destination)
+                                : writablePaths.add(
+                                      destination.parent_path());
+            if (!prepared.succeeded) {
+                return finishWithPermissionRestore(
+                    std::move(prepared), writablePaths);
+            }
+        }
+
+        if (!destinationDirectory) {
+            if (std::filesystem::exists(destination, error)) {
+                return finishWithPermissionRestore(
+                    RuntimeSystemStatus::failure(
+                        "directory copy destination is not a directory: " +
+                        pathToNativeUtf8(destination)),
+                    writablePaths);
+            }
+            if (error) {
+                return finishWithPermissionRestore(
+                    RuntimeSystemStatus::failure(
+                        errorMessage("copy destination query", error)),
+                    writablePaths);
+            }
+            std::filesystem::create_directories(destination, error);
+            if (error) {
+                return finishWithPermissionRestore(
+                    RuntimeSystemStatus::failure(errorMessage(
+                        "copy destination creation", error)),
+                    writablePaths);
+            }
+        }
+
+        for (std::filesystem::directory_iterator iterator(source, error), end;
+             !error && iterator != end; iterator.increment(error)) {
+            const auto target = destination / iterator->path().filename();
+            std::filesystem::copy(
+                iterator->path(), target,
+                std::filesystem::copy_options::recursive |
+                    std::filesystem::copy_options::overwrite_existing |
+                    std::filesystem::copy_options::copy_symlinks,
+                error);
+        }
+        return finishWithPermissionRestore(
+            error ? RuntimeSystemStatus::failure(
+                        errorMessage("directory copy", error))
+                  : RuntimeSystemStatus::success(),
+            writablePaths);
+    }
+
+    RuntimeSystemStatus movePath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination,
+        bool force) const override {
+        std::error_code error;
+        const bool sourceDirectory =
+            std::filesystem::is_directory(source, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("move source query", error));
+        }
+        const bool sourceFile = !sourceDirectory &&
+            std::filesystem::is_regular_file(source, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("move source query", error));
+        }
+        if (!sourceDirectory && !sourceFile) {
+            return RuntimeSystemStatus::failure(
+                "move source does not exist: " +
+                pathToNativeUtf8(source));
+        }
+
+        const bool destinationDirectory =
+            std::filesystem::is_directory(destination, error);
+        if (error && error != std::errc::no_such_file_or_directory &&
+            error != std::errc::not_a_directory) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("move destination query", error));
+        }
+        error.clear();
+        const auto target = destinationDirectory
+                                ? destination / source.filename()
+                                : destination;
+        if (source == target) {
+            return RuntimeSystemStatus::failure(
+                "move source and destination are the same path");
+        }
+        if (sourceDirectory) {
+            const auto normalizedSource =
+                canonicalizeForRootBoundary(source);
+            const auto normalizedTarget =
+                canonicalizeForRootBoundary(target);
+            if (!normalizedSource.succeeded ||
+                !normalizedTarget.succeeded) {
+                return RuntimeSystemStatus::failure(
+                    !normalizedSource.succeeded
+                        ? std::move(normalizedSource.error)
+                        : std::move(normalizedTarget.error));
+            }
+            if (pathIsWithinRoot(normalizedSource.value,
+                                 normalizedTarget.value)) {
+                return RuntimeSystemStatus::failure(
+                    "directory move destination is inside the source");
+            }
+        }
+
+        const bool targetExists = std::filesystem::exists(target, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("move destination query", error));
+        }
+        if (!targetExists) {
+            ScopedWritablePaths writablePaths;
+            if (force) {
+                auto prepared = writablePaths.add(target.parent_path());
+                if (!prepared.succeeded) {
+                    return finishWithPermissionRestore(
+                        std::move(prepared), writablePaths);
+                }
+            }
+            error.clear();
+            std::filesystem::rename(source, target, error);
+            if (!error) {
+                return finishWithPermissionRestore(
+                    RuntimeSystemStatus::success(), writablePaths);
+            }
+            auto restored = writablePaths.restore();
+            if (!restored.succeeded) {
+                return restored;
+            }
+        }
+
+        auto copied = copyPath(source, target, force);
+        if (!copied.succeeded) {
+            return copied;
+        }
+        if (sourceDirectory) {
+            return removeDirectory(source, true);
+        }
+        error.clear();
+        const bool removed = std::filesystem::remove(source, error);
+        if (error || !removed) {
+            return RuntimeSystemStatus::failure(
+                error ? errorMessage("move source removal", error)
+                      : "move source was not removed: " +
+                            pathToNativeUtf8(source));
+        }
+        return RuntimeSystemStatus::success();
     }
 
     RuntimeSystemResult<std::shared_ptr<RuntimeHostFile>>
@@ -843,10 +1272,76 @@ public:
                          std::move(resolved.error));
     }
 
+    RuntimeSystemResult<bool>
+    createDirectories(const std::filesystem::path& path) const override {
+        auto resolved = resolveMutation(root_, path);
+        return resolved.succeeded
+                   ? native_->createDirectories(resolved.value)
+                   : RuntimeSystemResult<bool>::failure(
+                         std::move(resolved.error));
+    }
+
+    RuntimeSystemStatus removeDirectory(
+        const std::filesystem::path& path,
+        bool recursive) const override {
+        auto resolved = resolveMutation(root_, path);
+        if (!resolved.succeeded) {
+            return RuntimeSystemStatus::failure(
+                std::move(resolved.error));
+        }
+        if (pathComponentsEqual(resolved.value, root_)) {
+            return RuntimeSystemStatus::failure(
+                "the rooted runtime directory cannot be removed");
+        }
+        return native_->removeDirectory(resolved.value, recursive);
+    }
+
+    RuntimeSystemStatus copyPath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination,
+        bool force) const override {
+        auto resolvedSource = resolve(root_, source);
+        if (!resolvedSource.succeeded) {
+            return RuntimeSystemStatus::failure(
+                std::move(resolvedSource.error));
+        }
+        auto resolvedDestination = resolveMutation(root_, destination);
+        if (!resolvedDestination.succeeded) {
+            return RuntimeSystemStatus::failure(
+                std::move(resolvedDestination.error));
+        }
+        return native_->copyPath(
+            resolvedSource.value, resolvedDestination.value, force);
+    }
+
+    RuntimeSystemStatus movePath(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination,
+        bool force) const override {
+        auto resolvedSource = resolveMutation(root_, source);
+        if (!resolvedSource.succeeded) {
+            return RuntimeSystemStatus::failure(
+                std::move(resolvedSource.error));
+        }
+        if (pathComponentsEqual(resolvedSource.value, root_)) {
+            return RuntimeSystemStatus::failure(
+                "the rooted runtime directory cannot be moved");
+        }
+        auto resolvedDestination = resolveMutation(root_, destination);
+        if (!resolvedDestination.succeeded) {
+            return RuntimeSystemStatus::failure(
+                std::move(resolvedDestination.error));
+        }
+        return native_->movePath(
+            resolvedSource.value, resolvedDestination.value, force);
+    }
+
     RuntimeSystemResult<std::shared_ptr<RuntimeHostFile>>
     openFile(const std::filesystem::path& path,
              const RuntimeFileOpenOptions& options) const override {
-        auto resolved = resolve(root_, path);
+        auto resolved = options.writable
+                            ? resolveMutation(root_, path)
+                            : resolve(root_, path);
         return resolved.succeeded
                    ? native_->openFile(resolved.value, options)
                    : RuntimeSystemResult<
@@ -875,6 +1370,30 @@ public:
     }
 
 private:
+    RuntimeSystemResult<std::filesystem::path>
+    resolveMutation(const std::filesystem::path& base,
+                    const std::filesystem::path& candidate) const {
+        std::filesystem::path lexical = candidate;
+        if (lexical.is_relative()) {
+            lexical = base / lexical;
+        }
+        lexical = lexical.lexically_normal();
+        if (lexical.filename().empty() &&
+            lexical.parent_path() != lexical) {
+            lexical = lexical.parent_path();
+        }
+        auto resolved = resolve(base, candidate);
+        if (!resolved.succeeded) {
+            return resolved;
+        }
+        if (!pathComponentsEqual(lexical, resolved.value)) {
+            return RuntimeSystemResult<std::filesystem::path>::failure(
+                "rooted filesystem mutation through symbolic links or "
+                "path aliases is unsupported");
+        }
+        return resolved;
+    }
+
     RuntimeSystemResult<std::filesystem::path>
     resolve(const std::filesystem::path& base,
             const std::filesystem::path& candidate) const {
@@ -1200,6 +1719,158 @@ RuntimeSystemResult<bool> RuntimeSystemContext::directoryExists(
     }
     return hostAdapter_->directoryExists(
         path.is_absolute() ? path : base / path);
+}
+
+RuntimeSystemResult<bool> RuntimeSystemContext::createDirectories(
+    const std::filesystem::path& path) {
+    const auto permission = require(
+        RuntimeSystemCapability::FileSystemWrite, "filesystem write");
+    if (!permission.succeeded) {
+        return RuntimeSystemResult<bool>::failure(permission.error);
+    }
+    std::filesystem::path base;
+    {
+        std::lock_guard lock(mutex_);
+        base = currentDirectory_;
+    }
+    return hostAdapter_->createDirectories(
+        path.is_absolute() ? path : base / path);
+}
+
+RuntimeSystemStatus RuntimeSystemContext::removeDirectory(
+    const std::filesystem::path& path, bool recursive) {
+    const auto permission = require(
+        RuntimeSystemCapability::FileSystemWrite, "filesystem write");
+    if (!permission.succeeded) {
+        return permission;
+    }
+    std::filesystem::path base;
+    {
+        std::lock_guard lock(mutex_);
+        base = currentDirectory_;
+    }
+    const auto normalized = hostAdapter_->normalizeDirectory(base, path);
+    if (normalized.succeeded &&
+        pathIsWithinRoot(normalized.value, base)) {
+        return RuntimeSystemStatus::failure(
+            "the current runtime directory or one of its parents cannot be "
+            "removed");
+    }
+    return hostAdapter_->removeDirectory(
+        path.is_absolute() ? path : base / path, recursive);
+}
+
+RuntimeSystemStatus RuntimeSystemContext::copyPath(
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination, bool force) {
+    const auto readPermission = require(
+        RuntimeSystemCapability::FileSystemRead, "filesystem read");
+    if (!readPermission.succeeded) {
+        return readPermission;
+    }
+    const auto writePermission = require(
+        RuntimeSystemCapability::FileSystemWrite, "filesystem write");
+    if (!writePermission.succeeded) {
+        return writePermission;
+    }
+    std::filesystem::path base;
+    {
+        std::lock_guard lock(mutex_);
+        base = currentDirectory_;
+    }
+    return hostAdapter_->copyPath(
+        source.is_absolute() ? source : base / source,
+        destination.is_absolute() ? destination : base / destination,
+        force);
+}
+
+RuntimeSystemStatus RuntimeSystemContext::movePath(
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination, bool force) {
+    const auto readPermission = require(
+        RuntimeSystemCapability::FileSystemRead, "filesystem read");
+    if (!readPermission.succeeded) {
+        return readPermission;
+    }
+    const auto writePermission = require(
+        RuntimeSystemCapability::FileSystemWrite, "filesystem write");
+    if (!writePermission.succeeded) {
+        return writePermission;
+    }
+    std::filesystem::path base;
+    {
+        std::lock_guard lock(mutex_);
+        base = currentDirectory_;
+    }
+    const auto normalized = hostAdapter_->normalizeDirectory(base, source);
+    if (normalized.succeeded &&
+        pathIsWithinRoot(normalized.value, base)) {
+        return RuntimeSystemStatus::failure(
+            "the current runtime directory or one of its parents cannot be "
+            "moved");
+    }
+    return hostAdapter_->movePath(
+        source.is_absolute() ? source : base / source,
+        destination.is_absolute() ? destination : base / destination,
+        force);
+}
+
+RuntimeSystemResult<std::filesystem::path>
+RuntimeSystemContext::temporaryName(
+    const std::optional<std::filesystem::path>& directory) const {
+    const auto permission = require(
+        RuntimeSystemCapability::FileSystemRead, "filesystem read");
+    if (!permission.succeeded) {
+        return RuntimeSystemResult<std::filesystem::path>::failure(
+            permission.error);
+    }
+
+    std::filesystem::path outputDirectory;
+    std::filesystem::path queryDirectory;
+    if (!directory || directory->empty()) {
+        const auto temporary = temporaryDirectory();
+        if (!temporary.succeeded) {
+            return temporary;
+        }
+        outputDirectory = temporary.value;
+        queryDirectory = temporary.value;
+    } else {
+        outputDirectory = *directory;
+        if (directory->is_absolute()) {
+            queryDirectory = *directory;
+        } else {
+            std::lock_guard lock(mutex_);
+            queryDirectory = currentDirectory_ / *directory;
+        }
+    }
+
+    static std::atomic<std::uint64_t> sequence{0};
+    for (size_t attempt = 0; attempt < 64; ++attempt) {
+        const auto clock = static_cast<std::uint64_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        const auto serial = sequence.fetch_add(1,
+                                               std::memory_order_relaxed);
+        std::ostringstream name;
+        name << "mpt" << std::hex << clock << '_' << serial;
+        const auto leaf = pathFromUtf8(name.str());
+        const auto query = queryDirectory / leaf;
+        const auto file = hostAdapter_->regularFileExists(query);
+        if (!file.succeeded) {
+            return RuntimeSystemResult<std::filesystem::path>::failure(
+                std::move(file.error));
+        }
+        const auto folder = hostAdapter_->directoryExists(query);
+        if (!folder.succeeded) {
+            return RuntimeSystemResult<std::filesystem::path>::failure(
+                std::move(folder.error));
+        }
+        if (!file.value && !folder.value) {
+            return RuntimeSystemResult<std::filesystem::path>::success(
+                outputDirectory / leaf);
+        }
+    }
+    return RuntimeSystemResult<std::filesystem::path>::failure(
+        "could not generate a unique temporary path");
 }
 
 RuntimeSystemResult<int> RuntimeSystemContext::openFile(
