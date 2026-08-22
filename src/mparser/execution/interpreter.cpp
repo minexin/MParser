@@ -25,6 +25,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <deque>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -307,6 +308,7 @@ public:
         outputEvents_.clear();
         expressionResults_.clear();
         activeIndexContexts_.clear();
+        sourceCallerOverrides_.clear();
         nextConsoleSequence_ = 0;
         runtimeOutputSink_ = [this, external = options.outputSink](
                                  const RuntimeOutputEvent& event) {
@@ -365,6 +367,11 @@ private:
     struct ActiveFunctionFrame {
         std::string key;
         size_t frameIndex = 0;
+    };
+
+    struct SourceCallerOverride {
+        size_t parentFrameCount = 0;
+        RuntimeWorkspace* workspace = nullptr;
     };
 
     class IndexContextGuard {
@@ -619,6 +626,17 @@ private:
         return frames_.back().workspace;
     }
 
+    const SourceCallerOverride* activeSourceCallerOverride() const {
+        if (sourceCallerOverrides_.empty()) {
+            return nullptr;
+        }
+        const auto& override = sourceCallerOverrides_.back();
+        return override.workspace &&
+                       frames_.size() == override.parentFrameCount + 1
+                   ? &override
+                   : nullptr;
+    }
+
     RuntimeWorkspace* workspaceFor(BuiltinWorkspaceScope scope) {
         if (frames_.empty()) {
             return nullptr;
@@ -627,6 +645,10 @@ private:
         if (scope == BuiltinWorkspaceScope::Base) {
             index = 0;
         } else if (scope == BuiltinWorkspaceScope::Caller) {
+            if (const auto* override =
+                    activeSourceCallerOverride()) {
+                return override->workspace;
+            }
             index = frames_.size() > 1 ? frames_.size() - 2 : 0;
         }
         return &frames_[index].workspace;
@@ -637,6 +659,18 @@ private:
         std::vector<RuntimeWorkspace*> ancestors;
         if (frames_.empty()) {
             return ancestors;
+        }
+        if (scope == BuiltinWorkspaceScope::Caller) {
+            if (const auto* override =
+                    activeSourceCallerOverride()) {
+                for (auto& frame : frames_) {
+                    if (&frame.workspace == override->workspace) {
+                        return ancestors;
+                    }
+                    ancestors.push_back(&frame.workspace);
+                }
+                ancestors.clear();
+            }
         }
         size_t index = frames_.size() - 1;
         if (scope == BuiltinWorkspaceScope::Base) {
@@ -818,9 +852,9 @@ private:
     }
 
     std::optional<std::pair<std::string, const HirNode*>>
-    resolveLocalFunction(std::string_view name) const {
-        if (!activeFunctionKeys_.empty()) {
-            std::string scope = activeFunctionKeys_.back();
+    resolveLocalFunctionInScope(
+        std::string_view name, std::string scope) const {
+        if (!scope.empty()) {
             if (unqualifiedFunctionKey(scope) == name) {
                 const auto recursive = functionsByName_.find(scope);
                 if (recursive != functionsByName_.end()) {
@@ -846,6 +880,143 @@ private:
             return std::nullopt;
         }
         return std::pair{function->first, function->second};
+    }
+
+    std::optional<std::pair<std::string, const HirNode*>>
+    resolveLocalFunction(std::string_view name) const {
+        return resolveLocalFunctionInScope(
+            name, activeFunctionKeys_.empty()
+                      ? std::string{}
+                      : activeFunctionKeys_.back());
+    }
+
+    std::string sourceCallableScopeKey(size_t frameIndex) const {
+        for (auto active = activeFunctionFrames_.rbegin();
+             active != activeFunctionFrames_.rend(); ++active) {
+            if (active->frameIndex == frameIndex) {
+                return active->key;
+            }
+        }
+        return {};
+    }
+
+    std::vector<RuntimeSourceCallable> sourceCallablesForFrame(
+        size_t frameIndex) const {
+        struct Candidate {
+            std::string key;
+            const HirNode* function = nullptr;
+            bool textResolutionAllowed = false;
+        };
+
+        std::map<std::string, Candidate> candidates;
+        std::set<std::string> ambiguous;
+        const auto addCandidate =
+            [&candidates, &ambiguous](std::string name,
+                                      Candidate candidate) {
+                if (name.empty() || ambiguous.contains(name)) {
+                    return;
+                }
+                const auto [existing, inserted] =
+                    candidates.emplace(std::move(name), candidate);
+                if (!inserted && existing->second.key != candidate.key) {
+                    ambiguous.insert(existing->first);
+                    candidates.erase(existing);
+                } else if (!inserted) {
+                    existing->second.textResolutionAllowed =
+                        existing->second.textResolutionAllowed ||
+                        candidate.textResolutionAllowed;
+                }
+            };
+
+        const std::string scope = sourceCallableScopeKey(frameIndex);
+        std::set<std::string> lexicalNames;
+        for (const auto& [key, function] : functionsByName_) {
+            if (function->lexicalClassName.empty()) {
+                lexicalNames.emplace(unqualifiedFunctionKey(key));
+            }
+        }
+        for (const auto& name : lexicalNames) {
+            const auto function =
+                resolveLocalFunctionInScope(name, scope);
+            if (!function ||
+                !function->second->lexicalClassName.empty()) {
+                continue;
+            }
+            const bool textAllowed =
+                !function->first.starts_with("$private") &&
+                (function->first.find('>') == std::string::npos ||
+                 function->first.starts_with("$path"));
+            addCandidate(
+                name, Candidate{function->first, function->second,
+                                textAllowed});
+        }
+        for (const auto& [key, function] : functionsByName_) {
+            if (!function->lexicalClassName.empty() ||
+                key.starts_with("$path") ||
+                key.starts_with("$private") ||
+                (key.find('>') != std::string::npos &&
+                 !key.starts_with("$path"))) {
+                continue;
+            }
+            addCandidate(
+                publicFunctionName(key),
+                Candidate{key, function,
+                          !key.starts_with("$private")});
+        }
+        size_t sourceId = kInvalidSourceId;
+        if (frameIndex < frames_.size()) {
+            sourceId = frames_[frameIndex].span.begin.sourceId;
+        }
+        if (sourceId == kInvalidSourceId && semantic_ &&
+            !semantic_->sources.empty()) {
+            sourceId = 0;
+        }
+        if (semantic_ && sourceId < semantic_->sources.size()) {
+            for (const auto& binding :
+                 semantic_->sources[sourceId].functionBindings) {
+                const auto function =
+                    functionsByName_.find(binding.target);
+                if (function == functionsByName_.end()) {
+                    continue;
+                }
+                addCandidate(
+                    binding.alias,
+                    Candidate{
+                        function->first, function->second,
+                        !function->first.starts_with("$private")});
+            }
+        }
+
+        std::vector<RuntimeSourceCallable> callables;
+        callables.reserve(candidates.size());
+        for (const auto& [name, candidate] : candidates) {
+            RuntimeFunctionHandle handle;
+            handle.kind = RuntimeFunctionHandleKind::Function;
+            handle.backend = RuntimeFunctionHandleBackend::Hir;
+            handle.context = callableContext_;
+            handle.display = "@" + name;
+            handle.targetName = candidate.key;
+            handle.span = candidate.function->span;
+            handle.sourceFile = sourceFileName(candidate.function->span);
+            callables.push_back(RuntimeSourceCallable{
+                name, makeRuntimeFunctionHandleValue(std::move(handle)),
+                preferredImplicitOutputCount(
+                    parseFunctionSignature(*candidate.function)),
+                candidate.textResolutionAllowed});
+        }
+        return callables;
+    }
+
+    std::vector<RuntimeSourceCallableScope>
+    sourceCallableScopes() {
+        std::vector<RuntimeSourceCallableScope> scopes;
+        scopes.reserve(frames_.size());
+        for (size_t index = 0; index < frames_.size(); ++index) {
+            scopes.push_back(RuntimeSourceCallableScope{
+                &frames_[index].workspace,
+                sourceCallablesForFrame(index)});
+        }
+        return scopes;
     }
 
     void executeModule(const HirNode& node) {
@@ -3377,6 +3548,64 @@ private:
         return std::move(result.value);
     }
 
+    RuntimeSourceCallableInvocationResult invokeSourceCallable(
+        const HirNode& node, const RuntimeValue& callable,
+        const std::vector<RuntimeValue>& arguments,
+        size_t requestedOutputCount, SourceSpan callbackSpan,
+        RuntimeWorkspace* ownerWorkspace) {
+        RuntimeSourceCallableInvocationResult result;
+        const size_t diagnosticStart = diagnostics_.size();
+        const size_t warningStart = warnings_.size();
+        auto savedPendingException = std::move(pendingException_);
+        auto savedOutputSink = std::move(runtimeOutputSink_);
+        pendingException_.reset();
+        runtimeOutputSink_ = [&result](const RuntimeOutputEvent& event) {
+            result.outputEvents.push_back(event);
+            return true;
+        };
+
+        if (ownerWorkspace) {
+            sourceCallerOverrides_.push_back(SourceCallerOverride{
+                frames_.size(), ownerWorkspace});
+        }
+        result.outputs = callFunctionHandle(
+                             node, callable, arguments,
+                             requestedOutputCount)
+                             .outputs;
+        if (ownerWorkspace) {
+            sourceCallerOverrides_.pop_back();
+        }
+
+        result.diagnostics.reserve(
+            diagnostics_.size() - diagnosticStart +
+            warnings_.size() - warningStart);
+        std::move(
+            warnings_.begin() +
+                static_cast<std::ptrdiff_t>(warningStart),
+            warnings_.end(),
+            std::back_inserter(result.diagnostics));
+        std::move(
+            diagnostics_.begin() +
+                static_cast<std::ptrdiff_t>(diagnosticStart),
+            diagnostics_.end(),
+            std::back_inserter(result.diagnostics));
+        warnings_.resize(warningStart);
+        diagnostics_.resize(diagnosticStart);
+        pendingException_ = std::move(savedPendingException);
+        runtimeOutputSink_ = std::move(savedOutputSink);
+
+        for (auto& diagnostic : result.diagnostics) {
+            diagnostic.span = callbackSpan;
+        }
+        result.succeeded = !std::any_of(
+            result.diagnostics.begin(), result.diagnostics.end(),
+            isErrorDiagnostic);
+        if (!result.succeeded) {
+            result.outputs.clear();
+        }
+        return result;
+    }
+
     FunctionCallResult
     callBuiltin(const HirNode& node, const std::string& name,
                 const std::vector<RuntimeValue>& arguments,
@@ -3504,7 +3733,8 @@ private:
                     descriptor->contextPermissions,
                     BuiltinContextPermission::SourceEvaluation)) {
                 context.sourceEvaluator =
-                    [this](const BuiltinSourceEvaluationRequest& request) {
+                    [this, &node](
+                        const BuiltinSourceEvaluationRequest& request) {
                     RuntimeWorkspace* target = workspaceFor(request.workspace);
                     if (!target) {
                         BuiltinSourceEvaluationResult result;
@@ -3523,6 +3753,28 @@ private:
                     options.outputSink = runtimeOutputSink_;
                     options.inheritedWorkspaceFrames =
                         workspaceAncestorsFor(request.workspace);
+                    options.inheritedCallableScopes =
+                        sourceCallableScopes();
+                    for (const auto& scope :
+                         options.inheritedCallableScopes) {
+                        if (scope.workspace == target) {
+                            options.inheritedCallables = scope.callables;
+                            break;
+                        }
+                    }
+                    options.inheritedCallableWorkspace = target;
+                    options.inheritedCallableInvoker =
+                        [this, &node](
+                            const RuntimeValue& callable,
+                            const std::vector<RuntimeValue>& arguments,
+                            size_t requestedOutputCount,
+                            SourceSpan callbackSpan,
+                            RuntimeWorkspace* ownerWorkspace) {
+                            return invokeSourceCallable(
+                                node, callable, arguments,
+                                requestedOutputCount, callbackSpan,
+                                ownerWorkspace);
+                        };
                     return evaluateRuntimeSource(request, *target, options);
                 };
             }
@@ -3999,11 +4251,12 @@ private:
     const SemanticResult* semantic_ = nullptr;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
-    std::vector<RuntimeCallFrame> frames_;
+    std::deque<RuntimeCallFrame> frames_;
     std::vector<ActiveIndexContext> activeIndexContexts_;
     std::vector<std::string> activeFunctionNames_;
     std::vector<std::string> activeFunctionKeys_;
     std::vector<ActiveFunctionFrame> activeFunctionFrames_;
+    std::vector<SourceCallerOverride> sourceCallerOverrides_;
     std::vector<std::string> activePersistentFunctionKeys_;
     std::set<std::string> baseGlobalNames_;
     std::vector<RuntimeExceptionFrame> exceptionCallerFrames_;

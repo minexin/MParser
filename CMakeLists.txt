@@ -1176,19 +1176,19 @@ add_test(NAME dynamic_workspace_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
 set_tests_properties(dynamic_workspace_interpreter_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 142")
+    PASS_REGULAR_EXPRESSION "summary = 173")
 
 add_test(NAME dynamic_workspace_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
 set_tests_properties(dynamic_workspace_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 142")
+    PASS_REGULAR_EXPRESSION "summary = 173")
 
 add_test(NAME dynamic_workspace_production_cli_smoke
     COMMAND mparser --run
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
 set_tests_properties(dynamic_workspace_production_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 142")
+    PASS_REGULAR_EXPRESSION "summary = 173")
 
 add_test(NAME system_command_interpreter_cli_smoke
     COMMAND mparser --run-hir

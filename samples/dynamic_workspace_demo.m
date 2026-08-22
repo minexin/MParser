@@ -20,9 +20,17 @@ recovered = eval('error(''Demo:Expected'', ''stop'')', 'partial + 1');
 
 scope_marker = 5;
 [caller_value, eval_caller_value] = caller_roundtrip();
+parent_direct = eval('parent_increment(4)');
+parent_handle = @parent_increment;
+parent_handle_value = eval('parent_handle(5)');
+dynamic_parent_handle = eval('@parent_increment');
+dynamic_parent_handle_value = dynamic_parent_handle(6);
+[nested_parent_value, nested_parent_count] = nested_parent_roundtrip();
 summary = value + rows + columns + numel(missing_row) + ...
     recovered + caller_value + shadowed_last + ...
-    eval_caller_value + scope_marker
+    eval_caller_value + scope_marker + parent_direct + ...
+    parent_handle_value + dynamic_parent_handle_value + ...
+    nested_parent_value + nested_parent_count
 
 function [result, caller_seen] = caller_roundtrip()
     caller_seen = eval( ...
@@ -38,4 +46,18 @@ end
 
 function value = read_from_helper()
     value = evalin('caller', 'caller_number + 1');
+end
+
+function value = parent_increment(input)
+    value = input + 1;
+end
+
+function [value, counter] = nested_parent_roundtrip()
+    counter = 0;
+    value = eval('bump(11)');
+
+    function result = bump(input)
+        counter = counter + 1;
+        result = input + counter;
+    end
 end

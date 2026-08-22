@@ -29,6 +29,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <deque>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -963,6 +964,11 @@ struct ActiveFunctionFrame {
     size_t frameIndex = 0;
 };
 
+struct SourceCallerOverride {
+    size_t parentFrameCount = 0;
+    RuntimeWorkspace* workspace = nullptr;
+};
+
 struct EventListenerRecord {
     size_t id = 0;
     std::weak_ptr<std::map<std::string, RuntimeValue>> sourceFields;
@@ -1156,6 +1162,13 @@ public:
                 inheritedWorkspaceFrames_.push_back(workspace);
             }
         }
+        inheritedSourceCallables_ = options.inheritedCallables;
+        inheritedSourceCallableScopes_ =
+            options.inheritedCallableScopes;
+        inheritedSourceCallableInvoker_ =
+            options.inheritedCallableInvoker;
+        inheritedSourceCallableWorkspace_ =
+            options.inheritedCallableWorkspace;
         requestedEntryFunction_ = options.entryFunction;
         entryArguments_ = options.arguments;
         requestedEntryOutputCount_ = options.requestedOutputCount;
@@ -1184,6 +1197,7 @@ public:
         baseGlobalNames_.clear();
         activePersistentFunctionKeys_.clear();
         activeFunctionFrames_.clear();
+        sourceCallerOverrides_.clear();
         activeClassFunctions_.clear();
         activeAnonymousBodyOutputCounts_.clear();
         eventListeners_.clear();
@@ -5271,6 +5285,10 @@ private:
 
     std::optional<RuntimeValue> functionHandleFromText(
         const BytecodeInstruction& instruction, std::string_view target) {
+        if (const auto* inherited = inheritedSourceCallable(target);
+            inherited && inherited->textResolutionAllowed) {
+            return inherited->callable;
+        }
         RuntimeFunctionHandle info;
         info.display = "@" + std::string(target);
         info.span = instruction.span;
@@ -5321,6 +5339,11 @@ private:
                 return continuation;
             }
         } else {
+            if (const auto* inherited =
+                    inheritedSourceCallable(instruction.operand)) {
+                pushRuntime(inherited->callable);
+                return continuation;
+            }
             info.display = instruction.calleeName.empty()
                                ? "@" + instruction.operand
                                : instruction.calleeName;
@@ -6096,10 +6119,9 @@ private:
         const FunctionInfo* info = nullptr;
     };
 
-    std::optional<ResolvedLocalFunction> resolveLocalFunction(
-        std::string_view name) const {
-        if (!activeFunctionFrames_.empty()) {
-            std::string scope = activeFunctionFrames_.back().key;
+    std::optional<ResolvedLocalFunction> resolveLocalFunctionInScope(
+        std::string_view name, std::string scope) const {
+        if (!scope.empty()) {
             if (unqualifiedFunctionKey(scope) == name) {
                 const auto recursive = functionsByName_.find(scope);
                 if (recursive != functionsByName_.end()) {
@@ -6128,6 +6150,191 @@ private:
             return std::nullopt;
         }
         return ResolvedLocalFunction{function->first, &function->second};
+    }
+
+    std::optional<ResolvedLocalFunction> resolveLocalFunction(
+        std::string_view name) const {
+        return resolveLocalFunctionInScope(
+            name, activeFunctionFrames_.empty()
+                      ? std::string{}
+                      : activeFunctionFrames_.back().key);
+    }
+
+    std::string sourceCallableScopeKey(size_t frameIndex) const {
+        for (auto active = activeFunctionFrames_.rbegin();
+             active != activeFunctionFrames_.rend(); ++active) {
+            if (active->frameIndex == frameIndex) {
+                return active->key;
+            }
+        }
+        return {};
+    }
+
+    std::vector<RuntimeSourceCallable> sourceCallablesForFrame(
+        size_t frameIndex) const {
+        struct Candidate {
+            std::string key;
+            const FunctionInfo* info = nullptr;
+            bool textResolutionAllowed = false;
+        };
+
+        std::map<std::string, Candidate> candidates;
+        std::set<std::string> ambiguous;
+        const auto addCandidate =
+            [&candidates, &ambiguous](std::string name,
+                                      Candidate candidate) {
+                if (name.empty() || ambiguous.contains(name)) {
+                    return;
+                }
+                const auto [existing, inserted] =
+                    candidates.emplace(std::move(name), candidate);
+                if (!inserted && existing->second.key != candidate.key) {
+                    ambiguous.insert(existing->first);
+                    candidates.erase(existing);
+                } else if (!inserted) {
+                    existing->second.textResolutionAllowed =
+                        existing->second.textResolutionAllowed ||
+                        candidate.textResolutionAllowed;
+                }
+            };
+
+        const std::string scope = sourceCallableScopeKey(frameIndex);
+        std::set<std::string> lexicalNames;
+        for (const auto& [key, function] : functionsByName_) {
+            (void)function;
+            lexicalNames.emplace(unqualifiedFunctionKey(key));
+        }
+        for (const auto& name : lexicalNames) {
+            const auto function =
+                resolveLocalFunctionInScope(name, scope);
+            if (!function) {
+                continue;
+            }
+            const bool textAllowed =
+                !function->info->name.starts_with("$private") &&
+                function->info->metadataIdentifier.find('>') ==
+                    std::string::npos;
+            addCandidate(
+                name, Candidate{function->key, function->info,
+                                textAllowed});
+        }
+        for (const auto& [identifier, key] :
+             functionsByMetadataIdentifier_) {
+            if (identifier.find('>') != std::string::npos) {
+                continue;
+            }
+            const auto function = functionsByName_.find(key);
+            if (function == functionsByName_.end() ||
+                function->second.name.starts_with("$path") ||
+                function->second.name.starts_with("$private")) {
+                continue;
+            }
+            addCandidate(
+                identifier,
+                Candidate{
+                    function->first, &function->second,
+                    !function->second.name.starts_with("$private")});
+        }
+        size_t sourceId = kInvalidSourceId;
+        if (frameIndex < frames_.size()) {
+            sourceId = frames_[frameIndex].span.begin.sourceId;
+        }
+        if (sourceId == kInvalidSourceId && semantic_ &&
+            !semantic_->sources.empty()) {
+            sourceId = 0;
+        }
+        if (semantic_ && sourceId < semantic_->sources.size()) {
+            for (const auto& binding :
+                 semantic_->sources[sourceId].functionBindings) {
+                const auto function =
+                    functionsByName_.find(binding.target);
+                if (function == functionsByName_.end()) {
+                    continue;
+                }
+                addCandidate(
+                    binding.alias,
+                    Candidate{
+                        function->first, &function->second,
+                        !function->second.name.starts_with(
+                            "$private")});
+            }
+        }
+
+        std::vector<RuntimeSourceCallable> callables;
+        callables.reserve(candidates.size());
+        for (const auto& [name, candidate] : candidates) {
+            RuntimeFunctionHandle handle;
+            handle.kind = RuntimeFunctionHandleKind::Function;
+            handle.backend = RuntimeFunctionHandleBackend::Bytecode;
+            handle.context = callableContext_;
+            handle.display = "@" + name;
+            handle.targetName = candidate.key;
+            handle.span = candidate.info->span;
+            handle.sourceFile = candidate.info->fullPath;
+            callables.push_back(RuntimeSourceCallable{
+                name, makeRuntimeFunctionHandleValue(std::move(handle)),
+                static_cast<size_t>(preferredImplicitOutputCount(
+                    candidate.info->signature)),
+                candidate.textResolutionAllowed});
+        }
+        return callables;
+    }
+
+    std::vector<RuntimeSourceCallableScope>
+    sourceCallableScopes() {
+        std::vector<RuntimeSourceCallableScope> scopes;
+        scopes.reserve(frames_.size());
+        for (size_t index = 0; index < frames_.size(); ++index) {
+            scopes.push_back(RuntimeSourceCallableScope{
+                &frames_[index].workspace,
+                sourceCallablesForFrame(index)});
+        }
+        return scopes;
+    }
+
+    const RuntimeSourceCallable* inheritedSourceCallable(
+        std::string_view name) const {
+        const auto callable = std::find_if(
+            inheritedSourceCallables_.begin(),
+            inheritedSourceCallables_.end(),
+            [name](const RuntimeSourceCallable& candidate) {
+                return candidate.name == name;
+            });
+        return callable == inheritedSourceCallables_.end()
+                   ? nullptr
+                   : &*callable;
+    }
+
+    const RuntimeSourceCallable* inheritedSourceCallable(
+        const RuntimeValue& handle) const {
+        if (!isFunctionHandle(handle)) {
+            return nullptr;
+        }
+        const size_t identity = handle.functionHandle->identity;
+        const auto callable = std::find_if(
+            inheritedSourceCallables_.begin(),
+            inheritedSourceCallables_.end(),
+            [identity](const RuntimeSourceCallable& candidate) {
+                return isFunctionHandle(candidate.callable) &&
+                       candidate.callable.functionHandle->identity ==
+                           identity;
+            });
+        return callable == inheritedSourceCallables_.end()
+                   ? nullptr
+                   : &*callable;
+    }
+
+    const RuntimeSourceCallableScope* inheritedSourceCallableScope(
+        const RuntimeWorkspace* workspace) const {
+        const auto scope = std::find_if(
+            inheritedSourceCallableScopes_.begin(),
+            inheritedSourceCallableScopes_.end(),
+            [workspace](const RuntimeSourceCallableScope& candidate) {
+                return candidate.workspace == workspace;
+            });
+        return scope == inheritedSourceCallableScopes_.end()
+                   ? nullptr
+                   : &*scope;
     }
 
     std::string persistentFunctionKey(
@@ -10113,10 +10320,14 @@ private:
                              method->second.signature);
         }
         const auto function = functionsByName_.find(info.targetName);
-        return function == functionsByName_.end()
-                   ? 1
-                   : preferredImplicitOutputCount(
-                         function->second.signature);
+        if (function != functionsByName_.end()) {
+            return preferredImplicitOutputCount(
+                function->second.signature);
+        }
+        if (const auto* inherited = inheritedSourceCallable(handle)) {
+            return static_cast<int>(inherited->implicitOutputCount);
+        }
+        return 1;
     }
 
     std::optional<int> anonymousBodyOutputCount(
@@ -10247,11 +10458,17 @@ private:
                        callInstruction.implicitExpressionOutput) {
                 callInstruction.implicitExpressionOutput = true;
                 const auto function = resolveLocalFunction(name);
-                callInstruction.resultCount =
-                    !function
-                        ? 1
-                        : preferredImplicitOutputCount(
-                              function->info->signature);
+                if (function) {
+                    callInstruction.resultCount =
+                        preferredImplicitOutputCount(
+                            function->info->signature);
+                } else if (const auto* inherited =
+                               inheritedSourceCallable(name)) {
+                    callInstruction.resultCount = static_cast<int>(
+                        inherited->implicitOutputCount);
+                } else {
+                    callInstruction.resultCount = 1;
+                }
             }
             BytecodeCallSiteProfile* profile = nullptr;
             if (profilingEnabled_) {
@@ -10442,6 +10659,61 @@ private:
         return {output};
     }
 
+    std::vector<RuntimeValue> callInheritedSourceCallable(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& callable,
+        const std::vector<RuntimeValue>& arguments,
+        int requestedCount) {
+        if (requestedCount < 0) {
+            addDiagnostic(
+                instruction,
+                "inherited callable result count cannot be negative");
+            return {};
+        }
+        if (!inheritedSourceCallableInvoker_) {
+            addDiagnostic(
+                instruction,
+                "inherited callable invocation context is unavailable",
+                "MParser:MissingInheritedCallableContext");
+            return missingOutputs(requestedCount);
+        }
+
+        if (inheritedSourceCallableWorkspace_) {
+            *inheritedSourceCallableWorkspace_ = currentFrame();
+        }
+        auto result = inheritedSourceCallableInvoker_(
+            callable, arguments, static_cast<size_t>(requestedCount),
+            instruction.span, inheritedSourceCallableWorkspace_);
+        if (inheritedSourceCallableWorkspace_) {
+            currentFrame() = *inheritedSourceCallableWorkspace_;
+        }
+
+        for (const auto& event : result.outputEvents) {
+            if (!runtimeOutputSink_ || !runtimeOutputSink_(event)) {
+                addDiagnostic(
+                    instruction,
+                    "dynamic parent callable output was rejected",
+                    "MParser:OutputSinkRejected");
+                break;
+            }
+        }
+        appendBuiltinDiagnostics(
+            instruction, std::move(result.diagnostics));
+        if (!result.succeeded) {
+            return missingOutputs(requestedCount);
+        }
+        if (result.outputs.size() !=
+            static_cast<size_t>(requestedCount)) {
+            addDiagnostic(
+                instruction,
+                "inherited callable produced an unexpected number of "
+                "outputs",
+                "MParser:InvalidInheritedCallableResult");
+            return missingOutputs(requestedCount);
+        }
+        return std::move(result.outputs);
+    }
+
     std::vector<RuntimeValue> callFunctionHandle(
         const BytecodeInstruction& instruction, const RuntimeValue& handle,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
@@ -10455,6 +10727,10 @@ private:
         if (info.kind != RuntimeFunctionHandleKind::Builtin &&
             (info.backend != RuntimeFunctionHandleBackend::Bytecode ||
              !info.context || info.context != callableContext_)) {
+            if (inheritedSourceCallableInvoker_) {
+                return callInheritedSourceCallable(
+                    instruction, handle, arguments, requestedCount);
+            }
             addDiagnostic(
                 instruction,
                 "function handle belongs to a different compiled module");
@@ -12117,6 +12393,73 @@ private:
         }
     }
 
+    RuntimeSourceCallableInvocationResult invokeSourceCallable(
+        const BytecodeInstruction& instruction,
+        const RuntimeValue& callable,
+        const std::vector<RuntimeValue>& arguments,
+        size_t requestedOutputCount, SourceSpan callbackSpan,
+        RuntimeWorkspace* ownerWorkspace) {
+        RuntimeSourceCallableInvocationResult result;
+        if (requestedOutputCount >
+            static_cast<size_t>(std::numeric_limits<int>::max())) {
+            result.diagnostics.push_back(Diagnostic{
+                callbackSpan,
+                "dynamic parent callable requested too many outputs",
+                "MParser:InvalidDynamicCall"});
+            return result;
+        }
+
+        const size_t diagnosticStart = diagnostics_.size();
+        const size_t warningStart = warnings_.size();
+        auto savedPendingException = std::move(pendingException_);
+        auto savedOutputSink = std::move(runtimeOutputSink_);
+        pendingException_.reset();
+        runtimeOutputSink_ = [&result](const RuntimeOutputEvent& event) {
+            result.outputEvents.push_back(event);
+            return true;
+        };
+
+        if (ownerWorkspace) {
+            sourceCallerOverrides_.push_back(SourceCallerOverride{
+                frames_.size(), ownerWorkspace});
+        }
+        result.outputs = callFunctionHandle(
+            instruction, callable, arguments,
+            static_cast<int>(requestedOutputCount));
+        if (ownerWorkspace) {
+            sourceCallerOverrides_.pop_back();
+        }
+
+        result.diagnostics.reserve(
+            diagnostics_.size() - diagnosticStart +
+            warnings_.size() - warningStart);
+        std::move(
+            warnings_.begin() +
+                static_cast<std::ptrdiff_t>(warningStart),
+            warnings_.end(),
+            std::back_inserter(result.diagnostics));
+        std::move(
+            diagnostics_.begin() +
+                static_cast<std::ptrdiff_t>(diagnosticStart),
+            diagnostics_.end(),
+            std::back_inserter(result.diagnostics));
+        warnings_.resize(warningStart);
+        diagnostics_.resize(diagnosticStart);
+        pendingException_ = std::move(savedPendingException);
+        runtimeOutputSink_ = std::move(savedOutputSink);
+
+        for (auto& diagnostic : result.diagnostics) {
+            diagnostic.span = callbackSpan;
+        }
+        result.succeeded = !std::any_of(
+            result.diagnostics.begin(), result.diagnostics.end(),
+            isErrorDiagnostic);
+        if (!result.succeeded) {
+            result.outputs.clear();
+        }
+        return result;
+    }
+
     std::vector<RuntimeValue> callBuiltinOutputs(
         const BytecodeInstruction& instruction, const std::string& name,
         const std::vector<RuntimeValue>& arguments, int requestedCount,
@@ -12263,7 +12606,8 @@ private:
                     descriptor->contextPermissions,
                     BuiltinContextPermission::SourceEvaluation)) {
                 context.sourceEvaluator =
-                    [this](const BuiltinSourceEvaluationRequest& request) {
+                    [this, &instruction](
+                        const BuiltinSourceEvaluationRequest& request) {
                     RuntimeWorkspace* target = workspaceFor(request.workspace);
                     if (!target) {
                         BuiltinSourceEvaluationResult result;
@@ -12285,6 +12629,54 @@ private:
                     options.enableTypedRegions = typedRegionsEnabled_;
                     options.inheritedWorkspaceFrames =
                         workspaceAncestorsFor(request.workspace);
+                    if (!inheritedSourceCallableInvoker_) {
+                        options.inheritedCallableScopes =
+                            sourceCallableScopes();
+                        for (const auto& scope :
+                             options.inheritedCallableScopes) {
+                            if (scope.workspace == target) {
+                                options.inheritedCallables =
+                                    scope.callables;
+                                break;
+                            }
+                        }
+                        options.inheritedCallableWorkspace = target;
+                        options.inheritedCallableInvoker =
+                            [this, &instruction](
+                                const RuntimeValue& callable,
+                                const std::vector<RuntimeValue>& arguments,
+                                size_t requestedOutputCount,
+                                SourceSpan callbackSpan,
+                                RuntimeWorkspace* ownerWorkspace) {
+                                return invokeSourceCallable(
+                                    instruction, callable, arguments,
+                                    requestedOutputCount, callbackSpan,
+                                    ownerWorkspace);
+                            };
+                    } else {
+                        const auto* callableScope =
+                            inheritedSourceCallableScope(target);
+                        if (target == &currentFrame()) {
+                            options.inheritedCallables =
+                                inheritedSourceCallables_;
+                            options.inheritedCallableWorkspace =
+                                inheritedSourceCallableWorkspace_;
+                        } else if (callableScope) {
+                            options.inheritedCallables =
+                                callableScope->callables;
+                            options.inheritedCallableWorkspace =
+                                callableScope->workspace;
+                        } else {
+                            options.inheritedCallables =
+                                inheritedSourceCallables_;
+                            options.inheritedCallableWorkspace =
+                                inheritedSourceCallableWorkspace_;
+                        }
+                        options.inheritedCallableScopes =
+                            inheritedSourceCallableScopes_;
+                        options.inheritedCallableInvoker =
+                            inheritedSourceCallableInvoker_;
+                    }
                     return evaluateRuntimeSource(request, *target, options);
                 };
             }
@@ -12551,6 +12943,12 @@ private:
 
         const auto function = resolveLocalFunction(name);
         if (!function) {
+            if (const auto* inherited =
+                    inheritedSourceCallable(name)) {
+                return callInheritedSourceCallable(
+                    instruction, inherited->callable, arguments,
+                    requestedCount);
+            }
             addDiagnostic(instruction,
                           "local function is not available: " + name);
             return missingOutputs(requestedCount);
@@ -14414,6 +14812,17 @@ private:
         return frames_.back().workspace;
     }
 
+    const SourceCallerOverride* activeSourceCallerOverride() const {
+        if (sourceCallerOverrides_.empty()) {
+            return nullptr;
+        }
+        const auto& override = sourceCallerOverrides_.back();
+        return override.workspace &&
+                       frames_.size() == override.parentFrameCount + 1
+                   ? &override
+                   : nullptr;
+    }
+
     RuntimeWorkspace* workspaceFor(BuiltinWorkspaceScope scope) {
         const size_t count =
             inheritedWorkspaceFrames_.size() + frames_.size();
@@ -14424,6 +14833,10 @@ private:
         if (scope == BuiltinWorkspaceScope::Base) {
             index = 0;
         } else if (scope == BuiltinWorkspaceScope::Caller) {
+            if (const auto* override =
+                    activeSourceCallerOverride()) {
+                return override->workspace;
+            }
             index = count > 1 ? count - 2 : 0;
         }
         if (index < inheritedWorkspaceFrames_.size()) {
@@ -14439,6 +14852,25 @@ private:
             inheritedWorkspaceFrames_.size() + frames_.size();
         if (count == 0) {
             return ancestors;
+        }
+        if (scope == BuiltinWorkspaceScope::Caller) {
+            if (const auto* override =
+                    activeSourceCallerOverride()) {
+                for (RuntimeWorkspace* workspace :
+                     inheritedWorkspaceFrames_) {
+                    if (workspace == override->workspace) {
+                        return ancestors;
+                    }
+                    ancestors.push_back(workspace);
+                }
+                for (auto& frame : frames_) {
+                    if (&frame.workspace == override->workspace) {
+                        return ancestors;
+                    }
+                    ancestors.push_back(&frame.workspace);
+                }
+                ancestors.clear();
+            }
         }
         size_t index = count - 1;
         if (scope == BuiltinWorkspaceScope::Base) {
@@ -14482,13 +14914,14 @@ private:
     std::vector<size_t> switchEndAt_;
     std::vector<size_t> tryEndAt_;
     std::vector<size_t> functionEndAt_;
-    std::vector<RuntimeCallFrame> frames_;
+    std::deque<RuntimeCallFrame> frames_;
     std::vector<int> activeAnonymousBodyOutputCounts_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
     std::shared_ptr<RuntimeExecutionControl> executionControl_;
     std::set<std::string> baseGlobalNames_;
     std::vector<std::string> activePersistentFunctionKeys_;
     std::vector<ActiveFunctionFrame> activeFunctionFrames_;
+    std::vector<SourceCallerOverride> sourceCallerOverrides_;
     std::vector<ActiveClassFunction> activeClassFunctions_;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::map<size_t, EventListenerRecord> eventListeners_;
@@ -14538,6 +14971,11 @@ private:
     TypedRegionBackend typedRegionBackend_ = TypedRegionBackend::Auto;
     bool typedRegionsEnabled_ = false;
     std::vector<RuntimeWorkspace*> inheritedWorkspaceFrames_;
+    std::vector<RuntimeSourceCallable> inheritedSourceCallables_;
+    std::vector<RuntimeSourceCallableScope>
+        inheritedSourceCallableScopes_;
+    RuntimeSourceCallableInvoker inheritedSourceCallableInvoker_;
+    RuntimeWorkspace* inheritedSourceCallableWorkspace_ = nullptr;
     std::string requestedEntryFunction_;
     std::vector<RuntimeValue> entryArguments_;
     std::optional<size_t> requestedEntryOutputCount_;

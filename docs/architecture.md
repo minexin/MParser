@@ -1932,6 +1932,21 @@ new MATLAB call frame, so nested `evalin`/`assignin('caller',...)` traverses to
 the original caller and `base` remains the original base frame. Each recursive
 evaluation passes the prefix before its newly selected frame.
 
+Each selected parent frame also contributes a source-scoped callable catalog.
+Semantic analysis predeclares only those names, so ordinary call lowering is
+reused without adding an external-call opcode. A catalog entry carries the
+parent-owned function handle, implicit output count, and whether MATLAB-style
+string lookup is permitted. The temporary VM delegates inherited direct calls,
+named handles, and pre-existing foreign handles through a synchronous callback
+to the active HIR or bytecode owner. Before and after delegation it synchronizes
+the selected workspace; owner output events are returned to the temporary VM
+so `evalc`, ordering, and forwarding retain the normal dynamic-source boundary.
+Runtime call frames use stable-address storage because a delegated call may
+push parent frames while the selected workspace remains borrowed. SourceUnit
+function bindings are retained in SemanticSourceInfo so path/private aliases
+remain scoped to the source that acquired them rather than becoming
+module-global.
+
 Call/index ambiguity remains runtime-guarded inside nested index expressions.
 For `values(min(end, 5))`, the statically callable `min` leaves `end` bound to
 the enclosing `values` index context. If a runtime workspace array shadows
@@ -1944,12 +1959,14 @@ suspends the caller's index context in both engines.
 Returned expression values use collision-free generated bindings that avoid
 both existing workspace names and source identifiers. Dynamic diagnostics map
 their first-line wrapper offset back to the supplied source and then project
-onto the outer call span. The temporary module may not declare functions,
-classes, globals, or persistent bindings in this slice, and any newly created
-module-bound handle is removed from outputs/workspace before reporting a
-deterministic escape diagnostic. Existing handles in the selected workspace
-are allow-listed by callable-context identity so they can pass through
-unchanged, but the temporary module cannot invoke a different module's handle.
+onto the outer call span. MATLAB R2024b rejects function/class definitions in
+evaluated text, while dynamic global/persistent declarations remain unsupported
+in this slice. Any newly created temporary-module handle is removed from
+outputs/workspace before reporting a deterministic escape diagnostic. Parent
+handles represented by the inherited catalog and handles already present in
+the selected workspace are allow-listed by callable-context identity; they can
+be invoked synchronously or returned unchanged without extending authority
+beyond the active owner invocation.
 Shared object-field maps reachable before evaluation are snapshotted and
 restored in place on escape, including when dynamic source clears the original
 workspace variable after storing a temporary callback. The same scan covers

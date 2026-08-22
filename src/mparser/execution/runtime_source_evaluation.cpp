@@ -409,6 +409,10 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
                 value, allowedContexts, contextTraversal);
         }
     }
+    for (const auto& inherited : options.inheritedCallables) {
+        collectCallableContexts(
+            inherited.callable, allowedContexts, contextTraversal);
+    }
     std::vector<SharedFieldSnapshot> sharedFieldSnapshots;
     HandleTraversal snapshotTraversal;
     for (const auto& [name, value] : originalWorkspace) {
@@ -429,6 +433,11 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     compileOptions.builtinRegistry =
         options.builtinRegistry ? options.builtinRegistry
                                 : defaultBuiltinRegistry();
+    compileOptions.externalFunctionNames.reserve(
+        options.inheritedCallables.size());
+    for (const auto& inherited : options.inheritedCallables) {
+        compileOptions.externalFunctionNames.push_back(inherited.name);
+    }
     CompiledModule module = CompiledModule::compile(
         std::vector<SourceUnit>{
             SourceUnit{"<eval>", prepared.source}},
@@ -458,6 +467,15 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     vmOptions.executionControl = options.executionControl;
     vmOptions.inheritedWorkspaceFrames =
         options.inheritedWorkspaceFrames;
+    vmOptions.inheritedCallables = options.inheritedCallables;
+    vmOptions.inheritedCallableScopes =
+        options.inheritedCallableScopes;
+    vmOptions.inheritedCallableInvoker =
+        options.inheritedCallableInvoker;
+    vmOptions.inheritedCallableWorkspace =
+        options.inheritedCallableWorkspace
+            ? options.inheritedCallableWorkspace
+            : &workspace;
     BytecodeVmResult runtime =
         options.enableTypedRegions
             ? RuntimeSourceEvaluationAccess::invoke(module, vmOptions)

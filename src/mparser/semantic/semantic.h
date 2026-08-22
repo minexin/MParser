@@ -136,6 +136,7 @@ struct SemanticScope {
 struct SemanticSourceInfo {
     std::string name;
     std::string namespaceName;
+    std::vector<SourceFunctionBinding> functionBindings;
 };
 
 struct SemanticResult {
@@ -151,7 +152,8 @@ class SemanticAnalyzer {
 public:
     SemanticAnalyzer();
     explicit SemanticAnalyzer(
-        std::shared_ptr<const BuiltinRegistry> builtinRegistry);
+        std::shared_ptr<const BuiltinRegistry> builtinRegistry,
+        std::vector<std::string> externalFunctionNames = {});
 
     SemanticResult analyze(
         const SyntaxNode& root,
@@ -159,6 +161,7 @@ public:
 
 private:
     std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
+    std::vector<std::string> externalFunctionNames_;
 };
 
 const char* hirKindName(HirKind kind);

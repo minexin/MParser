@@ -1923,19 +1923,24 @@ array-aware `fullfile`, shaped `isfile`/`isfolder`, container-preserving
 overrides, real `dir.datenum` metadata, wildcard and string-array file
 `delete`, `fileattrib` query/status/display forms, Windows `a/h/s/w` and UNIX
 `w/x` updates, recursive UNIX user scopes, rooted write-path link rejection,
-current/caller/
-base dynamic workspaces, `evalc` capture, multi-output dynamic expressions,
+current/caller/base dynamic workspaces, `evalc` capture, multi-output dynamic
+expressions,
 compressed and uncompressed MAT v5 persistence for dense numeric, logical,
 complex, UTF-16 char, Cell, and Struct values, zero-output workspace import,
 one-output Struct loading,
 catch expressions, late workspace-value shadowing of builtin call targets,
-and the non-shadowable `!command` shell escape. Dynamic source is compiled
+source-graph-visible parent local/nested/path/package/private function calls,
+pre-existing module-bound handle invocation, parent-handle creation and return,
+captured workspace updates, source-scoped private isolation, and the
+non-shadowable `!command` shell escape. Dynamic source is compiled
 through the ordinary frontend and bytecode authority; typed loops guard
 shadowed call targets and fall back to the VM, while process execution still
 requires the session's
 process capability. This is the current v1.3
-development slice; dynamic function/class declarations, escaping handles from
-temporary dynamic modules, complete MATLAB system behavior, MAT v4/v7.3,
+development slice; MATLAB R2024b itself rejects function/class definitions in
+`eval`, while dynamic `global`/`persistent` declarations and escaping handles
+whose implementation belongs to temporary dynamic modules remain unsupported.
+Complete MATLAB system behavior, MAT v4/v7.3,
 strict v6/append/ASCII MAT modes, remote files, non-UTF-8 encodings,
 filesystem recycle, parent-component wildcards, selectable symbolic-link
 behavior, broader platform-specific attributes, and

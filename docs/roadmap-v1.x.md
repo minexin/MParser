@@ -321,9 +321,13 @@ The latest MATLAB R2024b external differential rerun at
 and 4 gaps across all 223 MATLAB-accepted cases. It closes
 `cap_271_io_save_load` after the preceding 218-match run with no prior match
 regressing. The remaining observed gaps are `datetime`, `table`, `sparse`,
-and graphics. These batches do not close v1.3. Dynamic parent-module function
-lookup/declarations and remaining standard-library
-families remain milestone work. Scansets,
+and graphics. The thirteenth batch closes dynamic parent-module local,
+nested, path, package, private, and module-bound-handle invocation across HIR
+and bytecode parents, including recursive evaluation, output capture, captured
+workspace updates, and source-scoped private isolation. MATLAB R2024b reference
+probes confirm that function and class definitions are themselves illegal in
+`eval`; dynamic `global` and context-sensitive `persistent` declarations and
+remaining standard-library families remain v1.3 milestone work. Scansets,
 bit/character/complex binary-I/O corners,
 selectable non-UTF-8 encodings, remote URLs, extended MAT variants, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and

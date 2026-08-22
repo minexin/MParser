@@ -1,6 +1,7 @@
 #include "mparser/embedding/compiled_module.h"
 #include "mparser/execution/interpreter.h"
 #include "mparser/frontend/source_loader.h"
+#include "mparser/runtime/io/runtime_system.h"
 
 #include <cassert>
 #include <chrono>
@@ -73,6 +74,37 @@ void assertBothRuntimes(const mparser::CompiledModule& module,
     const auto interpreted = interpreter.run(module.semantic());
     assert(interpreted.diagnostics.empty());
     assertNumber(interpreted, name, expected);
+}
+
+std::shared_ptr<mparser::RuntimeSessionState> dynamicSession() {
+    mparser::RuntimeSystemContextOptions options;
+    options.capabilities =
+        mparser::RuntimeSystemCapability::DynamicEvaluation;
+    return std::make_shared<mparser::RuntimeSessionState>(
+        std::make_shared<mparser::RuntimeSystemContext>(
+            std::move(options)));
+}
+
+void assertBothDynamicRuntimes(
+    const mparser::CompiledModule& module,
+    const std::vector<std::pair<std::string_view, double>>& expected) {
+    mparser::BytecodeVmOptions vmOptions;
+    vmOptions.sessionState = dynamicSession();
+    const auto bytecode = module.invoke(vmOptions);
+    assert(bytecode.diagnostics.empty());
+    for (const auto& [name, value] : expected) {
+        assertNumber(bytecode, name, value);
+    }
+
+    mparser::InterpreterOptions interpreterOptions;
+    interpreterOptions.sessionState = dynamicSession();
+    mparser::Interpreter interpreter;
+    const auto interpreted =
+        interpreter.run(module.semantic(), interpreterOptions);
+    assert(interpreted.diagnostics.empty());
+    for (const auto& [name, value] : expected) {
+        assertNumber(interpreted, name, value);
+    }
 }
 
 bool hasDiagnostic(const std::vector<mparser::Diagnostic>& diagnostics,
@@ -308,6 +340,81 @@ void runPrivateTextBoundarySmoke() {
                          "function name string is not available"));
 }
 
+void runDynamicEvaluationSourceGraphSmoke() {
+    auto temporary = makeTemporaryDirectory();
+    const auto entry = temporary.path / "app" / "main.m";
+    const auto library = temporary.path / "library";
+    writeFile(
+        entry,
+        "path_anchor = @path_shift;\n"
+        "package_anchor = @tools.shift;\n"
+        "sin_anchor = @sin;\n"
+        "path_direct = eval('path_shift(1)');\n"
+        "package_direct = eval('tools.shift(2)');\n"
+        "builtin_shadow = eval('sin(3)');\n"
+        "path_created = eval('@path_shift');\n"
+        "path_created_value = path_created(4);\n"
+        "package_created = eval('@tools.shift');\n"
+        "package_created_value = package_created(5);\n"
+        "path_text = eval('str2func(''path_shift'')');\n"
+        "path_text_value = path_text(6);\n"
+        "package_text = eval('str2func(''tools.shift'')');\n"
+        "package_text_value = package_text(7);\n"
+        "private_direct = owner_dynamic(8);\n"
+        "private_outside_caught = false;\n"
+        "try\n"
+        "    eval('secret(1)');\n"
+        "catch\n"
+        "    private_outside_caught = true;\n"
+        "end\n"
+        "private_handle_outside_caught = false;\n"
+        "try\n"
+        "    eval('@secret');\n"
+        "catch\n"
+        "    private_handle_outside_caught = true;\n"
+        "end\n");
+    writeFile(library / "path_shift.m",
+              "function value = path_shift(input)\n"
+              "    value = input + 10;\n"
+              "end\n");
+    writeFile(library / "+tools" / "shift.m",
+              "function value = shift(input)\n"
+              "    value = input + 20;\n"
+              "end\n");
+    writeFile(library / "sin.m",
+              "function value = sin(input)\n"
+              "    value = input + 100;\n"
+              "end\n");
+    writeFile(library / "owner_dynamic.m",
+              "function value = owner_dynamic(input)\n"
+              "    dependency = @secret;\n"
+              "    value = eval('secret(input)');\n"
+              "end\n");
+    writeFile(library / "private" / "secret.m",
+              "function value = secret(input)\n"
+              "    value = input + 30;\n"
+              "end\n");
+
+    mparser::SourceLoaderOptions options;
+    options.searchPaths.push_back(library);
+    const auto loaded = mparser::SourceLoader{}.load(entry, options);
+    assert(loaded.sources.size() == 6);
+    const auto module = mparser::CompiledModule::compile(loaded.sources);
+    assert(module.valid());
+    assertBothDynamicRuntimes(
+        module,
+        {{"path_direct", 11},
+         {"package_direct", 22},
+         {"builtin_shadow", 103},
+         {"path_created_value", 14},
+         {"package_created_value", 25},
+         {"path_text_value", 16},
+         {"package_text_value", 27},
+         {"private_direct", 38},
+         {"private_outside_caught", 1},
+         {"private_handle_outside_caught", 1}});
+}
+
 void runEntryFunctionCatalogCompatibilitySmoke() {
     auto temporary = makeTemporaryDirectory();
     const auto entry = temporary.path / "entry_functions.m";
@@ -335,6 +442,7 @@ int main() {
     runWildcardImportPrecedenceSmoke();
     runLiteralDynamicDependencySmoke();
     runPrivateTextBoundarySmoke();
+    runDynamicEvaluationSourceGraphSmoke();
     runEntryFunctionCatalogCompatibilitySmoke();
     std::cout << "function path smoke tests passed\n";
     return 0;

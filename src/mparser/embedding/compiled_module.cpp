@@ -765,7 +765,8 @@ CompiledModule CompiledModule::compile(
         return module;
     }
 
-    SemanticAnalyzer analyzer(options.builtinRegistry);
+    SemanticAnalyzer analyzer(options.builtinRegistry,
+                              options.externalFunctionNames);
     module.data_->semantic =
         analyzer.analyze(*root, module.data_->sources);
     appendDiagnostics(module.data_->diagnostics,

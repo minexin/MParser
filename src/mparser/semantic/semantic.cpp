@@ -261,10 +261,12 @@ bool containsForbiddenArgumentFunction(const SyntaxNode& node,
 class AnalyzerContext {
 public:
     explicit AnalyzerContext(
-        std::shared_ptr<const BuiltinRegistry> builtinRegistry)
+        std::shared_ptr<const BuiltinRegistry> builtinRegistry,
+        std::vector<std::string> externalFunctionNames)
         : builtinRegistry_(builtinRegistry
                                ? std::move(builtinRegistry)
-                               : defaultBuiltinRegistry()) {
+                               : defaultBuiltinRegistry()),
+          externalFunctionNames_(std::move(externalFunctionNames)) {
         result_.builtinRegistry = builtinRegistry_;
     }
 
@@ -274,7 +276,8 @@ public:
         for (size_t sourceId = 0; sourceId < sources.size(); ++sourceId) {
             result_.sources.push_back(
                 SemanticSourceInfo{sources[sourceId].name,
-                                   sources[sourceId].namespaceName});
+                                   sources[sourceId].namespaceName,
+                                   sources[sourceId].functionBindings});
             if (!sources[sourceId].classPrivateFunctionOwner.empty()) {
                 lexicalClassBySource_[sourceId] =
                     sources[sourceId].classPrivateFunctionOwner;
@@ -284,6 +287,7 @@ public:
         pushScope(ScopeKind::Module, "module");
         predeclareModuleSymbols(root);
         predeclareWorkspaceDeclarations(root, false);
+        predeclareExternalFunctions();
         registerExternalFunctionBindings(sources);
         predeclareClassScopes(root);
         collectImportsForCurrentScope(root);
@@ -441,6 +445,15 @@ private:
             } else if (child->kind == SyntaxKind::ClassDef) {
                 declareSymbol(SymbolKind::Class, child->label, child->span,
                               child->label);
+            }
+        }
+    }
+
+    void predeclareExternalFunctions() {
+        for (const auto& name : externalFunctionNames_) {
+            if (!name.empty() &&
+                resolveLocal(name).kind == BindingKind::Unresolved) {
+                declareSymbol(SymbolKind::Function, name, SourceSpan{});
             }
         }
     }
@@ -2430,6 +2443,7 @@ private:
     std::unordered_map<size_t, std::string> lexicalClassBySource_;
     std::vector<RegisteredImport> registeredImports_;
     std::shared_ptr<const BuiltinRegistry> builtinRegistry_;
+    std::vector<std::string> externalFunctionNames_;
 };
 
 bool isAnonymousCaptureBinding(BindingKind kind) {
@@ -2606,14 +2620,16 @@ SemanticAnalyzer::SemanticAnalyzer()
     : builtinRegistry_(defaultBuiltinRegistry()) {}
 
 SemanticAnalyzer::SemanticAnalyzer(
-    std::shared_ptr<const BuiltinRegistry> builtinRegistry)
+    std::shared_ptr<const BuiltinRegistry> builtinRegistry,
+    std::vector<std::string> externalFunctionNames)
     : builtinRegistry_(builtinRegistry
                            ? std::move(builtinRegistry)
-                           : defaultBuiltinRegistry()) {}
+                           : defaultBuiltinRegistry()),
+      externalFunctionNames_(std::move(externalFunctionNames)) {}
 
 SemanticResult SemanticAnalyzer::analyze(
     const SyntaxNode& root, const std::vector<SourceUnit>& sources) {
-    AnalyzerContext context(builtinRegistry_);
+    AnalyzerContext context(builtinRegistry_, externalFunctionNames_);
     return context.analyze(root, sources);
 }
 

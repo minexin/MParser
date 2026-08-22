@@ -181,14 +181,24 @@ and execution-tier policy. HIR and explicit bytecode modes keep nested source
 on bytecode, while production execution supplies the compiled static Typed IR
 and selected portable/native backend. Cancellation, instruction/time/array
 limits, system capabilities, random state, and open-file ownership therefore
-do not reset at an `eval` boundary. Dynamic function/class declarations and
-`global`/`persistent`
-declarations are rejected in this development slice. A module-bound function
-handle created inside the temporary compiled module cannot escape through an
-output or workspace value. Pre-existing handles already owned by the selected
-workspace may pass through unchanged and remain valid in their owner, but the
-temporary module does not gain authority to invoke a different module's
-handle. Pre-existing shared object fields are snapshotted; if a temporary
+do not reset at an `eval` boundary. MATLAB R2024b rejects function and class
+definitions in evaluated text; dynamic `global` and `persistent` declarations
+remain unsupported in this development slice.
+
+The temporary module receives a read-only callable catalog for the selected
+parent frame. Source-graph-visible local, nested, path, package, and private
+functions are represented by their real owner handles, with private aliases
+restricted to the source that received the loader binding. Direct calls,
+`@name`, permitted string lookup, and pre-existing module-bound handles invoke
+synchronously in the active owner engine. The bridge synchronizes the selected
+workspace before and after the call and returns output events to the temporary
+VM, preserving nested capture updates and `evalc` behavior. It exists only for
+the active evaluation and does not grant general cross-module invocation.
+
+A module-bound function handle whose implementation is created inside the
+temporary compiled module cannot escape through an output or workspace value.
+Inherited owner handles may be invoked or returned and remain valid in their
+owner. Pre-existing shared object fields are snapshotted; if a temporary
 handle is written into one, those fields are restored in place before the
 escape diagnostic is returned. Ancestor workspaces reachable through
 `assignin` are included in the same escape scan and restore rule.

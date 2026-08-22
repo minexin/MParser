@@ -149,6 +149,29 @@ void verifyResult(const Result& result) {
     requireNumber(result, "base_value", 77.0);
     requireNumber(result, "eval_caller_read", 30.0);
     requireNumber(result, "eval_caller_after", 31.0);
+    requireNumber(result, "parent_direct", 5.0);
+    requireNumber(result, "parent_existing_call", 6.0);
+    requireNumber(result, "parent_returned_call", 7.0);
+    requireNumber(result, "parent_nested_eval", 9.0);
+    requireNumber(result, "parent_pair_left", 6.0);
+    requireNumber(result, "parent_pair_right", 36.0);
+    requireNumber(result, "parent_closure_result", 14.0);
+    requireNumber(result, "parent_cell_handle_result", 10.0);
+    requireNumber(result, "parent_shadow_result", 20.0);
+    requireNumber(result, "parent_error_caught", 1.0);
+    requireNumber(result, "nested_parent_direct", 11.0);
+    requireNumber(result, "nested_parent_existing", 22.0);
+    requireNumber(result, "nested_parent_returned", 33.0);
+    requireNumber(result, "nested_parent_nested_eval", 44.0);
+    requireNumber(result, "nested_parent_counter", 4.0);
+    requireNumber(result, "evalin_parent_result", 20.0);
+    requireNumber(result, "evalin_parent_assignment", 99.0);
+
+    const auto parentCaptured = mparser::runtimeTextScalarUtf8(
+        variable(result, "parent_captured"));
+    require(parentCaptured && parentCaptured->find("24") !=
+                                  std::string::npos,
+            "evalc did not capture inherited parent callable output");
 
     const auto& dynamicWarningState =
         variable(result, "dynamic_warning_state");
@@ -422,6 +445,35 @@ existing_handle = @parent_increment;
 eval('preserved_handle = existing_handle;');
 preserved_handle_result = preserved_handle(4);
 
+parent_direct = eval('parent_increment(4)');
+parent_existing_call = eval('existing_handle(5)');
+parent_returned_handle = eval('@parent_increment');
+parent_returned_call = parent_returned_handle(6);
+parent_nested_eval = eval('eval(''parent_increment(8)'')');
+[parent_pair_left, parent_pair_right] = eval('parent_pair(6)');
+parent_offset = 10;
+parent_closure = @(input) input + parent_offset;
+parent_closure_result = eval('parent_closure(4)');
+parent_handle_cell = eval('{@parent_increment}');
+parent_cell_handle = parent_handle_cell{1};
+parent_cell_handle_result = parent_cell_handle(9);
+eval(['parent_increment = [10 20 30]; ' ...
+      'parent_shadow_result = parent_increment(2); ' ...
+      'clear parent_increment;']);
+parent_captured = evalc('parent_display(24)');
+parent_error_caught = false;
+try
+    eval('parent_failure()');
+catch err
+    parent_error_caught = ...
+        strcmp(err.identifier, 'Dynamic:ParentFailure');
+end
+[nested_parent_direct, nested_parent_existing, ...
+ nested_parent_returned, nested_parent_nested_eval, ...
+ nested_parent_counter] = nested_parent_roundtrip();
+evalin_parent_result = evalin_parent_roundtrip();
+evalin_parent_assignment = evalin_parent_assignment_roundtrip();
+
 declaration_caught = false;
 try
     eval('global dynamic_global');
@@ -510,6 +562,61 @@ end
 
 function value = parent_increment(input)
     value = input + 1;
+end
+
+function [left, right] = parent_pair(input)
+    left = input;
+    right = input * input;
+end
+
+function parent_display(value)
+    disp(value);
+end
+
+function parent_failure()
+    error('Dynamic:ParentFailure', 'parent failure');
+end
+
+function [direct, existing_result, returned_result, nested_result, counter] = ...
+        nested_parent_roundtrip()
+    counter = 0;
+    existing = @bump;
+    direct = eval('bump(10)');
+    existing_result = eval('existing(20)');
+    returned = eval('@bump');
+    returned_result = returned(30);
+    nested_result = eval('eval(''bump(40)'')');
+
+    function value = bump(input)
+        counter = counter + 1;
+        value = input + counter;
+    end
+end
+
+function value = evalin_parent_roundtrip()
+    value = helper();
+
+    function result = parent_double(input)
+        result = input * 2;
+    end
+
+    function result = helper()
+        result = evalin('caller', 'parent_double(10)');
+    end
+end
+
+function value = evalin_parent_assignment_roundtrip()
+    marker = 0;
+    helper();
+    value = marker;
+
+    function helper()
+        evalin('caller', 'assign_marker()');
+    end
+
+    function assign_marker()
+        assignin('caller', 'marker', 99);
+    end
 end
 )MATLAB";
 

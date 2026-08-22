@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mparser/execution/bytecode/bytecode.h"
+#include "mparser/execution/runtime_source_evaluation.h"
 #include "mparser/runtime/core/runtime_execution_control.h"
 #include "mparser/runtime/core/runtime_output.h"
 #include "mparser/runtime/core/runtime_session_state.h"
@@ -123,6 +124,10 @@ struct BytecodeVmOptions {
     TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
     std::shared_ptr<RuntimeExecutionControl> executionControl;
     RuntimeOutputSink outputSink;
+    std::vector<RuntimeSourceCallable> inheritedCallables;
+    std::vector<RuntimeSourceCallableScope> inheritedCallableScopes;
+    RuntimeSourceCallableInvoker inheritedCallableInvoker;
+    RuntimeWorkspace* inheritedCallableWorkspace = nullptr;
 };
 
 struct BytecodeTypedRegionExecutionProfile {
