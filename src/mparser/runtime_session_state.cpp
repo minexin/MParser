@@ -1,6 +1,7 @@
 #include "mparser/runtime_session_state.h"
 
 #include "mparser/runtime_system.h"
+#include "mparser/runtime_warning.h"
 
 #include <utility>
 
@@ -10,11 +11,17 @@ RuntimeSessionState::RuntimeSessionState(
     std::shared_ptr<RuntimeSystemContext> systemContext)
     : systemContext_(systemContext
                          ? std::move(systemContext)
-                         : makeIsolatedRuntimeSystemContext()) {}
+                         : makeIsolatedRuntimeSystemContext()),
+      warningContext_(std::make_shared<RuntimeWarningContext>()) {}
 
 std::shared_ptr<RuntimeSystemContext>
 RuntimeSessionState::systemContext() const {
     return systemContext_;
+}
+
+std::shared_ptr<RuntimeWarningContext>
+RuntimeSessionState::warningContext() const {
+    return warningContext_;
 }
 
 RuntimeDisplayFormat RuntimeSessionState::displayFormat() const {
@@ -174,10 +181,13 @@ void RuntimeSessionState::clearGlobals() {
 }
 
 void RuntimeSessionState::reset() {
-    std::scoped_lock lock(mutex_);
-    globals_.clear();
-    persistentByFunction_.clear();
-    displayFormat_ = {};
+    {
+        std::scoped_lock lock(mutex_);
+        globals_.clear();
+        persistentByFunction_.clear();
+        displayFormat_ = {};
+    }
+    warningContext_->reset();
 }
 
 std::vector<RuntimeVariable> RuntimeSessionState::globals() const {

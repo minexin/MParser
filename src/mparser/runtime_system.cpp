@@ -1048,21 +1048,107 @@ RuntimeSystemResult<size_t> RuntimeSystemContext::writeFile(
             "invalid file identifier");
     }
     if (!found->second.info.options.writable) {
+        found->second.error = {
+            "file was not opened for writing", -1};
         return RuntimeSystemResult<size_t>::failure(
-            "file was not opened for writing");
+            found->second.error.message);
     }
     if (found->second.lastOperation ==
         OpenFileEntry::LastOperation::Read) {
-        return RuntimeSystemResult<size_t>::failure(
+        found->second.error = {
             "fseek or frewind is required between reading and writing an "
-            "update stream");
+            "update stream", -1};
+        return RuntimeSystemResult<size_t>::failure(
+            found->second.error.message);
     }
     auto result = found->second.file->write(text);
     if (result.succeeded) {
         found->second.lastOperation =
             OpenFileEntry::LastOperation::Write;
+        found->second.endOfFileReached = false;
+        found->second.error = {};
+    } else {
+        found->second.error = {result.error, -1};
     }
     return result;
+}
+
+RuntimeSystemResult<size_t> RuntimeSystemContext::writeFileBlocks(
+    int identifier, std::string_view bytes,
+    size_t blockBytes, size_t skipBytes) {
+    const auto permission = require(
+        RuntimeSystemCapability::FileSystemWrite, "filesystem write");
+    if (!permission.succeeded) {
+        return RuntimeSystemResult<size_t>::failure(permission.error);
+    }
+    std::lock_guard lock(mutex_);
+    const auto found = openFiles_.find(identifier);
+    if (found == openFiles_.end()) {
+        return RuntimeSystemResult<size_t>::failure(
+            "invalid file identifier");
+    }
+    OpenFileEntry& entry = found->second;
+    const auto fail = [&entry](std::string message) {
+        entry.error = {message, -1};
+        return RuntimeSystemResult<size_t>::failure(std::move(message));
+    };
+    if (!entry.info.options.writable) {
+        return fail("file was not opened for writing");
+    }
+    if (entry.lastOperation == OpenFileEntry::LastOperation::Read) {
+        return fail(
+            "fseek or frewind is required between reading and writing an "
+            "update stream");
+    }
+    if (!bytes.empty() && blockBytes == 0) {
+        return fail("binary file write block size must be positive");
+    }
+    if (skipBytes > static_cast<size_t>(
+                        std::numeric_limits<std::int64_t>::max())) {
+        return fail("binary file write skip exceeds the supported range");
+    }
+
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        const size_t count = std::min(blockBytes, bytes.size() - offset);
+        const auto written = entry.file->write(bytes.substr(offset, count));
+        if (!written.succeeded || written.value != count) {
+            return fail(written.succeeded
+                            ? "file write completed only partially"
+                            : std::move(written.error));
+        }
+        offset += count;
+        if (offset >= bytes.size() || skipBytes == 0) {
+            continue;
+        }
+        if (entry.info.options.append) {
+            static constexpr size_t kZeroChunkSize = 4096;
+            static const std::string zeros(kZeroChunkSize, '\0');
+            size_t remaining = skipBytes;
+            while (remaining != 0) {
+                const size_t zeroCount = std::min(remaining, zeros.size());
+                const auto gap = entry.file->write(
+                    std::string_view(zeros).substr(0, zeroCount));
+                if (!gap.succeeded || gap.value != zeroCount) {
+                    return fail(gap.succeeded
+                                    ? "file skip write completed only partially"
+                                    : std::move(gap.error));
+                }
+                remaining -= zeroCount;
+            }
+        } else {
+            const auto skipped = entry.file->seek(
+                static_cast<std::int64_t>(skipBytes),
+                RuntimeFileSeekOrigin::Current);
+            if (!skipped.succeeded) {
+                return fail(std::move(skipped.error));
+            }
+        }
+    }
+    entry.lastOperation = OpenFileEntry::LastOperation::Write;
+    entry.endOfFileReached = false;
+    entry.error = {};
+    return RuntimeSystemResult<size_t>::success(bytes.size());
 }
 
 RuntimeSystemResult<std::string>
@@ -1079,22 +1165,29 @@ RuntimeSystemContext::readFileRemaining(int identifier) {
             "invalid file identifier");
     }
     if (!found->second.info.options.readable) {
+        found->second.error = {
+            "file was not opened for reading", -1};
         return RuntimeSystemResult<std::string>::failure(
-            "file was not opened for reading");
+            found->second.error.message);
     }
     if (found->second.lastOperation ==
         OpenFileEntry::LastOperation::Write) {
-        return RuntimeSystemResult<std::string>::failure(
+        found->second.error = {
             "fseek or frewind is required between writing and reading an "
-            "update stream");
+            "update stream", -1};
+        return RuntimeSystemResult<std::string>::failure(
+            found->second.error.message);
     }
     if (found->second.unreadInput.size() > maximumFileReadBytes_) {
+        found->second.error = {
+            "buffered file input exceeds the runtime limit", -1};
         return RuntimeSystemResult<std::string>::failure(
-            "buffered file input exceeds the runtime limit");
+            found->second.error.message);
     }
     auto remainder = found->second.file->readRemaining(
         maximumFileReadBytes_ - found->second.unreadInput.size());
     if (!remainder.succeeded) {
+        found->second.error = {remainder.error, -1};
         return RuntimeSystemResult<std::string>::failure(
             std::move(remainder.error));
     }
@@ -1115,6 +1208,9 @@ RuntimeSystemContext::readFileRemaining(int identifier) {
     found->second.pendingReadSize = result.size();
     found->second.pendingExtraPhysicalByteOffsets =
         std::move(physicalOffsets);
+    found->second.pendingReadReachedEnd = true;
+    found->second.endOfFileReached = false;
+    found->second.error = {};
     found->second.lastOperation =
         OpenFileEntry::LastOperation::Read;
     return RuntimeSystemResult<std::string>::success(std::move(result));
@@ -1132,8 +1228,10 @@ RuntimeSystemStatus RuntimeSystemContext::restoreUnreadFileData(
         return RuntimeSystemStatus::failure("invalid file identifier");
     }
     if (text.size() > found->second.pendingReadSize) {
+        found->second.error = {
+            "unread data exceeds the preceding file read", -1};
         return RuntimeSystemStatus::failure(
-            "unread data exceeds the preceding file read");
+            found->second.error.message);
     }
     const size_t consumed = found->second.pendingReadSize - text.size();
     const auto firstUnread = std::upper_bound(
@@ -1151,8 +1249,12 @@ RuntimeSystemStatus RuntimeSystemContext::restoreUnreadFileData(
             *offset - consumed);
     }
     found->second.unreadInput = std::move(text);
+    found->second.endOfFileReached =
+        found->second.pendingReadReachedEnd &&
+        found->second.unreadInput.empty();
     found->second.pendingReadSize = 0;
     found->second.pendingExtraPhysicalByteOffsets.clear();
+    found->second.pendingReadReachedEnd = false;
     return RuntimeSystemStatus::success();
 }
 
@@ -1166,6 +1268,7 @@ RuntimeSystemContext::filePosition(int identifier) {
     }
     const auto physical = found->second.file->position();
     if (!physical.succeeded) {
+        found->second.error = {physical.error, -1};
         return physical;
     }
     if (found->second.unreadInput.size() >
@@ -1178,16 +1281,21 @@ RuntimeSystemContext::filePosition(int identifier) {
             static_cast<size_t>(
                 std::numeric_limits<std::int64_t>::max()) -
                 found->second.unreadExtraPhysicalByteOffsets.size()) {
+        found->second.error = {
+            "buffered input exceeds the supported file position range", -1};
         return RuntimeSystemResult<std::int64_t>::failure(
-            "buffered input exceeds the supported file position range");
+            found->second.error.message);
     }
     const auto unreadPhysicalBytes = static_cast<std::int64_t>(
         found->second.unreadInput.size() +
         found->second.unreadExtraPhysicalByteOffsets.size());
     if (physical.value < unreadPhysicalBytes) {
+        found->second.error = {
+            "buffered input exceeds the physical file position", -1};
         return RuntimeSystemResult<std::int64_t>::failure(
-            "buffered input exceeds the physical file position");
+            found->second.error.message);
     }
+    found->second.error = {};
     return RuntimeSystemResult<std::int64_t>::success(
         physical.value - unreadPhysicalBytes);
 }
@@ -1213,16 +1321,18 @@ RuntimeSystemStatus RuntimeSystemContext::seekFile(
                 static_cast<size_t>(
                     std::numeric_limits<std::int64_t>::max()) -
                     found->second.unreadExtraPhysicalByteOffsets.size()) {
-            return RuntimeSystemStatus::failure(
-                "buffered input is outside the supported seek range");
+            found->second.error = {
+                "buffered input is outside the supported seek range", -1};
+            return RuntimeSystemStatus::failure(found->second.error.message);
         }
         const auto unread = static_cast<std::int64_t>(
             found->second.unreadInput.size() +
             found->second.unreadExtraPhysicalByteOffsets.size());
         if (physicalOffset <
             std::numeric_limits<std::int64_t>::min() + unread) {
-            return RuntimeSystemStatus::failure(
-                "file seek target is outside the supported range");
+            found->second.error = {
+                "file seek target is outside the supported range", -1};
+            return RuntimeSystemStatus::failure(found->second.error.message);
         }
         physicalOffset -= unread;
     }
@@ -1230,15 +1340,46 @@ RuntimeSystemStatus RuntimeSystemContext::seekFile(
     const auto status = found->second.file->seek(
         physicalOffset, origin);
     if (!status.succeeded) {
+        found->second.error = {status.error, -1};
         return status;
     }
     found->second.unreadInput.clear();
     found->second.unreadExtraPhysicalByteOffsets.clear();
     found->second.pendingReadSize = 0;
     found->second.pendingExtraPhysicalByteOffsets.clear();
+    found->second.pendingReadReachedEnd = false;
+    found->second.endOfFileReached = false;
+    found->second.error = {};
     found->second.lastOperation =
         OpenFileEntry::LastOperation::None;
     return RuntimeSystemStatus::success();
+}
+
+RuntimeSystemResult<bool> RuntimeSystemContext::fileEndOfFile(
+    int identifier) const {
+    std::lock_guard lock(mutex_);
+    const auto found = openFiles_.find(identifier);
+    return found == openFiles_.end()
+               ? RuntimeSystemResult<bool>::failure(
+                     "invalid file identifier")
+               : RuntimeSystemResult<bool>::success(
+                     found->second.endOfFileReached);
+}
+
+RuntimeSystemResult<RuntimeFileError> RuntimeSystemContext::fileError(
+    int identifier, bool clear) {
+    std::lock_guard lock(mutex_);
+    const auto found = openFiles_.find(identifier);
+    if (found == openFiles_.end()) {
+        return RuntimeSystemResult<RuntimeFileError>::failure(
+            "invalid file identifier");
+    }
+    RuntimeFileError result = found->second.error;
+    if (clear) {
+        found->second.error = {};
+    }
+    return RuntimeSystemResult<RuntimeFileError>::success(
+        std::move(result));
 }
 
 RuntimeSystemStatus RuntimeSystemContext::closeFile(int identifier) {

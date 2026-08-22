@@ -8,6 +8,7 @@
 #include "mparser/runtime_shape.h"
 #include "mparser/runtime_source_evaluation.h"
 #include "mparser/runtime_session_state.h"
+#include "mparser/runtime_struct.h"
 #include "mparser/runtime_system.h"
 #include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
@@ -148,6 +149,22 @@ void verifyResult(const Result& result) {
     requireNumber(result, "base_value", 77.0);
     requireNumber(result, "eval_caller_read", 30.0);
     requireNumber(result, "eval_caller_after", 31.0);
+
+    const auto& dynamicWarningState =
+        variable(result, "dynamic_warning_state");
+    const auto* dynamicWarningStateText =
+        mparser::runtimeStructField(dynamicWarningState, "state");
+    require(dynamicWarningStateText &&
+                mparser::runtimeTextScalarUtf8(*dynamicWarningStateText) ==
+                    std::optional<std::string>{"on"},
+            "nested eval did not retain warning state in its session");
+    require(mparser::runtimeTextScalarUtf8(
+                variable(result, "dynamic_warning_message")) ==
+                std::optional<std::string>{"nested warning"} &&
+                mparser::runtimeTextScalarUtf8(
+                    variable(result, "dynamic_warning_identifier")) ==
+                std::optional<std::string>{"Dynamic:Nested"},
+            "nested eval did not retain lastwarn state in its session");
 
     const auto& assigned = variable(result, "assigned_matrix");
     require(mparser::runtimeDimensions(assigned) ==
@@ -416,6 +433,12 @@ end
 eval('temp_to_clear = 1; clear temp_to_clear;');
 temp_exists = exist('temp_to_clear', 'var');
 eval('disp(8)');
+
+warning('off', 'Dynamic:Nested');
+eval(['warning(''on'', ''Dynamic:Nested''); ' ...
+      'lastwarn(''nested warning'', ''Dynamic:Nested'');']);
+dynamic_warning_state = warning('query', 'Dynamic:Nested');
+[dynamic_warning_message, dynamic_warning_identifier] = lastwarn();
 
 scope_marker = 30;
 [caller_value, local_value, eval_caller_read] = caller_roundtrip();

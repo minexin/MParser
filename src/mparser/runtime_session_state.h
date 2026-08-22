@@ -14,6 +14,7 @@
 namespace mparser {
 
 class RuntimeSystemContext;
+class RuntimeWarningContext;
 
 struct RuntimePersistentVariable {
     size_t contextIdentity = 0;
@@ -28,6 +29,7 @@ public:
         std::shared_ptr<RuntimeSystemContext> systemContext = {});
 
     std::shared_ptr<RuntimeSystemContext> systemContext() const;
+    std::shared_ptr<RuntimeWarningContext> warningContext() const;
 
     RuntimeDisplayFormat displayFormat() const;
     RuntimeDisplayFormat replaceDisplayFormat(
@@ -75,6 +77,7 @@ private:
 
     mutable std::mutex mutex_;
     std::shared_ptr<RuntimeSystemContext> systemContext_;
+    std::shared_ptr<RuntimeWarningContext> warningContext_;
     RuntimeDisplayFormat displayFormat_;
     std::map<std::string, RuntimeValue> globals_;
     std::map<PersistentFunctionKey,

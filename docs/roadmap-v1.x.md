@@ -151,7 +151,7 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first four v1.3 implementation batches are present in the development tree. A
+The first five v1.3 implementation batches are present in the development tree. A
 session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
@@ -214,14 +214,26 @@ workspace variable. `samples/dynamic_workspace_demo.m` and
 entry points; builtin source contract 1.4 records 225 descriptors and 227
 registered names.
 
+The fifth batch makes warning state session-correct and extends the existing
+file abstraction instead of adding engine-specific shortcuts. `warning` and
+`lastwarn` now persist across repeated calls in one module session, reset with
+that session, remain isolated for stateless calls, and follow MATLAB-like
+implicit-output rules. `fgetl`/`fgets`, `feof`/`ferror`, and common numeric
+`fread`/`fwrite` share one unread-suffix, physical-position, EOF/error, and
+update-stream contract. Fixed-width logical/integer/single/double precisions,
+exact 64-bit payloads, finite/Inf shapes, repeat blocks, byte skips, and
+native/little/big-endian conversion are covered by deterministic adapter tests
+and the HIR/bytecode/production file sample. Builtin source contract 1.5 records
+231 descriptors and 233 registered names while retaining frozen 1.4 evidence.
+
 The fresh MATLAB R2024b external differential rerun records 201 matches and 22
 gaps across all 223 accepted cases; `eval`, `evalc`, and `evalin`/`assignin`
 are measured closures and the existing `!command` case remains green. This
 batch does not close v1.3. Broader workspace and filesystem operations,
 dynamic parent-module function lookup/declarations, remaining standard-library
 families, and public embedding configuration for host capabilities remain
-milestone work. Binary I/O, line reads, end/error queries,
-scansets, selectable encodings, remote URLs, MAT-file persistence, full
+milestone work. Scansets, bit/character/complex binary-I/O corners,
+selectable non-UTF-8 encodings, remote URLs, MAT-file persistence, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and
 long-tail overloads such as extended GCD coefficients are also not implied by
 these slices.

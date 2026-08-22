@@ -81,7 +81,7 @@ v1.2 candidate contract.
 
 ## v1.3 Development Additions
 
-The current tree has four end-to-end system and standard-library batches:
+The current tree has five end-to-end system and standard-library batches:
 
 - one session-owned capability context and injectable host adapter for current
   directory, search paths, environment, filesystem read/write, process,
@@ -94,11 +94,12 @@ The current tree has four end-to-end system and standard-library batches:
   arrays, single output, state save/restore, and guarded VM fallback;
 - native-aware `fullfile`, `filesep`, and `pathsep`, including string-array
   shape and missing-string-as-empty component behavior;
-- session-scoped `fopen`, `fclose`, `fseek`, `ftell`, `frewind`, file-targeted
-  `fprintf`, and repeated `fscanf` with update-stream barriers, translated
-  Windows text positions, bounded widths/output, scalar or matrix size,
-  column-major zero padding, mixed text/numeric conversion, and exact long
-  `int64`/`uint64` input;
+- session-scoped `fopen`, `fclose`, `fseek`, `ftell`, `frewind`, `feof`,
+  `ferror`, `fgetl`, `fgets`, file-targeted `fprintf`, repeated `fscanf`, and
+  common numeric `fread`/`fwrite`; this includes update-stream barriers,
+  translated Windows text positions, CR/LF line boundaries, per-file EOF/error
+  state, scalar or matrix sizes, column-major zero padding, exact 64-bit
+  payloads, precision blocks/skips, and native/little/big-endian conversion;
 - parser diagnostics for illegal bare newlines in calls/indexing while matrix
   and cell newlines remain row separators and `...` remains the legal
   continuation form;
@@ -135,10 +136,10 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/utility_library_demo.m`, `samples/dynamic_workspace_demo.m`, and
 `samples/system_command_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
-The 2026-08-22 MATLAB R2024b differential rerun records 201 matches and 22 gaps
-across its 223 accepted cases; all syntax, array, ecosystem, system, text, and
-workspace cases in that finite catalog match.
-Binary `fread`/`fwrite`, line reads, end/error queries, scansets, selectable
+The 2026-08-22 MATLAB R2024b differential rerun records 202 matches and 21 gaps
+across its 223 accepted cases; all syntax, array, ecosystem, exception, system,
+text, and workspace cases in that finite catalog match.
+Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT files, dynamic declarations and parent-module
 function lookup from evaluated text, extended GCD coefficients, arbitrary-rank
 mesh generation, many broad standard-library families, and full MATLAB
@@ -190,7 +191,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; ABI generation 2 revision 0, typed real/imaginary buffers, source metadata, output sink/results, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata and host output projection |
-| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.4 using registry/descriptors/call/results/source-evaluation context |
+| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.5 using registry/descriptors/call/results/source-evaluation and stream-I/O context |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once

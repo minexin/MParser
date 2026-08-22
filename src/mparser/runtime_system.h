@@ -96,6 +96,8 @@ struct RuntimeFileOpenOptions {
     bool truncate = false;
     bool binary = true;
     std::string permission;
+    std::string machineFormat;
+    std::string encoding = "UTF-8";
 };
 
 enum class RuntimeFileSeekOrigin {
@@ -109,6 +111,11 @@ struct RuntimeFileReadBuffer {
     // A point N means the first N logical bytes consumed one extra physical
     // byte, currently used for Windows CRLF text translation.
     std::vector<size_t> extraPhysicalByteOffsets;
+};
+
+struct RuntimeFileError {
+    std::string message;
+    int number = 0;
 };
 
 class RuntimeHostFile {
@@ -219,6 +226,9 @@ public:
         const RuntimeFileOpenOptions& options);
     RuntimeSystemResult<size_t> writeFile(
         int identifier, std::string_view text);
+    RuntimeSystemResult<size_t> writeFileBlocks(
+        int identifier, std::string_view bytes,
+        size_t blockBytes, size_t skipBytes);
     RuntimeSystemResult<std::string> readFileRemaining(
         int identifier);
     RuntimeSystemStatus restoreUnreadFileData(
@@ -228,6 +238,9 @@ public:
     RuntimeSystemStatus seekFile(
         int identifier, std::int64_t offset,
         RuntimeFileSeekOrigin origin);
+    RuntimeSystemResult<bool> fileEndOfFile(int identifier) const;
+    RuntimeSystemResult<RuntimeFileError> fileError(
+        int identifier, bool clear);
     RuntimeSystemStatus closeFile(int identifier);
     RuntimeSystemStatus closeAllFiles();
     RuntimeSystemResult<std::vector<int>>
@@ -280,6 +293,9 @@ private:
         std::vector<size_t> unreadExtraPhysicalByteOffsets;
         size_t pendingReadSize = 0;
         std::vector<size_t> pendingExtraPhysicalByteOffsets;
+        bool pendingReadReachedEnd = false;
+        bool endOfFileReached = false;
+        RuntimeFileError error;
         LastOperation lastOperation = LastOperation::None;
     };
     std::map<int, OpenFileEntry> openFiles_;

@@ -3255,7 +3255,8 @@ private:
             };
             BuiltinCallContext context;
             context.workspace = &workspace;
-            context.warningState = &warningState_;
+            context.warningContext =
+                sessionState_->warningContext().get();
             context.outputSink = &runtimeOutputSink_;
             context.systemContext =
                 sessionState_->systemContext().get();
@@ -3842,7 +3843,6 @@ private:
     std::vector<Diagnostic> diagnostics_;
     std::vector<Diagnostic> warnings_;
     std::optional<RuntimeValue> pendingException_;
-    RuntimeWarningState warningState_;
     std::optional<size_t> diagnosticTrapBase_;
     std::optional<std::chrono::steady_clock::time_point> ticStart_;
     size_t loopDepth_ = 0;

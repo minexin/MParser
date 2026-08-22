@@ -771,6 +771,8 @@ std::optional<RuntimeFileOpenOptions> fileOpenOptions(
         options.permission.push_back('+');
     }
     options.permission.push_back(binary ? 'b' : 't');
+    options.machineFormat = std::string(runtimeFileByteOrderName(
+        runtimeNativeFileByteOrder()));
     return options;
 }
 
@@ -791,6 +793,11 @@ RuntimeValue fileIdentifierVector(const std::vector<int>& identifiers) {
 BuiltinResult fopenBuiltin(const BuiltinCall& call) {
     RuntimeSystemContext* context = systemContext(call);
     if (const auto identifier = fileIdentifier(call.arguments.front())) {
+        if (call.arguments.size() != 1) {
+            return failure(call,
+                           "fopen file-identifier query accepts one input",
+                           "MParser:InvalidFileQuery");
+        }
         const auto info = context->openFileInfo(*identifier);
         if (!info.succeeded) {
             return failure(call, std::move(info.error),
@@ -801,10 +808,8 @@ BuiltinResult fopenBuiltin(const BuiltinCall& call) {
                 pathToNativeUtf8(info.value.path)),
             makeRuntimeCharacterVectorUtf8(info.value.options.permission),
             makeRuntimeCharacterVectorUtf8(
-                std::endian::native == std::endian::little
-                    ? "ieee-le"
-                    : "ieee-be"),
-            makeRuntimeCharacterVectorUtf8("UTF-8"),
+                info.value.options.machineFormat),
+            makeRuntimeCharacterVectorUtf8(info.value.options.encoding),
         });
     }
 
@@ -825,15 +830,41 @@ BuiltinResult fopenBuiltin(const BuiltinCall& call) {
         call.arguments.size() == 1
             ? "r"
             : textArgument(call.arguments[1]).value_or(std::string{});
-    if (call.arguments.size() == 2 && permission.empty() &&
+    if (call.arguments.size() >= 2 && permission.empty() &&
         !textArgument(call.arguments[1])) {
         return failure(call, "fopen permission must be a text scalar");
     }
     std::string modeError;
-    const auto options = fileOpenOptions(permission, modeError);
+    auto options = fileOpenOptions(permission, modeError);
     if (!options) {
         return failure(call, std::move(modeError),
                        "MParser:InvalidFilePermission");
+    }
+    if (call.arguments.size() >= 3) {
+        const auto machineFormat = textArgument(call.arguments[2]);
+        const auto byteOrder = machineFormat
+                                   ? runtimeFileByteOrderFromName(
+                                         *machineFormat)
+                                   : std::nullopt;
+        if (!byteOrder) {
+            return failure(call,
+                           "fopen machine format must be native, ieee-le, "
+                           "or ieee-be",
+                           "MParser:InvalidMachineFormat");
+        }
+        options->machineFormat =
+            std::string(runtimeFileByteOrderName(*byteOrder));
+    }
+    if (call.arguments.size() >= 4) {
+        const auto encoding = textArgument(call.arguments[3]);
+        if (!encoding ||
+            (*encoding != "UTF-8" && *encoding != "utf-8" &&
+             *encoding != "UTF8" && *encoding != "utf8")) {
+            return failure(call,
+                           "fopen currently supports only UTF-8 encoding",
+                           "MParser:UnsupportedFileEncoding");
+        }
+        options->encoding = "UTF-8";
     }
 
     RuntimeSystemResult<int> opened;
@@ -919,6 +950,361 @@ BuiltinResult frewindBuiltin(const BuiltinCall& call) {
                ? BuiltinResult::success()
                : failure(call, std::move(status.error),
                          "MParser:SystemOperationFailed");
+}
+
+std::optional<size_t> nonnegativeFileSize(
+    const RuntimeValue& value) {
+    if (!isRuntimeNumericValue(value) || value.numericComplex ||
+        runtimeShapeElementCount(value) != 1) {
+        return std::nullopt;
+    }
+    const auto element = runtimeNumericElementValue(value, 0);
+    return element
+               ? runtimeNumericElementAsNonnegativeSize(*element)
+               : std::nullopt;
+}
+
+BuiltinResult fileLineBuiltin(std::string_view name,
+                              const BuiltinCall& call) {
+    const auto identifier = fileIdentifier(call.arguments.front());
+    if (!identifier || *identifier < 3) {
+        return failure(call, std::string(name) +
+                                 " requires an open file identifier",
+                       "MParser:InvalidFileIdentifier");
+    }
+    std::optional<size_t> maximumCharacters;
+    if (call.arguments.size() == 2) {
+        maximumCharacters = nonnegativeFileSize(call.arguments[1]);
+        if (!maximumCharacters || *maximumCharacters == 0) {
+            return failure(call,
+                           "fgets character limit must be a positive integer",
+                           "MParser:InvalidFileReadSize");
+        }
+    }
+
+    RuntimeSystemContext* context = systemContext(call);
+    auto input = context->readFileRemaining(*identifier);
+    if (!input.succeeded) {
+        return failure(call, std::move(input.error),
+                       "MParser:SystemOperationFailed");
+    }
+    const bool keepTerminator = name == "fgets";
+    auto line = runtimeReadFileLine(
+        input.value, keepTerminator, maximumCharacters);
+    const auto restored = context->restoreUnreadFileData(
+        *identifier, input.value.substr(line.consumedBytes));
+    if (!restored.succeeded) {
+        return failure(call, std::move(restored.error),
+                       "MParser:SystemOperationFailed");
+    }
+
+    RuntimeValue value = line.hasValue
+                             ? makeRuntimeCharacterVectorUtf8(line.text)
+                             : makeRuntimeNumberValue(-1.0);
+    if (name == "fgetl") {
+        return BuiltinResult::success({std::move(value)});
+    }
+    const double terminator = line.terminator.empty()
+                                  ? 0.0
+                                  : static_cast<double>(
+                                        static_cast<unsigned char>(
+                                            line.terminator.back()));
+    return selectedOutputs(call, {
+        std::move(value), makeRuntimeNumberValue(terminator)});
+}
+
+BuiltinResult feofBuiltin(const BuiltinCall& call) {
+    const auto identifier = fileIdentifier(call.arguments.front());
+    if (!identifier || *identifier < 3) {
+        return failure(call, "feof requires an open file identifier",
+                       "MParser:InvalidFileIdentifier");
+    }
+    const auto result = systemContext(call)->fileEndOfFile(*identifier);
+    return result.succeeded
+               ? BuiltinResult::success({makeRuntimeNumberValue(
+                     result.value ? 1.0 : 0.0)})
+               : failure(call, std::move(result.error),
+                         "MParser:InvalidFileIdentifier");
+}
+
+BuiltinResult ferrorBuiltin(const BuiltinCall& call) {
+    const auto identifier = fileIdentifier(call.arguments.front());
+    if (!identifier || *identifier < 3) {
+        return failure(call, "ferror requires an open file identifier",
+                       "MParser:InvalidFileIdentifier");
+    }
+    bool clear = false;
+    if (call.arguments.size() == 2) {
+        const auto operation = textArgument(call.arguments[1]);
+        if (!operation || *operation != "clear") {
+            return failure(call,
+                           "ferror second input must be clear",
+                           "MParser:InvalidFileErrorOperation");
+        }
+        clear = true;
+    }
+    const auto result = systemContext(call)->fileError(*identifier, clear);
+    return result.succeeded
+               ? selectedOutputs(call, {
+                     makeRuntimeCharacterVectorUtf8(result.value.message),
+                     makeRuntimeNumberValue(
+                         static_cast<double>(result.value.number)),
+                 })
+               : failure(call, std::move(result.error),
+                         "MParser:InvalidFileIdentifier");
+}
+
+std::optional<RuntimeBinaryReadSize> binaryReadSize(
+    const RuntimeValue& value, std::string& error) {
+    if (!isRuntimeNumericValue(value) || value.numericComplex) {
+        error = "fread size must be a real numeric scalar or two-element vector";
+        return std::nullopt;
+    }
+    const size_t count = runtimeShapeElementCount(value);
+    if (count != 1 && count != 2) {
+        error = "fread size must contain one or two elements";
+        return std::nullopt;
+    }
+    std::vector<std::optional<size_t>> dimensions;
+    dimensions.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        const auto numeric = runtimeNumericElement(value, index);
+        if (!numeric || *numeric < 0.0 || std::isnan(*numeric) ||
+            (std::isfinite(*numeric) && std::trunc(*numeric) != *numeric) ||
+            (std::isfinite(*numeric) &&
+             *numeric > static_cast<double>(
+                            std::numeric_limits<size_t>::max()))) {
+            error = "fread size elements must be nonnegative integers or Inf";
+            return std::nullopt;
+        }
+        dimensions.push_back(
+            std::isinf(*numeric)
+                ? std::nullopt
+                : std::optional<size_t>(static_cast<size_t>(*numeric)));
+    }
+
+    RuntimeBinaryReadSize result;
+    if (count == 1) {
+        result.scalarRequested = dimensions.front().has_value();
+        result.maximumValues = dimensions.front();
+        return result;
+    }
+    if (!dimensions.front()) {
+        error = "fread row count must be finite";
+        return std::nullopt;
+    }
+    result.matrixRequested = true;
+    result.rows = *dimensions.front();
+    result.columns = dimensions[1];
+    if (result.rows == 0) {
+        result.maximumValues = 0;
+    } else if (result.columns) {
+        if (*result.columns >
+            std::numeric_limits<size_t>::max() / result.rows) {
+            error = "fread size is too large";
+            return std::nullopt;
+        }
+        result.maximumValues = result.rows * *result.columns;
+    }
+    return result;
+}
+
+std::optional<RuntimeFileByteOrder> fileByteOrder(
+    RuntimeSystemContext& context, int identifier,
+    const std::optional<std::string>& overrideName,
+    std::string& error) {
+    if (overrideName) {
+        const auto result = runtimeFileByteOrderFromName(*overrideName);
+        if (!result) {
+            error = "file machine format must be native, ieee-le, or ieee-be";
+        }
+        return result;
+    }
+    const auto info = context.openFileInfo(identifier);
+    if (!info.succeeded) {
+        error = info.error;
+        return std::nullopt;
+    }
+    const auto result = runtimeFileByteOrderFromName(
+        info.value.options.machineFormat);
+    if (!result) {
+        error = "open file has an invalid machine format";
+    }
+    return result;
+}
+
+BuiltinResult freadBuiltin(const BuiltinCall& call) {
+    const auto identifier = fileIdentifier(call.arguments.front());
+    if (!identifier || *identifier < 3) {
+        return failure(call, "fread requires an open file identifier",
+                       "MParser:InvalidFileIdentifier");
+    }
+
+    RuntimeBinaryReadSize size;
+    std::string precisionText = "uint8=>double";
+    size_t skipBytes = 0;
+    std::optional<std::string> machineFormat;
+    size_t index = 1;
+    if (index < call.arguments.size() &&
+        !textArgument(call.arguments[index])) {
+        std::string sizeError;
+        const auto parsed = binaryReadSize(
+            call.arguments[index++], sizeError);
+        if (!parsed) {
+            return failure(call, std::move(sizeError),
+                           "MParser:InvalidFileReadSize");
+        }
+        size = *parsed;
+    }
+    if (index < call.arguments.size()) {
+        if (const auto precision = textArgument(call.arguments[index])) {
+            precisionText = *precision;
+            ++index;
+        }
+    }
+    if (index < call.arguments.size()) {
+        if (const auto format = textArgument(call.arguments[index])) {
+            machineFormat = *format;
+            ++index;
+        } else {
+            const auto skip = nonnegativeFileSize(call.arguments[index]);
+            if (!skip) {
+                return failure(call,
+                               "fread skip must be a nonnegative integer",
+                               "MParser:InvalidFileReadSkip");
+            }
+            skipBytes = *skip;
+            ++index;
+        }
+    }
+    if (index < call.arguments.size()) {
+        machineFormat = textArgument(call.arguments[index++]);
+        if (!machineFormat) {
+            return failure(call,
+                           "fread machine format must be a text scalar",
+                           "MParser:InvalidMachineFormat");
+        }
+    }
+    if (index != call.arguments.size()) {
+        return failure(call, "fread received too many inputs");
+    }
+
+    const auto precision = runtimeParseBinaryPrecision(
+        precisionText, true);
+    if (!precision.succeeded) {
+        return failure(call, precision.error,
+                       "MParser:InvalidBinaryPrecision");
+    }
+    RuntimeSystemContext* context = systemContext(call);
+    std::string orderError;
+    const auto order = fileByteOrder(
+        *context, *identifier, machineFormat, orderError);
+    if (!order) {
+        return failure(call, std::move(orderError),
+                       "MParser:InvalidMachineFormat");
+    }
+    auto input = context->readFileRemaining(*identifier);
+    if (!input.succeeded) {
+        return failure(call, std::move(input.error),
+                       "MParser:SystemOperationFailed");
+    }
+    auto decoded = runtimeDecodeBinaryData(
+        input.value, precision.precision, size, skipBytes, *order);
+    if (!decoded.succeeded) {
+        (void)context->restoreUnreadFileData(
+            *identifier, std::move(input.value));
+        return failure(call, std::move(decoded.error),
+                       "MParser:InvalidBinaryInput");
+    }
+    const auto restored = context->restoreUnreadFileData(
+        *identifier, input.value.substr(decoded.consumedBytes));
+    if (!restored.succeeded) {
+        return failure(call, std::move(restored.error),
+                       "MParser:SystemOperationFailed");
+    }
+    return selectedOutputs(call, {
+        std::move(decoded.value),
+        makeRuntimeNumberValue(static_cast<double>(decoded.valueCount)),
+    });
+}
+
+BuiltinResult fwriteBuiltin(const BuiltinCall& call) {
+    const auto identifier = fileIdentifier(call.arguments.front());
+    if (!identifier || *identifier < 3) {
+        return failure(call, "fwrite requires an open file identifier",
+                       "MParser:InvalidFileIdentifier");
+    }
+    std::string precisionText = "uint8";
+    size_t skipBytes = 0;
+    std::optional<std::string> machineFormat;
+    size_t index = 2;
+    if (index < call.arguments.size()) {
+        const auto precision = textArgument(call.arguments[index]);
+        if (!precision) {
+            return failure(call,
+                           "fwrite precision must be a text scalar",
+                           "MParser:InvalidBinaryPrecision");
+        }
+        precisionText = *precision;
+        ++index;
+    }
+    if (index < call.arguments.size()) {
+        if (const auto format = textArgument(call.arguments[index])) {
+            machineFormat = *format;
+            ++index;
+        } else {
+            const auto skip = nonnegativeFileSize(call.arguments[index]);
+            if (!skip) {
+                return failure(call,
+                               "fwrite skip must be a nonnegative integer",
+                               "MParser:InvalidFileWriteSkip");
+            }
+            skipBytes = *skip;
+            ++index;
+        }
+    }
+    if (index < call.arguments.size()) {
+        machineFormat = textArgument(call.arguments[index++]);
+        if (!machineFormat) {
+            return failure(call,
+                           "fwrite machine format must be a text scalar",
+                           "MParser:InvalidMachineFormat");
+        }
+    }
+    if (index != call.arguments.size()) {
+        return failure(call, "fwrite received too many inputs");
+    }
+
+    const auto precision = runtimeParseBinaryPrecision(
+        precisionText, false);
+    if (!precision.succeeded) {
+        return failure(call, precision.error,
+                       "MParser:InvalidBinaryPrecision");
+    }
+    RuntimeSystemContext* context = systemContext(call);
+    std::string orderError;
+    const auto order = fileByteOrder(
+        *context, *identifier, machineFormat, orderError);
+    if (!order) {
+        return failure(call, std::move(orderError),
+                       "MParser:InvalidMachineFormat");
+    }
+    auto encoded = runtimeEncodeBinaryData(
+        call.arguments[1], precision.precision, *order);
+    if (!encoded.succeeded) {
+        return failure(call, std::move(encoded.error),
+                       "MParser:InvalidBinaryOutput");
+    }
+    const auto written = context->writeFileBlocks(
+        *identifier, encoded.bytes, encoded.blockBytes, skipBytes);
+    if (!written.succeeded) {
+        return failure(call, std::move(written.error),
+                       "MParser:SystemOperationFailed");
+    }
+    return call.requestedOutputCount == 0
+               ? BuiltinResult::success()
+               : BuiltinResult::success({makeRuntimeNumberValue(
+                     static_cast<double>(encoded.valueCount))});
 }
 
 std::optional<RuntimeFileScanSize> fileScanSize(
@@ -2306,13 +2692,15 @@ BuiltinResult systemBuiltin(const BuiltinCall& call) {
 } // namespace
 
 bool isRuntimeSystemBuiltin(std::string_view name) {
-    static constexpr std::array<std::string_view, 39> names = {
+    static constexpr std::array<std::string_view, 45> names = {
         "addpath", "assignin", "cd", "clear", "clock", "computer",
         "date", "dir", "eval", "evalc", "evalin", "exist", "fclose",
-        "filesep", "fopen", "format", "fprintf", "frewind", "fscanf",
-        "fseek", "ftell", "fullfile", "getenv", "path", "pathsep",
-        "pause", "pwd", "rand", "randi", "randn", "randperm", "rmpath",
-        "rng", "system", "tempdir", "version", "which", "who", "whos"};
+        "feof", "ferror", "fgetl", "fgets", "filesep", "fopen",
+        "format", "fprintf", "fread", "frewind", "fscanf", "fseek",
+        "ftell", "fullfile", "fwrite", "getenv", "path", "pathsep",
+        "pause", "pwd", "rand", "randi", "randn", "randperm",
+        "rmpath", "rng", "system", "tempdir", "version", "which",
+        "who", "whos"};
     return std::find(names.begin(), names.end(), name) != names.end();
 }
 
@@ -2345,6 +2733,15 @@ BuiltinResult invokeRuntimeSystemBuiltin(
     if (name == "fclose") {
         return fcloseBuiltin(call);
     }
+    if (name == "feof") {
+        return feofBuiltin(call);
+    }
+    if (name == "ferror") {
+        return ferrorBuiltin(call);
+    }
+    if (name == "fgetl" || name == "fgets") {
+        return fileLineBuiltin(name, call);
+    }
     if (name == "fseek") {
         return fseekBuiltin(call);
     }
@@ -2357,8 +2754,14 @@ BuiltinResult invokeRuntimeSystemBuiltin(
     if (name == "fscanf") {
         return fscanfBuiltin(call);
     }
+    if (name == "fread") {
+        return freadBuiltin(call);
+    }
     if (name == "fprintf") {
         return fprintfBuiltin(call);
+    }
+    if (name == "fwrite") {
+        return fwriteBuiltin(call);
     }
     if (name == "who" || name == "whos") {
         return workspaceQuery(name, call);

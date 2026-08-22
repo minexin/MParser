@@ -185,11 +185,11 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 4,
+                mparser::kBuiltinSourceContractMinor == 5,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 225,
+    require(registry->descriptors().size() == 231,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 227,
+    require(registry->names().size() == 233,
             "default builtin name catalog changed unexpectedly");
 
     for (std::string_view name : {"eval", "evalc", "evalin"}) {
@@ -217,6 +217,23 @@ void runDefaultCatalogSmoke() {
                     assignin->requiredContext,
                     mparser::BuiltinContextPermission::Workspace),
             "assignin metadata mismatch");
+    for (std::string_view name : {"fgetl", "fgets", "fread", "fwrite",
+                                  "feof", "ferror"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Context &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->requiredContext,
+                        mparser::BuiltinContextPermission::SystemServices),
+                "stream I/O builtin metadata mismatch");
+    }
+    require(registry->find("fread")->inputs.maximum == 5 &&
+                registry->find("fread")->outputs.maximum == 2 &&
+                registry->find("fwrite")->inputs.minimum == 2 &&
+                registry->find("fwrite")->outputs.maximum == 1 &&
+                registry->find("fgets")->outputs.maximum == 2,
+            "stream I/O arity metadata mismatch");
 
     const auto* absolute = registry->find("abs");
     require(absolute &&

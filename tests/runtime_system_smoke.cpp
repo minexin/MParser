@@ -1151,6 +1151,261 @@ void fileBuiltinSmoke() {
                     "MParser:InvalidFileIdentifier",
             "fclose accepted an invalid file identifier");
 
+    result = invoke("fopen", {text("lines.txt"), text("wb")}, 1);
+    const int lineWriter = static_cast<int>(outputNumber(result, 0));
+    require(invoke("fprintf",
+                   {mparser::makeRuntimeNumberValue(lineWriter),
+                    text("alpha\r\nbeta\nlast")},
+                   0).succeeded &&
+                invoke("fclose",
+                       {mparser::makeRuntimeNumberValue(lineWriter)}, 0)
+                    .succeeded,
+            "line fixture write failed");
+    result = invoke("fopen", {text("lines.txt"), text("rb")}, 1);
+    const int lineReader = static_cast<int>(outputNumber(result, 0));
+    require(outputNumber(
+                invoke("feof",
+                       {mparser::makeRuntimeNumberValue(lineReader)}, 1),
+                0) == 0.0,
+            "feof was set before a read reached the end");
+    result = invoke("fgetl",
+                    {mparser::makeRuntimeNumberValue(lineReader)}, 1);
+    require(result.succeeded &&
+                mparser::runtimeTextScalarUtf8(result.outputs[0]) ==
+                    std::optional<std::string>{"alpha"} &&
+                outputNumber(
+                    invoke("ftell",
+                           {mparser::makeRuntimeNumberValue(lineReader)}, 1),
+                    0) == 7.0,
+            "fgetl did not remove a CRLF terminator");
+    result = invoke("fgets",
+                    {mparser::makeRuntimeNumberValue(lineReader),
+                     mparser::makeRuntimeNumberValue(3)},
+                    2);
+    require(result.succeeded &&
+                mparser::runtimeTextScalarUtf8(result.outputs[0]) ==
+                    std::optional<std::string>{"bet"} &&
+                outputNumber(result, 1) == 0.0,
+            "bounded fgets consumed beyond its character limit");
+    result = invoke("fgets",
+                    {mparser::makeRuntimeNumberValue(lineReader)}, 2);
+    require(result.succeeded &&
+                mparser::runtimeTextScalarUtf8(result.outputs[0]) ==
+                    std::optional<std::string>{"a\n"} &&
+                outputNumber(result, 1) == 10.0,
+            "fgets did not preserve and report the line terminator");
+    result = invoke("fgetl",
+                    {mparser::makeRuntimeNumberValue(lineReader)}, 1);
+    require(result.succeeded &&
+                mparser::runtimeTextScalarUtf8(result.outputs[0]) ==
+                    std::optional<std::string>{"last"} &&
+                outputNumber(
+                    invoke("feof",
+                           {mparser::makeRuntimeNumberValue(lineReader)}, 1),
+                    0) == 1.0 &&
+                outputNumber(
+                    invoke("fgetl",
+                           {mparser::makeRuntimeNumberValue(lineReader)}, 1),
+                    0) == -1.0,
+            "line reads did not expose the logical end of file");
+    require(invoke("frewind",
+                   {mparser::makeRuntimeNumberValue(lineReader)}, 0)
+                .succeeded &&
+                outputNumber(
+                    invoke("feof",
+                           {mparser::makeRuntimeNumberValue(lineReader)}, 1),
+                    0) == 0.0 &&
+                outputNumber(
+                    invoke("fseek",
+                           {mparser::makeRuntimeNumberValue(lineReader),
+                            mparser::makeRuntimeNumberValue(-1), text("bof")},
+                           1),
+                    0) == -1.0,
+            "frewind did not clear EOF or failed seek status");
+    result = invoke("ferror",
+                    {mparser::makeRuntimeNumberValue(lineReader)}, 2);
+    require(result.succeeded &&
+                !mparser::runtimeTextScalarUtf8(result.outputs[0])->empty() &&
+                outputNumber(result, 1) == -1.0,
+            "ferror did not report the preceding seek failure");
+    result = invoke("ferror",
+                    {mparser::makeRuntimeNumberValue(lineReader),
+                     text("clear")},
+                    2);
+    require(result.succeeded &&
+                !mparser::runtimeTextScalarUtf8(result.outputs[0])->empty() &&
+                outputNumber(result, 1) == -1.0,
+            "ferror clear did not return the preceding error");
+    result = invoke("ferror",
+                    {mparser::makeRuntimeNumberValue(lineReader)}, 2);
+    require(result.succeeded &&
+                mparser::runtimeTextScalarUtf8(result.outputs[0]) ==
+                    std::optional<std::string>{""} &&
+                outputNumber(result, 1) == 0.0 &&
+                invoke("fclose",
+                       {mparser::makeRuntimeNumberValue(lineReader)}, 0)
+                    .succeeded,
+            "ferror clear did not reset the stream error indicator");
+
+    result = invoke("fopen",
+                    {text("binary.dat"), text("w+"), text("ieee-be"),
+                     text("UTF-8")},
+                    1);
+    const int binary = static_cast<int>(outputNumber(result, 0));
+    result = invoke("fopen", {mparser::makeRuntimeNumberValue(binary)}, 4);
+    require(result.succeeded &&
+                mparser::runtimeTextScalarUtf8(result.outputs[2]) ==
+                    std::optional<std::string>{"ieee-be"} &&
+                mparser::runtimeTextScalarUtf8(result.outputs[3]) ==
+                    std::optional<std::string>{"UTF-8"},
+            "fopen did not retain machine format and encoding metadata");
+    result = invoke("fopen",
+                    {mparser::makeRuntimeNumberValue(binary), text("r")}, 1);
+    require(!result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics.front().identifier ==
+                    "MParser:InvalidFileQuery",
+            "fopen identifier query silently ignored extra inputs");
+    auto binaryValues = mparser::runtimeNumericValueFromLogicalOrder(
+        {1, 3}, {1.0, 258.0, 65535.0},
+        mparser::RuntimeNumericClass::UInt16);
+    require(binaryValues.has_value() &&
+                outputNumber(
+                    invoke("fwrite",
+                           {mparser::makeRuntimeNumberValue(binary),
+                            *binaryValues, text("uint16")},
+                           1),
+                    0) == 3.0 &&
+                outputNumber(
+                    invoke("ftell",
+                           {mparser::makeRuntimeNumberValue(binary)}, 1),
+                    0) == 6.0 &&
+                !invoke("fread",
+                        {mparser::makeRuntimeNumberValue(binary)}, 1)
+                     .succeeded &&
+                invoke("frewind",
+                       {mparser::makeRuntimeNumberValue(binary)}, 0)
+                    .succeeded,
+            "big-endian fwrite or update-stream barrier mismatch");
+    result = invoke(
+        "fread",
+        {mparser::makeRuntimeNumberValue(binary),
+         mparser::makeRuntimeVectorValue({2.0, 2.0}),
+         text("uint16=>uint16")},
+        2);
+    require(result.succeeded && outputNumber(result, 1) == 3.0 &&
+                result.outputs[0].numericClass ==
+                    mparser::RuntimeNumericClass::UInt16 &&
+                mparser::runtimeDimensions(result.outputs[0]) ==
+                    std::vector<size_t>({2, 2}) &&
+                mparser::runtimeNumericElement(result.outputs[0], 0) == 1.0 &&
+                mparser::runtimeNumericElement(result.outputs[0], 1) == 258.0 &&
+                mparser::runtimeNumericElement(result.outputs[0], 2) ==
+                    65535.0 &&
+                mparser::runtimeNumericElement(result.outputs[0], 3) == 0.0 &&
+                outputNumber(
+                    invoke("feof",
+                           {mparser::makeRuntimeNumberValue(binary)}, 1),
+                    0) == 1.0,
+            "fread shape, class, padding, or EOF mismatch");
+    require(invoke("frewind",
+                   {mparser::makeRuntimeNumberValue(binary)}, 0)
+                .succeeded,
+            "binary rewind failed");
+    result = invoke("fread",
+                    {mparser::makeRuntimeNumberValue(binary),
+                     mparser::makeRuntimeNumberValue(1), text("uint16"),
+                     text("ieee-le")},
+                    2);
+    require(result.succeeded && outputNumber(result, 0) == 256.0 &&
+                outputNumber(result, 1) == 1.0 &&
+                invoke("fclose",
+                       {mparser::makeRuntimeNumberValue(binary)}, 0)
+                    .succeeded,
+            "fread machine-format override mismatch");
+
+    result = invoke("fopen",
+                    {text("skip.dat"), text("w+"), text("ieee-le")}, 1);
+    const int skipped = static_cast<int>(outputNumber(result, 0));
+    auto byteValues = mparser::runtimeNumericValueFromLogicalOrder(
+        {1, 4}, {1.0, 2.0, 3.0, 4.0},
+        mparser::RuntimeNumericClass::UInt8);
+    require(byteValues.has_value() &&
+                outputNumber(
+                    invoke("fwrite",
+                           {mparser::makeRuntimeNumberValue(skipped),
+                            *byteValues, text("2*uint8"),
+                            mparser::makeRuntimeNumberValue(2)},
+                           1),
+                    0) == 4.0 &&
+                invoke("frewind",
+                       {mparser::makeRuntimeNumberValue(skipped)}, 0)
+                    .succeeded,
+            "repeated fwrite precision or skip failed");
+    result = invoke("fread",
+                    {mparser::makeRuntimeNumberValue(skipped),
+                     mparser::makeRuntimeNumberValue(
+                         std::numeric_limits<double>::infinity()),
+                     text("2*uint8=>uint8"),
+                     mparser::makeRuntimeNumberValue(2)},
+                    2);
+    require(result.succeeded && outputNumber(result, 1) == 4.0 &&
+                result.outputs[0].numericClass ==
+                    mparser::RuntimeNumericClass::UInt8 &&
+                mparser::runtimeNumericElement(result.outputs[0], 0) == 1.0 &&
+                mparser::runtimeNumericElement(result.outputs[0], 1) == 2.0 &&
+                mparser::runtimeNumericElement(result.outputs[0], 2) == 3.0 &&
+                mparser::runtimeNumericElement(result.outputs[0], 3) == 4.0 &&
+                invoke("fclose",
+                       {mparser::makeRuntimeNumberValue(skipped)}, 0)
+                    .succeeded,
+            "repeated fread precision or skip failed");
+
+    mparser::RuntimeNumericElementValue exactElement;
+    exactElement.numericClass = mparser::RuntimeNumericClass::UInt64;
+    exactElement.integerRealBits = std::numeric_limits<std::uint64_t>::max();
+    exactElement.real = static_cast<double>(exactElement.integerRealBits);
+    auto exactValue = mparser::runtimeNumericValueFromElements(
+        {1, 1}, {exactElement}, mparser::RuntimeNumericClass::UInt64);
+    result = invoke("fopen", {text("exact.dat"), text("w+")}, 1);
+    const int exactFile = static_cast<int>(outputNumber(result, 0));
+    require(exactValue.has_value() &&
+                outputNumber(
+                    invoke("fwrite",
+                           {mparser::makeRuntimeNumberValue(exactFile),
+                            *exactValue, text("uint64")},
+                           1),
+                    0) == 1.0 &&
+                invoke("frewind",
+                       {mparser::makeRuntimeNumberValue(exactFile)}, 0)
+                    .succeeded,
+            "exact uint64 fixture write failed");
+    result = invoke("fread",
+                    {mparser::makeRuntimeNumberValue(exactFile),
+                     mparser::makeRuntimeNumberValue(1), text("*uint64")},
+                    2);
+    const auto exactOutput =
+        result.succeeded
+            ? mparser::runtimeNumericElementValue(result.outputs[0], 0)
+            : std::nullopt;
+    require(result.succeeded && exactOutput &&
+                exactOutput->numericClass ==
+                    mparser::RuntimeNumericClass::UInt64 &&
+                exactOutput->integerRealBits ==
+                    std::numeric_limits<std::uint64_t>::max() &&
+                invoke("fclose",
+                       {mparser::makeRuntimeNumberValue(exactFile)}, 0)
+                    .succeeded,
+            "fread/fwrite lost exact uint64 payload bits");
+
+    result = invoke("fopen",
+                    {text("encoding.txt"), text("w"), text("native"),
+                     text("windows-1252")},
+                    1);
+    require(!result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics.front().identifier ==
+                    "MParser:UnsupportedFileEncoding",
+            "fopen silently accepted an unsupported text encoding");
+
     result = invoke("fprintf", {text("console=%d"),
                                  mparser::makeRuntimeNumberValue(9)}, 1);
     require(result.succeeded && outputNumber(result, 0) == 9.0 &&

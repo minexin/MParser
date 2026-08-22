@@ -1161,21 +1161,21 @@ add_test(NAME file_io_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_io_demo.m)
 set_tests_properties(file_io_interpreter_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 17"
+    PASS_REGULAR_EXPRESSION "summary = 22"
     RESOURCE_LOCK mparser_file_io_demo)
 
 add_test(NAME file_io_bytecode_cli_smoke
     COMMAND mparser --run-bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_io_demo.m)
 set_tests_properties(file_io_bytecode_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 17"
+    PASS_REGULAR_EXPRESSION "summary = 22"
     RESOURCE_LOCK mparser_file_io_demo)
 
 add_test(NAME file_io_production_cli_smoke
     COMMAND mparser --run
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_io_demo.m)
 set_tests_properties(file_io_production_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 17"
+    PASS_REGULAR_EXPRESSION "summary = 22"
     RESOURCE_LOCK mparser_file_io_demo)
 
 add_test(NAME system_services_interpreter_cli_smoke
@@ -1924,10 +1924,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.4/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.5/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.4 catalog validated: 225 descriptors")
+        "builtin source contract 1.5 catalog validated: 231 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2577,7 +2577,7 @@ install(FILES
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
-    tests/public_contract/builtin/1.1/default_catalog.json
+    tests/public_contract/builtin/1.5/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"

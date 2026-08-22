@@ -1192,8 +1192,11 @@ MATLAB hyperlinks option for compatibility without emitting terminal links.
 `MParser:UnsupportedExceptionCorrection`, making the unsupported object model
 explicit.
 
-`runtime_warning` owns per-invocation warning settings, identifier overrides,
+`runtime_warning` owns warning settings, identifier overrides,
 `backtrace`/`verbose` flags, save/restore structures, and `lastwarn` state.
+`RuntimeSessionState` retains one thread-safe warning context, so repeated calls
+through the same module session observe prior state and `reset()` clears it;
+stateless invocations receive isolated contexts.
 Warnings use a separate internal queue so they cannot trigger `catch`, abort a
 VM instruction stream, block adaptive workspace publication, or turn a CLI
 run into failure. Public results merge them as severity-tagged diagnostics,
@@ -1411,8 +1414,9 @@ and execution-context permissions. Its v1.2 normalized snapshot records all
 structured workspace access, caller output count, implicit-output policy,
 system/display contexts, random/display side effects, and synchronous dynamic
 invocation. Active contract 1.4 adds current/caller/base workspace resolution
-and a source-evaluation callback; its development snapshot records 225
-descriptors and 227 registered names. A generator-backed
+and a source-evaluation callback. Active contract 1.5 records the expanded
+stream-I/O family and warning implicit-output corrections; its development
+snapshot records 231 descriptors and 233 registered names. A generator-backed
 smoke test compares the live registry to the active snapshot; it does not serialize
 handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
 values and diagnostics across HIR and bytecode rather than comparing display
@@ -1808,20 +1812,27 @@ builtin has a second engine-specific implementation. The production CLI uses
 the native adapter, while deterministic tests inject an in-memory adapter and
 isolated embedding requests can omit every process-facing capability.
 
-Text file identifiers and random state live in the context rather than global
+Low-level file identifiers and random state live in the context rather than global
 process state. File entries retain the requested name, resolved host path,
-canonical permission, unread scan suffix, and host file ownership. The
+canonical permission/machine format/encoding, unread suffix, EOF/error state,
+and host file ownership. The
 context serializes access, enforces open/read bounds, and closes all handles on
-destruction. `runtime_file_io` owns one bounded format scanner shared by HIR
-and VM calls; it reapplies formats, preserves column-major output shape,
-handles exact 64-bit integer formats, and commits only the consumed prefix so
-the next call observes the correct file position.
+destruction. `runtime_file_io` owns the bounded format scanner, line splitter,
+binary precision parser, and endian-neutral fixed-width numeric codec shared by
+HIR and VM calls. It reapplies formats, preserves column-major output shape,
+handles exact 64-bit payloads, and commits only the consumed prefix so the next
+call observes the correct file position. Blocked `fwrite` uses the context's
+serialized write/seek path so skipped bytes are not overwritten on ordinary
+update streams.
 
 `fseek`, `ftell`, and `frewind` operate on physical byte positions even though
 the scanner prefetches. File entries retain sparse translation offsets for
 Windows CRLF text input, while binary and Unix paths retain no mapping. A
 successful positioning call clears the prefetch suffix and forms the required
-barrier between read and write directions on `+` update streams.
+barrier between read and write directions on `+` update streams. It also clears
+the logical EOF indicator. Failed host operations remain queryable through
+per-entry `ferror` state; line, formatted, and binary reads all update EOF only
+after their logical unread suffix is empty.
 
 The dynamic-workspace slice adds one engine-neutral source re-entry path.
 `BuiltinWorkspaceAccess` resolves current, caller, and base frames, while the

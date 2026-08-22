@@ -3,6 +3,7 @@
 #include "mparser/runtime_value.h"
 
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,5 +42,22 @@ RuntimeWarningOperationResult runtimeLastWarning(
 
 bool runtimeWarningIsEnabled(const RuntimeWarningState& state,
                              std::string_view identifier);
+
+class RuntimeWarningContext {
+public:
+    RuntimeWarningOperationResult warning(
+        const std::vector<RuntimeValue>& arguments,
+        size_t requestedOutputCount);
+    RuntimeWarningOperationResult lastWarning(
+        const std::vector<RuntimeValue>& arguments,
+        size_t requestedOutputCount);
+
+    RuntimeWarningState snapshot() const;
+    void reset();
+
+private:
+    mutable std::mutex mutex_;
+    RuntimeWarningState state_;
+};
 
 } // namespace mparser

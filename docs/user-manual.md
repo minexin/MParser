@@ -87,7 +87,7 @@ without display. The frozen v1.2 embedding surface routes console output only.
 The active v1.3 CLI additionally gives each invocation a native system context
 and allows `fprintf(fid,...)` for a file opened in that same session.
 
-The first v1.3 text-file slice is:
+The active v1.3 low-level file slice is:
 
 ```matlab
 name = fullfile(tempdir, 'values.txt');
@@ -97,6 +97,9 @@ fclose(fid);
 
 fid = fopen(name, 'r');
 [values, count] = fscanf(fid, '%d', [2 2]);
+frewind(fid);
+firstLine = fgetl(fid);
+atEnd = feof(fid);
 fclose(fid);
 
 fid = fopen(name, 'r+');
@@ -106,16 +109,41 @@ fseek(fid, 0, 'cof');
 fprintf(fid, '%d', value + 1);
 frewind(fid);
 fclose(fid);
+
+binaryName = fullfile(tempdir, 'values.bin');
+fid = fopen(binaryName, 'w+', 'ieee-be', 'UTF-8');
+written = fwrite(fid, uint16([1 258 65535]), 'uint16');
+frewind(fid);
+[binaryValues, readCount] = fread(fid, [2 2], 'uint16=>uint16');
+fclose(fid);
 ```
 
 `fopen` currently accepts `r`, `w`, or `a`, optional `+`, and optional `b` or
-`t`; UTF-8 is the fixed encoding. `fscanf` supports `%c`, `%s`, `%d`, `%i`,
+`t`. Its optional machine format accepts native, little-endian, and big-endian
+spellings; UTF-8 is the only accepted encoding. `fscanf` supports `%c`, `%s`, `%d`, `%i`,
 `%u`, `%o`, `%x`, `%e`, `%f`, `%g`, the corresponding documented long integer
 forms, assignment suppression, field widths, literals, repeated formats, and
 scalar or two-dimensional sizes. Finite numeric shapes are zero padded in
 column order. Reads are bounded to 16 MiB, scan output to 16 million elements,
 and one session defaults to 256 open files. `fclose('all')` and `fopen('all')`
 operate only on that session.
+
+`fgetl` removes CR, LF, CRLF, or LFCR terminators. `fgets` retains the
+terminator, accepts an optional positive character limit, and can return its
+terminator code as a second output. Both return numeric `-1` when no input
+remains. `feof` becomes true only after a read consumes the logical remainder;
+successful `fseek` and `frewind` clear it. `ferror` returns the most recent
+per-file message and MParser error number, and `ferror(fid,'clear')` returns
+then clears that state.
+
+`fread` and `fwrite` support fixed-width logical, signed/unsigned 8/16/32/64-bit
+integer, single, and double precisions with common MATLAB aliases. `fread`
+accepts `source`, `source=>output`, `*source`, and `N*source` forms, scalar or
+two-dimensional sizes, byte skips, and per-call byte-order overrides. Finite
+shapes are zero padded in column-major order and exact 64-bit output classes
+retain their payload bits. `fwrite` converts numeric arrays in column-major
+order and applies skips between precision blocks without overwriting existing
+gap bytes on ordinary update streams.
 
 `fseek` accepts signed integer byte offsets with `bof`/`cof`/`eof` or numeric
 origins `-1`/`0`/`1`; `ftell` reports a zero-based byte position and `frewind`
@@ -125,8 +153,9 @@ is `fseek(fid,0,'bof')`. As in MATLAB, a `+` update stream requires `fseek` or
 current-relative seek uses the physical file position rather than the
 translated string length.
 
-This does not yet include `feof`, `ferror`, `fgetl`, `fgets`, `fread`,
-`fwrite`, scansets, selectable encodings, remote URLs, or MAT-file persistence.
+This does not yet include scansets, bit/ubit or encoding-dependent character
+binary precisions, direct complex `fwrite`, non-UTF-8 encodings, remote URLs,
+or MAT-file persistence.
 See [C Embedding API](embedding-c-api.md#output-and-top-level-expressions) for
 the frozen host-output conversions and limits.
 
@@ -343,7 +372,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.4 |
+| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.5 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

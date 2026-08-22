@@ -1,5 +1,7 @@
 #include "mparser/compiled_module.h"
 #include "mparser/native_scalar_jit.h"
+#include "mparser/runtime_struct.h"
+#include "mparser/runtime_text.h"
 #include "mparser/runtime_value.h"
 
 #include <cmath>
@@ -29,6 +31,14 @@ void requireScalar(
             std::string(label) + " is not a scalar number");
     require(std::abs(value.number - expected) < 1e-9,
             std::string(label) + " has an unexpected value");
+}
+
+void requireText(const mparser::RuntimeValue& value,
+                 std::string_view expected,
+                 std::string_view label) {
+    const auto text = mparser::runtimeTextScalarUtf8(value);
+    require(text && *text == expected,
+            std::string(label) + " has an unexpected text value");
 }
 
 void requireOutputs(
@@ -83,6 +93,17 @@ end
 function out = emitWarning()
 warning("Embed:Notice", "notice %d", 3);
 out = 7;
+end
+
+function out = writeWarningState()
+warning("off", "Embed:Persistent");
+lastwarn("session message", "Embed:Persistent");
+out = 1;
+end
+
+function [state, message, identifier] = readWarningState()
+state = warning("query", "Embed:Persistent");
+[message, identifier] = lastwarn();
 end
 
 function out = failNow()
@@ -459,12 +480,64 @@ void runSessionSmoke(const mparser::CompiledModule& module) {
     require(session.persistentVariables().size() == 1,
             "session did not retain persistent state");
 
+    mparser::ModuleInvocationRequest writeWarning;
+    writeWarning.entryFunction = "writeWarningState";
+    writeWarning.requestedOutputCount = 1;
+    writeWarning.backend = mparser::ModuleExecutionBackend::Bytecode;
+    const auto warningWrite = session.execute(writeWarning);
+    require(warningWrite.succeeded(),
+            "session warning-state write failed");
+
+    mparser::ModuleInvocationRequest readWarning;
+    readWarning.entryFunction = "readWarningState";
+    readWarning.requestedOutputCount = 3;
+    readWarning.backend = mparser::ModuleExecutionBackend::Bytecode;
+    const auto warningRead = session.execute(readWarning);
+    require(warningRead.succeeded() && warningRead.outputs.size() == 3,
+            "session warning-state read failed");
+    const auto* state = mparser::runtimeStructField(
+        warningRead.outputs[0], "state");
+    require(state != nullptr, "session warning query has no state field");
+    requireText(*state, "off", "session warning state");
+    requireText(warningRead.outputs[1], "session message",
+                "session last warning message");
+    requireText(warningRead.outputs[2], "Embed:Persistent",
+                "session last warning identifier");
+
+    const auto statelessWrite = module.execute(writeWarning);
+    const auto statelessRead = module.execute(readWarning);
+    require(statelessWrite.succeeded() && statelessRead.succeeded() &&
+                statelessRead.outputs.size() == 3,
+            "stateless warning-state probes failed");
+    const auto* statelessState = mparser::runtimeStructField(
+        statelessRead.outputs[0], "state");
+    require(statelessState != nullptr,
+            "stateless warning query has no state field");
+    requireText(*statelessState, "on", "stateless warning state");
+    requireText(statelessRead.outputs[1], "",
+                "stateless last warning message");
+    requireText(statelessRead.outputs[2], "",
+                "stateless last warning identifier");
+
     session.reset();
     request.arguments = {number(1)};
     const auto reset = session.execute(request);
     require(reset.succeeded() && reset.outputs.size() == 1,
             "reset session invocation failed");
     requireScalar(reset.outputs.front(), 1, "reset session output");
+
+    const auto resetWarning = session.execute(readWarning);
+    require(resetWarning.succeeded() && resetWarning.outputs.size() == 3,
+            "reset session warning-state read failed");
+    const auto* resetState = mparser::runtimeStructField(
+        resetWarning.outputs[0], "state");
+    require(resetState != nullptr,
+            "reset warning query has no state field");
+    requireText(*resetState, "on", "reset session warning state");
+    requireText(resetWarning.outputs[1], "",
+                "reset session last warning message");
+    requireText(resetWarning.outputs[2], "",
+                "reset session last warning identifier");
 }
 
 void runNameSmoke() {

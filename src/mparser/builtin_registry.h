@@ -17,12 +17,12 @@
 namespace mparser {
 
 inline constexpr std::uint32_t kBuiltinSourceContractMajor = 1;
-inline constexpr std::uint32_t kBuiltinSourceContractMinor = 4;
+inline constexpr std::uint32_t kBuiltinSourceContractMinor = 5;
 
 struct RuntimeObjectArrayPolicy;
 class RuntimeExecutionControl;
 class RuntimeSystemContext;
-struct RuntimeWarningState;
+class RuntimeWarningContext;
 class BuiltinRegistry;
 
 enum class BuiltinWorkspaceScope {
@@ -196,7 +196,7 @@ using BuiltinSourceEvaluator = std::function<
 
 struct BuiltinCallContext {
     BuiltinWorkspaceAccess* workspace = nullptr;
-    RuntimeWarningState* warningState = nullptr;
+    RuntimeWarningContext* warningContext = nullptr;
     const RuntimeObjectArrayPolicy* objectArrayPolicy = nullptr;
     RuntimeExecutionControl* executionControl = nullptr;
     RuntimeOutputSink* outputSink = nullptr;

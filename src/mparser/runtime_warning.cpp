@@ -299,4 +299,28 @@ RuntimeWarningOperationResult runtimeLastWarning(
     return success(std::move(outputs));
 }
 
+RuntimeWarningOperationResult RuntimeWarningContext::warning(
+    const std::vector<RuntimeValue>& arguments,
+    size_t requestedOutputCount) {
+    std::scoped_lock lock(mutex_);
+    return runtimeWarning(arguments, requestedOutputCount, state_);
+}
+
+RuntimeWarningOperationResult RuntimeWarningContext::lastWarning(
+    const std::vector<RuntimeValue>& arguments,
+    size_t requestedOutputCount) {
+    std::scoped_lock lock(mutex_);
+    return runtimeLastWarning(arguments, requestedOutputCount, state_);
+}
+
+RuntimeWarningState RuntimeWarningContext::snapshot() const {
+    std::scoped_lock lock(mutex_);
+    return state_;
+}
+
+void RuntimeWarningContext::reset() {
+    std::scoped_lock lock(mutex_);
+    state_ = {};
+}
+
 } // namespace mparser

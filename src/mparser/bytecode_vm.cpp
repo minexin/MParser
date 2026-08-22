@@ -1168,7 +1168,6 @@ public:
         warnings_.clear();
         pendingException_.reset();
         executionStopDiagnosticAdded_ = false;
-        warningState_ = RuntimeWarningState{};
         exceptionCallerFrames_.clear();
         activeExceptionFunctionNames_.clear();
         scriptModeActive_ = false;
@@ -11938,7 +11937,8 @@ private:
             };
             BuiltinCallContext context;
             context.workspace = &workspace;
-            context.warningState = &warningState_;
+            context.warningContext =
+                sessionState_->warningContext().get();
             context.objectArrayPolicy = &objectPolicy;
             context.executionControl =
                 executionControl_.get();
@@ -14204,7 +14204,6 @@ private:
     std::vector<Diagnostic> diagnostics_;
     std::vector<Diagnostic> warnings_;
     std::optional<RuntimeValue> pendingException_;
-    RuntimeWarningState warningState_;
     RuntimeOutputSink runtimeOutputSink_;
     std::vector<RuntimeOutputEvent> outputEvents_;
     std::vector<RuntimeExpressionResult> expressionResults_;

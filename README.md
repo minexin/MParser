@@ -1845,9 +1845,11 @@ build\mparser.exe --run samples\system_command_demo.m
 The five samples are also checked through `--run-hir` and `--run-bytecode`.
 They cover session-local path/current-directory/workspace state, capability
 routing, reproducible shaped random arrays, native path separators, file
-open/query/append/close lifetime, `fseek`/`ftell`/`frewind`, update-stream
-barriers, Windows text-mode CRLF positioning, formatted output, bounded
-repeated input, finite-shape padding, array-aware `fullfile`, current/caller/
+open/query/append/close lifetime, `fseek`/`ftell`/`frewind`, `feof`/`ferror`,
+`fgetl`/`fgets`, update-stream barriers, Windows text-mode CRLF positioning,
+formatted output, bounded repeated input, numeric `fread`/`fwrite`, finite-shape
+padding, exact 64-bit payloads, precision skips, byte-order conversion,
+array-aware `fullfile`, current/caller/
 base dynamic workspaces, `evalc` capture, multi-output dynamic expressions,
 catch expressions, late workspace-value shadowing of builtin call targets,
 and the non-shadowable `!command` shell escape. Dynamic source is compiled
@@ -1856,8 +1858,9 @@ shadowed call targets and fall back to the VM, while process execution still
 requires the session's
 process capability. This is the current v1.3
 development slice; dynamic function/class declarations, escaping handles from
-temporary dynamic modules, complete MATLAB system behavior, and broader
-low-level file I/O remain on the roadmap.
+temporary dynamic modules, complete MATLAB system behavior, MAT persistence,
+remote files, non-UTF-8 encodings, and bit/character/complex binary I/O corners
+remain on the roadmap.
 
 Run value, handle, and heterogeneous object arrays through the production
 interface:

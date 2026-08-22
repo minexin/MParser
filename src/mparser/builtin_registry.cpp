@@ -98,13 +98,19 @@ constexpr std::string_view kBuiltinNames[] = {
     "flipud",
     "floor",
     "fclose",
+    "feof",
+    "ferror",
+    "fgetl",
+    "fgets",
     "fopen",
     "format",
     "fprintf",
+    "fread",
     "frewind",
     "fscanf",
     "fseek",
     "ftell",
+    "fwrite",
     "fullfile",
     "func2str",
     "functions",
@@ -966,6 +972,10 @@ BuiltinDescriptor warningDescriptor(std::string_view name) {
     descriptor.determinism =
         BuiltinDeterminism::ContextDependent;
     descriptor.threadSafety = BuiltinThreadSafety::ContextBound;
+    descriptor.implicitOutputPolicy =
+        name == "warning"
+            ? BuiltinImplicitOutputPolicy::None
+            : BuiltinImplicitOutputPolicy::FirstWhenNoArguments;
     descriptor.sideEffects = BuiltinSideEffect::WarningState;
     descriptor.contextPermissions =
         BuiltinContextPermission::WarningState;
@@ -978,12 +988,10 @@ BuiltinDescriptor warningDescriptor(std::string_view name) {
                              const BuiltinCall& call) {
         RuntimeWarningOperationResult result =
             builtin == "warning"
-                ? runtimeWarning(call.arguments,
-                                 call.requestedOutputCount,
-                                 *call.context->warningState)
-                : runtimeLastWarning(call.arguments,
-                                     call.requestedOutputCount,
-                                     *call.context->warningState);
+                ? call.context->warningContext->warning(
+                      call.arguments, call.requestedOutputCount)
+                : call.context->warningContext->lastWarning(
+                      call.arguments, call.requestedOutputCount);
         if (!result.succeeded) {
             return helperFailure(
                 call.span, std::move(result.error),
@@ -1220,12 +1228,40 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
         descriptor.outputs = BuiltinArity::range(0, 1);
 
         if (name == "fopen") {
-            descriptor.inputs = BuiltinArity::range(1, 2);
+            descriptor.inputs = BuiltinArity::range(1, 4);
             descriptor.outputs = BuiltinArity::range(0, 4);
             descriptor.purity = BuiltinPurity::Impure;
             descriptor.sideEffects = BuiltinSideEffect::External;
         } else if (name == "fclose") {
             descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::range(0, 1);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "feof") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::fixed(1);
+        } else if (name == "ferror") {
+            descriptor.inputs = BuiltinArity::range(1, 2);
+            descriptor.outputs = BuiltinArity::range(1, 2);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "fgetl") {
+            descriptor.inputs = BuiltinArity::fixed(1);
+            descriptor.outputs = BuiltinArity::fixed(1);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "fgets") {
+            descriptor.inputs = BuiltinArity::range(1, 2);
+            descriptor.outputs = BuiltinArity::range(1, 2);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "fread") {
+            descriptor.inputs = BuiltinArity::range(1, 5);
+            descriptor.outputs = BuiltinArity::range(1, 2);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects = BuiltinSideEffect::External;
+        } else if (name == "fwrite") {
+            descriptor.inputs = BuiltinArity::range(2, 5);
             descriptor.outputs = BuiltinArity::range(0, 1);
             descriptor.purity = BuiltinPurity::Impure;
             descriptor.sideEffects = BuiltinSideEffect::External;
@@ -1671,7 +1707,7 @@ bool contextAvailable(const BuiltinCallContext* context,
                context->workspace->variables != nullptr;
     }
     if (permission == BuiltinContextPermission::WarningState) {
-        return context->warningState != nullptr;
+        return context->warningContext != nullptr;
     }
     if (permission ==
         BuiltinContextPermission::ObjectArrayPolicy) {

@@ -533,6 +533,50 @@ void runWarningParitySmoke() {
         kWarningSource, "warning_contract.m"));
     verifyWarningContract(runBytecode(
         kWarningSource, "warning_contract.m"));
+
+    constexpr std::string_view implicitSource = R"(
+clear ans;
+warning("Warn:TopLevel", "top-level warning");
+warning_created_ans = exist("ans", "var");
+explicit_warning_output_rejected = false;
+try
+    explicit_warning_output = ...
+        warning("Warn:Explicit", "explicit warning");
+catch warning_output_error
+    explicit_warning_output_rejected = strcmp( ...
+        warning_output_error.identifier, "MParser:InvalidWarning");
+end
+clear ans;
+lastwarn("set message", "Warn:Set");
+lastwarn_set_created_ans = exist("ans", "var");
+clear ans;
+lastwarn();
+queried_message = ans;
+)";
+    const auto verifyImplicitOutputs = [](const auto& result) {
+        require(!mparser::hasErrorDiagnostics(result.diagnostics),
+                "warning implicit-output script failed");
+        require(result.diagnostics.size() == 1 &&
+                    result.diagnostics[0].identifier ==
+                        "Warn:TopLevel",
+                "top-level warning was not emitted");
+        require(requiredVariable(result, "warning_created_ans").number ==
+                        0.0 &&
+                    requiredVariable(
+                        result, "lastwarn_set_created_ans").number == 0.0,
+                "warning setter form unexpectedly created ans");
+        require(requiredVariable(
+                    result, "explicit_warning_output_rejected").number ==
+                    1.0,
+                "warning message emission unexpectedly produced an output");
+        require(textValue(requiredVariable(result, "queried_message")) ==
+                    "set message",
+                "zero-input lastwarn did not produce its implicit output");
+    };
+    verifyImplicitOutputs(runInterpreter(
+        implicitSource, "warning_implicit_output.m"));
+    verifyImplicitOutputs(runBytecode(
+        implicitSource, "warning_implicit_output.m"));
 }
 
 const std::string kAssertSource = R"(function ok = assert_contract_demo()
