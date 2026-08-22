@@ -255,13 +255,13 @@ root/current-directory protection, and retained context state. The runnable
 production entry points. Builtin source contract 1.6 records 240 descriptors
 and 242 registered names while preserving every earlier snapshot.
 
-The fresh MATLAB R2024b external differential rerun records 202 matches and 21
-gaps across all 223 accepted cases; `eval`, `evalc`, and `evalin`/`assignin`
-are measured closures and the existing `!command` case remains green. This
-batch does not close v1.3. Broader workspace operations, file deletion and
-metadata conveniences, dynamic parent-module function lookup/declarations,
-and remaining
-standard-library families remain milestone work. Scansets,
+The latest MATLAB R2024b external differential rerun records 210 matches and
+13 gaps across all 223 accepted cases. It closes eight measured advanced
+numeric and matrix-division gaps after the preceding workspace/evaluation
+closures, with no regression among the prior 202 matches. This batch does not
+close v1.3. File deletion and metadata conveniences, dynamic parent-module
+function lookup/declarations, and remaining standard-library families remain
+milestone work. Scansets,
 bit/character/complex binary-I/O corners,
 selectable non-UTF-8 encodings, remote URLs, MAT-file persistence, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and
@@ -275,8 +275,10 @@ to make them useful:
 
 - statistics and reductions, sort/unique variants, dot/cross and matrix norms,
   determinant/inverse/rank/eigenvalue families, convolution, and FFT;
-- optional mature BLAS/LAPACK/FFT backends with documented license, threading,
-  determinism, feature detection, and portable fallback contracts;
+- a canonical repository-owned C++ implementation for dense linear algebra,
+  polynomial fitting, and FFT, without an Eigen dependency; any later optional
+  BLAS/LAPACK/FFT acceleration must document license, threading, determinism,
+  feature detection, and preserve this portable semantic fallback;
 - representative MATLAB/MParser benchmarks covering parse/compile/cold/warm,
   bytecode/portable/native, allocation, peak memory, cache, and fallback;
 - straight-line numeric regions, general dense-array shape/stride guards,

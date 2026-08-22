@@ -205,6 +205,8 @@ add_library(mparser_core STATIC
     src/mparser/adaptive_bytecode_vm.cpp
     src/mparser/argument_contract.cpp
     src/mparser/builtin_registry.cpp
+    src/mparser/runtime_advanced_numeric.cpp
+    src/mparser/runtime_native_numeric.cpp
     src/mparser/bytecode.cpp
     src/mparser/bytecode_dump.cpp
     src/mparser/bytecode_region.cpp
@@ -1920,6 +1922,32 @@ add_test(NAME utility_library_production_cli_smoke
 set_tests_properties(utility_library_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 13")
 
+add_executable(advanced_numeric_smoke_tests
+    tests/advanced_numeric_smoke.cpp)
+target_link_libraries(advanced_numeric_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME advanced_numeric_smoke
+    COMMAND advanced_numeric_smoke_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/advanced_numeric_demo.m)
+
+add_test(NAME advanced_numeric_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/advanced_numeric_demo.m)
+set_tests_properties(advanced_numeric_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "advanced_numeric_summary = 174")
+
+add_test(NAME advanced_numeric_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/advanced_numeric_demo.m)
+set_tests_properties(advanced_numeric_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "advanced_numeric_summary = 174")
+
+add_test(NAME advanced_numeric_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/advanced_numeric_demo.m)
+set_tests_properties(advanced_numeric_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "advanced_numeric_summary = 174")
+
 add_executable(builtin_registry_smoke_tests
     tests/builtin_registry_smoke.cpp)
 target_link_libraries(builtin_registry_smoke_tests PRIVATE
@@ -1942,10 +1970,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.6/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.7/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.6 catalog validated: 240 descriptors")
+        "builtin source contract 1.7 catalog validated: 257 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2615,7 +2643,7 @@ install(FILES
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
-    tests/public_contract/builtin/1.6/default_catalog.json
+    tests/public_contract/builtin/1.7/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
@@ -2633,6 +2661,7 @@ install(FILES
     samples/numeric_types_demo.m
     samples/complex_numeric_demo.m
     samples/core_numeric_builtins_demo.m
+    samples/advanced_numeric_demo.m
     samples/performance_scalar_loop.m
     samples/performance_array_workload.m
     samples/reliability_boundary_demo.m

@@ -1,5 +1,6 @@
 #include "mparser/builtin_registry.h"
 
+#include "mparser/runtime_advanced_numeric.h"
 #include "mparser/runtime_array_ops.h"
 #include "mparser/runtime_collection_builtins.h"
 #include "mparser/runtime_math.h"
@@ -61,19 +62,24 @@ constexpr std::string_view kBuiltinNames[] = {
     "complex",
     "computer",
     "conj",
+    "conv",
     "copyfile",
     "cos",
     "cosh",
+    "cross",
     "cummax",
     "cummin",
     "cumprod",
     "cumsum",
     "date",
     "delete",
+    "det",
     "disp",
     "diff",
     "dir",
     "double",
+    "dot",
+    "eig",
     "empty",
     "enumeration",
     "eps",
@@ -88,6 +94,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "factorial",
     "false",
     "fieldnames",
+    "fft",
     "fileparts",
     "fileread",
     "filesep",
@@ -123,12 +130,14 @@ constexpr std::string_view kBuiltinNames[] = {
     "horzcat",
     "hypot",
     "i",
+    "ifft",
     "imag",
     "inf",
     "int16",
     "int32",
     "int64",
     "int8",
+    "inv",
     "ipermute",
     "isa",
     "iscell",
@@ -175,6 +184,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "lower",
     "max",
     "mean",
+    "median",
     "meshgrid",
     "metaclass",
     "metafunction",
@@ -190,6 +200,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "ndims",
     "nextpow2",
     "notify",
+    "norm",
     "num2str",
     "numel",
     "ones",
@@ -199,6 +210,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "permute",
     "pi",
     "plot",
+    "polyfit",
+    "polyval",
     "prod",
     "properties",
     "primes",
@@ -207,6 +220,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "randi",
     "randn",
     "randperm",
+    "rank",
     "real",
     "regexp",
     "rem",
@@ -226,6 +240,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "sqrt",
     "squeeze",
     "sprintf",
+    "std",
     "str2double",
     "str2func",
     "strcmp",
@@ -250,6 +265,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "toc",
     "tempdir",
     "tempname",
+    "trace",
+    "trapz",
     "true",
     "rethrow",
     "uint16",
@@ -258,6 +275,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "uint8",
     "unique",
     "upper",
+    "var",
     "vertcat",
     "version",
     "warning",
@@ -1512,6 +1530,53 @@ BuiltinDescriptor numericLibraryDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor advancedNumericDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (matches(name, {"det", "inv", "trace"})) {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    } else if (matches(name, {"norm", "rank"})) {
+        descriptor.inputs = BuiltinArity::range(1, 2);
+    } else if (name == "eig") {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    } else if (matches(name, {"dot", "cross", "conv"})) {
+        descriptor.inputs = BuiltinArity::range(2, 3);
+    } else if (name == "polyval") {
+        descriptor.inputs = BuiltinArity::fixed(2);
+    } else if (matches(name, {"fft", "ifft", "trapz"})) {
+        descriptor.inputs = BuiltinArity::range(1, 3);
+    } else if (name == "polyfit") {
+        descriptor.inputs = BuiltinArity::fixed(3);
+    } else {
+        descriptor.inputs = BuiltinArity::range(1, 4);
+    }
+    descriptor.outputs = BuiltinArity::range(
+        0, name == "eig" ? 2 : name == "polyfit" ? 3 : 1);
+    descriptor.argumentConstraints.assign(
+        descriptor.inputs.minimum,
+        BuiltinArgumentConstraint{BuiltinValueConstraint::Numeric,
+                                  BuiltinShapeConstraint::Any});
+    descriptor.outputConstraints.assign(
+        *descriptor.outputs.maximum,
+        BuiltinOutputConstraint{BuiltinValueConstraint::Any,
+                                BuiltinShapeConstraint::Any});
+    descriptor.implementation = BuiltinImplementationKind::Context;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.contextPermissions =
+        BuiltinContextPermission::ExecutionControl;
+    descriptor.errorIdentifier =
+        "MParser:InvalidAdvancedNumericCall";
+    descriptor.summary =
+        "MATLAB-like statistics, dense linear algebra, polynomial, "
+        "convolution, or Fourier operation.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeAdvancedNumericBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor collectionLibraryDescriptor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
     if (name == "iscell" || name == "struct2cell") {
@@ -1578,6 +1643,9 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isRuntimeNumericLibraryBuiltin(name)) {
         return numericLibraryDescriptor(name);
+    }
+    if (isRuntimeAdvancedNumericBuiltin(name)) {
+        return advancedNumericDescriptor(name);
     }
     if (name == "missing") {
         return missingDescriptor();

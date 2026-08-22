@@ -1850,6 +1850,24 @@ cancellation and resource limits. `primes` requires an integer scalar;
 a nonpositive count. Extended GCD coefficients, arbitrary-rank `meshgrid`, and
 every MATLAB overload are not implied by this batch.
 
+Run the advanced statistics, dense linear algebra, polynomial, convolution,
+and Fourier batch with:
+
+```powershell
+build\mparser.exe --run samples\advanced_numeric_demo.m
+```
+
+The demo reports `advanced_numeric_summary = 174` through HIR, bytecode, and
+production modes. It covers dimension-aware `median`/`std`/`var`, `det`,
+`inv`, `trace`, `norm`, `rank`, one- and two-output `eig`, matrix `\` and `/`,
+complex `dot`, expanded `cross`, `fft`/`ifft`, `conv`, `trapz`, `polyfit`, and
+`polyval`. The canonical numerical backend is implemented in portable C++20:
+column-major LU and pivoted QR solve square and rectangular systems,
+Hermitian Jacobi and shifted complex QR provide eigensystems and singular
+values, and radix-2/Bluestein kernels cover power-of-two and arbitrary FFT
+lengths. MParser does not depend on Eigen. Legal inputs outside a typed/JIT
+region execute through the shared runtime implementation.
+
 Run the active v1.3 system, random-state, and bounded text-file slices with:
 
 ```powershell

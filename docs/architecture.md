@@ -1934,6 +1934,21 @@ sparse virtual Fisher-Yates map, so work and auxiliary storage scale with `k`;
 it checks cancellation and output limits before consuming session random
 state. Long numeric loops use the same cooperative execution-control boundary.
 
+The advanced numerical runtime separates MATLAB-facing value, shape, class,
+output-count, and diagnostic semantics in `runtime_advanced_numeric` from a
+portable column-major algorithm layer in `runtime_native_numeric`. The latter
+is standard C++20 and has no Eigen dependency. Partial-pivot LU handles square
+solve, determinant, and inverse; column-pivoted reorthogonalized QR handles
+overdetermined least squares and polynomial fitting; underdetermined systems
+use the full-row-rank minimum-norm form. Complex Hermitian Jacobi supplies
+ordered eigensystems and Gram-matrix singular values, while shifted complex QR
+plus nullspace recovery handles general dense eigensystems. FFT selects an
+iterative radix-2 kernel or Bluestein convolution for arbitrary lengths.
+Matrix `/` and `\` call the same solver used by the registry builtins, so HIR,
+bytecode, and production execution do not acquire separate numerical rules.
+Optional future acceleration must remain behind this semantic boundary and
+retain the native implementation as the portable fallback.
+
 The v1.2 core numeric builtin tranche also removes tier-specific equality
 behavior. `BuiltinRegistry` routes `mod`/`rem` and `nextpow2` through shared
 numeric helpers, shape predicates through `runtime_shape`, and recursive

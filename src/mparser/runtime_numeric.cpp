@@ -1,5 +1,6 @@
 #include "mparser/runtime_numeric.h"
 
+#include "mparser/runtime_advanced_numeric.h"
 #include "mparser/runtime_mixed_integer.h"
 
 #include "mparser/runtime_shape.h"
@@ -2035,8 +2036,7 @@ RuntimeNumericOperationResult runtimeApplyNumericBinary(
     }
     if ((operation == "/" || operation == "\\") &&
         leftArray && rightArray) {
-        return numericOperationFailure(
-            "matrix division is not implemented for array operands yet");
+        return runtimeApplyDenseMatrixDivision(operation, left, right);
     }
     if (operation == "^" && (leftArray || rightArray)) {
         return numericOperationFailure(

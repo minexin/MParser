@@ -315,6 +315,15 @@ case conversion, the complete MATLAB regular-expression dialect, extended
 GCD coefficients, and all long-tail overloads remain outside this development
 slice.
 
+The advanced numeric slice adds dimension-aware `median`, `std`, and `var`;
+dense `det`, `inv`, `trace`, `norm`, `rank`, and one- or two-output `eig`;
+matrix `/` and `\`; complex-aware `dot` and `cross`; `fft`/`ifft`, `conv`,
+`trapz`, `polyfit`, and `polyval`. Its canonical implementation is portable
+repository-owned C++20 rather than Eigen. See
+`samples/advanced_numeric_demo.m`; HIR, bytecode, and production execution use
+the same RuntimeValue and diagnostic contract, while optimized-ineligible
+calls fall back to the VM.
+
 ## Arrays And Values
 
 MParser uses MATLAB column-major linear order at language, C, C++, and machine
@@ -415,7 +424,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.6 |
+| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.7 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

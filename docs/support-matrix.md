@@ -126,6 +126,10 @@ batches:
   `logspace`, including integer-only prime limits and MATLAB-like fractional
   or nonpositive `logspace` point counts, plus one- to three-dimensional
   `meshgrid`;
+- dimension-aware `median`, `std`, and `var`; dense `det`, `inv`, `trace`,
+  `norm`, `rank`, `eig`, matrix `/` and `\`, `dot`, `cross`, `fft`, `ifft`,
+  `conv`, `trapz`, `polyfit`, and `polyval` through a repository-owned
+  standard C++20 backend with no Eigen dependency;
 - generic N-dimensional `flip`, `flipud`, and `fliplr` across supported dense
   values, including payload-free shaped missing arrays;
 - UTF-16 `strfind`/`strrep` with overlapping matches and string-array/Cell
@@ -144,11 +148,14 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/standard_library_demo.m`, plus
 `samples/utility_library_demo.m`, `samples/dynamic_workspace_demo.m`, and
 `samples/system_command_demo.m` and
-`samples/filesystem_management_demo.m`. These are
+`samples/filesystem_management_demo.m`, plus
+`samples/advanced_numeric_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
-The 2026-08-22 MATLAB R2024b differential rerun records 202 matches and 21 gaps
-across its 223 accepted cases; all syntax, array, ecosystem, exception, system,
-text, and workspace cases in that finite catalog match.
+The latest 2026-08-22 MATLAB R2024b differential rerun records 210 matches and
+13 gaps across its 223 accepted cases. It closes the eight advanced numeric and
+matrix-division cases with no regression among the prior 202 matches; all
+syntax, array, ecosystem, exception, system, text, workspace, and cataloged
+dense-numeric cases match.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT files, file deletion/recycle/attribute helpers,
 wildcards in parent path components, symbolic-link policy selection (rooted
@@ -203,7 +210,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; frozen v1.2 ABI generation 2 revision 0 plus live additive revision 1, typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.6 using registry/descriptors/call/results/source-evaluation, stream-I/O, and filesystem-management context |
+| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.7 using registry/descriptors/call/results/source-evaluation, stream-I/O, filesystem-management, and advanced-numeric context |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
