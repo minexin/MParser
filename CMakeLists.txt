@@ -1599,6 +1599,31 @@ add_executable(cell_varargs_smoke_tests tests/cell_varargs_smoke.cpp)
 target_link_libraries(cell_varargs_smoke_tests PRIVATE mparser_core)
 add_test(NAME cell_varargs_smoke COMMAND cell_varargs_smoke_tests)
 
+add_executable(dynamic_language_semantics_smoke_tests
+    tests/dynamic_language_semantics_smoke.cpp)
+target_link_libraries(dynamic_language_semantics_smoke_tests
+    PRIVATE mparser_core)
+add_test(NAME dynamic_language_semantics_smoke
+    COMMAND dynamic_language_semantics_smoke_tests)
+
+add_test(NAME dynamic_language_semantics_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_language_semantics_demo.m)
+set_tests_properties(dynamic_language_semantics_interpreter_cli_smoke
+    PROPERTIES PASS_REGULAR_EXPRESSION "summary = 112")
+
+add_test(NAME dynamic_language_semantics_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_language_semantics_demo.m)
+set_tests_properties(dynamic_language_semantics_bytecode_cli_smoke
+    PROPERTIES PASS_REGULAR_EXPRESSION "summary = 112")
+
+add_test(NAME dynamic_language_semantics_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_language_semantics_demo.m)
+set_tests_properties(dynamic_language_semantics_production_cli_smoke
+    PROPERTIES PASS_REGULAR_EXPRESSION "summary = 112")
+
 add_executable(class_runtime_smoke_tests tests/class_runtime_smoke.cpp)
 target_link_libraries(class_runtime_smoke_tests PRIVATE mparser_core)
 add_test(NAME class_runtime_smoke COMMAND class_runtime_smoke_tests)

@@ -362,6 +362,11 @@ private:
         size_t total = 0;
     };
 
+    struct ActiveFunctionFrame {
+        std::string key;
+        size_t frameIndex = 0;
+    };
+
     class IndexContextGuard {
     public:
         IndexContextGuard(std::vector<ActiveIndexContext>& contexts,
@@ -461,6 +466,24 @@ private:
 
     private:
         std::vector<std::string>& names_;
+    };
+
+    class ActiveFunctionFrameGuard {
+    public:
+        ActiveFunctionFrameGuard(
+            std::vector<ActiveFunctionFrame>& activeFrames,
+            std::string key, size_t frameIndex)
+            : activeFrames_(activeFrames) {
+            activeFrames_.push_back(
+                ActiveFunctionFrame{std::move(key), frameIndex});
+        }
+
+        ~ActiveFunctionFrameGuard() {
+            activeFrames_.pop_back();
+        }
+
+    private:
+        std::vector<ActiveFunctionFrame>& activeFrames_;
     };
 
     class ExceptionCallSiteGuard {
@@ -659,6 +682,9 @@ private:
 
     std::string persistentFunctionKey(
         const HirNode& function) const {
+        if (!function.lexicalFunctionName.empty()) {
+            return functionKey(function);
+        }
         if (!function.lexicalClassName.empty()) {
             return function.lexicalClassName + "." + function.label;
         }
@@ -741,23 +767,85 @@ private:
         }
     }
 
-    void collectFunctions(const HirNode& node) {
-        if (node.kind == HirKind::Module) {
-            for (const auto& child : node.children) {
-                if (child->kind == HirKind::Function) {
-                    functionsByName_[child->label] = child.get();
-                } else if (child->kind == HirKind::Class) {
-                    classNames_.insert(child->label);
-                }
+    void collectFunctions(const HirNode& node,
+                          std::string lexicalParent = {},
+                          std::string className = {}) {
+        if (node.kind == HirKind::Class) {
+            className = node.label;
+            classNames_.insert(className);
+        }
+
+        std::string childLexicalParent = lexicalParent;
+        if (node.kind == HirKind::Function) {
+            std::string key;
+            if (!lexicalParent.empty()) {
+                key = lexicalParent + ">" + node.label;
+            } else if (!className.empty()) {
+                key = className + "." + node.label;
+            } else {
+                key = node.label;
             }
+            functionsByName_[key] = &node;
+            functionKeys_[&node] = key;
+            functionLexicalParents_[&node] = lexicalParent;
+            functionCaptureNames_[&node] =
+                semantic_ ? nestedFunctionCaptureNames(node, *semantic_)
+                          : std::vector<std::string>{};
+            childLexicalParent = std::move(key);
         }
 
         for (const auto& child : node.children) {
-            if (child->kind == HirKind::Class) {
-                continue;
-            }
-            collectFunctions(*child);
+            collectFunctions(*child, childLexicalParent, className);
         }
+    }
+
+    std::string functionKey(const HirNode& function) const {
+        const auto found = functionKeys_.find(&function);
+        return found == functionKeys_.end() ? function.label
+                                            : found->second;
+    }
+
+    static std::string_view unqualifiedFunctionKey(
+        std::string_view key) {
+        const size_t nested = key.find_last_of('>');
+        if (nested != std::string_view::npos) {
+            return key.substr(nested + 1);
+        }
+        const size_t member = key.find_last_of('.');
+        return member == std::string_view::npos
+                   ? key
+                   : key.substr(member + 1);
+    }
+
+    std::optional<std::pair<std::string, const HirNode*>>
+    resolveLocalFunction(std::string_view name) const {
+        if (!activeFunctionKeys_.empty()) {
+            std::string scope = activeFunctionKeys_.back();
+            if (unqualifiedFunctionKey(scope) == name) {
+                const auto recursive = functionsByName_.find(scope);
+                if (recursive != functionsByName_.end()) {
+                    return std::pair{recursive->first, recursive->second};
+                }
+            }
+            while (!scope.empty()) {
+                const std::string candidate =
+                    scope + ">" + std::string(name);
+                const auto nested = functionsByName_.find(candidate);
+                if (nested != functionsByName_.end()) {
+                    return std::pair{nested->first, nested->second};
+                }
+                const size_t separator = scope.find_last_of('>');
+                if (separator == std::string::npos) {
+                    break;
+                }
+                scope.resize(separator);
+            }
+        }
+        const auto function = functionsByName_.find(std::string(name));
+        if (function == functionsByName_.end()) {
+            return std::nullopt;
+        }
+        return std::pair{function->first, function->second};
     }
 
     void executeModule(const HirNode& node) {
@@ -818,6 +906,8 @@ private:
                                              std::move(callerFrame));
         FunctionNameGuard functionName(
             activeFunctionNames_, publicFunctionName(node.label));
+        const std::string callableKey = functionKey(node);
+        FunctionNameGuard functionKeyGuard(activeFunctionKeys_, callableKey);
         FunctionNameGuard persistentFunction(
             activePersistentFunctionKeys_,
             persistentFunctionKey(node));
@@ -892,10 +982,62 @@ private:
             return missingOutputs();
         }
 
+        RuntimeWorkspace capturedWorkspace;
+        std::map<std::string, size_t> captureOwners;
+        std::optional<size_t> lexicalParentFrame;
+        const auto lexicalParent = functionLexicalParents_.find(&node);
+        if (lexicalParent != functionLexicalParents_.end() &&
+            !lexicalParent->second.empty()) {
+            for (auto active = activeFunctionFrames_.rbegin();
+                 active != activeFunctionFrames_.rend(); ++active) {
+                if (active->key == lexicalParent->second) {
+                    lexicalParentFrame = active->frameIndex;
+                    break;
+                }
+            }
+            if (!lexicalParentFrame) {
+                addDiagnostic(node,
+                              "nested function lexical parent is not active: " +
+                                  callableKey);
+                return missingOutputs();
+            }
+        }
+        if (const auto captures = functionCaptureNames_.find(&node);
+            captures != functionCaptureNames_.end()) {
+            for (const std::string& name : captures->second) {
+                std::optional<size_t> owner;
+                for (auto active = activeFunctionFrames_.rbegin();
+                     active != activeFunctionFrames_.rend(); ++active) {
+                    if (!callableKey.starts_with(active->key + ">") ||
+                        active->frameIndex >= frames_.size()) {
+                        continue;
+                    }
+                    const auto value = frames_[active->frameIndex]
+                                           .workspace.find(name);
+                    if (value == frames_[active->frameIndex]
+                                     .workspace.end()) {
+                        continue;
+                    }
+                    capturedWorkspace[name] = value->second;
+                    owner = active->frameIndex;
+                    break;
+                }
+                if (!owner && lexicalParentFrame) {
+                    owner = *lexicalParentFrame;
+                }
+                if (owner) {
+                    captureOwners[name] = *owner;
+                }
+            }
+        }
+
         frames_.push_back(makeRuntimeFunctionFrame(
             RuntimeCallFrameKind::Function,
             publicFunctionName(node.label), node.span,
-            normalized.positionalArgumentCount, reportedOutputCount));
+            normalized.positionalArgumentCount, reportedOutputCount,
+            std::move(capturedWorkspace)));
+        ActiveFunctionFrameGuard activeFunctionFrame(
+            activeFunctionFrames_, callableKey, frames_.size() - 1);
         auto validateValue = [&](RuntimeValue value,
                                  const ResolvedArgumentContract* contract,
                                  std::optional<size_t> occurrence =
@@ -1068,9 +1210,24 @@ private:
         }
         initializeRuntimeFunctionOutputs(currentFrame(), signature);
 
-        executeChildren(node);
+        for (const auto& child : node.children) {
+            if (child->kind == HirKind::Function) {
+                continue;
+            }
+            executeNode(*child);
+            if (controlSignal_ != ControlSignal::None ||
+                diagnosticTrapTriggered()) {
+                break;
+            }
+        }
 
         auto completedFrame = std::move(currentFrame());
+        for (const auto& [name, owner] : captureOwners) {
+            const auto value = completedFrame.find(name);
+            if (value != completedFrame.end() && owner < frames_.size() - 1) {
+                frames_[owner].workspace[name] = value->second;
+            }
+        }
         frames_.pop_back();
         const auto outputValidation =
             validateRuntimeFunctionOutputs(completedFrame, outputContracts);
@@ -1359,8 +1516,8 @@ private:
                        expression.children.size() - 1) != 0;
         }
         if (expression.binding.kind == BindingKind::Function) {
-            const auto function = functionsByName_.find(callee.label);
-            return function == functionsByName_.end() ||
+            const auto function = resolveLocalFunction(callee.label);
+            return !function ||
                    functionOutputCountIsValid(
                        parseFunctionSignature(*function->second), 1);
         }
@@ -2077,6 +2234,13 @@ private:
 
     bool caseMatches(const RuntimeValue& selector,
                      const RuntimeValue& candidate) const {
+        if (isCell(candidate)) {
+            return std::any_of(
+                candidate.cells.begin(), candidate.cells.end(),
+                [&](const RuntimeValue& element) {
+                    return runtimeEqual(selector, element);
+                });
+        }
         return runtimeEqual(selector, candidate);
     }
 
@@ -2877,9 +3041,9 @@ private:
                     info.display);
             return missingValue();
         }
-        if (node.binding.kind == BindingKind::Function) {
-            const auto function = functionsByName_.find(node.label);
-            if (function == functionsByName_.end()) {
+        const auto function = resolveLocalFunction(node.label);
+        if (node.binding.kind == BindingKind::Function || function) {
+            if (!function) {
                 addDiagnostic(node,
                               "function handle target is not available: " +
                                   info.display);
@@ -3058,8 +3222,8 @@ private:
             node.binding.kind == BindingKind::Function) {
             size_t outputCount = requestedOutputCount;
             if (implicitExpressionOutput) {
-                const auto function = functionsByName_.find(callee.label);
-                if (function != functionsByName_.end()) {
+                const auto function = resolveLocalFunction(callee.label);
+                if (function) {
                     outputCount = preferredImplicitOutputCount(
                         parseFunctionSignature(*function->second));
                 }
@@ -3114,8 +3278,8 @@ private:
                       size_t requestedOutputCount = 1,
                       std::optional<size_t> callerOutputCount =
                           std::nullopt) {
-        const auto function = functionsByName_.find(name);
-        if (function == functionsByName_.end()) {
+        const auto function = resolveLocalFunction(name);
+        if (!function) {
             addDiagnostic(node, "local function is not available: " + name);
             return FunctionCallResult{{missingValue()}};
         }
@@ -3829,10 +3993,16 @@ private:
     std::vector<RuntimeCallFrame> frames_;
     std::vector<ActiveIndexContext> activeIndexContexts_;
     std::vector<std::string> activeFunctionNames_;
+    std::vector<std::string> activeFunctionKeys_;
+    std::vector<ActiveFunctionFrame> activeFunctionFrames_;
     std::vector<std::string> activePersistentFunctionKeys_;
     std::set<std::string> baseGlobalNames_;
     std::vector<RuntimeExceptionFrame> exceptionCallerFrames_;
     std::map<std::string, const HirNode*> functionsByName_;
+    std::map<const HirNode*, std::string> functionKeys_;
+    std::map<const HirNode*, std::string> functionLexicalParents_;
+    std::map<const HirNode*, std::vector<std::string>>
+        functionCaptureNames_;
     std::set<std::string> classNames_;
     ArgumentContractCatalog argumentCatalog_;
     RuntimeWorkspace resultFrame_;

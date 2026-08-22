@@ -270,11 +270,19 @@ workspace variable or function named `system` does not intercept it.
 
 The target subset includes:
 
-- local and cross-file functions;
+- local, cross-file, and lexically nested functions;
 - positional, repeating, and name-value arguments;
 - `nargin`, `nargout`, multiple outputs, and function handles;
 - named, anonymous, builtin, and supported method handles;
 - dynamic invocation through the documented call/handle rules.
+
+Nested functions may read and update variables owned by active enclosing
+functions. Resolution is lexical, so different outer functions may each use
+the same inner name, inner functions may call siblings, and multi-level free
+variables are captured precisely. A named `@inner` handle is callable while
+its parent frame remains active. Returning that handle and invoking it after
+the parent has returned is currently diagnosed; retained shared-workspace
+closure lifetime is not yet part of the subset.
 
 Invoke a function entry instead of the script body with:
 
@@ -344,9 +352,10 @@ protocol boundaries. The current target subset includes:
 - scalar and N-dimensional `missing` arrays; `[missing missing]` is a 1-by-2
   missing array, floating numeric combinations convert missing elements to
   NaN, and string combinations retain per-element missing state;
-- N-dimensional Cell arrays;
-- ordered structures, structure arrays, dynamic fields, and comma-separated
-  field results;
+- N-dimensional Cell arrays, including brace comma-list expansion in calls,
+  output lists, and numeric or Cell literals;
+- ordered structures, structure arrays, dynamic fields, implicit indexed
+  creation such as `s(1).a = 1`, and comma-separated field results;
 - value, handle, and supported heterogeneous object arrays.
 
 Indexing and nested assignment use transactional root-and-path semantics. A
@@ -357,8 +366,9 @@ arbitrary MATLAB domain objects are outside the current contract.
 ## Control Flow And Exceptions
 
 The target subset includes `for`, serial `parfor`, `while`, `if`, `switch`,
-`try`/`catch`, `break`, `continue`, and `return`. `parfor` is accepted with
-serial semantics; it is not a parallel execution promise.
+`try`/`catch`, `break`, `continue`, and `return`. A `switch` case may be a Cell;
+its elements are tested in order and the first matching arm wins. `parfor` is
+accepted with serial semantics; it is not a parallel execution promise.
 
 Structured diagnostics retain an identifier, phase, severity, source range,
 stack frames, and nested causes where available. The supported exception

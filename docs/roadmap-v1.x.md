@@ -151,7 +151,7 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first seven v1.3 implementation batches are present in the development tree. A
+The first nine v1.3 implementation batches are present in the development tree. A
 session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
@@ -255,13 +255,36 @@ root/current-directory protection, and retained context state. The runnable
 production entry points. Builtin source contract 1.6 records 240 descriptors
 and 242 registered names while preserving every earlier snapshot.
 
-The latest MATLAB R2024b external differential rerun records 210 matches and
-13 gaps across all 223 accepted cases. It closes eight measured advanced
-numeric and matrix-division gaps after the preceding workspace/evaluation
-closures, with no regression among the prior 202 matches. This batch does not
-close v1.3. File deletion and metadata conveniences, dynamic parent-module
-function lookup/declarations, and remaining standard-library families remain
-milestone work. Scansets,
+The eighth batch brings forward the portable part of the advanced numerical
+train where it already has useful vertical coverage. One repository-owned
+C++20 backend implements dense LU/QR solves, Hermitian and general
+eigensystems, FFT/IFFT, convolution, statistics, norms, rank, polynomial fit,
+and related functions without depending on Eigen. HIR and bytecode share the
+same implementation; typed/native-ineligible calls retain guarded VM fallback.
+
+The ninth batch closes four high-value dynamic language gaps together. Cell
+case expressions in `switch` test their elements in order. Nested functions
+receive qualified lexical identities, exact semantic free-variable capture,
+shared parent-frame updates, sibling lookup, multi-level capture, and named
+handle invocation while the parent remains active. Bytecode Cell brace reads
+carry requested output arity so comma-separated contents expand consistently
+in destructuring, calls, and literals. The shared lvalue transaction seeds an
+undefined indexed Struct root, grows gaps, aligns schemas, and supports nested
+or dynamic fields. Escaping a nested-function handle after its lexical parent
+returns remains an explicit unsupported closure-lifetime boundary.
+`samples/dynamic_language_semantics_demo.m` and
+`dynamic_language_semantics_smoke` cover both baseline engines and production
+fallback.
+
+The latest MATLAB R2024b external differential rerun at
+`MParserV1.0Test/results/20260822-211659-v1.3-dynamic-language` records 214
+matches and 9 gaps across all 223 accepted cases. It closes `cap_101`,
+`cap_124`, `cap_164`, and `cap_177` after the preceding 210-match run with no
+regression. The remaining observed gaps are four class/reflection/event cases,
+MAT-file save/load, `datetime`, `table`, `sparse`, and graphics. These batches
+do not close v1.3. File deletion and metadata conveniences, dynamic
+parent-module function lookup/declarations, and remaining standard-library
+families remain milestone work. Scansets,
 bit/character/complex binary-I/O corners,
 selectable non-UTF-8 encodings, remote URLs, MAT-file persistence, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and

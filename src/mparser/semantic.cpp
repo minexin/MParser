@@ -833,6 +833,10 @@ private:
     std::unique_ptr<HirNode> lowerFunction(const SyntaxNode& syntax) {
         const bool method = currentScope().kind == ScopeKind::Class;
         const bool nestedFunction = currentScope().kind == ScopeKind::Function;
+        const std::string lexicalFunctionName =
+            nestedFunction && !functionStack_.empty()
+                ? functionStack_.back().qualifiedName
+                : std::string{};
         const std::string className = method && !classStack_.empty()
                                           ? classStack_.back()
                                           : std::string{};
@@ -847,8 +851,11 @@ private:
 
         auto node = makeNode(HirKind::Function, syntax);
         node->label = functionName;
+        node->lexicalFunctionName = lexicalFunctionName;
         if (method) {
             node->lexicalClassName = className;
+        } else if (nestedFunction && !functionStack_.empty()) {
+            node->lexicalClassName = functionStack_.back().className;
         } else if (syntax.span.begin.sourceId != kInvalidSourceId) {
             const auto lexicalClass =
                 lexicalClassBySource_.find(syntax.span.begin.sourceId);
@@ -856,7 +863,9 @@ private:
                 node->lexicalClassName = lexicalClass->second;
             }
         }
-        pushScope(ScopeKind::Function, functionName);
+        const int functionScope =
+            pushScope(ScopeKind::Function, functionName);
+        node->semanticScopeId = functionScope;
         collectImportsForCurrentScope(syntax);
 
         const FunctionSignature signature =
@@ -896,8 +905,14 @@ private:
                 "argument validation is not allowed in nested functions"});
         }
 
+        const std::string qualifiedName =
+            !lexicalFunctionName.empty()
+                ? lexicalFunctionName + ">" + functionName
+                : method && !className.empty()
+                      ? className + "." + functionName
+                      : functionName;
         functionStack_.push_back(FunctionContext{
-            className, functionName,
+            className, functionName, qualifiedName, functionScope,
             signature.outputs.empty() ? std::string{}
                                       : signature.outputs.front(),
             constructor});
@@ -2389,6 +2404,8 @@ private:
     struct FunctionContext {
         std::string className;
         std::string name;
+        std::string qualifiedName;
+        int scopeId = -1;
         std::string constructorOutput;
         bool constructor = false;
     };
@@ -2502,6 +2519,73 @@ private:
     std::vector<std::string> captures_;
 };
 
+bool isNestedCaptureBinding(BindingKind kind) {
+    return kind == BindingKind::LocalVariable ||
+           kind == BindingKind::FunctionParameter ||
+           kind == BindingKind::FunctionOutput;
+}
+
+class NestedFunctionCaptureCollector {
+public:
+    explicit NestedFunctionCaptureCollector(
+        const SemanticResult& semantic)
+        : semantic_(semantic) {}
+
+    std::vector<std::string> collect(const HirNode& function) {
+        if (function.kind != HirKind::Function ||
+            function.lexicalFunctionName.empty() ||
+            function.semanticScopeId < 0 ||
+            static_cast<size_t>(function.semanticScopeId) >=
+                semantic_.scopes.size()) {
+            return {};
+        }
+        functionScopeId_ = function.semanticScopeId;
+        for (const auto& child : function.children) {
+            collectNode(*child);
+        }
+        return std::move(captures_);
+    }
+
+private:
+    bool isAncestorFunctionScope(int scopeId) const {
+        int current = semantic_.scopes[static_cast<size_t>(
+            functionScopeId_)].parentId;
+        while (current >= 0 &&
+               static_cast<size_t>(current) < semantic_.scopes.size()) {
+            const SemanticScope& scope =
+                semantic_.scopes[static_cast<size_t>(current)];
+            if (current == scopeId) {
+                return scope.kind == ScopeKind::Function;
+            }
+            current = scope.parentId;
+        }
+        return false;
+    }
+
+    void collectNode(const HirNode& node) {
+        if (node.kind == HirKind::NameRef &&
+            node.binding.symbolId >= 0 &&
+            static_cast<size_t>(node.binding.symbolId) <
+                semantic_.symbols.size() &&
+            isNestedCaptureBinding(node.binding.kind)) {
+            const SemanticSymbol& symbol = semantic_.symbols[
+                static_cast<size_t>(node.binding.symbolId)];
+            if (isAncestorFunctionScope(symbol.scopeId) &&
+                capturedNames_.insert(symbol.name).second) {
+                captures_.push_back(symbol.name);
+            }
+        }
+        for (const auto& child : node.children) {
+            collectNode(*child);
+        }
+    }
+
+    const SemanticResult& semantic_;
+    int functionScopeId_ = -1;
+    std::unordered_set<std::string> capturedNames_;
+    std::vector<std::string> captures_;
+};
+
 } // namespace
 
 bool isKnownBuiltinName(std::string_view name) {
@@ -2511,6 +2595,11 @@ bool isKnownBuiltinName(std::string_view name) {
 std::vector<std::string> anonymousFunctionCaptureNames(
     const HirNode& functionHandle) {
     return AnonymousCaptureCollector{}.collect(functionHandle);
+}
+
+std::vector<std::string> nestedFunctionCaptureNames(
+    const HirNode& function, const SemanticResult& semantic) {
+    return NestedFunctionCaptureCollector(semantic).collect(function);
 }
 
 SemanticAnalyzer::SemanticAnalyzer()

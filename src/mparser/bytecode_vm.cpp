@@ -788,6 +788,8 @@ bool hasArgumentBlock(const HirNode& function, bool input) {
 
 struct FunctionInfo {
     std::string name;
+    std::string key;
+    std::string lexicalParent;
     std::string metadataIdentifier;
     std::string displayName;
     std::string namespaceName;
@@ -811,6 +813,7 @@ struct FunctionInfo {
     size_t end = 0;
     SourceSpan span;
     std::vector<ArgumentContract> argumentContracts;
+    std::vector<std::string> captureNames;
 };
 
 struct ReflectedArgument {
@@ -953,6 +956,11 @@ struct ActiveClassFunction {
     std::string methodName;
     std::string constructorOutput;
     ConstructionContext* construction = nullptr;
+};
+
+struct ActiveFunctionFrame {
+    std::string key;
+    size_t frameIndex = 0;
 };
 
 struct EventListenerRecord {
@@ -1175,6 +1183,7 @@ public:
         frames_.push_back(makeRuntimeScriptFrame());
         baseGlobalNames_.clear();
         activePersistentFunctionKeys_.clear();
+        activeFunctionFrames_.clear();
         activeClassFunctions_.clear();
         eventListeners_.clear();
         dynamicProperties_.clear();
@@ -1888,7 +1897,8 @@ private:
     }
 
     void collectFunctionNodes(const HirNode* node, std::string className = {},
-                              bool staticMethodBlock = false) {
+                              bool staticMethodBlock = false,
+                              std::string lexicalParent = {}) {
         if (!node) {
             return;
         }
@@ -1972,15 +1982,23 @@ private:
                 staticMethodBlock = !attribute.negated;
             }
         }
+        std::string childLexicalParent = lexicalParent;
         if (node->kind == HirKind::Function) {
-            if (className.empty()) {
-                functionNodes_[node->label] = node;
-            } else {
-                const std::string key = className + "." + node->label;
-                if (!classFunctionNodes_.try_emplace(key, node).second) {
+            const std::string key =
+                !lexicalParent.empty()
+                    ? lexicalParent + ">" + node->label
+                    : !className.empty()
+                          ? className + "." + node->label
+                          : node->label;
+            functionNodes_[key] = node;
+            childLexicalParent = key;
+            if (!className.empty() && lexicalParent.empty()) {
+                const std::string methodKey =
+                    className + "." + node->label;
+                if (!classFunctionNodes_.try_emplace(methodKey, node).second) {
                     diagnostics_.push_back(Diagnostic{
                         node->span,
-                        "duplicate method declaration: " + key});
+                        "duplicate method declaration: " + methodKey});
                 }
                 classesByName_[className].declaredStaticMethods[node->label] =
                     staticMethodBlock;
@@ -2016,7 +2034,8 @@ private:
         }
 
         for (const auto& child : node->children) {
-            collectFunctionNodes(child.get(), className, staticMethodBlock);
+            collectFunctionNodes(child.get(), className, staticMethodBlock,
+                                 childLexicalParent);
         }
     }
 
@@ -2040,6 +2059,18 @@ private:
                                       FunctionInfo& info) {
         for (size_t pc = begin; pc < end; ++pc) {
             const auto& instruction = program.instructions[pc];
+            if (instruction.op == BytecodeOp::EnterFunction) {
+                size_t depth = 1;
+                while (++pc < end && depth != 0) {
+                    const auto op = program.instructions[pc].op;
+                    if (op == BytecodeOp::EnterFunction) {
+                        ++depth;
+                    } else if (op == BytecodeOp::LeaveFunction) {
+                        --depth;
+                    }
+                }
+                continue;
+            }
             if (instruction.op != BytecodeOp::EnterArgumentDefault) {
                 continue;
             }
@@ -2070,8 +2101,19 @@ private:
     }
 
     void collectFunctionRanges(const BytecodeProgram& program) {
+        struct ActiveFunctionRange {
+            size_t end = 0;
+            std::string key;
+        };
+
+        functionEndAt_.assign(program.instructions.size(), 0);
         std::vector<std::string> classStack;
+        std::vector<ActiveFunctionRange> activeFunctions;
         for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
+            while (!activeFunctions.empty() &&
+                   pc > activeFunctions.back().end) {
+                activeFunctions.pop_back();
+            }
             const auto& instruction = program.instructions[pc];
             if (instruction.op == BytecodeOp::EnterClass) {
                 classStack.push_back(instruction.operand);
@@ -2203,42 +2245,46 @@ private:
             info.entry = pc + 1;
             info.end = end;
             info.span = instruction.span;
-            if (classStack.empty()) {
-                if (const auto hir = functionNodes_.find(info.name);
-                    hir != functionNodes_.end()) {
-                    info.signature = parseFunctionSignature(*hir->second);
-                    info.declaringClass =
-                        hir->second->lexicalClassName;
-                    collectArgumentContracts(
-                        *hir->second, argumentContractCatalog_,
-                        info.argumentContracts);
-                    collectArgumentDefaultRanges(program, info.entry, info.end,
-                                                 info);
-                    populateFunctionMetadata(info, hir->second);
-                } else {
-                    populateFunctionMetadata(info, nullptr);
-                }
-                const std::string functionName = info.name;
-                functionsByName_[functionName] = std::move(info);
-                registerFunctionMetadata(functionsByName_.at(functionName));
+            info.lexicalParent = activeFunctions.empty()
+                                     ? std::string{}
+                                     : activeFunctions.back().key;
+            info.key = !info.lexicalParent.empty()
+                           ? info.lexicalParent + ">" + info.name
+                           : !classStack.empty()
+                                 ? classStack.back() + "." + info.name
+                                 : info.name;
+            const std::string functionKey = info.key;
+            functionEndAt_[pc] = end;
+
+            const HirNode* hirNode = nullptr;
+            if (const auto hir = functionNodes_.find(info.key);
+                hir != functionNodes_.end()) {
+                hirNode = hir->second;
+                info.signature = parseFunctionSignature(*hirNode);
+                info.attributes = hirNode->attributes;
+                info.declaringClass = hirNode->lexicalClassName;
+                collectArgumentContracts(*hirNode, argumentContractCatalog_,
+                                         info.argumentContracts);
+                collectArgumentDefaultRanges(program, info.entry, info.end,
+                                             info);
+                info.captureNames =
+                    semantic_ ? nestedFunctionCaptureNames(*hirNode, *semantic_)
+                              : std::vector<std::string>{};
+                populateFunctionMetadata(info, hirNode);
             } else {
-                const std::string key = classStack.back() + "." + info.name;
+                populateFunctionMetadata(info, nullptr);
+            }
+
+            if (!info.lexicalParent.empty()) {
+                functionsByName_[functionKey] = std::move(info);
+            } else if (classStack.empty()) {
+                functionsByName_[functionKey] = std::move(info);
+                registerFunctionMetadata(functionsByName_.at(functionKey));
+            } else {
                 info.declaringClass = classStack.back();
-                if (const auto hir = classFunctionNodes_.find(key);
-                    hir != classFunctionNodes_.end()) {
-                    info.signature = parseFunctionSignature(*hir->second);
-                    info.attributes = hir->second->attributes;
-                    collectArgumentContracts(
-                        *hir->second, argumentContractCatalog_,
-                        info.argumentContracts);
-                    collectArgumentDefaultRanges(program, info.entry, info.end,
-                                                 info);
+                if (hirNode) {
                     collectExplicitSuperclassConstructors(
-                        *hir->second,
-                        info.explicitSuperclassConstructors);
-                    populateFunctionMetadata(info, hir->second);
-                } else {
-                    populateFunctionMetadata(info, nullptr);
+                        *hirNode, info.explicitSuperclassConstructors);
                 }
                 const auto& declaredStatic =
                     classesByName_[classStack.back()].declaredStaticMethods;
@@ -2254,7 +2300,7 @@ private:
                             classStack.back() + "." + instruction.operand});
                 }
             }
-            pc = end;
+            activeFunctions.push_back(ActiveFunctionRange{end, functionKey});
         }
     }
 
@@ -4233,6 +4279,7 @@ private:
         bool enteredProfile = false;
         bool enteredExceptionFunction = false;
         bool enteredPersistentFunction = false;
+        bool enteredActiveFunctionFrame = false;
         size_t skipDepth = 0;
 
         if (scriptMode) {
@@ -4287,6 +4334,13 @@ private:
                 enteredProfile = true;
                 enteredExceptionFunction = true;
                 enteredPersistentFunction = true;
+                if (const auto function =
+                        functionsByName_.find(instruction.operand);
+                    function != functionsByName_.end()) {
+                    activeFunctionFrames_.push_back(ActiveFunctionFrame{
+                        function->first, frames_.size() - 1});
+                    enteredActiveFunctionFrame = true;
+                }
                 activeFunction = true;
                 ranFirstFunction = true;
                 ++pc;
@@ -4302,9 +4356,13 @@ private:
                     if (enteredPersistentFunction) {
                         activePersistentFunctionKeys_.pop_back();
                     }
+                    if (enteredActiveFunctionFrame) {
+                        activeFunctionFrames_.pop_back();
+                    }
                     enteredProfile = false;
                     enteredExceptionFunction = false;
                     enteredPersistentFunction = false;
+                    enteredActiveFunctionFrame = false;
                     activeFunction = false;
                     break;
                 }
@@ -4356,6 +4414,10 @@ private:
         if (enteredPersistentFunction &&
             !activePersistentFunctionKeys_.empty()) {
             activePersistentFunctionKeys_.pop_back();
+        }
+        if (enteredActiveFunctionFrame &&
+            !activeFunctionFrames_.empty()) {
+            activeFunctionFrames_.pop_back();
         }
         scriptModeActive_ = false;
         if (!scriptMode && !requestedEntryFunction_.empty() &&
@@ -4787,6 +4849,11 @@ private:
         size_t pc = entry;
         while (pc < end && pc < program_->instructions.size()) {
             const auto& instruction = program_->instructions[pc];
+            if (instruction.op == BytecodeOp::EnterFunction &&
+                pc < functionEndAt_.size() && functionEndAt_[pc] > pc) {
+                pc = functionEndAt_[pc] + 1;
+                continue;
+            }
             if (instruction.op == BytecodeOp::EnterControl) {
                 addDiagnostic(instruction,
                               "bytecode VM does not execute control blocks "
@@ -5009,14 +5076,14 @@ private:
         std::string functionName = target;
         if (instruction.binding.kind == BindingKind::Function) {
             functionName = symbolName(instruction.binding).value_or(target);
-            const auto function = functionsByName_.find(functionName);
-            if (function != functionsByName_.end()) {
+            const auto function = resolveLocalFunction(functionName);
+            if (function) {
                 info.kind = RuntimeFunctionHandleKind::Function;
                 info.backend = RuntimeFunctionHandleBackend::Bytecode;
                 info.context = callableContext_;
-                info.targetName = function->first;
-                info.span = function->second.span;
-                info.sourceFile = function->second.fullPath;
+                info.targetName = function->key;
+                info.span = function->info->span;
+                info.sourceFile = function->info->fullPath;
                 return true;
             }
         }
@@ -5089,17 +5156,17 @@ private:
             }
         }
 
-        auto function = functionsByName_.find(functionName);
-        if (function == functionsByName_.end() && functionName != target) {
-            function = functionsByName_.find(target);
+        auto function = resolveLocalFunction(functionName);
+        if (!function && functionName != target) {
+            function = resolveLocalFunction(target);
         }
-        if (function != functionsByName_.end()) {
+        if (function) {
             info.kind = RuntimeFunctionHandleKind::Function;
             info.backend = RuntimeFunctionHandleBackend::Bytecode;
             info.context = callableContext_;
-            info.targetName = function->first;
-            info.span = function->second.span;
-            info.sourceFile = function->second.fullPath;
+            info.targetName = function->key;
+            info.span = function->info->span;
+            info.sourceFile = function->info->fullPath;
             return true;
         }
 
@@ -5572,8 +5639,15 @@ private:
         }
 
         auto& context = switchContextStack_.back();
-        if (context.matched ||
-            !runtimeEqual(context.selector, *candidate)) {
+        const bool matches =
+            isCell(*candidate)
+                ? std::any_of(
+                      candidate->cells.begin(), candidate->cells.end(),
+                      [&](const RuntimeValue& element) {
+                          return runtimeEqual(context.selector, element);
+                      })
+                : runtimeEqual(context.selector, *candidate);
+        if (context.matched || !matches) {
             return checkedTarget(instruction);
         }
         context.matched = true;
@@ -6004,8 +6078,62 @@ private:
                binding.kind == BindingKind::PersistentVariable;
     }
 
+    static std::string_view unqualifiedFunctionKey(
+        std::string_view key) {
+        const size_t nested = key.find_last_of('>');
+        if (nested != std::string_view::npos) {
+            return key.substr(nested + 1);
+        }
+        const size_t member = key.find_last_of('.');
+        return member == std::string_view::npos
+                   ? key
+                   : key.substr(member + 1);
+    }
+
+    struct ResolvedLocalFunction {
+        std::string key;
+        const FunctionInfo* info = nullptr;
+    };
+
+    std::optional<ResolvedLocalFunction> resolveLocalFunction(
+        std::string_view name) const {
+        if (!activeFunctionFrames_.empty()) {
+            std::string scope = activeFunctionFrames_.back().key;
+            if (unqualifiedFunctionKey(scope) == name) {
+                const auto recursive = functionsByName_.find(scope);
+                if (recursive != functionsByName_.end()) {
+                    return ResolvedLocalFunction{
+                        recursive->first, &recursive->second};
+                }
+            }
+            while (!scope.empty()) {
+                const std::string candidate =
+                    scope + ">" + std::string(name);
+                const auto nested = functionsByName_.find(candidate);
+                if (nested != functionsByName_.end()) {
+                    return ResolvedLocalFunction{
+                        nested->first, &nested->second};
+                }
+                const size_t separator = scope.find_last_of('>');
+                if (separator == std::string::npos) {
+                    break;
+                }
+                scope.resize(separator);
+            }
+        }
+
+        const auto function = functionsByName_.find(std::string(name));
+        if (function == functionsByName_.end()) {
+            return std::nullopt;
+        }
+        return ResolvedLocalFunction{function->first, &function->second};
+    }
+
     std::string persistentFunctionKey(
         const FunctionInfo& info) const {
+        if (!info.key.empty()) {
+            return info.key;
+        }
         if (!info.declaringClass.empty()) {
             return info.declaringClass + "." + info.name;
         }
@@ -9794,7 +9922,24 @@ private:
                 addDiagnostic(instruction, std::move(result.error));
                 return;
             }
-            pushRuntime(std::move(result.value));
+            if (instruction.resultCount == 1) {
+                pushRuntime(std::move(result.value));
+            } else if (instruction.resultCount > 1) {
+                std::vector<RuntimeValue> values;
+                appendRuntimeExpandedValues(values, result.value);
+                if (values.size() !=
+                    static_cast<size_t>(instruction.resultCount)) {
+                    addDiagnostic(
+                        instruction,
+                        "string contents output count mismatch: requested " +
+                            std::to_string(instruction.resultCount) +
+                            ", produced " + std::to_string(values.size()));
+                    return;
+                }
+                for (auto& value : values) {
+                    pushRuntime(std::move(value));
+                }
+            }
             return;
         }
         auto result = runtimeIndexCellContents(
@@ -9803,7 +9948,24 @@ private:
             addDiagnostic(instruction, std::move(result.error));
             return;
         }
-        pushRuntime(std::move(result.value));
+        if (instruction.resultCount == 1) {
+            pushRuntime(std::move(result.value));
+        } else if (instruction.resultCount > 1) {
+            std::vector<RuntimeValue> values;
+            appendRuntimeExpandedValues(values, result.value);
+            if (values.size() !=
+                static_cast<size_t>(instruction.resultCount)) {
+                addDiagnostic(
+                    instruction,
+                    "cell contents output count mismatch: requested " +
+                        std::to_string(instruction.resultCount) +
+                        ", produced " + std::to_string(values.size()));
+                return;
+            }
+            for (auto& value : values) {
+                pushRuntime(std::move(value));
+            }
+        }
     }
 
     void storeBraceIndex(const BytecodeInstruction& instruction) {
@@ -10029,12 +10191,12 @@ private:
             const std::string& name = callee->functionName;
             BytecodeInstruction callInstruction = instruction;
             if (callInstruction.implicitExpressionOutput) {
-                const auto function = functionsByName_.find(name);
+                const auto function = resolveLocalFunction(name);
                 callInstruction.resultCount =
-                    function == functionsByName_.end()
+                    !function
                         ? 1
                         : preferredImplicitOutputCount(
-                              function->second.signature);
+                              function->info->signature);
             }
             BytecodeCallSiteProfile* profile = nullptr;
             if (profilingEnabled_) {
@@ -12311,15 +12473,16 @@ private:
             return {};
         }
 
-        const auto function = functionsByName_.find(name);
-        if (function == functionsByName_.end()) {
+        const auto function = resolveLocalFunction(name);
+        if (!function) {
             addDiagnostic(instruction,
                           "local function is not available: " + name);
             return missingOutputs(requestedCount);
         }
 
-        return callFunctionInfo(instruction, name, function->second, arguments,
-                                requestedCount, std::nullopt, nullptr, false);
+        return callFunctionInfo(instruction, function->key, *function->info,
+                                arguments, requestedCount, std::nullopt,
+                                nullptr, false);
     }
 
     BytecodeInstruction propertyInstruction(
@@ -13236,6 +13399,52 @@ private:
             return missingOutputs(requestedCount);
         }
 
+        const std::string callableKey =
+            info.key.empty() ? name : info.key;
+        RuntimeWorkspace capturedWorkspace;
+        std::map<std::string, size_t> captureOwners;
+        std::optional<size_t> lexicalParentFrame;
+        if (!info.lexicalParent.empty()) {
+            for (auto active = activeFunctionFrames_.rbegin();
+                 active != activeFunctionFrames_.rend(); ++active) {
+                if (active->key == info.lexicalParent) {
+                    lexicalParentFrame = active->frameIndex;
+                    break;
+                }
+            }
+            if (!lexicalParentFrame) {
+                addDiagnostic(
+                    instruction,
+                    "nested function lexical parent is not active: " +
+                        callableKey);
+                return missingOutputs(requestedCount);
+            }
+        }
+        for (const std::string& captureName : info.captureNames) {
+            std::optional<size_t> owner;
+            for (auto active = activeFunctionFrames_.rbegin();
+                 active != activeFunctionFrames_.rend(); ++active) {
+                if (!callableKey.starts_with(active->key + ">") ||
+                    active->frameIndex >= frames_.size()) {
+                    continue;
+                }
+                const auto value = frames_[active->frameIndex]
+                                       .workspace.find(captureName);
+                if (value == frames_[active->frameIndex].workspace.end()) {
+                    continue;
+                }
+                capturedWorkspace[captureName] = value->second;
+                owner = active->frameIndex;
+                break;
+            }
+            if (!owner && lexicalParentFrame) {
+                owner = *lexicalParentFrame;
+            }
+            if (owner) {
+                captureOwners[captureName] = *owner;
+            }
+        }
+
         ExecutionCallGuard executionCall(*this, instruction.span);
         if (!executionCall) {
             return missingOutputs(requestedCount);
@@ -13276,7 +13485,9 @@ private:
         frames_.push_back(makeRuntimeFunctionFrame(
             RuntimeCallFrameKind::Function, traceName, info.span,
             validatedArguments->positionalArgumentCount,
-            callerOutputCount));
+            callerOutputCount, std::move(capturedWorkspace)));
+        activeFunctionFrames_.push_back(ActiveFunctionFrame{
+            callableKey, frames_.size() - 1});
         initializeFunctionFrame(info.signature, validatedArguments->values,
                                 callerOutputCount,
                                 validatedArguments->positionalArgumentCount);
@@ -13302,6 +13513,14 @@ private:
         activeClassFunctions_.pop_back();
 
         auto completedFrame = std::move(currentFrame());
+        for (const auto& [captureName, owner] : captureOwners) {
+            const auto value = completedFrame.find(captureName);
+            if (value != completedFrame.end() &&
+                owner < frames_.size() - 1) {
+                frames_[owner].workspace[captureName] = value->second;
+            }
+        }
+        activeFunctionFrames_.pop_back();
         frames_.pop_back();
         returnRequested_ = savedReturnRequested;
         forLoopStack_ = std::move(savedForLoopStack);
@@ -14180,11 +14399,13 @@ private:
     std::vector<TryContext> tryContextStack_;
     std::vector<size_t> switchEndAt_;
     std::vector<size_t> tryEndAt_;
+    std::vector<size_t> functionEndAt_;
     std::vector<RuntimeCallFrame> frames_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
     std::shared_ptr<RuntimeExecutionControl> executionControl_;
     std::set<std::string> baseGlobalNames_;
     std::vector<std::string> activePersistentFunctionKeys_;
+    std::vector<ActiveFunctionFrame> activeFunctionFrames_;
     std::vector<ActiveClassFunction> activeClassFunctions_;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::map<size_t, EventListenerRecord> eventListeners_;

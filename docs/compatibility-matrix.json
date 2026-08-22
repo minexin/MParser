@@ -32,20 +32,20 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "partial", "native": "partial"},
-      "evidence": ["interpreter_smoke", "bytecode_vm_smoke", "exception_runtime_smoke", "v1_1_core_interpreter_cli_smoke", "v1_1_core_bytecode_cli_smoke", "v1_1_core_production_cli_smoke"],
-      "sources": ["src/mparser/parser.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/parser_smoke.cpp", "samples/v1_1_core_compatibility_demo.m"],
-      "limits": "Top-level commas delimit one-line if/switch/for/while forms while nested expression commas retain argument and array meaning. parfor executes serially; typed regions accept only structured eligible control flow; no finally construct exists in MATLAB or MParser."
+      "evidence": ["interpreter_smoke", "bytecode_vm_smoke", "exception_runtime_smoke", "dynamic_language_semantics_smoke", "dynamic_language_semantics_interpreter_cli_smoke", "dynamic_language_semantics_bytecode_cli_smoke", "dynamic_language_semantics_production_cli_smoke", "v1_1_core_interpreter_cli_smoke", "v1_1_core_bytecode_cli_smoke", "v1_1_core_production_cli_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/parser_smoke.cpp", "tests/dynamic_language_semantics_smoke.cpp", "samples/dynamic_language_semantics_demo.m", "samples/v1_1_core_compatibility_demo.m"],
+      "limits": "Top-level commas delimit one-line if/switch/for/while forms while nested expression commas retain argument and array meaning. switch case expressions may be scalar values or Cells whose elements are tested in order. parfor executes serially; typed regions accept only structured eligible control flow; no finally construct exists in MATLAB or MParser."
     },
     {
       "id": "FUN-001",
       "area": "functions",
-      "feature": "Local functions, positional/repeating/name-value arguments, nargin/nargout, and multiple outputs",
+      "feature": "Local and nested functions, positional/repeating/name-value arguments, nargin/nargout, and multiple outputs",
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["function_call_contract_smoke", "output_argument_smoke", "name_value_argument_smoke", "repeating_argument_smoke"],
-      "sources": ["src/mparser/function_signature.cpp", "src/mparser/argument_contract.cpp", "src/mparser/runtime_argument_validation.cpp"],
-      "limits": "Function call frames and argument/output behavior are shared across the interpreter, VM, C ABI generation 2, C++ source API 1.2, and machine protocol 1.1 projections. An independently compiled native callback or plugin ABI is not currently exposed."
+      "evidence": ["function_call_contract_smoke", "output_argument_smoke", "name_value_argument_smoke", "repeating_argument_smoke", "dynamic_language_semantics_smoke", "dynamic_language_semantics_interpreter_cli_smoke", "dynamic_language_semantics_bytecode_cli_smoke", "dynamic_language_semantics_production_cli_smoke"],
+      "sources": ["src/mparser/function_signature.cpp", "src/mparser/argument_contract.cpp", "src/mparser/runtime_argument_validation.cpp", "src/mparser/semantic.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/dynamic_language_semantics_smoke.cpp", "samples/dynamic_language_semantics_demo.m"],
+      "limits": "Function call frames and argument/output behavior are shared across the interpreter, VM, C ABI generation 2, C++ source API 1.2, and machine protocol 1.1 projections. Nested functions use qualified lexical identities, exact semantic free-variable capture, shared updates while the parent frame is active, sibling lookup, and active-scope named handles. A nested-function handle that escapes after its lexical parent returns is diagnosed because retained shared-workspace closure lifetime is not implemented. An independently compiled native callback or plugin ABI is not currently exposed."
     },
     {
       "id": "SRC-001",
@@ -108,10 +108,10 @@
       "feature": "Row-structured N-dimensional Cell construction, scalar brace reads/writes, varargin, and varargout-like values",
       "status": "partial",
       "priority": "must-have",
-      "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "partial", "production": "partial", "typed": "fallback", "native": "fallback"},
-      "evidence": ["parser_smoke", "text_runtime_smoke", "text_runtime_interpreter_cli_smoke", "text_runtime_bytecode_cli_smoke", "text_runtime_production_cli_smoke", "standard_library_smoke", "standard_library_interpreter_cli_smoke", "standard_library_bytecode_cli_smoke", "standard_library_production_cli_smoke", "cell_varargs_smoke", "nd_array_smoke", "lvalue_runtime_smoke", "lvalue_runtime_production_cli_smoke"],
-      "sources": ["src/mparser/parser.cpp", "src/mparser/syntax.h", "src/mparser/semantic.h", "src/mparser/bytecode.h", "src/mparser/bytecode.cpp", "src/mparser/runtime_cell.cpp", "src/mparser/runtime_collection_builtins.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/parser_smoke.cpp", "tests/text_runtime_smoke.cpp", "tests/standard_library_smoke.cpp", "tests/lvalue_runtime_smoke.cpp", "samples/text_runtime_demo.m", "samples/standard_library_demo.m"],
-      "limits": "Semicolon-delimited Cell literal rows remain explicit through Parser, HIR, bytecode, interpreter, and VM and are vertically concatenated under ordinary dimension checks; empty cells, array-valued elements, and ragged-row diagnostics are covered without flattening. Shared indexing/mutation and varargs remain supported. The active v1.3 tree adds iscell and synchronous cellfun for same-shaped Cell inputs, multiple callbacks outputs, UniformOutput, and ErrorHandler through the shared dynamic invoker. Direct multi-output brace lowering and complete comma-separated-list contexts remain open."
+      "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
+      "evidence": ["parser_smoke", "text_runtime_smoke", "text_runtime_interpreter_cli_smoke", "text_runtime_bytecode_cli_smoke", "text_runtime_production_cli_smoke", "standard_library_smoke", "standard_library_interpreter_cli_smoke", "standard_library_bytecode_cli_smoke", "standard_library_production_cli_smoke", "cell_varargs_smoke", "nd_array_smoke", "lvalue_runtime_smoke", "lvalue_runtime_production_cli_smoke", "dynamic_language_semantics_smoke", "dynamic_language_semantics_interpreter_cli_smoke", "dynamic_language_semantics_bytecode_cli_smoke", "dynamic_language_semantics_production_cli_smoke"],
+      "sources": ["src/mparser/parser.cpp", "src/mparser/syntax.h", "src/mparser/semantic.h", "src/mparser/bytecode.h", "src/mparser/bytecode.cpp", "src/mparser/runtime_cell.cpp", "src/mparser/runtime_collection_builtins.cpp", "src/mparser/interpreter.cpp", "src/mparser/bytecode_vm.cpp", "tests/parser_smoke.cpp", "tests/text_runtime_smoke.cpp", "tests/standard_library_smoke.cpp", "tests/lvalue_runtime_smoke.cpp", "tests/dynamic_language_semantics_smoke.cpp", "samples/text_runtime_demo.m", "samples/standard_library_demo.m", "samples/dynamic_language_semantics_demo.m"],
+      "limits": "Semicolon-delimited Cell literal rows remain explicit through Parser, HIR, bytecode, interpreter, and VM and are vertically concatenated under ordinary dimension checks; empty cells, array-valued elements, and ragged-row diagnostics are covered without flattening. Brace selections produce comma-separated lists that expand in function arguments, output lists, and numeric or Cell literals; bytecode carries requested brace output arity and reports mismatches deterministically. Shared indexing/mutation and varargs remain supported. The active v1.3 tree adds iscell and synchronous cellfun for same-shaped Cell inputs, multiple callback outputs, UniformOutput, and ErrorHandler through the shared dynamic invoker. Every MATLAB comma-list distribution context is not implied."
     },
     {
       "id": "STRUCT-001",
@@ -120,9 +120,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["struct_runtime_smoke", "struct_runtime_production_cli_smoke"],
-      "sources": ["src/mparser/runtime_struct.cpp", "tests/struct_runtime_smoke.cpp"],
-      "limits": "Scalar structures use the same canonical element/schema representation as structure arrays; v0.72 routes nested structure mutation through the shared lvalue transaction."
+      "evidence": ["struct_runtime_smoke", "struct_runtime_production_cli_smoke", "dynamic_language_semantics_smoke", "dynamic_language_semantics_interpreter_cli_smoke", "dynamic_language_semantics_bytecode_cli_smoke", "dynamic_language_semantics_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_struct.cpp", "src/mparser/runtime_lvalue.cpp", "tests/struct_runtime_smoke.cpp", "tests/dynamic_language_semantics_smoke.cpp", "samples/dynamic_language_semantics_demo.m"],
+      "limits": "Scalar structures use the same canonical element/schema representation as structure arrays. The shared lvalue transaction creates a missing structure root for direct or indexed member paths, grows indexed gaps, aligns field schemas during copy-back, and supports nested and dynamic fields."
     },
     {
       "id": "STRUCT-002",
@@ -131,9 +131,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "supported", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["struct_runtime_smoke", "struct_array_interpreter_cli_smoke", "struct_array_bytecode_cli_smoke", "struct_array_production_cli_smoke", "standard_library_smoke", "standard_library_production_cli_smoke"],
+      "evidence": ["struct_runtime_smoke", "struct_array_interpreter_cli_smoke", "struct_array_bytecode_cli_smoke", "struct_array_production_cli_smoke", "standard_library_smoke", "standard_library_production_cli_smoke", "dynamic_language_semantics_smoke", "dynamic_language_semantics_production_cli_smoke"],
       "sources": ["src/mparser/runtime_struct.cpp", "src/mparser/runtime_value_ops.cpp", "src/mparser/runtime_collection_builtins.cpp", "tests/struct_runtime_smoke.cpp", "tests/standard_library_smoke.cpp", "samples/struct_array_demo.m", "samples/standard_library_demo.m"],
-      "limits": "v0.71 established array storage and field lists; v0.72 adds nested S(index).field copy-back, indexed intermediate growth, and schema extension. The active v1.3 tree adds dimension-aware struct2cell and cell2struct with field-order preservation. Bulk field assignment through nonscalar intermediates and general N-dimensional deletion remain open."
+      "limits": "v0.71 established array storage and field lists; v0.72 adds nested S(index).field copy-back, indexed intermediate growth, and schema extension. The active v1.3 tree extends this to undefined roots such as s(1).a and multi-dimensional indexed creation, and adds dimension-aware struct2cell and cell2struct with field-order preservation. Bulk field assignment through nonscalar intermediates and general N-dimensional deletion remain open."
     },
     {
       "id": "LVAL-001",
@@ -142,9 +142,9 @@
       "status": "supported",
       "priority": "must-have",
       "tiers": {"parser": "supported", "semantic": "supported", "hir": "partial", "bytecode": "supported", "production": "supported", "typed": "fallback", "native": "fallback"},
-      "evidence": ["lvalue_runtime_smoke", "lvalue_runtime_interpreter_cli_smoke", "lvalue_runtime_bytecode_cli_smoke", "lvalue_runtime_production_cli_smoke", "lvalue_object_production_cli_smoke"],
-      "sources": ["src/mparser/runtime_lvalue.cpp", "src/mparser/runtime_cell.cpp", "src/mparser/bytecode.cpp", "src/mparser/bytecode_vm.cpp", "tests/lvalue_runtime_smoke.cpp", "samples/lvalue_copyback_demo.m"],
-      "limits": "Intermediate selections must resolve to one value; HIR does not execute classdef objects; object setters and handle aliases retain their documented side effects; typed/native tiers fall back to the VM."
+      "evidence": ["lvalue_runtime_smoke", "lvalue_runtime_interpreter_cli_smoke", "lvalue_runtime_bytecode_cli_smoke", "lvalue_runtime_production_cli_smoke", "lvalue_object_production_cli_smoke", "dynamic_language_semantics_smoke", "dynamic_language_semantics_production_cli_smoke"],
+      "sources": ["src/mparser/runtime_lvalue.cpp", "src/mparser/runtime_cell.cpp", "src/mparser/bytecode.cpp", "src/mparser/bytecode_vm.cpp", "tests/lvalue_runtime_smoke.cpp", "tests/dynamic_language_semantics_smoke.cpp", "samples/lvalue_copyback_demo.m", "samples/dynamic_language_semantics_demo.m"],
+      "limits": "Intermediate selections must resolve to one value. Missing roots can be seeded from the next path segment for numeric, Cell, or Struct indexed creation before transactional copy-back. HIR does not execute classdef objects; object setters and handle aliases retain their documented side effects; typed/native tiers fall back to the VM."
     },
     {
       "id": "WORKSPACE-001",

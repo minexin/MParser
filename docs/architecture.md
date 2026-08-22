@@ -523,6 +523,17 @@ range, lexical class identity, and a value snapshot of only the free variables
 referenced by the body. Nested anonymous bodies contribute their external free
 variables, while parameters at either level remain local. HIR and bytecode use
 the same semantic capture analysis.
+Declared nested functions use qualified keys such as `outer>inner` (or
+`Class.method>inner`) rather than a module-global short name. Semantic binding
+records the defining function scope and computes exact free-variable names.
+Each runtime seeds the nested call frame from active lexical ancestors and
+writes shared captures back to their owning frame on return; declarations are
+cataloged but skipped during ordinary outer-body execution. This supports
+same-named inner functions, sibling and recursive lookup, multi-level capture,
+and named handles invoked while the lexical parent is active. The function
+descriptor intentionally does not yet retain a heap-owned shared workspace,
+so a nested handle invoked after its parent returns fails the explicit
+inactive-parent guard.
 Named handles resolve once at creation to a builtin, ordinary function,
 package function, static method, or bound object method. Builtin descriptors
 are backend-independent; source-backed descriptors remain tied to the engine
@@ -858,15 +869,17 @@ Code/P-code/MEX methods, automatic handle
 destruction at scope/workspace teardown, cyclic object collection,
 listener/source arrays, numeric/logical/character built-in enumeration bases,
 enumeration object arrays, class methods as `CompiledModule` entry targets,
-sparse arrays, and complex values until the IR grows richer mutation, layout,
-and dynamic dispatch conventions. Structures support ordered heterogeneous
-fields, N-dimensional element arrays, static/dynamic direct member access,
-indexed reads, whole-element assignment, common growth, vector deletion, and
-comma-separated field results. General nested value updates such as
-`S(index).field = value` remain outside the current lvalue contract. Cell
-execution supports N-dimensional scalar brace reads/writes, but Cell
-parenthesis indexing, vector-valued brace selections, and comma-separated-list
-expansion are future work.
+sparse arrays, and other undeclared domain types until the IR grows richer
+mutation, layout, and dynamic dispatch conventions. Structures support ordered
+heterogeneous fields, N-dimensional element arrays, static/dynamic direct
+member access, indexed reads, whole-element assignment, common growth, vector
+deletion, comma-separated field results, and transactional nested updates such
+as `S(index).field = value`. A missing root can be seeded as a Struct before
+indexed growth, including nested and dynamic member paths. Cell execution
+supports N-dimensional parenthesis indexing/mutation, scalar or vector-valued
+brace selections, and comma-separated-list expansion through calls,
+destructuring, and numeric or Cell literals. Bulk assignment distribution
+through nonscalar intermediates remains narrower than MATLAB.
 
 This shape is intentionally close to an interpreter dispatch loop, but still
 abstract enough for MATLAB's delayed decisions. `CallOrIndex` remains a neutral

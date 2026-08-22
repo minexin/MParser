@@ -277,9 +277,12 @@ RuntimeLvalueOperationResult RuntimeLvalueTransaction::descend(
     RuntimeLvalueSegment segment, const RuntimeLvalueHooks& hooks,
     std::optional<RuntimeValue> missingMemberSeed) {
     RuntimeValue parent = current_;
-    if (parent.kind == RuntimeValueKind::Missing &&
-        segment.kind == RuntimeLvalueSegmentKind::Member) {
-        parent = makeRuntimeStructValue();
+    if (parent.kind == RuntimeValueKind::Missing) {
+        if (segment.kind == RuntimeLvalueSegmentKind::Member) {
+            parent = makeRuntimeStructValue();
+        } else if (missingMemberSeed) {
+            parent = *missingMemberSeed;
+        }
     }
     if (!missingMemberSeed &&
         segment.kind == RuntimeLvalueSegmentKind::Member) {

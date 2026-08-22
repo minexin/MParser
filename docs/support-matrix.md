@@ -151,11 +151,12 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/filesystem_management_demo.m`, plus
 `samples/advanced_numeric_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
-The latest 2026-08-22 MATLAB R2024b differential rerun records 210 matches and
-13 gaps across its 223 accepted cases. It closes the eight advanced numeric and
-matrix-division cases with no regression among the prior 202 matches; all
-syntax, array, ecosystem, exception, system, text, workspace, and cataloged
-dense-numeric cases match.
+The latest 2026-08-22 MATLAB R2024b differential rerun records 214 matches and
+9 gaps across its 223 accepted cases. It closes Cell-valued `switch` cases,
+lexically scoped nested functions, direct Cell brace comma-list outputs, and
+implicit indexed Struct creation with no regression among the prior 210
+matches. The remaining observed gaps are four class/reflection/event cases,
+MAT-file save/load, `datetime`, `table`, `sparse`, and graphics.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT files, file deletion/recycle/attribute helpers,
 wildcards in parent path components, symbolic-link policy selection (rooted
@@ -170,13 +171,13 @@ report `1.2.0` until the complete v1.3 milestone is ready to freeze.
 | Area | Current v1.x summary | Matrix entries |
 | --- | --- | --- |
 | Lexing and expressions | Lossless tokens, MATLAB-like literals/operators, precedence, member access, and delayed call/index resolution | `LEX-001`, `SYN-001` |
-| Control flow | `for`, serial `parfor`, `while`, `if`, `switch`, `try/catch`, `break`, `continue`, `return` | `SYN-002` |
-| Functions | Local/cross-file calls, argument contracts, `nargin`/`nargout`, multiple outputs, and supported handles | `FUN-001`, `HANDLE-001` |
+| Control flow | `for`, serial `parfor`, `while`, `if`, Cell-valued `switch` cases, `try/catch`, `break`, `continue`, `return` | `SYN-002` |
+| Functions | Local/cross-file and nested lexical calls, argument contracts, `nargin`/`nargout`, multiple outputs, and supported handles | `FUN-001`, `HANDLE-001` |
 | Source graph | Search paths, packages, private functions, and class folders | `SRC-001` |
 | Numeric/logical arrays | Dense core numeric classes and complex double/single through N-D shape/index rules, logical/colon/`end` indexing, growth, and deletion within recorded limits | `ARR-001`, `ARR-002` |
 | Text | Distinct UTF-16 character and string arrays with shared conversion/formatting rules | `TEXT-001` |
 | Missing values | First-class scalar and N-D `missing` arrays with shape-preserving transforms, indexing/mutation, floating/string promotion, and same-shape `ismissing` masks | `MISSING-001` |
-| Cell and Struct | N-D Cells, ordered structures, structure arrays, dynamic fields, and comma-separated field results | `CELL-001`, `STRUCT-001`, `STRUCT-002` |
+| Cell and Struct | N-D Cells, brace comma-list expansion and multi-output assignment, ordered structures, implicit indexed creation, structure arrays, dynamic fields, and comma-separated field results | `CELL-001`, `STRUCT-001`, `STRUCT-002` |
 | Assignment | Transactional nested member/parenthesis/brace copy-back | `LVAL-001` |
 | Workspace | Scoped global/persistent bindings, reusable sessions, and bounded current/caller/base dynamic evaluation | `WORKSPACE-001`, `WORKSPACE-002` |
 | Exceptions | Structured exceptions, causes/stacks, warning state, assertions, and embedding diagnostics within explicit correction limits | `EXC-001` |

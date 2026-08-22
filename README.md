@@ -19,7 +19,12 @@ The live v1.3 development header advances C ABI generation 2 additively to
 revision 1 with a public, rooted runtime-system context for C and C++ hosts.
 Product and source-API metadata remain `1.2.0`/`1.2` until the complete v1.3
 train is ready to freeze; the immutable v1.2 revision-0 snapshots and
-109-symbol manifest are not rewritten by this development change.
+109-symbol manifest are not rewritten by this development change. The current
+tree also closes Cell-valued `switch` cases, lexically nested functions with
+shared active-frame captures, direct Cell brace comma-list outputs, and
+implicit indexed Struct creation. Its 2026-08-22 MATLAB R2024b differential
+run records 214 matches and 9 gaps across 223 accepted cases, up from 210 with
+no prior match regressing.
 
 The published release baseline remains v1.0.0. Its reliability and
 release-documentation gates were cross-platform confirmed at revision
@@ -1831,6 +1836,19 @@ It covers character-literal concatenation, case/trim/number conversion,
 splitting and regex matching, N-dimensional and missing-aware `sort`/`unique`,
 `cellfun` callback contracts, and Struct/Cell conversion. The regex layer is a
 documented portable subset, not a claim of complete MATLAB regexp syntax.
+
+Run the dynamic language semantics batch with:
+
+```powershell
+build\mparser.exe --run samples\dynamic_language_semantics_demo.m
+```
+
+The demo reports `summary = 112` through HIR, bytecode, and production modes.
+It covers Cell-valued `switch` cases, Cell brace comma-list expansion and
+destructuring, mutable nested-function capture, and implicit indexed Struct
+creation with gaps and nested fields. Nested handles are valid while their
+lexical parent frame remains active; retaining the shared closure after that
+parent returns is not yet supported.
 
 Run the active v1.3 numeric, array, text-search, and random utility batch with:
 

@@ -96,7 +96,8 @@ bool hasVariableResultCount(BytecodeOp op) {
     return op == BytecodeOp::LoadName ||
            op == BytecodeOp::MemberAccess ||
            op == BytecodeOp::CallOrIndex ||
-           op == BytecodeOp::CallSuperclass;
+           op == BytecodeOp::CallSuperclass ||
+           op == BytecodeOp::BraceIndex;
 }
 
 bool requiresZeroOperandCount(BytecodeOp op) {
@@ -184,7 +185,7 @@ StackEffect stackEffect(const BytecodeInstruction& instruction) {
     case BytecodeOp::CallSuperclass:
         return {operands, results - operands};
     case BytecodeOp::BraceIndex:
-        return {operands + 1, -operands};
+        return {operands + 1, results - operands - 1};
     case BytecodeOp::StoreMember: {
         const int64_t consumed =
             operands + (instruction.receiverName.empty() ? 1 : 0);

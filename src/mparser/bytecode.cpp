@@ -684,6 +684,15 @@ private:
             lowerMemberAccess(node, resultCount);
             return;
         }
+        if (node.kind == HirKind::BraceIndex) {
+            if (!node.children.empty()) {
+                lowerNode(*node.children.front());
+                lowerIndexArguments(node);
+            }
+            emit(BytecodeOp::BraceIndex, node, argumentCount(node), -1,
+                 resultCount);
+            return;
+        }
         lowerNode(node);
     }
 

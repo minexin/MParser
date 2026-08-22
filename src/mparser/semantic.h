@@ -101,6 +101,8 @@ struct HirNode {
     std::string label;
     std::string raw;
     std::string lexicalClassName;
+    std::string lexicalFunctionName;
+    int semanticScopeId = -1;
     SourceSpan span;
     BindingRef binding;
     std::vector<AttributeSyntax> attributes;
@@ -166,5 +168,7 @@ const char* scopeKindName(ScopeKind kind);
 bool isKnownBuiltinName(std::string_view name);
 std::vector<std::string> anonymousFunctionCaptureNames(
     const HirNode& functionHandle);
+std::vector<std::string> nestedFunctionCaptureNames(
+    const HirNode& function, const SemanticResult& semantic);
 
 } // namespace mparser
