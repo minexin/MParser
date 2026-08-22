@@ -172,6 +172,11 @@ constexpr std::string_view kPulseClass = R"(classdef Pulse < handle
             value = obj.CallbackCount;
         end
 
+        function recordWithoutOutput(obj, eventName)
+            obj.CallbackCount = obj.CallbackCount + 20;
+            obj.LastEvent = eventName;
+        end
+
         function value = reenter(obj, eventName)
             obj.RecursiveCount = obj.RecursiveCount + 1;
             obj.LastEvent = eventName;
@@ -368,6 +373,13 @@ data = TickData(7);
 dataPulse.fireWithData(data);
 custom_data_count = dataPulse.CallbackCount;
 custom_data_isa = isa(data, 'event.EventData');
+
+zeroOutputPulse = Pulse();
+% Generalizes cap_196 to callbacks whose root method has no output.
+zeroOutputListener = addlistener(zeroOutputPulse, 'Tick', ...
+    @(src, evt) src.recordWithoutOutput(evt.EventName));
+zeroOutputPulse.fire(0);
+zero_output_callback_count = zeroOutputPulse.CallbackCount;
 )";
 
     const auto result = run(source);
@@ -399,6 +411,7 @@ custom_data_isa = isa(data, 'event.EventData');
     checkNumber(result, "deleted_manual_listener_count", 4.0);
     checkNumber(result, "custom_data_count", 9.0);
     checkNumber(result, "custom_data_isa", 1.0);
+    checkNumber(result, "zero_output_callback_count", 20.0);
 }
 
 void runListenerOwnershipReleaseSmoke() {

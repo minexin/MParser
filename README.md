@@ -22,9 +22,14 @@ train is ready to freeze; the immutable v1.2 revision-0 snapshots and
 109-symbol manifest are not rewritten by this development change. The current
 tree also closes Cell-valued `switch` cases, lexically nested functions with
 shared active-frame captures, direct Cell brace comma-list outputs, and
-implicit indexed Struct creation. Its 2026-08-22 MATLAB R2024b differential
-run records 214 matches and 9 gaps across 223 accepted cases, up from 210 with
-no prior match regressing.
+implicit indexed Struct creation. The latest in-tree batch adds literal
+class-name source discovery for reflection queries, column enumeration object
+arrays, output-context-aware anonymous callbacks, and Cell-text
+`strcmp`/`strcmpi`. Its 2026-08-22 MATLAB R2024b differential
+run records 218 matches and 5 gaps across 223 accepted cases, closing the four
+class/reflection/event gaps after the preceding 214-match run with no prior
+match regressing. The observed remainder is MAT-file save/load, `datetime`,
+`table`, `sparse`, and graphics.
 
 The published release baseline remains v1.0.0. Its reliability and
 release-documentation gates were cross-platform confirmed at revision
@@ -394,9 +399,10 @@ constructors remain usable by member initialization, and recursive member
 initialization fails deterministically. The VM also implements `isenum`,
 `enumeration`, enum-aware `class`, `isa`, `char`, and `string`; `Hidden` members
 remain directly addressable but are filtered from enumeration queries. Until
-object arrays exist, `enumeration` returns visible values and names as Cells,
-which support brace indexing and general `length`, `numel`, `size`, and
-`isempty` queries.
+v0.76 supplied object arrays, the v0.40 baseline returned visible values and
+names as Cells. The active v1.3 runtime instead returns visible values as an
+N-by-1 homogeneous enumeration object array and names as an N-by-1 Cell;
+members therefore use parenthesis indexing while names use brace indexing.
 v0.41 makes function handles and class events executable in the bytecode VM.
 Anonymous handles retain their parameter list, bytecode body range, lexical
 class privilege, and a value snapshot of referenced free variables. Named
@@ -1717,8 +1723,8 @@ build\mparser.exe --run-bytecode `
 ```
 
 The demo reports `summary = 56`, prints members as
-`<palette.Status.Ready>`, and filters the `Hidden` member from the two Cells
-returned by `enumeration`.
+`<palette.Status.Ready>`, and filters the `Hidden` member from the N-by-1
+object array and names Cell returned by `enumeration`.
 
 Run class metadata lookup, inherited member discovery, visibility filtering,
 metadata comparison, and method introspection with:
@@ -1883,8 +1889,11 @@ complex `dot`, expanded `cross`, `fft`/`ifft`, `conv`, `trapz`, `polyfit`, and
 column-major LU and pivoted QR solve square and rectangular systems,
 Hermitian Jacobi and shifted complex QR provide eigensystems and singular
 values, and radix-2/Bluestein kernels cover power-of-two and arbitrary FFT
-lengths. MParser does not depend on Eigen. Legal inputs outside a typed/JIT
-region execute through the shared runtime implementation.
+lengths. All canonical mathematical implementations are repository-owned
+portable C++20. MParser does not link, vendor, or copy Eigen code; published
+algorithms and external implementations may inform algorithm selection, but
+the maintained implementation and tests live in this repository. Legal inputs
+outside a typed/JIT region execute through the shared runtime implementation.
 
 Run the active v1.3 system, random-state, and bounded text-file slices with:
 

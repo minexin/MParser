@@ -176,11 +176,13 @@ end
 [members, names] = enumeration(ready);
 [membersByName, namesByName] = enumeration('Status');
 visibleCount = numel(members);
-firstMember = members{1};
+firstMember = members(1);
+secondMember = members(2);
 firstName = names{1};
 secondName = names{2};
 secondNameByClass = namesByName{2};
 firstCode = firstMember.Code;
+secondMemberName = char(secondMember);
 hidden = Status.Internal;
 hiddenName = char(hidden);
 )";
@@ -247,6 +249,7 @@ void runValueEnumerationSmoke() {
     checkString(result, "firstName", "Ready");
     checkString(result, "secondName", "Busy");
     checkString(result, "secondNameByClass", "Busy");
+    checkString(result, "secondMemberName", "Busy");
     checkString(result, "hiddenName", "Internal");
 
     const auto* ready = findVariable(result, "ready");
@@ -261,14 +264,18 @@ void runValueEnumerationSmoke() {
 
     const auto* members = findVariable(result, "members");
     check(members != nullptr &&
-              members->kind == mparser::RuntimeValueKind::Cell &&
-              members->cells.size() == 2,
-          "enumeration() should return two visible members");
+              members->kind == mparser::RuntimeValueKind::Object &&
+              members->className == "Status" && members->rows == 2 &&
+              members->columns == 1 &&
+              members->objectElements.size() == 2,
+          "enumeration() should return a column enumeration array");
     const auto* membersByName = findVariable(result, "membersByName");
     check(membersByName != nullptr &&
-              membersByName->kind == mparser::RuntimeValueKind::Cell &&
-              membersByName->cells.size() == 2,
-          "enumeration(className) should return visible members");
+              membersByName->kind == mparser::RuntimeValueKind::Object &&
+              membersByName->className == "Status" &&
+              membersByName->rows == 2 && membersByName->columns == 1 &&
+              membersByName->objectElements.size() == 2,
+          "enumeration(className) should return a column enumeration array");
 }
 
 void runSimpleEnumerationSmoke() {

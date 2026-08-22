@@ -307,7 +307,13 @@ private:
         }
         instruction.captureNames = anonymousFunctionCaptureNames(node);
         if (node.children.size() >= 2) {
+            const size_t bodyBegin = program_.instructions.size();
             lowerExpression(*node.children[1]);
+            if (program_.instructions.size() > bodyBegin &&
+                (node.children[1]->kind == HirKind::CallOrIndex ||
+                 node.children[1]->kind == HirKind::NameRef)) {
+                program_.instructions.back().anonymousBodyOutput = true;
+            }
         }
         patchTarget(make, program_.instructions.size());
     }

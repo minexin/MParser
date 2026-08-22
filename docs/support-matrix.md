@@ -81,7 +81,7 @@ v1.2 candidate contract.
 
 ## v1.3 Development Additions
 
-The current tree has seven end-to-end system, standard-library, and embedding
+The current tree has ten end-to-end system, language, standard-library, and embedding
 batches:
 
 - one session-owned capability context and injectable host adapter for current
@@ -129,7 +129,8 @@ batches:
 - dimension-aware `median`, `std`, and `var`; dense `det`, `inv`, `trace`,
   `norm`, `rank`, `eig`, matrix `/` and `\`, `dot`, `cross`, `fft`, `ifft`,
   `conv`, `trapz`, `polyfit`, and `polyval` through a repository-owned
-  standard C++20 backend with no Eigen dependency;
+  standard C++20 backend with no Eigen dependency, copied Eigen source, or
+  vendored Eigen headers;
 - generic N-dimensional `flip`, `flipud`, and `fliplr` across supported dense
   values, including payload-free shaped missing arrays;
 - UTF-16 `strfind`/`strrep` with overlapping matches and string-array/Cell
@@ -141,7 +142,13 @@ batches:
   workspace-variable precedence over same-named callables;
 - MATLAB-style `!command` statements routed to the same capability-gated
   `system` implementation without allowing a workspace name to intercept the
-  syntax-level shell escape.
+  syntax-level shell escape;
+- Cell-valued `switch`, lexical nested functions, direct Cell comma-list
+  expansion, and implicit indexed Struct creation through shared HIR/VM
+  contracts;
+- literal class-name reflection source discovery, N-by-1 enumeration object
+  arrays, output-context-aware anonymous callbacks including zero-output event
+  methods, and shape-preserving Cell-text `strcmp`/`strcmpi`.
 
 The runnable evidence is `samples/system_services_demo.m`,
 `samples/random_runtime_demo.m`, `samples/file_io_demo.m`, and
@@ -151,12 +158,11 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/filesystem_management_demo.m`, plus
 `samples/advanced_numeric_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
-The latest 2026-08-22 MATLAB R2024b differential rerun records 214 matches and
-9 gaps across its 223 accepted cases. It closes Cell-valued `switch` cases,
-lexically scoped nested functions, direct Cell brace comma-list outputs, and
-implicit indexed Struct creation with no regression among the prior 210
-matches. The remaining observed gaps are four class/reflection/event cases,
-MAT-file save/load, `datetime`, `table`, `sparse`, and graphics.
+The latest 2026-08-22 MATLAB R2024b differential rerun records 218 matches and
+5 gaps across its 223 accepted cases. It closes literal class-name enumeration,
+events and metadata/member reflection after the preceding 214-match run, with
+no prior match regressing. The remaining observed gaps are MAT-file save/load,
+`datetime`, `table`, `sparse`, and graphics.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT files, file deletion/recycle/attribute helpers,
 wildcards in parent path components, symbolic-link policy selection (rooted

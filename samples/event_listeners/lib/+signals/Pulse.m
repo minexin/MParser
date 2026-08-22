@@ -29,6 +29,11 @@ classdef Pulse < handle
             value = obj.CallbackCount;
         end
 
+        function recordWithoutOutput(obj, eventName)
+            obj.CallbackCount = obj.CallbackCount + 20;
+            obj.LastEvent = eventName;
+        end
+
         function callback = privateCallback(obj)
             callback = @(src, evt) obj.recordPrivate(evt.EventName);
         end

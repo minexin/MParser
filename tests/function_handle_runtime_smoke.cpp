@@ -7,6 +7,7 @@
 #include "mparser/runtime_text.h"
 #include "mparser/semantic.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -234,6 +235,66 @@ void runTextDiagnosticParitySmoke() {
           "HIR interpreter accepted anonymous function text");
 }
 
+void runAnonymousZeroOutputParitySmoke() {
+    auto pipeline = lower(R"(callback = @() touch();
+seed = 13;
+seed;
+callback();
+ans_after_zero_output = ans;
+value_callback = @() produce();
+value_callback();
+observed_ans = ans;
+
+function touch()
+end
+
+function value = produce()
+value = 7;
+end
+)");
+
+    const auto bodyCall = std::find_if(
+        pipeline.bytecode.instructions.begin(),
+        pipeline.bytecode.instructions.end(), [](const auto& instruction) {
+            return instruction.op == mparser::BytecodeOp::CallOrIndex &&
+                   instruction.anonymousBodyOutput;
+        });
+    check(bodyCall != pipeline.bytecode.instructions.end(),
+          "anonymous body output metadata is missing");
+
+    mparser::BytecodeVm vm;
+    const auto bytecode = vm.run(pipeline.bytecode, pipeline.semantic);
+    check(bytecode.diagnostics.empty(),
+          "bytecode zero-output anonymous diagnostics:\n" +
+              diagnosticsText(bytecode.diagnostics));
+    checkNumber(bytecode, "ans_after_zero_output", 13.0);
+    checkNumber(bytecode, "observed_ans", 7.0);
+
+    mparser::Interpreter interpreter;
+    const auto hir = interpreter.run(pipeline.semantic);
+    check(hir.diagnostics.empty(),
+          "HIR zero-output anonymous diagnostics:\n" +
+              diagnosticsText(hir.diagnostics));
+    checkNumber(hir, "ans_after_zero_output", 13.0);
+    checkNumber(hir, "observed_ans", 7.0);
+
+    auto explicitPipeline = lower(R"(callback = @() touch();
+value = callback();
+
+function touch()
+end
+)");
+    const auto explicitBytecode =
+        vm.run(explicitPipeline.bytecode, explicitPipeline.semantic);
+    check(hasDiagnostic(explicitBytecode.diagnostics,
+                        "function output count mismatch for: touch"),
+          "bytecode accepted an assigned zero-output anonymous call");
+    const auto explicitHir = interpreter.run(explicitPipeline.semantic);
+    check(hasDiagnostic(explicitHir.diagnostics,
+                        "function output count mismatch for: touch"),
+          "HIR accepted an assigned zero-output anonymous call");
+}
+
 mparser::RuntimeValue number(double value) {
     mparser::RuntimeValue result;
     result.kind = mparser::RuntimeValueKind::Number;
@@ -361,6 +422,7 @@ int main() {
     try {
         runInterpreterAndVmParitySmoke();
         runTextDiagnosticParitySmoke();
+        runAnonymousZeroOutputParitySmoke();
         runCompiledModulePersistenceSmoke();
         std::cout << "function handle runtime smoke tests passed\n";
         return 0;

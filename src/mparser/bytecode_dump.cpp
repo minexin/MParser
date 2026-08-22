@@ -64,6 +64,12 @@ void dumpBytecode(std::ostream& output, const BytecodeProgram& program,
         if (instruction.nondeterministicAssignment) {
             output << " nondeterministic-assignment";
         }
+        if (instruction.implicitExpressionOutput) {
+            output << " implicit-output";
+        }
+        if (instruction.anonymousBodyOutput) {
+            output << " anonymous-body-output";
+        }
         if (instruction.hasIndexContext) {
             output << " index-context";
         }

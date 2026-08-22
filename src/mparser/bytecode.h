@@ -95,6 +95,7 @@ struct BytecodeInstruction {
     bool nondeterministicAssignment = false;
     bool outputSuppressed = false;
     bool implicitExpressionOutput = false;
+    bool anonymousBodyOutput = false;
     bool calleeReference = false;
     bool hasIndexContext = false;
 };

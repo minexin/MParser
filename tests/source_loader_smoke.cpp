@@ -319,6 +319,86 @@ void runFileDependencyLoadingSmoke() {
     assertNumber(runtime, "dynamic_code", 2);
 }
 
+void runStaticReflectionDependencySmoke() {
+    // Generalizes cap_195, cap_198b, and cap_199 across all static class-name
+    // reflection entry points rather than relying on constructor references.
+    auto temporary = makeTemporaryDirectory();
+    const auto entryDirectory = temporary.path / "entry";
+    const auto classDirectory = temporary.path / "classes";
+    const auto entryPath = entryDirectory / "main.m";
+
+    writeFile(entryPath, R"(colors = enumeration('LoaderColor');
+class_info = meta.class.fromName('LoaderPoint');
+legacy_class_info = matlab.metadata.Class.fromName('LoaderPoint');
+method_names = methods('LoaderPoint');
+property_names = properties("LoaderPoint");
+event_names = events('LoaderPulse');
+if false
+    unused_full_methods = methods('LoaderOptional', '-full');
+end
+summary = numel(colors) + strcmp(class_info.Name, 'LoaderPoint') + ...
+    strcmp(legacy_class_info.Name, 'LoaderPoint') + ...
+    any(strcmp(method_names, 'norm2')) + ...
+    any(strcmp(property_names, 'x')) + ...
+    any(strcmp(event_names, 'Ticked'));
+)");
+    writeFile(classDirectory / "LoaderColor.m", R"(classdef LoaderColor
+    enumeration
+        Red
+        Green
+        Blue
+    end
+end
+)");
+    writeFile(classDirectory / "LoaderPoint.m", R"(classdef LoaderPoint
+    properties
+        x = 0
+        y = 0
+    end
+    methods
+        function value = norm2(obj)
+            value = sqrt(obj.x^2 + obj.y^2);
+        end
+    end
+end
+)");
+    writeFile(classDirectory / "LoaderPulse.m", R"(classdef LoaderPulse < handle
+    events
+        Ticked
+    end
+end
+)");
+    writeFile(classDirectory / "LoaderOptional.m", R"(classdef LoaderOptional
+    methods
+        function value = marker(~)
+            value = 1;
+        end
+    end
+end
+)");
+
+    mparser::SourceLoaderOptions options;
+    options.searchPaths.push_back(classDirectory);
+    const auto loaded = mparser::SourceLoader{}.load(entryPath, options);
+    assert(loaded.sources.size() == 5);
+
+    std::set<std::string> loadedFiles;
+    for (const auto& source : loaded.sources) {
+        loadedFiles.insert(
+            std::filesystem::path(source.name).filename().string());
+    }
+    assert(loadedFiles.contains("LoaderColor.m"));
+    assert(loadedFiles.contains("LoaderPoint.m"));
+    assert(loadedFiles.contains("LoaderPulse.m"));
+    assert(loadedFiles.contains("LoaderOptional.m"));
+
+    const auto module = mparser::CompiledModule::compile(loaded.sources);
+    assert(module.valid());
+    const auto runtime = module.invoke();
+    assert(runtime.diagnostics.empty());
+    assertNumber(runtime, "summary", 8);
+}
+
 void runNamespaceClassLoadingSmoke() {
     auto temporary = makeTemporaryDirectory();
     const auto entryPath = temporary.path / "entry" / "main.m";
@@ -511,6 +591,7 @@ int main() {
     runMultiSourceCompilationSmoke();
     runMultiSourceDiagnosticSmoke();
     runFileDependencyLoadingSmoke();
+    runStaticReflectionDependencySmoke();
     runNamespaceClassLoadingSmoke();
     runNamespacePathPrecedenceSmoke();
     std::cout << "source loader smoke tests passed\n";

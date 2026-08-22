@@ -496,6 +496,15 @@ private:
                     "implicit expression output requires a one-result "
                     "CallOrIndex or LoadName instruction");
             }
+            if (instruction.anonymousBodyOutput &&
+                ((instruction.op != BytecodeOp::CallOrIndex &&
+                  instruction.op != BytecodeOp::LoadName) ||
+                 instruction.resultCount != 1)) {
+                addDiagnostic(
+                    pc,
+                    "anonymous body output requires a one-result "
+                    "CallOrIndex or LoadName instruction");
+            }
             if (instruction.hasIndexContext &&
                 instruction.op != BytecodeOp::CallOrIndex) {
                 addDiagnostic(

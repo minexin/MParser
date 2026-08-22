@@ -1185,6 +1185,7 @@ public:
         activePersistentFunctionKeys_.clear();
         activeFunctionFrames_.clear();
         activeClassFunctions_.clear();
+        activeAnonymousBodyOutputCounts_.clear();
         eventListeners_.clear();
         dynamicProperties_.clear();
         activeDynamicPropertyGetters_.clear();
@@ -6290,7 +6291,13 @@ private:
             if (descriptor && descriptor->handler &&
                 descriptor->inputs.accepts(0)) {
                 BytecodeInstruction callInstruction = instruction;
-                if (callInstruction.implicitExpressionOutput) {
+                if (const auto outputCount =
+                        anonymousBodyOutputCount(callInstruction)) {
+                    callInstruction.resultCount = *outputCount;
+                } else if (anonymousBodyUsesImplicitOutput(
+                               callInstruction) ||
+                           callInstruction.implicitExpressionOutput) {
+                    callInstruction.implicitExpressionOutput = true;
                     callInstruction.resultCount = static_cast<int>(
                         descriptor->implicitOutputCount(0));
                 }
@@ -10112,6 +10119,23 @@ private:
                          function->second.signature);
     }
 
+    std::optional<int> anonymousBodyOutputCount(
+        const BytecodeInstruction& instruction) const {
+        if (!instruction.anonymousBodyOutput ||
+            activeAnonymousBodyOutputCounts_.empty() ||
+            activeAnonymousBodyOutputCounts_.back() < 0) {
+            return std::nullopt;
+        }
+        return activeAnonymousBodyOutputCounts_.back();
+    }
+
+    bool anonymousBodyUsesImplicitOutput(
+        const BytecodeInstruction& instruction) const {
+        return instruction.anonymousBodyOutput &&
+               !activeAnonymousBodyOutputCounts_.empty() &&
+               activeAnonymousBodyOutputCounts_.back() < 0;
+    }
+
     void callOrIndex(const BytecodeInstruction& instruction) {
         const auto rawArguments = popRuntimeValues(
             instruction, instruction.operandCount,
@@ -10134,7 +10158,13 @@ private:
 
         if (callee->isClassReference) {
             BytecodeInstruction callInstruction = instruction;
-            if (callInstruction.implicitExpressionOutput) {
+            if (const auto outputCount =
+                    anonymousBodyOutputCount(callInstruction)) {
+                callInstruction.resultCount = *outputCount;
+            } else if (anonymousBodyUsesImplicitOutput(
+                           callInstruction) ||
+                       callInstruction.implicitExpressionOutput) {
+                callInstruction.implicitExpressionOutput = true;
                 callInstruction.resultCount = 1;
             }
             auto outputs = callClassConstructor(
@@ -10147,7 +10177,13 @@ private:
 
         if (callee->isMethodReference) {
             BytecodeInstruction callInstruction = instruction;
-            if (callInstruction.implicitExpressionOutput) {
+            if (const auto outputCount =
+                    anonymousBodyOutputCount(callInstruction)) {
+                callInstruction.resultCount = *outputCount;
+            } else if (anonymousBodyUsesImplicitOutput(
+                           callInstruction) ||
+                       callInstruction.implicitExpressionOutput) {
+                callInstruction.implicitExpressionOutput = true;
                 callInstruction.resultCount =
                     preferredImplicitMethodOutputCount(
                         callee->methodClassName, callee->methodName,
@@ -10165,7 +10201,13 @@ private:
 
         if (isFunctionHandle(callee->value)) {
             BytecodeInstruction callInstruction = instruction;
-            if (callInstruction.implicitExpressionOutput) {
+            if (const auto outputCount =
+                    anonymousBodyOutputCount(callInstruction)) {
+                callInstruction.resultCount = *outputCount;
+            } else if (anonymousBodyUsesImplicitOutput(
+                           callInstruction) ||
+                       callInstruction.implicitExpressionOutput) {
+                callInstruction.implicitExpressionOutput = true;
                 callInstruction.resultCount =
                     preferredImplicitHandleOutputCount(
                         callee->value, arguments.size());
@@ -10179,6 +10221,13 @@ private:
             auto outputs = callFunctionHandle(
                 callInstruction, callee->value, arguments,
                 callInstruction.resultCount);
+            if (callInstruction.implicitExpressionOutput &&
+                callee->value.functionHandle &&
+                callee->value.functionHandle->kind ==
+                    RuntimeFunctionHandleKind::Anonymous &&
+                outputs.empty()) {
+                callInstruction.resultCount = 0;
+            }
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
             }
@@ -10190,7 +10239,13 @@ private:
         if (callee->isFunctionReference) {
             const std::string& name = callee->functionName;
             BytecodeInstruction callInstruction = instruction;
-            if (callInstruction.implicitExpressionOutput) {
+            if (const auto outputCount =
+                    anonymousBodyOutputCount(callInstruction)) {
+                callInstruction.resultCount = *outputCount;
+            } else if (anonymousBodyUsesImplicitOutput(
+                           callInstruction) ||
+                       callInstruction.implicitExpressionOutput) {
+                callInstruction.implicitExpressionOutput = true;
                 const auto function = resolveLocalFunction(name);
                 callInstruction.resultCount =
                     !function
@@ -10222,7 +10277,13 @@ private:
                                      *callee->receiver);
             }
             BytecodeInstruction callInstruction = instruction;
-            if (callInstruction.implicitExpressionOutput) {
+            if (const auto outputCount =
+                    anonymousBodyOutputCount(callInstruction)) {
+                callInstruction.resultCount = *outputCount;
+            } else if (anonymousBodyUsesImplicitOutput(
+                           callInstruction) ||
+                       callInstruction.implicitExpressionOutput) {
+                callInstruction.implicitExpressionOutput = true;
                 callInstruction.resultCount =
                     preferredImplicitBuiltinOutputCount(
                         name, callArguments.size());
@@ -10345,16 +10406,22 @@ private:
                 info.lexicalClassName, "<anonymous>", {}, nullptr});
         }
         enterFunctionProfile(info.display, info.span);
+        activeAnonymousBodyOutputCounts_.push_back(
+            instruction.implicitExpressionOutput ? -1 : requestedCount);
         executeFunctionBody(info.entry, info.end);
+        activeAnonymousBodyOutputCounts_.pop_back();
         leaveFunctionProfile();
         if (!info.lexicalClassName.empty()) {
             activeClassFunctions_.pop_back();
         }
 
         RuntimeValue output = missingValue();
-        if (stack_.size() > stackBase) {
+        const bool producedOutput = stack_.size() > stackBase;
+        if (producedOutput) {
             output = stack_.back().value;
-        } else if (diagnostics_.empty()) {
+        } else if (requestedCount != 0 &&
+                   !instruction.implicitExpressionOutput &&
+                   diagnostics_.empty()) {
             addDiagnostic(instruction,
                           "anonymous function body produced no value: " +
                               info.display);
@@ -10368,7 +10435,8 @@ private:
         switchContextStack_ = std::move(savedSwitchContextStack);
         tryContextStack_ = std::move(savedTryContextStack);
 
-        if (requestedCount == 0) {
+        if (requestedCount == 0 ||
+            (instruction.implicitExpressionOutput && !producedOutput)) {
             return {};
         }
         return {output};
@@ -12682,10 +12750,17 @@ private:
         const size_t valueCount = values.size();
         const size_t nameCount = names.size();
         std::vector<RuntimeValue> outputs;
-        outputs.push_back(cellValueForShape(1, valueCount,
-                                            std::move(values)));
+        auto objectArray = runtimeMakeObjectArrayFromLogicalOrder(
+            std::move(values), {valueCount, 1}, *className,
+            klass.handleClass, objectArrayPolicy(instruction), *className);
+        if (!objectArray.succeeded) {
+            addDiagnostic(instruction,
+                          "enumeration " + std::move(objectArray.error));
+            return missingOutputs(requestedCount);
+        }
+        outputs.push_back(std::move(objectArray.value));
         if (requestedCount == 2) {
-            outputs.push_back(cellValueForShape(1, nameCount,
+            outputs.push_back(cellValueForShape(nameCount, 1,
                                                 std::move(names)));
         }
         return outputs;
@@ -13547,7 +13622,8 @@ private:
     void pushOutputValues(const BytecodeInstruction& instruction,
                           const std::vector<RuntimeValue>& outputs) {
         if (instruction.resultCount == 0) {
-            if (instruction.implicitExpressionOutput) {
+            if (instruction.implicitExpressionOutput &&
+                !instruction.anonymousBodyOutput) {
                 pushRuntime(missingValue());
             }
             return;
@@ -13948,12 +14024,10 @@ private:
             }
         }
         if (name == "strcmp" || name == "strcmpi") {
-            if (arguments.size() != 2 ||
-                !isRuntimeTextValue(arguments[0]) ||
-                !isRuntimeTextValue(arguments[1])) {
+            if (arguments.size() != 2) {
                 addDiagnostic(instruction,
                               "bytecode " + name +
-                                  " expects two text arguments");
+                                  " expects two arguments");
                 return missingValue();
             }
             auto result = runtimeCompareText(
@@ -14401,6 +14475,7 @@ private:
     std::vector<size_t> tryEndAt_;
     std::vector<size_t> functionEndAt_;
     std::vector<RuntimeCallFrame> frames_;
+    std::vector<int> activeAnonymousBodyOutputCounts_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
     std::shared_ptr<RuntimeExecutionControl> executionControl_;
     std::set<std::string> baseGlobalNames_;

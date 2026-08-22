@@ -216,6 +216,13 @@ void recordRawDependency(std::map<std::string, bool>& dependencies,
     existing = existing || functionsAllowed;
 }
 
+bool acceptsStaticClassName(std::string_view functionName) {
+    return functionName == "enumeration" || functionName == "events" ||
+           functionName == "methods" || functionName == "properties" ||
+           functionName == "meta.class.fromName" ||
+           functionName == "matlab.metadata.Class.fromName";
+}
+
 std::optional<std::string> staticStringLiteral(const SyntaxNode& node) {
     if (node.kind != SyntaxKind::StringLiteralExpr || node.raw.size() < 2) {
         return std::nullopt;
@@ -272,7 +279,8 @@ void collectRawDependencies(const SyntaxNode& node,
         if (const auto name =
                 dottedExpressionName(*node.children.front())) {
             recordRawDependency(dependencies, *name, true);
-            if (*name == "enumeration" && node.children.size() == 2) {
+            if (acceptsStaticClassName(*name) &&
+                node.children.size() >= 2) {
                 if (const auto className =
                         staticStringLiteral(*node.children[1]);
                     className && !splitClassName(*className).empty()) {

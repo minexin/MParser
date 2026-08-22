@@ -397,6 +397,32 @@ std::optional<RuntimeValue> normalizedStringValue(const RuntimeValue &value) {
   return makeRuntimeStringArray({dimensions[0], 1}, std::move(elements));
 }
 
+std::optional<RuntimeValue>
+normalizedComparisonStringValue(const RuntimeValue &value) {
+  if (isRuntimeTextValue(value)) {
+    return normalizedStringValue(value);
+  }
+  if (value.kind != RuntimeValueKind::Cell ||
+      runtimeShapeElementCount(value) != value.cells.size()) {
+    return std::nullopt;
+  }
+
+  std::vector<RuntimeStringElement> elements;
+  elements.reserve(value.cells.size());
+  for (const auto &cell : value.cells) {
+    const auto text = runtimeTextScalarCodeUnits(cell);
+    if (!text) {
+      return std::nullopt;
+    }
+    const bool missing =
+        isRuntimeStringArray(cell) && cell.stringElements.size() == 1 &&
+        cell.stringElements.front().missing;
+    elements.push_back(RuntimeStringElement{*text, missing});
+  }
+  return makeRuntimeStringArray(runtimeDimensions(value),
+                                std::move(elements));
+}
+
 std::vector<size_t>
 nonSingletonDimensions(const std::vector<size_t> &dimensions) {
   std::vector<size_t> result;
@@ -1335,18 +1361,26 @@ RuntimeTextOperationResult runtimeCompareText(std::string_view operation,
                                               const RuntimeValue &left,
                                               const RuntimeValue &right,
                                               bool ignoreCase) {
-  if (!isRuntimeTextValue(left) || !isRuntimeTextValue(right)) {
+  const bool strcmpOperation =
+      operation == "strcmp" || operation == "strcmpi";
+  if (!strcmpOperation &&
+      (!isRuntimeTextValue(left) || !isRuntimeTextValue(right))) {
     return textFailure("text comparison requires text operands");
   }
   const bool stringComparison =
-      operation == "strcmp" || operation == "strcmpi" ||
+      strcmpOperation ||
       isRuntimeStringArray(left) || isRuntimeStringArray(right);
   if (stringComparison) {
-    const auto leftStrings = normalizedStringValue(left);
-    const auto rightStrings = normalizedStringValue(right);
+    const auto leftStrings = strcmpOperation
+                                 ? normalizedComparisonStringValue(left)
+                                 : normalizedStringValue(left);
+    const auto rightStrings = strcmpOperation
+                                  ? normalizedComparisonStringValue(right)
+                                  : normalizedStringValue(right);
     if (!leftStrings || !rightStrings) {
       return textFailure(
-          "text comparison could not convert character arrays to strings");
+          "text comparison requires text arrays or Cell arrays of text "
+          "scalars");
     }
     const auto dimensions = runtimeImplicitExpansionDimensions(
         runtimeDimensions(*leftStrings), runtimeDimensions(*rightStrings));

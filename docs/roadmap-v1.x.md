@@ -276,12 +276,24 @@ returns remains an explicit unsupported closure-lifetime boundary.
 `dynamic_language_semantics_smoke` cover both baseline engines and production
 fallback.
 
+The tenth batch closes the four remaining class/reflection/event differential
+cases as one runtime slice. Literal class names passed to enumeration and
+metadata/member queries enter the source graph uniformly. `enumeration`
+returns an N-by-1 same-class object array plus an N-by-1 names Cell. Anonymous
+root calls inherit implicit, zero, or explicit-one output context, allowing
+zero-output listener methods without weakening assigned-call diagnostics.
+Shared `strcmp`/`strcmpi` accepts shape-preserving Cell arrays of text scalars
+with scalar expansion, so reflection lists use the same comparison contract in
+HIR and bytecode. Focused tests and runnable enumeration/event samples cover
+the generalized mechanisms; full differential results remain the closure
+authority.
+
 The latest MATLAB R2024b external differential rerun at
-`MParserV1.0Test/results/20260822-211659-v1.3-dynamic-language` records 214
-matches and 9 gaps across all 223 accepted cases. It closes `cap_101`,
-`cap_124`, `cap_164`, and `cap_177` after the preceding 210-match run with no
-regression. The remaining observed gaps are four class/reflection/event cases,
-MAT-file save/load, `datetime`, `table`, `sparse`, and graphics. These batches
+`MParserV1.0Test/results/20260822-224831-v1.3-class-reflection` records 218
+matches and 5 gaps across all 223 accepted cases. It closes `cap_195`,
+`cap_196`, `cap_198b`, and `cap_199` after the preceding 214-match run with no
+regression. The remaining observed gaps are MAT-file save/load, `datetime`,
+`table`, `sparse`, and graphics. These batches
 do not close v1.3. File deletion and metadata conveniences, dynamic
 parent-module function lookup/declarations, and remaining standard-library
 families remain milestone work. Scansets,
@@ -302,6 +314,10 @@ to make them useful:
   polynomial fitting, and FFT, without an Eigen dependency; any later optional
   BLAS/LAPACK/FFT acceleration must document license, threading, determinism,
   feature detection, and preserve this portable semantic fallback;
+- the same repository-owned native C++20 rule applies to every new core
+  mathematical function: Eigen must not be linked, vendored, or copied;
+  published algorithms or external implementations may inform design, while
+  MParser retains its own implementation, provenance, and regression tests;
 - representative MATLAB/MParser benchmarks covering parse/compile/cold/warm,
   bytecode/portable/native, allocation, peak memory, cache, and fallback;
 - straight-line numeric regions, general dense-array shape/stride guards,

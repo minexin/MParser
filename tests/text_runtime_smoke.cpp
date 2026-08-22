@@ -317,6 +317,22 @@ template <typename Result> void verifyMissingRow(const Result &result) {
           "[missing missing] did not produce a 1-by-2 missing array");
 }
 
+template <typename Result>
+void verifyCellTextComparison(const Result &result) {
+  require(result.diagnostics.empty(),
+          "Cell text comparison produced a runtime diagnostic");
+  const auto &matches = variable(result, "matches");
+  const auto &folded = variable(result, "folded");
+  require(mparser::runtimeDimensions(matches) ==
+                  std::vector<size_t>({2, 2}) &&
+              matches.elements == std::vector<double>({1, 0, 0, 0}),
+          "strcmp did not preserve Cell shape or scalar-expand text");
+  require(mparser::runtimeDimensions(folded) ==
+                  std::vector<size_t>({2, 2}) &&
+              folded.elements == std::vector<double>({1, 0, 0, 1}),
+          "strcmpi did not compare Cell text case-insensitively");
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -341,6 +357,14 @@ empty_cell = {};
     const RuntimePair missingRow = runBoth("a = [missing missing];\n");
     verifyMissingRow(missingRow.interpreter);
     verifyMissingRow(missingRow.vm);
+
+    const RuntimePair cellTextComparison = runBoth(R"(
+names = {'Alpha', 'other'; 'third', 'Target'};
+matches = strcmp(names, 'Alpha');
+folded = strcmpi(names, {'alpha', 'none'; 'none', 'target'});
+)");
+    verifyCellTextComparison(cellTextComparison.interpreter);
+    verifyCellTextComparison(cellTextComparison.vm);
 
     auto missingTarget =
         mparser::makeRuntimeMissingArrayValue({1, 2});

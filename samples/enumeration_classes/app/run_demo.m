@@ -14,7 +14,7 @@ switch busy
 end
 
 [members, names] = enumeration(ready);
-first_member = members{1};
+first_member = members(1);
 first_name = names{1};
 second_name = names{2};
 visible_count = numel(members);

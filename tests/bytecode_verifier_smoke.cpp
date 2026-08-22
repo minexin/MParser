@@ -243,6 +243,20 @@ void runMetadataRejectionSmoke() {
         "implicit expression output requires a one-result CallOrIndex or "
         "LoadName"));
 
+    mparser::BytecodeProgram invalidAnonymousBodyOutput;
+    mparser::BytecodeInstruction anonymousLiteral;
+    anonymousLiteral.op = mparser::BytecodeOp::LoadLiteral;
+    anonymousLiteral.operand = "1";
+    anonymousLiteral.anonymousBodyOutput = true;
+    invalidAnonymousBodyOutput.instructions.push_back(
+        std::move(anonymousLiteral));
+    assertInvalid(invalidAnonymousBodyOutput);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(invalidAnonymousBodyOutput)
+            .diagnostics,
+        "anonymous body output requires a one-result CallOrIndex or "
+        "LoadName"));
+
     mparser::BytecodeProgram invalidIndexConsumer;
     mparser::BytecodeInstruction indexedLiteral;
     indexedLiteral.op = mparser::BytecodeOp::LoadLiteral;

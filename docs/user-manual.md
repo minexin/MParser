@@ -284,6 +284,13 @@ its parent frame remains active. Returning that handle and invoking it after
 the parent has returned is currently diagnosed; retained shared-workspace
 closure lifetime is not yet part of the subset.
 
+Anonymous root calls preserve the caller's output context. Calling a wrapper
+such as `@() disp(value)` without an assignment is valid and produces no
+synthetic result; a wrapper around a value-returning function still updates
+`ans`, while assigning the zero-output wrapper requests one output and reports
+the same output-count error as a direct call. Listener callbacks use the same
+rule.
+
 Invoke a function entry instead of the script body with:
 
 ```text
@@ -327,7 +334,9 @@ The advanced numeric slice adds dimension-aware `median`, `std`, and `var`;
 dense `det`, `inv`, `trace`, `norm`, `rank`, and one- or two-output `eig`;
 matrix `/` and `\`; complex-aware `dot` and `cross`; `fft`/`ifft`, `conv`,
 `trapz`, `polyfit`, and `polyval`. Its canonical implementation is portable
-repository-owned C++20 rather than Eigen. See
+repository-owned C++20 rather than Eigen. Eigen is neither linked nor vendored,
+and its source is not copied into MParser; algorithm references may guide an
+independent implementation. See
 `samples/advanced_numeric_demo.m`; HIR, bytecode, and production execution use
 the same RuntimeValue and diagnostic contract, while optimized-ineligible
 calls fall back to the VM.
@@ -394,6 +403,13 @@ The parser and production runtime support the target `classdef` subset:
 - listeners, dynamic properties, explicit handle deletion, and validity;
 - class/member/function/signature/argument/namespace metadata queries;
 - supported value, handle, and `matlab.mixin.Heterogeneous` object arrays.
+
+Literal class names passed to `enumeration`, `events`, `methods`, `properties`,
+`meta.class.fromName`, and `matlab.metadata.Class.fromName` participate in
+source discovery. `enumeration` returns an N-by-1 homogeneous object array as
+its first output and an N-by-1 Cell of member names as its second output.
+Reflection name Cells can be compared directly with `strcmp` or `strcmpi`,
+including scalar text expansion.
 
 This is a deliberately bounded object model. MATLAB metaclass identity,
 dynamic loading behavior, undocumented reflection details, Java/.NET

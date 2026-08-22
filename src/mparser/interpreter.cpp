@@ -3152,6 +3152,7 @@ private:
         }
 
         RuntimeValue output = missingValue();
+        bool producedOutput = false;
         const size_t diagnosticCount = diagnostics_.size();
         {
             IndexContextSuspension indexContext(activeIndexContexts_);
@@ -3159,13 +3160,22 @@ private:
                 activeFunctionNames_,
                 info.display.empty() ? std::string("<anonymous>")
                                      : info.display);
-            output = evaluate(*info.hirBody);
+            const bool implicitBodyOutput =
+                requestedOutputCount != 0 && callerOutputCount == 0;
+            auto outputs = evaluateValues(*info.hirBody,
+                                          requestedOutputCount,
+                                          implicitBodyOutput);
+            if (requestedOutputCount != 0 && !outputs.empty()) {
+                output = std::move(outputs.front());
+                producedOutput = true;
+            }
         }
         frames_.pop_back();
         if (diagnostics_.size() != diagnosticCount) {
             return missingOutputs();
         }
-        return requestedOutputCount == 0
+        return requestedOutputCount == 0 ||
+                       (callerOutputCount == 0 && !producedOutput)
                    ? FunctionCallResult{}
                    : FunctionCallResult{{std::move(output)}};
     }
@@ -3972,10 +3982,9 @@ private:
     FunctionCallResult
     callStrcmpBuiltin(const HirNode& node, std::string_view name,
                       const std::vector<RuntimeValue>& arguments) {
-        if (arguments.size() != 2 || !isText(arguments[0]) ||
-            !isText(arguments[1])) {
+        if (arguments.size() != 2) {
             addDiagnostic(node, std::string(name) +
-                                    " expects two text arguments");
+                                    " expects two arguments");
             return FunctionCallResult{{missingValue()}};
         }
         auto result = runtimeCompareText(

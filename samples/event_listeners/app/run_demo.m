@@ -33,5 +33,11 @@ visible_event_count = numel(event_names);
 listener_valid = isvalid(anonymous_listener);
 last_event = pulse.LastEvent;
 
+zero_output_pulse = signals.Pulse();
+addlistener(zero_output_pulse, 'Tick', ...
+    @(source, eventData) source.recordWithoutOutput(eventData.EventName));
+zero_output_pulse.emit(0);
+zero_output_callback_count = zero_output_pulse.CallbackCount;
+
 summary = closure_value + fourth_count + callbacks_after_private + ...
-    visible_event_count + listener_valid;
+    visible_event_count + listener_valid + zero_output_callback_count;

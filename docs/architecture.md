@@ -511,8 +511,10 @@ construction function. Value-enumeration identity freezes property writes
 after construction; handle enumerations keep shared member storage. Equality
 and switch matching compare the class-qualified member identity. Enumeration
 classes are implicitly sealed, and member collisions are rejected during
-semantic predeclaration. Until object arrays exist, `enumeration` exposes its
-ordered visible values and names as Cells.
+semantic predeclaration. `enumeration` exposes ordered visible values as an
+N-by-1 homogeneous object array of the enumeration class and names as an
+N-by-1 Cell. The same object-array ownership and indexing rules therefore
+apply to queried members as to explicitly constructed class arrays.
 
 Function handles are first-class runtime values backed by shared
 `RuntimeFunctionHandle` descriptors rather than a VM-local identifier table.
@@ -522,7 +524,12 @@ handles retain an explicit parameter vector, the HIR or half-open bytecode body
 range, lexical class identity, and a value snapshot of only the free variables
 referenced by the body. Nested anonymous bodies contribute their external free
 variables, while parameters at either level remain local. HIR and bytecode use
-the same semantic capture analysis.
+the same semantic capture analysis. An anonymous root call also inherits the
+caller's output context: an implicit statement query asks the callee for its
+preferred output count, a zero-output callback produces no synthetic value,
+and an explicitly assigned call still requests one output and diagnoses a
+zero-output target. Existing `ans` is preserved when the implicit call produces
+no value.
 Declared nested functions use qualified keys such as `outer>inner` (or
 `Class.method>inner`) rather than a module-global short name. Semantic binding
 records the defining function scope and computes exact free-variable names.
@@ -1559,6 +1566,13 @@ metadata for namespace, external function identity, class ownership, private
 ownership, and alias bindings; none of that internal metadata is exposed as C
 ABI layout.
 
+The active v1.3 dependency pass also treats a literal first argument to
+`enumeration`, `events`, `methods`, `properties`, `meta.class.fromName`, or
+`matlab.metadata.Class.fromName` as a class dependency. Reflection-only
+scripts therefore load package and path classes without needing an unrelated
+constructor reference; computed class names remain a runtime/dynamic-loading
+boundary.
+
 Both paths converge before Lexer -> Parser -> HIR -> Semantic -> Bytecode and
 therefore share cached Typed IR, guarded native/portable execution, VM
 fallback, diagnostics, values, sessions, and resource controls. Modules own
@@ -1950,7 +1964,10 @@ state. Long numeric loops use the same cooperative execution-control boundary.
 The advanced numerical runtime separates MATLAB-facing value, shape, class,
 output-count, and diagnostic semantics in `runtime_advanced_numeric` from a
 portable column-major algorithm layer in `runtime_native_numeric`. The latter
-is standard C++20 and has no Eigen dependency. Partial-pivot LU handles square
+is repository-owned standard C++20 and has no Eigen dependency. Eigen is not
+linked, vendored, or copied into the implementation; external algorithms may
+inform design choices, but maintained source and regression tests remain
+native to MParser. Partial-pivot LU handles square
 solve, determinant, and inverse; column-pivoted reorthogonalized QR handles
 overdetermined least squares and polynomial fitting; underdetermined systems
 use the full-row-rank minimum-norm form. Complex Hermitian Jacobi supplies

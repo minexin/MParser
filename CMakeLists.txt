@@ -1390,7 +1390,7 @@ add_test(NAME event_listener_cli_smoke
         --class-path=${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/lib
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/event_listeners/app/run_demo.m)
 set_tests_properties(event_listener_cli_smoke PROPERTIES
-    PASS_REGULAR_EXPRESSION "summary = 40")
+    PASS_REGULAR_EXPRESSION "summary = 60")
 
 add_test(NAME event_listener_module_cli_smoke
     COMMAND mparser
