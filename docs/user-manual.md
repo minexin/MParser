@@ -137,6 +137,11 @@ present = isfile([string(file), string(fullfile(root, 'missing.txt'))]);
 text = fileread(file);
 copyfile(file, fullfile(root, 'copy.txt'));
 movefile(fullfile(root, 'copy.txt'), fullfile(root, 'moved.txt'));
+listing = dir(fullfile(root, '*.txt'));
+[attributeStatus, attributes] = fileattrib(file);
+fileattrib(file, '-w');
+fileattrib(file, '+w');
+delete(fullfile(root, '*.txt'));
 rmdir(root, 's');
 ```
 
@@ -152,14 +157,23 @@ The optional `'f'` input temporarily overrides a non-writable destination and
 restores every pre-existing destination permission after the operation.
 Rooted contexts reject all filesystem writes through symbolic links or path
 aliases; unrestricted native contexts retain operating-system behavior.
-Basename `*` and `?` source patterns are supported. Parent-component
-wildcards, remote URLs, selectable symbolic-link behavior, file deletion and
-attribute/recycle operations remain outside this slice. `fileread` is bounded
-by the context file-read limit and currently decodes UTF-8 only.
+Basename `*` and `?` source patterns are supported. `dir` returns the MATLAB
+field layout with a local-time serial `datenum`. Text-form `delete` accepts
+multiple character arguments or string arrays, expands basename wildcards,
+silently ignores an unmatched wildcard, warns for an exact missing file, and
+warns without removing a directory; object-form `delete` retains the VM
+lifecycle behavior. `fileattrib` supports query/status/display forms and
+attribute updates: `a/h/s/w` on Windows, `w/x` with `u/g/o/a` scopes on UNIX,
+plus recursive `'s'` updates. Unsupported platform attributes fail instead of
+being approximated. Parent-component wildcards, remote URLs, recycle-bin
+integration, and selectable symbolic-link behavior remain outside this slice.
+`fileread` is bounded by the context file-read limit and currently decodes
+UTF-8 only.
 
 Run the complete path through
-`mparser --run samples/filesystem_management_demo.m`; the same sample is a
-HIR and bytecode CTest and reports `filesystem_management_summary = 91`.
+`mparser --run samples/filesystem_management_demo.m` and
+`mparser --run samples/file_metadata_demo.m`; both samples are HIR and
+bytecode CTests and report deterministic summaries.
 
 `fopen` currently accepts `r`, `w`, or `a`, optional `+`, and optional `b` or
 `t`. Its optional machine format accepts native, little-endian, and big-endian
@@ -485,7 +499,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.8 |
+| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.9 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

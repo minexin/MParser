@@ -96,6 +96,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "false",
     "fieldnames",
     "fft",
+    "fileattrib",
     "fileparts",
     "fileread",
     "filesep",
@@ -1122,8 +1123,8 @@ BuiltinDescriptor outputDescriptor(std::string_view name) {
 }
 
 bool isZeroOutputIntrinsic(std::string_view name) {
-    return matches(name, {"assert", "clc", "delete",
-                          "error", "notify", "rethrow", "throw",
+    return matches(name, {"assert", "clc", "error", "notify",
+                          "rethrow", "throw",
                           "throwAsCaller"});
 }
 
@@ -1276,6 +1277,35 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
         } else if (name == "tempname") {
             descriptor.inputs = BuiltinArity::range(0, 1);
             descriptor.outputs = BuiltinArity::fixed(1);
+        } else if (name == "delete") {
+            descriptor.inputs = BuiltinArity::variadic(1);
+            descriptor.outputs = BuiltinArity::fixed(0);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects =
+                BuiltinSideEffect::External |
+                BuiltinSideEffect::WarningState |
+                BuiltinSideEffect::ObjectState;
+            descriptor.contextPermissions =
+                descriptor.contextPermissions |
+                BuiltinContextPermission::WarningState;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+            descriptor.summary =
+                "MATLAB-like file deletion with VM object-delete dispatch.";
+        } else if (name == "fileattrib") {
+            descriptor.inputs = BuiltinArity::range(0, 4);
+            descriptor.outputs = BuiltinArity::range(0, 3);
+            descriptor.purity = BuiltinPurity::Impure;
+            descriptor.sideEffects =
+                BuiltinSideEffect::External |
+                BuiltinSideEffect::Console;
+            descriptor.contextPermissions =
+                descriptor.contextPermissions |
+                BuiltinContextPermission::Output;
+            descriptor.implicitOutputPolicy =
+                BuiltinImplicitOutputPolicy::None;
+            descriptor.summary =
+                "Cross-platform MATLAB-like file attribute query and update.";
         } else if (name == "mkdir" || name == "rmdir") {
             descriptor.inputs = BuiltinArity::range(1, 2);
             descriptor.outputs = BuiltinArity::range(0, 3);

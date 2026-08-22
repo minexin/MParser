@@ -303,14 +303,26 @@ Builtin source contract 1.8 records 259 descriptors and 261 registered names.
 MAT v4/v7.3, strict v6 output, append/ASCII modes, sparse/table/object values,
 and arbitrary object persistence remain explicit later boundaries.
 
+The twelfth batch closes the file deletion and metadata convenience vertical
+slice. Source contract 1.9 contains 260 descriptors and 262 registered names:
+text `delete` is a capability-bound system builtin while object, listener, and
+dynamic-property deletion retain their VM lifecycle intrinsic. `fileattrib`
+implements query/status/display forms, basename wildcards, Windows
+archive/system/hidden/write flags, UNIX write/execute user scopes, and
+recursive updates without following symbolic links. `dir.datenum` now carries
+the local MATLAB serial modification date instead of a placeholder. In-memory
+adapter tests, rooted C++ API escape/link tests, object-lifecycle regressions,
+and `samples/file_metadata_demo.m` cover HIR, bytecode, and production paths.
+Recycle-bin integration, parent-component wildcards, selectable link policy,
+and broader platform-specific attributes remain later boundaries.
+
 The latest MATLAB R2024b external differential rerun at
 `MParserV1.0Test/results/20260823-003606-v1.3-mat-v5` records 219 matches
 and 4 gaps across all 223 MATLAB-accepted cases. It closes
 `cap_271_io_save_load` after the preceding 218-match run with no prior match
 regressing. The remaining observed gaps are `datetime`, `table`, `sparse`,
-and graphics. These batches do not close v1.3. File deletion and metadata
-conveniences, dynamic
-parent-module function lookup/declarations, and remaining standard-library
+and graphics. These batches do not close v1.3. Dynamic parent-module function
+lookup/declarations and remaining standard-library
 families remain milestone work. Scansets,
 bit/character/complex binary-I/O corners,
 selectable non-UTF-8 encodings, remote URLs, extended MAT variants, full

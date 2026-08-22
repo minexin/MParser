@@ -553,6 +553,186 @@ std::string formatDirectoryDate(
     }
 }
 
+double directorySerialDate(
+    const std::filesystem::file_time_type& value) {
+    try {
+        const auto systemValue = std::chrono::time_point_cast<
+            std::chrono::system_clock::duration>(
+            value - std::filesystem::file_time_type::clock::now() +
+            std::chrono::system_clock::now());
+        const auto converted = calendarTime(systemValue);
+        if (!converted.succeeded) {
+            return 0.0;
+        }
+        const auto& time = converted.value;
+        const std::chrono::year_month_day date{
+            std::chrono::year(time.year),
+            std::chrono::month(static_cast<unsigned>(time.month)),
+            std::chrono::day(static_cast<unsigned>(time.day))};
+        if (!date.ok()) {
+            return 0.0;
+        }
+        constexpr double kMatlabSerialDateAtUnixEpoch = 719529.0;
+        const auto days = std::chrono::sys_days(date).time_since_epoch();
+        const double seconds =
+            static_cast<double>(time.hour * 3600 + time.minute * 60) +
+            time.second;
+        return kMatlabSerialDateAtUnixEpoch +
+               static_cast<double>(days.count()) + seconds / 86400.0;
+    } catch (...) {
+        return 0.0;
+    }
+}
+
+RuntimeSystemResult<RuntimeFileAttributes> nativeFileAttributes(
+    const std::filesystem::path& path) {
+    RuntimeFileAttributes result;
+    result.path = path.lexically_normal();
+#ifdef _WIN32
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        return RuntimeSystemResult<RuntimeFileAttributes>::failure(
+            errorMessage("file attribute query",
+                         std::error_code(
+                             static_cast<int>(GetLastError()),
+                             std::system_category())));
+    }
+    result.directory =
+        (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    result.archive = (attributes & FILE_ATTRIBUTE_ARCHIVE) != 0;
+    result.system = (attributes & FILE_ATTRIBUTE_SYSTEM) != 0;
+    result.hidden = (attributes & FILE_ATTRIBUTE_HIDDEN) != 0;
+    result.userRead = true;
+    result.userWrite = (attributes & FILE_ATTRIBUTE_READONLY) == 0;
+    result.userExecute = true;
+#else
+    std::error_code error;
+    const auto status = std::filesystem::status(path, error);
+    if (error || status.type() == std::filesystem::file_type::not_found) {
+        return RuntimeSystemResult<RuntimeFileAttributes>::failure(
+            error ? errorMessage("file attribute query", error)
+                  : "file attribute query failed: path does not exist");
+    }
+    result.directory = std::filesystem::is_directory(status);
+    const auto permissions = status.permissions();
+    const auto enabled = [permissions](std::filesystem::perms value) {
+        return (permissions & value) != std::filesystem::perms::none;
+    };
+    result.userRead = enabled(std::filesystem::perms::owner_read);
+    result.userWrite = enabled(std::filesystem::perms::owner_write);
+    result.userExecute = enabled(std::filesystem::perms::owner_exec);
+    result.groupRead = enabled(std::filesystem::perms::group_read);
+    result.groupWrite = enabled(std::filesystem::perms::group_write);
+    result.groupExecute = enabled(std::filesystem::perms::group_exec);
+    result.otherRead = enabled(std::filesystem::perms::others_read);
+    result.otherWrite = enabled(std::filesystem::perms::others_write);
+    result.otherExecute = enabled(std::filesystem::perms::others_exec);
+#endif
+    return RuntimeSystemResult<RuntimeFileAttributes>::success(
+        std::move(result));
+}
+
+RuntimeSystemStatus setNativeFileAttributes(
+    const std::filesystem::path& path,
+    const RuntimeFileAttributeUpdate& update) {
+#ifdef _WIN32
+    if (update.group || update.other) {
+        return RuntimeSystemStatus::failure(
+            "group and other file attribute scopes are unsupported on "
+            "Windows");
+    }
+    if (update.executable) {
+        return RuntimeSystemStatus::failure(
+            "the executable file attribute is unsupported on Windows");
+    }
+    DWORD attributes = GetFileAttributesW(path.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        return RuntimeSystemStatus::failure(errorMessage(
+            "file attribute query",
+            std::error_code(static_cast<int>(GetLastError()),
+                            std::system_category())));
+    }
+    const auto replace = [&attributes](DWORD flag,
+                                       const std::optional<bool>& value) {
+        if (!value) {
+            return;
+        }
+        if (*value) {
+            attributes |= flag;
+        } else {
+            attributes &= ~flag;
+        }
+    };
+    replace(FILE_ATTRIBUTE_ARCHIVE, update.archive);
+    replace(FILE_ATTRIBUTE_SYSTEM, update.system);
+    replace(FILE_ATTRIBUTE_HIDDEN, update.hidden);
+    if (update.writable) {
+        if (*update.writable) {
+            attributes &= ~FILE_ATTRIBUTE_READONLY;
+        } else {
+            attributes |= FILE_ATTRIBUTE_READONLY;
+        }
+    }
+    if (!SetFileAttributesW(path.c_str(), attributes)) {
+        return RuntimeSystemStatus::failure(errorMessage(
+            "file attribute update",
+            std::error_code(static_cast<int>(GetLastError()),
+                            std::system_category())));
+    }
+    return RuntimeSystemStatus::success();
+#else
+    if (update.archive || update.system || update.hidden) {
+        return RuntimeSystemStatus::failure(
+            "archive, system, and hidden file attributes are unsupported "
+            "on UNIX");
+    }
+    std::filesystem::perms add = std::filesystem::perms::none;
+    std::filesystem::perms remove = std::filesystem::perms::none;
+    const auto collect = [&add, &remove](
+                             const std::optional<bool>& value,
+                             std::filesystem::perms bits) {
+        if (!value) {
+            return;
+        }
+        if (*value) {
+            add |= bits;
+        } else {
+            remove |= bits;
+        }
+    };
+    if (update.user) {
+        collect(update.writable, std::filesystem::perms::owner_write);
+        collect(update.executable, std::filesystem::perms::owner_exec);
+    }
+    if (update.group) {
+        collect(update.writable, std::filesystem::perms::group_write);
+        collect(update.executable, std::filesystem::perms::group_exec);
+    }
+    if (update.other) {
+        collect(update.writable, std::filesystem::perms::others_write);
+        collect(update.executable, std::filesystem::perms::others_exec);
+    }
+    std::error_code error;
+    if (add != std::filesystem::perms::none) {
+        std::filesystem::permissions(
+            path, add, std::filesystem::perm_options::add, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("file attribute update", error));
+        }
+    }
+    if (remove != std::filesystem::perms::none) {
+        std::filesystem::permissions(
+            path, remove, std::filesystem::perm_options::remove, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("file attribute update", error));
+        }
+    }
+    return RuntimeSystemStatus::success();
+#endif
+}
+
 class NativeRuntimeHostAdapter final : public RuntimeHostAdapter {
 public:
     RuntimeSystemResult<std::filesystem::path>
@@ -637,6 +817,7 @@ public:
             const auto modified = entry.last_write_time(error);
             if (!error) {
                 projected.date = formatDirectoryDate(modified);
+                projected.serialDate = directorySerialDate(modified);
             } else {
                 error.clear();
             }
@@ -710,6 +891,35 @@ public:
                    : RuntimeSystemResult<bool>::success(created);
     }
 
+    RuntimeSystemStatus removeFile(
+        const std::filesystem::path& path) const override {
+        std::error_code error;
+        const auto status = std::filesystem::status(path, error);
+        if (isMissingPathError(error) ||
+            status.type() == std::filesystem::file_type::not_found) {
+            return RuntimeSystemStatus::failure(
+                "file does not exist: " + pathToNativeUtf8(path));
+        }
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("file query", error));
+        }
+        if (std::filesystem::is_directory(status)) {
+            return RuntimeSystemStatus::failure(
+                "path is a directory: " + pathToNativeUtf8(path));
+        }
+        const bool removed = std::filesystem::remove(path, error);
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("file removal", error));
+        }
+        return removed
+                   ? RuntimeSystemStatus::success()
+                   : RuntimeSystemStatus::failure(
+                         "file was not removed: " +
+                         pathToNativeUtf8(path));
+    }
+
     RuntimeSystemStatus removeDirectory(
         const std::filesystem::path& path,
         bool recursive) const override {
@@ -747,6 +957,63 @@ public:
                    : RuntimeSystemStatus::failure(
                          "directory was not removed: " +
                          pathToNativeUtf8(path));
+    }
+
+    RuntimeSystemResult<RuntimeFileAttributes>
+    fileAttributes(const std::filesystem::path& path) const override {
+        return nativeFileAttributes(path);
+    }
+
+    RuntimeSystemStatus setFileAttributes(
+        const std::filesystem::path& path,
+        const RuntimeFileAttributeUpdate& update,
+        bool recursive) const override {
+        std::error_code error;
+        const auto rootStatus = std::filesystem::symlink_status(path, error);
+        if (isMissingPathError(error) ||
+            rootStatus.type() == std::filesystem::file_type::not_found) {
+            return RuntimeSystemStatus::failure(
+                "file attribute target does not exist: " +
+                pathToNativeUtf8(path));
+        }
+        if (error) {
+            return RuntimeSystemStatus::failure(
+                errorMessage("file attribute target query", error));
+        }
+        if (std::filesystem::is_symlink(rootStatus)) {
+            return RuntimeSystemStatus::failure(
+                "file attribute updates through symbolic links are "
+                "unsupported");
+        }
+
+        std::vector<std::filesystem::path> targets{path};
+        if (recursive && std::filesystem::is_directory(rootStatus)) {
+            std::filesystem::recursive_directory_iterator iterator(
+                path, error);
+            const std::filesystem::recursive_directory_iterator end;
+            while (!error && iterator != end) {
+                const auto status = iterator->symlink_status(error);
+                if (error) {
+                    break;
+                }
+                if (!std::filesystem::is_symlink(status)) {
+                    targets.push_back(iterator->path());
+                }
+                iterator.increment(error);
+            }
+            if (error) {
+                return RuntimeSystemStatus::failure(
+                    errorMessage("file attribute traversal", error));
+            }
+        }
+        for (auto iterator = targets.rbegin(); iterator != targets.rend();
+             ++iterator) {
+            auto updated = setNativeFileAttributes(*iterator, update);
+            if (!updated.succeeded) {
+                return updated;
+            }
+        }
+        return RuntimeSystemStatus::success();
     }
 
     RuntimeSystemStatus copyPath(
@@ -1281,6 +1548,16 @@ public:
                          std::move(resolved.error));
     }
 
+    RuntimeSystemStatus removeFile(
+        const std::filesystem::path& path) const override {
+        auto resolved = resolveMutation(root_, path);
+        if (!resolved.succeeded) {
+            return RuntimeSystemStatus::failure(
+                std::move(resolved.error));
+        }
+        return native_->removeFile(resolved.value);
+    }
+
     RuntimeSystemStatus removeDirectory(
         const std::filesystem::path& path,
         bool recursive) const override {
@@ -1294,6 +1571,28 @@ public:
                 "the rooted runtime directory cannot be removed");
         }
         return native_->removeDirectory(resolved.value, recursive);
+    }
+
+    RuntimeSystemResult<RuntimeFileAttributes>
+    fileAttributes(const std::filesystem::path& path) const override {
+        auto resolved = resolve(root_, path);
+        return resolved.succeeded
+                   ? native_->fileAttributes(resolved.value)
+                   : RuntimeSystemResult<RuntimeFileAttributes>::failure(
+                         std::move(resolved.error));
+    }
+
+    RuntimeSystemStatus setFileAttributes(
+        const std::filesystem::path& path,
+        const RuntimeFileAttributeUpdate& update,
+        bool recursive) const override {
+        auto resolved = resolveMutation(root_, path);
+        if (!resolved.succeeded) {
+            return RuntimeSystemStatus::failure(
+                std::move(resolved.error));
+        }
+        return native_->setFileAttributes(
+            resolved.value, update, recursive);
     }
 
     RuntimeSystemStatus copyPath(
@@ -1737,6 +2036,22 @@ RuntimeSystemResult<bool> RuntimeSystemContext::createDirectories(
         path.is_absolute() ? path : base / path);
 }
 
+RuntimeSystemStatus RuntimeSystemContext::removeFile(
+    const std::filesystem::path& path) {
+    const auto permission = require(
+        RuntimeSystemCapability::FileSystemWrite, "filesystem write");
+    if (!permission.succeeded) {
+        return permission;
+    }
+    std::filesystem::path base;
+    {
+        std::lock_guard lock(mutex_);
+        base = currentDirectory_;
+    }
+    return hostAdapter_->removeFile(
+        path.is_absolute() ? path : base / path);
+}
+
 RuntimeSystemStatus RuntimeSystemContext::removeDirectory(
     const std::filesystem::path& path, bool recursive) {
     const auto permission = require(
@@ -1758,6 +2073,42 @@ RuntimeSystemStatus RuntimeSystemContext::removeDirectory(
     }
     return hostAdapter_->removeDirectory(
         path.is_absolute() ? path : base / path, recursive);
+}
+
+RuntimeSystemResult<RuntimeFileAttributes>
+RuntimeSystemContext::fileAttributes(
+    const std::filesystem::path& path) const {
+    const auto permission = require(
+        RuntimeSystemCapability::FileSystemRead, "filesystem read");
+    if (!permission.succeeded) {
+        return RuntimeSystemResult<RuntimeFileAttributes>::failure(
+            permission.error);
+    }
+    std::filesystem::path base;
+    {
+        std::lock_guard lock(mutex_);
+        base = currentDirectory_;
+    }
+    return hostAdapter_->fileAttributes(
+        path.is_absolute() ? path : base / path);
+}
+
+RuntimeSystemStatus RuntimeSystemContext::setFileAttributes(
+    const std::filesystem::path& path,
+    const RuntimeFileAttributeUpdate& update,
+    bool recursive) {
+    const auto permission = require(
+        RuntimeSystemCapability::FileSystemWrite, "filesystem write");
+    if (!permission.succeeded) {
+        return permission;
+    }
+    std::filesystem::path base;
+    {
+        std::lock_guard lock(mutex_);
+        base = currentDirectory_;
+    }
+    return hostAdapter_->setFileAttributes(
+        path.is_absolute() ? path : base / path, update, recursive);
 }
 
 RuntimeSystemStatus RuntimeSystemContext::copyPath(

@@ -12127,9 +12127,17 @@ private:
             return {};
         }
 
+        const bool fileDeleteDispatch =
+            name == "delete" &&
+            (arguments.empty() ||
+             std::all_of(arguments.begin(), arguments.end(),
+                         [](const RuntimeValue& argument) {
+                             return isRuntimeCharacterVector(argument) ||
+                                    isRuntimeStringArray(argument);
+                         }));
         if (const BuiltinDescriptor* descriptor =
                 builtinRegistry().find(name);
-            descriptor &&
+            descriptor && (name != "delete" || fileDeleteDispatch) &&
             descriptor->implementation !=
                 BuiltinImplementationKind::Intrinsic) {
             RuntimeObjectArrayPolicy objectPolicy =

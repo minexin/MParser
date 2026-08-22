@@ -158,9 +158,9 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/random_runtime_demo.m`, `samples/file_io_demo.m`, and
 `samples/standard_library_demo.m`, plus
 `samples/utility_library_demo.m`, `samples/dynamic_workspace_demo.m`, and
-`samples/system_command_demo.m` and
-`samples/filesystem_management_demo.m`, plus
-`samples/advanced_numeric_demo.m` and `samples/mat_file_demo.m`. These are
+`samples/system_command_demo.m`, `samples/filesystem_management_demo.m`,
+`samples/file_metadata_demo.m`, `samples/advanced_numeric_demo.m`, and
+`samples/mat_file_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
 The latest 2026-08-23 MATLAB R2024b differential rerun records 219 matches and
 4 gaps across its 223 accepted cases. It closes MAT-file save/load after the
@@ -168,7 +168,7 @@ preceding 218-match class/reflection/event run, with no prior match regressing.
 The remaining observed gaps are `datetime`, `table`, `sparse`, and graphics.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT v4/v7.3, strict v6/append/ASCII MAT modes,
-file deletion/recycle/attribute helpers,
+filesystem recycle integration and broader platform-specific attributes,
 wildcards in parent path components, symbolic-link policy selection (rooted
 write paths reject links rather than selecting preserve/resolve), dynamic declarations and parent-module
 function lookup from evaluated text, extended GCD coefficients, arbitrary-rank
@@ -221,7 +221,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; frozen v1.2 ABI generation 2 revision 0 plus live additive revision 1, typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.8 using registry/descriptors/call/results/source-evaluation, stream-I/O, filesystem/MAT persistence, and advanced-numeric context |
+| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.9 using registry/descriptors/call/results/source-evaluation, stream-I/O, filesystem metadata/MAT persistence, and advanced-numeric context |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once

@@ -106,6 +106,14 @@ writer accepts default v7-style output, `-v7`, `-mat`, and
 `-nocompression`; `-v6`, `-append`, `-ascii`, object serialization, and MAT
 v7.3/HDF5 are not silently approximated.
 
+`dir`, file-form `delete`, and `fileattrib` also remain behind the adapter.
+Directory timestamps expose both local display text and MATLAB serial dates.
+Attribute queries report unsupported platform fields as `NaN`; updates map
+`a/h/s/w` to Windows flags and `w/x` plus `u/g/o/a` scopes to UNIX permission
+bits. Recursive updates do not follow symbolic links. Text `delete` removes
+files only, expands basename wildcards, and leaves directories to `rmdir`;
+non-text object deletion remains an engine lifecycle intrinsic.
+
 Formatted reads may prefetch beyond the value they return. Each entry keeps a
 logical unread suffix plus sparse physical-byte correction points, so `ftell`
 and current-relative `fseek` observe consumed bytes rather than the prefetch
@@ -133,7 +141,8 @@ process capabilities remain host-wide, and a launched command is not confined
 to the root. Rooted write operations also reject a path whose canonical form
 differs from its lexical form, so `mkdir`, writable `fopen`, `copyfile`
 destinations, and `movefile`/`rmdir` sources cannot silently mutate through an
-existing symbolic link or path alias. Read-only operations may resolve an
+existing symbolic link or path alias. The same rule applies to file deletion
+and attribute updates. Read-only operations may resolve an
 in-root link. Filesystem checks followed by open remain susceptible to a
 hostile local process racing link changes, so this is a deterministic host
 policy boundary rather than a complete OS security sandbox.
@@ -306,7 +315,7 @@ C source API 1.2 and ABI generation 2 ownership, sealed/extensible structure
 rules, and symbol meanings are checked against current headers and consumers.
 The C++ source API is 1.2 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
 typed and complex numeric values. Builtin source contract 1.1 is frozen with
-the v1.2 candidate; the active in-tree descriptor contract is 1.8 and remains
+the v1.2 candidate; the active in-tree descriptor contract is 1.9 and remains
 a compiled-in source extension surface, not an external plugin ABI. Archived
 v1.0 and frozen v1.2 contracts remain historical evidence rather than
 compatibility gates for development changes.

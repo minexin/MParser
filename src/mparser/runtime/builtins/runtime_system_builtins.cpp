@@ -1067,6 +1067,30 @@ BuiltinResult filesystemStatusResult(
     return BuiltinResult::success(std::move(outputs));
 }
 
+RuntimeSystemResult<std::optional<Diagnostic>> filesystemWarning(
+    const BuiltinCall& call, std::string identifier,
+    std::string message) {
+    if (call.context && call.context->warningContext) {
+        auto result = call.context->warningContext->warning(
+            {makeRuntimeCharacterVectorUtf8(identifier),
+             makeRuntimeCharacterVectorUtf8(message)},
+            0);
+        if (!result.succeeded) {
+            return RuntimeSystemResult<std::optional<Diagnostic>>::failure(
+                std::move(result.error));
+        }
+        if (!result.emitted) {
+            return RuntimeSystemResult<std::optional<Diagnostic>>::success(
+                std::nullopt);
+        }
+        identifier = std::move(result.emitted->identifier);
+        message = std::move(result.emitted->message);
+    }
+    return RuntimeSystemResult<std::optional<Diagnostic>>::success(
+        Diagnostic{call.span, std::move(message), std::move(identifier),
+                   DiagnosticSeverity::Warning});
+}
+
 BuiltinResult mkdirBuiltin(const BuiltinCall& call) {
     const auto first = textArgument(call.arguments.front());
     if (!first || first->empty() || first->find('\0') != std::string::npos) {
@@ -1140,7 +1164,8 @@ bool pathHasWildcard(const std::filesystem::path& path) {
 }
 
 RuntimeSystemResult<std::vector<std::filesystem::path>> expandPathPattern(
-    RuntimeSystemContext& context, const std::filesystem::path& source) {
+    RuntimeSystemContext& context, const std::filesystem::path& source,
+    bool requireMatch = true) {
     if (!pathHasWildcard(source)) {
         return RuntimeSystemResult<
             std::vector<std::filesystem::path>>::success({source});
@@ -1169,7 +1194,7 @@ RuntimeSystemResult<std::vector<std::filesystem::path>> expandPathPattern(
                                 : parent / pathFromUtf8(entry.name));
         }
     }
-    if (paths.empty()) {
+    if (paths.empty() && requireMatch) {
         return RuntimeSystemResult<
             std::vector<std::filesystem::path>>::failure(
                 "no files match source pattern: " +
@@ -1177,6 +1202,370 @@ RuntimeSystemResult<std::vector<std::filesystem::path>> expandPathPattern(
     }
     return RuntimeSystemResult<
         std::vector<std::filesystem::path>>::success(std::move(paths));
+}
+
+RuntimeSystemResult<std::vector<std::filesystem::path>> deletePaths(
+    const BuiltinCall& call) {
+    std::vector<std::filesystem::path> paths;
+    for (const RuntimeValue& argument : call.arguments) {
+        if (isRuntimeCharacterVector(argument)) {
+            const auto value = runtimeTextScalarUtf8(argument);
+            if (!value || value->empty() ||
+                value->find('\0') != std::string::npos) {
+                return RuntimeSystemResult<
+                    std::vector<std::filesystem::path>>::failure(
+                    "delete filenames must be nonempty text without null "
+                    "bytes");
+            }
+            paths.push_back(pathFromUtf8(*value));
+            continue;
+        }
+        if (!isRuntimeStringArray(argument)) {
+            return RuntimeSystemResult<
+                std::vector<std::filesystem::path>>::failure(
+                "delete filenames must be character vectors or string "
+                "arrays");
+        }
+        const size_t count = runtimeShapeElementCount(argument);
+        for (size_t index = 0; index < count; ++index) {
+            const RuntimeStringElement* element =
+                runtimeStringElement(argument, index);
+            if (!element || element->missing || element->value.empty()) {
+                return RuntimeSystemResult<
+                    std::vector<std::filesystem::path>>::failure(
+                    "delete filenames cannot contain missing or empty "
+                    "strings");
+            }
+            const std::string value = runtimeUtf16ToUtf8(element->value);
+            if (value.find('\0') != std::string::npos) {
+                return RuntimeSystemResult<
+                    std::vector<std::filesystem::path>>::failure(
+                    "delete filenames cannot contain null bytes");
+            }
+            paths.push_back(pathFromUtf8(value));
+        }
+    }
+    return RuntimeSystemResult<std::vector<std::filesystem::path>>::success(
+        std::move(paths));
+}
+
+BuiltinResult deleteFileBuiltin(const BuiltinCall& call) {
+    auto requested = deletePaths(call);
+    if (!requested.succeeded) {
+        return failure(call, std::move(requested.error),
+                       "MATLAB:DELETE:InvalidFileName");
+    }
+    RuntimeSystemContext* context = systemContext(call);
+    std::vector<Diagnostic> diagnostics;
+    for (const auto& pattern : requested.value) {
+        const bool wildcard = pathHasWildcard(pattern);
+        auto expanded = expandPathPattern(*context, pattern, false);
+        if (!expanded.succeeded) {
+            return failure(call, std::move(expanded.error),
+                           "MATLAB:DELETE:FileNotFound");
+        }
+        if (expanded.value.empty()) {
+            continue;
+        }
+        for (const auto& path : expanded.value) {
+            auto removed = context->removeFile(path);
+            if (removed.succeeded) {
+                continue;
+            }
+            const bool directory =
+                removed.error.find("path is a directory") !=
+                std::string::npos;
+            const bool missing =
+                removed.error.find("does not exist") != std::string::npos;
+            if (!directory && !missing) {
+                return failure(call, std::move(removed.error),
+                               "MATLAB:DELETE:Permission");
+            }
+            if (missing && wildcard) {
+                continue;
+            }
+            const std::string identifier =
+                directory ? "MATLAB:DELETE:DirectoryDeletion"
+                          : "MATLAB:DELETE:FileNotFound";
+            const std::string message =
+                directory
+                    ? "'" + pathToNativeUtf8(path) +
+                          "' is a directory; use rmdir to remove directories."
+                    : "File '" + pathToNativeUtf8(path) +
+                          "' was not found.";
+            auto warning = filesystemWarning(call, identifier, message);
+            if (!warning.succeeded) {
+                return failure(call, std::move(warning.error),
+                               "MParser:InvalidWarning");
+            }
+            if (warning.value) {
+                diagnostics.push_back(std::move(*warning.value));
+            }
+        }
+    }
+    return BuiltinResult::success({}, std::move(diagnostics));
+}
+
+double attributeNumber(const std::optional<bool>& value) {
+    return value ? (*value ? 1.0 : 0.0)
+                 : std::numeric_limits<double>::quiet_NaN();
+}
+
+RuntimeValue fileAttributesValue(
+    const std::vector<RuntimeFileAttributes>& attributes) {
+    const std::vector<std::string> fields = {
+        "Name", "archive", "system", "hidden", "directory",
+        "UserRead", "UserWrite", "UserExecute", "GroupRead",
+        "GroupWrite", "GroupExecute", "OtherRead", "OtherWrite",
+        "OtherExecute"};
+    std::vector<RuntimeStructElement> elements;
+    elements.reserve(attributes.size());
+    for (const auto& value : attributes) {
+        elements.push_back({
+            {"Name", makeRuntimeCharacterVectorUtf8(
+                         pathToNativeUtf8(value.path))},
+            {"archive", makeRuntimeNumberValue(
+                            attributeNumber(value.archive))},
+            {"system", makeRuntimeNumberValue(
+                           attributeNumber(value.system))},
+            {"hidden", makeRuntimeNumberValue(
+                           attributeNumber(value.hidden))},
+            {"directory", makeRuntimeNumberValue(
+                              value.directory ? 1.0 : 0.0)},
+            {"UserRead", makeRuntimeNumberValue(
+                             attributeNumber(value.userRead))},
+            {"UserWrite", makeRuntimeNumberValue(
+                              attributeNumber(value.userWrite))},
+            {"UserExecute", makeRuntimeNumberValue(
+                                attributeNumber(value.userExecute))},
+            {"GroupRead", makeRuntimeNumberValue(
+                              attributeNumber(value.groupRead))},
+            {"GroupWrite", makeRuntimeNumberValue(
+                               attributeNumber(value.groupWrite))},
+            {"GroupExecute", makeRuntimeNumberValue(
+                                 attributeNumber(value.groupExecute))},
+            {"OtherRead", makeRuntimeNumberValue(
+                              attributeNumber(value.otherRead))},
+            {"OtherWrite", makeRuntimeNumberValue(
+                               attributeNumber(value.otherWrite))},
+            {"OtherExecute", makeRuntimeNumberValue(
+                                 attributeNumber(value.otherExecute))},
+        });
+    }
+    return makeRuntimeStructArrayValue(
+        fields, std::move(elements), {1, attributes.size()});
+}
+
+std::string fileAttributesText(
+    const std::vector<RuntimeFileAttributes>& attributes) {
+    const auto text = [](const std::optional<bool>& value) {
+        return value ? (*value ? std::string("1") : std::string("0"))
+                     : std::string("NaN");
+    };
+    std::ostringstream output;
+    for (const auto& value : attributes) {
+        output << "            Name: '" << pathToNativeUtf8(value.path)
+               << "'\n"
+               << "         archive: " << text(value.archive) << '\n'
+               << "          system: " << text(value.system) << '\n'
+               << "          hidden: " << text(value.hidden) << '\n'
+               << "       directory: " << (value.directory ? 1 : 0) << '\n'
+               << "        UserRead: " << text(value.userRead) << '\n'
+               << "       UserWrite: " << text(value.userWrite) << '\n'
+               << "     UserExecute: " << text(value.userExecute) << '\n'
+               << "       GroupRead: " << text(value.groupRead) << '\n'
+               << "      GroupWrite: " << text(value.groupWrite) << '\n'
+               << "    GroupExecute: " << text(value.groupExecute) << '\n'
+               << "       OtherRead: " << text(value.otherRead) << '\n'
+               << "      OtherWrite: " << text(value.otherWrite) << '\n'
+               << "    OtherExecute: " << text(value.otherExecute)
+               << "\n\n";
+    }
+    return output.str();
+}
+
+RuntimeSystemResult<RuntimeFileAttributeUpdate> fileAttributeUpdate(
+    std::string_view attributes, std::string_view users) {
+    RuntimeFileAttributeUpdate result;
+    result.user = users.empty() || users == "u" || users == "a";
+    result.group = users == "g" || users == "a";
+    result.other = users == "o" || users == "a";
+    if (!users.empty() && users != "u" && users != "g" &&
+        users != "o" && users != "a") {
+        return RuntimeSystemResult<RuntimeFileAttributeUpdate>::failure(
+            "fileattrib users must be '', 'u', 'g', 'o', or 'a'");
+    }
+    std::istringstream input{std::string(attributes)};
+    std::string token;
+    bool found = false;
+    while (input >> token) {
+        if (token.size() != 2 ||
+            (token.front() != '+' && token.front() != '-')) {
+            return RuntimeSystemResult<RuntimeFileAttributeUpdate>::failure(
+                "fileattrib attributes must use + or - followed by a, h, "
+                "s, w, or x");
+        }
+        const bool enabled = token.front() == '+';
+        switch (token.back()) {
+        case 'a':
+            result.archive = enabled;
+            break;
+        case 'h':
+            result.hidden = enabled;
+            break;
+        case 's':
+            result.system = enabled;
+            break;
+        case 'w':
+            result.writable = enabled;
+            break;
+        case 'x':
+            result.executable = enabled;
+            break;
+        default:
+            return RuntimeSystemResult<RuntimeFileAttributeUpdate>::failure(
+                "fileattrib attribute code must be a, h, s, w, or x");
+        }
+        found = true;
+    }
+    if (!found) {
+        return RuntimeSystemResult<RuntimeFileAttributeUpdate>::failure(
+            "fileattrib attributes cannot be empty");
+    }
+    return RuntimeSystemResult<RuntimeFileAttributeUpdate>::success(
+        std::move(result));
+}
+
+BuiltinResult fileattribQuery(const BuiltinCall& call,
+                              const std::filesystem::path& pattern) {
+    if (call.requestedOutputCount > 2) {
+        return failure(call, "fileattrib query supports at most two outputs");
+    }
+    RuntimeSystemContext* context = systemContext(call);
+    auto paths = expandPathPattern(*context, pattern, false);
+    std::string error;
+    std::vector<RuntimeFileAttributes> attributes;
+    if (!paths.succeeded) {
+        error = std::move(paths.error);
+    } else if (paths.value.empty()) {
+        error = "file or directory was not found: " +
+                pathToNativeUtf8(pattern);
+    } else {
+        attributes.reserve(paths.value.size());
+        for (const auto& path : paths.value) {
+            auto queried = context->fileAttributes(path);
+            if (!queried.succeeded) {
+                error = std::move(queried.error);
+                break;
+            }
+            attributes.push_back(std::move(queried.value));
+        }
+    }
+    if (!error.empty()) {
+        if (call.requestedOutputCount == 0) {
+            return failure(call, std::move(error),
+                           "MATLAB:FILEATTRIB:CannotFindFile");
+        }
+        std::vector<RuntimeValue> outputs = {
+            makeRuntimeLogicalValue(false),
+            makeRuntimeCharacterVectorUtf8(error),
+        };
+        outputs.resize(call.requestedOutputCount);
+        return BuiltinResult::success(std::move(outputs));
+    }
+    if (call.requestedOutputCount == 0) {
+        return emit(call, RuntimeOutputKind::StandardOutput,
+                    fileAttributesText(attributes));
+    }
+    std::vector<RuntimeValue> outputs = {
+        makeRuntimeLogicalValue(true),
+        fileAttributesValue(attributes),
+    };
+    outputs.resize(call.requestedOutputCount);
+    return BuiltinResult::success(std::move(outputs));
+}
+
+BuiltinResult fileattribUpdateBuiltin(
+    const BuiltinCall& call, const std::filesystem::path& pattern) {
+    const auto attributeText = textArgument(call.arguments[1]);
+    if (!attributeText) {
+        return failure(call, "fileattrib attributes must be a text scalar");
+    }
+    std::string users;
+    if (call.arguments.size() >= 3) {
+        const auto value = textArgument(call.arguments[2]);
+        if (!value) {
+            return failure(call, "fileattrib users must be a text scalar");
+        }
+        users = *value;
+    }
+    bool recursive = false;
+    if (call.arguments.size() == 4) {
+        const auto value = textArgument(call.arguments[3]);
+        if (!value || *value != "s") {
+            return failure(call, "fileattrib recursive option must be 's'");
+        }
+        recursive = true;
+    }
+    auto update = fileAttributeUpdate(*attributeText, users);
+    if (!update.succeeded) {
+        return failure(call, std::move(update.error),
+                       "MATLAB:FILEATTRIB:InvalidAttribute");
+    }
+    RuntimeSystemContext* context = systemContext(call);
+    auto paths = expandPathPattern(*context, pattern, false);
+    std::string error;
+    if (!paths.succeeded) {
+        error = std::move(paths.error);
+    } else if (paths.value.empty()) {
+        error = "file or directory was not found: " +
+                pathToNativeUtf8(pattern);
+    } else {
+        for (const auto& path : paths.value) {
+            auto status = context->setFileAttributes(
+                path, update.value, recursive);
+            if (!status.succeeded) {
+                error = std::move(status.error);
+                break;
+            }
+        }
+    }
+    const bool succeeded = error.empty();
+    constexpr std::string_view identifier =
+        "MATLAB:FILEATTRIB:CannotSetAttribute";
+    if (call.requestedOutputCount == 0) {
+        return succeeded
+                   ? BuiltinResult::success()
+                   : failure(call, std::move(error),
+                             std::string(identifier));
+    }
+    std::vector<RuntimeValue> outputs = {
+        makeRuntimeLogicalValue(succeeded),
+        makeRuntimeCharacterVectorUtf8(error),
+        makeRuntimeCharacterVectorUtf8(
+            succeeded ? std::string_view{} : identifier),
+    };
+    outputs.resize(call.requestedOutputCount);
+    return BuiltinResult::success(std::move(outputs));
+}
+
+BuiltinResult fileattribBuiltin(const BuiltinCall& call) {
+    std::string target = ".";
+    if (!call.arguments.empty()) {
+        const auto value = textArgument(call.arguments.front());
+        if (!value || value->empty() ||
+            value->find('\0') != std::string::npos) {
+            return failure(call,
+                           "fileattrib target must be nonempty text without "
+                           "null bytes",
+                           "MATLAB:FILEATTRIB:InvalidFileName");
+        }
+        target = *value;
+    }
+    const auto pattern = pathFromUtf8(target);
+    return call.arguments.size() < 2
+               ? fileattribQuery(call, pattern)
+               : fileattribUpdateBuiltin(call, pattern);
 }
 
 BuiltinResult copyMoveBuiltin(std::string_view name,
@@ -2592,7 +2981,7 @@ RuntimeValue directoryEntriesValue(
             {"bytes", makeRuntimeNumberValue(
                           static_cast<double>(entry.bytes))},
             {"isdir", makeRuntimeLogicalValue(entry.directory)},
-            {"datenum", makeRuntimeNumberValue(0.0)},
+            {"datenum", makeRuntimeNumberValue(entry.serialDate)},
         });
     }
     const size_t count = values.size();
@@ -3265,12 +3654,12 @@ BuiltinResult systemBuiltin(const BuiltinCall& call) {
 } // namespace
 
 bool isRuntimeSystemBuiltin(std::string_view name) {
-    static constexpr std::array<std::string_view, 54> names = {
+    static constexpr std::array<std::string_view, 56> names = {
         "addpath", "assignin", "cd", "clear", "clock", "computer",
-        "copyfile", "date", "dir", "eval", "evalc", "evalin", "exist",
+        "copyfile", "date", "delete", "dir", "eval", "evalc", "evalin", "exist",
         "fclose", "feof", "ferror", "fgetl", "fgets", "fileparts",
-        "fileread", "filesep", "fopen", "format", "fprintf", "fread",
-        "frewind", "fscanf", "fseek", "ftell", "fullfile", "fwrite",
+        "fileattrib", "fileread", "filesep", "fopen", "format", "fprintf",
+        "fread", "frewind", "fscanf", "fseek", "ftell", "fullfile", "fwrite",
         "getenv", "isfile", "isfolder", "mkdir", "movefile", "path",
         "pathsep", "pause", "pwd", "rand", "randi", "randn",
         "randperm", "rmdir", "rmpath", "rng", "system", "tempdir",
@@ -3300,6 +3689,12 @@ BuiltinResult invokeRuntimeSystemBuiltin(
     }
     if (name == "fileparts") {
         return filepartsBuiltin(call);
+    }
+    if (name == "delete") {
+        return deleteFileBuiltin(call);
+    }
+    if (name == "fileattrib") {
+        return fileattribBuiltin(call);
     }
     if (name == "isfile" || name == "isfolder") {
         return pathExistenceBuiltin(name, call);

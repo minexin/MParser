@@ -205,6 +205,35 @@ function score = filesystem_management()
     score = made + copied + moved + removed + length(fileread('sub/copy.txt'));
 end
 
+function score = file_metadata_management()
+    [made, message, message_id] = mkdir('metadata');
+    assert(made && isempty(message_id));
+    first = fullfile('metadata', 'alpha.txt');
+    second = fullfile('metadata', 'beta.txt');
+    doomed = fullfile('metadata', 'delete-me.tmp');
+    fid = fopen(first, 'w'); fprintf(fid, '%s', 'alpha'); fclose(fid);
+    fid = fopen(second, 'w'); fprintf(fid, '%s', 'beta'); fclose(fid);
+    fid = fopen(doomed, 'w'); fprintf(fid, '%s', 'doomed'); fclose(fid);
+
+    [status, attributes] = fileattrib('metadata/*.txt');
+    assert(status && numel(attributes) == 2);
+    assert(isfield(attributes, 'UserWrite'));
+    [status, message, message_id] = fileattrib(first, '-w');
+    assert(status && isempty(message) && isempty(message_id));
+    [status, attributes] = fileattrib(first);
+    assert(status && attributes.UserWrite == 0);
+    [status, message, message_id] = fileattrib(first, '+w');
+    assert(status && isempty(message) && isempty(message_id));
+
+    entries = dir('metadata/*.txt');
+    assert(numel(entries) == 2 && entries(1).datenum > 0);
+    delete('metadata/delete-*.tmp');
+    assert(~isfile(doomed));
+    [removed, ignored, ignored_id] = rmdir('metadata', 's');
+    assert(removed && isempty(ignored) && isempty(ignored_id));
+    score = numel(attributes) + numel(entries) + removed;
+end
+
 function [status, message] = escape_mkdir()
     [status, message] = mkdir('../outside/new-directory');
 end
@@ -215,6 +244,14 @@ end
 
 function [status, message] = escape_move()
     [status, message] = movefile('tmp/context.bin', '../outside/moved.bin');
+end
+
+function [status, message] = escape_fileattrib()
+    [status, message] = fileattrib('../outside', '-w');
+end
+
+function escape_delete()
+    delete('../outside/protected.txt');
 end
 
 function [status, message] = remove_root()
@@ -264,6 +301,14 @@ end
 
 function [status, message] = link_remove()
     [status, message] = rmdir('internal-link', 's');
+end
+
+function [status, message] = link_fileattrib()
+    [status, message] = fileattrib('internal-link', '-w');
+end
+
+function link_delete()
+    delete('internal-link/link-protected.txt');
 end
 )MATLAB";
 
@@ -361,6 +406,15 @@ int main() {
     assert(std::filesystem::is_regular_file(tree.root / "sub" / "copy.txt"));
     assert(!std::filesystem::exists(tree.root / "managed"));
 
+    auto metadata = module.execute(
+        request("file_metadata_management", 1), context);
+    if (metadata.status() != InvocationStatus::Succeeded) {
+        printDiagnostics(metadata);
+    }
+    assert(metadata.status() == InvocationStatus::Succeeded);
+    assert(scalar(metadata.output(0)) == 4.0);
+    assert(!std::filesystem::exists(tree.root / "metadata"));
+
     const auto restrictedCopy = tree.root / "restricted-copy";
     const auto restrictedMove = tree.root / "restricted-move";
     std::filesystem::create_directories(restrictedCopy);
@@ -443,7 +497,8 @@ int main() {
     assert(!permissionError);
 
     for (const auto* entry : {"escape_mkdir", "escape_copy",
-                              "escape_move", "remove_root",
+                              "escape_move", "escape_fileattrib",
+                              "remove_root",
                               "copy_into_self", "move_into_self"}) {
         auto operation = module.execute(request(entry, 2), context);
         assert(operation.status() == InvocationStatus::Succeeded);
@@ -458,6 +513,14 @@ int main() {
     assert(std::filesystem::is_directory(tree.root));
     assert(std::filesystem::is_regular_file(tree.root / "tmp" /
                                             "context.bin"));
+    {
+        std::ofstream protectedFile(tree.outside / "protected.txt");
+        protectedFile << "protected";
+    }
+    auto deleteEscape = module.execute(request("escape_delete", 0), context);
+    assert(deleteEscape.status() == InvocationStatus::RuntimeFailed);
+    assert(std::filesystem::is_regular_file(tree.outside /
+                                            "protected.txt"));
 
     auto escaped = module.execute(request("escape_root", 2), context);
     assert(escaped.status() == InvocationStatus::Succeeded);
@@ -481,11 +544,16 @@ int main() {
     }
 
     linkError.clear();
+    {
+        std::ofstream protectedFile(tree.root / "sub" /
+                                    "link-protected.txt");
+        protectedFile << "protected";
+    }
     std::filesystem::create_directory_symlink(
         tree.root / "sub", tree.root / "internal-link", linkError);
     if (!linkError) {
         for (const auto* entry : {"link_mkdir", "link_copy", "link_move",
-                                  "link_remove"}) {
+                                  "link_remove", "link_fileattrib"}) {
             auto operation = module.execute(request(entry, 2), context);
             assert(operation.status() == InvocationStatus::Succeeded);
             assert(!logicalScalar(operation.output(0)));
@@ -497,6 +565,10 @@ int main() {
         assert(scalar(linkOpen.output(0)) == -1.0);
         assert(asciiText(linkOpen.output(1)).find("symbolic links") !=
                std::string::npos);
+        auto linkDelete = module.execute(request("link_delete", 0), context);
+        assert(linkDelete.status() == InvocationStatus::RuntimeFailed);
+        assert(std::filesystem::is_regular_file(
+            tree.root / "sub" / "link-protected.txt"));
         assert(std::filesystem::is_directory(tree.root / "sub"));
         assert(std::filesystem::is_symlink(tree.root / "internal-link"));
         assert(!std::filesystem::exists(tree.root / "sub" / "new-directory"));

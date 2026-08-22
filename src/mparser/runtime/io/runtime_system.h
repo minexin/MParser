@@ -82,6 +82,35 @@ struct RuntimeDirectoryEntry {
     std::string date;
     std::uintmax_t bytes = 0;
     bool directory = false;
+    double serialDate = 0.0;
+};
+
+struct RuntimeFileAttributes {
+    std::filesystem::path path;
+    bool directory = false;
+    std::optional<bool> archive;
+    std::optional<bool> system;
+    std::optional<bool> hidden;
+    std::optional<bool> userRead;
+    std::optional<bool> userWrite;
+    std::optional<bool> userExecute;
+    std::optional<bool> groupRead;
+    std::optional<bool> groupWrite;
+    std::optional<bool> groupExecute;
+    std::optional<bool> otherRead;
+    std::optional<bool> otherWrite;
+    std::optional<bool> otherExecute;
+};
+
+struct RuntimeFileAttributeUpdate {
+    std::optional<bool> archive;
+    std::optional<bool> system;
+    std::optional<bool> hidden;
+    std::optional<bool> writable;
+    std::optional<bool> executable;
+    bool user = true;
+    bool group = false;
+    bool other = false;
 };
 
 struct RuntimeProcessOutput {
@@ -165,8 +194,16 @@ public:
     directoryExists(const std::filesystem::path& path) const = 0;
     virtual RuntimeSystemResult<bool>
     createDirectories(const std::filesystem::path& path) const = 0;
+    virtual RuntimeSystemStatus removeFile(
+        const std::filesystem::path& path) const = 0;
     virtual RuntimeSystemStatus removeDirectory(
         const std::filesystem::path& path, bool recursive) const = 0;
+    virtual RuntimeSystemResult<RuntimeFileAttributes>
+    fileAttributes(const std::filesystem::path& path) const = 0;
+    virtual RuntimeSystemStatus setFileAttributes(
+        const std::filesystem::path& path,
+        const RuntimeFileAttributeUpdate& update,
+        bool recursive) const = 0;
     virtual RuntimeSystemStatus copyPath(
         const std::filesystem::path& source,
         const std::filesystem::path& destination, bool force) const = 0;
@@ -245,8 +282,16 @@ public:
         const std::filesystem::path& path) const;
     RuntimeSystemResult<bool> createDirectories(
         const std::filesystem::path& path);
+    RuntimeSystemStatus removeFile(
+        const std::filesystem::path& path);
     RuntimeSystemStatus removeDirectory(
         const std::filesystem::path& path, bool recursive);
+    RuntimeSystemResult<RuntimeFileAttributes> fileAttributes(
+        const std::filesystem::path& path) const;
+    RuntimeSystemStatus setFileAttributes(
+        const std::filesystem::path& path,
+        const RuntimeFileAttributeUpdate& update,
+        bool recursive);
     RuntimeSystemStatus copyPath(
         const std::filesystem::path& source,
         const std::filesystem::path& destination, bool force);

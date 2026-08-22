@@ -1247,6 +1247,24 @@ add_test(NAME filesystem_management_production_cli_smoke
 set_tests_properties(filesystem_management_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "filesystem_management_summary = 91")
 
+add_test(NAME file_metadata_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_metadata_demo.m)
+set_tests_properties(file_metadata_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "file_metadata_summary = 10")
+
+add_test(NAME file_metadata_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_metadata_demo.m)
+set_tests_properties(file_metadata_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "file_metadata_summary = 10")
+
+add_test(NAME file_metadata_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_metadata_demo.m)
+set_tests_properties(file_metadata_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "file_metadata_summary = 10")
+
 add_test(NAME system_services_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/system_services_demo.m)
@@ -2044,10 +2062,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.8/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.9/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.8 catalog validated: 259 descriptors")
+        "builtin source contract 1.9 catalog validated: 260 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2718,7 +2736,7 @@ install(FILES
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
-    tests/public_contract/builtin/1.8/default_catalog.json
+    tests/public_contract/builtin/1.9/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
@@ -2742,6 +2760,7 @@ install(FILES
     samples/reliability_boundary_demo.m
     samples/v1_1_core_compatibility_demo.m
     samples/filesystem_management_demo.m
+    samples/file_metadata_demo.m
     samples/mat_file_demo.m
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
 install(DIRECTORY samples/class_folders/

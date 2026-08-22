@@ -17,7 +17,7 @@
 namespace mparser {
 
 inline constexpr std::uint32_t kBuiltinSourceContractMajor = 1;
-inline constexpr std::uint32_t kBuiltinSourceContractMinor = 8;
+inline constexpr std::uint32_t kBuiltinSourceContractMinor = 9;
 
 struct RuntimeObjectArrayPolicy;
 class RuntimeExecutionControl;

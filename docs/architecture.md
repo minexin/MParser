@@ -1448,12 +1448,13 @@ stream-I/O family and warning implicit-output corrections. Active contract
 1.6 adds capability-bound filesystem query, path, whole-file text, temporary
 name, and mutation descriptors. Active contract 1.7 adds the shared advanced
 numeric family, and active contract 1.8 adds capability-bound MAT workspace
-persistence; its development snapshot records 259 descriptors and 261
-registered names. A generator-backed
-smoke test compares the live registry to the active snapshot; it does not serialize
-handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
-values and diagnostics across HIR and bytecode rather than comparing display
-strings.
+persistence. Active contract 1.9 adds file metadata/removal descriptors and
+records the dual file/object dispatch contract for `delete`; its development
+snapshot contains 260 descriptors and 262 registered names. A generator-backed
+smoke test compares the live registry to the active snapshot; it does not
+serialize handlers or claim a C++ binary ABI. Conformance tests compare
+recursive runtime values and diagnostics across HIR and bytecode rather than
+comparing display strings.
 
 v0.81 adds an engine-neutral host boundary above the bytecode VM.
 `ModuleInvocationRequest` contains entry selection, arguments, output arity,
@@ -1865,12 +1866,17 @@ and the rooted adapter documents filesystem-link TOCTOU as an OS sandboxing
 concern rather than claiming process isolation.
 
 Filesystem management remains behind that same adapter. `isfile`, `isfolder`,
-`fileread`, and `tempname` use session-relative paths and read capability;
-`mkdir`, `rmdir`, `copyfile`, and `movefile` additionally require write
+`fileread`, `dir`, `fileattrib`, and `tempname` use session-relative paths and
+read capability; `delete`, attribute updates, `mkdir`, `rmdir`, `copyfile`,
+and `movefile` additionally require write
 capability and return MATLAB-style status/message/message-ID triples when the
 caller requests outputs. `fileparts` is the pure exception and only parses
-text. The native adapter handles recursive creation/removal, directory-copy
-contents, directory-move nesting, and cross-device move fallback. The rooted
+text. Directory entries carry formatted local timestamps and MATLAB serial
+dates. The native adapter maps Windows archive/system/hidden/read-only flags
+or UNIX owner/group/other write/execute bits without inventing unsupported
+attributes. It also handles recursive creation/removal/attribute updates,
+directory-copy contents, directory-move nesting, and cross-device move
+fallback. The rooted
 adapter validates source and destination independently, rejects root/current
 directory removal or movement, and keeps all operations on the canonical
 context path rather than letting handlers call `std::filesystem` directly.

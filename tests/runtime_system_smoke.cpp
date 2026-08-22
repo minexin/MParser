@@ -174,7 +174,10 @@ public:
     FakeHostAdapter()
         : root(virtualRoot()), child(root / "child"), tools(root / "tools"),
           library(root / "library"), temporary(root / "temporary") {
-        directories = {root, child, tools, library, temporary};
+        directories = {root, child, child / "nested", tools, library,
+                       temporary};
+        files[child / "data.bin"] =
+            std::make_shared<std::string>(17, '\0');
     }
 
     mparser::RuntimeSystemResult<std::filesystem::path>
@@ -207,16 +210,37 @@ public:
     mparser::RuntimeSystemResult<std::vector<mparser::RuntimeDirectoryEntry>>
     listDirectory(const std::filesystem::path& path) const override {
         lastListedDirectory = path;
-        if (normalize(path) != child) {
+        const auto normalized = normalize(path);
+        if (!directories.contains(normalized)) {
             return mparser::RuntimeSystemResult<
                 std::vector<mparser::RuntimeDirectoryEntry>>::failure(
                 "fake directory is unavailable");
         }
+        std::vector<mparser::RuntimeDirectoryEntry> entries;
+        for (const auto& directory : directories) {
+            if (directory != normalized &&
+                directory.parent_path() == normalized) {
+                entries.push_back({
+                    directory.filename().string(), normalized.string(),
+                    "01-Jan-2026 01:02:03", 0, true,
+                    739983.0430902778});
+            }
+        }
+        for (const auto& [file, contents] : files) {
+            if (file.parent_path() == normalized) {
+                entries.push_back({
+                    file.filename().string(), normalized.string(),
+                    "01-Jan-2026 01:02:03", contents->size(), false,
+                    739983.0430902778});
+            }
+        }
+        std::sort(entries.begin(), entries.end(),
+                  [](const auto& left, const auto& right) {
+                      return left.name < right.name;
+                  });
         return mparser::RuntimeSystemResult<
-            std::vector<mparser::RuntimeDirectoryEntry>>::success({
-            {"nested", path.string(), "01-Jan-2026 01:02:03", 0, true},
-            {"data.bin", path.string(), "01-Jan-2026 01:02:03", 17, false},
-        });
+            std::vector<mparser::RuntimeDirectoryEntry>>::success(
+            std::move(entries));
     }
 
     mparser::RuntimeSystemResult<bool>
@@ -259,6 +283,21 @@ public:
         return mparser::RuntimeSystemResult<bool>::success(created);
     }
 
+    mparser::RuntimeSystemStatus removeFile(
+        const std::filesystem::path& path) const override {
+        const auto normalized = normalize(path);
+        if (directories.contains(normalized)) {
+            return mparser::RuntimeSystemStatus::failure(
+                "fake path is a directory");
+        }
+        if (files.erase(normalized) == 0) {
+            return mparser::RuntimeSystemStatus::failure(
+                "fake file does not exist");
+        }
+        fileAttributesByPath.erase(normalized);
+        return mparser::RuntimeSystemStatus::success();
+    }
+
     mparser::RuntimeSystemStatus removeDirectory(
         const std::filesystem::path& path,
         bool recursive) const override {
@@ -289,6 +328,111 @@ public:
         std::erase_if(files, [&normalized](const auto& entry) {
             return isWithin(normalized, entry.first);
         });
+        std::erase_if(fileAttributesByPath,
+                      [&normalized](const auto& entry) {
+                          return entry.first == normalized ||
+                                 isWithin(normalized, entry.first);
+                      });
+        return mparser::RuntimeSystemStatus::success();
+    }
+
+    mparser::RuntimeSystemResult<mparser::RuntimeFileAttributes>
+    fileAttributes(const std::filesystem::path& path) const override {
+        const auto normalized = normalize(path);
+        const bool directory = directories.contains(normalized);
+        if (!directory && !files.contains(normalized)) {
+            return mparser::RuntimeSystemResult<
+                mparser::RuntimeFileAttributes>::failure(
+                "fake file attribute target does not exist");
+        }
+        if (const auto found = fileAttributesByPath.find(normalized);
+            found != fileAttributesByPath.end()) {
+            return mparser::RuntimeSystemResult<
+                mparser::RuntimeFileAttributes>::success(found->second);
+        }
+        mparser::RuntimeFileAttributes result;
+        result.path = normalized;
+        result.directory = directory;
+        result.archive = !directory;
+        result.system = false;
+        result.hidden = normalized.filename().string().starts_with('.');
+        result.userRead = true;
+        result.userWrite = true;
+        result.userExecute = directory;
+        result.groupRead = true;
+        result.groupWrite = false;
+        result.groupExecute = directory;
+        result.otherRead = true;
+        result.otherWrite = false;
+        result.otherExecute = directory;
+        return mparser::RuntimeSystemResult<
+            mparser::RuntimeFileAttributes>::success(std::move(result));
+    }
+
+    mparser::RuntimeSystemStatus setFileAttributes(
+        const std::filesystem::path& path,
+        const mparser::RuntimeFileAttributeUpdate& update,
+        bool recursive) const override {
+        const auto normalized = normalize(path);
+        if (!directories.contains(normalized) &&
+            !files.contains(normalized)) {
+            return mparser::RuntimeSystemStatus::failure(
+                "fake file attribute target does not exist");
+        }
+        std::vector<std::filesystem::path> targets{normalized};
+        if (recursive && directories.contains(normalized)) {
+            for (const auto& directory : directories) {
+                if (directory != normalized &&
+                    isWithin(normalized, directory)) {
+                    targets.push_back(directory);
+                }
+            }
+            for (const auto& [file, contents] : files) {
+                (void)contents;
+                if (isWithin(normalized, file)) {
+                    targets.push_back(file);
+                }
+            }
+        }
+        for (const auto& target : targets) {
+            auto attributes = fileAttributes(target);
+            if (!attributes.succeeded) {
+                return mparser::RuntimeSystemStatus::failure(
+                    std::move(attributes.error));
+            }
+            if (update.archive) {
+                attributes.value.archive = update.archive;
+            }
+            if (update.system) {
+                attributes.value.system = update.system;
+            }
+            if (update.hidden) {
+                attributes.value.hidden = update.hidden;
+            }
+            if (update.writable) {
+                if (update.user) {
+                    attributes.value.userWrite = update.writable;
+                }
+                if (update.group) {
+                    attributes.value.groupWrite = update.writable;
+                }
+                if (update.other) {
+                    attributes.value.otherWrite = update.writable;
+                }
+            }
+            if (update.executable) {
+                if (update.user) {
+                    attributes.value.userExecute = update.executable;
+                }
+                if (update.group) {
+                    attributes.value.groupExecute = update.executable;
+                }
+                if (update.other) {
+                    attributes.value.otherExecute = update.executable;
+                }
+            }
+            fileAttributesByPath[target] = std::move(attributes.value);
+        }
         return mparser::RuntimeSystemStatus::success();
     }
 
@@ -422,6 +566,8 @@ public:
     mutable std::map<std::filesystem::path,
                      std::shared_ptr<std::string>> files;
     mutable std::set<std::filesystem::path> directories;
+    mutable std::map<std::filesystem::path,
+                     mparser::RuntimeFileAttributes> fileAttributesByPath;
 
 private:
     static bool isWithin(const std::filesystem::path& rootPath,
@@ -481,6 +627,15 @@ void permissionSmoke() {
             "isolated context exposed the environment");
     require(!isolated->listDirectory(".").succeeded,
             "isolated context exposed the filesystem");
+    require(!isolated->fileAttributes(".").succeeded,
+            "isolated context exposed file attributes");
+    mparser::RuntimeFileAttributeUpdate attributeUpdate;
+    attributeUpdate.writable = false;
+    require(!isolated->setFileAttributes(".", attributeUpdate, false)
+                 .succeeded,
+            "isolated context changed file attributes");
+    require(!isolated->removeFile("denied.txt").succeeded,
+            "isolated context removed a file");
     mparser::RuntimeFileOpenOptions writeOptions;
     writeOptions.writable = true;
     writeOptions.truncate = true;
@@ -1549,10 +1704,17 @@ void filesystemManagementBuiltinSmoke() {
     auto system = makeContext(adapter);
     auto registry = mparser::createBuiltinRegistryWithDefaults();
     mparser::RuntimeWarningContext warningContext;
+    std::vector<mparser::RuntimeOutputEvent> outputEvents;
+    mparser::RuntimeOutputSink outputSink =
+        [&outputEvents](const mparser::RuntimeOutputEvent& event) {
+            outputEvents.push_back(event);
+            return true;
+        };
     mparser::BuiltinCallContext context;
     context.systemContext = system.get();
     context.registry = registry.get();
     context.warningContext = &warningContext;
+    context.outputSink = &outputSink;
     const auto text = [](std::string_view value) {
         return mparser::makeRuntimeCharacterVectorUtf8(value);
     };
@@ -1651,6 +1813,130 @@ void filesystemManagementBuiltinSmoke() {
                 mparser::runtimeTextScalarUtf8(result.outputs[0]) ==
                     "path contents",
             "fileread search-path lookup mismatch");
+
+    result = invoke("dir", {text("child/*.bin")}, 1);
+    const auto* directoryDate =
+        result.succeeded
+            ? mparser::runtimeStructField(result.outputs[0], "datenum")
+            : nullptr;
+    require(result.succeeded && result.outputs.size() == 1 &&
+                mparser::runtimeShapeElementCount(result.outputs[0]) == 1 &&
+                directoryDate && numeric(*directoryDate) > 739000.0,
+            "dir did not expose the host serial modification date");
+
+    adapter->files[adapter->root / "beta.txt"] =
+        std::make_shared<std::string>("beta");
+    result = invoke("fileattrib", {text("*.txt")}, 2);
+    const auto* firstAttributeName =
+        result.succeeded
+            ? mparser::runtimeStructField(result.outputs[1], "Name", 0)
+            : nullptr;
+    const auto* secondAttributeName =
+        result.succeeded
+            ? mparser::runtimeStructField(result.outputs[1], "Name", 1)
+            : nullptr;
+    require(result.succeeded && numeric(result.outputs[0]) == 1.0 &&
+                mparser::runtimeDimensions(result.outputs[1]) ==
+                    std::vector<size_t>({1, 2}) &&
+                firstAttributeName && secondAttributeName &&
+                mparser::runtimeTextScalarUtf8(*firstAttributeName)
+                    ->ends_with("alpha.txt") &&
+                mparser::runtimeTextScalarUtf8(*secondAttributeName)
+                    ->ends_with("beta.txt"),
+            "fileattrib wildcard query did not return a row struct array");
+
+    result = invoke("fileattrib",
+                    {text("alpha.txt"), text("-w +h"), text("")}, 3);
+    require(result.succeeded && numeric(result.outputs[0]) == 1.0 &&
+                mparser::runtimeTextScalarUtf8(result.outputs[1]) == "" &&
+                adapter->fileAttributesByPath[adapter->root / "alpha.txt"]
+                        .userWrite == false &&
+                adapter->fileAttributesByPath[adapter->root / "alpha.txt"]
+                        .hidden == true,
+            "fileattrib did not apply multiple attribute updates");
+    result = invoke("fileattrib", {text("alpha.txt")}, 2);
+    const auto* writable =
+        result.succeeded
+            ? mparser::runtimeStructField(result.outputs[1], "UserWrite")
+            : nullptr;
+    const auto* hidden =
+        result.succeeded
+            ? mparser::runtimeStructField(result.outputs[1], "hidden")
+            : nullptr;
+    require(result.succeeded && writable && hidden &&
+                numeric(*writable) == 0.0 && numeric(*hidden) == 1.0,
+            "fileattrib query lost updated attributes");
+
+    adapter->directories.insert(adapter->root / "attribute-tree");
+    adapter->directories.insert(adapter->root / "attribute-tree" / "deep");
+    adapter->files[adapter->root / "attribute-tree" / "deep" /
+                   "value.bin"] = std::make_shared<std::string>("value");
+    result = invoke("fileattrib",
+                    {text("attribute-tree"), text("-w"), text("a"),
+                     text("s")},
+                    3);
+    const auto recursiveAttributes = adapter->fileAttributes(
+        adapter->root / "attribute-tree" / "deep" / "value.bin");
+    require(result.succeeded && numeric(result.outputs[0]) == 1.0 &&
+                recursiveAttributes.succeeded &&
+                recursiveAttributes.value.userWrite == false &&
+                recursiveAttributes.value.groupWrite == false &&
+                recursiveAttributes.value.otherWrite == false,
+            "fileattrib recursive all-user update did not reach descendants");
+
+    result = invoke("fileattrib", {text("missing.file")}, 2);
+    require(result.succeeded && numeric(result.outputs[0]) == 0.0 &&
+                !mparser::runtimeTextScalarUtf8(result.outputs[1])->empty(),
+            "fileattrib missing query did not return status and message");
+    result = invoke("fileattrib", {text("missing.file")}, 0);
+    require(!result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics.front().identifier ==
+                    "MATLAB:FILEATTRIB:CannotFindFile",
+            "fileattrib missing no-output query did not fail");
+    outputEvents.clear();
+    result = invoke("fileattrib", {text("alpha.txt")}, 0);
+    require(result.succeeded && outputEvents.size() == 1 &&
+                outputEvents.front().text.find("UserWrite: 0") !=
+                    std::string::npos,
+            "fileattrib no-output query did not emit attribute details");
+
+    adapter->files[adapter->root / "delete-a.tmp"] =
+        std::make_shared<std::string>("a");
+    adapter->files[adapter->root / "delete-b.tmp"] =
+        std::make_shared<std::string>("b");
+    result = invoke("delete", {text("delete-*.tmp")}, 0);
+    require(result.succeeded &&
+                !adapter->files.contains(adapter->root / "delete-a.tmp") &&
+                !adapter->files.contains(adapter->root / "delete-b.tmp"),
+            "delete wildcard did not remove every matched file");
+    result = invoke("delete", {text("missing-delete-*.tmp")}, 0);
+    require(result.succeeded && result.diagnostics.empty(),
+            "delete unmatched wildcard did not remain silent");
+    adapter->files[adapter->root / "delete-c.tmp"] =
+        std::make_shared<std::string>("c");
+    adapter->files[adapter->root / "delete-d.tmp"] =
+        std::make_shared<std::string>("d");
+    result = invoke(
+        "delete",
+        {mparser::makeRuntimeStringArray(
+            {1, 2}, {{u"delete-c.tmp", false},
+                     {u"delete-d.tmp", false}})},
+        0);
+    require(result.succeeded &&
+                !adapter->files.contains(adapter->root / "delete-c.tmp") &&
+                !adapter->files.contains(adapter->root / "delete-d.tmp"),
+            "delete string array did not remove every filename");
+    result = invoke("delete", {text("missing-delete.tmp")}, 0);
+    require(result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics.front().identifier ==
+                    "MATLAB:DELETE:FileNotFound",
+            "delete missing-file warning mismatch");
+    result = invoke("delete", {text("child")}, 0);
+    require(result.succeeded && result.diagnostics.size() == 1 &&
+                result.diagnostics.front().identifier ==
+                    "MATLAB:DELETE:DirectoryDeletion" &&
+                adapter->directories.contains(adapter->child),
+            "delete directory warning or preservation mismatch");
 
     const auto firstTemporary = invoke("tempname", {}, 1);
     const auto secondTemporary = invoke("tempname", {}, 1);

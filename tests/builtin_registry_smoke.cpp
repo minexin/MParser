@@ -186,11 +186,11 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 8,
+                mparser::kBuiltinSourceContractMinor == 9,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 259,
+    require(registry->descriptors().size() == 260,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 261,
+    require(registry->names().size() == 262,
             "default builtin name catalog changed unexpectedly");
 
     for (std::string_view name : {"eval", "evalc", "evalin"}) {
@@ -294,6 +294,31 @@ void runDefaultCatalogSmoke() {
                         mparser::BuiltinImplicitOutputPolicy::None,
                 "filesystem mutation builtin metadata mismatch");
     }
+    const auto* fileattrib = registry->find("fileattrib");
+    require(fileattrib && fileattrib->inputs.minimum == 0 &&
+                fileattrib->inputs.maximum == 4 &&
+                fileattrib->outputs.minimum == 0 &&
+                fileattrib->outputs.maximum == 3 &&
+                fileattrib->implementation ==
+                    mparser::BuiltinImplementationKind::Context &&
+                fileattrib->purity == mparser::BuiltinPurity::Impure &&
+                mparser::hasBuiltinContextPermission(
+                    fileattrib->contextPermissions,
+                    mparser::BuiltinContextPermission::Output),
+            "fileattrib metadata mismatch");
+    const auto* deleteBuiltin = registry->find("delete");
+    require(deleteBuiltin && deleteBuiltin->inputs.minimum == 1 &&
+                !deleteBuiltin->inputs.maximum &&
+                deleteBuiltin->outputs.maximum == 0 &&
+                deleteBuiltin->implementation ==
+                    mparser::BuiltinImplementationKind::Context &&
+                mparser::hasBuiltinSideEffect(
+                    deleteBuiltin->sideEffects,
+                    mparser::BuiltinSideEffect::External) &&
+                mparser::hasBuiltinSideEffect(
+                    deleteBuiltin->sideEffects,
+                    mparser::BuiltinSideEffect::ObjectState),
+            "dual file/object delete metadata mismatch");
 
     const auto* absolute = registry->find("abs");
     require(absolute &&

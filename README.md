@@ -1904,12 +1904,13 @@ build\mparser.exe --run samples\system_services_demo.m
 build\mparser.exe --run samples\random_runtime_demo.m
 build\mparser.exe --run samples\file_io_demo.m
 build\mparser.exe --run samples\filesystem_management_demo.m
+build\mparser.exe --run samples\file_metadata_demo.m
 build\mparser.exe --run samples\mat_file_demo.m
 build\mparser.exe --run samples\dynamic_workspace_demo.m
 build\mparser.exe --run samples\system_command_demo.m
 ```
 
-The seven samples are also checked through `--run-hir` and `--run-bytecode`.
+The eight samples are also checked through `--run-hir` and `--run-bytecode`.
 They cover session-local path/current-directory/workspace state, capability
 routing, reproducible shaped random arrays, native path separators, file
 open/query/append/close lifetime, `fseek`/`ftell`/`frewind`, `feof`/`ferror`,
@@ -1919,7 +1920,10 @@ padding, exact 64-bit payloads, precision skips, byte-order conversion,
 array-aware `fullfile`, shaped `isfile`/`isfolder`, container-preserving
 `fileparts`, bounded `fileread`, `tempname`, status-returning
 `mkdir`/`rmdir`/`copyfile`/`movefile`, permission-preserving `'f'` destination
-overrides, rooted write-path link rejection, current/caller/
+overrides, real `dir.datenum` metadata, wildcard and string-array file
+`delete`, `fileattrib` query/status/display forms, Windows `a/h/s/w` and UNIX
+`w/x` updates, recursive UNIX user scopes, rooted write-path link rejection,
+current/caller/
 base dynamic workspaces, `evalc` capture, multi-output dynamic expressions,
 compressed and uncompressed MAT v5 persistence for dense numeric, logical,
 complex, UTF-16 char, Cell, and Struct values, zero-output workspace import,
@@ -1933,8 +1937,8 @@ process capability. This is the current v1.3
 development slice; dynamic function/class declarations, escaping handles from
 temporary dynamic modules, complete MATLAB system behavior, MAT v4/v7.3,
 strict v6/append/ASCII MAT modes, remote files, non-UTF-8 encodings,
-file deletion/attributes/recycle,
-parent-component wildcards, selectable symbolic-link behavior, and
+filesystem recycle, parent-component wildcards, selectable symbolic-link
+behavior, broader platform-specific attributes, and
 bit/character/complex binary I/O corners
 remain on the roadmap.
 
