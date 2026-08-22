@@ -81,8 +81,8 @@ v1.2 candidate contract.
 
 ## v1.3 Development Additions
 
-The current tree has ten end-to-end system, language, standard-library, and embedding
-batches:
+The current tree has fourteen end-to-end system, language, standard-library,
+and embedding batches:
 
 - one session-owned capability context and injectable host adapter for current
   directory, search paths, environment, filesystem read/write, process,

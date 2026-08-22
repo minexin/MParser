@@ -151,8 +151,8 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first eleven v1.3 implementation batches are present in the development tree. A
-session-owned `RuntimeSystemContext` now separates current-directory, path,
+The first fourteen v1.3 implementation batches are present in the development
+tree. A session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
 adapter; engine tests use a deterministic in-memory adapter. Implemented
@@ -317,12 +317,12 @@ Recycle-bin integration, parent-component wildcards, selectable link policy,
 and broader platform-specific attributes remain later boundaries.
 
 The latest MATLAB R2024b external differential rerun at
-`MParserV1.0Test/results/20260823-003606-v1.3-mat-v5` records 219 matches
-and 4 gaps across all 223 MATLAB-accepted cases. It closes
-`cap_271_io_save_load` after the preceding 218-match run with no prior match
-regressing. The remaining observed gaps are `datetime`, `table`, `sparse`,
-and graphics. The thirteenth batch closes dynamic parent-module local,
-nested, path, package, private, and module-bound-handle invocation across HIR
+`MParserV1.0Test/results/20260823-030627-v1.3-file-metadata` records 219
+matches and 4 gaps across all 223 MATLAB-accepted cases. It preserves the
+`cap_271_io_save_load` closure first recorded by the preceding MAT v5 run,
+with no prior match regressing. The remaining observed gaps are `datetime`,
+`table`, `sparse`, and graphics. The thirteenth batch closes dynamic
+parent-module local, nested, path, package, private, and module-bound-handle invocation across HIR
 and bytecode parents, including recursive evaluation, output capture, captured
 workspace updates, and source-scoped private isolation. MATLAB R2024b reference
 probes confirm that function and class definitions are themselves illegal in
