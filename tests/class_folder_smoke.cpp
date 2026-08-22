@@ -1,5 +1,5 @@
-#include "mparser/compiled_module.h"
-#include "mparser/source_loader.h"
+#include "mparser/embedding/compiled_module.h"
+#include "mparser/frontend/source_loader.h"
 
 #include <cassert>
 #include <chrono>

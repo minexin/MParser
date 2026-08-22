@@ -1,6 +1,6 @@
-#include "mparser/lexer.h"
-#include "mparser/parser.h"
-#include "mparser/semantic.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/frontend/parser.h"
+#include "mparser/semantic/semantic.h"
 
 #include <algorithm>
 #include <array>

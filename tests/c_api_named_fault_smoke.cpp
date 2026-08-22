@@ -1,5 +1,5 @@
 #include "mparser/c_api.h"
-#include "mparser/c_api_test_hooks.h"
+#include "mparser/embedding/c_api_test_hooks.h"
 
 #include <atomic>
 #include <cmath>

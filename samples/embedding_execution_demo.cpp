@@ -1,5 +1,5 @@
-#include "mparser/compiled_module.h"
-#include "mparser/runtime_value.h"
+#include "mparser/embedding/compiled_module.h"
+#include "mparser/runtime/core/runtime_value.h"
 
 #include <iostream>
 #include <stdexcept>

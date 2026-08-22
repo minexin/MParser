@@ -1,8 +1,8 @@
 #include "test_assertions_enabled.h"
 
-#include "mparser/runtime_numeric.h"
-#include "mparser/runtime_output.h"
-#include "mparser/runtime_text.h"
+#include "mparser/runtime/core/runtime_numeric.h"
+#include "mparser/runtime/core/runtime_output.h"
+#include "mparser/runtime/core/runtime_text.h"
 
 #include <bit>
 #include <cassert>

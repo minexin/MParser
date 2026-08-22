@@ -1,10 +1,10 @@
 #pragma once
 
-#include "mparser/builtin_registry.h"
-#include "mparser/compiled_module.h"
-#include "mparser/interpreter.h"
-#include "mparser/runtime_shape.h"
-#include "mparser/runtime_struct.h"
+#include "mparser/runtime/builtins/builtin_registry.h"
+#include "mparser/embedding/compiled_module.h"
+#include "mparser/execution/interpreter.h"
+#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/runtime_struct.h"
 
 #include <cmath>
 #include <memory>

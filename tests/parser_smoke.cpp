@@ -1,5 +1,5 @@
-#include "mparser/lexer.h"
-#include "mparser/parser.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/frontend/parser.h"
 
 #include <cassert>
 #include <iostream>

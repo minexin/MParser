@@ -1,9 +1,9 @@
-#include "mparser/runtime_mat_file.h"
+#include "mparser/runtime/io/runtime_mat_file.h"
 
-#include "mparser/runtime_numeric.h"
-#include "mparser/runtime_struct.h"
-#include "mparser/runtime_text.h"
-#include "mparser/runtime_value_ops.h"
+#include "mparser/runtime/core/runtime_numeric.h"
+#include "mparser/runtime/core/runtime_struct.h"
+#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/runtime_value_ops.h"
 
 #include "miniz.h"
 

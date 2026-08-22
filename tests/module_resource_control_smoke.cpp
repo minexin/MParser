@@ -1,8 +1,8 @@
-#include "mparser/builtin_registry.h"
-#include "mparser/compiled_module.h"
-#include "mparser/native_scalar_jit.h"
-#include "mparser/runtime_execution_control.h"
-#include "mparser/runtime_value.h"
+#include "mparser/runtime/builtins/builtin_registry.h"
+#include "mparser/embedding/compiled_module.h"
+#include "mparser/execution/jit/native_scalar_jit.h"
+#include "mparser/runtime/core/runtime_execution_control.h"
+#include "mparser/runtime/core/runtime_value.h"
 
 #include <chrono>
 #include <cmath>

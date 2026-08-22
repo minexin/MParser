@@ -1,12 +1,12 @@
-#include "mparser/bytecode.h"
-#include "mparser/bytecode_vm.h"
-#include "mparser/lexer.h"
-#include "mparser/parser.h"
-#include "mparser/runtime_object.h"
-#include "mparser/runtime_numeric.h"
-#include "mparser/runtime_shape.h"
-#include "mparser/runtime_text.h"
-#include "mparser/semantic.h"
+#include "mparser/execution/bytecode/bytecode.h"
+#include "mparser/execution/bytecode/bytecode_vm.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/frontend/parser.h"
+#include "mparser/runtime/core/runtime_object.h"
+#include "mparser/runtime/core/runtime_numeric.h"
+#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/semantic/semantic.h"
 
 #include <algorithm>
 #include <cassert>

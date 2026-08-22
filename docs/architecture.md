@@ -7,6 +7,15 @@ function invocation, or constructor invocation depending on runtime bindings.
 Likewise, `A.B` can be package access, static method access, property access, or
 an enumeration member.
 
+## Source ownership
+
+Public, installed SDK headers live in `include/mparser`. Internal implementation
+files are grouped by subsystem under `src/mparser`: `frontend`, `semantic`,
+`execution`, `runtime`, and `embedding`, with bytecode/JIT and core/builtin/I/O
+subdirectories where ownership needs a narrower boundary. The complete placement
+rules are recorded in `src/mparser/README.md`; internal paths are not public API
+or ABI.
+
 ## Frontend stages
 
 ```text
@@ -1505,7 +1514,7 @@ The internal source-level C++ execution API can still propagate
 allocation-free exit-4 result when ordinary serialization cannot complete.
 
 v0.83 adds a narrow C projection in `include/mparser/c_api.h` and
-`src/mparser/c_api.cpp`. `mparser_c_api` is a shared library; the static core
+`src/mparser/embedding/c_api.cpp`. `mparser_c_api` is a shared library; the static core
 and optional SLJIT dependency are position-independent inputs. The public
 header contains no C++ layout. Modules, sessions, results, values, and
 cancellation tokens are atomically retained opaque handles, while diagnostic

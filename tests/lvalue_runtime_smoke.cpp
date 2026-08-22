@@ -1,9 +1,9 @@
-#include "mparser/bytecode.h"
-#include "mparser/bytecode_vm.h"
-#include "mparser/interpreter.h"
-#include "mparser/lexer.h"
-#include "mparser/parser.h"
-#include "mparser/semantic.h"
+#include "mparser/execution/bytecode/bytecode.h"
+#include "mparser/execution/bytecode/bytecode_vm.h"
+#include "mparser/execution/interpreter.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/frontend/parser.h"
+#include "mparser/semantic/semantic.h"
 
 #include <cassert>
 #include <cmath>

@@ -1,6 +1,6 @@
-#include "mparser/compiled_module.h"
-#include "mparser/interpreter.h"
-#include "mparser/source_loader.h"
+#include "mparser/embedding/compiled_module.h"
+#include "mparser/execution/interpreter.h"
+#include "mparser/frontend/source_loader.h"
 
 #include <chrono>
 #include <filesystem>

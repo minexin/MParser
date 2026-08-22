@@ -1,12 +1,12 @@
-#include "mparser/adaptive_module_runtime.h"
-#include "mparser/bytecode.h"
-#include "mparser/bytecode_vm.h"
-#include "mparser/compiled_module.h"
-#include "mparser/function_signature.h"
-#include "mparser/interpreter.h"
-#include "mparser/lexer.h"
-#include "mparser/parser.h"
-#include "mparser/semantic.h"
+#include "mparser/embedding/adaptive_module_runtime.h"
+#include "mparser/execution/bytecode/bytecode.h"
+#include "mparser/execution/bytecode/bytecode_vm.h"
+#include "mparser/embedding/compiled_module.h"
+#include "mparser/semantic/function_signature.h"
+#include "mparser/execution/interpreter.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/frontend/parser.h"
+#include "mparser/semantic/semantic.h"
 
 #include <cmath>
 #include <iostream>

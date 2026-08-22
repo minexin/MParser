@@ -48,8 +48,8 @@ existing constructors.
 ## Minimal C++ Registration
 
 ```cpp
-#include "mparser/builtin_registry.h"
-#include "mparser/compiled_module.h"
+#include "mparser/runtime/builtins/builtin_registry.h"
+#include "mparser/embedding/compiled_module.h"
 
 #include <stdexcept>
 

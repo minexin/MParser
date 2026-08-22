@@ -1,4 +1,4 @@
-#include "mparser/native_scalar_jit.h"
+#include "mparser/execution/jit/native_scalar_jit.h"
 
 #include <atomic>
 #include <barrier>

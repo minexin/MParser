@@ -1,9 +1,9 @@
 #include "builtin_conformance.h"
 
-#include "mparser/native_scalar_jit.h"
-#include "mparser/optimization_plan.h"
-#include "mparser/runtime_math.h"
-#include "mparser/typed_ir.h"
+#include "mparser/execution/jit/native_scalar_jit.h"
+#include "mparser/execution/jit/optimization_plan.h"
+#include "mparser/runtime/builtins/runtime_math.h"
+#include "mparser/execution/jit/typed_ir.h"
 
 #include <algorithm>
 #include <cmath>

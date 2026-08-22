@@ -1,4 +1,4 @@
-#include "mparser/adaptive_module_runtime.h"
+#include "mparser/embedding/adaptive_module_runtime.h"
 
 #include <cassert>
 #include <cmath>

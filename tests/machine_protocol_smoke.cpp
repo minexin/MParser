@@ -1,10 +1,10 @@
-#include "mparser/machine_protocol.h"
+#include "mparser/embedding/machine_protocol.h"
 
-#include "mparser/runtime_numeric.h"
-#include "mparser/runtime_shape.h"
-#include "mparser/runtime_struct.h"
-#include "mparser/runtime_text.h"
-#include "mparser/runtime_value.h"
+#include "mparser/runtime/core/runtime_numeric.h"
+#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/runtime_struct.h"
+#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/runtime_value.h"
 
 #include <cmath>
 #include <cstdlib>

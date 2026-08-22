@@ -219,72 +219,72 @@ else()
 endif()
 
 add_library(mparser_core STATIC
-    src/mparser/adaptive_module_runtime.cpp
-    src/mparser/adaptive_bytecode_vm.cpp
-    src/mparser/argument_contract.cpp
-    src/mparser/builtin_registry.cpp
-    src/mparser/runtime_advanced_numeric.cpp
-    src/mparser/runtime_native_numeric.cpp
-    src/mparser/bytecode.cpp
-    src/mparser/bytecode_dump.cpp
-    src/mparser/bytecode_region.cpp
-    src/mparser/bytecode_verifier.cpp
-    src/mparser/bytecode_vm.cpp
-    src/mparser/compiled_module.cpp
-    src/mparser/filesystem_utf8.cpp
-    src/mparser/function_signature.cpp
-    src/mparser/interpreter.cpp
-    src/mparser/lexer.cpp
-    src/mparser/machine_protocol.cpp
-    src/mparser/module_execution.cpp
-    src/mparser/native_scalar_jit.cpp
-    src/mparser/optimization_plan.cpp
-    src/mparser/parser.cpp
-    src/mparser/runtime_array_ops.cpp
-    src/mparser/runtime_argument_validation.cpp
-    src/mparser/runtime_assignment.cpp
-    src/mparser/runtime_benchmark.cpp
-    src/mparser/runtime_call_frame.cpp
-    src/mparser/runtime_cell.cpp
-    src/mparser/runtime_collection_builtins.cpp
-    src/mparser/runtime_exception.cpp
-    src/mparser/runtime_execution_control.cpp
-    src/mparser/runtime_file_io.cpp
-    src/mparser/runtime_fallback.cpp
-    src/mparser/runtime_warning.cpp
-    src/mparser/runtime_index.cpp
-    src/mparser/runtime_lvalue.cpp
-    src/mparser/runtime_mat_builtins.cpp
-    src/mparser/runtime_mat_file.cpp
-    src/mparser/runtime_math.cpp
-    src/mparser/runtime_metadata.cpp
-    src/mparser/runtime_mixed_integer.cpp
-    src/mparser/runtime_numeric.cpp
-    src/mparser/runtime_numeric_library_builtins.cpp
-    src/mparser/runtime_object.cpp
-    src/mparser/runtime_output.cpp
-    src/mparser/runtime_range.cpp
-    src/mparser/runtime_reduction.cpp
-    src/mparser/runtime_scan.cpp
-    src/mparser/runtime_session_state.cpp
-    src/mparser/runtime_shape.cpp
-    src/mparser/runtime_source_evaluation.cpp
-    src/mparser/runtime_struct.cpp
-    src/mparser/runtime_system.cpp
-    src/mparser/runtime_system_builtins.cpp
-    src/mparser/runtime_text.cpp
-    src/mparser/runtime_text_builtins.cpp
-    src/mparser/runtime_value.cpp
-    src/mparser/runtime_value_ops.cpp
-    src/mparser/semantic.cpp
-    src/mparser/semantic_dump.cpp
-    src/mparser/source.cpp
-    src/mparser/source_loader.cpp
-    src/mparser/syntax.cpp
-    src/mparser/syntax_dump.cpp
-    src/mparser/typed_ir.cpp
-    src/mparser/typed_region_executor.cpp
-    src/mparser/token.cpp
+    src/mparser/embedding/adaptive_module_runtime.cpp
+    src/mparser/execution/bytecode/adaptive_bytecode_vm.cpp
+    src/mparser/semantic/argument_contract.cpp
+    src/mparser/runtime/builtins/builtin_registry.cpp
+    src/mparser/runtime/builtins/runtime_advanced_numeric.cpp
+    src/mparser/execution/jit/runtime_native_numeric.cpp
+    src/mparser/execution/bytecode/bytecode.cpp
+    src/mparser/execution/bytecode/bytecode_dump.cpp
+    src/mparser/execution/bytecode/bytecode_region.cpp
+    src/mparser/execution/bytecode/bytecode_verifier.cpp
+    src/mparser/execution/bytecode/bytecode_vm.cpp
+    src/mparser/embedding/compiled_module.cpp
+    src/mparser/runtime/io/filesystem_utf8.cpp
+    src/mparser/semantic/function_signature.cpp
+    src/mparser/execution/interpreter.cpp
+    src/mparser/frontend/lexer.cpp
+    src/mparser/embedding/machine_protocol.cpp
+    src/mparser/embedding/module_execution.cpp
+    src/mparser/execution/jit/native_scalar_jit.cpp
+    src/mparser/execution/jit/optimization_plan.cpp
+    src/mparser/frontend/parser.cpp
+    src/mparser/runtime/builtins/runtime_array_ops.cpp
+    src/mparser/runtime/core/runtime_argument_validation.cpp
+    src/mparser/runtime/core/runtime_assignment.cpp
+    src/mparser/execution/runtime_benchmark.cpp
+    src/mparser/runtime/core/runtime_call_frame.cpp
+    src/mparser/runtime/core/runtime_cell.cpp
+    src/mparser/runtime/builtins/runtime_collection_builtins.cpp
+    src/mparser/runtime/core/runtime_exception.cpp
+    src/mparser/runtime/core/runtime_execution_control.cpp
+    src/mparser/runtime/io/runtime_file_io.cpp
+    src/mparser/execution/runtime_fallback.cpp
+    src/mparser/runtime/core/runtime_warning.cpp
+    src/mparser/runtime/core/runtime_index.cpp
+    src/mparser/runtime/core/runtime_lvalue.cpp
+    src/mparser/runtime/builtins/runtime_mat_builtins.cpp
+    src/mparser/runtime/io/runtime_mat_file.cpp
+    src/mparser/runtime/builtins/runtime_math.cpp
+    src/mparser/runtime/core/runtime_metadata.cpp
+    src/mparser/runtime/core/runtime_mixed_integer.cpp
+    src/mparser/runtime/core/runtime_numeric.cpp
+    src/mparser/runtime/builtins/runtime_numeric_library_builtins.cpp
+    src/mparser/runtime/core/runtime_object.cpp
+    src/mparser/runtime/core/runtime_output.cpp
+    src/mparser/runtime/core/runtime_range.cpp
+    src/mparser/runtime/builtins/runtime_reduction.cpp
+    src/mparser/runtime/builtins/runtime_scan.cpp
+    src/mparser/runtime/core/runtime_session_state.cpp
+    src/mparser/runtime/core/runtime_shape.cpp
+    src/mparser/execution/runtime_source_evaluation.cpp
+    src/mparser/runtime/core/runtime_struct.cpp
+    src/mparser/runtime/io/runtime_system.cpp
+    src/mparser/runtime/builtins/runtime_system_builtins.cpp
+    src/mparser/runtime/core/runtime_text.cpp
+    src/mparser/runtime/builtins/runtime_text_builtins.cpp
+    src/mparser/runtime/core/runtime_value.cpp
+    src/mparser/runtime/core/runtime_value_ops.cpp
+    src/mparser/semantic/semantic.cpp
+    src/mparser/semantic/semantic_dump.cpp
+    src/mparser/frontend/source.cpp
+    src/mparser/frontend/source_loader.cpp
+    src/mparser/frontend/syntax.cpp
+    src/mparser/frontend/syntax_dump.cpp
+    src/mparser/execution/jit/typed_ir.cpp
+    src/mparser/execution/jit/typed_region_executor.cpp
+    src/mparser/frontend/token.cpp
 )
 
 set_target_properties(mparser_core PROPERTIES
@@ -302,7 +302,7 @@ if(MPARSER_ENABLE_NATIVE_JIT)
 endif()
 
 add_library(mparser_c_api SHARED
-    src/mparser/c_api.cpp)
+    src/mparser/embedding/c_api.cpp)
 target_include_directories(mparser_c_api
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -2306,7 +2306,7 @@ add_test(NAME c_api_smoke
 
 add_executable(c_api_allocation_failure_tests
     tests/c_api_allocation_failure.cpp
-    src/mparser/c_api.cpp)
+    src/mparser/embedding/c_api.cpp)
 target_include_directories(c_api_allocation_failure_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(c_api_allocation_failure_tests PRIVATE
@@ -2325,7 +2325,7 @@ set_tests_properties(c_api_allocation_failure PROPERTIES
 
 add_executable(c_api_named_fault_smoke_tests
     tests/c_api_named_fault_smoke.cpp
-    src/mparser/c_api.cpp)
+    src/mparser/embedding/c_api.cpp)
 target_include_directories(c_api_named_fault_smoke_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(c_api_named_fault_smoke_tests PRIVATE

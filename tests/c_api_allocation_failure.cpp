@@ -1,5 +1,5 @@
 #include "mparser/c_api.h"
-#include "mparser/machine_protocol.h"
+#include "mparser/embedding/machine_protocol.h"
 
 #include <cstddef>
 #include <cstdint>

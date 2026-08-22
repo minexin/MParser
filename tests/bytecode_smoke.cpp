@@ -1,7 +1,7 @@
-#include "mparser/bytecode.h"
-#include "mparser/lexer.h"
-#include "mparser/parser.h"
-#include "mparser/semantic.h"
+#include "mparser/execution/bytecode/bytecode.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/frontend/parser.h"
+#include "mparser/semantic/semantic.h"
 
 #include <cassert>
 #include <iostream>

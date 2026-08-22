@@ -1,8 +1,8 @@
-#include "mparser/interpreter.h"
-#include "mparser/runtime_metadata.h"
-#include "mparser/runtime_numeric.h"
-#include "mparser/runtime_object.h"
-#include "mparser/runtime_shape.h"
+#include "mparser/execution/interpreter.h"
+#include "mparser/runtime/core/runtime_metadata.h"
+#include "mparser/runtime/core/runtime_numeric.h"
+#include "mparser/runtime/core/runtime_object.h"
+#include "mparser/runtime/core/runtime_shape.h"
 
 #include <algorithm>
 #include <cassert>

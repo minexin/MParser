@@ -1,11 +1,11 @@
-#include "mparser/interpreter.h"
-#include "mparser/lexer.h"
-#include "mparser/parser.h"
-#include "mparser/runtime_exception.h"
-#include "mparser/runtime_numeric.h"
-#include "mparser/runtime_shape.h"
-#include "mparser/runtime_text.h"
-#include "mparser/semantic.h"
+#include "mparser/execution/interpreter.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/frontend/parser.h"
+#include "mparser/runtime/core/runtime_exception.h"
+#include "mparser/runtime/core/runtime_numeric.h"
+#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/semantic/semantic.h"
 
 #include <cassert>
 #include <cmath>

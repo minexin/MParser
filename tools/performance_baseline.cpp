@@ -1,7 +1,7 @@
-#include "mparser/compiled_module.h"
-#include "mparser/lexer.h"
-#include "mparser/native_scalar_jit.h"
-#include "mparser/parser.h"
+#include "mparser/embedding/compiled_module.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/execution/jit/native_scalar_jit.h"
+#include "mparser/frontend/parser.h"
 #include "performance_environment.h"
 
 #include <nlohmann/json.hpp>

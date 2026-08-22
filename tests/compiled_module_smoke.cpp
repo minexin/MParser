@@ -1,4 +1,4 @@
-#include "mparser/compiled_module.h"
+#include "mparser/embedding/compiled_module.h"
 
 #include <cassert>
 #include <cmath>

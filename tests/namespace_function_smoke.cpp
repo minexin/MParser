@@ -1,8 +1,8 @@
-#include "mparser/compiled_module.h"
-#include "mparser/interpreter.h"
-#include "mparser/lexer.h"
-#include "mparser/parser.h"
-#include "mparser/source_loader.h"
+#include "mparser/embedding/compiled_module.h"
+#include "mparser/execution/interpreter.h"
+#include "mparser/frontend/lexer.h"
+#include "mparser/frontend/parser.h"
+#include "mparser/frontend/source_loader.h"
 
 #include <cassert>
 #include <chrono>

@@ -1,12 +1,12 @@
-#include "mparser/builtin_registry.h"
-#include "mparser/runtime_execution_control.h"
-#include "mparser/runtime_file_io.h"
-#include "mparser/runtime_numeric.h"
-#include "mparser/runtime_shape.h"
-#include "mparser/runtime_struct.h"
-#include "mparser/runtime_system.h"
-#include "mparser/runtime_text.h"
-#include "mparser/runtime_warning.h"
+#include "mparser/runtime/builtins/builtin_registry.h"
+#include "mparser/runtime/core/runtime_execution_control.h"
+#include "mparser/runtime/io/runtime_file_io.h"
+#include "mparser/runtime/core/runtime_numeric.h"
+#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/runtime_struct.h"
+#include "mparser/runtime/io/runtime_system.h"
+#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/runtime_warning.h"
 
 #include <algorithm>
 #include <chrono>
