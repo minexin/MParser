@@ -32,7 +32,9 @@ template <typename Unsigned>
 void appendLittleUnsigned(std::string &output, Unsigned value) {
   for (size_t index = 0; index < sizeof(Unsigned); ++index) {
     output.push_back(static_cast<char>(value & Unsigned{0xff}));
-    value >>= 8U;
+    if constexpr (sizeof(Unsigned) > 1) {
+      value >>= 8U;
+    }
   }
 }
 
