@@ -1,6 +1,5 @@
 #include "mparser/cpp_api.hpp"
 
-#include <cassert>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -63,7 +62,10 @@ function total = run_demo()
     total = double(sum(values));
 end
 )MATLAB", "cpp_system_context_demo.m");
-    assert(module.isValid());
+    if (!module.isValid()) {
+        std::cerr << "could not compile system-context demo\n";
+        return 1;
+    }
 
     auto session = module.createSession(systemContext);
     systemContext = {};
@@ -71,9 +73,16 @@ end
     invocation.entryFunction = "run_demo";
     invocation.requestedOutputCount = 1;
     const auto result = session.execute(invocation);
-    assert(result.succeeded());
-    const auto values = result.output(0).numericData<double>();
-    assert(values.size() == 1 && values.front() == 12.0);
+    if (!result.succeeded()) {
+        std::cerr << "system-context demo execution failed\n";
+        return 1;
+    }
+    const auto output = result.output(0);
+    const auto values = output.numericData<double>();
+    if (values.size() != 1 || values.front() != 12.0) {
+        std::cerr << "system-context demo returned an unexpected value\n";
+        return 1;
+    }
 
     std::cout << "system context sdk = rooted-session,12\n";
     return 0;

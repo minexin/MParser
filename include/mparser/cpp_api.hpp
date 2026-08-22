@@ -685,7 +685,7 @@ public:
     }
 
     template <typename Element = double>
-    [[nodiscard]] std::span<const Element> numericData() const {
+    [[nodiscard]] std::span<const Element> numericData() const & {
         const auto buffer = numericBuffer();
         const auto numericClass =
             static_cast<NumericClass>(buffer.numeric_class);
@@ -700,8 +700,11 @@ public:
     }
 
     template <typename Element = double>
+    [[nodiscard]] std::span<const Element> numericData() const && = delete;
+
+    template <typename Element = double>
     [[nodiscard]] std::span<const Element>
-    numericImaginaryData() const {
+    numericImaginaryData() const & {
         const auto buffer = numericBuffer();
         const auto numericClass =
             static_cast<NumericClass>(buffer.numeric_class);
@@ -718,8 +721,12 @@ public:
                    : std::span<const Element>{};
     }
 
+    template <typename Element = double>
+    [[nodiscard]] std::span<const Element>
+    numericImaginaryData() const && = delete;
+
     [[nodiscard]] std::span<const std::uint16_t>
-    characterData() const {
+    characterData() const & {
         const std::uint16_t* data = nullptr;
         std::size_t count = 0;
         detail::checkStatus(
@@ -728,6 +735,9 @@ public:
             "read character data");
         return std::span<const std::uint16_t>(data, count);
     }
+
+    [[nodiscard]] std::span<const std::uint16_t>
+    characterData() const && = delete;
 
     [[nodiscard]] std::optional<std::u16string>
     stringElement(std::size_t index) const {

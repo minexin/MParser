@@ -240,10 +240,12 @@ copied on construction. Array payload and linear element order is MATLAB
 column-major. `numericClass()` and `isComplex()` describe numeric storage;
 `numericData<Element>()` and `numericImaginaryData<Element>()` return typed
 immutable spans and reject an element type that does not match the numeric
-class. Their lifetime is tied to that `Value`; retain the `Value` instead of
-keeping a span returned through a temporary wrapper. `characterData()`,
-`stringElement`, `cellElement`, and `structField` return borrowed spans,
-copies, or independently retained values as documented by their types.
+class. Their lifetime is tied to that `Value`, and the live API permits these
+borrowed-view methods only on lvalue wrappers. Store a returned `Value` before
+requesting its span; calls such as `result.output(0).numericData()` are rejected
+at compile time. `characterData()` has the same lvalue-only rule, while
+`stringElement`, `cellElement`, and `structField` return copies or independently
+retained values as documented by their types.
 
 Structure field indexes follow the order supplied to `Value::structure`; that
 order survives a module round trip. The current public constructor creates a

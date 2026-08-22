@@ -33,6 +33,25 @@ using mparser::sdk::StopReason;
 using mparser::sdk::Value;
 using mparser::sdk::ValueKind;
 
+template <typename T>
+concept TemporaryNumericDataReadable = requires {
+    T{}.template numericData<double>();
+};
+
+template <typename T>
+concept TemporaryImaginaryDataReadable = requires {
+    T{}.template numericImaginaryData<double>();
+};
+
+template <typename T>
+concept TemporaryCharacterDataReadable = requires {
+    T{}.characterData();
+};
+
+static_assert(!TemporaryNumericDataReadable<Value>);
+static_assert(!TemporaryImaginaryDataReadable<Value>);
+static_assert(!TemporaryCharacterDataReadable<Value>);
+
 constexpr double kTolerance = 1e-9;
 
 const std::string kModuleSource = R"(function [total, last] = accumulate(limit)
@@ -255,7 +274,8 @@ void runValueSmoke() {
 
     bool rejectedEmptyHandle = false;
     try {
-        static_cast<void>(Value{}.numericData());
+        const Value empty;
+        static_cast<void>(empty.numericData());
     } catch (const ApiError& error) {
         rejectedEmptyHandle =
             error.status() == MPARSER_API_STATUS_INVALID_ARGUMENT;
