@@ -495,6 +495,12 @@ private:
                     "implicit expression output requires a one-result "
                     "CallOrIndex or LoadName instruction");
             }
+            if (instruction.hasIndexContext &&
+                instruction.op != BytecodeOp::CallOrIndex) {
+                addDiagnostic(
+                    pc,
+                    "only CallOrIndex can consume an index context");
+            }
 
             if (!hasVariableResultCount(instruction.op) &&
                 instruction.resultCount != 1) {
@@ -967,8 +973,7 @@ private:
             return true;
         }
         return instruction.op == BytecodeOp::CallOrIndex &&
-               instruction.binding.kind != BindingKind::Builtin &&
-               instruction.binding.kind != BindingKind::Function;
+               instruction.hasIndexContext;
     }
 
     bool closesLvalueIndexContext(BytecodeOp op) const {

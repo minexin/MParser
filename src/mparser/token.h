@@ -13,6 +13,7 @@ enum class TokenKind {
     Identifier,
     Number,
     String,
+    SystemCommand,
     KeywordArguments,
     KeywordBreak,
     KeywordCase,

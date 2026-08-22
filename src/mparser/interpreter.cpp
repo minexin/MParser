@@ -15,6 +15,7 @@
 #include "mparser/runtime_object.h"
 #include "mparser/runtime_range.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_source_evaluation.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
 #include "mparser/runtime_value_ops.h"
@@ -305,6 +306,7 @@ public:
                             : std::make_shared<RuntimeSessionState>();
         outputEvents_.clear();
         expressionResults_.clear();
+        activeIndexContexts_.clear();
         nextConsoleSequence_ = 0;
         runtimeOutputSink_ = [this, external = options.outputSink](
                                  const RuntimeOutputEvent& event) {
@@ -352,6 +354,45 @@ private:
         Break,
         Continue,
         Return,
+    };
+
+    struct ActiveIndexContext {
+        const RuntimeValue* target = nullptr;
+        size_t position = 0;
+        size_t total = 0;
+    };
+
+    class IndexContextGuard {
+    public:
+        IndexContextGuard(std::vector<ActiveIndexContext>& contexts,
+                          const RuntimeValue& target, size_t position,
+                          size_t total)
+            : contexts_(contexts) {
+            contexts_.push_back(ActiveIndexContext{
+                &target, position, total});
+        }
+
+        ~IndexContextGuard() {
+            contexts_.pop_back();
+        }
+
+    private:
+        std::vector<ActiveIndexContext>& contexts_;
+    };
+
+    class IndexContextSuspension {
+    public:
+        explicit IndexContextSuspension(
+            std::vector<ActiveIndexContext>& contexts)
+            : contexts_(contexts), saved_(std::move(contexts)) {}
+
+        ~IndexContextSuspension() {
+            contexts_ = std::move(saved_);
+        }
+
+    private:
+        std::vector<ActiveIndexContext>& contexts_;
+        std::vector<ActiveIndexContext> saved_;
     };
 
     class LoopDepthGuard {
@@ -555,6 +596,38 @@ private:
         return frames_.back().workspace;
     }
 
+    RuntimeWorkspace* workspaceFor(BuiltinWorkspaceScope scope) {
+        if (frames_.empty()) {
+            return nullptr;
+        }
+        size_t index = frames_.size() - 1;
+        if (scope == BuiltinWorkspaceScope::Base) {
+            index = 0;
+        } else if (scope == BuiltinWorkspaceScope::Caller) {
+            index = frames_.size() > 1 ? frames_.size() - 2 : 0;
+        }
+        return &frames_[index].workspace;
+    }
+
+    std::vector<RuntimeWorkspace*> workspaceAncestorsFor(
+        BuiltinWorkspaceScope scope) {
+        std::vector<RuntimeWorkspace*> ancestors;
+        if (frames_.empty()) {
+            return ancestors;
+        }
+        size_t index = frames_.size() - 1;
+        if (scope == BuiltinWorkspaceScope::Base) {
+            index = 0;
+        } else if (scope == BuiltinWorkspaceScope::Caller) {
+            index = frames_.size() > 1 ? frames_.size() - 2 : 0;
+        }
+        ancestors.reserve(index);
+        for (size_t frame = 0; frame < index; ++frame) {
+            ancestors.push_back(&frames_[frame].workspace);
+        }
+        return ancestors;
+    }
+
     const BuiltinRegistry& builtinRegistry() const {
         if (semantic_ && semantic_->builtinRegistry) {
             return *semantic_->builtinRegistry;
@@ -732,6 +805,7 @@ private:
                                         std::nullopt,
                                     std::optional<size_t> callerOutputCount =
                                         std::nullopt) {
+        IndexContextSuspension indexContext(activeIndexContexts_);
         std::optional<RuntimeExceptionFrame> callerFrame;
         if (callSite) {
             callerFrame = exceptionFrame(
@@ -1280,7 +1354,9 @@ private:
         const HirNode& callee = *expression.children.front();
         if (expression.binding.kind == BindingKind::Builtin) {
             const auto* descriptor = builtinRegistry().find(callee.label);
-            return !descriptor || descriptor->outputs.accepts(1);
+            return !descriptor ||
+                   descriptor->implicitOutputCount(
+                       expression.children.size() - 1) != 0;
         }
         if (expression.binding.kind == BindingKind::Function) {
             const auto function = functionsByName_.find(callee.label);
@@ -2300,6 +2376,19 @@ private:
 
     RuntimeValue evaluateLiteral(const HirNode& node) {
         if (node.label == "end" || node.label == ":") {
+            if (!activeIndexContexts_.empty()) {
+                const ActiveIndexContext& context =
+                    activeIndexContexts_.back();
+                if (context.target) {
+                    const size_t end = static_cast<size_t>(
+                        endValueForIndex(*context.target,
+                                         context.position,
+                                         context.total));
+                    return node.label == "end"
+                               ? numberValue(static_cast<double>(end))
+                               : oneBasedIndexRange(end);
+                }
+            }
             addDiagnostic(node, "literal is not executable in this context: " +
                                     node.label);
             return missingValue();
@@ -2515,6 +2604,8 @@ private:
         std::vector<RuntimeValue> arguments;
         const size_t total = node.children.size() - 1;
         for (size_t index = 1; index < node.children.size(); ++index) {
+            IndexContextGuard context(
+                activeIndexContexts_, target, index - 1, total);
             appendRuntimeExpandedValues(
                 arguments,
                 evaluateWithIndexContext(*node.children[index], target,
@@ -2899,6 +2990,7 @@ private:
         RuntimeValue output = missingValue();
         const size_t diagnosticCount = diagnostics_.size();
         {
+            IndexContextSuspension indexContext(activeIndexContexts_);
             FunctionNameGuard functionName(
                 activeFunctionNames_,
                 info.display.empty() ? std::string("<anonymous>")
@@ -2937,7 +3029,17 @@ private:
             return method->outputs;
         }
 
-        if (node.binding.kind == BindingKind::Builtin) {
+        if (node.label == "system-command") {
+            return callBuiltin(node, "system", evaluateArguments(node), 0)
+                .outputs;
+        }
+
+        const bool runtimeNameShadowsCallable =
+            callee.kind == HirKind::NameRef &&
+            currentFrame().find(callee.label) != currentFrame().end();
+
+        if (!runtimeNameShadowsCallable &&
+            node.binding.kind == BindingKind::Builtin) {
             std::vector<RuntimeValue> arguments = evaluateArguments(node);
             const size_t outputCount =
                 implicitExpressionOutput
@@ -2952,7 +3054,8 @@ private:
                            : std::nullopt)
                 .outputs;
         }
-        if (node.binding.kind == BindingKind::Function) {
+        if (!runtimeNameShadowsCallable &&
+            node.binding.kind == BindingKind::Function) {
             size_t outputCount = requestedOutputCount;
             if (implicitExpressionOutput) {
                 const auto function = functionsByName_.find(callee.label);
@@ -3117,6 +3220,9 @@ private:
                 BuiltinImplementationKind::Intrinsic) {
             BuiltinWorkspaceAccess workspace;
             workspace.variables = &currentFrame();
+            workspace.resolveVariables = [this](BuiltinWorkspaceScope scope) {
+                return workspaceFor(scope);
+            };
             workspace.clearVariables = [this] {
                 currentFrame().clear();
                 if (frames_.size() == 1) {
@@ -3217,6 +3323,32 @@ private:
                                : BuiltinResult::success(
                                      std::move(outputs),
                                      std::move(nestedDiagnostics));
+                };
+            }
+            if (hasBuiltinContextPermission(
+                    descriptor->contextPermissions,
+                    BuiltinContextPermission::SourceEvaluation)) {
+                context.sourceEvaluator =
+                    [this](const BuiltinSourceEvaluationRequest& request) {
+                    RuntimeWorkspace* target = workspaceFor(request.workspace);
+                    if (!target) {
+                        BuiltinSourceEvaluationResult result;
+                        result.diagnostics.push_back(Diagnostic{
+                            request.span,
+                            "dynamic source workspace is unavailable",
+                            "MParser:MissingBuiltinContext"});
+                        return result;
+                    }
+                    RuntimeSourceEvaluationOptions options;
+                    options.builtinRegistry =
+                        semantic_ && semantic_->builtinRegistry
+                            ? semantic_->builtinRegistry
+                            : defaultBuiltinRegistry();
+                    options.sessionState = sessionState_;
+                    options.outputSink = runtimeOutputSink_;
+                    options.inheritedWorkspaceFrames =
+                        workspaceAncestorsFor(request.workspace);
+                    return evaluateRuntimeSource(request, *target, options);
                 };
             }
             BuiltinResult result = builtinRegistry().invoke(
@@ -3694,6 +3826,7 @@ private:
     std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
     std::vector<RuntimeCallFrame> frames_;
+    std::vector<ActiveIndexContext> activeIndexContexts_;
     std::vector<std::string> activeFunctionNames_;
     std::vector<std::string> activePersistentFunctionKeys_;
     std::set<std::string> baseGlobalNames_;

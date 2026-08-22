@@ -64,6 +64,9 @@ void dumpBytecode(std::ostream& output, const BytecodeProgram& program,
         if (instruction.nondeterministicAssignment) {
             output << " nondeterministic-assignment";
         }
+        if (instruction.hasIndexContext) {
+            output << " index-context";
+        }
         if (instruction.target >= 0) {
             output << " target=" << instruction.target;
         }

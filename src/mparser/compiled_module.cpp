@@ -959,6 +959,12 @@ std::vector<Diagnostic> CompiledModule::validateInvocation(
 
 BytecodeVmResult CompiledModule::invoke(
     const BytecodeVmOptions& options) const {
+    return invokeInternal(options, false);
+}
+
+BytecodeVmResult CompiledModule::invokeInternal(
+    const BytecodeVmOptions& options,
+    bool enableTypedRegions) const {
     const auto validation =
         validateInvocation(options.entryFunction, options.arguments,
                            options.requestedOutputCount);
@@ -971,8 +977,12 @@ BytecodeVmResult CompiledModule::invoke(
     BytecodeVm vm;
     BytecodeVmOptions runtimeOptions = options;
     runtimeOptions.callableContext = callableContext_;
-    return vm.runValidated(data_->bytecode, data_->semantic,
-                           runtimeOptions);
+    return enableTypedRegions
+               ? vm.runValidated(
+                     data_->bytecode, data_->semantic,
+                     data_->staticTypedModule, runtimeOptions)
+               : vm.runValidated(
+                     data_->bytecode, data_->semantic, runtimeOptions);
 }
 
 ModuleInvocationResult CompiledModule::execute(

@@ -304,6 +304,33 @@ void runCompilationAndScriptSmoke() {
             "script result did not expose workspace variables");
     requireScalar(*summary, 42, "script summary");
 
+    const auto shadowScript = mparser::CompiledModule::compile(
+        R"(selected = sin(end);
+total = sum(sin(:));
+loop_total = 0;
+for shadow_index = 1:3
+    loop_total = loop_total + sin(shadow_index);
+end
+)");
+    require(shadowScript.valid(),
+            "call/index shadowing script did not compile");
+    mparser::ModuleInvocationRequest shadowRequest;
+    shadowRequest.initialWorkspace = {
+        {"sin", mparser::makeRuntimeVectorValue({10, 20, 30})}};
+    shadowRequest.backend =
+        mparser::ModuleExecutionBackend::Portable;
+    const auto shadowResult = shadowScript.execute(shadowRequest);
+    require(shadowResult.succeeded(),
+            "initial workspace did not shadow a builtin call target");
+    const auto* selected = findVariable(shadowResult, "selected");
+    const auto* total = findVariable(shadowResult, "total");
+    const auto* loopTotal = findVariable(shadowResult, "loop_total");
+    require(selected != nullptr && total != nullptr && loopTotal != nullptr,
+            "shadowing script did not expose its results");
+    requireScalar(*selected, 30, "shadowed builtin end index");
+    requireScalar(*total, 60, "shadowed builtin colon index");
+    requireScalar(*loopTotal, 60, "shadowed typed builtin call");
+
     scriptRequest.arguments = {number(1)};
     const auto scriptArguments = script.execute(scriptRequest);
     require(findDiagnostic(

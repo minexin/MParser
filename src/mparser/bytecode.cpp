@@ -711,8 +711,11 @@ private:
         } else {
             lowerNode(*node.children.front());
         }
-        if (node.binding.kind == BindingKind::Builtin ||
-            node.binding.kind == BindingKind::Function) {
+        const bool hasIndexContext =
+            !((node.binding.kind == BindingKind::Builtin ||
+               node.binding.kind == BindingKind::Function) &&
+              !argumentsRequireIndexContext(node));
+        if (!hasIndexContext) {
             for (size_t index = 1; index < node.children.size(); ++index) {
                 lowerNode(*node.children[index]);
             }
@@ -724,6 +727,7 @@ private:
                  resultCount);
         program_.instructions[call].implicitExpressionOutput =
             implicitExpressionOutput;
+        program_.instructions[call].hasIndexContext = hasIndexContext;
         attachColonSubscripts(call, node);
         if ((node.binding.kind == BindingKind::Builtin ||
              node.binding.kind == BindingKind::Function) &&
@@ -752,6 +756,32 @@ private:
                  static_cast<int>(index - 1));
             lowerNode(*node.children[index]);
         }
+    }
+
+    static bool requiresIndexContext(const HirNode& node) {
+        if (node.kind == HirKind::Literal &&
+            (node.label == "end" || node.label == ":")) {
+            return true;
+        }
+        if (node.kind == HirKind::CallOrIndex ||
+            node.kind == HirKind::BraceIndex) {
+            return false;
+        }
+        for (const auto& child : node.children) {
+            if (requiresIndexContext(*child)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static bool argumentsRequireIndexContext(const HirNode& node) {
+        for (size_t index = 1; index < node.children.size(); ++index) {
+            if (requiresIndexContext(*node.children[index])) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void lowerLvalueIndexArguments(const HirNode& node) {
@@ -1084,7 +1114,9 @@ private:
         if (expression.binding.kind == BindingKind::Builtin &&
             builtinRegistry_) {
             const auto* descriptor = builtinRegistry_->find(callee.label);
-            return !descriptor || descriptor->outputs.accepts(1);
+            return !descriptor ||
+                   descriptor->implicitOutputCount(
+                       static_cast<size_t>(argumentCount(expression))) != 0;
         }
         if (expression.binding.kind == BindingKind::Function) {
             const auto function = functionSignatures_.find(callee.label);

@@ -140,6 +140,60 @@ supported subset recorded in the compatibility matrix. Reusable embedding
 sessions preserve their explicit session workspace; one-shot `--run` does
 not persist state between processes.
 
+The active v1.3 tree supports dynamic workspace execution through `eval`,
+`evalc`, `evalin`, and `assignin`. Character rows and string scalars are
+accepted as source. `eval` uses the current workspace, `evalin` selects
+`caller` or `base`, and `assignin` writes one validated variable name to one
+of those two workspaces. Expression forms support multiple outputs; `evalc`
+returns captured console text first and any requested expression outputs
+after it. The legacy catch-expression argument executes in the same selected
+workspace, and assignments completed before a runtime error remain visible.
+Compilation failure does not modify the workspace. A value already present
+in the selected workspace shadows a same-named builtin or source function at
+runtime; parenthesis access, `end`, and `:` then use array-index semantics.
+An evaluated `evalin`/`assignin('caller',...)` call sees the caller of the
+original function; the temporary evaluator does not insert a visible MATLAB
+function frame.
+
+```matlab
+seed = 40;
+value = eval('seed + 2');
+[rows, columns] = eval('size(ones(2, 3))');
+text = evalc('disp(value)');
+assignin('base', 'row', [missing missing]);
+row = evalin('base', 'row');
+sin = [10 20 30];
+last = eval('sin(end)');
+```
+
+Dynamic source is limited to 16 MiB and 1024 requested outputs and is always
+compiled through the normal frontend and production bytecode VM. The owning
+system context must grant `DynamicEvaluation`; isolated sessions grant no
+such capability, while the local CLI native context does. Explicit HIR and
+bytecode modes keep evaluated source on bytecode; production mode may run
+eligible loops through its guarded portable/native backend. Dynamic declarations
+of functions, classes, `global`, or `persistent` values are not yet accepted,
+and a function handle created by the temporary dynamic module cannot escape
+it. Parent-module local/path/package functions and module-bound workspace
+handles are not callable from the temporary source graph yet. Pre-existing
+handles may pass through unchanged and remain callable after control returns;
+builtins and other selected workspace values remain available. If new dynamic
+handles are written into a pre-existing shared object, its fields are restored
+before the escape error is reported.
+
+A system command may also be written in MATLAB shell-escape form at the start
+of a statement:
+
+```matlab
+!echo mparser_system_command
+```
+
+The lexer preserves the rest of that physical line verbatim and the parser
+routes it through zero-output `system(...)`. It therefore has the same host
+adapter, output, platform-shell, and `Process` capability boundaries as an
+ordinary `system` call. Because `!` is syntax rather than a name lookup, a
+workspace variable or function named `system` does not intercept it.
+
 ## Functions And Arguments
 
 The target subset includes:
@@ -289,7 +343,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.3 |
+| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.4 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

@@ -17,6 +17,7 @@ namespace mparser {
 
 struct CompiledModuleData;
 class CompiledModuleSession;
+class RuntimeSourceEvaluationAccess;
 
 struct CompiledFunctionInfo {
     std::string name;
@@ -92,6 +93,11 @@ public:
 private:
     CompiledModule();
     friend class CompiledModuleSession;
+    friend class RuntimeSourceEvaluationAccess;
+
+    BytecodeVmResult invokeInternal(
+        const BytecodeVmOptions& options,
+        bool enableTypedRegions) const;
 
     ModuleInvocationResult execute(
         const ModuleInvocationRequest& request,

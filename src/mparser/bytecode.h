@@ -96,6 +96,7 @@ struct BytecodeInstruction {
     bool outputSuppressed = false;
     bool implicitExpressionOutput = false;
     bool calleeReference = false;
+    bool hasIndexContext = false;
 };
 
 struct BytecodeProgram {

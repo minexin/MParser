@@ -14,6 +14,8 @@ const char* tokenKindName(TokenKind kind) {
         return "Number";
     case TokenKind::String:
         return "String";
+    case TokenKind::SystemCommand:
+        return "SystemCommand";
     case TokenKind::KeywordArguments:
         return "KeywordArguments";
     case TokenKind::KeywordBreak:

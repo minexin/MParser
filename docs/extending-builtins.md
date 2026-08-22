@@ -209,6 +209,20 @@ retains the callable or callback. Calling a descriptor that requires
 `DynamicCall` without an engine context still produces a deterministic
 missing-context diagnostic.
 
+Dynamic source re-entry is a separate permission from callable invocation.
+`BuiltinContextPermission::SourceEvaluation` exposes one borrowed evaluator
+for `eval`-family handlers. It receives source text, current/caller/base
+workspace scope, requested output count, capture policy, and call span, then
+returns values, captured text, and diagnostics through ordinary runtime-owned
+types. A handler must invoke it synchronously and must not retain the callback,
+workspace pointers, or any temporary-module value after the call. Declaring
+this permission does not itself grant the session's
+`RuntimeSystemCapability::DynamicEvaluation` right.
+The engine supplies a borrowed logical ancestor-workspace chain so recursive
+`caller`/`base` resolution is frame-transparent. Temporary module handles are
+checked across the selected and reachable ancestor workspaces, including
+pre-existing shared object fields, before the synchronous call returns.
+
 ## Resource Cooperation
 
 An allocation-heavy or long-running context builtin should declare
@@ -274,22 +288,23 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.3. Contract 1.0 established
+identify active source contract 1.4. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
 class layout. Frozen contract 1.1 added host output and execution-context
-permissions for v1.2. The active 1.3 contract additionally records structured
+permissions for v1.2. Contract 1.3 additionally records structured
 workspace access, caller `nargout`, implicit-output policy, system/display
 contexts, random/display side effects, and the expanded descriptor catalog.
-The current v1.3 development catalog additionally exercises callable-based
-dynamic invocation through `cellfun`, execution-controlled numeric utilities,
-and session-random `randperm`; it contains 221 descriptors and 223 registered
-names.
+Active contract 1.4 adds current/caller/base workspace resolution and
+synchronous source evaluation. The current v1.3 development catalog exercises
+callable-based dynamic invocation through `cellfun`, execution-controlled
+numeric utilities, session-random `randperm`, and the `eval`/`evalc`/`evalin`/
+`assignin` family; it contains 225 descriptors and 227 registered names.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The active development snapshot is
-`tests/public_contract/builtin/1.3/default_catalog.json`; the 1.0 file remains
+`tests/public_contract/builtin/1.4/default_catalog.json`; the 1.0 file remains
 historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output

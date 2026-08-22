@@ -965,4 +965,38 @@ RuntimeFormatResult runtimeFormatPrintf(
     return RuntimeFormatResult{true, std::move(output), {}};
 }
 
+std::string runtimeRenderConsole(
+    const std::vector<RuntimeOutputEvent>& outputEvents,
+    const std::vector<RuntimeExpressionResult>& expressionResults) {
+    std::string output;
+    size_t outputIndex = 0;
+    size_t expressionIndex = 0;
+    while (outputIndex < outputEvents.size() ||
+           expressionIndex < expressionResults.size()) {
+        const bool emitOutput =
+            expressionIndex >= expressionResults.size() ||
+            (outputIndex < outputEvents.size() &&
+             outputEvents[outputIndex].sequence <=
+                 expressionResults[expressionIndex].sequence);
+        if (emitOutput) {
+            output += outputEvents[outputIndex++].text;
+            continue;
+        }
+
+        const auto& expression = expressionResults[expressionIndex++];
+        if (expression.outputSuppressed) {
+            continue;
+        }
+        output += "ans = ";
+        output += expression.displayText.empty()
+                      ? runtimeValueToString(expression.value)
+                      : expression.displayText;
+        output.push_back('\n');
+        if (expression.lineSpacing == RuntimeLineSpacing::Loose) {
+            output.push_back('\n');
+        }
+    }
+    return output;
+}
+
 } // namespace mparser

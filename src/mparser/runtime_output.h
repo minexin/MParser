@@ -84,4 +84,8 @@ RuntimeFormatResult runtimeFormatDisplay(
 RuntimeFormatResult runtimeFormatPrintf(
     const std::vector<RuntimeValue>& arguments);
 
+std::string runtimeRenderConsole(
+    const std::vector<RuntimeOutputEvent>& outputEvents,
+    const std::vector<RuntimeExpressionResult>& expressionResults);
+
 } // namespace mparser

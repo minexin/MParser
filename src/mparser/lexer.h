@@ -31,6 +31,7 @@ private:
     Token scanIdentifierOrKeyword(std::vector<Trivia> leadingTrivia);
     Token scanNumber(std::vector<Trivia> leadingTrivia);
     Token scanString(char quote, std::vector<Trivia> leadingTrivia);
+    Token scanSystemCommand(std::vector<Trivia> leadingTrivia);
     Token scanSingleQuoteOrTranspose(std::vector<Trivia> leadingTrivia);
     Token scanNewline(std::vector<Trivia> leadingTrivia);
 

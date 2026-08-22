@@ -17,7 +17,7 @@
 namespace mparser {
 
 inline constexpr std::uint32_t kBuiltinSourceContractMajor = 1;
-inline constexpr std::uint32_t kBuiltinSourceContractMinor = 3;
+inline constexpr std::uint32_t kBuiltinSourceContractMinor = 4;
 
 struct RuntimeObjectArrayPolicy;
 class RuntimeExecutionControl;
@@ -25,8 +25,15 @@ class RuntimeSystemContext;
 struct RuntimeWarningState;
 class BuiltinRegistry;
 
+enum class BuiltinWorkspaceScope {
+    Current,
+    Caller,
+    Base,
+};
+
 struct BuiltinWorkspaceAccess {
     RuntimeWorkspace* variables = nullptr;
+    std::function<RuntimeWorkspace*(BuiltinWorkspaceScope)> resolveVariables;
     std::function<void()> clearVariables;
     std::function<bool(std::string_view)> eraseVariable;
     std::function<bool(std::string_view)> functionExists;
@@ -119,6 +126,7 @@ enum class BuiltinContextPermission : std::uint32_t {
     Output = 1U << 5U,
     SystemServices = 1U << 6U,
     DisplayFormat = 1U << 7U,
+    SourceEvaluation = 1U << 8U,
 };
 
 BuiltinSideEffect operator|(BuiltinSideEffect left,
@@ -168,6 +176,24 @@ using BuiltinDynamicInvoker = std::function<BuiltinResult(
     const std::vector<RuntimeValue>& arguments,
     size_t requestedOutputCount, SourceSpan span)>;
 
+struct BuiltinSourceEvaluationRequest {
+    std::string source;
+    BuiltinWorkspaceScope workspace = BuiltinWorkspaceScope::Current;
+    size_t requestedOutputCount = 0;
+    bool captureOutput = false;
+    SourceSpan span;
+};
+
+struct BuiltinSourceEvaluationResult {
+    bool succeeded = false;
+    std::vector<RuntimeValue> outputs;
+    std::string capturedOutput;
+    std::vector<Diagnostic> diagnostics;
+};
+
+using BuiltinSourceEvaluator = std::function<
+    BuiltinSourceEvaluationResult(const BuiltinSourceEvaluationRequest&)>;
+
 struct BuiltinCallContext {
     BuiltinWorkspaceAccess* workspace = nullptr;
     RuntimeWarningState* warningState = nullptr;
@@ -178,6 +204,7 @@ struct BuiltinCallContext {
     BuiltinDisplayFormatAccess* displayFormat = nullptr;
     const BuiltinRegistry* registry = nullptr;
     BuiltinDynamicInvoker dynamicInvoker;
+    BuiltinSourceEvaluator sourceEvaluator;
 };
 
 struct BuiltinCall {

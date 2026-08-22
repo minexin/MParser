@@ -246,6 +246,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime_scan.cpp
     src/mparser/runtime_session_state.cpp
     src/mparser/runtime_shape.cpp
+    src/mparser/runtime_source_evaluation.cpp
     src/mparser/runtime_struct.cpp
     src/mparser/runtime_system.cpp
     src/mparser/runtime_system_builtins.cpp
@@ -1114,6 +1115,48 @@ add_executable(runtime_system_smoke_tests
 target_link_libraries(runtime_system_smoke_tests PRIVATE mparser_core)
 add_test(NAME runtime_system_smoke COMMAND runtime_system_smoke_tests)
 
+add_executable(dynamic_workspace_smoke_tests
+    tests/dynamic_workspace_smoke.cpp)
+target_link_libraries(dynamic_workspace_smoke_tests PRIVATE mparser_core)
+add_test(NAME dynamic_workspace_smoke
+    COMMAND dynamic_workspace_smoke_tests)
+
+add_test(NAME dynamic_workspace_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
+set_tests_properties(dynamic_workspace_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 142")
+
+add_test(NAME dynamic_workspace_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
+set_tests_properties(dynamic_workspace_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 142")
+
+add_test(NAME dynamic_workspace_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dynamic_workspace_demo.m)
+set_tests_properties(dynamic_workspace_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 142")
+
+add_test(NAME system_command_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/system_command_demo.m)
+set_tests_properties(system_command_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "mparser_system_command")
+
+add_test(NAME system_command_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/system_command_demo.m)
+set_tests_properties(system_command_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "mparser_system_command")
+
+add_test(NAME system_command_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/system_command_demo.m)
+set_tests_properties(system_command_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "mparser_system_command")
+
 add_test(NAME file_io_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/file_io_demo.m)
@@ -1881,10 +1924,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.3/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.4/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.3 catalog validated: 221 descriptors")
+        "builtin source contract 1.4 catalog validated: 225 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir

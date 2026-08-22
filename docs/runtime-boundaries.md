@@ -72,7 +72,8 @@ work or allocates unreported payloads.
 The active v1.3 engine keeps process-facing state in one
 `RuntimeSystemContext` per reusable session. Current-directory, path,
 environment, filesystem read, filesystem write, process, clock, sleep, and
-random rights are separate capability bits. An isolated context grants none;
+random rights are separate capability bits. Dynamic source evaluation has its
+own capability and does not implicitly grant process or filesystem access. An isolated context grants none;
 the CLI creates a native context for ordinary local script execution; tests
 can inject a deterministic `RuntimeHostAdapter` without touching the process.
 
@@ -97,6 +98,52 @@ filesystem access are capabilities, not sandboxing: an embedding host should
 grant them only when its own isolation policy allows the operation. Public
 C/C++ configuration of these capabilities is still v1.3 milestone work; the
 frozen v1.2 APIs remain isolated from the new native CLI services.
+
+## Dynamic Source Evaluation
+
+`eval`, `evalc`, and `evalin` re-enter the canonical Lexer, Parser, semantic,
+bytecode, and VM pipeline through a borrowed source-evaluator callback in
+`BuiltinCallContext`. The outer HIR interpreter and bytecode VM use the same
+implementation. `eval` selects the current frame; `evalin` selects caller or
+base; `assignin` uses the same frame resolver without compiling source.
+Evaluation is frame-transparent: a borrowed base-to-caller workspace chain is
+passed into the temporary VM, so `evalin` or `assignin('caller',...)` inside
+evaluated text addresses the caller of the original function rather than the
+temporary script frame. The chain is valid only for the synchronous evaluator
+call and is never retained.
+
+Evaluation begins from a value copy of the selected workspace. A compile
+failure leaves the original workspace untouched. Successful execution and
+assignments completed before an ordinary runtime error replace the selected
+workspace snapshot, matching the language-visible side-effect boundary.
+`evalc` retains the dynamically rendered output instead of forwarding it;
+ordinary `eval` forwards one ordered output event to its parent invocation.
+Multiple requested values are received through collision-free internal names
+and removed before workspace commit. Diagnostics retain dynamic line/column
+coordinates in their message and project their public span to the call site.
+Runtime frame values take precedence over static builtin/function bindings,
+including values introduced by `initialWorkspace` or `assignin`. The neutral
+call/index bytecode contract preserves `end` and `:` indexing in that case;
+typed regions guard callable targets and transactionally fall back when a
+workspace value shadows one.
+
+One source string is limited to 16 MiB and one call to 1024 requested outputs.
+The nested VM shares the parent execution control, session, builtin registry,
+and execution-tier policy. HIR and explicit bytecode modes keep nested source
+on bytecode, while production execution supplies the compiled static Typed IR
+and selected portable/native backend. Cancellation, instruction/time/array
+limits, system capabilities, random state, and open-file ownership therefore
+do not reset at an `eval` boundary. Dynamic function/class declarations and
+`global`/`persistent`
+declarations are rejected in this development slice. A module-bound function
+handle created inside the temporary compiled module cannot escape through an
+output or workspace value. Pre-existing handles already owned by the selected
+workspace may pass through unchanged and remain valid in their owner, but the
+temporary module does not gain authority to invoke a different module's
+handle. Pre-existing shared object fields are snapshotted; if a temporary
+handle is written into one, those fields are restored in place before the
+escape diagnostic is returned. Ancestor workspaces reachable through
+`assignin` are included in the same escape scan and restore rule.
 
 ## Cancellation
 
@@ -220,7 +267,7 @@ C source API 1.2 and ABI generation 2 ownership, sealed/extensible structure
 rules, and symbol meanings are checked against current headers and consumers.
 The C++ source API is 1.2 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
 typed and complex numeric values. Builtin source contract 1.1 is frozen with
-the v1.2 candidate; the active in-tree descriptor contract is 1.3 and remains
+the v1.2 candidate; the active in-tree descriptor contract is 1.4 and remains
 a compiled-in source extension surface, not an external plugin ABI. Archived
 v1.0 and frozen v1.2 contracts remain historical evidence rather than
 compatibility gates for development changes.

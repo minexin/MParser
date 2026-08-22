@@ -205,7 +205,9 @@ Json permissionsJson(
              std::pair{Permission::SystemServices,
                        "system-services"},
              std::pair{Permission::DisplayFormat,
-                       "display-format"}}) {
+                       "display-format"},
+             std::pair{Permission::SourceEvaluation,
+                       "source-evaluation"}}) {
         if (mparser::hasBuiltinContextPermission(
                 permissions, permission)) {
             result.push_back(name);

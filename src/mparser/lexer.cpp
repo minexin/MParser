@@ -217,6 +217,10 @@ Token Lexer::scanToken(std::vector<Trivia> leadingTrivia) {
         return scanSingleQuoteOrTranspose(std::move(leadingTrivia));
     }
 
+    if (peek() == '!') {
+        return scanSystemCommand(std::move(leadingTrivia));
+    }
+
     const SourcePosition begin = position();
 
     switch (advance()) {
@@ -417,6 +421,17 @@ Token Lexer::scanString(char quote, std::vector<Trivia> leadingTrivia) {
 
     return makeToken(TokenKind::String, begin, std::move(text),
                      std::move(leadingTrivia));
+}
+
+Token Lexer::scanSystemCommand(std::vector<Trivia> leadingTrivia) {
+    const SourcePosition begin = position();
+    advance();
+    std::string command;
+    while (!isAtEnd() && peek() != '\r' && peek() != '\n') {
+        command.push_back(advance());
+    }
+    return makeToken(TokenKind::SystemCommand, begin,
+                     std::move(command), std::move(leadingTrivia));
 }
 
 Token Lexer::scanSingleQuoteOrTranspose(std::vector<Trivia> leadingTrivia) {

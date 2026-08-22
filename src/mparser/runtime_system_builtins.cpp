@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iomanip>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <optional>
@@ -380,6 +381,177 @@ BuiltinResult clearBuiltin(const BuiltinCall& call) {
         workspace.eraseVariable(selector);
     }
     return BuiltinResult::success();
+}
+
+std::optional<BuiltinWorkspaceScope> workspaceScope(
+    const RuntimeValue& value) {
+    const auto name = textArgument(value);
+    if (!name) {
+        return std::nullopt;
+    }
+    if (*name == "base") {
+        return BuiltinWorkspaceScope::Base;
+    }
+    if (*name == "caller") {
+        return BuiltinWorkspaceScope::Caller;
+    }
+    return std::nullopt;
+}
+
+bool validWorkspaceVariableName(std::string_view name) {
+    if (name.empty()) {
+        return false;
+    }
+    const auto start = [](char character) {
+        const unsigned char value =
+            static_cast<unsigned char>(character);
+        return std::isalpha(value) != 0 || character == '_';
+    };
+    const auto part = [](char character) {
+        const unsigned char value =
+            static_cast<unsigned char>(character);
+        return std::isalnum(value) != 0 || character == '_';
+    };
+    if (!start(name.front()) ||
+        !std::all_of(name.begin() + 1, name.end(), part)) {
+        return false;
+    }
+    static constexpr std::array<std::string_view, 26> keywords = {
+        "arguments", "break", "case", "catch", "classdef",
+        "continue", "else", "elseif", "end", "enumeration",
+        "events", "for", "function", "global", "if", "import",
+        "methods", "otherwise", "parfor", "persistent", "properties",
+        "return", "spmd", "switch", "try", "while"};
+    return std::find(keywords.begin(), keywords.end(), name) ==
+           keywords.end();
+}
+
+BuiltinResult assigninBuiltin(const BuiltinCall& call) {
+    if (!call.context || !call.context->workspace ||
+        !call.context->workspace->resolveVariables) {
+        return failure(call, "assignin requires workspace resolution",
+                       "MParser:MissingBuiltinContext");
+    }
+    const auto scope = workspaceScope(call.arguments[0]);
+    if (!scope) {
+        return failure(call,
+                       "assignin workspace must be 'base' or 'caller'",
+                       "MParser:InvalidWorkspaceScope");
+    }
+    const auto name = textArgument(call.arguments[1]);
+    if (!name || !validWorkspaceVariableName(*name)) {
+        return failure(call,
+                       "assignin variable name must be a valid identifier",
+                       "MParser:InvalidWorkspaceVariableName");
+    }
+    RuntimeWorkspace* workspace =
+        call.context->workspace->resolveVariables(*scope);
+    if (!workspace) {
+        return failure(call, "assignin could not resolve the workspace",
+                       "MParser:MissingBuiltinContext");
+    }
+    (*workspace)[*name] = call.arguments[2];
+    return BuiltinResult::success();
+}
+
+BuiltinSourceEvaluationResult evaluateSource(
+    const BuiltinCall& call, BuiltinWorkspaceScope scope,
+    std::string source, size_t requestedOutputCount,
+    bool captureOutput) {
+    if (!call.context || !call.context->sourceEvaluator) {
+        BuiltinSourceEvaluationResult result;
+        result.diagnostics.push_back(Diagnostic{
+            call.span, "dynamic source evaluation context is unavailable",
+            "MParser:MissingBuiltinContext"});
+        return result;
+    }
+    return call.context->sourceEvaluator(
+        BuiltinSourceEvaluationRequest{
+            std::move(source), scope, requestedOutputCount,
+            captureOutput, call.span});
+}
+
+BuiltinResult dynamicEvaluationBuiltin(
+    std::string_view name, const BuiltinCall& call) {
+    const bool evalc = name == "evalc";
+    BuiltinWorkspaceScope scope = BuiltinWorkspaceScope::Current;
+    size_t sourceIndex = 0;
+    if (name == "evalin") {
+        const auto selected = workspaceScope(call.arguments[0]);
+        if (!selected) {
+            return failure(call,
+                           "evalin workspace must be 'base' or 'caller'",
+                           "MParser:InvalidWorkspaceScope");
+        }
+        scope = *selected;
+        sourceIndex = 1;
+    }
+
+    const auto source = textArgument(call.arguments[sourceIndex]);
+    if (!source) {
+        return failure(call,
+                       std::string(name) +
+                           " source must be a character vector or string "
+                           "scalar",
+                       "MParser:InvalidDynamicSource");
+    }
+    const size_t expressionOutputCount =
+        evalc && call.requestedOutputCount > 0
+            ? call.requestedOutputCount - 1
+            : evalc ? 0 : call.requestedOutputCount;
+    auto evaluated = evaluateSource(
+        call, scope, *source, expressionOutputCount, evalc);
+
+    const bool hasCatchExpression =
+        call.arguments.size() > sourceIndex + 1;
+    if (!evaluated.succeeded && hasCatchExpression) {
+        const auto catchSource =
+            textArgument(call.arguments[sourceIndex + 1]);
+        if (!catchSource) {
+            return failure(call,
+                           std::string(name) +
+                               " catch source must be a character vector or "
+                               "string scalar",
+                           "MParser:InvalidDynamicSource");
+        }
+        std::vector<Diagnostic> warnings;
+        for (auto& diagnostic : evaluated.diagnostics) {
+            if (!isErrorDiagnostic(diagnostic)) {
+                warnings.push_back(std::move(diagnostic));
+            }
+        }
+        std::string captured = std::move(evaluated.capturedOutput);
+        evaluated = evaluateSource(
+            call, scope, *catchSource, expressionOutputCount, evalc);
+        if (evalc) {
+            evaluated.capturedOutput =
+                std::move(captured) + evaluated.capturedOutput;
+        }
+        warnings.insert(
+            warnings.end(),
+            std::make_move_iterator(evaluated.diagnostics.begin()),
+            std::make_move_iterator(evaluated.diagnostics.end()));
+        evaluated.diagnostics = std::move(warnings);
+        evaluated.succeeded =
+            !hasErrorDiagnostics(evaluated.diagnostics);
+    }
+
+    if (!evaluated.succeeded) {
+        return BuiltinResult{
+            false, {}, std::move(evaluated.diagnostics)};
+    }
+
+    std::vector<RuntimeValue> outputs;
+    if (evalc && call.requestedOutputCount > 0) {
+        outputs.push_back(makeRuntimeCharacterVectorUtf8(
+            evaluated.capturedOutput));
+    }
+    outputs.insert(
+        outputs.end(),
+        std::make_move_iterator(evaluated.outputs.begin()),
+        std::make_move_iterator(evaluated.outputs.end()));
+    return BuiltinResult::success(
+        std::move(outputs), std::move(evaluated.diagnostics));
 }
 
 struct FullfileArgument {
@@ -2134,14 +2306,13 @@ BuiltinResult systemBuiltin(const BuiltinCall& call) {
 } // namespace
 
 bool isRuntimeSystemBuiltin(std::string_view name) {
-    static constexpr std::array<std::string_view, 35> names = {
-        "addpath", "cd", "clear", "clock", "computer", "date", "dir",
-        "exist", "fclose", "filesep", "fopen", "format", "fprintf",
-        "frewind", "fscanf", "fseek", "ftell", "fullfile", "getenv",
-        "path", "pathsep", "pause", "pwd", "rand", "randi", "randn",
-        "randperm",
-        "rmpath", "rng", "system", "tempdir", "version", "which", "who",
-        "whos"};
+    static constexpr std::array<std::string_view, 39> names = {
+        "addpath", "assignin", "cd", "clear", "clock", "computer",
+        "date", "dir", "eval", "evalc", "evalin", "exist", "fclose",
+        "filesep", "fopen", "format", "fprintf", "frewind", "fscanf",
+        "fseek", "ftell", "fullfile", "getenv", "path", "pathsep",
+        "pause", "pwd", "rand", "randi", "randn", "randperm", "rmpath",
+        "rng", "system", "tempdir", "version", "which", "who", "whos"};
     return std::find(names.begin(), names.end(), name) != names.end();
 }
 
@@ -2149,6 +2320,12 @@ BuiltinResult invokeRuntimeSystemBuiltin(
     std::string_view name, const BuiltinCall& call) {
     if (name == "clear") {
         return clearBuiltin(call);
+    }
+    if (name == "assignin") {
+        return assigninBuiltin(call);
+    }
+    if (name == "eval" || name == "evalc" || name == "evalin") {
+        return dynamicEvaluationBuiltin(name, call);
     }
     if (name == "exist") {
         return existBuiltin(call);

@@ -81,7 +81,7 @@ v1.2 candidate contract.
 
 ## v1.3 Development Additions
 
-The current tree has three end-to-end system and standard-library batches:
+The current tree has four end-to-end system and standard-library batches:
 
 - one session-owned capability context and injectable host adapter for current
   directory, search paths, environment, filesystem read/write, process,
@@ -120,18 +120,29 @@ The current tree has three end-to-end system and standard-library batches:
   values, including payload-free shaped missing arrays;
 - UTF-16 `strfind`/`strrep` with overlapping matches and string-array/Cell
   mapping, plus reproducible O(k) `randperm(n,k)` using session random state
-  and preflight resource checks.
+  and preflight resource checks;
+- capability-gated `eval`, `evalc`, `evalin`, and `assignin` with current,
+  caller, and base workspace routing, multiple outputs, captured output,
+  catch expressions, runtime-error side-effect preservation, and late
+  workspace-variable precedence over same-named callables;
+- MATLAB-style `!command` statements routed to the same capability-gated
+  `system` implementation without allowing a workspace name to intercept the
+  syntax-level shell escape.
 
 The runnable evidence is `samples/system_services_demo.m`,
 `samples/random_runtime_demo.m`, `samples/file_io_demo.m`, and
 `samples/standard_library_demo.m`, plus
-`samples/utility_library_demo.m`. These are
+`samples/utility_library_demo.m`, `samples/dynamic_workspace_demo.m`, and
+`samples/system_command_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
+The 2026-08-22 MATLAB R2024b differential rerun records 201 matches and 22 gaps
+across its 223 accepted cases; all syntax, array, ecosystem, system, text, and
+workspace cases in that finite catalog match.
 Binary `fread`/`fwrite`, line reads, end/error queries, scansets, selectable
-encodings, remote files, MAT files, dynamic evaluation, extended GCD
-coefficients, arbitrary-rank mesh generation, many broad standard-library
-families, and full MATLAB regexp/Unicode behavior remain open. The product and
-public SDK still
+encodings, remote files, MAT files, dynamic declarations and parent-module
+function lookup from evaluated text, extended GCD coefficients, arbitrary-rank
+mesh generation, many broad standard-library families, and full MATLAB
+regexp/Unicode behavior remain open. The product and public SDK still
 report `1.2.0` until the complete v1.3 milestone is ready to freeze.
 
 ## Language And Runtime
@@ -147,7 +158,7 @@ report `1.2.0` until the complete v1.3 milestone is ready to freeze.
 | Missing values | First-class scalar and N-D `missing` arrays with shape-preserving transforms, indexing/mutation, floating/string promotion, and same-shape `ismissing` masks | `MISSING-001` |
 | Cell and Struct | N-D Cells, ordered structures, structure arrays, dynamic fields, and comma-separated field results | `CELL-001`, `STRUCT-001`, `STRUCT-002` |
 | Assignment | Transactional nested member/parenthesis/brace copy-back | `LVAL-001` |
-| Workspace | Scoped global/persistent bindings and reusable sessions | `WORKSPACE-001` |
+| Workspace | Scoped global/persistent bindings, reusable sessions, and bounded current/caller/base dynamic evaluation | `WORKSPACE-001`, `WORKSPACE-002` |
 | Exceptions | Structured exceptions, causes/stacks, warning state, assertions, and embedding diagnostics within explicit correction limits | `EXC-001` |
 | Classes | Target `classdef` syntax, value/handle semantics, properties, events/listeners, reflection, and object arrays | `CLASS-001` through `CLASS-006` |
 | Builtins | Representative math, reduction, scan, constructor, and array-transform families through one registry contract | `BUILTIN-001`, `BUILTIN-002` |
@@ -179,7 +190,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; ABI generation 2 revision 0, typed real/imaginary buffers, source metadata, output sink/results, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata and host output projection |
-| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.3 using registry/descriptors/call/results |
+| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.4 using registry/descriptors/call/results/source-evaluation context |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
@@ -249,6 +260,6 @@ version drift.
 The v1.0 snapshots remain immutable historical evidence. The current C API
 1.2, ABI generation 2, C++ API 1.2, protocol 1.1, and builtin contract 1.1
 snapshots are frozen separately at the v1.2 candidate gate. The in-tree
-builtin source contract has advanced to 1.3 for v1.3 development and is not a
+builtin source contract has advanced to 1.4 for v1.3 development and is not a
 new frozen SDK release. See
 [v1.x Roadmap](roadmap-v1.x.md).

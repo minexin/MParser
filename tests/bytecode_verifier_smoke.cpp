@@ -243,6 +243,18 @@ void runMetadataRejectionSmoke() {
         "implicit expression output requires a one-result CallOrIndex or "
         "LoadName"));
 
+    mparser::BytecodeProgram invalidIndexConsumer;
+    mparser::BytecodeInstruction indexedLiteral;
+    indexedLiteral.op = mparser::BytecodeOp::LoadLiteral;
+    indexedLiteral.operand = "1";
+    indexedLiteral.hasIndexContext = true;
+    invalidIndexConsumer.instructions.push_back(
+        std::move(indexedLiteral));
+    assertInvalid(invalidIndexConsumer);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(invalidIndexConsumer).diagnostics,
+        "only CallOrIndex can consume an index context"));
+
     mparser::BytecodeProgram duplicateCapture;
     mparser::BytecodeInstruction handle;
     handle.op = mparser::BytecodeOp::MakeFunctionHandle;
@@ -369,6 +381,28 @@ void runContextAndStackRejectionSmoke() {
     missingIndexContext.instructions.push_back(std::move(argument));
     assertInvalid(missingIndexContext);
 
+    mparser::BytecodeProgram missingIndexConsumerContext;
+    mparser::BytecodeInstruction target;
+    target.op = mparser::BytecodeOp::LoadName;
+    target.operand = "x";
+    missingIndexConsumerContext.instructions.push_back(std::move(target));
+    mparser::BytecodeInstruction subscript;
+    subscript.op = mparser::BytecodeOp::LoadLiteral;
+    subscript.operand = "1";
+    missingIndexConsumerContext.instructions.push_back(
+        std::move(subscript));
+    mparser::BytecodeInstruction indexedCall;
+    indexedCall.op = mparser::BytecodeOp::CallOrIndex;
+    indexedCall.operandCount = 1;
+    indexedCall.hasIndexContext = true;
+    missingIndexConsumerContext.instructions.push_back(
+        std::move(indexedCall));
+    assertInvalid(missingIndexConsumerContext);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(
+            missingIndexConsumerContext).diagnostics,
+        "index operation has no active context"));
+
     mparser::BytecodeProgram incompleteLvalue;
     mparser::BytecodeInstruction lvalue;
     lvalue.op = mparser::BytecodeOp::BeginLvalue;
@@ -462,6 +496,7 @@ void runContextAndStackRejectionSmoke() {
     mparser::BytecodeInstruction indexCall;
     indexCall.op = mparser::BytecodeOp::CallOrIndex;
     indexCall.operandCount = 1;
+    indexCall.hasIndexContext = true;
     crossBoundaryIndex.instructions.push_back(std::move(indexCall));
     mparser::BytecodeInstruction discardIndexResult;
     discardIndexResult.op = mparser::BytecodeOp::Pop;
@@ -493,6 +528,7 @@ void runContextAndStackRejectionSmoke() {
     mparser::BytecodeInstruction call;
     call.op = mparser::BytecodeOp::CallOrIndex;
     call.operandCount = 0;
+    call.hasIndexContext = true;
     bypassIndexContext.instructions.push_back(std::move(call));
     mparser::BytecodeInstruction discardCall;
     discardCall.op = mparser::BytecodeOp::Pop;

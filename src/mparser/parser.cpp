@@ -1290,6 +1290,33 @@ std::string characterLiteral(std::string_view value) {
     return result;
 }
 
+std::unique_ptr<SyntaxNode> buildSystemCommandStatement(
+    const Token& token) {
+    auto statement = makeNodeFromSpan(
+        SyntaxKind::ExpressionStatement, token.span);
+    statement->raw = "!" + token.text;
+    statement->outputSuppressed = true;
+
+    auto call = makeNodeFromSpan(
+        SyntaxKind::CallOrIndexExpr, token.span);
+    call->label = "system-command";
+    call->raw = statement->raw;
+
+    auto callee = makeNodeFromSpan(
+        SyntaxKind::IdentifierExpr, token.span);
+    callee->label = "system";
+    callee->raw = "system";
+    call->children.push_back(std::move(callee));
+
+    auto argument = makeNodeFromSpan(
+        SyntaxKind::StringLiteralExpr, token.span);
+    argument->raw = characterLiteral(token.text);
+    argument->label = argument->raw;
+    call->children.push_back(std::move(argument));
+    statement->children.push_back(std::move(call));
+    return statement;
+}
+
 std::unique_ptr<SyntaxNode> buildCommandForm(
     const std::vector<Token>& tokens) {
     if (tokens.size() < 2 || tokens.front().kind != TokenKind::Identifier ||
@@ -2007,6 +2034,14 @@ std::unique_ptr<SyntaxNode> Parser::parseControlBlock() {
 }
 
 std::unique_ptr<SyntaxNode> Parser::parseStatement() {
+    if (at(TokenKind::SystemCommand)) {
+        const Token command = current();
+        advance();
+        auto statement = buildSystemCommandStatement(command);
+        consumeSeparator();
+        return statement;
+    }
+
     if (at(TokenKind::KeywordArguments)) {
         return parseArgumentsBlock();
     }

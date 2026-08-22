@@ -611,6 +611,33 @@ void parseSpaceSeparatedCharacterLiteralSmoke() {
     assert(repeatedNonconjugate.diagnostics.empty());
 }
 
+void parseSystemCommandSmoke() {
+    constexpr std::string_view source =
+        "!echo 'a|b' && echo %PATH%\nvalue = 1;\n";
+    const auto tokens = mparser::Lexer(source).lex();
+    assert(tokens.size() >= 3);
+    assert(tokens[0].kind == mparser::TokenKind::SystemCommand);
+    assert(tokens[0].text == "echo 'a|b' && echo %PATH%");
+    assert(tokens[1].kind == mparser::TokenKind::Newline);
+
+    auto result = parse(source);
+    assert(result.diagnostics.empty());
+    assert(result.root->children.size() == 2);
+    const auto& statement = *result.root->children.front();
+    assert(statement.kind == mparser::SyntaxKind::ExpressionStatement);
+    assert(!statement.capturesExpressionResult);
+    assert(statement.outputSuppressed);
+    assert(statement.raw == "!echo 'a|b' && echo %PATH%");
+    assert(statement.children.size() == 1);
+    const auto& call = *statement.children.front();
+    assert(call.kind == mparser::SyntaxKind::CallOrIndexExpr);
+    assert(call.label == "system-command");
+    assert(call.children.size() == 2);
+    assert(call.children[0]->label == "system");
+    assert(call.children[1]->raw ==
+           "'echo ''a|b'' && echo %PATH%'");
+}
+
 } // namespace
 
 int main() {
@@ -629,6 +656,7 @@ int main() {
     parseWorkspaceDeclarationSmoke();
     parseCommandFormSmoke();
     parseSpaceSeparatedCharacterLiteralSmoke();
+    parseSystemCommandSmoke();
     std::cout << "parser smoke tests passed\n";
     return 0;
 }

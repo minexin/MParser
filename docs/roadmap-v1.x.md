@@ -151,7 +151,7 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first three v1.3 implementation batches are present in the development tree. A
+The first four v1.3 implementation batches are present in the development tree. A
 session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
@@ -192,10 +192,35 @@ point-count rules are covered independently of the imported examples.
 `samples/utility_library_demo.m` exercises the same surface through HIR,
 bytecode, and production modes.
 
-This batch does not close v1.3. Dynamic evaluation, broader workspace and
-filesystem operations, remaining standard-library families, public
-embedding configuration for host capabilities, and the external differential
-rerun remain milestone work. Binary I/O, line reads, end/error queries,
+The fourth batch closes the first dynamic-workspace vertical path rather than
+special-casing the three externally observed names. `eval`, `evalc`, `evalin`,
+and `assignin` share current/caller/base frame resolution, character/string
+source conversion, zero/multiple-output calls, ordered capture, catch-source
+execution, compile-versus-runtime workspace commitment, and projected source
+diagnostics. Dynamic source is recompiled through the canonical frontend and
+verified bytecode VM with the parent registry, session, execution control, and
+typed-backend policy. Capability denial, nested evaluation, shaped arrays such
+as `[missing missing]`, generated-name collisions, runtime-error side effects,
+temporary-module handle escape, and runtime builtin shadowing through ordinary,
+`end`, and `:` indexing are covered in both baseline engines. Nested callable
+arguments inherit an enclosing array's `end`, while a concrete runtime array
+shadow creates the nearer index context. Portable/native typed loops guard
+same-named workspace values and fall back to bytecode.
+MATLAB `!command` syntax is lexed as one physical command line and lowers to
+the existing capability-gated `system` builtin rather than adding a new IR or
+VM operation; syntax-level dispatch remains independent of a same-named
+workspace variable. `samples/dynamic_workspace_demo.m` and
+`samples/system_command_demo.m` run through HIR, bytecode, and production
+entry points; builtin source contract 1.4 records 225 descriptors and 227
+registered names.
+
+The fresh MATLAB R2024b external differential rerun records 201 matches and 22
+gaps across all 223 accepted cases; `eval`, `evalc`, and `evalin`/`assignin`
+are measured closures and the existing `!command` case remains green. This
+batch does not close v1.3. Broader workspace and filesystem operations,
+dynamic parent-module function lookup/declarations, remaining standard-library
+families, and public embedding configuration for host capabilities remain
+milestone work. Binary I/O, line reads, end/error queries,
 scansets, selectable encodings, remote URLs, MAT-file persistence, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and
 long-tail overloads such as extended GCD coefficients are also not implied by
@@ -232,7 +257,7 @@ inspection remains an additive, separately gated public contract.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 
-Remaining in-scope parser, nested-function, persistence, dynamic-evaluation,
+Remaining in-scope parser, nested-function, persistence, dynamic-source-graph,
 data-family, and standard-library gaps continue in complete functional bundles.
 After the v1.4 baseline, later optimization candidates are numeric-type-aware
 lowering, copy-on-write/alias and temporary-buffer reuse, x86 SIMD/ARM NEON,

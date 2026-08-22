@@ -15,6 +15,7 @@
 #include "mparser/runtime_object.h"
 #include "mparser/runtime_range.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_source_evaluation.h"
 #include "mparser/runtime_struct.h"
 #include "mparser/runtime_text.h"
 #include "mparser/runtime_value_ops.h"
@@ -660,6 +661,7 @@ struct IndexContext {
     RuntimeValue target;
     size_t total = 0;
     size_t position = 0;
+    bool hasTarget = false;
 };
 
 struct ActiveLvalue {
@@ -1138,6 +1140,14 @@ public:
         profilingEnabled_ =
             options.profiling == BytecodeVmProfilingMode::Full;
         typedRegionBackend_ = options.typedRegionBackend;
+        typedRegionsEnabled_ = typedIr != nullptr;
+        inheritedWorkspaceFrames_.clear();
+        for (RuntimeWorkspace* workspace :
+             options.inheritedWorkspaceFrames) {
+            if (workspace) {
+                inheritedWorkspaceFrames_.push_back(workspace);
+            }
+        }
         requestedEntryFunction_ = options.entryFunction;
         entryArguments_ = options.arguments;
         requestedEntryOutputCount_ = options.requestedOutputCount;
@@ -5377,6 +5387,23 @@ private:
             return std::nullopt;
         }
 
+        const auto shadowedCall = std::find_if(
+            active->second.contract.callTargets.begin(),
+            active->second.contract.callTargets.end(),
+            [this](const std::string& name) {
+                return currentFrame().contains(name);
+            });
+        if (shadowedCall !=
+            active->second.contract.callTargets.end()) {
+            ++execution.fallbackCount;
+            execution.lastFallbackKind =
+                RuntimeFallbackKind::UnsupportedRuntimeValue;
+            execution.lastReason =
+                "typed callable target is shadowed by workspace variable: " +
+                *shadowedCall;
+            return std::nullopt;
+        }
+
         ScalarTypedRegionExecutor executor(
             semantic_ ? semantic_->builtinRegistry : nullptr);
         auto result = BytecodeVmTrustedAccess::executeRegion(
@@ -5653,7 +5680,8 @@ private:
             target.isClassReference || target.isMethodReference ||
             isFunctionHandle(target.value)) {
             indexContextStack_.push_back(IndexContext{
-                missingValue(), static_cast<size_t>(instruction.operandCount), 0});
+                missingValue(), static_cast<size_t>(instruction.operandCount),
+                0, false});
             return;
         }
         if (target.value.kind != RuntimeValueKind::MissingArray &&
@@ -5669,7 +5697,8 @@ private:
         }
 
         indexContextStack_.push_back(IndexContext{
-            target.value, static_cast<size_t>(instruction.operandCount), 0});
+            target.value, static_cast<size_t>(instruction.operandCount), 0,
+            true});
     }
 
     void beginIndexArgument(const BytecodeInstruction& instruction) {
@@ -5693,15 +5722,22 @@ private:
             return std::nullopt;
         }
 
-        const IndexContext& context = indexContextStack_.back();
-        if (instruction.operand == "end") {
-            return numberValue(
-                endValueForIndex(context.target, context.position,
-                                 context.total));
-        }
-        if (instruction.operand == ":") {
-            return oneBasedIndexRange(static_cast<size_t>(endValueForIndex(
-                context.target, context.position, context.total)));
+        for (auto context = indexContextStack_.rbegin();
+             context != indexContextStack_.rend(); ++context) {
+            if (!context->hasTarget) {
+                continue;
+            }
+            if (instruction.operand == "end") {
+                return numberValue(
+                    endValueForIndex(context->target, context->position,
+                                     context->total));
+            }
+            if (instruction.operand == ":") {
+                return oneBasedIndexRange(static_cast<size_t>(
+                    endValueForIndex(context->target, context->position,
+                                     context->total)));
+            }
+            break;
         }
         return std::nullopt;
     }
@@ -5718,6 +5754,13 @@ private:
     void finishIndexContext() {
         if (!indexContextStack_.empty()) {
             indexContextStack_.pop_back();
+        }
+    }
+
+    void finishCallOrIndexContext(
+        const BytecodeInstruction& instruction) {
+        if (instruction.hasIndexContext) {
+            finishIndexContext();
         }
     }
 
@@ -5755,7 +5798,8 @@ private:
         indexContextStack_.push_back(IndexContext{
             active->failed ? missingValue()
                            : active->transaction.current(),
-            static_cast<size_t>(instruction.operandCount), 0});
+            static_cast<size_t>(instruction.operandCount), 0,
+            !active->failed});
     }
 
     std::optional<std::string> lvalueMemberName(
@@ -6106,13 +6150,17 @@ private:
         }
 
         if (instruction.binding.kind == BindingKind::Builtin) {
+            if (instruction.calleeReference) {
+                stack_.push_back(
+                    builtinStackValue(instruction.operand));
+                return;
+            }
             const BuiltinDescriptor* descriptor =
                 builtinRegistry().find(instruction.operand);
             const std::string_view builtinName =
                 descriptor ? std::string_view(descriptor->name)
                            : std::string_view(instruction.operand);
-            if (!instruction.calleeReference && descriptor &&
-                descriptor->handler &&
+            if (descriptor && descriptor->handler &&
                 descriptor->inputs.accepts(0)) {
                 BytecodeInstruction callInstruction = instruction;
                 if (callInstruction.implicitExpressionOutput) {
@@ -9913,6 +9961,16 @@ private:
         }
         const auto arguments = runtimeExpandedValues(*rawArguments);
 
+        if (instruction.operand == "system-command") {
+            BytecodeInstruction callInstruction = instruction;
+            callInstruction.resultCount = 0;
+            auto outputs = callBuiltinOutputs(
+                callInstruction, "system", arguments, 0);
+            finishCallOrIndexContext(instruction);
+            pushOutputValues(callInstruction, outputs);
+            return;
+        }
+
         if (callee->isClassReference) {
             BytecodeInstruction callInstruction = instruction;
             if (callInstruction.implicitExpressionOutput) {
@@ -9921,7 +9979,7 @@ private:
             auto outputs = callClassConstructor(
                 callInstruction, callee->className, arguments,
                 callInstruction.resultCount);
-            finishIndexContext();
+            finishCallOrIndexContext(instruction);
             pushOutputValues(callInstruction, outputs);
             return;
         }
@@ -9939,7 +9997,7 @@ private:
                 callee->methodName, callee->methodDeclaringClass,
                 callee->receiver, arguments,
                 callInstruction.resultCount);
-            finishIndexContext();
+            finishCallOrIndexContext(instruction);
             pushOutputValues(callInstruction, outputs);
             return;
         }
@@ -9963,15 +10021,13 @@ private:
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
             }
-            finishIndexContext();
+            finishCallOrIndexContext(instruction);
             pushOutputValues(callInstruction, outputs);
             return;
         }
 
-        if (instruction.binding.kind == BindingKind::Function ||
-            callee->isFunctionReference) {
-            const std::string name = symbolName(instruction.binding)
-                                         .value_or(callee->functionName);
+        if (callee->isFunctionReference) {
+            const std::string& name = callee->functionName;
             BytecodeInstruction callInstruction = instruction;
             if (callInstruction.implicitExpressionOutput) {
                 const auto function = functionsByName_.find(name);
@@ -9992,14 +10048,13 @@ private:
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
             }
+            finishCallOrIndexContext(instruction);
             pushOutputValues(callInstruction, outputs);
             return;
         }
 
-        if (instruction.binding.kind == BindingKind::Builtin ||
-            callee->isBuiltinReference) {
-            const std::string name = symbolName(instruction.binding)
-                                         .value_or(callee->builtinName);
+        if (callee->isBuiltinReference) {
+            const std::string& name = callee->builtinName;
             std::vector<RuntimeValue> callArguments = arguments;
             if (callee->receiver) {
                 callArguments.insert(callArguments.begin(),
@@ -10023,12 +10078,13 @@ private:
             if (profile) {
                 observeValues(profile->resultObservations, outputs);
             }
+            finishCallOrIndexContext(instruction);
             pushOutputValues(callInstruction, outputs);
             return;
         }
 
         if (instruction.resultCount != 0 && instruction.resultCount != 1) {
-            finishIndexContext();
+            finishCallOrIndexContext(instruction);
             addDiagnostic(instruction,
                           "bytecode indexing cannot produce multiple outputs");
             return;
@@ -10041,7 +10097,7 @@ private:
             callee->value.kind != RuntimeValueKind::Cell &&
             !isRuntimeClassObject(callee->value) &&
             !isRuntimeMetadataObject(callee->value)) {
-            finishIndexContext();
+            finishCallOrIndexContext(instruction);
             addDiagnostic(instruction,
                           "bytecode indexing requires a numeric, text, cell, "
                           "structure, object, or metadata target");
@@ -10058,14 +10114,14 @@ private:
         RuntimeValue result = indexValue(instruction, callee->value,
                                          arguments);
         if (instruction.resultCount == 0) {
-            finishIndexContext();
+            finishCallOrIndexContext(instruction);
             return;
         }
         const std::vector<RuntimeValue> outputs{result};
         if (profile) {
             observeValues(profile->resultObservations, outputs);
         }
-        finishIndexContext();
+        finishCallOrIndexContext(instruction);
         pushRuntime(std::move(result));
     }
 
@@ -11851,6 +11907,9 @@ private:
                 objectArrayPolicy(instruction);
             BuiltinWorkspaceAccess workspace;
             workspace.variables = &currentFrame();
+            workspace.resolveVariables = [this](BuiltinWorkspaceScope scope) {
+                return workspaceFor(scope);
+            };
             workspace.clearVariables = [this] {
                 currentFrame().clear();
                 if (frames_.size() == 1) {
@@ -11960,6 +12019,35 @@ private:
                                : BuiltinResult::success(
                                      std::move(outputs),
                                      std::move(nestedDiagnostics));
+                };
+            }
+            if (hasBuiltinContextPermission(
+                    descriptor->contextPermissions,
+                    BuiltinContextPermission::SourceEvaluation)) {
+                context.sourceEvaluator =
+                    [this](const BuiltinSourceEvaluationRequest& request) {
+                    RuntimeWorkspace* target = workspaceFor(request.workspace);
+                    if (!target) {
+                        BuiltinSourceEvaluationResult result;
+                        result.diagnostics.push_back(Diagnostic{
+                            request.span,
+                            "dynamic source workspace is unavailable",
+                            "MParser:MissingBuiltinContext"});
+                        return result;
+                    }
+                    RuntimeSourceEvaluationOptions options;
+                    options.builtinRegistry =
+                        semantic_ && semantic_->builtinRegistry
+                            ? semantic_->builtinRegistry
+                            : defaultBuiltinRegistry();
+                    options.sessionState = sessionState_;
+                    options.executionControl = executionControl_;
+                    options.outputSink = runtimeOutputSink_;
+                    options.typedRegionBackend = typedRegionBackend_;
+                    options.enableTypedRegions = typedRegionsEnabled_;
+                    options.inheritedWorkspaceFrames =
+                        workspaceAncestorsFor(request.workspace);
+                    return evaluateRuntimeSource(request, *target, options);
                 };
             }
             BuiltinResult result = builtinRegistry().invoke(
@@ -14025,6 +14113,51 @@ private:
         return frames_.back().workspace;
     }
 
+    RuntimeWorkspace* workspaceFor(BuiltinWorkspaceScope scope) {
+        const size_t count =
+            inheritedWorkspaceFrames_.size() + frames_.size();
+        if (count == 0) {
+            return nullptr;
+        }
+        size_t index = count - 1;
+        if (scope == BuiltinWorkspaceScope::Base) {
+            index = 0;
+        } else if (scope == BuiltinWorkspaceScope::Caller) {
+            index = count > 1 ? count - 2 : 0;
+        }
+        if (index < inheritedWorkspaceFrames_.size()) {
+            return inheritedWorkspaceFrames_[index];
+        }
+        return &frames_[index - inheritedWorkspaceFrames_.size()].workspace;
+    }
+
+    std::vector<RuntimeWorkspace*> workspaceAncestorsFor(
+        BuiltinWorkspaceScope scope) {
+        std::vector<RuntimeWorkspace*> ancestors;
+        const size_t count =
+            inheritedWorkspaceFrames_.size() + frames_.size();
+        if (count == 0) {
+            return ancestors;
+        }
+        size_t index = count - 1;
+        if (scope == BuiltinWorkspaceScope::Base) {
+            index = 0;
+        } else if (scope == BuiltinWorkspaceScope::Caller) {
+            index = count > 1 ? count - 2 : 0;
+        }
+        ancestors.reserve(index);
+        for (size_t frame = 0; frame < index; ++frame) {
+            if (frame < inheritedWorkspaceFrames_.size()) {
+                ancestors.push_back(inheritedWorkspaceFrames_[frame]);
+            } else {
+                ancestors.push_back(
+                    &frames_[frame - inheritedWorkspaceFrames_.size()]
+                         .workspace);
+            }
+        }
+        return ancestors;
+    }
+
     std::optional<std::string> symbolName(BindingRef binding) const {
         if (!semantic_ || binding.symbolId < 0) {
             return std::nullopt;
@@ -14100,6 +14233,8 @@ private:
     bool executionControlActive_ = false;
     bool executionStopDiagnosticAdded_ = false;
     TypedRegionBackend typedRegionBackend_ = TypedRegionBackend::Auto;
+    bool typedRegionsEnabled_ = false;
+    std::vector<RuntimeWorkspace*> inheritedWorkspaceFrames_;
     std::string requestedEntryFunction_;
     std::vector<RuntimeValue> entryArguments_;
     std::optional<size_t> requestedEntryOutputCount_;

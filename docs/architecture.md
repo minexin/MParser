@@ -104,6 +104,14 @@ minimal but useful: constructors and first method parameters can carry class
 type names, allowing member access such as `obj.Value` to bind to a known class
 property when the receiver type is clear.
 
+Late workspace mutation remains dynamic even when a call target received a
+static callable binding. HIR checks the active frame before builtin/function
+dispatch, and bytecode `LoadName` carries either a runtime value or an explicit
+callable reference into `CallOrIndex`. An explicit index-context bit keeps
+`end`/`:` validation neutral. Typed loops guard their callable target set and
+fall back to the VM when `initialWorkspace`, `assignin`, or dynamic evaluation
+has installed a same-named value.
+
 `import` has dedicated syntax and HIR nodes. Imports are precollected for the
 whole containing script or function, including statements textually before the
 declaration, and never leak into nested functions or classes. Variable-like
@@ -1299,9 +1307,10 @@ containing script or function, does not descend into nested functions or
 classes, rejects conflicting declaration roles, and requires a workspace
 declaration before a reference in the supported subset. A no-argument MATLAB
 `clear` still clears the current execution frame's local association without
-erasing `RuntimeSessionState`. Command forms such as `clear name`,
-`clear global name`, and `clear functionName` are not yet executable language
-syntax; embedders use the explicit session APIs above.
+erasing `RuntimeSessionState`. That v0.78 baseline did not execute MATLAB
+command forms; the active v1.3 parser now normalizes the supported `clear`
+forms before semantic analysis while unsupported target categories remain
+explicit diagnostics.
 
 Typed-region discovery treats shared binding declarations, loads, stores, and
 session-bound loop targets as unsupported optimization operations. It does not
@@ -1398,11 +1407,12 @@ adapter boundary are specified in
 The semantic source-integration boundary is versioned independently. Frozen
 builtin source contract 1.1 extends the archived 1.0 contract with host output
 and execution-context permissions. Its v1.2 normalized snapshot records all
-166 default descriptors and 168 registered names. Active contract 1.3 adds
+166 default descriptors and 168 registered names. Active contract 1.3 added
 structured workspace access, caller output count, implicit-output policy,
 system/display contexts, random/display side effects, and synchronous dynamic
-invocation; its development snapshot records 221 descriptors and 223
-registered names. A generator-backed
+invocation. Active contract 1.4 adds current/caller/base workspace resolution
+and a source-evaluation callback; its development snapshot records 225
+descriptors and 227 registered names. A generator-backed
 smoke test compares the live registry to the active snapshot; it does not serialize
 handlers or claim a C++ binary ABI. Conformance tests compare recursive runtime
 values and diagnostics across HIR and bytecode rather than comparing display
@@ -1791,7 +1801,8 @@ continue through the bytecode authority.
 The v1.3 system layer extends that invocation model with a session-owned
 `RuntimeSystemContext`. Capability bits and an abstract `RuntimeHostAdapter`
 separate path/current-directory state, filesystem read/write, environment,
-clock/sleep, process, and random behavior from the interpreter and bytecode
+clock/sleep, process, random behavior, and dynamic evaluation from the
+interpreter and bytecode
 VM. Both engines place the same context in `BuiltinCallContext`; no system
 builtin has a second engine-specific implementation. The production CLI uses
 the native adapter, while deterministic tests inject an in-memory adapter and
@@ -1811,6 +1822,57 @@ the scanner prefetches. File entries retain sparse translation offsets for
 Windows CRLF text input, while binary and Unix paths retain no mapping. A
 successful positioning call clears the prefetch suffix and forms the required
 barrier between read and write directions on `+` update streams.
+
+The dynamic-workspace slice adds one engine-neutral source re-entry path.
+`BuiltinWorkspaceAccess` resolves current, caller, and base frames, while the
+source-evaluator callback receives source text, selected scope, output count,
+capture policy, and call span. `runtime_source_evaluation` compiles a temporary
+`CompiledModule` through the ordinary frontend, executes its verified bytecode
+with the parent registry/session/execution control, and commits the selected
+workspace snapshot. Compile failure does not commit; ordinary runtime failure
+preserves assignments completed before the error. `evalc` renders the
+temporary module's ordered output and expression records without leaking them
+to the parent sink. Baseline HIR/bytecode callers keep the nested module on
+bytecode, while production callers reuse its prebuilt static Typed IR and the
+parent portable/native backend policy.
+
+The temporary VM receives a synchronous borrowed chain of logical ancestor
+workspaces. Its root script represents the selected workspace rather than a
+new MATLAB call frame, so nested `evalin`/`assignin('caller',...)` traverses to
+the original caller and `base` remains the original base frame. Each recursive
+evaluation passes the prefix before its newly selected frame.
+
+Call/index ambiguity remains runtime-guarded inside nested index expressions.
+For `values(min(end, 5))`, the statically callable `min` leaves `end` bound to
+the enclosing `values` index context. If a runtime workspace array shadows
+`min`, the same syntax creates an inner index context and resolves `end`
+against that array instead. HIR models this with scoped visible contexts;
+bytecode keeps placeholder call contexts but resolves literals against the
+nearest context that has a concrete target. Entering a real function body
+suspends the caller's index context in both engines.
+
+Returned expression values use collision-free generated bindings that avoid
+both existing workspace names and source identifiers. Dynamic diagnostics map
+their first-line wrapper offset back to the supplied source and then project
+onto the outer call span. The temporary module may not declare functions,
+classes, globals, or persistent bindings in this slice, and any newly created
+module-bound handle is removed from outputs/workspace before reporting a
+deterministic escape diagnostic. Existing handles in the selected workspace
+are allow-listed by callable-context identity so they can pass through
+unchanged, but the temporary module cannot invoke a different module's handle.
+Shared object-field maps reachable before evaluation are snapshotted and
+restored in place on escape, including when dynamic source clears the original
+workspace variable after storing a temporary callback. The same scan covers
+borrowed ancestor workspaces that dynamic source can mutate through `assignin`.
+
+The lexer also recognizes `!` at statement start as one physical-line system
+command token. The parser lowers it directly to a suppressed zero-output
+`CallOrIndex` node with an escaped character literal. Its `system-command`
+marker makes HIR and bytecode dispatch directly to the registry's
+capability-gated `system` handler, so a workspace value named `system` cannot
+reinterpret the shell escape as indexing. Output routing, host adapters, and
+process capability checks remain on the existing builtin path instead of
+introducing a shell-specific IR or bytecode instruction.
 
 The second v1.3 library batch adds `runtime_text_builtins` and
 `runtime_collection_builtins` as engine-neutral registry handlers. Text case,

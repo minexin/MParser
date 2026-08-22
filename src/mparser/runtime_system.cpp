@@ -682,7 +682,8 @@ RuntimeSystemCapability nativeCapabilities() {
            RuntimeSystemCapability::Process |
            RuntimeSystemCapability::Clock |
            RuntimeSystemCapability::Sleep |
-           RuntimeSystemCapability::Random;
+           RuntimeSystemCapability::Random |
+           RuntimeSystemCapability::DynamicEvaluation;
 }
 
 double nextUniform(std::mt19937_64& engine) {

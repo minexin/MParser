@@ -185,12 +185,38 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 3,
+                mparser::kBuiltinSourceContractMinor == 4,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 221,
+    require(registry->descriptors().size() == 225,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 223,
+    require(registry->names().size() == 227,
             "default builtin name catalog changed unexpectedly");
+
+    for (std::string_view name : {"eval", "evalc", "evalin"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Context &&
+                    descriptor->purity ==
+                        mparser::BuiltinPurity::Impure &&
+                    descriptor->implicitOutputPolicy ==
+                        (name == "evalc"
+                             ? mparser::BuiltinImplicitOutputPolicy::
+                                   FirstAvailable
+                             : mparser::BuiltinImplicitOutputPolicy::None) &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->requiredContext,
+                        mparser::BuiltinContextPermission::SourceEvaluation),
+                "dynamic source builtin metadata mismatch");
+    }
+    const auto* assignin = registry->find("assignin");
+    require(assignin && assignin->inputs.minimum == 3 &&
+                assignin->inputs.maximum == 3 &&
+                assignin->outputs.maximum == 0 &&
+                mparser::hasBuiltinContextPermission(
+                    assignin->requiredContext,
+                    mparser::BuiltinContextPermission::Workspace),
+            "assignin metadata mismatch");
 
     const auto* absolute = registry->find("abs");
     require(absolute &&

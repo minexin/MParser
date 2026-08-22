@@ -1838,16 +1838,26 @@ Run the active v1.3 system, random-state, and bounded text-file slices with:
 build\mparser.exe --run samples\system_services_demo.m
 build\mparser.exe --run samples\random_runtime_demo.m
 build\mparser.exe --run samples\file_io_demo.m
+build\mparser.exe --run samples\dynamic_workspace_demo.m
+build\mparser.exe --run samples\system_command_demo.m
 ```
 
-The three samples are also checked through `--run-hir` and `--run-bytecode`.
+The five samples are also checked through `--run-hir` and `--run-bytecode`.
 They cover session-local path/current-directory/workspace state, capability
 routing, reproducible shaped random arrays, native path separators, file
 open/query/append/close lifetime, `fseek`/`ftell`/`frewind`, update-stream
 barriers, Windows text-mode CRLF positioning, formatted output, bounded
-repeated input, finite-shape padding, and array-aware `fullfile`. This is the
-current v1.3 development slice; complete MATLAB system and low-level file I/O
-remain on the roadmap.
+repeated input, finite-shape padding, array-aware `fullfile`, current/caller/
+base dynamic workspaces, `evalc` capture, multi-output dynamic expressions,
+catch expressions, late workspace-value shadowing of builtin call targets,
+and the non-shadowable `!command` shell escape. Dynamic source is compiled
+through the ordinary frontend and bytecode authority; typed loops guard
+shadowed call targets and fall back to the VM, while process execution still
+requires the session's
+process capability. This is the current v1.3
+development slice; dynamic function/class declarations, escaping handles from
+temporary dynamic modules, complete MATLAB system behavior, and broader
+low-level file I/O remain on the roadmap.
 
 Run value, handle, and heterogeneous object arrays through the production
 interface:

@@ -116,6 +116,7 @@ struct BytecodeVmOptions {
     std::shared_ptr<RuntimeCallableContext> callableContext;
     std::shared_ptr<RuntimeSessionState> sessionState;
     std::vector<RuntimeVariable> initialWorkspace;
+    std::vector<RuntimeWorkspace*> inheritedWorkspaceFrames;
     std::string entryFunction;
     std::vector<RuntimeValue> arguments;
     std::optional<size_t> requestedOutputCount;

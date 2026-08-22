@@ -41,6 +41,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "any",
     "asin",
     "asinh",
+    "assignin",
     "assert",
     "atan",
     "atan2",
@@ -76,6 +77,9 @@ constexpr std::string_view kBuiltinNames[] = {
     "enumeration",
     "eps",
     "error",
+    "eval",
+    "evalc",
+    "evalin",
     "events",
     "exist",
     "exp",
@@ -1110,6 +1114,49 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
         descriptor.contextPermissions = BuiltinContextPermission::Workspace;
         descriptor.requiredContext = BuiltinContextPermission::Workspace;
         descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+    } else if (name == "assignin") {
+        descriptor.inputs = BuiltinArity::fixed(3);
+        descriptor.outputs = BuiltinArity::fixed(0);
+        descriptor.argumentConstraints = {
+            BuiltinArgumentConstraint{BuiltinValueConstraint::Text,
+                                      BuiltinShapeConstraint::Any},
+            BuiltinArgumentConstraint{BuiltinValueConstraint::Text,
+                                      BuiltinShapeConstraint::Any},
+            BuiltinArgumentConstraint{BuiltinValueConstraint::Any,
+                                      BuiltinShapeConstraint::Any}};
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::Workspace;
+        descriptor.contextPermissions = BuiltinContextPermission::Workspace;
+        descriptor.requiredContext = BuiltinContextPermission::Workspace;
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+    } else if (name == "eval" || name == "evalc" ||
+               name == "evalin") {
+        descriptor.inputs =
+            name == "evalin" ? BuiltinArity::range(2, 3)
+                             : BuiltinArity::range(1, 2);
+        descriptor.outputs = BuiltinArity::variadic(0);
+        descriptor.argumentConstraints.assign(
+            *descriptor.inputs.maximum,
+            BuiltinArgumentConstraint{BuiltinValueConstraint::Text,
+                                      BuiltinShapeConstraint::Any});
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects =
+            BuiltinSideEffect::Workspace |
+            BuiltinSideEffect::Console |
+            BuiltinSideEffect::WarningState |
+            BuiltinSideEffect::Time |
+            BuiltinSideEffect::ObjectState |
+            BuiltinSideEffect::External |
+            BuiltinSideEffect::RandomState |
+            BuiltinSideEffect::DisplayState;
+        descriptor.contextPermissions =
+            BuiltinContextPermission::SourceEvaluation;
+        descriptor.requiredContext =
+            BuiltinContextPermission::SourceEvaluation;
+        descriptor.implicitOutputPolicy =
+            name == "evalc"
+                ? BuiltinImplicitOutputPolicy::FirstAvailable
+                : BuiltinImplicitOutputPolicy::None;
     } else if (name == "format") {
         descriptor.inputs = BuiltinArity::range(0, 2);
         descriptor.outputs = BuiltinArity::range(0, 1);
@@ -1608,6 +1655,9 @@ std::string missingContextName(
     if (permission == BuiltinContextPermission::DisplayFormat) {
         return "display-format state";
     }
+    if (permission == BuiltinContextPermission::SourceEvaluation) {
+        return "source evaluator";
+    }
     return "runtime context";
 }
 
@@ -1645,6 +1695,9 @@ bool contextAvailable(const BuiltinCallContext* context,
         return context->displayFormat != nullptr &&
                static_cast<bool>(context->displayFormat->current) &&
                static_cast<bool>(context->displayFormat->replace);
+    }
+    if (permission == BuiltinContextPermission::SourceEvaluation) {
+        return static_cast<bool>(context->sourceEvaluator);
     }
     return true;
 }
@@ -2026,7 +2079,8 @@ BuiltinResult BuiltinRegistry::invoke(
              BuiltinContextPermission::ExecutionControl,
              BuiltinContextPermission::Output,
              BuiltinContextPermission::SystemServices,
-             BuiltinContextPermission::DisplayFormat}) {
+             BuiltinContextPermission::DisplayFormat,
+             BuiltinContextPermission::SourceEvaluation}) {
         if (hasBuiltinContextPermission(
                 descriptor->requiredContext, permission) &&
             !contextAvailable(call.context, permission)) {

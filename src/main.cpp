@@ -1140,37 +1140,10 @@ void printFunctionOutputs(const mparser::BytecodeVmResult& runtime) {
 void printRuntimeConsole(
     const std::vector<mparser::RuntimeOutputEvent>& outputEvents,
     const std::vector<mparser::RuntimeExpressionResult>& expressions) {
-    size_t outputIndex = 0;
-    size_t expressionIndex = 0;
-    while (outputIndex < outputEvents.size() ||
-           expressionIndex < expressions.size()) {
-        const bool emitOutput =
-            expressionIndex >= expressions.size() ||
-            (outputIndex < outputEvents.size() &&
-             outputEvents[outputIndex].sequence <=
-                 expressions[expressionIndex].sequence);
-        if (emitOutput) {
-            const auto& event = outputEvents[outputIndex++];
-            std::cout.write(
-                event.text.data(),
-                static_cast<std::streamsize>(event.text.size()));
-            continue;
-        }
-
-        const auto& expression = expressions[expressionIndex++];
-        if (!expression.outputSuppressed) {
-            std::cout << "ans = "
-                      << (expression.displayText.empty()
-                              ? mparser::runtimeValueToString(
-                                    expression.value)
-                              : expression.displayText)
-                      << "\n";
-            if (expression.lineSpacing ==
-                mparser::RuntimeLineSpacing::Loose) {
-                std::cout << "\n";
-            }
-        }
-    }
+    const std::string rendered =
+        mparser::runtimeRenderConsole(outputEvents, expressions);
+    std::cout.write(
+        rendered.data(), static_cast<std::streamsize>(rendered.size()));
 }
 
 void printRuntimeConsole(const mparser::BytecodeVmResult& runtime) {
