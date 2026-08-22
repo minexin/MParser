@@ -194,6 +194,35 @@ written = fprintf("pi=%.1f\n", 3.14);
                         "installed_host_cpp.m"),
                 "host top-level expressions differ");
 
+        const auto randomModule = mparser::sdk::Module::compile(R"(
+function value = draw()
+value = rand();
+end
+)", "installed_system_context_cpp.m");
+        mparser::sdk::SystemContextOptions systemOptions;
+        systemOptions.capabilities =
+            mparser::sdk::SystemCapability::Random;
+        systemOptions.rootDirectory = ".";
+        auto systemContext =
+            mparser::sdk::SystemContext::rootedNative(systemOptions);
+        require(mparser::sdk::hasSystemCapability(
+                    systemContext.capabilities(),
+                    mparser::sdk::SystemCapability::Random),
+                "system context capability differs");
+        mparser::sdk::Invocation draw;
+        draw.entryFunction = "draw";
+        draw.requestedOutputCount = 1;
+        const double statelessRandom =
+            scalar(randomModule.execute(draw, systemContext).output(0));
+        auto randomSession = randomModule.createSession(systemContext);
+        systemContext = {};
+        const double sessionRandom =
+            scalar(randomSession.execute(draw).output(0));
+        require(statelessRandom >= 0.0 && statelessRandom < 1.0 &&
+                    sessionRandom >= 0.0 && sessionRandom < 1.0 &&
+                    statelessRandom != sessionRandom,
+                "system context random/session lifetime differs");
+
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','
@@ -202,7 +231,8 @@ written = fprintf("pi=%.1f\n", 3.14);
                   << mparser::sdk::abiRevision()
                   << ",cpp-api-" << sourceApiVersion.major << '.'
                   << sourceApiVersion.minor
-                  << ",host-output-2-2\n";
+                  << ",host-output-2-2"
+                  << ",system-context-rooted-retained\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

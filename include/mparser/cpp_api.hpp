@@ -97,6 +97,39 @@ enum class OutputKind : std::uint32_t {
     StandardOutput = MPARSER_OUTPUT_STANDARD,
 };
 
+enum class SystemCapability : std::uint32_t {
+    None = MPARSER_SYSTEM_CAPABILITY_NONE,
+    CurrentDirectory = MPARSER_SYSTEM_CAPABILITY_CURRENT_DIRECTORY,
+    SearchPaths = MPARSER_SYSTEM_CAPABILITY_SEARCH_PATHS,
+    EnvironmentRead = MPARSER_SYSTEM_CAPABILITY_ENVIRONMENT_READ,
+    FileSystemRead = MPARSER_SYSTEM_CAPABILITY_FILESYSTEM_READ,
+    Process = MPARSER_SYSTEM_CAPABILITY_PROCESS,
+    Clock = MPARSER_SYSTEM_CAPABILITY_CLOCK,
+    Sleep = MPARSER_SYSTEM_CAPABILITY_SLEEP,
+    Random = MPARSER_SYSTEM_CAPABILITY_RANDOM,
+    DynamicEvaluation = MPARSER_SYSTEM_CAPABILITY_DYNAMIC_EVALUATION,
+    FileSystemWrite = MPARSER_SYSTEM_CAPABILITY_FILESYSTEM_WRITE,
+};
+
+[[nodiscard]] inline constexpr SystemCapability operator|(
+    SystemCapability left, SystemCapability right) noexcept {
+    return static_cast<SystemCapability>(
+        static_cast<std::uint32_t>(left) |
+        static_cast<std::uint32_t>(right));
+}
+
+[[nodiscard]] inline constexpr SystemCapability operator&(
+    SystemCapability left, SystemCapability right) noexcept {
+    return static_cast<SystemCapability>(
+        static_cast<std::uint32_t>(left) &
+        static_cast<std::uint32_t>(right));
+}
+
+[[nodiscard]] inline constexpr bool hasSystemCapability(
+    SystemCapability value, SystemCapability expected) noexcept {
+    return (value & expected) == expected;
+}
+
 enum class ValueKind : std::uint32_t {
     Missing = MPARSER_VALUE_MISSING,
     Numeric = MPARSER_VALUE_NUMERIC,
@@ -248,6 +281,17 @@ struct SourceLoadOptions {
     std::vector<std::string> searchPaths;
 };
 
+struct SystemContextOptions {
+    SystemCapability capabilities = SystemCapability::None;
+    std::string rootDirectory;
+    std::optional<std::string> currentDirectory;
+    std::optional<std::string> temporaryDirectory;
+    std::vector<std::string> searchPaths;
+    std::uint64_t randomSeed = 5489U;
+    std::size_t maximumOpenFiles = 256;
+    std::size_t maximumFileReadBytes = 16U * 1024U * 1024U;
+};
+
 struct SourceMetadata {
     std::string name;
     SourceKind kind = SourceKind::Unknown;
@@ -261,6 +305,7 @@ struct NamedValue;
 struct Invocation;
 class Result;
 class Session;
+class SystemContext;
 
 namespace detail {
 
@@ -400,6 +445,15 @@ struct SessionPolicy {
     }
     static void release(mparser_session* value) noexcept {
         mparser_session_release(value);
+    }
+};
+
+struct SystemContextPolicy {
+    static void retain(mparser_system_context* value) noexcept {
+        mparser_system_context_retain(value);
+    }
+    static void release(mparser_system_context* value) noexcept {
+        mparser_system_context_release(value);
     }
 };
 
@@ -885,6 +939,96 @@ private:
     Handle handle_;
 
     friend struct detail::InvocationBridge;
+};
+
+class SystemContext {
+public:
+    SystemContext() noexcept = default;
+
+    [[nodiscard]] static SystemContext rootedNative(
+        const SystemContextOptions& source) {
+        mparser_system_context_options options{};
+        detail::checkStatus(
+            MPARSER_SYSTEM_CONTEXT_OPTIONS_INIT(&options),
+            "initialize system context options");
+
+        std::vector<mparser_utf8_view> searchPaths;
+        searchPaths.reserve(source.searchPaths.size());
+        for (const auto& path : source.searchPaths) {
+            searchPaths.push_back(
+                mparser_utf8_view{path.data(), path.size()});
+        }
+        const auto view = [](const std::string& value) {
+            return mparser_utf8_view{value.data(), value.size()};
+        };
+
+        options.capabilities =
+            static_cast<mparser_system_capability>(source.capabilities);
+        options.root_directory = view(source.rootDirectory);
+        if (source.currentDirectory) {
+            options.current_directory = view(*source.currentDirectory);
+        }
+        if (source.temporaryDirectory) {
+            options.temporary_directory =
+                view(*source.temporaryDirectory);
+        }
+        options.search_paths = searchPaths.data();
+        options.search_path_count = searchPaths.size();
+        options.random_seed = source.randomSeed;
+        options.maximum_open_files =
+            static_cast<std::uint64_t>(source.maximumOpenFiles);
+        options.maximum_file_read_bytes =
+            static_cast<std::uint64_t>(source.maximumFileReadBytes);
+
+        mparser_system_context* context = nullptr;
+        const auto status =
+            mparser_system_context_create_rooted_native(
+                &options, &context);
+        if (status != MPARSER_API_STATUS_OK) {
+            mparser_system_context_release(context);
+            detail::checkStatus(status, "create rooted system context");
+        }
+        if (!context) {
+            throw ApiError(
+                MPARSER_API_STATUS_INTERNAL_ERROR,
+                "create rooted system context returned no handle");
+        }
+        return SystemContext(context, detail::adoptHandle);
+    }
+
+    [[nodiscard]] bool hasHandle() const noexcept {
+        return static_cast<bool>(handle_);
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return hasHandle();
+    }
+
+    [[nodiscard]] SystemCapability capabilities() const {
+        return static_cast<SystemCapability>(
+            mparser_system_context_capabilities(requireRaw()));
+    }
+
+private:
+    using Handle = detail::SharedHandle<
+        mparser_system_context, detail::SystemContextPolicy>;
+
+    SystemContext(mparser_system_context* value,
+                  detail::AdoptHandle) noexcept
+        : handle_(value, detail::adoptHandle) {}
+
+    [[nodiscard]] mparser_system_context* requireRaw() const {
+        if (!handle_) {
+            throw ApiError(
+                MPARSER_API_STATUS_INVALID_ARGUMENT,
+                "system context handle is empty");
+        }
+        return handle_.get();
+    }
+
+    Handle handle_;
+
+    friend class Module;
 };
 
 struct Invocation {
@@ -1388,7 +1532,14 @@ public:
 
     [[nodiscard]] Result execute() const;
     [[nodiscard]] Result execute(const Invocation& invocation) const;
+    [[nodiscard]] Result execute(
+        const SystemContext& context) const;
+    [[nodiscard]] Result execute(
+        const Invocation& invocation,
+        const SystemContext& context) const;
     [[nodiscard]] Session createSession() const;
+    [[nodiscard]] Session createSession(
+        const SystemContext& context) const;
 
 private:
     using Handle = detail::SharedHandle<
@@ -1501,6 +1652,30 @@ inline Result Module::execute(
     return Result::takeCreated(status, result, "execute module");
 }
 
+inline Result Module::execute(
+    const SystemContext& context) const {
+    return execute(Invocation{}, context);
+}
+
+inline Result Module::execute(
+    const Invocation& invocation,
+    const SystemContext& context) const {
+    detail::InvocationBridge bridge(invocation);
+    mparser_result* result = nullptr;
+    const auto status =
+        mparser_module_execute_with_system_context(
+            requireRaw(), context.requireRaw(),
+            &bridge.options, &result);
+    try {
+        bridge.rethrowOutputSinkException();
+    } catch (...) {
+        mparser_result_release(result);
+        throw;
+    }
+    return Result::takeCreated(
+        status, result, "execute module with system context");
+}
+
 inline Session Module::createSession() const {
     mparser_session* session = nullptr;
     const auto status = mparser_module_create_session(
@@ -1513,6 +1688,25 @@ inline Session Module::createSession() const {
         throw ApiError(
             MPARSER_API_STATUS_INTERNAL_ERROR,
             "create module session returned no handle");
+    }
+    return Session(session, detail::adoptHandle);
+}
+
+inline Session Module::createSession(
+    const SystemContext& context) const {
+    mparser_session* session = nullptr;
+    const auto status =
+        mparser_module_create_session_with_system_context(
+            requireRaw(), context.requireRaw(), &session);
+    if (status != MPARSER_API_STATUS_OK) {
+        mparser_session_release(session);
+        detail::checkStatus(
+            status, "create module session with system context");
+    }
+    if (!session) {
+        throw ApiError(
+            MPARSER_API_STATUS_INTERNAL_ERROR,
+            "create module session with system context returned no handle");
     }
     return Session(session, detail::adoptHandle);
 }

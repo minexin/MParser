@@ -296,6 +296,21 @@ int main() {
             },
             "cancellation-token creation did not translate std::bad_alloc");
 
+        mparser_system_context_options systemOptions{};
+        require(mparser_system_context_options_init(&systemOptions) ==
+                    MPARSER_API_STATUS_OK,
+                "failed to initialize system-context options");
+        constexpr char systemRoot[] = ".";
+        systemOptions.root_directory = {
+            systemRoot, sizeof(systemRoot) - 1};
+        systemOptions.capabilities = MPARSER_SYSTEM_CAPABILITY_RANDOM;
+        requireAllocationFailure<mparser_system_context>(
+            [&](mparser_system_context** output) {
+                return mparser_system_context_create_rooted_native(
+                    &systemOptions, output);
+            },
+            "system-context creation did not translate std::bad_alloc");
+
         mparser_module* module = nullptr;
         require(mparser_module_compile_utf8(
                     source, sizeof(source) - 1,
@@ -345,7 +360,8 @@ int main() {
         mparser_result_release(result);
         mparser_module_release(module);
         std::cout << "c api allocation failure = "
-                     "protocol,compile,value,token,session,execute,output\n";
+                     "protocol,compile,value,token,system-context,session,"
+                     "execute,output\n";
         return 0;
     } catch (const std::exception& exception) {
         disarmAllocationFailure();

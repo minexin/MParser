@@ -1,9 +1,11 @@
 # MParser C++ Embedding SDK
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
-facade. The current v1.2 development line reports source API 1.2 and delegates
-to C ABI generation 2. The product and installed SDK still share one MParser
-version; source API 1.2 is contract metadata, not a separately versioned SDK.
+facade. The frozen v1.2 line reports source API 1.2 over C ABI generation 2
+revision 0. The live v1.3 development header adds the public `SystemContext`
+facade over additive C ABI revision 1. Product/source metadata remains
+`1.2.0`/`1.2` until the complete v1.3 milestone is frozen; source API 1.2 is
+contract metadata, not a separately versioned SDK.
 
 The facade does not expose Parser, HIR, Bytecode, `RuntimeValue`, VM, SLJIT,
 or C++ standard-library layouts from the shared library. No C++ exception or
@@ -80,11 +82,11 @@ The complete runnable example is `samples/cpp_embedding_demo.cpp`.
 
 ## Ownership
 
-`Module`, `Session`, `Result`, `Value`, and `CancellationToken` are copyable
-RAII handles. Copying retains the opaque C handle, moving transfers the
-reference, and destruction releases it. An extracted output, workspace value,
-Cell element, or Struct field remains valid after its parent wrapper is
-destroyed because the C API returns an owned reference.
+`Module`, `Session`, `Result`, `Value`, `CancellationToken`, and
+`SystemContext` are copyable RAII handles. Copying retains the opaque C handle,
+moving transfers the reference, and destruction releases it. An extracted
+output, workspace value, Cell element, or Struct field remains valid after its
+parent wrapper is destroyed because the C API returns an owned reference.
 
 Module-bound objects and function handles retain their compiled module. They
 can be passed back to that module after the original result is destroyed.
@@ -105,6 +107,39 @@ serialized at the module graph boundary and then at the individual session.
 This also protects objects that escape from session state. Wall-time and
 cancellation accounting begins after this lock admission, so queue wait is
 not part of a request's wall-time budget.
+
+## System Contexts
+
+`SystemContext::rootedNative(SystemContextOptions)` exposes the v1.3 native
+host services without leaking `RuntimeSystemContext` or filesystem types
+through the shared-library ABI. The host chooses a root directory, optional
+current/temporary/search directories, random seed, open/read limits, and an
+explicit `SystemCapability` mask. Bind it with
+`Module::execute(invocation, context)` or `Module::createSession(context)`:
+
+```cpp
+mparser::sdk::SystemContextOptions options;
+options.rootDirectory = sandboxPath;
+options.temporaryDirectory = sandboxPath + "/tmp";
+options.capabilities =
+    mparser::sdk::SystemCapability::CurrentDirectory |
+    mparser::sdk::SystemCapability::FileSystemRead |
+    mparser::sdk::SystemCapability::FileSystemWrite |
+    mparser::sdk::SystemCapability::Random;
+
+auto context = mparser::sdk::SystemContext::rootedNative(options);
+auto session = module.createSession(context);
+context = {};
+auto result = session.execute();
+```
+
+The session retains the context. Reusing one context across calls shares its
+current directory, paths, random sequence, and open files; use separate
+contexts for isolation. Path-oriented operations reject resolved paths outside
+the root, including existing escaping symbolic links. Environment/process
+capabilities remain host-wide, and the root is not an OS sandbox or protection
+against a hostile process racing link changes during a call. The complete
+runnable example is `samples/cpp_system_context_demo.cpp`.
 
 ## Compilation And Loading
 
@@ -176,9 +211,10 @@ the original exception after the C call returns; no C++ exception crosses the
 shared-library ABI. A sink is invoked synchronously while execution owns its
 module/session lock and must not re-enter that module/session.
 
-The current `disp`, stdout-only `fprintf`, and pure `sprintf` formatter is the
-same bounded subset described in [C Embedding API](embedding-c-api.md). It is
-not a file I/O API or a claim of complete MATLAB formatting compatibility.
+The isolated `disp`, stdout-only `fprintf`, and pure `sprintf` formatter is the
+same bounded subset described in [C Embedding API](embedding-c-api.md).
+File-targeted formatting and stream I/O require a bound system context with
+filesystem capability; neither surface claims complete MATLAB formatting.
 
 ## Values
 
@@ -251,14 +287,16 @@ Source-tree and relocated installed consumers exercise source API 1.2 through
 compile-once invocation, exact typed and complex numeric values, multi-output
 results, composite values, retained lifetimes, diagnostics, sessions,
 cancellation, resource limits, UTF-8 source graphs and metadata, synchronous
-output sinks, and ordered output/expression results. The installed
+output sinks, ordered output/expression results, and rooted system-context
+creation/retention. The installed
 reference consumer spans multiple translation units and checks product, C ABI,
 C++ API, host output behavior, and protocol metadata after relocation.
 
 Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared
-cancellation, isolated limits, and concurrent retain/release. The shared C
-library carries ABI generation 2 and an exact 109-symbol manifest; the
+cancellation, isolated limits, and concurrent retain/release. The frozen v1.2
+library contract is revision 0 with 109 exports; the live v1.3 development
+library is revision 1 with an exact 117-symbol manifest. The
 C++ facade remains header-only rather than a C++ binary ABI.
 
 The current header and consumers move together. Source API 1.2 is frozen in

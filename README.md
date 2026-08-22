@@ -8,12 +8,18 @@ including precision-preserving `int64`/`uint64` arithmetic with scalar
 `double`, dense complex double/single values, typed constructors and elementary
 math, C/C++ source API 1.2, C ABI generation 2 revision 0, in-memory source
 metadata, host-routed output and top-level expression results, and machine
-result protocol 1.1. Its current C/C++/builtin surfaces are frozen in the
+result protocol 1.1. Its v1.2 C/C++/builtin surfaces are frozen in the
 [v1.2 candidate contract](docs/public-contract-v1.2.json). The released v1.0
 contracts remain archived evidence; unreleased interfaces may be simplified
 without compatibility adapters. See [docs/v1.2.md](docs/v1.2.md),
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) and the
 [external gap plan](docs/v1.x-external-gap-plan.md).
+
+The live v1.3 development header advances C ABI generation 2 additively to
+revision 1 with a public, rooted runtime-system context for C and C++ hosts.
+Product and source-API metadata remain `1.2.0`/`1.2` until the complete v1.3
+train is ready to freeze; the immutable v1.2 revision-0 snapshots and
+109-symbol manifest are not rewritten by this development change.
 
 The published release baseline remains v1.0.0. Its reliability and
 release-documentation gates were cross-platform confirmed at revision
@@ -1070,6 +1076,18 @@ build\mparser_cpp_embedding_demo.exe
 
 The C++ example exercises the equivalent `SourceMetadata`, `OutputSink`,
 `OutputEvent`, and `TopLevelExpression` RAII surface.
+
+Build and run the rooted system-context embedding example:
+
+```powershell
+cmake --build build --target mparser_cpp_system_context_demo
+build\mparser_cpp_system_context_demo.exe
+```
+
+It grants only selected current-directory, filesystem, and random capabilities
+inside a host-selected root, binds the context to a reusable session, and
+demonstrates that the session retains the context after the host wrapper is
+released.
 
 Build and run the C ABI compatibility example:
 

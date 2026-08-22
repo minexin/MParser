@@ -26,6 +26,10 @@ end
 function out = invokeHandle(handle, value)
 out = feval(handle, value);
 end
+
+function out = nextRandom()
+out = rand();
+end
 )";
 
 struct Handles {
@@ -34,6 +38,7 @@ struct Handles {
     mparser_result* result = nullptr;
     mparser_value* value = nullptr;
     mparser_cancel_token* token = nullptr;
+    mparser_system_context* systemContext = nullptr;
 };
 
 void waitForStart(const std::atomic<bool>& start) {
@@ -119,8 +124,21 @@ int main() {
                &module) == MPARSER_API_STATUS_OK);
     assert(module && mparser_module_is_valid(module) != 0);
 
+    mparser_system_context_options systemOptions{};
+    assert(MPARSER_SYSTEM_CONTEXT_OPTIONS_INIT(&systemOptions) ==
+           MPARSER_API_STATUS_OK);
+    constexpr char systemRoot[] = ".";
+    systemOptions.root_directory = {
+        systemRoot, sizeof(systemRoot) - 1};
+    systemOptions.capabilities = MPARSER_SYSTEM_CAPABILITY_RANDOM;
+    mparser_system_context* systemContext = nullptr;
+    assert(mparser_system_context_create_rooted_native(
+               &systemOptions, &systemContext) == MPARSER_API_STATUS_OK);
+    assert(systemContext);
+
     mparser_session* session = nullptr;
-    assert(mparser_module_create_session(module, &session) ==
+    assert(mparser_module_create_session_with_system_context(
+               module, systemContext, &session) ==
            MPARSER_API_STATUS_OK);
     assert(session);
 
@@ -154,7 +172,8 @@ int main() {
     assert(token);
 
     const Handles handles{
-        module, session, numericResult, functionHandle, token};
+        module, session, numericResult, functionHandle, token,
+        systemContext};
     std::atomic<bool> start{false};
     std::atomic<bool> failed{false};
     std::vector<std::thread> threads;
@@ -171,15 +190,20 @@ int main() {
                 mparser_result_retain(handles.result);
                 mparser_value_retain(handles.value);
                 mparser_cancel_token_retain(handles.token);
+                mparser_system_context_retain(handles.systemContext);
 
                 if (mparser_module_is_valid(handles.module) == 0 ||
                     mparser_result_succeeded(handles.result) == 0 ||
                     mparser_value_get_kind(handles.value) !=
                         MPARSER_VALUE_FUNCTION_HANDLE ||
-                    mparser_cancel_token_is_requested(handles.token) != 0) {
+                    mparser_cancel_token_is_requested(handles.token) != 0 ||
+                    mparser_system_context_capabilities(
+                        handles.systemContext) !=
+                        MPARSER_SYSTEM_CAPABILITY_RANDOM) {
                     failed.store(true, std::memory_order_relaxed);
                 }
 
+                mparser_system_context_release(handles.systemContext);
                 mparser_cancel_token_release(handles.token);
                 mparser_value_release(handles.value);
                 mparser_result_release(handles.result);
@@ -197,6 +221,8 @@ int main() {
     mparser_result_release(handleResult);
     mparser_result_release(numericResult);
     mparser_value_release(numericOutput);
+    mparser_system_context_release(systemContext);
+    systemContext = nullptr;
     mparser_module_release(module);
     module = nullptr;
 
@@ -210,6 +236,24 @@ int main() {
            MPARSER_API_STATUS_OK);
     assert(scalarEquals(retainedOutput, 42.0));
 
+    mparser_result* randomResult = execute(
+        session, "nextRandom", nullptr, 0);
+    mparser_value* randomOutput = nullptr;
+    assert(mparser_result_output(
+               randomResult, 0, &randomOutput) ==
+           MPARSER_API_STATUS_OK);
+    mparser_numeric_buffer randomBuffer{};
+    assert(mparser_value_get_numeric_buffer(
+               randomOutput, &randomBuffer) == MPARSER_API_STATUS_OK);
+    assert(randomBuffer.numeric_class == MPARSER_NUMERIC_DOUBLE &&
+           randomBuffer.is_complex == 0 && randomBuffer.real_data &&
+           randomBuffer.element_count == 1);
+    const double randomValue = static_cast<const double*>(
+        randomBuffer.real_data)[0];
+    assert(randomValue >= 0.0 && randomValue < 1.0);
+
+    mparser_value_release(randomOutput);
+    mparser_result_release(randomResult);
     mparser_result_release(retainedResult);
     mparser_value_release(retainedOutput);
     mparser_session_release(session);
@@ -225,6 +269,7 @@ int main() {
 
     std::cout << "c api lifecycle stress = "
               << kThreadCount * kRetainIterations
-              << ",retained-session,retained-handle\n";
+              << ",retained-session,retained-handle,"
+                 "retained-system-context\n";
     return 0;
 }

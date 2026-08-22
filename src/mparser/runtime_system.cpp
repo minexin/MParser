@@ -10,9 +10,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <iomanip>
 #include <fstream>
 #include <limits>
+#include <new>
 #include <numbers>
 #include <sstream>
 #include <system_error>
@@ -671,6 +673,230 @@ public:
         return RuntimeSystemResult<RuntimeProcessOutput>::success(
             std::move(result));
     }
+};
+
+bool pathComponentsEqual(const std::filesystem::path& left,
+                         const std::filesystem::path& right) {
+#ifdef _WIN32
+    const auto& leftText = left.native();
+    const auto& rightText = right.native();
+    if (leftText.size() >
+            static_cast<size_t>(std::numeric_limits<int>::max()) ||
+        rightText.size() >
+            static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    return CompareStringOrdinal(
+               leftText.data(), static_cast<int>(leftText.size()),
+               rightText.data(), static_cast<int>(rightText.size()), TRUE) ==
+           CSTR_EQUAL;
+#else
+    return left == right;
+#endif
+}
+
+bool pathIsWithinRoot(const std::filesystem::path& root,
+                      const std::filesystem::path& candidate) {
+    auto rootPart = root.begin();
+    auto candidatePart = candidate.begin();
+    for (; rootPart != root.end(); ++rootPart, ++candidatePart) {
+        if (candidatePart == candidate.end() ||
+            !pathComponentsEqual(*candidatePart, *rootPart)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+RuntimeSystemResult<std::filesystem::path>
+canonicalizeForRootBoundary(std::filesystem::path candidate) {
+    candidate = candidate.lexically_normal();
+    std::error_code error;
+    if (std::filesystem::exists(candidate, error)) {
+        auto canonical = std::filesystem::canonical(candidate, error);
+        return error
+                   ? RuntimeSystemResult<std::filesystem::path>::failure(
+                         errorMessage("path normalization", error))
+                   : RuntimeSystemResult<std::filesystem::path>::success(
+                         std::move(canonical));
+    }
+    if (error) {
+        return RuntimeSystemResult<std::filesystem::path>::failure(
+            errorMessage("path query", error));
+    }
+
+    std::filesystem::path suffix;
+    std::filesystem::path existing = candidate;
+    while (!existing.empty()) {
+        const auto filename = existing.filename();
+        if (!filename.empty()) {
+            suffix = suffix.empty() ? filename : filename / suffix;
+        }
+        const auto parent = existing.parent_path();
+        if (parent == existing) {
+            break;
+        }
+        existing = parent;
+        if (std::filesystem::exists(existing, error)) {
+            break;
+        }
+        if (error) {
+            return RuntimeSystemResult<std::filesystem::path>::failure(
+                errorMessage("path query", error));
+        }
+    }
+    if (existing.empty()) {
+        return RuntimeSystemResult<std::filesystem::path>::failure(
+            "path has no existing ancestor: " +
+            pathToNativeUtf8(candidate));
+    }
+    auto canonicalParent = std::filesystem::canonical(existing, error);
+    if (error) {
+        return RuntimeSystemResult<std::filesystem::path>::failure(
+            errorMessage("path normalization", error));
+    }
+    return RuntimeSystemResult<std::filesystem::path>::success(
+        (canonicalParent / suffix).lexically_normal());
+}
+
+class RootedNativeRuntimeHostAdapter final : public RuntimeHostAdapter {
+public:
+    RootedNativeRuntimeHostAdapter(
+        std::shared_ptr<RuntimeHostAdapter> native,
+        std::filesystem::path root,
+        std::filesystem::path temporaryDirectory)
+        : native_(std::move(native)),
+          root_(std::move(root)),
+          temporaryDirectory_(std::move(temporaryDirectory)) {}
+
+    RuntimeSystemResult<std::filesystem::path>
+    processCurrentDirectory() const override {
+        return RuntimeSystemResult<std::filesystem::path>::success(root_);
+    }
+
+    RuntimeSystemResult<std::filesystem::path>
+    temporaryDirectory() const override {
+        return RuntimeSystemResult<std::filesystem::path>::success(
+            temporaryDirectory_);
+    }
+
+    RuntimeSystemResult<std::filesystem::path>
+    normalizeDirectory(const std::filesystem::path& base,
+                       const std::filesystem::path& candidate) const override {
+        auto resolved = resolve(base, candidate);
+        if (!resolved.succeeded) {
+            return resolved;
+        }
+        std::error_code error;
+        const bool directory =
+            std::filesystem::is_directory(resolved.value, error);
+        if (error) {
+            return RuntimeSystemResult<std::filesystem::path>::failure(
+                errorMessage("directory query", error));
+        }
+        if (!directory) {
+            return RuntimeSystemResult<std::filesystem::path>::failure(
+                "directory does not exist: " +
+                pathToNativeUtf8(resolved.value));
+        }
+        return resolved;
+    }
+
+    RuntimeSystemResult<std::vector<RuntimeDirectoryEntry>>
+    listDirectory(const std::filesystem::path& path) const override {
+        auto resolved = resolve(root_, path);
+        if (!resolved.succeeded) {
+            return RuntimeSystemResult<
+                std::vector<RuntimeDirectoryEntry>>::failure(
+                std::move(resolved.error));
+        }
+        auto listed = native_->listDirectory(resolved.value);
+        if (!listed.succeeded) {
+            return listed;
+        }
+        std::erase_if(
+            listed.value,
+            [this](const RuntimeDirectoryEntry& entry) {
+                return !resolve(
+                            root_, std::filesystem::path(entry.folder) /
+                                       pathFromUtf8(entry.name))
+                            .succeeded;
+            });
+        return listed;
+    }
+
+    RuntimeSystemResult<bool>
+    regularFileExists(const std::filesystem::path& path) const override {
+        auto resolved = resolve(root_, path);
+        return resolved.succeeded
+                   ? native_->regularFileExists(resolved.value)
+                   : RuntimeSystemResult<bool>::failure(
+                         std::move(resolved.error));
+    }
+
+    RuntimeSystemResult<bool>
+    directoryExists(const std::filesystem::path& path) const override {
+        auto resolved = resolve(root_, path);
+        return resolved.succeeded
+                   ? native_->directoryExists(resolved.value)
+                   : RuntimeSystemResult<bool>::failure(
+                         std::move(resolved.error));
+    }
+
+    RuntimeSystemResult<std::shared_ptr<RuntimeHostFile>>
+    openFile(const std::filesystem::path& path,
+             const RuntimeFileOpenOptions& options) const override {
+        auto resolved = resolve(root_, path);
+        return resolved.succeeded
+                   ? native_->openFile(resolved.value, options)
+                   : RuntimeSystemResult<
+                         std::shared_ptr<RuntimeHostFile>>::failure(
+                         std::move(resolved.error));
+    }
+
+    RuntimeSystemResult<std::optional<std::string>>
+    environment(std::string_view name) const override {
+        return native_->environment(name);
+    }
+
+    RuntimeSystemResult<RuntimeCalendarTime>
+    localCalendarTime() const override {
+        return native_->localCalendarTime();
+    }
+
+    RuntimeSystemStatus sleepFor(
+        std::chrono::nanoseconds duration) const override {
+        return native_->sleepFor(duration);
+    }
+
+    RuntimeSystemResult<RuntimeProcessOutput>
+    executeProcess(std::string_view command) const override {
+        return native_->executeProcess(command);
+    }
+
+private:
+    RuntimeSystemResult<std::filesystem::path>
+    resolve(const std::filesystem::path& base,
+            const std::filesystem::path& candidate) const {
+        std::filesystem::path combined = candidate;
+        if (combined.is_relative()) {
+            combined = base / combined;
+        }
+        auto normalized = canonicalizeForRootBoundary(combined);
+        if (!normalized.succeeded) {
+            return normalized;
+        }
+        if (!pathIsWithinRoot(root_, normalized.value)) {
+            return RuntimeSystemResult<std::filesystem::path>::failure(
+                "path is outside the rooted runtime directory: " +
+                pathToNativeUtf8(normalized.value));
+        }
+        return normalized;
+    }
+
+    std::shared_ptr<RuntimeHostAdapter> native_;
+    std::filesystem::path root_;
+    std::filesystem::path temporaryDirectory_;
 };
 
 RuntimeSystemCapability nativeCapabilities() {
@@ -1642,6 +1868,92 @@ makeNativeRuntimeSystemContext(
     options.hostAdapter = makeNativeRuntimeHostAdapter();
     options.searchPaths = std::move(searchPaths);
     return std::make_shared<RuntimeSystemContext>(std::move(options));
+}
+
+RuntimeSystemResult<std::shared_ptr<RuntimeSystemContext>>
+makeRootedNativeRuntimeSystemContext(
+    RuntimeRootedSystemContextOptions options) {
+    try {
+        if (options.rootDirectory.empty()) {
+            return RuntimeSystemResult<
+                std::shared_ptr<RuntimeSystemContext>>::failure(
+                "rooted runtime directory must not be empty");
+        }
+
+        auto native = makeNativeRuntimeHostAdapter();
+        auto processDirectory = native->processCurrentDirectory();
+        if (!processDirectory.succeeded) {
+            return RuntimeSystemResult<
+                std::shared_ptr<RuntimeSystemContext>>::failure(
+                std::move(processDirectory.error));
+        }
+        auto root = native->normalizeDirectory(
+            processDirectory.value, options.rootDirectory);
+        if (!root.succeeded) {
+            return RuntimeSystemResult<
+                std::shared_ptr<RuntimeSystemContext>>::failure(
+                std::move(root.error));
+        }
+
+        auto bootstrap = std::make_shared<RootedNativeRuntimeHostAdapter>(
+            native, root.value, root.value);
+        auto temporaryDirectory = bootstrap->normalizeDirectory(
+            root.value,
+            options.temporaryDirectory.value_or(root.value));
+        if (!temporaryDirectory.succeeded) {
+            return RuntimeSystemResult<
+                std::shared_ptr<RuntimeSystemContext>>::failure(
+                std::move(temporaryDirectory.error));
+        }
+        auto rooted = std::make_shared<RootedNativeRuntimeHostAdapter>(
+            std::move(native), root.value,
+            std::move(temporaryDirectory.value));
+
+        auto currentDirectory = rooted->normalizeDirectory(
+            root.value,
+            options.currentDirectory.value_or(root.value));
+        if (!currentDirectory.succeeded) {
+            return RuntimeSystemResult<
+                std::shared_ptr<RuntimeSystemContext>>::failure(
+                std::move(currentDirectory.error));
+        }
+
+        std::vector<std::filesystem::path> searchPaths;
+        searchPaths.reserve(options.searchPaths.size());
+        for (const auto& path : options.searchPaths) {
+            auto normalized = rooted->normalizeDirectory(
+                currentDirectory.value, path);
+            if (!normalized.succeeded) {
+                return RuntimeSystemResult<
+                    std::shared_ptr<RuntimeSystemContext>>::failure(
+                    std::move(normalized.error));
+            }
+            if (std::find(searchPaths.begin(), searchPaths.end(),
+                          normalized.value) == searchPaths.end()) {
+                searchPaths.push_back(std::move(normalized.value));
+            }
+        }
+
+        RuntimeSystemContextOptions contextOptions;
+        contextOptions.capabilities = options.capabilities;
+        contextOptions.hostAdapter = std::move(rooted);
+        contextOptions.searchPaths = std::move(searchPaths);
+        contextOptions.currentDirectory =
+            std::move(currentDirectory.value);
+        contextOptions.randomSeed = options.randomSeed;
+        contextOptions.maximumOpenFiles = options.maximumOpenFiles;
+        contextOptions.maximumFileReadBytes =
+            options.maximumFileReadBytes;
+        return RuntimeSystemResult<
+            std::shared_ptr<RuntimeSystemContext>>::success(
+            std::make_shared<RuntimeSystemContext>(
+                std::move(contextOptions)));
+    } catch (const std::bad_alloc&) {
+        throw;
+    } catch (const std::exception& error) {
+        return RuntimeSystemResult<
+            std::shared_ptr<RuntimeSystemContext>>::failure(error.what());
+    }
 }
 
 } // namespace mparser

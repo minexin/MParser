@@ -200,6 +200,64 @@ cleanup:
     return succeeded;
 }
 
+static int run_system_context_contract(void) {
+    static const char source[] = "random_value = rand();\n";
+    mparser_system_context_options context_options;
+    mparser_system_context* context = NULL;
+    mparser_invocation_options invocation;
+    mparser_module* module = NULL;
+    mparser_session* session = NULL;
+    mparser_result* result = NULL;
+    int succeeded = 0;
+
+    if (MPARSER_SYSTEM_CONTEXT_OPTIONS_INIT(&context_options) !=
+            MPARSER_API_STATUS_OK ||
+        MPARSER_INVOCATION_OPTIONS_INIT(&invocation) !=
+            MPARSER_API_STATUS_OK) {
+        goto cleanup;
+    }
+    context_options.capabilities = MPARSER_SYSTEM_CAPABILITY_RANDOM;
+    context_options.root_directory.data = ".";
+    context_options.root_directory.size = 1;
+    if (mparser_system_context_create_rooted_native(
+            &context_options, &context) != MPARSER_API_STATUS_OK ||
+        !context ||
+        mparser_system_context_capabilities(context) !=
+            MPARSER_SYSTEM_CAPABILITY_RANDOM ||
+        mparser_module_compile_utf8(
+            source, strlen(source), "installed_system_context.m",
+            strlen("installed_system_context.m"), &module) !=
+            MPARSER_API_STATUS_OK ||
+        mparser_module_execute_with_system_context(
+            module, context, &invocation, &result) !=
+            MPARSER_API_STATUS_OK ||
+        !result || !mparser_result_succeeded(result)) {
+        goto cleanup;
+    }
+    mparser_result_release(result);
+    result = NULL;
+    if (mparser_module_create_session_with_system_context(
+            module, context, &session) != MPARSER_API_STATUS_OK ||
+        !session) {
+        goto cleanup;
+    }
+    mparser_system_context_release(context);
+    context = NULL;
+    if (mparser_session_execute(session, &invocation, &result) !=
+            MPARSER_API_STATUS_OK ||
+        !result || !mparser_result_succeeded(result)) {
+        goto cleanup;
+    }
+    succeeded = 1;
+
+cleanup:
+    mparser_result_release(result);
+    mparser_session_release(session);
+    mparser_module_release(module);
+    mparser_system_context_release(context);
+    return succeeded;
+}
+
 int main(void) {
     mparser_module* module = NULL;
     mparser_value* left = NULL;
@@ -242,12 +300,14 @@ int main(void) {
         mparser_result_output_count(result) != 2 ||
         !read_scalar(result, 0, 42.0) ||
         !read_scalar(result, 1, 36.0) ||
-        !run_host_contract()) {
+        !run_host_contract() ||
+        !run_system_context_contract()) {
         goto cleanup;
     }
 
     printf("installed-consumer = %u.%u.%u,42,36,"
-           "abi-generation-%u-revision-%u,host-output-2-2\n",
+           "abi-generation-%u-revision-%u,host-output-2-2,"
+           "system-context-rooted-retained\n",
            mparser_version_major(), mparser_version_minor(),
            mparser_version_patch(), mparser_c_abi_generation(),
            mparser_c_abi_revision());

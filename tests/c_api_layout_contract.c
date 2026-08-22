@@ -17,11 +17,13 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");
-_Static_assert(MPARSER_C_ABI_REVISION == 0u,
+_Static_assert(MPARSER_C_ABI_REVISION == 1u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
                "allocation status changed");
 _Static_assert(MPARSER_API_STATUS_SOURCE_LOAD_FAILED == 9u,
+               "status range changed");
+_Static_assert(MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED == 10u,
                "status range changed");
 _Static_assert(MPARSER_INVOCATION_RUNTIME_FAILED == 3u,
                "invocation status range changed");
@@ -36,6 +38,8 @@ _Static_assert(MPARSER_SOURCE_CLASS == 3u,
 _Static_assert(MPARSER_OUTPUT_STANDARD == 1u &&
                    MPARSER_OUTPUT_REJECT == 1u,
                "output contract range changed");
+_Static_assert(MPARSER_SYSTEM_CAPABILITY_FILESYSTEM_WRITE == (1u << 9u),
+               "system capability range changed");
 _Static_assert(MPARSER_VALUE_FUNCTION_HANDLE == 7u,
                "value kind range changed");
 _Static_assert(MPARSER_NUMERIC_UINT64 == 10u,
@@ -75,6 +79,21 @@ REQUIRE_OFFSET(mparser_source_load_options, struct_size, 0);
 REQUIRE_OFFSET(mparser_source_load_options, abi_generation, 4);
 REQUIRE_OFFSET(mparser_source_load_options, search_paths, 8);
 REQUIRE_OFFSET(mparser_source_load_options, search_path_count, 16);
+
+_Static_assert(sizeof(mparser_system_context_options) == 104,
+               "mparser_system_context_options size changed");
+REQUIRE_OFFSET(mparser_system_context_options, struct_size, 0);
+REQUIRE_OFFSET(mparser_system_context_options, abi_generation, 4);
+REQUIRE_OFFSET(mparser_system_context_options, capabilities, 8);
+REQUIRE_OFFSET(mparser_system_context_options, root_directory, 16);
+REQUIRE_OFFSET(mparser_system_context_options, current_directory, 32);
+REQUIRE_OFFSET(mparser_system_context_options, temporary_directory, 48);
+REQUIRE_OFFSET(mparser_system_context_options, search_paths, 64);
+REQUIRE_OFFSET(mparser_system_context_options, search_path_count, 72);
+REQUIRE_OFFSET(mparser_system_context_options, random_seed, 80);
+REQUIRE_OFFSET(mparser_system_context_options, maximum_open_files, 88);
+REQUIRE_OFFSET(
+    mparser_system_context_options, maximum_file_read_bytes, 96);
 
 _Static_assert(sizeof(mparser_named_value) == 24,
                "mparser_named_value size changed");

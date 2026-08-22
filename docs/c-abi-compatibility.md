@@ -1,14 +1,15 @@
 # MParser C ABI Development Contract
 
-MParser and its installed SDK use one product version. The current source tree
-is the v1.2 candidate and reports product/SDK version `1.2.0`. It remains
-untagged until publication is explicitly selected.
+MParser and its installed SDK use one product version. The frozen v1.2
+candidate and the active v1.3 development tree currently report product/SDK
+version `1.2.0`; product metadata advances only when the complete v1.3 train
+reaches its milestone gate.
 
 The embedding boundary has an independent technical contract level:
 
 - C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/2/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
-- C ABI revision: `MPARSER_C_ABI_REVISION == 0`;
+- active C ABI revision: `MPARSER_C_ABI_REVISION == 1`;
 - shared-library full version: `1.2.0`, with SOVERSION/install-name generation
   `2`.
 
@@ -18,6 +19,12 @@ and revision are binary negotiation data rather than another SDK version.
 runtime. The three `mparser_version_*()` functions report product version
 `1.2.0`.
 
+Revision 1 is an additive v1.3 development extension over the frozen v1.2
+revision-0 contract. It adds rooted runtime-system-context creation, ownership,
+capability queries, and context-bound module/session entry points. The frozen
+revision-0 header, 109-symbol manifest, and public-contract hashes remain
+unchanged.
+
 ## Development Policy
 
 The project is not yet using the v1.2 SDK in production. Current headers,
@@ -25,7 +32,7 @@ implementation, in-repository callers, tests, examples, and documentation move
 together. Superseded development headers and binaries are not compatibility
 targets, and no adapters are added solely to preserve them.
 
-At the v1.2 candidate gate, the current header, layouts, symbols, package
+At the v1.2 candidate gate, the revision-0 header, layouts, symbols, package
 metadata, and independent consumers were frozen as one reviewed contract in
 `docs/public-contract-v1.2.json`. An incompatible correction after this
 candidate requires a new ABI generation.
@@ -46,8 +53,9 @@ The current ABI-generation library names are:
 - Windows: `mparser_c.dll` plus its import library.
 
 Internal compiler, VM, C++ facade, and SLJIT symbols have hidden visibility.
-The current public export set is the 109-name manifest in
-`tests/c_api_generation2_symbols.txt`.
+The live revision-1 public export set is the 117-name manifest in
+`tests/c_api_generation2_revision1_symbols.txt`. The frozen revision-0
+109-name manifest remains `tests/c_api_generation2_symbols.txt`.
 
 ## Extensible Roots
 
@@ -56,7 +64,8 @@ tail fields within ABI 2:
 
 - `mparser_invocation_options`;
 - `mparser_execution_summary`;
-- `mparser_source_load_options`.
+- `mparser_source_load_options`;
+- `mparser_system_context_options`.
 
 Initialize current-source storage with the uppercase macros:
 
@@ -69,6 +78,9 @@ MPARSER_EXECUTION_SUMMARY_INIT(&summary);
 
 mparser_source_load_options load_options;
 MPARSER_SOURCE_LOAD_OPTIONS_INIT(&load_options);
+
+mparser_system_context_options system_options;
+MPARSER_SYSTEM_CONTEXT_OPTIONS_INIT(&system_options);
 ```
 
 The macros call the matching `*_init_sized` function with the caller's
@@ -92,9 +104,10 @@ sets known defaults. Input readers consume known fields and ignore an unknown
 tail. Output writers never exceed the recorded capacity.
 
 The public minimum-size constants are `MPARSER_INVOCATION_OPTIONS_SIZE`,
-`MPARSER_EXECUTION_SUMMARY_SIZE`, `MPARSER_SOURCE_LOAD_OPTIONS_SIZE`, and
-`MPARSER_SOURCE_UNIT_SIZE`. They describe the current minimum accepted record
-or fixed stride; they are not API or product versions.
+`MPARSER_EXECUTION_SUMMARY_SIZE`, `MPARSER_SOURCE_LOAD_OPTIONS_SIZE`,
+`MPARSER_SYSTEM_CONTEXT_OPTIONS_SIZE`, and `MPARSER_SOURCE_UNIT_SIZE`. They
+describe the current minimum accepted record or fixed stride; they are not API
+or product versions.
 
 ## Sealed Records
 
@@ -105,9 +118,9 @@ In particular, source units are passed as an array, so
 An oversized source-unit descriptor is rejected rather than interpreted with
 an ambiguous stride.
 
-Opaque module, session, result, value, cancellation, and diagnostic handles
-may change internally. Their retain/release, ownership, concurrency, and
-borrowed-view rules are documented in `embedding-c-api.md`.
+Opaque module, session, result, value, cancellation, system-context, and
+diagnostic handles may change internally. Their retain/release, ownership,
+concurrency, and borrowed-view rules are documented in `embedding-c-api.md`.
 
 `mparser_output_sink_callback` is a function-pointer calling convention, not a
 structure layout. Its arguments are fixed-width values, borrowed byte ranges,
@@ -133,14 +146,16 @@ borrowed-input lifetime crosses the C boundary.
 
 `c_api_smoke` validates ABI negotiation, caller-sized roots, sealed records,
 every numeric class, complex buffers, source graphs and metadata, output
-callbacks/results, sessions, ownership, resources, and failure boundaries.
+callbacks/results, system-context options and retained sessions, ownership,
+resources, and failure boundaries.
 `c_api_layout_contract` checks current 64-bit sizes, offsets, and constant
 values.
 
 `c_api_shared_library_abi` inspects the dynamic library with the platform
-toolchain, compares its exports with `tests/c_api_generation2_symbols.txt`, and checks
-SONAME/install-name major 2. Lifecycle, unload, allocation-failure, named-fault,
+toolchain, compares its exports with
+`tests/c_api_generation2_revision1_symbols.txt`, and checks SONAME/install-name
+major 2. Lifecycle, unload, allocation-failure, named-fault,
 concurrency, and relocated C/C++ consumer tests exercise the same current
-headers. The complete platform matrix runs at the v1.2 candidate gate;
+headers. The complete platform matrix runs at a milestone candidate gate;
 internal batches use focused local regression unless a change
 has unusual cross-platform risk.

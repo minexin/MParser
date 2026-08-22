@@ -81,11 +81,16 @@ v1.2 candidate contract.
 
 ## v1.3 Development Additions
 
-The current tree has five end-to-end system and standard-library batches:
+The current tree has six end-to-end system, standard-library, and embedding
+batches:
 
 - one session-owned capability context and injectable host adapter for current
   directory, search paths, environment, filesystem read/write, process,
   clock, sleep, and random services;
+- a public rooted native context through C ABI generation 2 revision 1 and the
+  header-only C++ facade, with explicit capabilities, retained session
+  ownership, deterministic random state, path-escape rejection, and installed
+  C/C++ consumer coverage;
 - command-form parsing and workspace-aware `clear`, `who`, `whos`, `exist`,
   display `format`, and MATLAB-like implicit-output rules;
 - `pwd`, `cd`, `tempdir`, `path`, `addpath`, `rmpath`, `which`, `dir`,
@@ -189,15 +194,17 @@ script fail; it returns to a less specialized tier.
 | --- | --- |
 | CLI | Production `--run`, strict options, stable exit classes, JSON protocol selector |
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
-| C API/ABI | C source API 1.2; ABI generation 2 revision 0, typed real/imaginary buffers, source metadata, output sink/results, opaque retained handles, caller-sized roots |
-| C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata and host output projection |
+| C API/ABI | C source API 1.2; frozen v1.2 ABI generation 2 revision 0 plus live additive revision 1, typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, caller-sized roots |
+| C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
 | Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.5 using registry/descriptors/call/results/source-evaluation and stream-I/O context |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
 invocation, sessions, diagnostics, cancellation, resource summaries,
 synchronous output routing, retained output events, and top-level expression
-results.
+results. Live revision 1 additionally exposes capability-gated native contexts
+for stateless calls and retained sessions; the frozen revision-0 snapshot
+remains unchanged.
 Host-created array payloads are copy-in. Returned views remain owned by their
 value/result handles.
 

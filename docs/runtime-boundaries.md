@@ -95,9 +95,22 @@ between operation directions.
 Host adapter calls are synchronous and serialized by the owning context.
 Adapters must not re-enter that same context. Process execution and native
 filesystem access are capabilities, not sandboxing: an embedding host should
-grant them only when its own isolation policy allows the operation. Public
-C/C++ configuration of these capabilities is still v1.3 milestone work; the
-frozen v1.2 APIs remain isolated from the new native CLI services.
+grant them only when its own isolation policy allows the operation.
+
+The active v1.3 C ABI revision 1 and header-only C++ facade expose a rooted
+native context. The host selects capability bits, root/current/temporary/search
+directories, a random seed, and open/read limits, then binds that context to a
+stateless invocation or reusable session. The session retains the context;
+calls sharing it also share current-directory, path, random, and open-file
+state. Revision-0 entry points retain their isolated behavior.
+
+Path-oriented adapter calls canonicalize the longest existing ancestor and
+reject `..` or existing symbolic-link targets that leave the configured root.
+Directory listings omit entries whose resolved targets escape. Environment and
+process capabilities remain host-wide, and a launched command is not confined
+to the root. Filesystem checks followed by open remain susceptible to a
+hostile local process racing link changes, so this is a deterministic host
+policy boundary rather than a complete OS security sandbox.
 
 ## Dynamic Source Evaluation
 
@@ -167,9 +180,9 @@ adapter calls.
 
 ## Ownership
 
-C ABI modules, sessions, values, results, and cancellation tokens are opaque
-reference-counted handles. Every thread that keeps a handle while another
-thread may release it must own a retained reference.
+C ABI modules, sessions, values, results, cancellation tokens, and system
+contexts are opaque reference-counted handles. Every thread that keeps a
+handle while another thread may release it must own a retained reference.
 
 Borrowed pointers follow their owner:
 

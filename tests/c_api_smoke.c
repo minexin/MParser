@@ -17,7 +17,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "unexpected C API version");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "unexpected C ABI generation");
-_Static_assert(MPARSER_C_ABI_REVISION == 0u,
+_Static_assert(MPARSER_C_ABI_REVISION == 1u,
                "unexpected C ABI revision");
 _Static_assert(MPARSER_NUMERIC_SINGLE == 2u &&
                    MPARSER_NUMERIC_INT8 == 3u &&
@@ -374,6 +374,112 @@ static int compile_valid(const char* source,
     CHECK(*out_module != NULL);
     CHECK(mparser_module_is_valid(*out_module) == 1);
     CHECK(mparser_module_diagnostic_count(*out_module) == 0);
+    return 1;
+}
+
+static int run_system_context_smoke(const char* root_path) {
+    static const char source[] = "random_value = rand();\n";
+    mparser_system_context_options options;
+    mparser_system_context* context = NULL;
+    mparser_module* module = NULL;
+    mparser_result* result = NULL;
+    mparser_session* session = NULL;
+    mparser_invocation_options invocation;
+    struct extended_system_options {
+        mparser_system_context_options value;
+        unsigned char tail[16];
+    } extended;
+    size_t index;
+
+    CHECK(view_equals(
+        mparser_api_status_name(
+            MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED),
+        "system-context-failed"));
+    CHECK(mparser_system_context_options_init(NULL) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(mparser_system_context_options_init_sized(
+              NULL, sizeof(options), MPARSER_C_ABI_GENERATION) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(mparser_system_context_options_init_sized(
+              &options, MPARSER_SYSTEM_CONTEXT_OPTIONS_SIZE - 1,
+              MPARSER_C_ABI_GENERATION) ==
+          MPARSER_API_STATUS_ABI_MISMATCH);
+    CHECK(mparser_system_context_options_init_sized(
+              &options, sizeof(options),
+              MPARSER_C_ABI_GENERATION + 1) ==
+          MPARSER_API_STATUS_ABI_MISMATCH);
+    memset(&extended, 0xa5, sizeof(extended));
+    CHECK(mparser_system_context_options_init_sized(
+              &extended, sizeof(extended),
+              MPARSER_C_ABI_GENERATION) == MPARSER_API_STATUS_OK);
+    CHECK(extended.value.struct_size == sizeof(extended));
+    CHECK(extended.value.random_seed == 5489u);
+    for (index = 0; index < sizeof(extended.tail); ++index) {
+        CHECK(extended.tail[index] == 0);
+    }
+    CHECK(MPARSER_SYSTEM_CONTEXT_OPTIONS_INIT(&options) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(options.struct_size == sizeof(options));
+    CHECK(options.abi_generation == MPARSER_C_ABI_GENERATION);
+    CHECK(options.capabilities == MPARSER_SYSTEM_CAPABILITY_NONE);
+    CHECK(options.random_seed == 5489u);
+    CHECK(options.maximum_open_files == 256u);
+    CHECK(options.maximum_file_read_bytes == 16u * 1024u * 1024u);
+    CHECK(mparser_system_context_create_rooted_native(
+              &options, &context) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(context == NULL);
+
+    options.root_directory.data = root_path;
+    options.root_directory.size = strlen(root_path);
+    options.capabilities = MPARSER_SYSTEM_CAPABILITY_RANDOM |
+                           (1u << 31u);
+    CHECK(mparser_system_context_create_rooted_native(
+              &options, &context) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(context == NULL);
+    options.capabilities = MPARSER_SYSTEM_CAPABILITY_RANDOM;
+    CHECK(mparser_system_context_create_rooted_native(
+              &options, &context) == MPARSER_API_STATUS_OK);
+    CHECK(context != NULL);
+    CHECK(mparser_system_context_capabilities(context) ==
+          MPARSER_SYSTEM_CAPABILITY_RANDOM);
+    CHECK(mparser_system_context_capabilities(NULL) ==
+          MPARSER_SYSTEM_CAPABILITY_NONE);
+    mparser_system_context_retain(context);
+    mparser_system_context_release(context);
+
+    CHECK(compile_valid(source, "system_context_c.m", &module));
+    CHECK(MPARSER_INVOCATION_OPTIONS_INIT(&invocation) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_module_execute(module, &invocation, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(result != NULL && mparser_result_succeeded(result) == 0);
+    mparser_result_release(result);
+    result = NULL;
+    CHECK(mparser_module_execute_with_system_context(
+              module, NULL, &invocation, &result) ==
+          MPARSER_API_STATUS_INVALID_ARGUMENT);
+    CHECK(result == NULL);
+    CHECK(mparser_module_execute_with_system_context(
+              module, context, &invocation, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(result != NULL && mparser_result_succeeded(result) == 1);
+    mparser_result_release(result);
+    result = NULL;
+
+    CHECK(mparser_module_create_session_with_system_context(
+              module, context, &session) == MPARSER_API_STATUS_OK);
+    CHECK(session != NULL);
+    mparser_system_context_release(context);
+    context = NULL;
+    CHECK(mparser_session_execute(session, &invocation, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(result != NULL && mparser_result_succeeded(result) == 1);
+
+    mparser_result_release(result);
+    mparser_session_release(session);
+    mparser_module_release(module);
     return 1;
 }
 
@@ -1653,6 +1759,7 @@ int main(int argc, char** argv) {
     }
 
     if (!run_multi_source_compilation_smoke() ||
+        !run_system_context_smoke(argv[2]) ||
         !run_file_source_graph_smoke(argv[1], argv[2]) ||
         !run_module_metadata_smoke(module) ||
         !run_host_output_smoke() ||

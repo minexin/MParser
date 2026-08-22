@@ -4,7 +4,9 @@
 #include "mparser/compiled_module.h"
 #include "mparser/filesystem_utf8.h"
 #include "mparser/runtime_numeric.h"
+#include "mparser/runtime_session_state.h"
 #include "mparser/runtime_shape.h"
+#include "mparser/runtime_system.h"
 #include "mparser/runtime_text.h"
 #include "mparser/runtime_value.h"
 #include "mparser/source_loader.h"
@@ -186,6 +188,11 @@ struct mparser_module {
 struct mparser_session {
     std::atomic_size_t references{1};
     std::shared_ptr<mparser_c_detail::SessionState> state;
+};
+
+struct mparser_system_context {
+    std::atomic_size_t references{1};
+    std::shared_ptr<mparser::RuntimeSystemContext> state;
 };
 
 struct mparser_result {
@@ -470,6 +477,77 @@ bool uint64ToSize(uint64_t value, size_t& result) noexcept {
 
 uint64_t sizeToUint64(size_t value) noexcept {
     return static_cast<uint64_t>(value);
+}
+
+mparser_api_status copySystemContextOptions(
+    const mparser_system_context_options* options,
+    mparser::RuntimeRootedSystemContextOptions& copied) {
+    if (!options) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (options->struct_size < MPARSER_SYSTEM_CONTEXT_OPTIONS_SIZE ||
+        options->abi_generation != MPARSER_C_ABI_GENERATION) {
+        return MPARSER_API_STATUS_ABI_MISMATCH;
+    }
+    constexpr mparser_system_capability knownCapabilities =
+        MPARSER_SYSTEM_CAPABILITY_CURRENT_DIRECTORY |
+        MPARSER_SYSTEM_CAPABILITY_SEARCH_PATHS |
+        MPARSER_SYSTEM_CAPABILITY_ENVIRONMENT_READ |
+        MPARSER_SYSTEM_CAPABILITY_FILESYSTEM_READ |
+        MPARSER_SYSTEM_CAPABILITY_PROCESS |
+        MPARSER_SYSTEM_CAPABILITY_CLOCK |
+        MPARSER_SYSTEM_CAPABILITY_SLEEP |
+        MPARSER_SYSTEM_CAPABILITY_RANDOM |
+        MPARSER_SYSTEM_CAPABILITY_DYNAMIC_EVALUATION |
+        MPARSER_SYSTEM_CAPABILITY_FILESYSTEM_WRITE;
+    if ((options->capabilities & ~knownCapabilities) != 0 ||
+        (!options->search_paths && options->search_path_count != 0)) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+
+    const auto root = copyBytes(
+        options->root_directory.data,
+        options->root_directory.size);
+    const auto current = copyBytes(
+        options->current_directory.data,
+        options->current_directory.size);
+    const auto temporary = copyBytes(
+        options->temporary_directory.data,
+        options->temporary_directory.size);
+    if (!root || !validPathText(*root) || !current || !temporary ||
+        (!current->empty() && !validPathText(*current)) ||
+        (!temporary->empty() && !validPathText(*temporary))) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+
+    copied = {};
+    copied.capabilities = static_cast<mparser::RuntimeSystemCapability>(
+        options->capabilities);
+    copied.rootDirectory = mparser::pathFromUtf8(*root);
+    if (!current->empty()) {
+        copied.currentDirectory = mparser::pathFromUtf8(*current);
+    }
+    if (!temporary->empty()) {
+        copied.temporaryDirectory = mparser::pathFromUtf8(*temporary);
+    }
+    copied.searchPaths.reserve(options->search_path_count);
+    for (size_t index = 0; index < options->search_path_count; ++index) {
+        const auto path = copyBytes(
+            options->search_paths[index].data,
+            options->search_paths[index].size);
+        if (!path || !validPathText(*path)) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        copied.searchPaths.push_back(mparser::pathFromUtf8(*path));
+    }
+    copied.randomSeed = options->random_seed;
+    if (!uint64ToSize(options->maximum_open_files,
+                      copied.maximumOpenFiles) ||
+        !uint64ToSize(options->maximum_file_read_bytes,
+                      copied.maximumFileReadBytes)) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    return MPARSER_API_STATUS_OK;
 }
 
 bool runtimeValueRequiresModule(
@@ -1223,6 +1301,82 @@ mparser_api_status makeResultHandle(
     }
 }
 
+mparser_api_status executeModule(
+    const mparser_module* module,
+    const mparser_invocation_options* options,
+    std::shared_ptr<mparser::RuntimeSystemContext> systemContext,
+    mparser_result** outResult) {
+    if (!outResult) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *outResult = nullptr;
+    if (!module || !module->state) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        mparser::ModuleInvocationRequest request;
+        bool usesSharedGraph = false;
+        const auto requestStatus = buildRequest(
+            options, module->state, request, usesSharedGraph);
+        if (requestStatus != MPARSER_API_STATUS_OK) {
+            return requestStatus;
+        }
+        request.systemContext = std::move(systemContext);
+        std::unique_lock<std::recursive_mutex> sharedGraphLock;
+        if (usesSharedGraph) {
+            sharedGraphLock =
+                std::unique_lock<std::recursive_mutex>(
+                    module->state->sharedGraphMutex);
+        }
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExecuteBeforeCore);
+        auto result = module->state->module.execute(request);
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExecuteAfterCore);
+        return makeResultHandle(
+            std::move(result), module->state, outResult);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_api_status createSession(
+    const mparser_module* module,
+    std::shared_ptr<mparser::RuntimeSystemContext> systemContext,
+    mparser_session** outSession) {
+    if (!outSession) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *outSession = nullptr;
+    if (!module || !module->state) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (!module->state->module.valid()) {
+        return MPARSER_API_STATUS_COMPILATION_FAILED;
+    }
+    try {
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::SessionCreate);
+        auto runtimeState =
+            std::make_shared<mparser::RuntimeSessionState>(
+                std::move(systemContext));
+        auto state = std::make_shared<SessionState>(
+            module->state,
+            module->state->module.createSession(
+                std::move(runtimeState)));
+        auto* handle = new mparser_session;
+        handle->state = std::move(state);
+        *outSession = handle;
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
 mparser_invocation_status invocationStatus(
     mparser::ModuleInvocationStatus status) noexcept {
     switch (status) {
@@ -1366,6 +1520,9 @@ static_assert(
 static_assert(
     sizeof(mparser_source_load_options) >=
     MPARSER_SOURCE_LOAD_OPTIONS_SIZE);
+static_assert(
+    sizeof(mparser_system_context_options) >=
+    MPARSER_SYSTEM_CONTEXT_OPTIONS_SIZE);
 
 } // namespace
 } // namespace mparser_c_detail
@@ -1416,6 +1573,8 @@ mparser_api_status_name(mparser_api_status status) {
         return utf8View("abi-mismatch");
     case MPARSER_API_STATUS_SOURCE_LOAD_FAILED:
         return utf8View("source-load-failed");
+    case MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED:
+        return utf8View("system-context-failed");
     default:
         return utf8View("unknown");
     }
@@ -1488,6 +1647,78 @@ mparser_api_status mparser_source_load_options_init_sized(
         mparser_source_load_options>(
         storage, storage_size,
         MPARSER_SOURCE_LOAD_OPTIONS_SIZE, abi_generation);
+}
+
+mparser_api_status mparser_system_context_options_init(
+    mparser_system_context_options* options) {
+    return mparser_system_context_options_init_sized(
+        options, MPARSER_SYSTEM_CONTEXT_OPTIONS_SIZE,
+        MPARSER_C_ABI_GENERATION);
+}
+
+mparser_api_status mparser_system_context_options_init_sized(
+    void* storage, size_t storage_size,
+    uint32_t abi_generation) {
+    const auto status =
+        mparser_c_detail::initializeVersionedStructure<
+            mparser_system_context_options>(
+            storage, storage_size,
+            MPARSER_SYSTEM_CONTEXT_OPTIONS_SIZE, abi_generation);
+    if (status == MPARSER_API_STATUS_OK) {
+        auto* options =
+            static_cast<mparser_system_context_options*>(storage);
+        options->random_seed = 5489U;
+        options->maximum_open_files = 256U;
+        options->maximum_file_read_bytes = 16U * 1024U * 1024U;
+    }
+    return status;
+}
+
+mparser_api_status mparser_system_context_create_rooted_native(
+    const mparser_system_context_options* options,
+    mparser_system_context** out_context) {
+    using namespace mparser_c_detail;
+    if (!out_context) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_context = nullptr;
+    try {
+        mparser::RuntimeRootedSystemContextOptions copied;
+        const auto copyStatus =
+            copySystemContextOptions(options, copied);
+        if (copyStatus != MPARSER_API_STATUS_OK) {
+            return copyStatus;
+        }
+        auto created = mparser::makeRootedNativeRuntimeSystemContext(
+            std::move(copied));
+        if (!created.succeeded || !created.value) {
+            return MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED;
+        }
+        auto* handle = new mparser_system_context;
+        handle->state = std::move(created.value);
+        *out_context = handle;
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+void mparser_system_context_retain(mparser_system_context* context) {
+    mparser_c_detail::retainHandle(context);
+}
+
+void mparser_system_context_release(mparser_system_context* context) {
+    mparser_c_detail::releaseHandle(context);
+}
+
+mparser_system_capability mparser_system_context_capabilities(
+    const mparser_system_context* context) {
+    return context && context->state
+               ? static_cast<mparser_system_capability>(
+                     context->state->capabilities())
+               : MPARSER_SYSTEM_CAPABILITY_NONE;
 }
 
 mparser_api_status mparser_module_compile_utf8(
@@ -1791,73 +2022,45 @@ mparser_api_status mparser_module_execute(
     const mparser_module* module,
     const mparser_invocation_options* options,
     mparser_result** out_result) {
-    using namespace mparser_c_detail;
-    if (!out_result) {
+    return mparser_c_detail::executeModule(
+        module, options, {}, out_result);
+}
+
+mparser_api_status mparser_module_execute_with_system_context(
+    const mparser_module* module,
+    const mparser_system_context* context,
+    const mparser_invocation_options* options,
+    mparser_result** out_result) {
+    if (!context || !context->state) {
+        if (out_result) {
+            *out_result = nullptr;
+        }
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
-    *out_result = nullptr;
-    if (!module || !module->state) {
-        return MPARSER_API_STATUS_INVALID_ARGUMENT;
-    }
-    try {
-        mparser::ModuleInvocationRequest request;
-        bool usesSharedGraph = false;
-        const auto requestStatus =
-            buildRequest(
-                options, module->state, request,
-                usesSharedGraph);
-        if (requestStatus != MPARSER_API_STATUS_OK) {
-            return requestStatus;
-        }
-        std::unique_lock<std::recursive_mutex> sharedGraphLock;
-        if (usesSharedGraph) {
-            sharedGraphLock =
-                std::unique_lock<std::recursive_mutex>(
-                    module->state->sharedGraphMutex);
-        }
-        mparser::c_api_test::inject(
-            mparser::c_api_test::FaultPoint::ExecuteBeforeCore);
-        auto result = module->state->module.execute(request);
-        mparser::c_api_test::inject(
-            mparser::c_api_test::FaultPoint::ExecuteAfterCore);
-        return makeResultHandle(
-            std::move(result), module->state, out_result);
-    } catch (const std::bad_alloc&) {
-        return MPARSER_API_STATUS_ALLOCATION_FAILED;
-    } catch (...) {
-        return MPARSER_API_STATUS_INTERNAL_ERROR;
-    }
+    return mparser_c_detail::executeModule(
+        module, options, context->state, out_result);
 }
 
 mparser_api_status mparser_module_create_session(
     const mparser_module* module,
     mparser_session** out_session) {
-    using namespace mparser_c_detail;
-    if (!out_session) {
+    return mparser_c_detail::createSession(
+        module, {}, out_session);
+}
+
+mparser_api_status
+mparser_module_create_session_with_system_context(
+    const mparser_module* module,
+    const mparser_system_context* context,
+    mparser_session** out_session) {
+    if (!context || !context->state) {
+        if (out_session) {
+            *out_session = nullptr;
+        }
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
-    *out_session = nullptr;
-    if (!module || !module->state) {
-        return MPARSER_API_STATUS_INVALID_ARGUMENT;
-    }
-    if (!module->state->module.valid()) {
-        return MPARSER_API_STATUS_COMPILATION_FAILED;
-    }
-    try {
-        mparser::c_api_test::inject(
-            mparser::c_api_test::FaultPoint::SessionCreate);
-        auto state = std::make_shared<SessionState>(
-            module->state,
-            module->state->module.createSession());
-        auto* handle = new mparser_session;
-        handle->state = std::move(state);
-        *out_session = handle;
-        return MPARSER_API_STATUS_OK;
-    } catch (const std::bad_alloc&) {
-        return MPARSER_API_STATUS_ALLOCATION_FAILED;
-    } catch (...) {
-        return MPARSER_API_STATUS_INTERNAL_ERROR;
-    }
+    return mparser_c_detail::createSession(
+        module, context->state, out_session);
 }
 
 void mparser_session_retain(mparser_session* session) {

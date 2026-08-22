@@ -31,7 +31,7 @@ if(NOT MParser_C_ABI_GENERATION EQUAL 2)
     message(FATAL_ERROR
         "Unexpected installed C ABI generation: ${MParser_C_ABI_GENERATION}")
 endif()
-if(NOT MParser_C_ABI_REVISION EQUAL 0)
+if(NOT MParser_C_ABI_REVISION EQUAL 1)
     message(FATAL_ERROR
         "Unexpected installed C ABI revision: ${MParser_C_ABI_REVISION}")
 endif()
@@ -77,7 +77,7 @@ add_test(NAME installed_c_api_runtime
     COMMAND mparser_installed_c_consumer)
 set_tests_properties(installed_c_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-consumer = ${MParser_VERSION},42,36,abi-generation-2-revision-0,host-output-2-2")
+        "installed-consumer = ${MParser_VERSION},42,36,abi-generation-2-revision-1,host-output-2-2,system-context-rooted-retained")
 
 add_test(NAME installed_cli_version
     COMMAND MParser::cli --version)

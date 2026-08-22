@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 2u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 0u
+#define MPARSER_C_ABI_REVISION 1u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -39,6 +39,7 @@ typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_INTERNAL_ERROR 7u
 #define MPARSER_API_STATUS_ABI_MISMATCH 8u
 #define MPARSER_API_STATUS_SOURCE_LOAD_FAILED 9u
+#define MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED 10u
 
 typedef uint32_t mparser_invocation_status;
 #define MPARSER_INVOCATION_SUCCEEDED 0u
@@ -90,6 +91,19 @@ typedef uint32_t mparser_output_disposition;
 #define MPARSER_OUTPUT_ACCEPT 0u
 #define MPARSER_OUTPUT_REJECT 1u
 
+typedef uint32_t mparser_system_capability;
+#define MPARSER_SYSTEM_CAPABILITY_NONE 0u
+#define MPARSER_SYSTEM_CAPABILITY_CURRENT_DIRECTORY (1u << 0u)
+#define MPARSER_SYSTEM_CAPABILITY_SEARCH_PATHS (1u << 1u)
+#define MPARSER_SYSTEM_CAPABILITY_ENVIRONMENT_READ (1u << 2u)
+#define MPARSER_SYSTEM_CAPABILITY_FILESYSTEM_READ (1u << 3u)
+#define MPARSER_SYSTEM_CAPABILITY_PROCESS (1u << 4u)
+#define MPARSER_SYSTEM_CAPABILITY_CLOCK (1u << 5u)
+#define MPARSER_SYSTEM_CAPABILITY_SLEEP (1u << 6u)
+#define MPARSER_SYSTEM_CAPABILITY_RANDOM (1u << 7u)
+#define MPARSER_SYSTEM_CAPABILITY_DYNAMIC_EVALUATION (1u << 8u)
+#define MPARSER_SYSTEM_CAPABILITY_FILESYSTEM_WRITE (1u << 9u)
+
 typedef uint32_t mparser_value_kind;
 #define MPARSER_VALUE_MISSING 0u
 #define MPARSER_VALUE_NUMERIC 1u
@@ -140,6 +154,7 @@ typedef struct mparser_result mparser_result;
 typedef struct mparser_value mparser_value;
 typedef struct mparser_cancel_token mparser_cancel_token;
 typedef struct mparser_diagnostic mparser_diagnostic;
+typedef struct mparser_system_context mparser_system_context;
 
 typedef struct mparser_utf8_view {
     const char* data;
@@ -167,6 +182,26 @@ typedef struct mparser_source_load_options {
     const mparser_utf8_view* search_paths;
     size_t search_path_count;
 } mparser_source_load_options;
+
+/*
+ * Creates a native context whose path-oriented operations are constrained to
+ * root_directory. Environment and process capabilities are host-wide and
+ * must be enabled explicitly. The root is not a security boundary against a
+ * hostile local process racing filesystem links while a call is in flight.
+ */
+typedef struct mparser_system_context_options {
+    uint32_t struct_size;
+    uint32_t abi_generation;
+    mparser_system_capability capabilities;
+    mparser_utf8_view root_directory;
+    mparser_utf8_view current_directory;
+    mparser_utf8_view temporary_directory;
+    const mparser_utf8_view* search_paths;
+    size_t search_path_count;
+    uint64_t random_seed;
+    uint64_t maximum_open_files;
+    uint64_t maximum_file_read_bytes;
+} mparser_system_context_options;
 
 typedef struct mparser_named_value {
     const char* name;
@@ -238,7 +273,7 @@ typedef struct mparser_execution_summary {
 } mparser_execution_summary;
 
 /*
- * ABI-generation-2 structure sizes. The three extensible structures may gain
+ * ABI-generation-2 structure sizes. The extensible structures may gain
  * tail fields without changing their minimum sizes. mparser_source_unit is
  * sealed because arrays use sizeof(mparser_source_unit) as their stride.
  */
@@ -251,6 +286,11 @@ typedef struct mparser_execution_summary {
 #define MPARSER_SOURCE_LOAD_OPTIONS_SIZE                                \
     ((uint32_t)(offsetof(mparser_source_load_options, search_path_count) + \
                 sizeof(((mparser_source_load_options*)0)->search_path_count)))
+#define MPARSER_SYSTEM_CONTEXT_OPTIONS_SIZE                             \
+    ((uint32_t)(offsetof(mparser_system_context_options,                \
+                         maximum_file_read_bytes) +                     \
+                sizeof(((mparser_system_context_options*)0)             \
+                           ->maximum_file_read_bytes)))
 #define MPARSER_SOURCE_UNIT_SIZE                                        \
     ((uint32_t)(offsetof(mparser_source_unit, source_size) +            \
                 sizeof(((mparser_source_unit*)0)->source_size)))
@@ -263,6 +303,9 @@ typedef struct mparser_execution_summary {
         (summary), sizeof(*(summary)), MPARSER_C_ABI_GENERATION)
 #define MPARSER_SOURCE_LOAD_OPTIONS_INIT(options)                       \
     mparser_source_load_options_init_sized(                            \
+        (options), sizeof(*(options)), MPARSER_C_ABI_GENERATION)
+#define MPARSER_SYSTEM_CONTEXT_OPTIONS_INIT(options)                    \
+    mparser_system_context_options_init_sized(                         \
         (options), sizeof(*(options)), MPARSER_C_ABI_GENERATION)
 
 MPARSER_C_API uint32_t mparser_c_abi_generation(void);
@@ -293,6 +336,26 @@ MPARSER_C_API mparser_api_status mparser_source_load_options_init_sized(
     void* storage,
     size_t storage_size,
     uint32_t abi_generation);
+MPARSER_C_API mparser_api_status
+mparser_system_context_options_init(
+    mparser_system_context_options* options);
+MPARSER_C_API mparser_api_status
+mparser_system_context_options_init_sized(
+    void* storage,
+    size_t storage_size,
+    uint32_t abi_generation);
+
+MPARSER_C_API mparser_api_status
+mparser_system_context_create_rooted_native(
+    const mparser_system_context_options* options,
+    mparser_system_context** out_context);
+MPARSER_C_API void
+mparser_system_context_retain(mparser_system_context* context);
+MPARSER_C_API void
+mparser_system_context_release(mparser_system_context* context);
+MPARSER_C_API mparser_system_capability
+mparser_system_context_capabilities(
+    const mparser_system_context* context);
 
 MPARSER_C_API mparser_api_status mparser_module_compile_utf8(
     const char* source,
@@ -347,8 +410,19 @@ MPARSER_C_API mparser_api_status mparser_module_execute(
     const mparser_module* module,
     const mparser_invocation_options* options,
     mparser_result** out_result);
+MPARSER_C_API mparser_api_status
+mparser_module_execute_with_system_context(
+    const mparser_module* module,
+    const mparser_system_context* context,
+    const mparser_invocation_options* options,
+    mparser_result** out_result);
 MPARSER_C_API mparser_api_status mparser_module_create_session(
     const mparser_module* module,
+    mparser_session** out_session);
+MPARSER_C_API mparser_api_status
+mparser_module_create_session_with_system_context(
+    const mparser_module* module,
+    const mparser_system_context* context,
     mparser_session** out_session);
 
 MPARSER_C_API void mparser_session_retain(mparser_session* session);

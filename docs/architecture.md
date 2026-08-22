@@ -1812,6 +1812,18 @@ builtin has a second engine-specific implementation. The production CLI uses
 the native adapter, while deterministic tests inject an in-memory adapter and
 isolated embedding requests can omit every process-facing capability.
 
+The active v1.3 embedding layer projects this internal authority through an
+opaque `mparser_system_context` and header-only C++ `SystemContext`. A rooted
+native constructor validates root/current/temporary/search directories,
+canonicalizes the longest existing path ancestor, and rejects path operations
+whose resolved identity escapes the root. Module execution may borrow the
+shared context for one call; a created session retains it through
+`RuntimeSessionState`. C ABI generation 2 revision 1 adds only these opaque
+handle and entry-point contracts, leaving the frozen revision-0 layouts and
+exports intact. Environment/process capabilities remain explicitly host-wide,
+and the rooted adapter documents filesystem-link TOCTOU as an OS sandboxing
+concern rather than claiming process isolation.
+
 Low-level file identifiers and random state live in the context rather than global
 process state. File entries retain the requested name, resolved host path,
 canonical permission/machine format/encoding, unread suffix, EOF/error state,

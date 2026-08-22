@@ -4,17 +4,20 @@
 It is implemented by the `mparser_c_api` CMake shared-library target, whose
 output name is `mparser_c`. It supports explicit source graphs, compile-once
 execution, sessions, structured diagnostics, resource controls, typed numeric
-values, and host-owned output routing.
+values, host-owned output routing, and explicitly capability-gated system
+contexts.
 
 The header exposes no C++ standard-library type, exception, class layout, or
 `RuntimeValue` representation. All state crosses the boundary through opaque
 handles, fixed-width constants, byte/code-unit views, and versioned plain C
 structures.
 
-The current v1.2 development tree uses C ABI generation 2 revision 0. That is
-binary-contract metadata, not the SDK product version. MParser, the installed
-SDK, and the C/C++ source APIs report development version `1.2.0`/`1.2`; the
-tree is not a tagged release until the milestone gate. Applications can query
+The frozen v1.2 candidate uses C ABI generation 2 revision 0 and 109 exports.
+The live v1.3 development header advances that generation additively to
+revision 1 and 117 exports for public system-context injection. These are
+binary-contract identifiers, not SDK product versions. MParser, the installed
+SDK, and the C/C++ source APIs still report development version `1.2.0`/`1.2`
+until the whole v1.3 train reaches its milestone gate. Applications can query
 `mparser_c_abi_generation()`, `mparser_c_abi_revision()`, and the three
 MParser component-version functions rather than assuming that product, ABI,
 and machine protocol levels advance together. The released ABI 1.1 contract
@@ -74,9 +77,9 @@ checks rather than a separate SDK version.
 
 ## Handles And Ownership
 
-The API defines opaque handles for modules, sessions, results, values, and
-cancellation tokens. Each successful constructor or owned getter returns one
-reference. Release it with the matching function:
+The API defines opaque handles for modules, sessions, results, values,
+cancellation tokens, and system contexts. Each successful constructor or
+owned getter returns one reference. Release it with the matching function:
 
 | Handle | Retain/release |
 | --- | --- |
@@ -85,6 +88,7 @@ reference. Release it with the matching function:
 | `mparser_result` | `mparser_result_retain/release` |
 | `mparser_value` | `mparser_value_retain/release` |
 | `mparser_cancel_token` | `mparser_cancel_token_retain/release` |
+| `mparser_system_context` | `mparser_system_context_retain/release` |
 
 `mparser_result_output`, `mparser_result_variable`,
 `mparser_value_cell_element`, and `mparser_value_struct_field` return owned
@@ -117,6 +121,36 @@ Invocation wall-time and cancellation accounting starts after lock admission.
 Time spent waiting behind an operation on the same module/session is not part
 of the requested wall-time limit. Cancellation remains observable once the
 queued invocation enters the runtime.
+
+## System Contexts
+
+Initialize `mparser_system_context_options` with
+`MPARSER_SYSTEM_CONTEXT_OPTIONS_INIT`, set a nonempty existing
+`root_directory`, select explicit capability bits, and call
+`mparser_system_context_create_rooted_native`. Optional current, temporary,
+and search directories must resolve to existing directories inside the root.
+The context owns mutable current-directory, search-path, random, and open-file
+state used by an invocation or reusable session.
+
+Use `mparser_module_execute_with_system_context` for a stateless invocation or
+`mparser_module_create_session_with_system_context` for persistent execution.
+A session retains the context, so the host may release its original context
+handle after session creation. Calls that share one context intentionally
+share its mutable system state; create separate contexts when requests require
+isolation. The original `mparser_module_execute` and
+`mparser_module_create_session` continue to create isolated runtime state with
+no process-facing capabilities.
+
+The rooted native adapter canonicalizes the longest existing path ancestor
+before every path-oriented directory, lookup, listing, and open operation. It
+rejects `..` and existing symbolic-link targets outside the configured root,
+filters directory entries that resolve outside it, limits simultaneously open
+files and one read window, and closes retained files with the context.
+Environment and process capabilities are host-wide and must be granted
+separately; the root does not constrain a command launched through `system`.
+This path policy is not a complete OS sandbox and does not defend against a
+hostile local process racing filesystem links during a call. Use an operating
+system sandbox when adversarial filesystem mutation is in scope.
 
 ## Compilation And Invocation
 
@@ -189,6 +223,10 @@ and JIT suppression rules are the same as the v0.82 C++ contract.
 calls and supports targeted global clearing, clearing all globals, and reset.
 Both paths return an owned `mparser_result`.
 
+The corresponding `*_with_system_context` entry points use the host-provided
+context described above. Execution-tier selection and VM fallback are
+unchanged; system builtins remain ordinary context-aware registry calls.
+
 An API status of `OK` means the host request was accepted and a result was
 created. It does not by itself mean that MATLAB-like execution succeeded.
 Inspect `mparser_result_status` or `mparser_result_succeeded`, then inspect
@@ -199,8 +237,9 @@ outputs, variables, diagnostics, and the execution summary.
 `disp` emits a display event. The current `fprintf(format, ...)` form emits a
 standard-output event and, when requested, returns the emitted UTF-8 byte
 count. `sprintf(format, ...)` returns a character row vector without emitting
-an event. File identifiers and file ownership are not part of this v1.2
-slice.
+an event. The frozen v1.2 host surface does not expose file ownership; the
+active v1.3 `*_with_system_context` calls expose session/context-owned file
+identifiers when the host grants filesystem capabilities.
 
 The `fprintf`/`sprintf` formatter accepts static flags/width/precision and
 `d`, `i`, `u`, `f`, `F`, `e`, `E`, `g`, `G`, `s`, and `c` conversions. It
@@ -333,8 +372,9 @@ outside MParser.
 
 ## Structure Versioning
 
-`mparser_invocation_options`, `mparser_execution_summary`, and
-`mparser_source_load_options` start with `struct_size` and `abi_generation`.
+`mparser_invocation_options`, `mparser_execution_summary`,
+`mparser_source_load_options`, and `mparser_system_context_options` start with
+`struct_size` and `abi_generation`.
 Initialize current source with the uppercase `MPARSER_*_INIT` macros; do not
 use aggregate literals. The macros pass the caller's complete storage size and
 current ABI generation to the sized initializers. Input readers ignore unknown
@@ -400,9 +440,11 @@ state, shared cancellation, and per-invocation resource isolation.
 `embedding_unload_stress` dynamically
 loads, queries, and unloads the shared library 256 times.
 
-`c_api_shared_library_abi` compares the dynamic export table against
-`tests/c_api_generation2_symbols.txt` and validates ELF SONAME or macOS install-name
-major 2. Internal compiler, VM, C++ facade, and SLJIT symbols use hidden
+`c_api_shared_library_abi` compares the live dynamic export table against
+`tests/c_api_generation2_revision1_symbols.txt` and validates ELF SONAME or
+macOS install-name major 2. The frozen revision-0 manifest remains in
+`tests/c_api_generation2_symbols.txt`. Internal compiler, VM, C++ facade, and
+SLJIT symbols use hidden
 visibility. Windows x64, Linux x64, macOS x64/ARM64, and focused Linux
 AArch64 jobs execute the applicable ABI and stress evidence.
 
@@ -434,12 +476,14 @@ Simplified BSD terms reproduced in the third-party notices.
 
 ## Current Development Boundary
 
-The v1.2 candidate host surface is C source API 1.2, C ABI generation 2 revision
-0, header-only C++ source API 1.2, and machine protocol 1.1. These contracts are versioned
-independently for technical checks, while the CLI, libraries, headers, and
-installed SDK report MParser version 1.2.0. Current in-repository and relocated
-consumers are updated together. The candidate snapshot is
-`docs/public-contract-v1.2.json`.
+The frozen v1.2 candidate host surface is C source API 1.2, C ABI generation 2
+revision 0 with 109 exports, header-only C++ source API 1.2, and machine
+protocol 1.1. The active v1.3 tree additively advances the live ABI to revision
+1 with 117 exports and rooted system-context calls. These contracts are
+versioned independently for technical checks, while the CLI, libraries,
+headers, and installed SDK still report MParser version 1.2.0 until the v1.3
+gate. Current in-repository and relocated consumers move together. The frozen
+v1.2 snapshot remains `docs/public-contract-v1.2.json`.
 
 The v1.0 contract, package, hashes, and authentication evidence remain
 available as a historical release record in `docs/public-contract-v1.json`

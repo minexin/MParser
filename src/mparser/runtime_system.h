@@ -189,6 +189,18 @@ struct RuntimeSystemContextOptions {
     size_t maximumFileReadBytes = 16U * 1024U * 1024U;
 };
 
+struct RuntimeRootedSystemContextOptions {
+    RuntimeSystemCapability capabilities =
+        RuntimeSystemCapability::None;
+    std::filesystem::path rootDirectory;
+    std::optional<std::filesystem::path> currentDirectory;
+    std::optional<std::filesystem::path> temporaryDirectory;
+    std::vector<std::filesystem::path> searchPaths;
+    std::uint64_t randomSeed = 5489U;
+    size_t maximumOpenFiles = 256;
+    size_t maximumFileReadBytes = 16U * 1024U * 1024U;
+};
+
 class RuntimeSystemContext {
 public:
     explicit RuntimeSystemContext(
@@ -315,5 +327,9 @@ makeIsolatedRuntimeSystemContext();
 std::shared_ptr<RuntimeSystemContext>
 makeNativeRuntimeSystemContext(
     std::vector<std::filesystem::path> searchPaths = {});
+
+RuntimeSystemResult<std::shared_ptr<RuntimeSystemContext>>
+makeRootedNativeRuntimeSystemContext(
+    RuntimeRootedSystemContextOptions options);
 
 } // namespace mparser

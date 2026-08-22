@@ -9,8 +9,9 @@ Those numbers are never SDK product versions.
 
 MParser uses semantic versions for release tags and packages. The active
 source tree, product metadata, and installed SDK report candidate version
-`1.2.0`. The complete v1.2 train has reached its internal candidate gate, but
-it is not a tagged release until publication is explicitly selected.
+`1.2.0`. The complete v1.2 train has reached its internal candidate gate; the
+live source is now the v1.3 development line, but product metadata is stamped
+only once that larger train is ready to freeze.
 
 This project is not currently using the v1.2 interfaces in production.
 Implementation, in-repository consumers, tests, samples, and documentation may
@@ -29,7 +30,7 @@ requirement.
 | MParser product and SDK | `1.2.0` candidate snapshot | User-facing release identity |
 | Production CLI | 1.0 | Command, option, channel, and exit contract |
 | C source API | 1.2 | Header-level source contract for C hosts |
-| C ABI | generation 2, revision 0 | Binary layout, symbols, ownership, and calling convention |
+| C ABI | generation 2, live revision 1; frozen v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.2 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
 | Builtin source contract | 1.1 | Registry/descriptor/call semantics compiled with the engine |
@@ -49,7 +50,7 @@ separate execution products.
 
 `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.2.0`.
 `MPARSER_C_ABI_GENERATION` contains generation `2`, and
-`MPARSER_C_ABI_REVISION` contains revision `0`.
+the active header's `MPARSER_C_ABI_REVISION` contains revision `1`.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` expose the same
 binary compatibility identifiers at runtime. The generation terminology is
 deliberately distinct from the MParser product version and source API.
@@ -59,10 +60,17 @@ complex real/imaginary buffers. The current SONAME/install-name major is 2.
 Caller-sized root records permit future tails; fixed-stride records remain
 sealed. Exact rules and validation are in `c-abi-compatibility.md`.
 
-Until the v1.2 candidate freeze, the current ABI may change with all repository
-consumers updated in the same change. After a freeze, an incompatible binary
-change advances the generation; an additive frozen-generation change advances
-the revision.
+The frozen v1.2 candidate is generation 2 revision 0 with 109 exports. The
+active v1.3 tree adds eight context-related exports, advances the revision to
+1, and retains generation/SOVERSION 2 because all revision-0 layouts and
+symbols remain present. Frozen v1.2 snapshots are archive evidence, not live
+header inputs.
+
+During the v1.3 development train, repository consumers move with the live
+header. An incompatible binary change advances the generation; an additive
+change within a frozen generation advances the revision. The product/source
+API level is updated at the milestone gate rather than for each internal
+batch.
 
 ## C++ Source API 1.2
 
@@ -71,9 +79,11 @@ generation 2. Its source API follows the v1.2 product line to avoid presenting
 an unrelated SDK 2.0 identity. It does not promise a C++ binary ABI, and no STL
 object or C++ class layout crosses the shared-library boundary.
 
-The v1.2 candidate header and relocated multi-translation-unit consumer are
-snapshotted together. Later development lines may replace their own unreleased
-headers without adding compatibility wrappers.
+The v1.2 candidate header and relocated multi-translation-unit consumer remain
+snapshotted together. The live v1.3 header/consumer pair adds rooted system
+contexts while retaining source API metadata 1.2 until the milestone freeze.
+Unreleased development interfaces may move together without compatibility
+wrappers.
 
 ## Machine Result Protocol 1.1
 

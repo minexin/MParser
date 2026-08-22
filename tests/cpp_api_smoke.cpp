@@ -497,7 +497,7 @@ int main(int argc, char** argv) {
     static_assert(sourceApiVersion.major == 1);
     static_assert(sourceApiVersion.minor == 2);
     assert(mparser::sdk::abiGeneration() == 2);
-    assert(mparser::sdk::abiRevision() == 0);
+    assert(mparser::sdk::abiRevision() == 1);
     runValueSmoke();
     runHostOutputSmoke();
     runModuleSmoke(argv[1], argv[2]);

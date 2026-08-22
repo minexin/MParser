@@ -84,8 +84,12 @@ The script console supports `disp`, `fprintf`, and pure `sprintf`.
 Unsuppressed expression statements print `ans = value` using the session's
 `format` and line-spacing state; semicolon-suppressed expressions update `ans`
 without display. The frozen v1.2 embedding surface routes console output only.
-The active v1.3 CLI additionally gives each invocation a native system context
-and allows `fprintf(fid,...)` for a file opened in that same session.
+The active v1.3 CLI gives each invocation a native system context, and C/C++
+hosts can now create an explicitly capability-gated rooted context and bind it
+to one call or retained session. File identifiers, current directory, search
+paths, and random state belong to that context. The root constrains
+path-oriented operations but is not an OS sandbox; process/environment rights
+remain separately granted host-wide capabilities.
 
 The active v1.3 low-level file slice is:
 
