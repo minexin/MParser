@@ -140,6 +140,18 @@ and embedding batches:
 - UTF-16 `strfind`/`strrep` with overlapping matches and string-array/Cell
   mapping, plus reproducible O(k) `randperm(n,k)` using session random state
   and preflight resource checks;
+- `int2str`, class-aware `mat2str`, isolated numeric `str2num`,
+  N-dimensional `num2cell` and variable-segment `cell2mat`, `iscellstr`, and
+  shape-preserving `arrayfun` with multiple outputs, `UniformOutput`, and
+  `ErrorHandler`; fixed-width integer formatting and class roundtrips retain
+  exact `int64`/`uint64` bits above `flintmax`;
+- `ismember`, `union`, `intersect`, `setdiff`, and `setxor` for dense numeric,
+  complex, character, string, missing, and Cell-text values, including
+  sorted/stable order, `rows`, first-index outputs, mixed numeric classes,
+  exact wide-integer ordering, and payload-free missing-only value outputs;
+- shape-preserving `contains`, `startsWith`, and `endsWith` over character
+  vectors, string arrays, and Cell text with multiple patterns and
+  `IgnoreCase`;
 - capability-gated `eval`, `evalc`, `evalin`, and `assignin` with current,
   caller, and base workspace routing, multiple outputs, captured output,
   catch expressions, runtime-error side-effect preservation, and late
@@ -164,7 +176,8 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/utility_library_demo.m`, `samples/dynamic_workspace_demo.m`, and
 `samples/system_command_demo.m`, `samples/filesystem_management_demo.m`,
 `samples/file_metadata_demo.m`, `samples/advanced_numeric_demo.m`, and
-`samples/mat_file_demo.m`. These are
+`samples/mat_file_demo.m`, plus
+`samples/conversion_set_callback_demo.m`. These are
 development capabilities, not a claim of complete MATLAB system or file I/O.
 The latest 2026-08-23 MATLAB R2024b differential rerun records 219 matches and
 4 gaps across its 223 accepted cases. It closes MAT-file save/load after the
@@ -225,7 +238,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.2; frozen v1.2 ABI generation 2 revision 0 plus live additive revision 1, typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, caller-sized roots |
 | C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.9 using registry/descriptors/call/results/source-evaluation, stream-I/O, filesystem metadata/MAT persistence, and advanced-numeric context |
+| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.10 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, and advanced-numeric context |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
@@ -297,6 +310,6 @@ version drift.
 The v1.0 snapshots remain immutable historical evidence. The current C API
 1.2, ABI generation 2, C++ API 1.2, protocol 1.1, and builtin contract 1.1
 snapshots are frozen separately at the v1.2 candidate gate. The in-tree
-builtin source contract has advanced to 1.4 for v1.3 development and is not a
+builtin source contract has advanced to 1.10 for v1.3 development and is not a
 new frozen SDK release. See
 [v1.x Roadmap](roadmap-v1.x.md).

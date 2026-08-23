@@ -349,6 +349,28 @@ bytecode, and production modes. Remaining v1.3 work is standard-library breadth
 and explicitly recorded system/text/I/O boundaries rather than this workspace
 contract.
 
+The fifteenth batch adds source contract 1.10 with 275 descriptors and 277
+registered names. Conversion coverage now includes `int2str`, class-aware
+`mat2str`, isolated numeric `str2num`, N-dimensional `num2cell`/`cell2mat`,
+and `iscellstr`. Exact fixed-width formatting does not round through `double`;
+class-preserving wide-integer text uses MATLAB-readable `s64`/`u64` literals,
+and `cell2mat` assembles variable-segment rectangular N-dimensional grids.
+`str2num` parses a restricted expression graph and admits
+only deterministic pure registry calls; it cannot assign, reach caller
+variables, or invoke workspace/system services. `arrayfun` shares the dynamic
+invoker, exact input-shape rule, multi-output behavior, `UniformOutput`, and
+`ErrorHandler` contract with direct calls. `ismember`, `union`, `intersect`,
+`setdiff`, and `setxor` preserve numeric classes and MATLAB column-major
+shapes, support element or numeric/character `rows` operation, sorted/stable
+ordering, first indices, Cell text, string missing, complex values, and the
+MATLAB rule that NaN or missing set elements do not match. `contains`,
+`startsWith`, and `endsWith` accept multiple patterns and `IgnoreCase` while
+preserving string/Cell input shape. One runnable sample and paired HIR/bytecode
+tests cover normal, malformed, exact 64-bit, variable-block N-dimensional,
+20,000-element, payload-free billion-element, and cancellation paths. Legacy
+set ordering, Pattern objects, locale-wide Unicode case folding, and broad
+long-tail conversion overloads remain explicit later work.
+
 ## v1.4: Advanced Mathematics And Typed Performance
 
 v1.4 groups the heavier numerical families with the optimization work needed

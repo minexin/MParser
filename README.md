@@ -1845,6 +1845,22 @@ splitting and regex matching, N-dimensional and missing-aware `sort`/`unique`,
 `cellfun` callback contracts, and Struct/Cell conversion. The regex layer is a
 documented portable subset, not a claim of complete MATLAB regexp syntax.
 
+Run the conversion, array callback, set, and text-query batch with:
+
+```powershell
+build\mparser.exe --run samples\conversion_set_callback_demo.m
+```
+
+The demo reports `summary = 31` through HIR, bytecode, and production modes.
+It covers safe numeric `str2num`, exact-integer `int2str`/`mat2str`,
+N-dimensional `num2cell` and variable-block `cell2mat`, `iscellstr`,
+multi-output and error-handled `arrayfun`, five set operations with
+NaN/rows/stable/index behavior, and shape-preserving
+`contains`/`startsWith`/`endsWith`. Exact `int64`/`uint64` class text above
+`flintmax` uses MATLAB-readable `s64`/`u64` hexadecimal literals so parsing it
+does not round through `double`. `str2num` cannot reach caller workspace or
+system services; legal but unoptimized calls continue through VM fallback.
+
 Run the dynamic language semantics batch with:
 
 ```powershell

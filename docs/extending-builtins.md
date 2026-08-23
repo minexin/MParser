@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.9. Contract 1.0 established
+identify active source contract 1.10. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -313,16 +313,22 @@ Contract 1.9 adds capability-bound `fileattrib` and file-form `delete`.
 `delete` retains object/listener/dynamic-property dispatch as a VM intrinsic
 for non-text operands while text operands use the shared system handler; its
 descriptor records both external and object-state effects.
+Contract 1.10 adds execution-controlled conversion, dense set, callback, and
+text-query descriptors. `arrayfun` uses the existing dynamic-call and
+object-array-policy capabilities; set/text handlers remain pure and
+deterministic while cooperating with optional execution control; `str2num`
+uses an isolated source graph restricted to deterministic pure descriptors.
 The current v1.3 development catalog exercises
 callable-based dynamic invocation through `cellfun`, execution-controlled
 numeric utilities, session-random `randperm`, and the `eval`/`evalc`/`evalin`/
 `assignin` family plus shared text/binary, managed filesystem, and advanced
-numeric operations plus MAT persistence and file metadata; it contains 260
-descriptors and 262 registered names.
+numeric operations plus MAT persistence, file metadata, conversion, set,
+callback, and text-query operations; it contains 275 descriptors and 277
+registered names.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The active development snapshot is
-`tests/public_contract/builtin/1.9/default_catalog.json`; earlier files remain
+`tests/public_contract/builtin/1.10/default_catalog.json`; earlier files remain
 historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output

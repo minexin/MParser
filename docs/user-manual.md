@@ -348,6 +348,38 @@ but the runtime value is shape-carrying: concatenation, `repmat`, indexing,
 and transforms such as `flip` operate on arbitrary N-dimensional missing
 arrays without allocating an element payload.
 
+The conversion, callback, set, and text-query slice adds `int2str`,
+class-aware `mat2str`, numeric `str2num`, N-dimensional
+`num2cell`/`cell2mat`, `iscellstr`, and `arrayfun`. `str2num` executes in an
+isolated compiled module and accepts only numeric syntax plus deterministic
+pure registry calls; invalid or unsafe text returns `[]`, while cancellation
+and resource failures remain diagnostics. It cannot read caller variables or
+perform assignment/system/workspace operations. `arrayfun` requires every
+array input to have identical dimensions and supports multiple outputs,
+`UniformOutput`, and `ErrorHandler`. Fixed-width integer formatting reads the
+exact stored bits; class-preserving `mat2str` emits MATLAB-readable `s64`/`u64`
+hexadecimal literals above `flintmax` so `str2num` can reconstruct the original
+`int64`/`uint64`. `cell2mat` accepts rectangular N-dimensional block grids
+whose row heights, column widths, or higher-axis segment sizes vary by Cell
+coordinate, including zero-volume neutral blocks.
+
+`ismember`, `union`, `intersect`, `setdiff`, and `setxor` support dense
+numeric/logical classes, complex values, characters, strings, missing values,
+and Cell arrays of character vectors. Set outputs preserve the first input's
+numeric class, use MATLAB sorted order by default, accept `stable`, and support
+numeric or character `rows`; NaN and string missing values never match and can
+therefore remain distinct. A generic missing array can mix only with `double`
+or `single`, where it becomes NaN. When both set operands are shape-only
+missing arrays, one-output operations remain payload-free even for very large
+shapes; logical or index outputs are bounded to 10,000,000 materialized
+elements and otherwise report `MParser:SetInputTooLarge`.
+
+`contains`, `startsWith`, and `endsWith` preserve
+string/Cell shape, test any of multiple patterns, and accept `IgnoreCase`.
+Current case-insensitive matching is deterministic ASCII folding rather than
+locale-wide Unicode case folding. See
+`samples/conversion_set_callback_demo.m` for the executable workflow.
+
 See `samples/standard_library_demo.m` and
 `samples/utility_library_demo.m` for executable examples. Locale-wide Unicode
 case conversion, the complete MATLAB regular-expression dialect, extended
@@ -509,7 +541,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.2, ABI generation 2 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.2 |
-| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.9 |
+| Builtin compiled into the engine | Frozen v1.2 source contract 1.1; active in-tree contract 1.10 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

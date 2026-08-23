@@ -1449,8 +1449,10 @@ stream-I/O family and warning implicit-output corrections. Active contract
 name, and mutation descriptors. Active contract 1.7 adds the shared advanced
 numeric family, and active contract 1.8 adds capability-bound MAT workspace
 persistence. Active contract 1.9 adds file metadata/removal descriptors and
-records the dual file/object dispatch contract for `delete`; its development
-snapshot contains 260 descriptors and 262 registered names. A generator-backed
+records the dual file/object dispatch contract for `delete`. Active contract
+1.10 adds conversion, dynamic array callback, dense set, and text-query
+families; its development snapshot contains 275 descriptors and 277 registered
+names. A generator-backed
 smoke test compares the live registry to the active snapshot; it does not
 serialize handlers or claim a C++ binary ABI. Conformance tests compare
 recursive runtime values and diagnostics across HIR and bytecode rather than
@@ -2014,6 +2016,19 @@ matching across scalar, string-array, and Cell inputs. `randperm(n,k)` uses a
 sparse virtual Fisher-Yates map, so work and auxiliary storage scale with `k`;
 it checks cancellation and output limits before consuming session random
 state. Long numeric loops use the same cooperative execution-control boundary.
+
+The conversion, callback, set, and text-query batch keeps the same shared
+handler model. Conversion reads exact integer element bits instead of routing
+fixed-width values through `double`; class-preserving `mat2str` uses exact
+`s64`/`u64` literals outside the binary64 integer range. `cell2mat` derives one
+segment size and prefix offset per Cell coordinate and axis, so rectangular
+two- and N-dimensional block grids may vary row height, column width, or depth
+without engine-specific concatenation. Set ordering uses exact cross-class
+integer comparisons, with magnitude/phase ordering for complex values, and
+retains an analytic path when both operands are payload-free missing arrays.
+`arrayfun` enters the owning engine through the existing dynamic invoker and
+therefore shares call frames, output counts, diagnostics, cancellation, and
+fallback rather than introducing callback bytecode.
 
 The advanced numerical runtime separates MATLAB-facing value, shape, class,
 output-count, and diagnostic semantics in `runtime_advanced_numeric` from a

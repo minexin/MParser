@@ -339,7 +339,7 @@ C source API 1.2 and ABI generation 2 ownership, sealed/extensible structure
 rules, and symbol meanings are checked against current headers and consumers.
 The C++ source API is 1.2 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
 typed and complex numeric values. Builtin source contract 1.1 is frozen with
-the v1.2 candidate; the active in-tree descriptor contract is 1.9 and remains
+the v1.2 candidate; the active in-tree descriptor contract is 1.10 and remains
 a compiled-in source extension surface, not an external plugin ABI. Archived
 v1.0 and frozen v1.2 contracts remain historical evidence rather than
 compatibility gates for development changes.

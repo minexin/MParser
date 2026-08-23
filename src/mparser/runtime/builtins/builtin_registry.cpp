@@ -2,7 +2,9 @@
 
 #include "mparser/runtime/builtins/runtime_advanced_numeric.h"
 #include "mparser/runtime/builtins/runtime_array_ops.h"
+#include "mparser/runtime/builtins/runtime_callback_builtins.h"
 #include "mparser/runtime/builtins/runtime_collection_builtins.h"
+#include "mparser/runtime/builtins/runtime_conversion_builtins.h"
 #include "mparser/runtime/builtins/runtime_math.h"
 #include "mparser/runtime/builtins/runtime_mat_builtins.h"
 #include "mparser/runtime/core/runtime_numeric.h"
@@ -10,10 +12,12 @@
 #include "mparser/runtime/core/runtime_object.h"
 #include "mparser/runtime/builtins/runtime_reduction.h"
 #include "mparser/runtime/builtins/runtime_scan.h"
+#include "mparser/runtime/builtins/runtime_set_builtins.h"
 #include "mparser/runtime/core/runtime_shape.h"
 #include "mparser/runtime/builtins/runtime_system_builtins.h"
 #include "mparser/runtime/core/runtime_text.h"
 #include "mparser/runtime/builtins/runtime_text_builtins.h"
+#include "mparser/runtime/builtins/runtime_text_query_builtins.h"
 #include "mparser/runtime/core/runtime_value_ops.h"
 #include "mparser/runtime/core/runtime_warning.h"
 
@@ -43,6 +47,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "any",
     "asin",
     "asinh",
+    "arrayfun",
     "assignin",
     "assert",
     "atan",
@@ -50,6 +55,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "atanh",
     "cat",
     "cell",
+    "cell2mat",
     "cell2struct",
     "cellfun",
     "cellstr",
@@ -63,6 +69,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "complex",
     "computer",
     "conj",
+    "contains",
     "conv",
     "copyfile",
     "cos",
@@ -82,6 +89,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "dot",
     "eig",
     "empty",
+    "endsWith",
     "enumeration",
     "eps",
     "error",
@@ -139,10 +147,13 @@ constexpr std::string_view kBuiltinNames[] = {
     "int32",
     "int64",
     "int8",
+    "int2str",
     "inv",
+    "intersect",
     "ipermute",
     "isa",
     "iscell",
+    "iscellstr",
     "isenum",
     "isempty",
     "ischar",
@@ -155,6 +166,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "isinf",
     "isinteger",
     "islogical",
+    "ismember",
     "ismatrix",
     "ismethod",
     "isnumeric",
@@ -189,6 +201,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "mean",
     "median",
     "meshgrid",
+    "mat2str",
     "metaclass",
     "metafunction",
     "methods",
@@ -205,6 +218,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "notify",
     "norm",
     "num2str",
+    "num2cell",
     "numel",
     "ones",
     "path",
@@ -235,6 +249,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "rng",
     "round",
     "save",
+    "setdiff",
+    "setxor",
     "sign",
     "single",
     "sin",
@@ -245,7 +261,9 @@ constexpr std::string_view kBuiltinNames[] = {
     "squeeze",
     "sprintf",
     "std",
+    "startsWith",
     "str2double",
+    "str2num",
     "str2func",
     "strcmp",
     "strcmpi",
@@ -278,6 +296,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "uint64",
     "uint8",
     "unique",
+    "union",
     "upper",
     "var",
     "vertcat",
@@ -1692,6 +1711,124 @@ BuiltinDescriptor collectionLibraryDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor conversionLibraryDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "mat2str") {
+        descriptor.inputs = BuiltinArity::range(1, 3);
+    } else if (name == "num2cell") {
+        descriptor.inputs = BuiltinArity::range(1, 2);
+    } else {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    }
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {{
+        name == "int2str" ? BuiltinValueConstraint::Numeric
+        : name == "str2num" ? BuiltinValueConstraint::Text
+                             : BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Any,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Context;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidConversionBuiltinCall";
+    descriptor.summary =
+        "MATLAB-like numeric/text representation or Cell conversion.";
+    descriptor.contextPermissions =
+        BuiltinContextPermission::ExecutionControl;
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeConversionLibraryBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor callbackLibraryDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::variadic(2);
+    descriptor.outputs = BuiltinArity::variadic(0);
+    descriptor.implementation = BuiltinImplementationKind::Context;
+    descriptor.purity = BuiltinPurity::Impure;
+    descriptor.determinism = BuiltinDeterminism::ContextDependent;
+    descriptor.threadSafety = BuiltinThreadSafety::ContextBound;
+    descriptor.sideEffects = BuiltinSideEffect::External;
+    descriptor.contextPermissions =
+        BuiltinContextPermission::DynamicCall |
+        BuiltinContextPermission::ObjectArrayPolicy |
+        BuiltinContextPermission::ExecutionControl;
+    descriptor.requiredContext = BuiltinContextPermission::DynamicCall;
+    descriptor.errorIdentifier = "MParser:InvalidCallbackBuiltinCall";
+    descriptor.summary =
+        "MATLAB-like element-wise callback mapping over dense arrays.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeCallbackLibraryBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor setLibraryDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::variadic(2);
+    descriptor.outputs = BuiltinArity::range(
+        0, name == "ismember" || name == "setdiff" ? 2 : 3);
+    descriptor.argumentConstraints = {
+        {BuiltinValueConstraint::Any, BuiltinShapeConstraint::Any},
+        {BuiltinValueConstraint::Any, BuiltinShapeConstraint::Any},
+    };
+    descriptor.outputConstraints.assign(
+        *descriptor.outputs.maximum,
+        BuiltinOutputConstraint{BuiltinValueConstraint::Any,
+                                BuiltinShapeConstraint::Any});
+    descriptor.implementation = BuiltinImplementationKind::Context;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.contextPermissions =
+        BuiltinContextPermission::ExecutionControl;
+    descriptor.errorIdentifier = "MParser:InvalidSetBuiltinCall";
+    descriptor.summary =
+        "MATLAB-like membership and set operation over dense values or "
+        "rows.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeSetLibraryBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor textQueryDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = BuiltinArity::variadic(2);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints = {
+        {BuiltinValueConstraint::Any, BuiltinShapeConstraint::Any},
+        {BuiltinValueConstraint::Any, BuiltinShapeConstraint::Any},
+    };
+    descriptor.outputConstraints = {{
+        BuiltinValueConstraint::Numeric,
+        BuiltinShapeConstraint::Any,
+    }};
+    descriptor.implementation = BuiltinImplementationKind::Context;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.contextPermissions =
+        BuiltinContextPermission::ExecutionControl;
+    descriptor.errorIdentifier = "MParser:InvalidTextQueryCall";
+    descriptor.summary =
+        "MATLAB-like contains, startsWith, or endsWith text query.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeTextQueryBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isRuntimeSystemBuiltin(name)) {
         return systemDescriptor(name);
@@ -1704,6 +1841,18 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isRuntimeCollectionLibraryBuiltin(name)) {
         return collectionLibraryDescriptor(name);
+    }
+    if (isRuntimeConversionLibraryBuiltin(name)) {
+        return conversionLibraryDescriptor(name);
+    }
+    if (isRuntimeCallbackLibraryBuiltin(name)) {
+        return callbackLibraryDescriptor(name);
+    }
+    if (isRuntimeSetLibraryBuiltin(name)) {
+        return setLibraryDescriptor(name);
+    }
+    if (isRuntimeTextQueryBuiltin(name)) {
+        return textQueryDescriptor(name);
     }
     if (isRuntimeNumericLibraryBuiltin(name)) {
         return numericLibraryDescriptor(name);

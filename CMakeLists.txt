@@ -245,8 +245,10 @@ add_library(mparser_core STATIC
     src/mparser/runtime/core/runtime_assignment.cpp
     src/mparser/execution/runtime_benchmark.cpp
     src/mparser/runtime/core/runtime_call_frame.cpp
+    src/mparser/runtime/builtins/runtime_callback_builtins.cpp
     src/mparser/runtime/core/runtime_cell.cpp
     src/mparser/runtime/builtins/runtime_collection_builtins.cpp
+    src/mparser/runtime/builtins/runtime_conversion_builtins.cpp
     src/mparser/runtime/core/runtime_exception.cpp
     src/mparser/runtime/core/runtime_execution_control.cpp
     src/mparser/runtime/io/runtime_file_io.cpp
@@ -266,6 +268,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/core/runtime_range.cpp
     src/mparser/runtime/builtins/runtime_reduction.cpp
     src/mparser/runtime/builtins/runtime_scan.cpp
+    src/mparser/runtime/builtins/runtime_set_builtins.cpp
     src/mparser/runtime/core/runtime_session_state.cpp
     src/mparser/runtime/core/runtime_shape.cpp
     src/mparser/execution/runtime_source_evaluation.cpp
@@ -275,6 +278,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/builtins/runtime_system_builtins.cpp
     src/mparser/runtime/core/runtime_text.cpp
     src/mparser/runtime/builtins/runtime_text_builtins.cpp
+    src/mparser/runtime/builtins/runtime_text_query_builtins.cpp
     src/mparser/runtime/core/runtime_value.cpp
     src/mparser/runtime/core/runtime_value_ops.cpp
     src/mparser/semantic/semantic.cpp
@@ -1995,6 +1999,32 @@ add_test(NAME standard_library_production_cli_smoke
 set_tests_properties(standard_library_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 12")
 
+add_executable(conversion_set_callback_smoke_tests
+    tests/conversion_set_callback_smoke.cpp)
+target_link_libraries(conversion_set_callback_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME conversion_set_callback_smoke
+    COMMAND conversion_set_callback_smoke_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/conversion_set_callback_demo.m)
+
+add_test(NAME conversion_set_callback_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/conversion_set_callback_demo.m)
+set_tests_properties(conversion_set_callback_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 31")
+
+add_test(NAME conversion_set_callback_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/conversion_set_callback_demo.m)
+set_tests_properties(conversion_set_callback_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 31")
+
+add_test(NAME conversion_set_callback_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/conversion_set_callback_demo.m)
+set_tests_properties(conversion_set_callback_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 31")
+
 add_executable(utility_library_smoke_tests
     tests/utility_library_smoke.cpp)
 target_link_libraries(utility_library_smoke_tests PRIVATE
@@ -2069,10 +2099,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.9/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.10/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.9 catalog validated: 260 descriptors")
+        "builtin source contract 1.10 catalog validated: 275 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2743,7 +2773,7 @@ install(FILES
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
-    tests/public_contract/builtin/1.9/default_catalog.json
+    tests/public_contract/builtin/1.10/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
@@ -2762,6 +2792,7 @@ install(FILES
     samples/complex_numeric_demo.m
     samples/core_numeric_builtins_demo.m
     samples/advanced_numeric_demo.m
+    samples/conversion_set_callback_demo.m
     samples/performance_scalar_loop.m
     samples/performance_array_workload.m
     samples/reliability_boundary_demo.m
