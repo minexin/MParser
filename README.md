@@ -1037,6 +1037,24 @@ the exact boundaries and comparison rules. Source-only host reports and their
 local validation evidence are indexed in
 [docs/baselines/v1.0/README.md](docs/baselines/v1.0/README.md).
 
+The active v1.4 train adds a versioned seven-workload suite so optimization
+work is selected from repeatable scalar, array, reduction, function-call, and
+dense-linear-algebra evidence. Its first selected optimization inlines a
+strictly proven pure local scalar function into the existing portable/SLJIT
+kernel while retaining transactional VM fallback:
+
+```powershell
+ctest --test-dir build/windows-msvc-release `
+  -R "^performance_suite_contract_smoke$" --output-on-failure
+cmake --build build/windows-msvc-release --config Release `
+  --target mparser_v1_4_performance_suite
+build\windows-msvc-release\mparser.exe --run-typed-bytecode `
+  --typed-backend=native samples\scalar_function_jit_demo.m
+```
+
+See [docs/v1.4.md](docs/v1.4.md) for the exact specialization boundary,
+current host characterization, and still-uncovered workload priorities.
+
 Install and consume the C SDK:
 
 ```powershell

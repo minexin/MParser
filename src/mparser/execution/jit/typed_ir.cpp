@@ -91,7 +91,15 @@ void addCommonOperations(BytecodeTypedIrRegion& region,
                 ", linear-index-reads=" +
                 std::to_string(contract.linearIndexReadCount) +
                 ", linear-index-writes=" +
-                std::to_string(contract.linearIndexWriteCount)});
+                std::to_string(contract.linearIndexWriteCount) +
+                ", scalar-function-calls=" +
+                std::to_string(contract.scalarFunctionCallCount)});
+        if (contract.scalarFunctionCallCount > 0) {
+            region.operations.push_back(BytecodeTypedIrOperation{
+                "inline-scalar-function",
+                "calls=" +
+                    std::to_string(contract.scalarFunctionCallCount)});
+        }
     } else if (candidate.kind == "function-site" ||
                candidate.kind == "builtin-site") {
         region.operations.push_back(BytecodeTypedIrOperation{

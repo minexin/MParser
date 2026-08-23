@@ -227,6 +227,98 @@ end
            mparser::RuntimeFallbackKind::ContainsCall);
 }
 
+void runScalarFunctionSpecializationRegionSmoke() {
+    const auto result = plan(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + local_kernel(i) + local_kernel(i + 1);
+end
+end
+
+function z = local_kernel(x)
+shifted = x + 1;
+z = sin(sqrt(shifted + 1)) + sqrt(shifted + 1) / (shifted + 2);
+end
+)");
+
+    const auto* loop = findLoop(result, "i");
+    assert(loop != nullptr);
+    assert(hasName(loop->region.callTargets, "local_kernel"));
+    assert(!loop->region.hasCalls);
+    assert(loop->region.scalarFunctionCallCount == 2);
+    assert(loop->region.eligibleForTypedExecution);
+    assert(loop->region.reason ==
+           "eligible closed scalar loop region with scalar function specialization");
+}
+
+void assertScalarFunctionRejected(std::string_view source) {
+    const auto result = plan(source);
+    const auto* loop = findLoop(result, "i");
+    assert(loop != nullptr);
+    assert(loop->region.scalarFunctionCallCount == 0);
+    assert(loop->region.hasCalls);
+    assert(!loop->region.eligibleForTypedExecution);
+    assert(loop->region.fallbackKind ==
+           mparser::RuntimeFallbackKind::ContainsCall);
+}
+
+void runScalarFunctionSpecializationRejectionSmoke() {
+    assertScalarFunctionRejected(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + local_kernel(i, 2);
+end
+end
+
+function z = local_kernel(x, scale)
+z = x * scale;
+end
+)");
+
+    assertScalarFunctionRejected(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + local_kernel(i);
+end
+end
+
+function z = local_kernel(x)
+arguments
+    x (1, 1) double
+end
+z = x + 1;
+end
+)");
+
+    assertScalarFunctionRejected(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + local_kernel(i);
+end
+end
+
+function z = local_kernel(x)
+z = sum(x);
+end
+)");
+
+    assertScalarFunctionRejected(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + local_kernel(i);
+end
+
+function z = local_kernel(x)
+z = x + 100;
+end
+end
+
+function z = local_kernel(x)
+z = x + 1;
+end
+)");
+}
+
 void runLinearIndexRegionSmoke() {
     const auto result = plan(R"(function total = main()
 x = 1:12;
@@ -354,6 +446,8 @@ int main() {
     runNestedLoopRegionSmoke();
     runPureMathCallRegionSmoke();
     runGeneralBuiltinCallRejectionSmoke();
+    runScalarFunctionSpecializationRegionSmoke();
+    runScalarFunctionSpecializationRejectionSmoke();
     runLinearIndexRegionSmoke();
     runMultidimensionalIndexRejectionSmoke();
     runSessionBindingRejectionSmoke();

@@ -35,6 +35,7 @@ set(required_documents
     docs/v1.1.md
     docs/v1.2.md
     docs/v1.3.md
+    docs/v1.4.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-jit-scope-decision.md
     docs/v1.0-documentation.md

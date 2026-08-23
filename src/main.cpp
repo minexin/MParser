@@ -762,6 +762,8 @@ void printBytecodeOptimizationPlan(
                   << region.linearIndexReadCount
                   << ", linearIndexWrites="
                   << region.linearIndexWriteCount
+                  << ", scalarFunctionCalls="
+                  << region.scalarFunctionCallCount
                   << ", stack=" << region.stackInputCount << "->"
                   << region.stackOutputCount << "\n";
         std::cout << "      inputs="
@@ -808,6 +810,8 @@ void printBytecodeTypedIr(const mparser::BytecodeTypedIrModule& module) {
                   << region.region.linearIndexReadCount
                   << ", linearIndexWrites="
                   << region.region.linearIndexWriteCount
+                  << ", scalarFunctionCalls="
+                  << region.region.scalarFunctionCallCount
                   << "\n";
         std::cout << "      inputs="
                   << stringListToString(region.region.inputs)

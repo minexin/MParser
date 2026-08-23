@@ -1,0 +1,63 @@
+{
+  "protocol": {
+    "name": "mparser.performance-workload-manifest",
+    "major": 1,
+    "minor": 0
+  },
+  "suite": {
+    "id": "v1.4-numeric-v1",
+    "version": 1,
+    "description": "Representative scalar, array, builtin, and function-call workloads for evidence-driven v1.4 Typed/JIT work"
+  },
+  "workloads": [
+    {
+      "id": "nested-scalar-loop-v1",
+      "category": "scalar-loop",
+      "source": "samples/performance_scalar_loop.m",
+      "result_variable": "baseline_result",
+      "optimization_focus": "nested loop scalar math lowering"
+    },
+    {
+      "id": "linear-array-loop-v1",
+      "category": "dense-array-loop",
+      "source": "samples/performance_array_workload.m",
+      "result_variable": "baseline_result",
+      "optimization_focus": "guarded dense linear indexing and mutation"
+    },
+    {
+      "id": "straight-line-scalar-v1",
+      "category": "straight-line-scalar",
+      "source": "benchmarks/v1.4/straight_line_scalar.m",
+      "result_variable": "baseline_result",
+      "optimization_focus": "loop-external scalar numeric region"
+    },
+    {
+      "id": "dense-elementwise-v1",
+      "category": "dense-elementwise",
+      "source": "benchmarks/v1.4/dense_elementwise.m",
+      "result_variable": "baseline_result",
+      "optimization_focus": "shape-guarded element-wise fusion and temporary elimination"
+    },
+    {
+      "id": "reduction-statistics-v1",
+      "category": "reduction-statistics",
+      "source": "benchmarks/v1.4/reduction_statistics.m",
+      "result_variable": "baseline_result",
+      "optimization_focus": "pure reduction and statistics builtin lowering"
+    },
+    {
+      "id": "user-function-call-v1",
+      "category": "user-function-call",
+      "source": "benchmarks/v1.4/user_function_call.m",
+      "result_variable": "baseline_result",
+      "optimization_focus": "stable local-function call specialization"
+    },
+    {
+      "id": "dense-linear-algebra-v1",
+      "category": "dense-linear-algebra",
+      "source": "benchmarks/v1.4/dense_linear_algebra.m",
+      "result_variable": "baseline_result",
+      "optimization_focus": "portable dense kernel cost and future optional backend boundary"
+    }
+  ]
+}

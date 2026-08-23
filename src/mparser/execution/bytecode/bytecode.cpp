@@ -94,12 +94,35 @@ private:
             emitBlock(BytecodeOp::EnterClass, BytecodeOp::LeaveClass, node);
             break;
         case HirKind::Function:
-            emit(BytecodeOp::EnterFunction, node);
+        {
+            const FunctionSignature signature =
+                parseFunctionSignature(node);
+            const size_t functionIndex = program_.functions.size();
+            BytecodeFunctionInfo info;
+            info.name = node.label;
+            info.binding = node.binding;
+            info.lexicalClassName = node.lexicalClassName;
+            info.lexicalFunctionName = node.lexicalFunctionName;
+            info.parameters = signature.parameters;
+            info.outputs = signature.outputs;
+            info.span = node.span;
+            info.hasVarargin = signature.hasVarargin;
+            info.hasVarargout = signature.hasVarargout;
+            info.hasArgumentBlocks = std::any_of(
+                node.children.begin(), node.children.end(),
+                [](const std::unique_ptr<HirNode>& child) {
+                    return child->kind == HirKind::ArgumentBlock;
+                });
+            info.enterPc = emit(BytecodeOp::EnterFunction, node);
+            info.bodyBeginPc = program_.instructions.size();
+            program_.functions.push_back(std::move(info));
             ++functionDepth_;
             lowerChildren(node);
             --functionDepth_;
-            emit(BytecodeOp::LeaveFunction, node);
+            program_.functions[functionIndex].bodyEndPc =
+                emit(BytecodeOp::LeaveFunction, node);
             break;
+        }
         case HirKind::Import:
             break;
         case HirKind::GlobalDeclaration:

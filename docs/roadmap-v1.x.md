@@ -404,6 +404,15 @@ failure and transactional fallback tests, and applicable x64/ARM64 validation.
 Optimization coverage may improve release value, but cannot turn a legal VM
 program into an error.
 
+The first implementation batch is recorded in [v1.4.md](v1.4.md). It adds a
+versioned seven-workload suite and uses its largest uncovered call-overhead
+signal to add guarded pure local scalar-function specialization through the
+existing portable/SLJIT kernel. The same suite keeps straight-line scalar,
+dense element-wise, reduction, and dense-linear-algebra coverage visibly
+uncovered. Dense element-wise fusion and representative reductions are the
+next evidence-backed candidates; the v1.4 milestone remains open and the
+project version is not advanced for this single batch.
+
 ## v1.5: Rich Data, Ownership, And Inspection
 
 Close the remaining Cell, Struct, class, enum, event, and reflection gaps that

@@ -133,10 +133,12 @@ end
     assertScalarGuard(*loop, "variable", 12);
     assert(loop->region.available);
     assert(loop->region.closed);
-    assert(loop->region.hasCalls);
-    assert(!loop->region.eligibleForTypedExecution);
-    assert(!hasOperation(*loop, "specialize-loop"));
-    assert(hasOperation(*loop, "reject-region"));
+    assert(!loop->region.hasCalls);
+    assert(loop->region.scalarFunctionCallCount == 1);
+    assert(loop->region.eligibleForTypedExecution);
+    assert(hasOperation(*loop, "specialize-loop"));
+    assert(hasOperation(*loop, "inline-scalar-function"));
+    assert(!hasOperation(*loop, "reject-region"));
     assert(hasOperation(*loop, "deopt-on-guard-failure"));
 
     const auto* call = findRegion(module, "scalar-call-site", "kernel");
@@ -160,8 +162,8 @@ end
     assert(loopCheck->checkedCount == 1);
     assert(loopCheck->passedCount == 1);
     assert(loopCheck->failedCount == 0);
-    assert(!loopCheck->regionEligible);
-    assert(!loopCheck->canEnterTypedPath);
+    assert(loopCheck->regionEligible);
+    assert(loopCheck->canEnterTypedPath);
 
     const auto* callCheck =
         findEvaluation(evaluation, "scalar-call-site", "kernel");

@@ -862,11 +862,15 @@ private:
             method && logicalAttributeEnabled(syntax.attributes, "Static");
         const std::string functionName =
             constructor ? className : syntax.label;
-        declareSymbol(method ? SymbolKind::Method : SymbolKind::Function,
-                      functionName, syntax.span);
+        const SymbolKind functionSymbolKind =
+            method ? SymbolKind::Method : SymbolKind::Function;
+        const int functionSymbolId =
+            declareSymbol(functionSymbolKind, functionName, syntax.span);
 
         auto node = makeNode(HirKind::Function, syntax);
         node->label = functionName;
+        node->binding = BindingRef{
+            bindingKindForSymbol(functionSymbolKind), functionSymbolId};
         node->lexicalFunctionName = lexicalFunctionName;
         if (method) {
             node->lexicalClassName = className;

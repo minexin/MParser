@@ -15,6 +15,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -849,6 +850,90 @@ end
            mparser::RuntimeFallbackKind::InvalidContract);
 }
 
+void runFunctionMetadataValidationSmoke() {
+    auto compiled = compile(R"(function y = local_kernel(x)
+y = x * x + 1;
+end
+)");
+    assert(compiled.bytecode.functions.size() == 1);
+    const auto& function = compiled.bytecode.functions.front();
+    assert(function.name == "local_kernel");
+    assert(function.binding.kind == mparser::BindingKind::Function);
+    assert(function.binding.symbolId >= 0);
+    assert(function.parameters == std::vector<std::string>({"x"}));
+    assert(function.outputs == std::vector<std::string>({"y"}));
+    assert(function.bodyBeginPc == function.enterPc + 1);
+    assert(function.bodyEndPc < compiled.bytecode.instructions.size());
+    assert(compiled.bytecode.instructions[function.enterPc].op ==
+           mparser::BytecodeOp::EnterFunction);
+    assert(compiled.bytecode.instructions[function.bodyEndPc].op ==
+           mparser::BytecodeOp::LeaveFunction);
+    assert(mparser::validateBytecodeProgram(compiled.bytecode).succeeded);
+
+    auto wrongName = compiled.bytecode;
+    wrongName.functions.front().name = "other";
+    assertInvalid(wrongName);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(wrongName).diagnostics,
+        "name does not match"));
+
+    auto wrongBoundary = compiled.bytecode;
+    wrongBoundary.functions.front().bodyEndPc =
+        wrongBoundary.functions.front().bodyBeginPc;
+    assertInvalid(wrongBoundary);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(wrongBoundary).diagnostics,
+        "invalid body boundaries"));
+
+    auto duplicate = compiled.bytecode;
+    duplicate.functions.push_back(duplicate.functions.front());
+    assertInvalid(duplicate);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(duplicate).diagnostics,
+        "duplicates an entry"));
+
+    auto wrongBinding = compiled.bytecode;
+    ++wrongBinding.functions.front().binding.symbolId;
+    assertInvalid(wrongBinding);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(wrongBinding).diagnostics,
+        "binding does not match"));
+
+    auto partial = compile(R"(function y = first(x)
+y = x + 1;
+end
+function y = second(x)
+y = x + 2;
+end
+)").bytecode;
+    assert(partial.functions.size() == 2);
+    partial.functions.pop_back();
+    assertInvalid(partial);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(partial).diagnostics,
+        "does not describe every function entry"));
+
+    auto nested = compile(R"(function y = outer(x)
+y = inner(x);
+function z = inner(value)
+z = value + 1;
+end
+end
+)").bytecode;
+    assert(nested.functions.size() == 2);
+    auto nestedInfo = std::find_if(
+        nested.functions.begin(), nested.functions.end(),
+        [](const mparser::BytecodeFunctionInfo& candidate) {
+            return candidate.name == "inner";
+        });
+    assert(nestedInfo != nested.functions.end());
+    nestedInfo->lexicalFunctionName.clear();
+    assertInvalid(nested);
+    assert(hasDiagnosticMessage(
+        mparser::validateBytecodeProgram(nested).diagnostics,
+        "lexical owner does not match"));
+}
+
 } // namespace
 
 int main() {
@@ -863,6 +948,7 @@ int main() {
     runExecutionBoundarySmoke();
     runImmutableAdaptiveSnapshotSmoke();
     runTypedContractBindingSmoke();
+    runFunctionMetadataValidationSmoke();
     std::cout << "bytecode verifier smoke tests passed\n";
     return 0;
 }

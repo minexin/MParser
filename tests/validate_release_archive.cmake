@@ -534,6 +534,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/cli-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-v1.schema.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/performance-baseline-v1.schema.json"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/performance-suite-v1.schema.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-performance-baseline.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-jit-scope-decision.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/versioning-and-deprecation.md"
@@ -549,7 +550,15 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserConfig.cmake"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/machine_protocol_demo.m"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/performance_scalar_loop.m"
-    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/performance_array_workload.m")
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/performance_array_workload.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4/manifest.json"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4/straight_line_scalar.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4/dense_elementwise.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4/reduction_statistics.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4/user_function_call.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4/dense_linear_algebra.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/samples/performance_scalar_loop.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/samples/performance_array_workload.m")
 foreach(path IN LISTS required_paths)
     if(NOT EXISTS "${path}")
         message(FATAL_ERROR

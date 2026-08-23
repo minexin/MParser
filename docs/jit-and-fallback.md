@@ -69,15 +69,23 @@ The v1.0 release includes guarded portable regions and bundled SLJIT native
 kernels for selected numeric scalar loops, structured branches, nested loops,
 and dense-double linear-array operations. It also contains adaptive promotion,
 invalidation, repeated module sessions, and a bounded process-local native
-cache.
+cache. The active v1.4 development train additionally specializes proven pure
+single-input/single-output top-level local scalar functions called from those
+loops. Their private locals are inlined as kernel SSA operands; unsupported
+signatures, argument contracts, free variables, side effects, types, or domain
+results remain in or return transactionally to bytecode. Exact semantic symbol
+identity prevents nested-function shadowing from selecting a same-named local
+target. When a call-depth limit is active, regions containing specialized
+calls remain in the VM so the resource contract observes each logical call.
 
 Coverage is intentionally conservative. Objects, Cells, Struct values,
 dynamic operations, arbitrary calls, unsupported mutations, and unrecognized
 control flow commonly remain in the VM. The
 [v1.0 JIT scope decision](v1.0-jit-scope-decision.md) found no measured v1.0
-release workload that requires another specialization, so `G-JIT-001` remains
-a Should-have but is deferred to v1.x. New coverage requires representative
-performance evidence and unchanged fallback parity.
+release workload that required another specialization. v1.4 re-evaluates that
+historical decision with the versioned seven-workload suite described in
+[v1.4.md](v1.4.md). New coverage still requires a representative bottleneck,
+native/no-JIT equivalence, and unchanged fallback parity.
 
 ## Native Backend
 

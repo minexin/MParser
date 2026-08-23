@@ -27,6 +27,7 @@ struct BytecodeRegionContract {
     size_t conditionalBranchCount = 0;
     size_t linearIndexReadCount = 0;
     size_t linearIndexWriteCount = 0;
+    size_t scalarFunctionCallCount = 0;
     size_t stackInputCount = 0;
     size_t stackOutputCount = 0;
     std::vector<std::string> reads;
@@ -43,6 +44,23 @@ struct BytecodeRegionContract {
     RuntimeFallbackKind fallbackKind = RuntimeFallbackKind::None;
     std::string reason;
 };
+
+struct BytecodeScalarFunctionSpecialization {
+    bool eligible = false;
+    std::string name;
+    std::string parameter;
+    std::string output;
+    size_t enterPc = 0;
+    size_t bodyBeginPc = 0;
+    size_t bodyEndPc = 0;
+    std::string reason;
+};
+
+BytecodeScalarFunctionSpecialization
+analyzeBytecodeScalarFunctionSpecialization(
+    const BytecodeProgram& program,
+    const BytecodeInstruction& call,
+    const BuiltinRegistry& builtinRegistry);
 
 bool bytecodeRegionContractsEquivalent(
     const BytecodeRegionContract& left,

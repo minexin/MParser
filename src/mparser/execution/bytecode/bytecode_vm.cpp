@@ -5515,6 +5515,17 @@ private:
             return std::nullopt;
         }
 
+        if (active->second.contract.scalarFunctionCallCount != 0 &&
+            executionControl_->limits().maxCallDepth != 0) {
+            ++execution.fallbackCount;
+            execution.lastFallbackKind =
+                RuntimeFallbackKind::UnsupportedOperation;
+            execution.lastReason =
+                "typed scalar function specialization is suppressed while a call-depth limit is active";
+            executionControl_->markOptimizedExecutionSuppressed();
+            return std::nullopt;
+        }
+
         ScalarTypedRegionExecutor executor(
             semantic_ ? semantic_->builtinRegistry : nullptr);
         auto result = BytecodeVmTrustedAccess::executeRegion(
@@ -14196,9 +14207,35 @@ private:
         auto validatedArguments =
             validateFunctionArguments(instruction, name, info, arguments,
                                       callerOutputCount);
-        frames_.pop_back();
         if (!validatedArguments) {
+            frames_.pop_back();
             return missingOutputs(requestedCount);
+        }
+
+        // Discard validation-only locals while retaining parameter map nodes
+        // and the frame's persistent-scope metadata. Validated values are
+        // rebound below, preserving the former two-frame isolation without
+        // rebuilding a RuntimeWorkspace for every function call.
+        for (auto binding = frames_.back().workspace.begin();
+             binding != frames_.back().workspace.end();) {
+            const bool declaredParameter =
+                std::find(info.signature.parameters.begin(),
+                          info.signature.parameters.end(),
+                          binding->first) !=
+                info.signature.parameters.end();
+            const bool varargin = info.signature.hasVarargin &&
+                                  binding->first == "varargin";
+            if (!declaredParameter && !varargin) {
+                binding = frames_.back().workspace.erase(binding);
+            } else {
+                ++binding;
+            }
+        }
+        frames_.back().globalBindings.clear();
+        frames_.back().persistentBindings.clear();
+        for (auto& [captureName, captureValue] : capturedWorkspace) {
+            currentFrame().try_emplace(captureName,
+                                       std::move(captureValue));
         }
 
         const bool savedReturnRequested = returnRequested_;
@@ -14212,11 +14249,6 @@ private:
         switchContextStack_.clear();
         tryContextStack_.clear();
 
-        frames_.push_back(makeRuntimeFunctionFrame(
-            RuntimeCallFrameKind::Function, traceName, info.span,
-            validatedArguments->positionalArgumentCount,
-            callerOutputCount, std::move(capturedWorkspace)));
-        configurePersistentScope(frames_.back(), info);
         activeFunctionFrames_.push_back(ActiveFunctionFrame{
             callableKey, frames_.size() - 1});
         initializeFunctionFrame(info.signature, validatedArguments->values,

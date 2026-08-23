@@ -57,6 +57,9 @@ set(MPARSER_PERFORMANCE_EVIDENCE_REVISION "working-tree" CACHE STRING
 set(MPARSER_PERFORMANCE_EVIDENCE_OUTPUT_DIR
     "${CMAKE_BINARY_DIR}/performance-evidence" CACHE PATH
     "Output directory for native performance evidence reports")
+set(MPARSER_PERFORMANCE_SUITE_OUTPUT_DIR
+    "${CMAKE_BINARY_DIR}/performance-suite-v1.4" CACHE PATH
+    "Output directory for the versioned v1.4 performance suite")
 
 function(mparser_enable_project_warnings target)
     if(MSVC)
@@ -1049,6 +1052,21 @@ set_tests_properties(linear_array_kernel_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "predecoded linear-array scalar kernel executed")
 
+add_test(NAME scalar_function_specialization_nojit_cli_smoke
+    COMMAND mparser --run --jit=off
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/scalar_function_jit_demo.m)
+set_tests_properties(scalar_function_specialization_nojit_cli_smoke
+    PROPERTIES PASS_REGULAR_EXPRESSION "summary = 334835500")
+
+add_test(NAME scalar_function_specialization_portable_cli_smoke
+    COMMAND mparser
+        --run-typed-bytecode
+        --typed-backend=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/scalar_function_jit_demo.m)
+set_tests_properties(scalar_function_specialization_portable_cli_smoke
+    PROPERTIES PASS_REGULAR_EXPRESSION
+        "summary = 334835500.*backend=portable.*baseline outputs: match")
+
 if(MPARSER_ENABLE_NATIVE_JIT)
     add_test(NAME production_run_native_jit_cli_smoke
         COMMAND mparser --run --jit=native --native-cache-stats
@@ -1102,6 +1120,15 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     set_tests_properties(native_linear_array_kernel_cli_smoke PROPERTIES
         PASS_REGULAR_EXPRESSION
             "backend=native.*linear-array scalar kernel executed")
+
+    add_test(NAME scalar_function_specialization_native_cli_smoke
+        COMMAND mparser
+            --run-typed-bytecode
+            --typed-backend=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/scalar_function_jit_demo.m)
+    set_tests_properties(scalar_function_specialization_native_cli_smoke
+        PROPERTIES PASS_REGULAR_EXPRESSION
+            "summary = 334835500.*backend=native.*baseline outputs: match")
 
     add_test(NAME native_cache_lifecycle_cli_smoke
         COMMAND mparser
@@ -2225,6 +2252,10 @@ add_executable(performance_baseline_schema_smoke_tests
     tests/performance_baseline_schema_smoke.cpp)
 target_link_libraries(performance_baseline_schema_smoke_tests PRIVATE
     mparser_json_schema_validator)
+add_executable(performance_suite_schema_smoke_tests
+    tests/performance_suite_schema_smoke.cpp)
+target_link_libraries(performance_suite_schema_smoke_tests PRIVATE
+    mparser_json_schema_validator)
 add_executable(performance_environment_smoke_tests
     tests/performance_environment_smoke.cpp
     tools/performance_environment.cpp)
@@ -2252,6 +2283,52 @@ set_tests_properties(performance_baseline_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "performance baseline protocol 1.0 validated"
     TIMEOUT 180)
+
+set(_mparser_performance_suite_command
+    "${CMAKE_COMMAND}"
+    "-DMPARSER_BASELINE_TOOL=$<TARGET_FILE:mparser_performance_baseline>"
+    "-DMPARSER_CLI=$<TARGET_FILE:mparser>"
+    "-DMPARSER_C_API_LIBRARY=$<TARGET_FILE:mparser_c_api>"
+    "-DMPARSER_BASELINE_VALIDATOR=$<TARGET_FILE:performance_baseline_schema_smoke_tests>"
+    "-DMPARSER_BASELINE_SCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/performance-baseline-v1.schema.json"
+    "-DMPARSER_SUITE_VALIDATOR=$<TARGET_FILE:performance_suite_schema_smoke_tests>"
+    "-DMPARSER_SUITE_SCHEMA=${CMAKE_CURRENT_SOURCE_DIR}/docs/performance-suite-v1.schema.json"
+    "-DMPARSER_SUITE_INTEGRITY_VALIDATOR=${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_performance_suite_integrity.cmake"
+    "-DMPARSER_MANIFEST=${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/v1.4/manifest.json"
+    "-DMPARSER_SOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DMPARSER_OUTPUT_DIR=${MPARSER_PERFORMANCE_SUITE_OUTPUT_DIR}"
+    "-DMPARSER_REVISION=${MPARSER_PERFORMANCE_EVIDENCE_REVISION}"
+    "-DMPARSER_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/collect_performance_suite.cmake")
+
+set(_mparser_performance_suite_smoke_command
+    ${_mparser_performance_suite_command})
+list(LENGTH _mparser_performance_suite_smoke_command
+    _mparser_performance_suite_smoke_length)
+math(EXPR _mparser_performance_suite_smoke_insert
+    "${_mparser_performance_suite_smoke_length} - 2")
+list(INSERT _mparser_performance_suite_smoke_command
+    ${_mparser_performance_suite_smoke_insert} "-DMPARSER_QUICK=ON")
+if(NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME performance_suite_contract_smoke
+        COMMAND ${_mparser_performance_suite_smoke_command})
+    set_tests_properties(performance_suite_contract_smoke PROPERTIES
+        LABELS performance
+        PASS_REGULAR_EXPRESSION
+            "MParser performance suite collected: 7 reports"
+        TIMEOUT 900)
+
+    add_custom_target(mparser_v1_4_performance_suite
+        COMMAND ${_mparser_performance_suite_command}
+        DEPENDS
+            mparser_performance_baseline
+            performance_baseline_schema_smoke_tests
+            performance_suite_schema_smoke_tests
+            mparser
+            mparser_c_api
+        COMMENT "Collecting the versioned v1.4 performance suite"
+        VERBATIM)
+endif()
 
 add_test(NAME cross_platform_performance_evidence_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -2777,6 +2854,7 @@ install(FILES
     docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
     docs/performance-baseline-v1.schema.json
+    docs/performance-suite-v1.schema.json
     docs/compatibility-matrix.json
     docs/roadmap-v1.0.md
     docs/v0.90.md
@@ -2785,6 +2863,7 @@ install(FILES
     docs/v1.1.md
     docs/v1.2.md
     docs/v1.3.md
+    docs/v1.4.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -2823,6 +2902,7 @@ install(FILES
     samples/dynamic_workspace_demo.m
     samples/performance_scalar_loop.m
     samples/performance_array_workload.m
+    samples/scalar_function_jit_demo.m
     samples/reliability_boundary_demo.m
     samples/v1_1_core_compatibility_demo.m
     samples/filesystem_management_demo.m
@@ -2835,6 +2915,16 @@ install(FILES
 install(DIRECTORY samples/class_folders/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples/class_folders"
     FILES_MATCHING PATTERN "*.m")
+install(DIRECTORY benchmarks/v1.4/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4"
+    FILES_MATCHING
+        PATTERN "*.m"
+        PATTERN "*.json"
+        PATTERN "README.md")
+install(FILES
+    samples/performance_scalar_loop.m
+    samples/performance_array_workload.m
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/performance-suite/samples")
 
 if(MPARSER_ENABLE_RELEASE_PACKAGING)
     set(CPACK_PACKAGE_NAME "mparser")

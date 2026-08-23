@@ -238,6 +238,7 @@ public:
 
         validateInstructionMetadata();
         validateStructuredRanges();
+        validateFunctionMetadata();
         collectAnonymousExecutionRanges();
         validateStructuredExecutionOwners();
         validateTargets();
@@ -599,6 +600,90 @@ private:
                        !instruction.colonSubscripts.empty()) {
                 addDiagnostic(
                     pc, "this opcode cannot carry colon subscript metadata");
+            }
+        }
+    }
+
+    void validateFunctionMetadata() {
+        std::set<size_t> describedEntries;
+        std::set<int> describedSymbols;
+        for (const auto& function : program_.functions) {
+            if (function.enterPc >= program_.instructions.size() ||
+                function.bodyBeginPc > program_.instructions.size() ||
+                function.bodyEndPc >= program_.instructions.size()) {
+                addProgramDiagnostic(
+                    "function metadata references an out-of-range bytecode position");
+                continue;
+            }
+            if (!describedEntries.insert(function.enterPc).second) {
+                addDiagnostic(function.enterPc,
+                              "function metadata duplicates an entry");
+            }
+            const auto& enter = program_.instructions[function.enterPc];
+            if (enter.op != BytecodeOp::EnterFunction) {
+                addDiagnostic(function.enterPc,
+                              "function metadata does not reference EnterFunction");
+                continue;
+            }
+            if ((function.binding.kind != BindingKind::Function &&
+                 function.binding.kind != BindingKind::Method) ||
+                function.binding.symbolId < 0 ||
+                enter.binding.kind != function.binding.kind ||
+                enter.binding.symbolId != function.binding.symbolId) {
+                addDiagnostic(function.enterPc,
+                              "function metadata binding does not match its entry");
+            } else if (!describedSymbols
+                            .insert(function.binding.symbolId)
+                            .second) {
+                addDiagnostic(function.enterPc,
+                              "function metadata duplicates a symbol binding");
+            }
+            if (function.name.empty() || enter.operand != function.name) {
+                addDiagnostic(function.enterPc,
+                              "function metadata name does not match its entry");
+            }
+            if (function.bodyBeginPc != function.enterPc + 1 ||
+                function.bodyEndPc <= function.enterPc ||
+                program_.instructions[function.bodyEndPc].op !=
+                    BytecodeOp::LeaveFunction ||
+                matchingBoundary_[function.enterPc] !=
+                    function.bodyEndPc) {
+                addDiagnostic(function.enterPc,
+                              "function metadata has invalid body boundaries");
+            }
+            const bool structurallyNested = std::any_of(
+                program_.functions.begin(), program_.functions.end(),
+                [&](const BytecodeFunctionInfo& owner) {
+                    return owner.enterPc < function.enterPc &&
+                           owner.bodyEndPc > function.enterPc;
+                });
+            if (structurallyNested !=
+                !function.lexicalFunctionName.empty()) {
+                addDiagnostic(function.enterPc,
+                              "function metadata lexical owner does not match its bytecode nesting");
+            }
+            for (const auto& parameter : function.parameters) {
+                if (parameter.empty()) {
+                    addDiagnostic(function.enterPc,
+                                  "function metadata has an empty parameter");
+                }
+            }
+            for (const auto& output : function.outputs) {
+                if (output.empty()) {
+                    addDiagnostic(function.enterPc,
+                                  "function metadata has an empty output");
+                }
+            }
+        }
+
+        if (!program_.functions.empty()) {
+            for (size_t pc = 0; pc < program_.instructions.size(); ++pc) {
+                if (program_.instructions[pc].op ==
+                        BytecodeOp::EnterFunction &&
+                    !describedEntries.contains(pc)) {
+                    addDiagnostic(pc,
+                                  "function metadata does not describe every function entry");
+                }
             }
         }
     }

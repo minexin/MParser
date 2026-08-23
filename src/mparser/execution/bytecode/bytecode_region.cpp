@@ -51,6 +51,171 @@ bool isScalarBinary(std::string_view operation) {
     return supported.contains(operation);
 }
 
+bool isFunctionLocalBinding(BindingKind kind) {
+    return kind == BindingKind::LocalVariable ||
+           kind == BindingKind::FunctionParameter ||
+           kind == BindingKind::FunctionOutput;
+}
+
+BytecodeScalarFunctionSpecialization analyzeScalarFunctionSpecialization(
+    const BytecodeProgram& program,
+    const BytecodeInstruction& call,
+    const BuiltinRegistry& builtinRegistry) {
+    BytecodeScalarFunctionSpecialization result;
+    result.name = call.calleeName;
+    const auto reject = [&](std::string reason) {
+        result.reason = std::move(reason);
+        return result;
+    };
+
+    if (call.binding.kind != BindingKind::Function ||
+        call.binding.symbolId < 0 ||
+        call.operandCount != 1 || call.resultCount != 1 ||
+        call.implicitExpressionOutput || call.calleeName.empty()) {
+        return reject(
+            "call is not a direct single-input single-output function");
+    }
+
+    const BytecodeFunctionInfo* function = nullptr;
+    for (const auto& candidate : program.functions) {
+        if (candidate.name == call.calleeName &&
+            !candidate.lexicalFunctionName.empty()) {
+            return reject(
+                "same-named nested function requires dynamic VM resolution");
+        }
+        if (candidate.name != call.calleeName ||
+            candidate.binding.kind != BindingKind::Function ||
+            candidate.binding.symbolId != call.binding.symbolId ||
+            !candidate.lexicalClassName.empty() ||
+            !candidate.lexicalFunctionName.empty()) {
+            continue;
+        }
+        if (function != nullptr) {
+            return reject("function target is ambiguous");
+        }
+        function = &candidate;
+    }
+    if (!function) {
+        return reject("function target is not a local bytecode function");
+    }
+    if (function->parameters.size() != 1 ||
+        function->outputs.size() != 1 || function->hasVarargin ||
+        function->hasVarargout || function->hasArgumentBlocks ||
+        function->parameters.front() == "~" ||
+        function->outputs.front() == "~") {
+        return reject(
+            "function signature is not a plain single-input single-output contract");
+    }
+    if (function->bodyBeginPc > function->bodyEndPc ||
+        function->bodyEndPc >= program.instructions.size()) {
+        return reject("function bytecode boundaries are invalid");
+    }
+
+    result.enterPc = function->enterPc;
+    result.bodyBeginPc = function->bodyBeginPc;
+    result.bodyEndPc = function->bodyEndPc;
+    result.parameter = function->parameters.front();
+    result.output = function->outputs.front();
+
+    std::set<std::string> defined{result.parameter};
+    std::vector<std::string> callableStack;
+    size_t stackDepth = 0;
+    bool outputAssigned = false;
+    for (size_t pc = result.bodyBeginPc; pc < result.bodyEndPc; ++pc) {
+        const auto& instruction = program.instructions[pc];
+        switch (instruction.op) {
+        case BytecodeOp::LoadName: {
+            const BuiltinDescriptor* descriptor =
+                builtinRegistry.find(instruction.operand);
+            if (instruction.binding.kind == BindingKind::Builtin &&
+                descriptor && descriptor->purity == BuiltinPurity::Pure &&
+                descriptor->typedLowering != BuiltinTypedLowering::None) {
+                callableStack.push_back(instruction.operand);
+                break;
+            }
+            if (!isFunctionLocalBinding(instruction.binding.kind) ||
+                instruction.operand.empty() ||
+                !defined.contains(instruction.operand)) {
+                return reject(
+                    "function reads an unsupported or uninitialized binding");
+            }
+            ++stackDepth;
+            break;
+        }
+        case BytecodeOp::LoadLiteral:
+            if (!isNumericLiteral(instruction.operand)) {
+                return reject("function contains a nonnumeric literal");
+            }
+            ++stackDepth;
+            break;
+        case BytecodeOp::StoreName:
+            if (stackDepth == 0 ||
+                !isFunctionLocalBinding(instruction.binding.kind) ||
+                instruction.operand.empty()) {
+                return reject("function has an invalid local assignment");
+            }
+            --stackDepth;
+            defined.insert(instruction.operand);
+            outputAssigned = outputAssigned ||
+                             instruction.operand == result.output;
+            break;
+        case BytecodeOp::UnaryOp:
+            if (stackDepth == 0 ||
+                !isScalarUnary(instruction.operand)) {
+                return reject("function has an unsupported unary operation");
+            }
+            break;
+        case BytecodeOp::BinaryOp:
+            if (stackDepth < 2 || instruction.operandCount != 2 ||
+                !isScalarBinary(instruction.operand)) {
+                return reject("function has an unsupported binary operation");
+            }
+            --stackDepth;
+            break;
+        case BytecodeOp::PostfixOp:
+            if (stackDepth == 0 || instruction.operand != "'") {
+                return reject("function has an unsupported postfix operation");
+            }
+            break;
+        case BytecodeOp::CallOrIndex: {
+            const BuiltinDescriptor* descriptor =
+                builtinRegistry.find(instruction.calleeName);
+            if (instruction.binding.kind != BindingKind::Builtin ||
+                instruction.operandCount != 1 ||
+                instruction.resultCount != 1 ||
+                instruction.implicitExpressionOutput || stackDepth == 0 ||
+                !descriptor || descriptor->purity != BuiltinPurity::Pure ||
+                descriptor->typedLowering == BuiltinTypedLowering::None ||
+                callableStack.empty() ||
+                callableStack.back() != instruction.calleeName) {
+                return reject("function contains an unsupported call");
+            }
+            callableStack.pop_back();
+            break;
+        }
+        case BytecodeOp::Pop:
+            if (stackDepth == 0) {
+                return reject("function stack underflows at discard");
+            }
+            --stackDepth;
+            break;
+        default:
+            return reject(
+                "function is not a straight-line pure scalar body");
+        }
+    }
+
+    if (stackDepth != 0 || !callableStack.empty()) {
+        return reject("function body does not restore its stack boundary");
+    }
+    if (!outputAssigned) {
+        return reject("function output is not definitely assigned");
+    }
+    result.eligible = true;
+    result.reason = "eligible pure scalar local function";
+    return result;
+}
+
 struct LoopBoundary {
     size_t beginPc = 0;
     size_t latchPc = 0;
@@ -193,6 +358,9 @@ std::string rejectionReason(const BytecodeRegionContract& contract) {
         contract.linearIndexWriteCount > 0) {
         reason += " with linear numeric indexing";
     }
+    if (contract.scalarFunctionCallCount > 0) {
+        reason += " with scalar function specialization";
+    }
     return reason;
 }
 
@@ -201,7 +369,8 @@ void finalizeContract(BytecodeRegionContract& contract) {
     contract.reason = rejectionReason(contract);
 }
 
-void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
+void analyzeInstruction(const BytecodeProgram& program,
+                        const BytecodeInstruction& instruction, size_t pc,
                         size_t exitPc, const LoopStructure& loops,
                         const BuiltinRegistry& builtinRegistry,
                         std::set<std::string>& reads,
@@ -285,6 +454,14 @@ void analyzeInstruction(const BytecodeInstruction& instruction, size_t pc,
             descriptor->purity == BuiltinPurity::Pure &&
             descriptor->typedLowering != BuiltinTypedLowering::None) {
             calls.insert(instruction.calleeName);
+            break;
+        }
+        if (const auto specialization =
+                analyzeScalarFunctionSpecialization(
+                    program, instruction, builtinRegistry);
+            specialization.eligible) {
+            calls.insert(instruction.calleeName);
+            ++contract.scalarFunctionCallCount;
             break;
         }
         if (!isCallableBinding(instruction.binding.kind) &&
@@ -613,7 +790,8 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
     std::set<std::string> outputs;
     std::set<std::string> calls;
     for (size_t pc = sourcePc; pc < exitPc; ++pc) {
-        analyzeInstruction(program.instructions[pc], pc, exitPc, loops,
+        analyzeInstruction(program, program.instructions[pc], pc, exitPc,
+                           loops,
                            builtinRegistry, reads, writes, outputs,
                            calls, contract);
     }
@@ -636,6 +814,14 @@ BytecodeRegionContract analyzeLoopRegion(const BytecodeProgram& program,
 
 } // namespace
 
+BytecodeScalarFunctionSpecialization
+analyzeBytecodeScalarFunctionSpecialization(
+    const BytecodeProgram& program, const BytecodeInstruction& call,
+    const BuiltinRegistry& builtinRegistry) {
+    return analyzeScalarFunctionSpecialization(program, call,
+                                               builtinRegistry);
+}
+
 bool bytecodeRegionContractsEquivalent(
     const BytecodeRegionContract& left,
     const BytecodeRegionContract& right) {
@@ -651,6 +837,8 @@ bool bytecodeRegionContractsEquivalent(
                right.conditionalBranchCount &&
            left.linearIndexReadCount == right.linearIndexReadCount &&
            left.linearIndexWriteCount == right.linearIndexWriteCount &&
+           left.scalarFunctionCallCount ==
+               right.scalarFunctionCallCount &&
            left.stackInputCount == right.stackInputCount &&
            left.stackOutputCount == right.stackOutputCount &&
            left.reads == right.reads &&

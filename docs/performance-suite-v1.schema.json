@@ -1,0 +1,214 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/minexin/MParser/docs/performance-suite-v1.schema.json",
+  "title": "MParser performance suite index protocol 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "generated_at_utc",
+    "revision",
+    "manifest",
+    "environment",
+    "build",
+    "settings",
+    "coverage_summary",
+    "reports"
+  ],
+  "properties": {
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "major", "minor"],
+      "properties": {
+        "name": {"const": "mparser.performance-suite"},
+        "major": {"const": 1},
+        "minor": {"type": "integer", "minimum": 0}
+      }
+    },
+    "generated_at_utc": {"type": "string", "minLength": 1},
+    "revision": {"type": "string", "minLength": 1},
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "path", "sha256"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$"},
+        "version": {"type": "integer", "minimum": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["os", "architecture", "cpu_model", "emulated"],
+      "properties": {
+        "os": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1},
+        "cpu_model": {"type": "string", "minLength": 1},
+        "emulated": {"type": "boolean"}
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": [
+        "project_version",
+        "build_type",
+        "compiler_id",
+        "compiler_version",
+        "native_jit_available",
+        "native_jit_platform"
+      ],
+      "properties": {
+        "project_version": {"type": "string", "minLength": 1},
+        "build_type": {"type": "string"},
+        "compiler_id": {"type": "string", "minLength": 1},
+        "compiler_version": {"type": "string", "minLength": 1},
+        "native_jit_available": {"type": "boolean"},
+        "native_jit_platform": {"type": "string", "minLength": 1}
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quick", "report_count"],
+      "properties": {
+        "quick": {"type": "boolean"},
+        "report_count": {"type": "integer", "minimum": 1, "maximum": 32}
+      }
+    },
+    "coverage_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["portable", "native"],
+      "properties": {
+        "portable": {"$ref": "#/definitions/coverageCounts"},
+        "native": {"$ref": "#/definitions/coverageCounts"}
+      }
+    },
+    "reports": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {"$ref": "#/definitions/report"}
+    }
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "coverage": {
+      "type": "string",
+      "enum": ["executed", "guarded-fallback", "uncovered", "unavailable"]
+    },
+    "coverageCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executed", "guarded_fallback", "uncovered", "unavailable"],
+      "properties": {
+        "executed": {"type": "integer", "minimum": 0},
+        "guarded_fallback": {"type": "integer", "minimum": 0},
+        "uncovered": {"type": "integer", "minimum": 0},
+        "unavailable": {"type": "integer", "minimum": 0}
+      }
+    },
+    "nullableNanoseconds": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parse",
+        "compile",
+        "process_cold_start",
+        "bytecode",
+        "portable",
+        "native_cold",
+        "native_warm"
+      ],
+      "properties": {
+        "parse": {"type": "number", "minimum": 0},
+        "compile": {"type": "number", "minimum": 0},
+        "process_cold_start": {"type": "number", "minimum": 0},
+        "bytecode": {"type": "number", "minimum": 0},
+        "portable": {"type": "number", "minimum": 0},
+        "native_cold": {"$ref": "#/definitions/nullableNanoseconds"},
+        "native_warm": {"$ref": "#/definitions/nullableNanoseconds"}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempts", "executions", "fallbacks"],
+      "properties": {
+        "attempts": {"type": "integer", "minimum": 0},
+        "executions": {"type": "integer", "minimum": 0},
+        "fallbacks": {"type": "integer", "minimum": 0}
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workload_id",
+        "category",
+        "optimization_focus",
+        "source_path",
+        "source_sha256",
+        "result_variable",
+        "report_file",
+        "report_sha256",
+        "reference_value",
+        "all_runtime_results_match",
+        "typed_coverage",
+        "timing_median_ns",
+        "allocation_requested_bytes",
+        "typed_execution"
+      ],
+      "properties": {
+        "workload_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "category": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "optimization_focus": {"type": "string", "minLength": 1},
+        "source_path": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/definitions/sha256"},
+        "result_variable": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+        "report_file": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*\\.json$"},
+        "report_sha256": {"$ref": "#/definitions/sha256"},
+        "reference_value": {"type": "number"},
+        "all_runtime_results_match": {"const": true},
+        "typed_coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["portable", "native"],
+          "properties": {
+            "portable": {"$ref": "#/definitions/coverage"},
+            "native": {"$ref": "#/definitions/coverage"}
+          }
+        },
+        "timing_median_ns": {"$ref": "#/definitions/timing"},
+        "allocation_requested_bytes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bytecode", "portable", "native_warm"],
+          "properties": {
+            "bytecode": {"type": "integer", "minimum": 0},
+            "portable": {"type": "integer", "minimum": 0},
+            "native_warm": {"type": ["integer", "null"], "minimum": 0}
+          }
+        },
+        "typed_execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["portable", "native"],
+          "properties": {
+            "portable": {"$ref": "#/definitions/execution"},
+            "native": {"anyOf": [{"$ref": "#/definitions/execution"}, {"type": "null"}]}
+          }
+        }
+      }
+    }
+  }
+}

@@ -279,7 +279,7 @@ end
            mparser::RuntimeFallbackKind::AdaptiveRetrainingRejected);
 }
 
-void runAdaptiveStaticRejectionSmoke() {
+void runAdaptiveScalarFunctionSpecializationSmoke() {
     auto fixture = lower(R"(function y = main()
 y = 0;
 for i = 1:6
@@ -297,23 +297,35 @@ end
         mparser::AdaptiveBytecodeVmOptions{10});
     const auto cold = session.run();
     const auto hot = session.run();
-    const auto stillProfiling = session.run();
+    const auto steady = session.run();
 
     assert(!cold.promotionOccurred);
-    assert(!hot.promotionOccurred);
-    assert(!stillProfiling.promotionOccurred);
-    assert(stillProfiling.tier ==
-           mparser::AdaptiveBytecodeTier::Profiling);
-    assert(!session.hasTypedModule());
+    assert(hot.promotionOccurred);
+    assert(!steady.promotionOccurred);
+    assert(hot.executableRegionCount == 1);
+    assert(steady.tier ==
+           mparser::AdaptiveBytecodeTier::Typed);
+    assert(session.hasTypedModule());
     const auto* loop = findLoop(session.accumulatedProfile(), "i");
     assert(loop != nullptr);
     assert(loop->hot);
-    assert(loop->iterationCount == 18);
+    assert(loop->iterationCount == 12);
     const auto* call = findCallSite(session.accumulatedProfile(), "kernel");
     assert(call != nullptr);
-    assert(call->executionCount == 18);
+    assert(call->executionCount == 12);
 
-    const auto* output = findVariable(stillProfiling.runtime, "y");
+    const auto* execution = findExecution(steady.runtime, "i");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+    assert(eventCount(session,
+                      mparser::AdaptiveBytecodeEventKind::Promotion) == 1);
+    assert(eventCount(
+               session,
+               mparser::AdaptiveBytecodeEventKind::TypedExecution) == 1);
+
+    const auto* output = findVariable(steady.runtime, "y");
     assert(output != nullptr);
     assert(output->number == 42.0);
 }
@@ -488,7 +500,7 @@ int main() {
     try {
         runAdaptivePromotionSmoke();
         runAdaptiveFallbackSmoke();
-        runAdaptiveStaticRejectionSmoke();
+        runAdaptiveScalarFunctionSpecializationSmoke();
         runPersistentWorkspaceRetrainingSmoke();
         runFunctionArgumentRetrainingSmoke();
         std::cout << "adaptive bytecode VM smoke tests passed\n";

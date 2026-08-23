@@ -4,6 +4,7 @@
 #include "mparser/semantic/semantic.h"
 #include "mparser/frontend/source.h"
 
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -100,8 +101,25 @@ struct BytecodeInstruction {
     bool hasIndexContext = false;
 };
 
+struct BytecodeFunctionInfo {
+    std::string name;
+    BindingRef binding;
+    std::string lexicalClassName;
+    std::string lexicalFunctionName;
+    std::vector<std::string> parameters;
+    std::vector<std::string> outputs;
+    SourceSpan span;
+    size_t enterPc = 0;
+    size_t bodyBeginPc = 0;
+    size_t bodyEndPc = 0;
+    bool hasVarargin = false;
+    bool hasVarargout = false;
+    bool hasArgumentBlocks = false;
+};
+
 struct BytecodeProgram {
     std::vector<BytecodeInstruction> instructions;
+    std::vector<BytecodeFunctionInfo> functions;
     std::vector<Diagnostic> diagnostics;
 };
 

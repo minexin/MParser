@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -414,6 +415,221 @@ std::optional<ScalarKernel> compileKernel(
         return ScalarKernelOperand{ScalarKernelStorage::Register, result,
                                    {}};
     };
+    const auto inlineScalarFunction =
+        [&](const BytecodeScalarFunctionSpecialization& specialization,
+            ScalarKernelOperand argument)
+        -> std::optional<ScalarKernelOperand> {
+        std::map<std::string, ScalarKernelOperand> locals;
+        locals.emplace(specialization.parameter, argument);
+        std::vector<ScalarKernelStackValue> localStack;
+        std::vector<std::string> localCallables;
+        localStack.reserve(specialization.bodyEndPc -
+                           specialization.bodyBeginPc);
+
+        for (size_t functionPc = specialization.bodyBeginPc;
+             functionPc < specialization.bodyEndPc; ++functionPc) {
+            const auto& body = program.instructions[functionPc];
+            ++pendingSourceInstructionCount;
+            switch (body.op) {
+            case BytecodeOp::LoadName: {
+                const BuiltinDescriptor* descriptor =
+                    builtinRegistry.find(body.operand);
+                if (body.binding.kind == BindingKind::Builtin &&
+                    descriptor &&
+                    descriptor->purity == BuiltinPurity::Pure &&
+                    descriptor->typedLowering !=
+                        BuiltinTypedLowering::None) {
+                    localCallables.push_back(body.operand);
+                    break;
+                }
+                const auto local = locals.find(body.operand);
+                if (local == locals.end()) {
+                    failureReason =
+                        "specialized scalar function load is unavailable: " +
+                        body.operand;
+                    return std::nullopt;
+                }
+                ScalarKernelStackValue value;
+                value.scalar = local->second;
+                localStack.push_back(value);
+                break;
+            }
+            case BytecodeOp::LoadLiteral: {
+                const auto value = parseNumber(body.operand);
+                if (!value) {
+                    failureReason =
+                        "specialized scalar function literal is not numeric";
+                    return std::nullopt;
+                }
+                ScalarKernelStackValue stackValue;
+                stackValue.scalar = {
+                    ScalarKernelStorage::Literal, 0, TypedScalar{*value}};
+                localStack.push_back(stackValue);
+                break;
+            }
+            case BytecodeOp::StoreName: {
+                if (!requireStack(
+                        localStack, 1,
+                        "specialized scalar function stack underflow at store",
+                        failureReason) ||
+                    !isScalarStackValue(localStack.back())) {
+                    if (failureReason.empty()) {
+                        failureReason =
+                            "specialized scalar function store is not scalar";
+                    }
+                    return std::nullopt;
+                }
+                const auto source = localStack.back().scalar;
+                localStack.pop_back();
+                ScalarKernelOperand stored = source;
+                if (source.storage == ScalarKernelStorage::Register &&
+                    !kernel.instructions.empty() &&
+                    kernel.instructions.back().destination.storage ==
+                        ScalarKernelStorage::Register &&
+                    kernel.instructions.back().destination.index ==
+                        source.index) {
+                    kernel.instructions.back().sourceInstructionCount +=
+                        pendingSourceInstructionCount;
+                    pendingSourceInstructionCount = 0;
+                } else {
+                    const size_t result = kernel.registerCount++;
+                    ScalarKernelInstruction value;
+                    value.op = ScalarKernelOp::Copy;
+                    value.destination = {
+                        ScalarKernelStorage::Register, result};
+                    value.left = source;
+                    appendInstruction(std::move(value));
+                    stored = {ScalarKernelStorage::Register, result, {}};
+                }
+                locals[body.operand] = stored;
+                break;
+            }
+            case BytecodeOp::UnaryOp: {
+                if (!requireStack(
+                        localStack, 1,
+                        "specialized scalar function stack underflow at unary operation",
+                        failureReason) ||
+                    !isScalarStackValue(localStack.back())) {
+                    if (failureReason.empty()) {
+                        failureReason =
+                            "specialized scalar function unary operand is not scalar";
+                    }
+                    return std::nullopt;
+                }
+                const auto operation = unaryOperation(body.operand);
+                if (!operation) {
+                    failureReason =
+                        "specialized scalar function unary operation is unsupported";
+                    return std::nullopt;
+                }
+                localStack.back().scalar =
+                    appendUnary(*operation, localStack.back().scalar);
+                break;
+            }
+            case BytecodeOp::BinaryOp: {
+                if (!requireStack(
+                        localStack, 2,
+                        "specialized scalar function stack underflow at binary operation",
+                        failureReason) ||
+                    !isScalarStackValue(
+                        localStack[localStack.size() - 2]) ||
+                    !isScalarStackValue(localStack.back())) {
+                    if (failureReason.empty()) {
+                        failureReason =
+                            "specialized scalar function binary operand is not scalar";
+                    }
+                    return std::nullopt;
+                }
+                const auto operation = binaryOperation(body.operand);
+                if (!operation) {
+                    failureReason =
+                        "specialized scalar function binary operation is unsupported";
+                    return std::nullopt;
+                }
+                const auto right = localStack.back().scalar;
+                localStack.pop_back();
+                const auto left = localStack.back().scalar;
+                localStack.back().scalar =
+                    appendBinary(*operation, left, right);
+                break;
+            }
+            case BytecodeOp::CallOrIndex: {
+                const BuiltinDescriptor* descriptor =
+                    builtinRegistry.find(body.calleeName);
+                const auto operation =
+                    mathOperation(builtinRegistry, body.calleeName);
+                if (body.binding.kind != BindingKind::Builtin ||
+                    body.operandCount != 1 || body.resultCount != 1 ||
+                    body.implicitExpressionOutput || !descriptor ||
+                    descriptor->purity != BuiltinPurity::Pure ||
+                    localCallables.empty() ||
+                    localCallables.back() != body.calleeName ||
+                    !operation || !requireStack(
+                                      localStack, 1,
+                                      "specialized scalar function stack underflow at builtin call",
+                                      failureReason) ||
+                    !isScalarStackValue(localStack.back())) {
+                    if (failureReason.empty()) {
+                        failureReason =
+                            "specialized scalar function builtin call is unsupported";
+                    }
+                    return std::nullopt;
+                }
+                localCallables.pop_back();
+                localStack.back().scalar =
+                    appendUnary(*operation, localStack.back().scalar);
+                break;
+            }
+            case BytecodeOp::PostfixOp:
+                if (body.operand != "'" ||
+                    !requireStack(
+                        localStack, 1,
+                        "specialized scalar function stack underflow at transpose",
+                        failureReason) ||
+                    !isScalarStackValue(localStack.back())) {
+                    if (failureReason.empty()) {
+                        failureReason =
+                            "specialized scalar function transpose is unsupported";
+                    }
+                    return std::nullopt;
+                }
+                break;
+            case BytecodeOp::Pop: {
+                if (!requireStack(
+                        localStack, 1,
+                        "specialized scalar function stack underflow at discard",
+                        failureReason) ||
+                    !isScalarStackValue(localStack.back())) {
+                    if (failureReason.empty()) {
+                        failureReason =
+                            "specialized scalar function cannot discard a non-scalar";
+                    }
+                    return std::nullopt;
+                }
+                ScalarKernelInstruction value;
+                value.op = ScalarKernelOp::Discard;
+                value.left = localStack.back().scalar;
+                appendInstruction(std::move(value));
+                localStack.pop_back();
+                break;
+            }
+            default:
+                failureReason =
+                    "specialized scalar function contains unsupported bytecode";
+                return std::nullopt;
+            }
+        }
+
+        const auto output = locals.find(specialization.output);
+        if (!localStack.empty() || !localCallables.empty() ||
+            output == locals.end() ||
+            pendingSourceInstructionCount != 0) {
+            failureReason =
+                "specialized scalar function did not close its local state";
+            return std::nullopt;
+        }
+        return output->second;
+    };
 
     for (size_t pc = region.bodyBeginPc; pc < region.bodyEndPc; ++pc) {
         pcToKernel[pc - region.bodyBeginPc] =
@@ -428,6 +644,10 @@ std::optional<ScalarKernel> compileKernel(
                 descriptor &&
                 descriptor->typedLowering !=
                     BuiltinTypedLowering::None) {
+                break;
+            }
+            if (instruction.binding.kind == BindingKind::Function &&
+                !instruction.operand.empty()) {
                 break;
             }
             if (const auto slot = findSlot(kernel, instruction.operand)) {
@@ -652,6 +872,40 @@ std::optional<ScalarKernel> compileKernel(
                 }
                 stack.back().scalar =
                     appendUnary(*operation, stack.back().scalar);
+                break;
+            }
+
+            if (instruction.binding.kind == BindingKind::Function) {
+                const auto specialization =
+                    analyzeBytecodeScalarFunctionSpecialization(
+                        program, instruction, builtinRegistry);
+                if (!specialization.eligible) {
+                    failureReason =
+                        "typed scalar function call is unsupported: " +
+                        specialization.reason;
+                    return std::nullopt;
+                }
+                if (!requireStack(
+                        stack, 1,
+                        "typed region stack underflow at scalar function call",
+                        failureReason) ||
+                    !isScalarStackValue(stack.back())) {
+                    if (failureReason.empty()) {
+                        failureReason =
+                            "typed scalar function argument is not scalar";
+                    }
+                    return std::nullopt;
+                }
+                const auto argument = stack.back().scalar;
+                stack.pop_back();
+                const auto result =
+                    inlineScalarFunction(specialization, argument);
+                if (!result) {
+                    return std::nullopt;
+                }
+                ScalarKernelStackValue value;
+                value.scalar = *result;
+                stack.push_back(value);
                 break;
             }
 

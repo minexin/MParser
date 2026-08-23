@@ -340,18 +340,18 @@
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "not-applicable"},
-      "evidence": ["typed_region_executor_smoke", "production_run_portable_jit_cli_smoke", "bytecode_region_smoke"],
-      "sources": ["src/mparser/execution/jit/typed_ir.cpp", "src/mparser/execution/jit/typed_region_executor.cpp", "src/mparser/execution/bytecode/bytecode_region.cpp"],
-      "limits": "Coverage is intentionally narrower than VM semantics; guard failure must fall back without partial mutation."
+      "evidence": ["typed_region_executor_smoke", "production_run_portable_jit_cli_smoke", "bytecode_region_smoke", "scalar_function_specialization_portable_cli_smoke", "performance_suite_contract_smoke"],
+      "sources": ["src/mparser/execution/jit/typed_ir.cpp", "src/mparser/execution/jit/typed_region_executor.cpp", "src/mparser/execution/bytecode/bytecode_region.cpp", "benchmarks/v1.4/manifest.json", "docs/performance-suite-v1.schema.json"],
+      "limits": "Coverage is intentionally narrower than VM semantics; guard failure must fall back without partial mutation. The active v1.4 batch also accepts unambiguous top-level local functions only when validated bytecode proves one input/output, no argument contract or varargs, straight-line local-only scalar state, and pure registry-backed Typed builtin calls. Other functions remain in the VM."
     },
     {
       "id": "JIT-002",
       "area": "jit",
-      "feature": "Bundled SLJIT native scalar/branched/linear-array kernels on x64 and AArch64",
+      "feature": "Bundled SLJIT native scalar/branched/linear-array and restricted local-function-inlined kernels on x64 and AArch64",
       "status": "partial",
       "priority": "must-have",
       "tiers": {"parser": "not-applicable", "semantic": "supported", "hir": "not-applicable", "bytecode": "supported", "production": "supported", "typed": "supported", "native": "supported"},
-      "evidence": ["native_scalar_jit_cache_smoke", "native_linear_array_kernel_cli_smoke", "production_run_native_jit_cli_smoke"],
+      "evidence": ["native_scalar_jit_cache_smoke", "native_linear_array_kernel_cli_smoke", "production_run_native_jit_cli_smoke", "scalar_function_specialization_native_cli_smoke", "performance_suite_contract_smoke"],
       "sources": ["src/mparser/execution/jit/native_scalar_jit.cpp", "third_party/sljit/sljit_src/sljitLir.c"],
       "limits": "Native coverage is incremental and never blocks correct VM execution; SIMD and general matrices remain future work."
     },

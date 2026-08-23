@@ -97,8 +97,9 @@ end
     assert(hotLoop->region.endPc == 15);
     assert(hotLoop->region.bodyBeginPc == 8);
     assert(hotLoop->region.bodyEndPc == 14);
-    assert(hotLoop->region.hasCalls);
-    assert(!hotLoop->region.eligibleForTypedExecution);
+    assert(!hotLoop->region.hasCalls);
+    assert(hotLoop->region.scalarFunctionCallCount == 1);
+    assert(hotLoop->region.eligibleForTypedExecution);
 
     assert(findCandidate(result, "hot-loop", "j") == nullptr);
 
@@ -148,7 +149,13 @@ end
     assert(loop->executionCount == 0);
     assert(loop->region.eligibleForTypedExecution);
     assertScalarNumberGuard(*loop, "variable", 0);
-    assert(findCandidate(result, "hot-loop", "j") == nullptr);
+    const auto* functionLoop =
+        findCandidate(result, "hot-loop", "j");
+    assert(functionLoop != nullptr);
+    assert(functionLoop->executionCount == 0);
+    assert(functionLoop->region.scalarFunctionCallCount == 1);
+    assert(functionLoop->region.eligibleForTypedExecution);
+    assertScalarNumberGuard(*functionLoop, "variable", 0);
 }
 
 } // namespace

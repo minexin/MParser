@@ -13,6 +13,7 @@
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -678,6 +679,176 @@ end
            "predecoded scalar kernel executed");
 }
 
+void runScalarFunctionSpecializationExecutionSmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + local_kernel(i) + local_kernel(i + 1);
+end
+end
+
+function z = local_kernel(x)
+shifted = x + 1;
+z = sin(sqrt(shifted + 1)) + sqrt(shifted + 1) / (shifted + 2);
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+    assert(region->region.scalarFunctionCallCount == 2);
+
+    const auto optimized = runTyped(pipeline, backend);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+    assert(optimized.executedInstructionCount <
+           pipeline.baseline.executedInstructionCount);
+    assert(findVariable(optimized.variables, "shifted") == nullptr);
+    assert(findVariable(optimized.variables, "x") == nullptr);
+    assert(findVariable(optimized.variables, "z") == nullptr);
+
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 1);
+    assert(execution->fallbackCount == 0);
+    assert(execution->iterationCount == 12);
+    assert(execution->executedKernelInstructionCount > 0);
+    if (backend == mparser::TypedRegionBackend::Native) {
+        assert(execution->backend == "native");
+        assert(execution->nativeCodeSize != 0);
+    } else {
+        assert(execution->backend == "portable");
+    }
+}
+
+void runScalarFunctionSpecializationComplexFallbackSmoke(
+    mparser::TypedRegionBackend backend) {
+    auto pipeline = prepare(R"(function y = main()
+y = 3;
+for i = 1:12
+    y = y + local_kernel(i);
+end
+end
+
+function z = local_kernel(x)
+z = sqrt(-x);
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+    assert(region->region.scalarFunctionCallCount == 1);
+
+    const auto optimized = runTyped(pipeline, backend);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 0);
+    assert(execution->fallbackCount == 1);
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::RuntimeFailed);
+    assert(execution->lastReason.find("complex result") !=
+           std::string::npos);
+}
+
+void runScalarFunctionSpecializationInputGuardSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+input = single(2);
+y = 0;
+for i = 1:12
+    y = y + local_kernel(input + i);
+end
+end
+
+function z = local_kernel(x)
+z = x * x + 1;
+end
+)");
+
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.eligibleForTypedExecution);
+    assert(region->region.scalarFunctionCallCount == 1);
+
+    const auto optimized = runTyped(pipeline);
+    assert(optimized.diagnostics.empty());
+    assertVariablesEqual(pipeline.baseline.variables,
+                         optimized.variables);
+    const auto* execution =
+        findExecution(optimized, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 0);
+    assert(execution->fallbackCount == 1);
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedInput);
+    assert(execution->lastReason.find("input") != std::string::npos);
+}
+
+void runScalarFunctionSpecializationCallDepthFallbackSmoke() {
+    auto pipeline = prepare(R"(function y = main()
+y = 0;
+for i = 1:12
+    y = y + local_kernel(i);
+end
+end
+
+function z = local_kernel(x)
+z = x * x + 1;
+end
+)");
+    const auto* region = findLoopRegion(pipeline.module, "i");
+    assert(region != nullptr);
+    assert(region->region.scalarFunctionCallCount == 1);
+
+    mparser::RuntimeExecutionLimits limits;
+    limits.maxCallDepth = 1;
+
+    mparser::BytecodeVmOptions baselineOptions;
+    baselineOptions.executionControl =
+        std::make_shared<mparser::RuntimeExecutionControl>(limits);
+    mparser::BytecodeVm baselineVm;
+    const auto limitedBaseline = baselineVm.run(
+        pipeline.bytecode, pipeline.semantic, baselineOptions);
+    assert(limitedBaseline.execution.stopReason ==
+           mparser::RuntimeExecutionStopReason::CallDepthLimit);
+
+    mparser::BytecodeVmOptions typedOptions;
+    typedOptions.typedRegionBackend =
+        mparser::TypedRegionBackend::Portable;
+    typedOptions.executionControl =
+        std::make_shared<mparser::RuntimeExecutionControl>(limits);
+    mparser::BytecodeVm typedVm;
+    const auto limitedTyped = typedVm.run(
+        pipeline.bytecode, pipeline.semantic, pipeline.module,
+        typedOptions);
+    assert(limitedTyped.execution.stopReason ==
+           mparser::RuntimeExecutionStopReason::CallDepthLimit);
+    assert(limitedTyped.execution.maximumCallDepth ==
+           limitedBaseline.execution.maximumCallDepth);
+    assert(limitedTyped.execution.optimizedExecutionSuppressed);
+
+    const auto* execution =
+        findExecution(limitedTyped, "scalar-loop", "i");
+    assert(execution != nullptr);
+    assert(execution->attemptCount == 1);
+    assert(execution->executionCount == 0);
+    assert(execution->fallbackCount == 1);
+    assert(execution->lastFallbackKind ==
+           mparser::RuntimeFallbackKind::UnsupportedOperation);
+    assert(execution->lastReason.find("call-depth") !=
+           std::string::npos);
+}
+
 void runPredecodedOperationCoverageSmoke(
     mparser::TypedRegionBackend backend) {
     auto pipeline = prepare(R"(function y = main()
@@ -1200,12 +1371,22 @@ int main() {
         }
         runTypedLogicalResultSmoke();
         runTypedPureMathBuiltinSmoke();
+        runScalarFunctionSpecializationExecutionSmoke(
+            mparser::TypedRegionBackend::Portable);
+        runScalarFunctionSpecializationComplexFallbackSmoke(
+            mparser::TypedRegionBackend::Portable);
+        runScalarFunctionSpecializationInputGuardSmoke();
+        runScalarFunctionSpecializationCallDepthFallbackSmoke();
         runComplexResultFallbackSmoke(
             mparser::TypedRegionBackend::Portable);
         runPredecodedOperationCoverageSmoke(
             mparser::TypedRegionBackend::Portable);
         if (mparser::nativeScalarJitAvailable()) {
             runComplexResultFallbackSmoke(
+                mparser::TypedRegionBackend::Native);
+            runScalarFunctionSpecializationExecutionSmoke(
+                mparser::TypedRegionBackend::Native);
+            runScalarFunctionSpecializationComplexFallbackSmoke(
                 mparser::TypedRegionBackend::Native);
             runPredecodedOperationCoverageSmoke(
                 mparser::TypedRegionBackend::Native);

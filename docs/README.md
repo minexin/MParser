@@ -87,6 +87,7 @@ These files are release contracts, not generated prose:
 | [cli-contract-v1.json](cli-contract-v1.json) | CLI 1.0 modes, options, channels, and compatibility |
 | [machine-result-v1.schema.json](machine-result-v1.schema.json) | Tolerant `mparser.result` major-1 consumer schema |
 | [performance-baseline-v1.schema.json](performance-baseline-v1.schema.json) | Engineering baseline protocol schema |
+| [performance-suite-v1.schema.json](performance-suite-v1.schema.json) | Versioned multi-workload performance-suite index schema |
 | `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
 The v1.3 candidate contract freezes the current protocol, headers, ABI 2.1
@@ -96,6 +97,9 @@ their archived boundaries.
 
 ## Release Evidence
 
+- [v1.4 Development Milestone](v1.4.md): versioned numerical workload suite,
+  evidence-selected local scalar-function specialization, current performance
+  characterization, and remaining release-train scope.
 - [v1.3 Candidate](v1.3.md): system/runtime capabilities, broad standard
   library, dynamic semantics, MAT persistence, and current contract freeze.
 - [v1.2 Candidate](v1.2.md): core numeric/data semantics, host integration,
