@@ -816,7 +816,7 @@ end
     mparser::BytecodeOptimizationPlanner planner;
     mparser::BytecodeTypedIrBuilder builder;
     auto typed = builder.build(
-        planner.planStaticLoops(compiled.bytecode));
+        planner.planStaticRegions(compiled.bytecode));
     assert(typed.regions.size() == 1);
     typed.regions.front().region.endPc =
         typed.regions.front().region.beginPc + 1;

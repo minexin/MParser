@@ -13,6 +13,7 @@ struct BytecodeTypedValue {
     size_t rows = 0;
     size_t columns = 0;
     std::vector<size_t> dimensions;
+    bool shapeKnown = true;
 };
 
 struct BytecodeTypedIrGuard {

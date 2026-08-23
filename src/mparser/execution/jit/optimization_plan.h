@@ -19,6 +19,7 @@ struct BytecodeOptimizationGuard {
     size_t columns = 0;
     std::vector<size_t> dimensions;
     size_t observationCount = 0;
+    bool shapeKnown = true;
 };
 
 struct BytecodeOptimizationCandidate {
@@ -44,9 +45,9 @@ public:
         const BytecodeVmProfile& profile,
         const BytecodeProgram& program,
         std::shared_ptr<const BuiltinRegistry> builtinRegistry) const;
-    BytecodeOptimizationPlan planStaticLoops(
+    BytecodeOptimizationPlan planStaticRegions(
         const BytecodeProgram& program) const;
-    BytecodeOptimizationPlan planStaticLoops(
+    BytecodeOptimizationPlan planStaticRegions(
         const BytecodeProgram& program,
         std::shared_ptr<const BuiltinRegistry> builtinRegistry) const;
 };

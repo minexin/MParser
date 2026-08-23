@@ -1,6 +1,8 @@
 #include "mparser/execution/jit/optimization_plan.h"
+#include "mparser/execution/jit/dense_array_region_executor.h"
 
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -53,6 +55,127 @@ bool allStable(const std::vector<BytecodeValueObservation>& observations) {
     return true;
 }
 
+bool sameObservedTypeAndShape(const BytecodeValueObservation& left,
+                              const BytecodeValueObservation& right) {
+    return left.kind == right.kind &&
+           left.numericClass == right.numericClass &&
+           left.rows == right.rows &&
+           left.columns == right.columns &&
+           left.dimensions == right.dimensions;
+}
+
+std::optional<BytecodeValueObservation> denseInputObservation(
+    const BytecodeVmProfile* profile, const BytecodeRegionContract& region,
+    std::string_view name) {
+    if (!profile) {
+        return std::nullopt;
+    }
+    std::optional<BytecodeValueObservation> result;
+    for (const auto& load : profile->loads) {
+        if (load.pc < region.beginPc || load.pc >= region.bodyEndPc ||
+            load.name != name ||
+            !isStableGuardInput(load.valueObservation)) {
+            continue;
+        }
+        if (!result) {
+            result = load.valueObservation;
+            continue;
+        }
+        if (!sameObservedTypeAndShape(*result, load.valueObservation)) {
+            return std::nullopt;
+        }
+        result->observationCount +=
+            load.valueObservation.observationCount;
+    }
+    return result;
+}
+
+std::vector<bool> forLoopMembership(const BytecodeProgram& program) {
+    std::vector<int> depthChanges(program.instructions.size() + 1, 0);
+    for (size_t candidate = 0; candidate < program.instructions.size();
+         ++candidate) {
+        const auto& instruction = program.instructions[candidate];
+        if (instruction.op == BytecodeOp::ForBegin &&
+            instruction.target > static_cast<int>(candidate) &&
+            instruction.target <=
+                static_cast<int>(program.instructions.size())) {
+            ++depthChanges[candidate + 1];
+            --depthChanges[static_cast<size_t>(instruction.target)];
+        }
+    }
+    std::vector<bool> result(program.instructions.size(), false);
+    int depth = 0;
+    for (size_t pc = 0; pc < result.size(); ++pc) {
+        depth += depthChanges[pc];
+        result[pc] = depth != 0;
+    }
+    return result;
+}
+
+void addDenseInputGuard(BytecodeOptimizationCandidate& candidate,
+                        size_t storePc, std::string_view name,
+                        const std::optional<BytecodeValueObservation>&
+                            observation) {
+    if (observation) {
+        addGuard(candidate, storePc, "region-input", std::string(name),
+                 *observation);
+        return;
+    }
+    candidate.guards.push_back(BytecodeOptimizationGuard{
+        storePc, "region-input", std::string(name), "numeric", "double",
+        0, 0, {}, 0, false});
+}
+
+void addDenseCandidate(
+    BytecodeOptimizationPlan& plan, const BytecodeProgram& program,
+    size_t storePc, const BytecodeAssignmentProfile* assignment,
+    const BytecodeVmProfile* profile,
+    const std::shared_ptr<const BuiltinRegistry>& builtinRegistry,
+    const std::vector<bool>& insideForLoops, bool staticPlanning) {
+    if (storePc >= insideForLoops.size() || insideForLoops[storePc] ||
+        storePc >= program.instructions.size()) {
+        return;
+    }
+    const auto& store = program.instructions[storePc];
+    const auto analysis = analyzeDenseArrayAssignmentRegion(
+        program, storePc, *builtinRegistry);
+    if (!analysis.eligible || analysis.inputs.empty()) {
+        return;
+    }
+    const bool observedDenseOutput =
+        assignment &&
+        assignment->valueObservation.numericClass == "double" &&
+        (assignment->valueObservation.kind == "vector" ||
+         assignment->valueObservation.kind == "matrix");
+    if (!staticPlanning && !observedDenseOutput &&
+        analysis.reductionOperationCount == 0) {
+        return;
+    }
+    if (staticPlanning && !analysis.explicitArraySyntax &&
+        analysis.reductionOperationCount == 0) {
+        return;
+    }
+
+    BytecodeOptimizationCandidate candidate;
+    candidate.kind = "dense-array-assignment";
+    candidate.pc = storePc;
+    candidate.target = store.operand;
+    candidate.executionCount =
+        assignment ? assignment->executionCount : 0;
+    candidate.reason = staticPlanning
+                           ? "statically closed dense assignment with runtime shape guards"
+                           : "profiled dense assignment with stable double-array output";
+    BytecodeRegionAnalyzer analyzer(builtinRegistry);
+    candidate.region = analyzer.analyze(
+        program, candidate.kind, storePc, candidate.target);
+    for (const auto& input : candidate.region.inputs) {
+        addDenseInputGuard(
+            candidate, storePc, input,
+            denseInputObservation(profile, candidate.region, input));
+    }
+    plan.candidates.push_back(std::move(candidate));
+}
+
 std::map<size_t, bool> hotLoopMap(const BytecodeVmProfile& profile) {
     std::map<size_t, bool> result;
     for (const auto& loop : profile.loops) {
@@ -76,10 +199,14 @@ BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
                                   std::shared_ptr<const BuiltinRegistry>
                                       builtinRegistry) const {
     BytecodeOptimizationPlan result;
+    if (!builtinRegistry) {
+        builtinRegistry = defaultBuiltinRegistry();
+    }
     result.hotLoopThreshold = profile.hotLoopThreshold;
     if (!validateBytecodeProgram(program).succeeded) {
         return result;
     }
+    const auto insideForLoops = forLoopMembership(program);
     const auto hotLoops = hotLoopMap(profile);
 
     for (const auto& loop : profile.loops) {
@@ -151,8 +278,13 @@ BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
         result.candidates.push_back(std::move(candidate));
     }
 
+    for (const auto& assignment : profile.assignments) {
+        addDenseCandidate(result, program, assignment.pc, &assignment,
+                          &profile, builtinRegistry, insideForLoops, false);
+    }
+
     BytecodeRegionAnalyzer regionAnalyzer(
-        std::move(builtinRegistry));
+        builtinRegistry);
     for (auto& candidate : result.candidates) {
         candidate.region = regionAnalyzer.analyzeValidated(
             program, candidate.kind, candidate.pc, candidate.target);
@@ -162,20 +294,24 @@ BytecodeOptimizationPlanner::plan(const BytecodeVmProfile& profile,
 }
 
 BytecodeOptimizationPlan
-BytecodeOptimizationPlanner::planStaticLoops(
+BytecodeOptimizationPlanner::planStaticRegions(
     const BytecodeProgram& program) const {
-    return planStaticLoops(program, {});
+    return planStaticRegions(program, {});
 }
 
-BytecodeOptimizationPlan BytecodeOptimizationPlanner::planStaticLoops(
+BytecodeOptimizationPlan BytecodeOptimizationPlanner::planStaticRegions(
     const BytecodeProgram& program,
     std::shared_ptr<const BuiltinRegistry> builtinRegistry) const {
     BytecodeOptimizationPlan result;
+    if (!builtinRegistry) {
+        builtinRegistry = defaultBuiltinRegistry();
+    }
     if (!validateBytecodeProgram(program).succeeded) {
         return result;
     }
+    const auto insideForLoops = forLoopMembership(program);
     BytecodeRegionAnalyzer regionAnalyzer(
-        std::move(builtinRegistry));
+        builtinRegistry);
 
     for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
         const auto& instruction = program.instructions[pc];
@@ -201,6 +337,13 @@ BytecodeOptimizationPlan BytecodeOptimizationPlanner::planStaticLoops(
             {1, 1}, 0});
         candidate.region = std::move(region);
         result.candidates.push_back(std::move(candidate));
+    }
+
+    for (size_t pc = 0; pc < program.instructions.size(); ++pc) {
+        if (program.instructions[pc].op == BytecodeOp::StoreName) {
+            addDenseCandidate(result, program, pc, nullptr, nullptr,
+                              builtinRegistry, insideForLoops, true);
+        }
     }
 
     return result;

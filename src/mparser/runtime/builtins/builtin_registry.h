@@ -17,7 +17,7 @@
 namespace mparser {
 
 inline constexpr std::uint32_t kBuiltinSourceContractMajor = 1;
-inline constexpr std::uint32_t kBuiltinSourceContractMinor = 10;
+inline constexpr std::uint32_t kBuiltinSourceContractMinor = 11;
 
 struct RuntimeObjectArrayPolicy;
 class RuntimeExecutionControl;
@@ -151,7 +151,12 @@ enum class BuiltinTypedLowering {
     Sine,
     SquareRoot,
     Tangent,
+    Sum,
 };
+
+bool builtinTypedLoweringIsElementwiseUnary(
+    BuiltinTypedLowering lowering);
+bool builtinTypedLoweringIsReduction(BuiltinTypedLowering lowering);
 
 enum class BuiltinImplicitOutputPolicy {
     FirstAvailable,

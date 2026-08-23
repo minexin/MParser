@@ -1452,7 +1452,10 @@ persistence. Active contract 1.9 adds file metadata/removal descriptors and
 records the dual file/object dispatch contract for `delete`. Active contract
 1.10 adds conversion, dynamic array callback, dense set, and text-query
 families; its development snapshot contains 275 descriptors and 277 registered
-names. A generator-backed
+names. Active contract 1.11 keeps that catalog size and adds the declarative
+`sum` reduction identity. Dense-region analysis may consume it only through
+the same descriptor purity, shadowing, arity, shape, numeric-class, and
+resource guards used by the VM fallback boundary. A generator-backed
 smoke test compares the live registry to the active snapshot; it does not
 serialize handlers or claim a C++ binary ABI. Conformance tests compare
 recursive runtime values and diagnostics across HIR and bytecode rather than

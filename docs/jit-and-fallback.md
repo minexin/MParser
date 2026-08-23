@@ -77,6 +77,16 @@ results remain in or return transactionally to bytecode. Exact semantic symbol
 identity prevents nested-function shadowing from selecting a same-named local
 target. When a call-depth limit is active, regions containing specialized
 calls remain in the VM so the resource contract observes each logical call.
+The second v1.4 batch adds closed-assignment Dense Typed regions for real
+double scalars and arrays. Portable execution fuses supported element-wise
+arithmetic and pure unary builtin calls into one N-dimensional pass with
+MATLAB column-major implicit expansion. Exact-shape expressions may use the
+existing SLJIT scalar kernel. Builtin source contract 1.11 also declares
+`sum` as a Typed reduction: portable supports default, explicit-dimension, and
+all-element results, while native lowering is currently restricted to scalar
+results. Broadcast/native mismatch, changed shapes, complex/non-double values,
+shadowing, unsupported domains, and active checkpoints retain transactional
+portable or VM fallback.
 
 Coverage is intentionally conservative. Objects, Cells, Struct values,
 dynamic operations, arbitrary calls, unsupported mutations, and unrecognized

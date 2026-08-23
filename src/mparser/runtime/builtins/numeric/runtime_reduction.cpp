@@ -367,19 +367,14 @@ RuntimeReductionResult reduceNumeric(
         return failure(
             "reductions do not support complex integer values");
     }
-    auto inputDimensions = runtimeDimensions(input);
-    auto dimensions = selectedDimensions(inputDimensions,
-                                         options.selection);
-    const size_t requestedRank =
-        dimensions.empty() ? inputDimensions.size()
-                           : dimensions.back() + 1;
-    inputDimensions.resize(
-        std::max(inputDimensions.size(), requestedRank), 1);
-
-    if (options.selection.all) {
-        dimensions = selectedDimensions(inputDimensions,
-                                        options.selection);
-    }
+    auto sourceDimensions = runtimeDimensions(input);
+    auto dimensions = selectedDimensions(
+        sourceDimensions, options.selection);
+    auto shape = runtimeReductionShape(
+        std::move(sourceDimensions), options.selection.specified,
+        options.selection.all, std::move(dimensions), isExtrema(kind));
+    auto& inputDimensions = shape.inputDimensions;
+    dimensions = shape.reductionDimensions;
     if (isExtrema(kind) && requestedOutputCount > 1 &&
         dimensions.size() > 1 && !options.linearIndices &&
         !options.selection.all) {
@@ -387,22 +382,7 @@ RuntimeReductionResult reduceNumeric(
             "multi-dimension min/max index output requires \"linear\"");
     }
 
-    std::vector<size_t> outputDimensions = inputDimensions;
-    for (const size_t dimension : dimensions) {
-        outputDimensions[dimension] =
-            isExtrema(kind) && inputDimensions[dimension] == 0 ? 0 : 1;
-    }
-
-    const bool defaultZeroByZero =
-        !options.selection.specified && inputDimensions.size() == 2 &&
-        inputDimensions[0] == 0 && inputDimensions[1] == 0;
-    if (defaultZeroByZero && !isExtrema(kind)) {
-        outputDimensions = {1, 1};
-    }
-    if (options.selection.all && isExtrema(kind) &&
-        runtimeShapeElementCount(input) == 0) {
-        outputDimensions = {0, 0};
-    }
+    auto& outputDimensions = shape.outputDimensions;
 
     const auto outputCount =
         checkedRuntimeDimensionProduct(outputDimensions);
@@ -808,6 +788,58 @@ RuntimeReductionResult findBuiltin(
 }
 
 } // namespace
+
+RuntimeReductionShape runtimeReductionShape(
+    std::vector<size_t> inputDimensions, bool dimensionSpecified,
+    bool allDimensions, std::vector<size_t> reductionDimensions,
+    bool extrema) {
+    if (!dimensionSpecified && !allDimensions &&
+        reductionDimensions.empty()) {
+        size_t dimension = 0;
+        for (size_t index = 0; index < inputDimensions.size(); ++index) {
+            if (inputDimensions[index] != 1) {
+                dimension = index;
+                break;
+            }
+        }
+        reductionDimensions = {dimension};
+    }
+    const auto maximumDimension = std::max_element(
+        reductionDimensions.begin(), reductionDimensions.end());
+    const size_t requestedRank =
+        maximumDimension == reductionDimensions.end()
+            ? inputDimensions.size()
+            : *maximumDimension + 1;
+    inputDimensions.resize(
+        std::max(inputDimensions.size(), requestedRank), 1);
+    if (allDimensions) {
+        reductionDimensions.resize(inputDimensions.size());
+        for (size_t index = 0; index < inputDimensions.size(); ++index) {
+            reductionDimensions[index] = index;
+        }
+    }
+
+    std::vector<size_t> outputDimensions = inputDimensions;
+    for (const size_t dimension : reductionDimensions) {
+        outputDimensions[dimension] =
+            extrema && inputDimensions[dimension] == 0 ? 0 : 1;
+    }
+
+    const bool defaultZeroByZero =
+        !dimensionSpecified && inputDimensions.size() == 2 &&
+        inputDimensions[0] == 0 && inputDimensions[1] == 0;
+    if (defaultZeroByZero && !extrema) {
+        outputDimensions = {1, 1};
+    }
+    const auto inputCount =
+        checkedRuntimeDimensionProduct(inputDimensions);
+    if (allDimensions && extrema && inputCount && *inputCount == 0) {
+        outputDimensions = {0, 0};
+    }
+    return RuntimeReductionShape{
+        std::move(inputDimensions), std::move(reductionDimensions),
+        std::move(outputDimensions)};
+}
 
 bool isRuntimeReductionBuiltin(std::string_view name) {
     return reductionKind(name).has_value() || name == "find";

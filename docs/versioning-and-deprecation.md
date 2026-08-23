@@ -32,7 +32,7 @@ unreleased development interfaces.
 | C ABI | generation 2, revision 1; archived v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.3 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
-| Builtin source contract | 1.10 | Registry/descriptor/call semantics compiled with the engine |
+| Builtin source contract | 1.11 | Registry/descriptor/call semantics compiled with the engine |
 
 ## CLI 1.0
 
@@ -94,7 +94,7 @@ Consumers check the protocol major and tolerate documented additive minor
 fields. A change that removes a required field or changes its meaning requires
 a protocol-major change.
 
-## Builtin Source Contract 1.10
+## Builtin Source Contract 1.11
 
 `BuiltinRegistry`, `BuiltinDescriptor`, `BuiltinCall`, and `BuiltinResult`
 form a source-integration contract for builtins compiled with the engine. They
@@ -110,7 +110,9 @@ registered names, including the `Inf` and `NaN` aliases. Incremental v1.3
 source-contract revisions add deterministic system contexts, dynamic source
 evaluation, callbacks, file/MAT services, native C++20 numerical families,
 conversion, set, and text-query metadata. The v1.3 contract 1.10 catalog has
-275 descriptors and 277 registered names.
+275 descriptors and 277 registered names. Contract 1.11 keeps those counts and
+adds the declarative `sum` Typed reduction identity used by guarded Dense
+regions; it does not add an alternate builtin implementation or external ABI.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry

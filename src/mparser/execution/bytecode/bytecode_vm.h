@@ -81,6 +81,13 @@ struct BytecodeAssignmentProfile {
     BytecodeValueObservation valueObservation;
 };
 
+struct BytecodeLoadProfile {
+    size_t pc = 0;
+    std::string name;
+    SourceSpan span;
+    BytecodeValueObservation valueObservation;
+};
+
 struct BytecodeWorkspaceInputProfile {
     std::string name;
     BytecodeValueObservation valueObservation;
@@ -103,6 +110,7 @@ struct BytecodeVmProfile {
     std::vector<BytecodeLoopProfile> loops;
     std::vector<BytecodeCallSiteProfile> callSites;
     std::vector<BytecodeAssignmentProfile> assignments;
+    std::vector<BytecodeLoadProfile> loads;
     std::vector<BytecodeWorkspaceInputProfile> workspaceInputs;
     std::vector<BytecodeFunctionEntryProfile> functionEntries;
 };

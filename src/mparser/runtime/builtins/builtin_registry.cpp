@@ -808,6 +808,9 @@ BuiltinDescriptor reductionDescriptor(std::string_view name) {
     descriptor.purity = BuiltinPurity::Pure;
     descriptor.determinism = BuiltinDeterminism::Deterministic;
     descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    if (name == "sum") {
+        descriptor.typedLowering = BuiltinTypedLowering::Sum;
+    }
     descriptor.summary =
         "Numeric reduction with MATLAB-like dimension and output rules.";
     descriptor.handler = [builtin = std::string(name)](
@@ -2063,6 +2066,31 @@ bool contextAvailable(const BuiltinCallContext* context,
 
 } // namespace
 
+bool builtinTypedLoweringIsElementwiseUnary(
+    BuiltinTypedLowering lowering) {
+    switch (lowering) {
+    case BuiltinTypedLowering::Absolute:
+    case BuiltinTypedLowering::ArcCosine:
+    case BuiltinTypedLowering::ArcSine:
+    case BuiltinTypedLowering::ArcTangent:
+    case BuiltinTypedLowering::Cosine:
+    case BuiltinTypedLowering::Exponential:
+    case BuiltinTypedLowering::Logarithm:
+    case BuiltinTypedLowering::Sine:
+    case BuiltinTypedLowering::SquareRoot:
+    case BuiltinTypedLowering::Tangent:
+        return true;
+    case BuiltinTypedLowering::None:
+    case BuiltinTypedLowering::Sum:
+        return false;
+    }
+    return false;
+}
+
+bool builtinTypedLoweringIsReduction(BuiltinTypedLowering lowering) {
+    return lowering == BuiltinTypedLowering::Sum;
+}
+
 BuiltinArity BuiltinArity::fixed(size_t count) {
     return BuiltinArity{count, count};
 }
@@ -2258,7 +2286,13 @@ BuiltinRegistrationResult BuiltinRegistry::registerBuiltin(
                  BuiltinValueConstraint::Numeric ||
              descriptor.outputConstraints.front().value ==
                  BuiltinValueConstraint::ScalarNumeric);
-        if (descriptor.implementation !=
+        const bool loweringContractSupported =
+            builtinTypedLoweringIsElementwiseUnary(
+                descriptor.typedLowering) ||
+            builtinTypedLoweringIsReduction(
+                descriptor.typedLowering);
+        if (!loweringContractSupported ||
+            descriptor.implementation !=
                 BuiltinImplementationKind::Shared ||
             descriptor.purity != BuiltinPurity::Pure ||
             descriptor.determinism !=

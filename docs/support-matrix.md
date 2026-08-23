@@ -238,7 +238,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.3 over ABI generation 2 revision 1 with 117 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, and caller-sized roots; v1.2 revision 0 remains archived |
 | C++ API | Header-only C++20 source API 1.3 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | v1.3 source contract 1.10 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, and advanced-numeric context; v1.2 contract 1.1 remains archived |
+| Builtin extension | active source contract 1.11 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, and guarded `sum` Typed lowering; v1.2 contract 1.1 remains archived |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
@@ -309,6 +309,6 @@ version drift.
 
 The v1.0 and v1.2 snapshots remain immutable historical evidence. The current
 v1.3 candidate freezes C source API 1.3, ABI generation 2 revision 1, C++
-source API 1.3, protocol 1.1, and builtin source contract 1.10 in
+source API 1.3, protocol 1.1, and builtin source contract 1.11 in
 [public-contract-v1.3.json](public-contract-v1.3.json). See
 [v1.x Roadmap](roadmap-v1.x.md).

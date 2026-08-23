@@ -30,6 +30,11 @@ bool allScalarNumberGuards(
 std::string typedRegionKind(
     const BytecodeOptimizationCandidate& candidate) {
     const bool scalar = allScalarNumberGuards(candidate);
+    if (candidate.kind == "dense-array-assignment") {
+        return candidate.region.reductionOperationCount == 0
+                   ? "dense-elementwise"
+                   : "dense-reduction";
+    }
     if (candidate.kind == "hot-loop") {
         return scalar ? "scalar-loop" : "typed-loop";
     }
@@ -56,7 +61,7 @@ BytecodeTypedIrGuard typedGuard(
         guard.role,
         BytecodeTypedValue{guard.kind, guard.numericClass, guard.rows,
                            guard.columns,
-                           dimensions},
+                           dimensions, guard.shapeKnown},
         guard.observationCount};
 }
 
@@ -100,6 +105,21 @@ void addCommonOperations(BytecodeTypedIrRegion& region,
                 "calls=" +
                     std::to_string(contract.scalarFunctionCallCount)});
         }
+    } else if (candidate.kind == "dense-array-assignment") {
+        region.operations.push_back(BytecodeTypedIrOperation{
+            "fuse-dense-elementwise",
+            "operations=" +
+                std::to_string(
+                    contract.denseElementwiseOperationCount)});
+        if (contract.reductionOperationCount > 0) {
+            region.operations.push_back(BytecodeTypedIrOperation{
+                "lower-reduction",
+                "kind=sum, operations=" +
+                    std::to_string(contract.reductionOperationCount)});
+        }
+        region.operations.push_back(BytecodeTypedIrOperation{
+            "guard-shape-alias-type",
+            "inputs=" + std::to_string(contract.inputs.size())});
     } else if (candidate.kind == "function-site" ||
                candidate.kind == "builtin-site") {
         region.operations.push_back(BytecodeTypedIrOperation{
@@ -187,6 +207,9 @@ std::optional<std::string> guardRuntimeName(
     if (guard.source == "assignment" && guard.role == "value") {
         return region.target;
     }
+    if (guard.source == "region-input") {
+        return guard.role;
+    }
     return std::nullopt;
 }
 
@@ -221,9 +244,16 @@ BytecodeTypedIrGuardCheck evaluateGuard(
             ? normalizeRuntimeDimensions(
                   {guard.value.rows, guard.value.columns})
             : normalizeRuntimeDimensions(guard.value.dimensions);
-    check.passed = actualKind == guard.value.kind &&
+    const bool kindMatches =
+        guard.value.kind == "numeric"
+            ? isRuntimeNumericValue(*value)
+            : actualKind == guard.value.kind;
+    const bool shapeMatches =
+        !guard.value.shapeKnown ||
+        actualDimensions == expectedDimensions;
+    check.passed = kindMatches &&
                    actualNumericClass == guard.value.numericClass &&
-                   actualDimensions == expectedDimensions;
+                   shapeMatches;
     if (check.passed) {
         check.reason = "matched " +
                        shapeText(actualKind, actualNumericClass,

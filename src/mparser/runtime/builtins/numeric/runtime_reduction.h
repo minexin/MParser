@@ -15,6 +15,17 @@ struct RuntimeReductionResult {
     std::string error;
 };
 
+struct RuntimeReductionShape {
+    std::vector<size_t> inputDimensions;
+    std::vector<size_t> reductionDimensions;
+    std::vector<size_t> outputDimensions;
+};
+
+RuntimeReductionShape runtimeReductionShape(
+    std::vector<size_t> inputDimensions, bool dimensionSpecified,
+    bool allDimensions, std::vector<size_t> reductionDimensions,
+    bool extrema);
+
 bool isRuntimeReductionBuiltin(std::string_view name);
 
 RuntimeReductionResult runtimeReductionBuiltin(

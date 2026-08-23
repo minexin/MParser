@@ -241,6 +241,7 @@ add_library(mparser_core STATIC
     src/mparser/embedding/machine_protocol.cpp
     src/mparser/embedding/module_execution.cpp
     src/mparser/execution/jit/native_scalar_jit.cpp
+    src/mparser/execution/jit/dense_array_region_executor.cpp
     src/mparser/execution/jit/optimization_plan.cpp
     src/mparser/frontend/parser.cpp
     src/mparser/runtime/builtins/array/runtime_array_ops.cpp
@@ -693,7 +694,7 @@ add_test(NAME v1_3_public_contract_smoke
 set_tests_properties(v1_3_public_contract_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.10, 275 descriptors and 277 names")
+        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.11, 275 descriptors and 277 names")
 
 add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -947,6 +948,13 @@ target_link_libraries(typed_region_executor_smoke_tests PRIVATE mparser_core)
 add_test(NAME typed_region_executor_smoke
     COMMAND typed_region_executor_smoke_tests)
 
+add_executable(dense_array_typed_region_smoke_tests
+    tests/dense_array_typed_region_smoke.cpp)
+target_link_libraries(dense_array_typed_region_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME dense_array_typed_region_smoke
+    COMMAND dense_array_typed_region_smoke_tests)
+
 add_executable(native_scalar_jit_cache_smoke_tests
     tests/native_scalar_jit_cache_smoke.cpp)
 target_link_libraries(native_scalar_jit_cache_smoke_tests PRIVATE
@@ -995,6 +1003,27 @@ add_test(NAME production_run_portable_jit_cli_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m)
 set_tests_properties(production_run_portable_jit_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "summary = 705")
+
+add_test(NAME dense_array_jit_off_cli_smoke
+    COMMAND mparser --run --jit=off
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_array_jit_demo.m)
+set_tests_properties(dense_array_jit_off_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "dense_jit_checksum = 31568\\.8646463556")
+
+add_test(NAME dense_array_jit_portable_cli_smoke
+    COMMAND mparser --run --jit=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_array_jit_demo.m)
+set_tests_properties(dense_array_jit_portable_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "dense_jit_checksum = 31568\\.8646463556")
+
+add_test(NAME dense_array_jit_diagnostic_cli_smoke
+    COMMAND mparser --run-jit --typed-backend=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_array_jit_demo.m)
+set_tests_properties(dense_array_jit_diagnostic_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "fused portable dense sum kernel executed")
 
 add_test(NAME production_run_jit_off_cli_smoke
     COMMAND mparser --run --jit=off --native-cache-stats
@@ -1068,6 +1097,13 @@ set_tests_properties(scalar_function_specialization_portable_cli_smoke
         "summary = 334835500.*backend=portable.*baseline outputs: match")
 
 if(MPARSER_ENABLE_NATIVE_JIT)
+    add_test(NAME dense_array_jit_native_cli_smoke
+        COMMAND mparser --run --jit=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_array_jit_demo.m)
+    set_tests_properties(dense_array_jit_native_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "dense_jit_checksum = 31568\\.8646463556")
+
     add_test(NAME production_run_native_jit_cli_smoke
         COMMAND mparser --run --jit=native --native-cache-stats
             ${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m)
@@ -2150,10 +2186,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.10/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.11/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.10 catalog validated: 275 descriptors")
+        "builtin source contract 1.11 catalog validated: 275 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2878,7 +2914,7 @@ install(FILES
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
-    tests/public_contract/builtin/1.10/default_catalog.json
+    tests/public_contract/builtin/1.11/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
@@ -2903,6 +2939,7 @@ install(FILES
     samples/performance_scalar_loop.m
     samples/performance_array_workload.m
     samples/scalar_function_jit_demo.m
+    samples/dense_array_jit_demo.m
     samples/reliability_boundary_demo.m
     samples/v1_1_core_compatibility_demo.m
     samples/filesystem_management_demo.m

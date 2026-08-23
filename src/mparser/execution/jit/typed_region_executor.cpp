@@ -437,8 +437,8 @@ std::optional<ScalarKernel> compileKernel(
                 if (body.binding.kind == BindingKind::Builtin &&
                     descriptor &&
                     descriptor->purity == BuiltinPurity::Pure &&
-                    descriptor->typedLowering !=
-                        BuiltinTypedLowering::None) {
+                    builtinTypedLoweringIsElementwiseUnary(
+                        descriptor->typedLowering)) {
                     localCallables.push_back(body.operand);
                     break;
                 }
@@ -642,8 +642,8 @@ std::optional<ScalarKernel> compileKernel(
                 builtinRegistry.find(instruction.operand);
             if (instruction.binding.kind == BindingKind::Builtin &&
                 descriptor &&
-                descriptor->typedLowering !=
-                    BuiltinTypedLowering::None) {
+                builtinTypedLoweringIsElementwiseUnary(
+                    descriptor->typedLowering)) {
                 break;
             }
             if (instruction.binding.kind == BindingKind::Function &&

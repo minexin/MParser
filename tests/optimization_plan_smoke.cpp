@@ -143,7 +143,7 @@ end
     const auto bytecode = lowerer.lower(semantic);
 
     mparser::BytecodeOptimizationPlanner planner;
-    const auto result = planner.planStaticLoops(bytecode);
+    const auto result = planner.planStaticRegions(bytecode);
     const auto* loop = findCandidate(result, "hot-loop", "i");
     assert(loop != nullptr);
     assert(loop->executionCount == 0);

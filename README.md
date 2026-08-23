@@ -5,7 +5,7 @@ session-owned system boundary, broad standard-library coverage, dynamic
 workspace and language semantics, MAT v5 persistence, and repository-owned
 C++20 advanced numerical algorithms without Eigen. The public identities are
 C/C++ source API 1.3, C ABI generation 2 revision 1, CLI 1.0, machine result
-protocol 1.1, and Builtin source contract 1.10. They are frozen together in the
+protocol 1.1, and Builtin source contract 1.11. They are frozen together in the
 [v1.3 candidate contract](docs/public-contract-v1.3.json). The v1.2 and
 released v1.0 contracts remain immutable archived evidence; unreleased
 interfaces do not require compatibility adapters. See
@@ -1039,9 +1039,10 @@ local validation evidence are indexed in
 
 The active v1.4 train adds a versioned seven-workload suite so optimization
 work is selected from repeatable scalar, array, reduction, function-call, and
-dense-linear-algebra evidence. Its first selected optimization inlines a
-strictly proven pure local scalar function into the existing portable/SLJIT
-kernel while retaining transactional VM fallback:
+dense-linear-algebra evidence. It now inlines strictly proven pure local
+scalar functions and fuses guarded N-dimensional dense-double element-wise
+expressions. `sum` is the first registry-declared Typed reduction; portable
+and native paths retain transactional VM fallback:
 
 ```powershell
 ctest --test-dir build/windows-msvc-release `
@@ -1050,10 +1051,12 @@ cmake --build build/windows-msvc-release --config Release `
   --target mparser_v1_4_performance_suite
 build\windows-msvc-release\mparser.exe --run-typed-bytecode `
   --typed-backend=native samples\scalar_function_jit_demo.m
+build\windows-msvc-release\mparser.exe --run --jit=portable `
+  samples\dense_array_jit_demo.m
 ```
 
-See [docs/v1.4.md](docs/v1.4.md) for the exact specialization boundary,
-current host characterization, and still-uncovered workload priorities.
+See [docs/v1.4.md](docs/v1.4.md) for the exact specialization boundaries,
+current host characterization, and remaining workload priorities.
 
 Install and consume the C SDK:
 

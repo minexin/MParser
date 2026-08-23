@@ -21,6 +21,7 @@
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
 #include "mparser/runtime/core/session/runtime_warning.h"
+#include "mparser/execution/jit/dense_array_region_executor.h"
 #include "mparser/execution/jit/typed_ir.h"
 #include "mparser/execution/jit/typed_region_executor.h"
 
@@ -63,6 +64,16 @@ public:
         TypedRegionBackend backend) {
         return executor.executeValidated(
             program, region, loopRange, variables, backend);
+    }
+
+    static DenseArrayRegionExecutionResult executeDenseRegion(
+        const DenseArrayTypedRegionExecutor& executor,
+        const BytecodeProgram& program,
+        const BytecodeRegionContract& region,
+        const RuntimeWorkspace& variables,
+        TypedRegionBackend backend) {
+        return executor.executeValidated(
+            program, region, variables, backend);
     }
 };
 
@@ -1018,6 +1029,12 @@ struct ActiveTypedLoopRegion {
     BytecodeRegionContract contract;
 };
 
+struct ActiveTypedDenseRegion {
+    size_t regionId = 0;
+    BytecodeRegionContract contract;
+    std::vector<BytecodeTypedIrGuard> guards;
+};
+
 StackValue runtimeStackValue(RuntimeValue value) {
     StackValue result;
     result.value = std::move(value);
@@ -1316,9 +1333,11 @@ private:
         loopProfiles_.clear();
         callSiteProfiles_.clear();
         assignmentProfiles_.clear();
+        loadProfiles_.clear();
         workspaceInputProfiles_.clear();
         functionEntryProfiles_.clear();
         typedLoopRegions_.clear();
+        typedDenseRegions_.clear();
         typedRegionExecutions_.clear();
         functionProfileStack_.clear();
         executedInstructionCount_ = 0;
@@ -1367,6 +1386,10 @@ private:
 
         for (const auto& [pc, assignment] : assignmentProfiles_) {
             profile.assignments.push_back(assignment);
+        }
+
+        for (const auto& [pc, load] : loadProfiles_) {
+            profile.loads.push_back(load);
         }
 
         for (const auto& [name, input] : workspaceInputProfiles_) {
@@ -1716,12 +1739,19 @@ private:
     void recordAssignment(const BytecodeInstruction& instruction,
                           std::string kind,
                           const RuntimeValue& value) {
+        recordAssignmentAt(currentPc_, instruction, std::move(kind), value);
+    }
+
+    void recordAssignmentAt(size_t pc,
+                            const BytecodeInstruction& instruction,
+                            std::string kind,
+                            const RuntimeValue& value) {
         if (!profilingEnabled_) {
             return;
         }
-        auto& profile = assignmentProfiles_[currentPc_];
+        auto& profile = assignmentProfiles_[pc];
         if (profile.kind.empty()) {
-            profile.pc = currentPc_;
+            profile.pc = pc;
             profile.kind = std::move(kind);
             profile.target = instruction.operand;
             profile.span = instruction.span;
@@ -1736,6 +1766,20 @@ private:
             }
         }
         ++profile.executionCount;
+        observeValue(profile.valueObservation, value);
+    }
+
+    void recordLoad(const BytecodeInstruction& instruction,
+                    const RuntimeValue& value) {
+        if (!profilingEnabled_) {
+            return;
+        }
+        auto& profile = loadProfiles_[currentPc_];
+        if (profile.name.empty()) {
+            profile.pc = currentPc_;
+            profile.name = instruction.operand;
+            profile.span = instruction.span;
+        }
         observeValue(profile.valueObservation, value);
     }
 
@@ -4228,10 +4272,14 @@ private:
 
         std::map<size_t, size_t> idCounts;
         std::map<size_t, size_t> loopSourceCounts;
+        std::map<size_t, size_t> denseSourceCounts;
         for (const auto& region : typedIr->regions) {
             ++idCounts[region.id];
             if (region.kind == "scalar-loop") {
                 ++loopSourceCounts[region.sourcePc];
+            } else if (region.kind == "dense-elementwise" ||
+                       region.kind == "dense-reduction") {
+                ++denseSourceCounts[region.sourcePc];
             }
         }
         BytecodeRegionAnalyzer regionAnalyzer(
@@ -4250,43 +4298,100 @@ private:
                 region.region.fallbackKind;
             execution.lastReason = region.region.reason;
 
-            if (region.kind != "scalar-loop" ||
-                !region.region.eligibleForTypedExecution) {
+            if (!region.region.eligibleForTypedExecution) {
                 typedRegionExecutions_[region.id] =
                     std::move(execution);
                 continue;
             }
 
-            const auto expected =
-                BytecodeVmTrustedAccess::analyzeRegion(
-                    regionAnalyzer, *program_, "hot-loop",
-                    region.sourcePc, region.target);
-            const bool sourceMatches =
-                region.sourcePc < program_->instructions.size() &&
-                program_->instructions[region.sourcePc].op ==
-                    BytecodeOp::ForBegin &&
-                region.target ==
-                    program_->instructions[region.sourcePc].operand;
-            const bool unique =
-                idCounts[region.id] == 1 &&
-                loopSourceCounts[region.sourcePc] == 1;
-            if (!sourceMatches || !unique ||
-                !expected.eligibleForTypedExecution ||
-                !bytecodeRegionContractsEquivalent(
-                    region.region, expected)) {
-                execution.eligible = false;
-                execution.lastFallbackKind =
-                    RuntimeFallbackKind::InvalidContract;
-                execution.lastReason =
-                    "typed region contract does not match its bytecode "
-                    "program";
+            if (region.kind == "scalar-loop") {
+                const auto expected =
+                    BytecodeVmTrustedAccess::analyzeRegion(
+                        regionAnalyzer, *program_, "hot-loop",
+                        region.sourcePc, region.target);
+                const bool sourceMatches =
+                    region.sourcePc < program_->instructions.size() &&
+                    program_->instructions[region.sourcePc].op ==
+                        BytecodeOp::ForBegin &&
+                    region.target ==
+                        program_->instructions[region.sourcePc].operand;
+                const bool unique =
+                    idCounts[region.id] == 1 &&
+                    loopSourceCounts[region.sourcePc] == 1;
+                if (sourceMatches && unique &&
+                    expected.eligibleForTypedExecution &&
+                    bytecodeRegionContractsEquivalent(
+                        region.region, expected)) {
+                    typedRegionExecutions_[region.id] = execution;
+                    typedLoopRegions_[region.sourcePc] =
+                        ActiveTypedLoopRegion{
+                            region.id, region.kind, region.target,
+                            expected};
+                    continue;
+                }
+            } else if (region.kind == "dense-elementwise" ||
+                       region.kind == "dense-reduction") {
+                const auto expected =
+                    BytecodeVmTrustedAccess::analyzeRegion(
+                        regionAnalyzer, *program_,
+                        "dense-array-assignment", region.sourcePc,
+                        region.target);
+                const bool sourceMatches =
+                    region.sourcePc < program_->instructions.size() &&
+                    program_->instructions[region.sourcePc].op ==
+                        BytecodeOp::StoreName &&
+                    program_->instructions[region.sourcePc].operand ==
+                        region.target &&
+                    expected.bodyEndPc == region.sourcePc &&
+                    expected.endPc == region.sourcePc + 1;
+                const bool kindMatches =
+                    (region.kind == "dense-reduction") ==
+                    (expected.reductionOperationCount != 0);
+                std::set<std::string, std::less<>> guardedInputs;
+                bool guardsMatch =
+                    region.guards.size() == expected.inputs.size();
+                for (const auto& guard : region.guards) {
+                    const bool knownInput =
+                        std::find(expected.inputs.begin(),
+                                  expected.inputs.end(), guard.role) !=
+                        expected.inputs.end();
+                    const bool numericKind =
+                        guard.value.kind == "numeric" ||
+                        guard.value.kind == "number" ||
+                        guard.value.kind == "vector" ||
+                        guard.value.kind == "matrix";
+                    guardsMatch = guardsMatch &&
+                                  guard.source == "region-input" &&
+                                  knownInput && numericKind &&
+                                  guard.value.numericClass == "double" &&
+                                  guardedInputs.insert(guard.role).second;
+                }
+                const bool unique =
+                    idCounts[region.id] == 1 &&
+                    denseSourceCounts[region.sourcePc] == 1 &&
+                    !typedDenseRegions_.contains(expected.beginPc);
+                if (sourceMatches && kindMatches && guardsMatch && unique &&
+                    expected.eligibleForTypedExecution &&
+                    bytecodeRegionContractsEquivalent(
+                        region.region, expected)) {
+                    typedRegionExecutions_[region.id] = execution;
+                    typedDenseRegions_[expected.beginPc] =
+                        ActiveTypedDenseRegion{
+                            region.id, expected, region.guards};
+                    continue;
+                }
+            } else {
                 typedRegionExecutions_[region.id] =
                     std::move(execution);
                 continue;
             }
-            typedRegionExecutions_[region.id] = execution;
-            typedLoopRegions_[region.sourcePc] = ActiveTypedLoopRegion{
-                region.id, region.kind, region.target, expected};
+
+            execution.eligible = false;
+            execution.lastFallbackKind =
+                RuntimeFallbackKind::InvalidContract;
+            execution.lastReason =
+                "typed region contract does not match its bytecode program";
+            typedRegionExecutions_[region.id] = std::move(execution);
         }
     }
 
@@ -4922,6 +5027,9 @@ private:
 
     std::optional<size_t>
     executeInstruction(const BytecodeInstruction& instruction) {
+        if (const auto typedTarget = executeTypedDenseRegion()) {
+            return typedTarget;
+        }
         switch (instruction.op) {
         case BytecodeOp::LoadName:
             loadName(instruction);
@@ -5453,6 +5561,125 @@ private:
             ForLoopState{instruction.operand, std::move(*values), 1,
                          currentPc_, instruction.binding});
         return std::nullopt;
+    }
+
+    bool typedDenseGuardsMatch(
+        const ActiveTypedDenseRegion& active,
+        std::string& failureReason) const {
+        for (const auto& guard : active.guards) {
+            if (guard.source != "region-input" || guard.role.empty()) {
+                failureReason =
+                    "typed dense region contains an unsupported guard";
+                return false;
+            }
+            const auto found = currentFrame().find(guard.role);
+            if (found == currentFrame().end()) {
+                failureReason =
+                    "typed dense guard input is unavailable: " +
+                    guard.role;
+                return false;
+            }
+            const RuntimeValue& value = found->second;
+            const std::string actualKind = runtimeKindName(value);
+            const bool kindMatches =
+                guard.value.kind == "numeric"
+                    ? isRuntimeNumericValue(value)
+                    : actualKind == guard.value.kind;
+            const std::string actualNumericClass =
+                isRuntimeNumericValue(value)
+                    ? std::string(runtimeNumericClassName(
+                          value.numericClass))
+                    : std::string{};
+            const auto expectedDimensions =
+                guard.value.dimensions.empty()
+                    ? normalizeRuntimeDimensions(
+                          {guard.value.rows, guard.value.columns})
+                    : normalizeRuntimeDimensions(
+                          guard.value.dimensions);
+            const bool shapeMatches =
+                !guard.value.shapeKnown ||
+                runtimeDimensions(value) == expectedDimensions;
+            if (!kindMatches ||
+                actualNumericClass != guard.value.numericClass ||
+                !shapeMatches) {
+                failureReason =
+                    "typed dense guard failed for input: " + guard.role;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::optional<size_t> executeTypedDenseRegion() {
+        const auto active = typedDenseRegions_.find(currentPc_);
+        if (active == typedDenseRegions_.end()) {
+            return std::nullopt;
+        }
+
+        auto& execution =
+            typedRegionExecutions_[active->second.regionId];
+        ++execution.attemptCount;
+        std::string guardFailure;
+        if (!typedDenseGuardsMatch(active->second, guardFailure)) {
+            ++execution.fallbackCount;
+            execution.lastFallbackKind =
+                RuntimeFallbackKind::UnsupportedInput;
+            execution.lastReason = std::move(guardFailure);
+            return std::nullopt;
+        }
+
+        DenseArrayTypedRegionExecutor executor(
+            semantic_ ? semantic_->builtinRegistry : nullptr);
+        auto result = BytecodeVmTrustedAccess::executeDenseRegion(
+            executor, *program_, active->second.contract,
+            currentFrame(), typedRegionBackend_);
+        execution.backend = typedRegionBackendName(result.backend);
+        execution.nativeCompilationCount +=
+            result.nativeCompilationCount;
+        execution.nativeCacheHitCount += result.nativeCacheHitCount;
+        execution.nativeCacheInsertionCount +=
+            result.nativeCacheInsertionCount;
+        execution.nativeCacheBypassCount +=
+            result.nativeCacheBypassCount;
+        execution.nativeCacheEvictionCount +=
+            result.nativeCacheEvictionCount;
+        execution.nativeCacheEvictedCodeBytes +=
+            result.nativeCacheEvictedCodeBytes;
+        execution.nativeCodeSize =
+            std::max(execution.nativeCodeSize,
+                     result.nativeCodeSize);
+        execution.nativePlatform = result.nativePlatform;
+        execution.lastFallbackKind = result.fallbackKind;
+        execution.nativeFallbackKind =
+            result.nativeFallbackKind;
+        execution.nativeFallbackReason =
+            result.nativeFallbackReason;
+        execution.lastReason = result.reason;
+        if (result.status != TypedRegionExecutionStatus::Executed) {
+            ++execution.fallbackCount;
+            return std::nullopt;
+        }
+
+        const size_t storePc = active->second.contract.bodyEndPc;
+        if (storePc >= program_->instructions.size()) {
+            ++execution.fallbackCount;
+            execution.lastFallbackKind =
+                RuntimeFallbackKind::InvalidContract;
+            execution.lastReason =
+                "typed dense store instruction is unavailable";
+            return std::nullopt;
+        }
+        const auto& store = program_->instructions[storePc];
+        recordAssignmentAt(storePc, store, "name", result.value);
+        storeVariable(store, std::move(result.value));
+
+        ++execution.executionCount;
+        execution.iterationCount += result.elementCount;
+        execution.executedInstructionCount +=
+            result.executedInstructionCount;
+        execution.executedKernelInstructionCount +=
+            result.executedKernelInstructionCount;
+        return active->second.contract.endPc;
     }
 
     std::optional<size_t> executeTypedLoop(
@@ -6689,6 +6916,7 @@ private:
             const auto variable =
                 loadStoredVariable(instruction, *binding);
             if (variable) {
+                recordLoad(instruction, *variable);
                 stack_.push_back(runtimeStackValue(*variable));
             }
             return;
@@ -6696,6 +6924,7 @@ private:
         if (const auto variable =
                 currentFrame().find(instruction.operand);
             variable != currentFrame().end()) {
+            recordLoad(instruction, variable->second);
             stack_.push_back(
                 runtimeStackValue(variable->second));
             return;
@@ -15233,11 +15462,13 @@ private:
     std::map<size_t, BytecodeLoopProfile> loopProfiles_;
     std::map<size_t, BytecodeCallSiteProfile> callSiteProfiles_;
     std::map<size_t, BytecodeAssignmentProfile> assignmentProfiles_;
+    std::map<size_t, BytecodeLoadProfile> loadProfiles_;
     std::map<std::string, BytecodeWorkspaceInputProfile>
         workspaceInputProfiles_;
     std::map<std::string, BytecodeFunctionEntryProfile>
         functionEntryProfiles_;
     std::map<size_t, ActiveTypedLoopRegion> typedLoopRegions_;
+    std::map<size_t, ActiveTypedDenseRegion> typedDenseRegions_;
     std::map<size_t, BytecodeTypedRegionExecutionProfile>
         typedRegionExecutions_;
     std::vector<std::string> functionProfileStack_;

@@ -798,7 +798,7 @@ CompiledModule CompiledModule::compile(
     BytecodeOptimizationPlanner planner;
     BytecodeTypedIrBuilder builder;
     module.data_->staticTypedModule = builder.build(
-        planner.planStaticLoops(
+        planner.planStaticRegions(
             module.data_->bytecode,
             module.data_->semantic.builtinRegistry));
 

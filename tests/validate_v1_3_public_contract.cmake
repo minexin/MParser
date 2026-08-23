@@ -109,7 +109,7 @@ require_json("1" "machine protocol major" machine_result_protocol major)
 require_json("1" "machine protocol minor" machine_result_protocol minor)
 require_json("1" "builtin source contract major"
     builtin_source_contract major)
-require_json("10" "builtin source contract minor"
+require_json("11" "builtin source contract minor"
     builtin_source_contract minor)
 require_json("275" "builtin descriptor count"
     builtin_source_contract descriptor_count)
@@ -147,8 +147,8 @@ validate_contract_artifact("machine protocol schema"
 validate_live_contract_artifact("builtin contract header"
     "src/mparser/runtime/builtins/builtin_registry.h"
     builtin_source_contract header)
-validate_contract_artifact("builtin 1.10 catalog"
-    "tests/public_contract/builtin/1.10/default_catalog.json"
+validate_contract_artifact("builtin 1.11 catalog"
+    "tests/public_contract/builtin/1.11/default_catalog.json"
     builtin_source_contract default_catalog)
 validate_live_contract_artifact("builtin extension guide"
     "docs/extending-builtins.md" builtin_source_contract author_guide)
@@ -212,7 +212,7 @@ if(contract_is_current)
         builtin_header)
     foreach(version_pair IN ITEMS
             "kBuiltinSourceContractMajor;1"
-            "kBuiltinSourceContractMinor;10")
+            "kBuiltinSourceContractMinor;11")
         list(GET version_pair 0 constant)
         list(GET version_pair 1 expected)
         string(REGEX MATCH
@@ -236,14 +236,14 @@ if(NOT symbol_count EQUAL 117)
 endif()
 
 file(READ
-    "${PROJECT_ROOT}/tests/public_contract/builtin/1.10/default_catalog.json"
+    "${PROJECT_ROOT}/tests/public_contract/builtin/1.11/default_catalog.json"
     builtin_catalog)
 string(JSON descriptor_count GET "${builtin_catalog}" descriptor_count)
 string(JSON catalog_major GET "${builtin_catalog}" source_contract major)
 string(JSON catalog_minor GET "${builtin_catalog}" source_contract minor)
 if(NOT descriptor_count EQUAL 275 OR
-   NOT catalog_major EQUAL 1 OR NOT catalog_minor EQUAL 10)
-    message(FATAL_ERROR "Builtin 1.10 catalog identity changed")
+   NOT catalog_major EQUAL 1 OR NOT catalog_minor EQUAL 11)
+    message(FATAL_ERROR "Builtin 1.11 catalog identity changed")
 endif()
 set(registered_name_count 0)
 math(EXPR descriptor_last "${descriptor_count} - 1")
@@ -272,7 +272,7 @@ endif()
 if(contract_is_current)
     file(READ "${PROJECT_ROOT}/cmake/MParserConfig.cmake.in" package_template)
     foreach(required_text IN ITEMS
-            "set(MParser_BUILTIN_SOURCE_CONTRACT_MINOR \"10\")"
+            "set(MParser_BUILTIN_SOURCE_CONTRACT_MINOR \"11\")"
             "@PACKAGE_CMAKE_INSTALL_DOCDIR@/public-contract-v1.3.json"
             "@PACKAGE_CMAKE_INSTALL_DOCDIR@/default_catalog.json")
         string(FIND "${package_template}" "${required_text}" found_at)
@@ -286,4 +286,4 @@ endif()
 message(STATUS
     "MParser v1.3 candidate contract validated: C API 1.3, ABI generation "
     "2 revision 1, 117 symbols, C++ API 1.3, mparser.result 1.1, builtin "
-    "source contract 1.10, 275 descriptors and 277 names")
+    "source contract 1.11, 275 descriptors and 277 names")

@@ -131,6 +131,8 @@ std::string_view typedLoweringName(
         return "square-root";
     case Lowering::Tangent:
         return "tangent";
+    case Lowering::Sum:
+        return "sum";
     }
     return "unknown";
 }

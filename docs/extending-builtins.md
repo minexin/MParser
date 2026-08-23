@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.10. Contract 1.0 established
+identify active source contract 1.11. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -318,6 +318,12 @@ text-query descriptors. `arrayfun` uses the existing dynamic-call and
 object-array-policy capabilities; set/text handlers remain pure and
 deterministic while cooperating with optional execution control; `str2num`
 uses an isolated source graph restricted to deterministic pure descriptors.
+Contract 1.11 adds the `sum` reduction identity to `BuiltinTypedLowering`.
+The identity remains declarative: the VM is the semantic authority, while an
+eligible Dense Typed region may consume it only after proving the descriptor
+is the unshadowed default builtin and validating argument, numeric-class,
+shape, and resource guards. Other reductions remain ordinary registry calls
+until they receive an independently tested lowering identity.
 The v1.3 candidate catalog exercises
 callable-based dynamic invocation through `cellfun`, execution-controlled
 numeric utilities, session-random `randperm`, and the `eval`/`evalc`/`evalin`/
@@ -328,7 +334,7 @@ registered names.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The current v1.3 candidate snapshot is
-`tests/public_contract/builtin/1.10/default_catalog.json`; earlier files remain
+`tests/public_contract/builtin/1.11/default_catalog.json`; earlier files remain
 historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output

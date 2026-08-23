@@ -1,4 +1,5 @@
 #include "mparser/execution/bytecode/bytecode_region.h"
+#include "mparser/execution/jit/dense_array_region_executor.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
 
 #include <algorithm>
@@ -129,7 +130,8 @@ BytecodeScalarFunctionSpecialization analyzeScalarFunctionSpecialization(
                 builtinRegistry.find(instruction.operand);
             if (instruction.binding.kind == BindingKind::Builtin &&
                 descriptor && descriptor->purity == BuiltinPurity::Pure &&
-                descriptor->typedLowering != BuiltinTypedLowering::None) {
+                builtinTypedLoweringIsElementwiseUnary(
+                    descriptor->typedLowering)) {
                 callableStack.push_back(instruction.operand);
                 break;
             }
@@ -185,7 +187,8 @@ BytecodeScalarFunctionSpecialization analyzeScalarFunctionSpecialization(
                 instruction.resultCount != 1 ||
                 instruction.implicitExpressionOutput || stackDepth == 0 ||
                 !descriptor || descriptor->purity != BuiltinPurity::Pure ||
-                descriptor->typedLowering == BuiltinTypedLowering::None ||
+                !builtinTypedLoweringIsElementwiseUnary(
+                    descriptor->typedLowering) ||
                 callableStack.empty() ||
                 callableStack.back() != instruction.calleeName) {
                 return reject("function contains an unsupported call");
@@ -361,6 +364,12 @@ std::string rejectionReason(const BytecodeRegionContract& contract) {
     if (contract.scalarFunctionCallCount > 0) {
         reason += " with scalar function specialization";
     }
+    if (contract.denseElementwiseOperationCount > 0) {
+        reason += " with fused dense element-wise operations";
+    }
+    if (contract.reductionOperationCount > 0) {
+        reason += " with typed reduction lowering";
+    }
     return reason;
 }
 
@@ -452,7 +461,8 @@ void analyzeInstruction(const BytecodeProgram& program,
             instruction.resultCount == 1 &&
             !instruction.implicitExpressionOutput && descriptor &&
             descriptor->purity == BuiltinPurity::Pure &&
-            descriptor->typedLowering != BuiltinTypedLowering::None) {
+            builtinTypedLoweringIsElementwiseUnary(
+                descriptor->typedLowering)) {
             calls.insert(instruction.calleeName);
             break;
         }
@@ -839,6 +849,10 @@ bool bytecodeRegionContractsEquivalent(
            left.linearIndexWriteCount == right.linearIndexWriteCount &&
            left.scalarFunctionCallCount ==
                right.scalarFunctionCallCount &&
+           left.denseElementwiseOperationCount ==
+               right.denseElementwiseOperationCount &&
+           left.reductionOperationCount ==
+               right.reductionOperationCount &&
            left.stackInputCount == right.stackInputCount &&
            left.stackOutputCount == right.stackOutputCount &&
            left.reads == right.reads &&
@@ -890,6 +904,36 @@ BytecodeRegionContract BytecodeRegionAnalyzer::analyzeValidated(
     if (candidateKind == "hot-loop") {
         return analyzeLoopRegion(
             program, sourcePc, *builtinRegistry_);
+    }
+    if (candidateKind == "dense-array-assignment") {
+        const auto analysis = analyzeDenseArrayAssignmentRegion(
+            program, sourcePc, *builtinRegistry_);
+        BytecodeRegionContract contract;
+        contract.available = analysis.available;
+        contract.closed = analysis.closed;
+        contract.beginPc = analysis.beginPc;
+        contract.endPc = analysis.endPc;
+        contract.bodyBeginPc = analysis.beginPc;
+        contract.bodyEndPc = analysis.storePc;
+        contract.reads = analysis.inputs;
+        contract.inputs = analysis.inputs;
+        if (!analysis.target.empty()) {
+            contract.writes = {analysis.target};
+            contract.outputs = {analysis.target};
+        }
+        contract.callTargets = analysis.callTargets;
+        contract.denseElementwiseOperationCount =
+            analysis.elementwiseOperationCount;
+        contract.reductionOperationCount =
+            analysis.reductionOperationCount;
+        contract.hasCalls = analysis.hasUnsupportedCall ||
+                            !analysis.callTargets.empty();
+        contract.hasUnsupportedOperations =
+            analysis.hasUnsupportedOperation;
+        contract.eligibleForTypedExecution = analysis.eligible;
+        contract.fallbackKind = analysis.fallbackKind;
+        contract.reason = analysis.reason;
+        return contract;
     }
     return analyzePointRegion(program, sourcePc, target);
 }

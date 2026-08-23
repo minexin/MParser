@@ -15,7 +15,7 @@
   },
   "milestone": {
     "path": "docs/v1.3.md",
-    "sha256_lf": "26c9bbe9cd837c8b993fd5db7ffd430aa3f20bd3b4a75f5038e430eb862a57bd"
+    "sha256_lf": "504a71fecaf7375118485bc072379239b3b6e0c5abcd0546ed61faf6a4436b39"
   },
   "cli": {
     "major": 1,
@@ -93,32 +93,32 @@
   },
   "builtin_source_contract": {
     "major": 1,
-    "minor": 10,
+    "minor": 11,
     "binary_abi": "none",
     "integration": "compiled together with the engine",
     "descriptor_count": 275,
     "registered_name_count": 277,
     "header": {
       "path": "src/mparser/runtime/builtins/builtin_registry.h",
-      "sha256_lf": "2dfe3e02e896628475636c471d05e79a3a7e50d5a41970df17a38affec491a2f"
+      "sha256_lf": "969679d9e0bc2378f07711bc216adb845b692b8e1a4456807686d998ddacd5ba"
     },
     "default_catalog": {
-      "path": "tests/public_contract/builtin/1.10/default_catalog.json",
-      "sha256_lf": "2ca21d18a03bc72660e4a5282db45f14701a6ce654040700a212f51b5d4257f6"
+      "path": "tests/public_contract/builtin/1.11/default_catalog.json",
+      "sha256_lf": "531e07c024c3b532a258a8cdfa7eae341a4e5211995a1e0b543b8acde48e2b6d"
     },
     "author_guide": {
       "path": "docs/extending-builtins.md",
-      "sha256_lf": "df0bc1be0f31c84e627290d8036e7d401d9c38a65dfa2010b73c0aec2190f277"
+      "sha256_lf": "b6271deb8477ff5526aa40da3e456f90a8e093686be600a687a15527b4d7f612"
     }
   },
   "versioning_and_deprecation": {
     "path": "docs/versioning-and-deprecation.md",
-    "sha256_lf": "e99defa99f4bf833b313b7bee225299dd31fc515230cfa19bf663802c629a677"
+    "sha256_lf": "47fde42202064d879324d4a7f5ddc74510639148a810801a8f9028b79c494fda"
   },
   "cmake_package": {
     "config_template": {
       "path": "cmake/MParserConfig.cmake.in",
-      "sha256_lf": "39af2ee9da600d56d0dcc4ac376162c4be29a4aaae168b48d8e9c86aaaf0e5d2"
+      "sha256_lf": "d41b2e30ac6a804cb2f653a329d0ea7b6b825d6d5251e7b2f6fc49777bc5ee24"
     },
     "compatibility": "SameMajorVersion",
     "current_contract_file": "public-contract-v1.3.json",

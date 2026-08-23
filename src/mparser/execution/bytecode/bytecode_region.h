@@ -28,6 +28,8 @@ struct BytecodeRegionContract {
     size_t linearIndexReadCount = 0;
     size_t linearIndexWriteCount = 0;
     size_t scalarFunctionCallCount = 0;
+    size_t denseElementwiseOperationCount = 0;
+    size_t reductionOperationCount = 0;
     size_t stackInputCount = 0;
     size_t stackOutputCount = 0;
     std::vector<std::string> reads;

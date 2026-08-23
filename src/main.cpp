@@ -734,6 +734,15 @@ void printBytecodeProfile(const mparser::BytecodeVmResult& runtime) {
         }
         std::cout << "\n";
     }
+
+    std::cout << "  loads:\n";
+    for (const auto& load : runtime.profile.loads) {
+        std::cout << "    pc=" << load.pc
+                  << ", name=" << load.name
+                  << ", value="
+                  << observationToString(load.valueObservation)
+                  << "\n";
+    }
 }
 
 void printBytecodeOptimizationPlan(
@@ -764,6 +773,10 @@ void printBytecodeOptimizationPlan(
                   << region.linearIndexWriteCount
                   << ", scalarFunctionCalls="
                   << region.scalarFunctionCallCount
+                  << ", denseElementwiseOperations="
+                  << region.denseElementwiseOperationCount
+                  << ", reductionOperations="
+                  << region.reductionOperationCount
                   << ", stack=" << region.stackInputCount << "->"
                   << region.stackOutputCount << "\n";
         std::cout << "      inputs="
@@ -779,8 +792,11 @@ void printBytecodeOptimizationPlan(
                       << ", role=" << guard.role
                       << ", kind=" << guard.kind
                       << ", shape="
-                      << dimensionListToString(guard.dimensions, guard.rows,
-                                               guard.columns)
+                      << (guard.shapeKnown
+                              ? dimensionListToString(
+                                    guard.dimensions, guard.rows,
+                                    guard.columns)
+                              : std::string("dynamic"))
                       << ", observations=" << guard.observationCount
                       << "\n";
         }
@@ -812,6 +828,10 @@ void printBytecodeTypedIr(const mparser::BytecodeTypedIrModule& module) {
                   << region.region.linearIndexWriteCount
                   << ", scalarFunctionCalls="
                   << region.region.scalarFunctionCallCount
+                  << ", denseElementwiseOperations="
+                  << region.region.denseElementwiseOperationCount
+                  << ", reductionOperations="
+                  << region.region.reductionOperationCount
                   << "\n";
         std::cout << "      inputs="
                   << stringListToString(region.region.inputs)
@@ -826,9 +846,13 @@ void printBytecodeTypedIr(const mparser::BytecodeTypedIrModule& module) {
             std::cout << "      guard source=" << guard.source
                       << ", role=" << guard.role
                       << ", kind=" << guard.value.kind
-                      << ", shape=" << dimensionListToString(
-                             guard.value.dimensions, guard.value.rows,
-                             guard.value.columns)
+                      << ", shape="
+                      << (guard.value.shapeKnown
+                              ? dimensionListToString(
+                                    guard.value.dimensions,
+                                    guard.value.rows,
+                                    guard.value.columns)
+                              : std::string("dynamic"))
                       << ", observations=" << guard.observationCount
                       << "\n";
         }
@@ -1943,7 +1967,7 @@ int main(int argc, char** argv) {
                     mparser::BytecodeOptimizationPlanner planner;
                     mparser::BytecodeTypedIrBuilder builder;
                     const auto typedModule = builder.build(
-                        planner.planStaticLoops(bytecode));
+                        planner.planStaticRegions(bytecode));
                     runtime = vm.run(
                         bytecode, semantic, typedModule, vmOptions);
                 } else {
