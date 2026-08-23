@@ -13,6 +13,46 @@ foreach(owner IN LISTS owner_directories)
     endif()
 endforeach()
 
+foreach(required_directory IN ITEMS
+        "${PROJECT_ROOT}/src/mparser/cli"
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm")
+    if(NOT IS_DIRECTORY "${required_directory}")
+        message(FATAL_ERROR
+            "required source ownership directory is missing: ${required_directory}")
+    endif()
+endforeach()
+
+foreach(required_file IN ITEMS
+        "${PROJECT_ROOT}/src/mparser/cli/main.cpp"
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/bytecode_vm.cpp"
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/bytecode_vm.h"
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/adaptive_bytecode_vm.cpp"
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/adaptive_bytecode_vm.h")
+    if(NOT EXISTS "${required_file}")
+        message(FATAL_ERROR
+            "required source ownership file is missing: ${required_file}")
+    endif()
+endforeach()
+
+foreach(retired_source IN ITEMS
+        "${PROJECT_ROOT}/src/main.cpp"
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/bytecode_vm.cpp"
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/adaptive_bytecode_vm.cpp")
+    if(EXISTS "${retired_source}")
+        message(FATAL_ERROR
+            "source remains outside its owning directory: ${retired_source}")
+    endif()
+endforeach()
+
+foreach(forwarding_header IN ITEMS
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/bytecode_vm.h"
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/adaptive_bytecode_vm.h")
+    if(NOT EXISTS "${forwarding_header}")
+        message(FATAL_ERROR
+            "VM forwarding header is missing: ${forwarding_header}")
+    endif()
+endforeach()
+
 set(allowed_root_files README.md runtime_output.h runtime_value.h)
 file(GLOB root_entries LIST_DIRECTORIES TRUE RELATIVE "${core_root}"
     "${core_root}/*")
@@ -94,4 +134,5 @@ endforeach()
 
 message(STATUS
     "MParser source layout validated: ${pair_count} runtime pairs, "
-    "four owners, two facades, and no core-to-builtin dependency")
+    "four owners, two facades, and no core-to-builtin dependency; "
+    "CLI and VM ownership boundaries are present")

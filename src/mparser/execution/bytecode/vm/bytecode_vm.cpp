@@ -1,4 +1,4 @@
-#include "mparser/execution/bytecode/bytecode_vm.h"
+#include "mparser/execution/bytecode/vm/bytecode_vm.h"
 #include "mparser/semantic/argument_contract.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
 #include "mparser/semantic/function_signature.h"

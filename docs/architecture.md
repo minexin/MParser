@@ -11,10 +11,10 @@ an enumeration member.
 
 Public, installed SDK headers live in `include/mparser`. Internal implementation
 files are grouped by subsystem under `src/mparser`: `frontend`, `semantic`,
-`execution`, `runtime`, and `embedding`, with bytecode/JIT and core/builtin/I/O
-subdirectories where ownership needs a narrower boundary. The complete placement
-rules are recorded in `src/mparser/README.md`; internal paths are not public API
-or ABI.
+`cli`, `execution`, `runtime`, and `embedding`. The bytecode VM has its own
+`execution/bytecode/vm` ownership boundary, alongside the existing JIT,
+core/builtin, and I/O subdirectories. The complete placement rules are
+recorded in `src/mparser/README.md`; internal paths are not public API or ABI.
 
 ## Frontend stages
 

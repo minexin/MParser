@@ -223,7 +223,7 @@ endif()
 
 add_library(mparser_core STATIC
     src/mparser/embedding/adaptive_module_runtime.cpp
-    src/mparser/execution/bytecode/adaptive_bytecode_vm.cpp
+    src/mparser/execution/bytecode/vm/adaptive_bytecode_vm.cpp
     src/mparser/semantic/argument_contract.cpp
     src/mparser/runtime/builtins/builtin_registry.cpp
     src/mparser/runtime/builtins/numeric/runtime_advanced_numeric.cpp
@@ -232,7 +232,7 @@ add_library(mparser_core STATIC
     src/mparser/execution/bytecode/bytecode_dump.cpp
     src/mparser/execution/bytecode/bytecode_region.cpp
     src/mparser/execution/bytecode/bytecode_verifier.cpp
-    src/mparser/execution/bytecode/bytecode_vm.cpp
+    src/mparser/execution/bytecode/vm/bytecode_vm.cpp
     src/mparser/embedding/compiled_module.cpp
     src/mparser/runtime/io/filesystem_utf8.cpp
     src/mparser/semantic/function_signature.cpp
@@ -390,7 +390,7 @@ target_compile_features(mparser_cpp_api INTERFACE cxx_std_20)
 set_target_properties(mparser_cpp_api PROPERTIES
     EXPORT_NAME cpp_api)
 
-add_executable(mparser src/main.cpp)
+add_executable(mparser src/mparser/cli/main.cpp)
 target_link_libraries(mparser PRIVATE mparser_core)
 target_compile_definitions(mparser PRIVATE MPARSER_VERSION="${PROJECT_VERSION}")
 set_target_properties(mparser PROPERTIES EXPORT_NAME cli)

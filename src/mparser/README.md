@@ -7,8 +7,10 @@ remain under `include/mparser`; paths in this tree are not public API or ABI.
 | --- | --- |
 | `frontend` | Source loading, tokens, lexer, parser, syntax tree, and diagnostics |
 | `semantic` | Semantic HIR, signatures, argument contracts, and property specifications |
+| `cli` | Command-line entry point, execution mode selection, diagnostics, and result presentation |
 | `execution` | Reference interpreter and execution behavior shared across engines |
-| `execution/bytecode` | Bytecode IR, verifier, VM, regions, and adaptive bytecode execution |
+| `execution/bytecode` | Bytecode IR, verifier, and region metadata |
+| `execution/bytecode/vm` | Bytecode dispatch, call frames, adaptive execution, and VM-specific runtime integration |
 | `execution/jit` | Typed IR, optimization planning, portable kernels, and native lowering |
 | `runtime/core` | Stable internal runtime facades and ownership rules |
 | `runtime/core/value` | Runtime values, shapes, text, containers, numeric storage, and repository-owned dense numeric algorithms |
@@ -29,7 +31,9 @@ Keep a `.cpp`/`.h` pair in the same owning directory. The only root core
 headers are the registry-facing `runtime_value.h` and `runtime_output.h`
 facades; their definitions remain in the owning subdirectories. New code
 should have one clear owner instead of adding files directly under
-`src/mparser`. Include internal headers from the `src` include root, for
+`src/mparser`. Parent-level bytecode VM headers are forwarding headers for
+path continuity; new VM code should include `execution/bytecode/vm` headers.
+Include internal headers from the `src` include root, for
 example `mparser/runtime/core/value/runtime_value.h`; do not depend on
 relative `../` paths. Core must not include builtin-family headers. Detailed
 runtime and builtin dependency rules are documented in `runtime/core/README.md`

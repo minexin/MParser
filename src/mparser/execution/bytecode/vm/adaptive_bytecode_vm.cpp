@@ -1,4 +1,4 @@
-#include "mparser/execution/bytecode/adaptive_bytecode_vm.h"
+#include "mparser/execution/bytecode/vm/adaptive_bytecode_vm.h"
 
 #include "mparser/execution/jit/optimization_plan.h"
 

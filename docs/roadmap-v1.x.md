@@ -420,7 +420,10 @@ fallback preserving results. The measured Dense workload moves from about
 Straight-line scalar, nested reductions, general matrix kernels, additional
 numeric classes, and dense linear algebra remain visible candidates; the v1.4
 milestone stays open and the project version is not advanced for either
-internal batch.
+internal batch. A behavior-neutral source-ownership batch also places the VM
+implementation under `execution/bytecode/vm` and the CLI entry point under
+`cli`, with forwarding headers and a layout smoke preserving the existing
+internal include boundary; larger monolith splits remain separately gated.
 
 ## v1.5: Rich Data, Ownership, And Inspection
 
