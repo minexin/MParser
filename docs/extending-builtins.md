@@ -318,7 +318,7 @@ text-query descriptors. `arrayfun` uses the existing dynamic-call and
 object-array-policy capabilities; set/text handlers remain pure and
 deterministic while cooperating with optional execution control; `str2num`
 uses an isolated source graph restricted to deterministic pure descriptors.
-The current v1.3 development catalog exercises
+The v1.3 candidate catalog exercises
 callable-based dynamic invocation through `cellfun`, execution-controlled
 numeric utilities, session-random `randperm`, and the `eval`/`evalc`/`evalin`/
 `assignin` family plus shared text/binary, managed filesystem, and advanced
@@ -327,7 +327,7 @@ callback, and text-query operations; it contains 275 descriptors and 277
 registered names.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
-v1.2 candidate snapshot. The active development snapshot is
+v1.2 candidate snapshot. The current v1.3 candidate snapshot is
 `tests/public_contract/builtin/1.10/default_catalog.json`; earlier files remain
 historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the

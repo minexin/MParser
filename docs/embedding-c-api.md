@@ -13,11 +13,10 @@ handles, fixed-width constants, byte/code-unit views, and versioned plain C
 structures.
 
 The frozen v1.2 candidate uses C ABI generation 2 revision 0 and 109 exports.
-The live v1.3 development header advances that generation additively to
-revision 1 and 117 exports for public system-context injection. These are
-binary-contract identifiers, not SDK product versions. MParser, the installed
-SDK, and the C/C++ source APIs still report development version `1.2.0`/`1.2`
-until the whole v1.3 train reaches its milestone gate. Applications can query
+The v1.3 candidate advances that generation additively to revision 1 and 117
+exports for public system-context injection. These are binary-contract
+identifiers, not SDK product versions. MParser and the installed SDK report
+`1.3.0`, while the C source API reports `1.3`. Applications can query
 `mparser_c_abi_generation()`, `mparser_c_abi_revision()`, and the three
 MParser component-version functions rather than assuming that product, ABI,
 and machine protocol levels advance together. The released ABI 1.1 contract
@@ -43,7 +42,7 @@ On Linux the link name is `libmparser_c.so` and its current ABI-generation SONAM
 `libmparser_c.so.2`. On macOS the corresponding install name is
 `libmparser_c.2.dylib`. On Windows it is `mparser_c.dll` plus the toolchain
 import library. The current shared-library ABI implementation version is
-`1.2.0`; its loader compatibility identity remains generation 2.
+`1.3.0`; its loader compatibility identity remains generation 2.
 
 For a production-only installed SDK:
 
@@ -238,7 +237,7 @@ outputs, variables, diagnostics, and the execution summary.
 standard-output event and, when requested, returns the emitted UTF-8 byte
 count. `sprintf(format, ...)` returns a character row vector without emitting
 an event. The frozen v1.2 host surface does not expose file ownership; the
-active v1.3 `*_with_system_context` calls expose session/context-owned file
+v1.3 `*_with_system_context` calls expose session/context-owned file
 identifiers when the host grants filesystem capabilities.
 
 The `fprintf`/`sprintf` formatter accepts static flags/width/precision and
@@ -474,16 +473,15 @@ The relocated CMake package exports `MParser_LICENSE`, `MParser_COPYRIGHT`,
 and checked paths to all three files. Vendored SLJIT remains under the
 Simplified BSD terms reproduced in the third-party notices.
 
-## Current Development Boundary
+## Current Candidate Boundary
 
-The frozen v1.2 candidate host surface is C source API 1.2, C ABI generation 2
-revision 0 with 109 exports, header-only C++ source API 1.2, and machine
-protocol 1.1. The active v1.3 tree additively advances the live ABI to revision
-1 with 117 exports and rooted system-context calls. These contracts are
-versioned independently for technical checks, while the CLI, libraries,
-headers, and installed SDK still report MParser version 1.2.0 until the v1.3
-gate. Current in-repository and relocated consumers move together. The frozen
-v1.2 snapshot remains `docs/public-contract-v1.2.json`.
+The v1.3 candidate host surface is C source API 1.3, C ABI generation 2
+revision 1 with 117 exports, header-only C++ source API 1.3, and machine
+protocol 1.1. It includes rooted system-context calls and reports product/SDK
+version 1.3.0. Current in-repository and relocated consumers validate the same
+boundary. The v1.3 snapshot is `docs/public-contract-v1.3.json`; the frozen
+v1.2 revision-0 snapshot remains archived in
+`docs/public-contract-v1.2.json`.
 
 The v1.0 contract, package, hashes, and authentication evidence remain
 available as a historical release record in `docs/public-contract-v1.json`

@@ -13,7 +13,7 @@ _Static_assert(sizeof(size_t) == 8,
                "MParser v1 release platforms require 64-bit size_t");
 
 _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
-                   MPARSER_C_API_VERSION_MINOR == 2u,
+                   MPARSER_C_API_VERSION_MINOR == 3u,
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");
@@ -155,6 +155,6 @@ REQUIRE_OFFSET(mparser_execution_summary, maximum_diagnostic_count, 112);
 REQUIRE_OFFSET(mparser_execution_summary, elapsed_nanoseconds, 120);
 
 int main(void) {
-    puts("c api layout contract = api-1.2,abi-generation-2,64-bit");
+    puts("c api layout contract = api-1.3,abi-generation-2,64-bit");
     return 0;
 }

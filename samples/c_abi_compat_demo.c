@@ -93,7 +93,7 @@ int main(void) {
         goto cleanup;
     }
 
-    printf("api = 1.2, abi-generation = %u, revision = %u, "
+    printf("api = 1.3, abi-generation = %u, revision = %u, "
            "result = %.0f, request-bytes = %u\n",
            mparser_c_abi_generation(), mparser_c_abi_revision(),
            ((const double*)numeric_buffer.real_data)[0],

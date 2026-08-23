@@ -1,39 +1,39 @@
 # MParser C ABI Development Contract
 
-MParser and its installed SDK use one product version. The frozen v1.2
-candidate and the active v1.3 development tree currently report product/SDK
-version `1.2.0`; product metadata advances only when the complete v1.3 train
-reaches its milestone gate.
+MParser and its installed SDK use one product version. The current v1.3
+candidate reports product/SDK version `1.3.0`; the v1.2 candidate remains an
+archived contract.
 
 The embedding boundary has an independent technical contract level:
 
-- C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/2/0`;
+- C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/3/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
 - active C ABI revision: `MPARSER_C_ABI_REVISION == 1`;
-- shared-library full version: `1.2.0`, with SOVERSION/install-name generation
+- shared-library full version: `1.3.0`, with SOVERSION/install-name generation
   `2`.
 
 The API version follows the MParser/SDK development line. The ABI generation
 and revision are binary negotiation data rather than another SDK version.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` report them at
 runtime. The three `mparser_version_*()` functions report product version
-`1.2.0`.
+`1.3.0`.
 
-Revision 1 is an additive v1.3 development extension over the frozen v1.2
+Revision 1 is the v1.3 candidate's additive extension over the frozen v1.2
 revision-0 contract. It adds rooted runtime-system-context creation, ownership,
-capability queries, and context-bound module/session entry points. The frozen
-revision-0 header, 109-symbol manifest, and public-contract hashes remain
-unchanged.
+capability queries, and context-bound module/session entry points. ABI 2.1 is
+frozen with 117 exports; the revision-0 header, 109-symbol manifest, and v1.2
+public-contract hashes remain unchanged.
 
 ## Development Policy
 
-The project is not yet using the v1.2 SDK in production. Current headers,
+The project is not yet using the v1.3 SDK in production. Current headers,
 implementation, in-repository callers, tests, examples, and documentation move
 together. Superseded development headers and binaries are not compatibility
 targets, and no adapters are added solely to preserve them.
 
-At the v1.2 candidate gate, the revision-0 header, layouts, symbols, package
-metadata, and independent consumers were frozen as one reviewed contract in
+At the v1.3 candidate gate, the revision-1 header, layouts, symbols, package
+metadata, and independent consumers are frozen as one reviewed contract in
+`docs/public-contract-v1.3.json`. The revision-0 boundary remains archived in
 `docs/public-contract-v1.2.json`. An incompatible correction after this
 candidate requires a new ABI generation.
 An additive change within one frozen ABI generation requires a revision
@@ -53,7 +53,7 @@ The current ABI-generation library names are:
 - Windows: `mparser_c.dll` plus its import library.
 
 Internal compiler, VM, C++ facade, and SLJIT symbols have hidden visibility.
-The live revision-1 public export set is the 117-name manifest in
+The current revision-1 public export set is the 117-name manifest in
 `tests/c_api_generation2_revision1_symbols.txt`. The frozen revision-0
 109-name manifest remains `tests/c_api_generation2_symbols.txt`.
 

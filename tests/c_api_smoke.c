@@ -12,7 +12,7 @@
 #endif
 
 _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
-                   MPARSER_C_API_VERSION_MINOR == 2u &&
+                   MPARSER_C_API_VERSION_MINOR == 3u &&
                    MPARSER_C_API_VERSION_PATCH == 0u,
                "unexpected C API version");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,

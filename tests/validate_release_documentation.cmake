@@ -34,6 +34,7 @@ set(required_documents
     docs/v1.0.md
     docs/v1.1.md
     docs/v1.2.md
+    docs/v1.3.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-jit-scope-decision.md
     docs/v1.0-documentation.md
@@ -91,7 +92,7 @@ file(READ "${PROJECT_ROOT}/docs/release-notes-v1.0.md" release_notes)
 file(READ "${PROJECT_ROOT}/docs/roadmap-v1.0.md" release_roadmap)
 file(READ "${PROJECT_ROOT}/docs/v1.0.md" release_milestone)
 file(READ "${PROJECT_ROOT}/docs/public-contract-v1.json" public_contract)
-file(READ "${PROJECT_ROOT}/docs/public-contract-v1.2.json"
+file(READ "${PROJECT_ROOT}/docs/public-contract-v1.3.json"
     current_public_contract)
 file(READ "${PROJECT_ROOT}/README.md" project_readme)
 file(READ "${CLI_CONTRACT}" cli_contract)
@@ -132,7 +133,7 @@ string(JSON current_contract_state GET
 if(NOT current_contract_version STREQUAL EXPECTED_VERSION OR
    NOT current_contract_state STREQUAL "frozen-candidate")
     message(FATAL_ERROR
-        "release documentation requires the v1.2 candidate contract for ${EXPECTED_VERSION}")
+        "release documentation requires the v1.3 candidate contract for ${EXPECTED_VERSION}")
 endif()
 require_text(release_notes "Publication contract: **frozen v1**."
     "v1.0 release notes")

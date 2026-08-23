@@ -23,7 +23,7 @@ if(NOT TARGET MParser::c_api OR NOT TARGET MParser::cli)
         "The installed package must export MParser::c_api and MParser::cli")
 endif()
 if(NOT MParser_C_API_VERSION_MAJOR EQUAL 1 OR
-   NOT MParser_C_API_VERSION_MINOR EQUAL 2)
+   NOT MParser_C_API_VERSION_MINOR EQUAL 3)
     message(FATAL_ERROR
         "Unexpected installed C API: ${MParser_C_API_VERSION_MAJOR}.${MParser_C_API_VERSION_MINOR}")
 endif()
@@ -41,7 +41,7 @@ if(NOT MParser_CLI_CONTRACT_MAJOR EQUAL 1 OR
         "Unexpected CLI contract: ${MParser_CLI_CONTRACT_MAJOR}.${MParser_CLI_CONTRACT_MINOR}")
 endif()
 if(NOT MParser_BUILTIN_SOURCE_CONTRACT_MAJOR EQUAL 1 OR
-   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 8)
+   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 10)
     message(FATAL_ERROR
         "Unexpected builtin source contract: ${MParser_BUILTIN_SOURCE_CONTRACT_MAJOR}.${MParser_BUILTIN_SOURCE_CONTRACT_MINOR}")
 endif()

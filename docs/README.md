@@ -1,9 +1,9 @@
 # MParser Documentation
 
 MParser is a documented, embeddable, and sustainably extensible MATLAB-like
-subset runtime. The published baseline is v1.0, v1.2 is the frozen current
-candidate, and the source tree is now the v1.3 development train. It does not
-claim complete MATLAB compatibility.
+subset runtime. The published baseline is v1.0, v1.2 is the frozen historical
+candidate, and v1.3 is the current candidate. The source roadmap
+now advances toward v1.4. It does not claim complete MATLAB compatibility.
 
 Start with the task that matches your role.
 
@@ -30,12 +30,12 @@ mparser --run --result-format=json-v1 script.m
 
 ## Embed MParser
 
-- [C Embedding API](embedding-c-api.md): C source API 1.2 over ABI generation
+- [C Embedding API](embedding-c-api.md): C source API 1.3 over ABI generation
   2, with opaque handles, values, sessions, diagnostics, cancellation, and
   limits.
 - [C ABI Compatibility](c-abi-compatibility.md): structure evolution,
   symbols, layouts, ownership, and candidate-freeze rules.
-- [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.2.
+- [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.3.
 - [Machine Result Protocol](machine-result-protocol.md): one-shot JSON
   protocol 1.1.
 
@@ -44,8 +44,8 @@ Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 
 ## Extend The Runtime
 
-- [Extending Builtins](extending-builtins.md): frozen v1.2 builtin source
-  contract 1.1 plus active in-tree contract 1.10, descriptor rules, registry
+- [Extending Builtins](extending-builtins.md): current v1.3 builtin source
+  contract 1.10 plus archived v1.2 contract 1.1, descriptor rules, registry
   behavior, ownership, threading, resources, and conformance tests.
 - [Architecture](architecture.md): Lexer to Parser to semantic HIR to
   verified bytecode to VM/typed/native execution.
@@ -61,6 +61,8 @@ adapter is Post-v1.0.
 - [v1.0 Release Notes](release-notes-v1.0.md)
 - [v1.0 Release Freeze](v1.0.md)
 - [v1.1 Core Compatibility](v1.1.md)
+- [v1.2 Core Runtime Candidate](v1.2.md)
+- [v1.3 System And Standard Library Candidate](v1.3.md)
 - [v1 Release Process](release-process.md)
 - [Release Authentication](release-authentication.md): opt-in release-tag
   signing, public-transparency boundary, and consumer verification.
@@ -79,20 +81,23 @@ These files are release contracts, not generated prose:
 | Artifact | Authority |
 | --- | --- |
 | [compatibility-matrix.json](compatibility-matrix.json) | Feature status, tier coverage, limits, executable evidence, and gaps |
-| [public-contract-v1.2.json](public-contract-v1.2.json) | Current v1.2 candidate API, ABI, protocol, catalog, and artifact hashes |
+| [public-contract-v1.3.json](public-contract-v1.3.json) | Current v1.3 candidate API, ABI, protocol, catalog, and artifact hashes |
+| [public-contract-v1.2.json](public-contract-v1.2.json) | Archived v1.2 candidate API, ABI, protocol, catalog, and artifact hashes |
 | [public-contract-v1.json](public-contract-v1.json) | Archived v1.0 public contract hashes and versions |
 | [cli-contract-v1.json](cli-contract-v1.json) | CLI 1.0 modes, options, channels, and compatibility |
 | [machine-result-v1.schema.json](machine-result-v1.schema.json) | Tolerant `mparser.result` major-1 consumer schema |
 | [performance-baseline-v1.schema.json](performance-baseline-v1.schema.json) | Engineering baseline protocol schema |
 | `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
-The v1.2 candidate contract freezes that milestone's protocol, headers, and
-catalog. Active v1.3 implementation and builtin-catalog changes are not folded
-back into the frozen artifact. The earlier v1 contract and catalog remain
-authorities only for their archived release.
+The v1.3 candidate contract freezes the current protocol, headers, ABI 2.1
+symbol set, and builtin 1.10 catalog. v1.3 changes are not folded back into the
+v1.2 artifact. The earlier v1 and v1.2 contracts remain authorities only for
+their archived boundaries.
 
 ## Release Evidence
 
+- [v1.3 Candidate](v1.3.md): system/runtime capabilities, broad standard
+  library, dynamic semantics, MAT persistence, and current contract freeze.
 - [v1.2 Candidate](v1.2.md): core numeric/data semantics, host integration,
   current contract freeze, differential results, and validation evidence.
 

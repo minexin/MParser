@@ -9,31 +9,30 @@ Those numbers are never SDK product versions.
 
 MParser uses semantic versions for release tags and packages. The active
 source tree, product metadata, and installed SDK report candidate version
-`1.2.0`. The complete v1.2 train has reached its internal candidate gate; the
-live source is now the v1.3 development line, but product metadata is stamped
-only once that larger train is ready to freeze.
+`1.3.0`. The complete fifteen-batch v1.3 train has reached its internal
+candidate gate; the next implementation train is v1.4.
 
-This project is not currently using the v1.2 interfaces in production.
+This project is not currently using the v1.3 interfaces in production.
 Implementation, in-repository consumers, tests, samples, and documentation may
 change together without compatibility wrappers for superseded development
 interfaces. This keeps the current design small while its numeric, embedding,
 and function surfaces are still settling.
 
-The published MParser 1.0.0 contracts remain immutable historical evidence.
-They do not turn an unreleased v1.2 interface into a backward-compatibility
-requirement.
+The published MParser 1.0.0 and frozen v1.2 contracts remain immutable
+historical evidence. They do not require compatibility wrappers for superseded
+unreleased development interfaces.
 
 ## Current Contract Identifiers
 
 | Boundary | Current identifier | Meaning |
 | --- | --- | --- |
-| MParser product and SDK | `1.2.0` candidate snapshot | User-facing release identity |
+| MParser product and SDK | `1.3.0` candidate snapshot | User-facing release identity |
 | Production CLI | 1.0 | Command, option, channel, and exit contract |
-| C source API | 1.2 | Header-level source contract for C hosts |
-| C ABI | generation 2, live revision 1; frozen v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
-| C++ source API | 1.2 | Header-level source contract over the C ABI |
+| C source API | 1.3 | Header-level source contract for C hosts |
+| C ABI | generation 2, revision 1; archived v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
+| C++ source API | 1.3 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
-| Builtin source contract | 1.1 | Registry/descriptor/call semantics compiled with the engine |
+| Builtin source contract | 1.10 | Registry/descriptor/call semantics compiled with the engine |
 
 ## CLI 1.0
 
@@ -48,7 +47,7 @@ separate execution products.
 
 ## C ABI Generation 2
 
-`MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.2.0`.
+`MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.3.0`.
 `MPARSER_C_ABI_GENERATION` contains generation `2`, and
 the active header's `MPARSER_C_ABI_REVISION` contains revision `1`.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` expose the same
@@ -61,29 +60,27 @@ Caller-sized root records permit future tails; fixed-stride records remain
 sealed. Exact rules and validation are in `c-abi-compatibility.md`.
 
 The frozen v1.2 candidate is generation 2 revision 0 with 109 exports. The
-active v1.3 tree adds eight context-related exports, advances the revision to
-1, and retains generation/SOVERSION 2 because all revision-0 layouts and
-symbols remain present. Frozen v1.2 snapshots are archive evidence, not live
-header inputs.
+v1.3 candidate adds eight context-related exports and freezes revision 1 with
+117 exports. It retains generation/SOVERSION 2 because all revision-0 layouts
+and symbols remain present. Frozen v1.2 snapshots are archive evidence, not
+live header inputs.
 
-During the v1.3 development train, repository consumers move with the live
-header. An incompatible binary change advances the generation; an additive
-change within a frozen generation advances the revision. The product/source
-API level is updated at the milestone gate rather than for each internal
-batch.
+Repository consumers move with unreleased development headers. An incompatible
+binary change advances the generation; an additive change within a frozen
+generation advances the revision. The product/source API level is updated at
+the milestone gate rather than for each internal batch.
 
-## C++ Source API 1.2
+## C++ Source API 1.3
 
 `include/mparser/cpp_api.hpp` is a header-only C++20 facade over C ABI
-generation 2. Its source API follows the v1.2 product line to avoid presenting
+generation 2. Its source API follows the v1.3 product line to avoid presenting
 an unrelated SDK 2.0 identity. It does not promise a C++ binary ABI, and no STL
 object or C++ class layout crosses the shared-library boundary.
 
-The v1.2 candidate header and relocated multi-translation-unit consumer remain
-snapshotted together. The live v1.3 header/consumer pair adds rooted system
-contexts while retaining source API metadata 1.2 until the milestone freeze.
-Unreleased development interfaces may move together without compatibility
-wrappers.
+The v1.3 candidate header, C dependency snapshot, and relocated
+multi-translation-unit consumer are frozen together. They include rooted
+system contexts over ABI revision 1. Unreleased development interfaces may
+move together without compatibility wrappers.
 
 ## Machine Result Protocol 1.1
 
@@ -97,7 +94,7 @@ Consumers check the protocol major and tolerate documented additive minor
 fields. A change that removes a required field or changes its meaning requires
 a protocol-major change.
 
-## Builtin Source Contract 1.0
+## Builtin Source Contract 1.10
 
 `BuiltinRegistry`, `BuiltinDescriptor`, `BuiltinCall`, and `BuiltinResult`
 form a source-integration contract for builtins compiled with the engine. They
@@ -109,7 +106,11 @@ conversion, diagnostics, ownership, and typed-lowering eligibility. Contract
 1.1 adds the host output and execution-context permissions used by the v1.2
 runtime without creating an external binary ABI. The archived 1.0 catalog has
 118 descriptors. The frozen v1.2 catalog has 166 descriptors and 168
-registered names, including the `Inf` and `NaN` aliases.
+registered names, including the `Inf` and `NaN` aliases. Incremental v1.3
+source-contract revisions add deterministic system contexts, dynamic source
+evaluation, callbacks, file/MAT services, native C++20 numerical families,
+conversion, set, and text-query metadata. The v1.3 contract 1.10 catalog has
+275 descriptors and 277 registered names.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry
@@ -118,11 +119,12 @@ classes, or VM pointers.
 ## Freeze And Deprecation
 
 A contract snapshot is created at a release-candidate gate, not after every
-internal batch. The v1.2 candidate is frozen in
-`public-contract-v1.2.json`. Once a contract is released, incompatible changes require an
-explicit replacement contract and migration record. Unreleased development
-interfaces do not require a deprecation window; repository callers are simply
-updated to the cleaner current form.
+internal batch. The current v1.3 candidate is frozen in
+`public-contract-v1.3.json`; the v1.2 artifact remains archived. Once a
+contract is released, incompatible changes require an explicit replacement
+contract and migration record. Unreleased development interfaces do not
+require a deprecation window; repository callers are simply updated to the
+cleaner current form.
 
 Every candidate-boundary change updates the applicable version metadata,
 snapshot, tests, documentation, and independent consumer evidence. Historical

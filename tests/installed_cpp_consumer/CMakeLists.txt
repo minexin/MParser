@@ -28,7 +28,7 @@ if(NOT MParser_C_ABI_GENERATION EQUAL 2 OR
         "Unexpected installed C ABI generation/revision: ${MParser_C_ABI_GENERATION}/${MParser_C_ABI_REVISION}")
 endif()
 if(NOT MParser_CPP_API_VERSION_MAJOR EQUAL 1 OR
-   NOT MParser_CPP_API_VERSION_MINOR EQUAL 2)
+   NOT MParser_CPP_API_VERSION_MINOR EQUAL 3)
     message(FATAL_ERROR
         "Unexpected C++ source API: ${MParser_CPP_API_VERSION_MAJOR}.${MParser_CPP_API_VERSION_MINOR}")
 endif()
@@ -44,7 +44,7 @@ if(NOT MParser_CLI_CONTRACT_MAJOR EQUAL 1 OR
         "Unexpected CLI contract: ${MParser_CLI_CONTRACT_MAJOR}.${MParser_CLI_CONTRACT_MINOR}")
 endif()
 if(NOT MParser_BUILTIN_SOURCE_CONTRACT_MAJOR EQUAL 1 OR
-   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 8)
+   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 10)
     message(FATAL_ERROR
         "Unexpected builtin source contract: ${MParser_BUILTIN_SOURCE_CONTRACT_MAJOR}.${MParser_BUILTIN_SOURCE_CONTRACT_MINOR}")
 endif()
@@ -81,7 +81,7 @@ add_test(NAME installed_cpp_api_runtime
     COMMAND mparser_installed_cpp_consumer)
 set_tests_properties(installed_cpp_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-generation-2-revision-1,cpp-api-1.2,host-output-2-2,system-context-rooted-retained")
+        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-generation-2-revision-1,cpp-api-1.3,host-output-2-2,system-context-rooted-retained")
 
 add_test(NAME installed_cpp_cli_version
     COMMAND MParser::cli --version)

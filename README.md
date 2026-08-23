@@ -1,26 +1,21 @@
 # MParser
 
-Current product and SDK candidate: v1.2.0. The active source development line
-is v1.3, while product metadata and the installed SDK remain `1.2.0` until that
-larger milestone is ready to freeze. The completed v1.2 train extends the
-runtime with exact core numeric classes,
-including precision-preserving `int64`/`uint64` arithmetic with scalar
-`double`, dense complex double/single values, typed constructors and elementary
-math, C/C++ source API 1.2, C ABI generation 2 revision 0, in-memory source
-metadata, host-routed output and top-level expression results, and machine
-result protocol 1.1. Its v1.2 C/C++/builtin surfaces are frozen in the
-[v1.2 candidate contract](docs/public-contract-v1.2.json). The released v1.0
-contracts remain archived evidence; unreleased interfaces may be simplified
-without compatibility adapters. See [docs/v1.2.md](docs/v1.2.md),
-[docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) and the
+Current product and SDK candidate: v1.3.0. This fifteen-batch milestone adds a
+session-owned system boundary, broad standard-library coverage, dynamic
+workspace and language semantics, MAT v5 persistence, and repository-owned
+C++20 advanced numerical algorithms without Eigen. The public identities are
+C/C++ source API 1.3, C ABI generation 2 revision 1, CLI 1.0, machine result
+protocol 1.1, and Builtin source contract 1.10. They are frozen together in the
+[v1.3 candidate contract](docs/public-contract-v1.3.json). The v1.2 and
+released v1.0 contracts remain immutable archived evidence; unreleased
+interfaces do not require compatibility adapters. See
+[docs/v1.3.md](docs/v1.3.md),
+[docs/roadmap-v1.x.md](docs/roadmap-v1.x.md), and the
 [external gap plan](docs/v1.x-external-gap-plan.md).
 
-The live v1.3 development header advances C ABI generation 2 additively to
-revision 1 with a public, rooted runtime-system context for C and C++ hosts.
-Product and source-API metadata remain `1.2.0`/`1.2` until the complete v1.3
-train is ready to freeze; the immutable v1.2 revision-0 snapshots and
-109-symbol manifest are not rewritten by this development change. The current
-tree also closes Cell-valued `switch` cases, lexically nested functions with
+v1.3 advances C ABI generation 2 additively to revision 1 with a public,
+rooted runtime-system context for C and C++ hosts. It also closes Cell-valued
+`switch` cases, lexically nested functions with
 shared active-frame captures, direct Cell brace comma-list outputs, and
 implicit indexed Struct creation. The latest in-tree batch adds literal
 class-name source discovery for reflection queries, column enumeration object
@@ -81,8 +76,10 @@ notes,
 [docs/release-process.md](docs/release-process.md) for checksums, provenance,
 and publication boundaries,
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) for current v1.x development,
+[docs/public-contract-v1.3.json](docs/public-contract-v1.3.json) for the
+current v1.3 candidate boundary,
 [docs/public-contract-v1.2.json](docs/public-contract-v1.2.json) for the
-current v1.2 candidate boundary,
+archived v1.2 candidate boundary,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the
 archived v1.0-era combined freeze,
 [docs/cli-contract-v1.json](docs/cli-contract-v1.json) for production and
@@ -1049,7 +1046,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 1.2.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 1.3.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 

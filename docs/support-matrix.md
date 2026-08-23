@@ -1,9 +1,9 @@
 # v1.x Support Matrix
 
 MParser v1.x is a MATLAB-like subset runtime, not a complete MATLAB
-replacement. This page summarizes the released v1.0 baseline, frozen v1.2
-candidate, and active v1.3 development line. Development interfaces are not
-production compatibility promises until their milestone candidate is frozen.
+replacement. This page summarizes the released v1.0 baseline, archived v1.2
+candidate, and current v1.3 candidate. Interfaces under a later development
+train are not compatibility promises until that milestone candidate is frozen.
 The machine-readable
 [compatibility-matrix.json](compatibility-matrix.json) is authoritative and
 links every supported or partial claim to source and executable evidence.
@@ -41,7 +41,7 @@ recorded under `SYN-001`, `SYN-002`, `ARR-001`, and `ARR-002`.
 
 ## v1.2 Candidate Additions
 
-The current v1.2 train is building one end-to-end numeric foundation:
+The archived v1.2 candidate established one end-to-end numeric foundation:
 
 - dense `double`, `single`, logical, and all eight fixed-width integer classes;
 - exact `int64`/`uint64` storage and transport without conversion through
@@ -79,9 +79,9 @@ independent contract metadata, not SDK product versions. Its
 166-descriptor/168-name catalog and current public surfaces are frozen by the
 v1.2 candidate contract.
 
-## v1.3 Development Additions
+## v1.3 Candidate Additions
 
-The current tree has fourteen end-to-end system, language, standard-library,
+The current tree has fifteen end-to-end system, language, standard-library,
 and embedding batches:
 
 - one session-owned capability context and injectable host adapter for current
@@ -177,8 +177,8 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/system_command_demo.m`, `samples/filesystem_management_demo.m`,
 `samples/file_metadata_demo.m`, `samples/advanced_numeric_demo.m`, and
 `samples/mat_file_demo.m`, plus
-`samples/conversion_set_callback_demo.m`. These are
-development capabilities, not a claim of complete MATLAB system or file I/O.
+`samples/conversion_set_callback_demo.m`. These are bounded candidate
+capabilities, not a claim of complete MATLAB system or file I/O.
 The latest 2026-08-23 MATLAB R2024b differential rerun records 219 matches and
 4 gaps across its 223 accepted cases. It closes MAT-file save/load after the
 preceding 218-match class/reflection/event run, with no prior match regressing.
@@ -190,8 +190,8 @@ wildcards in parent path components, symbolic-link policy selection (rooted
 write paths reject links rather than selecting preserve/resolve), extended
 GCD coefficients, arbitrary-rank
 mesh generation, many broad standard-library families, and full MATLAB
-regexp/Unicode behavior remain open. The product and public SDK still
-report `1.2.0` until the complete v1.3 milestone is ready to freeze.
+regexp/Unicode behavior remain open. The product and public SDK report
+`1.3.0`; source API and ABI identifiers remain independently versioned.
 
 ## Language And Runtime
 
@@ -232,20 +232,20 @@ script fail; it returns to a less specialized tier.
 
 ## Embedding And Extension
 
-| Boundary | Current development contract |
+| Boundary | Current candidate contract |
 | --- | --- |
 | CLI | Production `--run`, strict options, stable exit classes, JSON protocol selector |
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
-| C API/ABI | C source API 1.2; frozen v1.2 ABI generation 2 revision 0 plus live additive revision 1, typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, caller-sized roots |
-| C++ API | Header-only C++20 source API 1.2 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | Frozen v1.2 source contract 1.1; active in-tree source contract 1.10 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, and advanced-numeric context |
+| C API/ABI | C source API 1.3 over ABI generation 2 revision 1 with 117 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, and caller-sized roots; v1.2 revision 0 remains archived |
+| C++ API | Header-only C++20 source API 1.3 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
+| Builtin extension | v1.3 source contract 1.10 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, and advanced-numeric context; v1.2 contract 1.1 remains archived |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
 invocation, sessions, diagnostics, cancellation, resource summaries,
 synchronous output routing, retained output events, and top-level expression
-results. Live revision 1 additionally exposes capability-gated native contexts
-for stateless calls and retained sessions; the frozen revision-0 snapshot
+results. Revision 1 additionally exposes capability-gated native contexts
+for stateless calls and retained sessions; the archived revision-0 snapshot
 remains unchanged.
 Host-created array payloads are copy-in. Returned views remain owned by their
 value/result handles.
@@ -307,9 +307,8 @@ test and one source artifact. `compatibility_matrix_smoke` rejects missing
 sources, missing test registrations, duplicate IDs, invalid states, and
 version drift.
 
-The v1.0 snapshots remain immutable historical evidence. The current C API
-1.2, ABI generation 2, C++ API 1.2, protocol 1.1, and builtin contract 1.1
-snapshots are frozen separately at the v1.2 candidate gate. The in-tree
-builtin source contract has advanced to 1.10 for v1.3 development and is not a
-new frozen SDK release. See
+The v1.0 and v1.2 snapshots remain immutable historical evidence. The current
+v1.3 candidate freezes C source API 1.3, ABI generation 2 revision 1, C++
+source API 1.3, protocol 1.1, and builtin source contract 1.10 in
+[public-contract-v1.3.json](public-contract-v1.3.json). See
 [v1.x Roadmap](roadmap-v1.x.md).

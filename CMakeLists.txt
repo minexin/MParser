@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 1.2.0 LANGUAGES C CXX)
+project(MParser VERSION 1.3.0 LANGUAGES C CXX)
 
 set(MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION "0.90.0")
 set(MPARSER_V1_RELEASE_VERSION "1.0.0")
@@ -650,8 +650,9 @@ add_test(NAME project_license_smoke
         -DTHIRD_PARTY_NOTICES_FILE=${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_project_license.cmake)
 
-# The v1.0 and v1.2 contracts remain archived under docs/tests while the next
-# source-contract milestone evolves independently in the worktree.
+# The v1.0 and v1.2 contracts remain archived under docs/tests. The v1.3
+# contract validates the current product, SDK, ABI, protocol, and builtin
+# source-contract candidate as one boundary.
 set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
@@ -667,6 +668,18 @@ set_tests_properties(v1_2_public_contract_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
         "MParser v1.2 candidate contract validated: C API 1.2, ABI generation 2 revision 0, 109 symbols, C\\+\\+ API 1.2, mparser.result 1.1, builtin source contract 1.1, 166 descriptors and 168 names")
+
+add_test(NAME v1_3_public_contract_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DCONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.3.json
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DCONTRACT_STATE=current
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_v1_3_public_contract.cmake)
+set_tests_properties(v1_3_public_contract_smoke PROPERTIES
+    LABELS "documentation;release"
+    PASS_REGULAR_EXPRESSION
+        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.10, 275 descriptors and 277 names")
 
 add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -2443,7 +2456,7 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-generation-2-revision-1,cpp-api-1.2")
+        "cpp api smoke = 5050,42,21,abi-generation-2-revision-1,cpp-api-1.3")
 
 add_executable(system_context_api_smoke_tests
     tests/system_context_api_smoke.cpp)
@@ -2484,7 +2497,7 @@ add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp sdk = 5050,5,abi-generation-2-revision-1,cpp-api-1.2,host-output-2-2")
+        "cpp sdk = 5050,5,abi-generation-2-revision-1,cpp-api-1.3,host-output-2-2")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
@@ -2498,7 +2511,7 @@ add_test(NAME c_api_layout_contract
     COMMAND c_api_layout_contract_tests)
 set_tests_properties(c_api_layout_contract PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "c api layout contract = api-1.2,abi-generation-2,64-bit")
+        "c api layout contract = api-1.3,abi-generation-2,64-bit")
 
 add_executable(c_api_utf8_source_graph_smoke_tests
     tests/c_api_utf8_source_graph_smoke.cpp)
@@ -2533,7 +2546,7 @@ add_test(NAME c_abi_compat_demo_smoke
     COMMAND mparser_c_abi_compat_demo)
 set_tests_properties(c_abi_compat_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "api = 1.2, abi-generation = 2, revision = 1, result = 42, request-bytes = ")
+        "api = 1.3, abi-generation = 2, revision = 1, result = 42, request-bytes = ")
 
 add_executable(mparser_c_source_graph_demo
     samples/c_source_graph_demo.c)
@@ -2747,6 +2760,7 @@ install(FILES
     docs/release-authentication.md
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
+    docs/public-contract-v1.3.json
     docs/public-contract-v1.2.json
     docs/public-contract-v1.json
     docs/cli-contract-v1.json
@@ -2759,6 +2773,7 @@ install(FILES
     docs/v1.0.md
     docs/v1.1.md
     docs/v1.2.md
+    docs/v1.3.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -2793,6 +2808,8 @@ install(FILES
     samples/core_numeric_builtins_demo.m
     samples/advanced_numeric_demo.m
     samples/conversion_set_callback_demo.m
+    samples/dynamic_language_semantics_demo.m
+    samples/dynamic_workspace_demo.m
     samples/performance_scalar_loop.m
     samples/performance_array_workload.m
     samples/reliability_boundary_demo.m
@@ -2800,6 +2817,9 @@ install(FILES
     samples/filesystem_management_demo.m
     samples/file_metadata_demo.m
     samples/mat_file_demo.m
+    samples/standard_library_demo.m
+    samples/system_services_demo.m
+    samples/utility_library_demo.m
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples")
 install(DIRECTORY samples/class_folders/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mparser/examples/class_folders"

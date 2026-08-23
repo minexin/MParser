@@ -1,11 +1,10 @@
 # MParser C++ Embedding SDK
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
-facade. The frozen v1.2 line reports source API 1.2 over C ABI generation 2
-revision 0. The live v1.3 development header adds the public `SystemContext`
-facade over additive C ABI revision 1. Product/source metadata remains
-`1.2.0`/`1.2` until the complete v1.3 milestone is frozen; source API 1.2 is
-contract metadata, not a separately versioned SDK.
+facade. The v1.3 candidate reports source API 1.3 over C ABI generation 2
+revision 1 and includes the public `SystemContext` facade. MParser and the
+installed SDK report product version `1.3.0`; source API, ABI, and protocol
+identifiers remain independently queryable contract metadata.
 
 The facade does not expose Parser, HIR, Bytecode, `RuntimeValue`, VM, SLJIT,
 or C++ standard-library layouts from the shared library. No C++ exception or
@@ -34,9 +33,9 @@ target_link_libraries(host PRIVATE MParser::cpp_api)
 transitive link to `MParser::c_api`. `MParser::cli` is the matching imported
 executable. The package exports `MParser_CPP_FOUND`,
 `MParser_CPP_INCLUDE_DIR`, engine/C API version components, and C ABI
-generation/revision metadata. It also exports C++ source API `1.2`, machine
+generation/revision metadata. It also exports C++ source API `1.3`, machine
 result protocol `1.1`,
-CLI contract `1.0`, builtin source contract `1.1`, and checked paths to the
+CLI contract `1.0`, builtin source contract `1.10`, and checked paths to the
 public/CLI contracts, protocol schema, builtin catalog/author guide, and
 versioning policy. On Windows, deploy `mparser_c.dll` beside the host
 executable or add the installed `bin` directory to the runtime loader path.
@@ -45,7 +44,7 @@ Hosts can query the header declaration directly:
 
 ```cpp
 static_assert(mparser::sdk::kSourceApiVersionMajor == 1);
-static_assert(mparser::sdk::kSourceApiVersionMinor == 2);
+static_assert(mparser::sdk::kSourceApiVersionMinor == 3);
 const auto version = mparser::sdk::sourceApiVersion();
 ```
 
@@ -285,7 +284,7 @@ admission, so queue deadlines remain a host responsibility.
 
 ## Current Boundary
 
-Source-tree and relocated installed consumers exercise source API 1.2 through
+Source-tree and relocated installed consumers exercise source API 1.3 through
 compile-once invocation, exact typed and complex numeric values, multi-output
 results, composite values, retained lifetimes, diagnostics, sessions,
 cancellation, resource limits, UTF-8 source graphs and metadata, synchronous
@@ -296,15 +295,15 @@ C++ API, host output behavior, and protocol metadata after relocation.
 
 Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared
-cancellation, isolated limits, and concurrent retain/release. The frozen v1.2
-library contract is revision 0 with 109 exports; the live v1.3 development
-library is revision 1 with an exact 117-symbol manifest. The
+cancellation, isolated limits, and concurrent retain/release. The v1.3
+candidate library contract is revision 1 with an exact 117-symbol manifest;
+the archived v1.2 boundary remains revision 0 with 109 exports. The
 C++ facade remains header-only rather than a C++ binary ABI.
 
-The current header and consumers move together. Source API 1.2 is frozen in
-the v1.2 candidate snapshot; source API 1.0 remains historical v1.0 evidence. The
-full Windows/Linux/macOS x64/ARM64 SDK matrix is likewise run at the milestone
-gate instead of after every internal batch.
+The current header and consumers move together. Source API 1.3 is frozen in
+the v1.3 candidate snapshot; source API 1.2 and 1.0 remain archived v1.2 and
+v1.0 evidence. The full Windows/Linux/macOS x64/ARM64 SDK matrix is likewise
+run at the milestone gate instead of after every internal batch.
 
 Distribution licensing is Apache-2.0 with `Copyright 2026 Wang Xin`.
 Candidate archives include the current headers, contract metadata, schema,

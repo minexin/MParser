@@ -86,7 +86,7 @@ void inject(FaultPoint) {}
 #define MPARSER_VERSION_MAJOR 1
 #endif
 #ifndef MPARSER_VERSION_MINOR
-#define MPARSER_VERSION_MINOR 2
+#define MPARSER_VERSION_MINOR 3
 #endif
 #ifndef MPARSER_VERSION_PATCH
 #define MPARSER_VERSION_PATCH 0

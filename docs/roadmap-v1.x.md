@@ -130,6 +130,11 @@ numeric class tag.
 
 ## v1.3: System And Broad Standard Library
 
+**Status: implemented; candidate scope and current contract are recorded in
+[v1.3.md](v1.3.md) and
+[public-contract-v1.3.json](public-contract-v1.3.json). v1.4 is the next
+active development train.**
+
 v1.3 builds on the v1.2 host boundary and closes a substantial system-function
 and general-library bundle:
 
@@ -151,8 +156,8 @@ System services are capability checked and testable with injected deterministic
 adapters. The CLI may provide an explicit native host adapter, while embedded
 sessions retain isolation and resource controls.
 
-The first fourteen v1.3 implementation batches are present in the development
-tree. A session-owned `RuntimeSystemContext` now separates current-directory, path,
+Fifteen v1.3 implementation batches are present in the candidate tree. A
+session-owned `RuntimeSystemContext` now separates current-directory, path,
 environment, filesystem read/write, process, clock, sleep, and random
 capabilities behind an injectable host adapter. The CLI supplies the native
 adapter; engine tests use a deterministic in-memory adapter. Implemented
@@ -317,7 +322,7 @@ Recycle-bin integration, parent-component wildcards, selectable link policy,
 and broader platform-specific attributes remain later boundaries.
 
 The latest MATLAB R2024b external differential rerun at
-`MParserV1.0Test/results/20260823-030627-v1.3-file-metadata` records 219
+`MParserV1.0Test/results/20260823-091751-v1.3-candidate` records 219
 matches and 4 gaps across all 223 MATLAB-accepted cases. It preserves the
 `cap_271_io_save_load` closure first recorded by the preceding MAT v5 run,
 with no prior match regressing. The remaining observed gaps are `datetime`,
@@ -326,8 +331,9 @@ parent-module local, nested, path, package, private, and module-bound-handle inv
 and bytecode parents, including recursive evaluation, output capture, captured
 workspace updates, and source-scoped private isolation. MATLAB R2024b reference
 probes confirm that function and class definitions are themselves illegal in
-`eval`; dynamic `global` and context-sensitive `persistent` declarations and
-remaining standard-library families were the next v1.3 milestone work. Scansets,
+`eval`; the fourteenth and fifteenth batches subsequently closed dynamic
+storage declarations and the planned conversion/callback/set/text-query
+standard-library slice. Scansets,
 bit/character/complex binary-I/O corners,
 selectable non-UTF-8 encodings, remote URLs, extended MAT variants, full
 MATLAB regular-expression syntax, locale-wide Unicode case conversion, and
@@ -345,8 +351,9 @@ whole-workspace clear association, and HIR/bytecode parent equivalence have
 focused coverage. Temporary-module handle rollback now includes session
 globals, persistent variables, and shared objects reachable only through those
 stores. `samples/dynamic_workspace_demo.m` exercises the supported path in HIR,
-bytecode, and production modes. Remaining v1.3 work is standard-library breadth
-and explicitly recorded system/text/I/O boundaries rather than this workspace
+bytecode, and production modes. The fifteenth batch below closes the remaining
+planned v1.3 standard-library breadth; explicitly recorded system/text/I/O
+boundaries stay assigned to later milestones rather than this workspace
 contract.
 
 The fifteenth batch adds source contract 1.10 with 275 descriptors and 277

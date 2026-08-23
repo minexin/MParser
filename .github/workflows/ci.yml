@@ -97,18 +97,18 @@ jobs:
         if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-1.2.0-windows-x86_64
+          name: mparser-1.3.0-windows-x86_64
           path: |
-            build-ci/packages/mparser-1.2.0-windows-x86_64.zip
-            build-ci/packages/mparser-1.2.0-windows-x86_64.zip.sha256
-            build-ci/packages/mparser-1.2.0-windows-x86_64.zip.provenance.json
+            build-ci/packages/mparser-1.3.0-windows-x86_64.zip
+            build-ci/packages/mparser-1.3.0-windows-x86_64.zip.sha256
+            build-ci/packages/mparser-1.3.0-windows-x86_64.zip.provenance.json
             build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload Windows performance evidence
         if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-performance-1.2.0-windows-x86_64
+          name: mparser-performance-1.3.0-windows-x86_64
           path: build-ci/performance-evidence/*.json
           if-no-files-found: error
           retention-days: 90
@@ -153,18 +153,18 @@ jobs:
         if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-1.2.0-linux-x86_64
+          name: mparser-1.3.0-linux-x86_64
           path: |
-            build-ci/packages/mparser-1.2.0-linux-x86_64.tar.gz
-            build-ci/packages/mparser-1.2.0-linux-x86_64.tar.gz.sha256
-            build-ci/packages/mparser-1.2.0-linux-x86_64.tar.gz.provenance.json
+            build-ci/packages/mparser-1.3.0-linux-x86_64.tar.gz
+            build-ci/packages/mparser-1.3.0-linux-x86_64.tar.gz.sha256
+            build-ci/packages/mparser-1.3.0-linux-x86_64.tar.gz.provenance.json
             build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload Linux x64 performance evidence
         if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-performance-1.2.0-linux-x86_64
+          name: mparser-performance-1.3.0-linux-x86_64
           path: build-ci/performance-evidence/*.json
           if-no-files-found: error
           retention-days: 90
@@ -208,7 +208,7 @@ jobs:
         if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-performance-1.2.0-linux-aarch64
+          name: mparser-performance-1.3.0-linux-aarch64
           path: build-ci/performance-evidence/*.json
           if-no-files-found: error
           retention-days: 90
@@ -301,18 +301,18 @@ jobs:
         if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-1.2.0-macos-${{ matrix.arch }}
+          name: mparser-1.3.0-macos-${{ matrix.arch }}
           path: |
-            build-ci/packages/mparser-1.2.0-macos-${{ matrix.arch }}.tar.gz
-            build-ci/packages/mparser-1.2.0-macos-${{ matrix.arch }}.tar.gz.sha256
-            build-ci/packages/mparser-1.2.0-macos-${{ matrix.arch }}.tar.gz.provenance.json
+            build-ci/packages/mparser-1.3.0-macos-${{ matrix.arch }}.tar.gz
+            build-ci/packages/mparser-1.3.0-macos-${{ matrix.arch }}.tar.gz.sha256
+            build-ci/packages/mparser-1.3.0-macos-${{ matrix.arch }}.tar.gz.provenance.json
             build-ci/packages/SHA256SUMS
           if-no-files-found: error
       - name: Upload macOS performance evidence
         if: env.MPARSER_CI_PERFORMANCE_EVIDENCE == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-performance-1.2.0-macos-${{ matrix.arch }}
+          name: mparser-performance-1.3.0-macos-${{ matrix.arch }}
           path: build-ci/performance-evidence/*.json
           if-no-files-found: error
           retention-days: 90
@@ -377,7 +377,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/build-arm64-jit/install-sdk" \
-            -DMPARSER_REQUIRED_VERSION=1.2.0
+            -DMPARSER_REQUIRED_VERSION=1.3.0
           cmake --build build-arm64-jit-consumer --parallel 4
           LD_LIBRARY_PATH="$PWD/build-arm64-jit/install-sdk/lib" \
             ctest --test-dir build-arm64-jit-consumer --output-on-failure \
@@ -387,20 +387,20 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/cmake/toolchains/linux-aarch64.cmake" \
             -DCMAKE_CROSSCOMPILING_EMULATOR="qemu-aarch64;-L;/usr/aarch64-linux-gnu" \
             -DCMAKE_PREFIX_PATH="$PWD/build-arm64-jit/install-sdk" \
-            -DMPARSER_REQUIRED_VERSION=1.2.0
+            -DMPARSER_REQUIRED_VERSION=1.3.0
           cmake --build build-arm64-jit-cpp-consumer --parallel 4
           LD_LIBRARY_PATH="$PWD/build-arm64-jit/install-sdk/lib" \
             ctest --test-dir build-arm64-jit-cpp-consumer --output-on-failure \
               -R "^installed_cpp_api_runtime$"
           qemu-aarch64 -L /usr/aarch64-linux-gnu \
             ./build-arm64-jit/install-sdk/bin/mparser --version | tee build-arm64-jit/arm64-jit-sdk-version.txt
-          grep --fixed-strings "MParser 1.2.0" build-arm64-jit/arm64-jit-sdk-version.txt
+          grep --fixed-strings "MParser 1.3.0" build-arm64-jit/arm64-jit-sdk-version.txt
       - name: Validate unpacked AArch64 release archive under QEMU
         shell: bash
         run: |
           set -euo pipefail
           package_dir="$PWD/build-arm64-jit/packages"
-          package_name="mparser-1.2.0-linux-aarch64"
+          package_name="mparser-1.3.0-linux-aarch64"
           archive="$package_dir/$package_name.tar.gz"
           (cd "$package_dir" && sha256sum --check "$package_name.tar.gz.sha256")
           unpack_root="$RUNNER_TEMP/mparser-arm64-release"
@@ -429,11 +429,11 @@ jobs:
         if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-1.2.0-linux-aarch64
+          name: mparser-1.3.0-linux-aarch64
           path: |
-            build-arm64-jit/packages/mparser-1.2.0-linux-aarch64.tar.gz
-            build-arm64-jit/packages/mparser-1.2.0-linux-aarch64.tar.gz.sha256
-            build-arm64-jit/packages/mparser-1.2.0-linux-aarch64.tar.gz.provenance.json
+            build-arm64-jit/packages/mparser-1.3.0-linux-aarch64.tar.gz
+            build-arm64-jit/packages/mparser-1.3.0-linux-aarch64.tar.gz.sha256
+            build-arm64-jit/packages/mparser-1.3.0-linux-aarch64.tar.gz.provenance.json
             build-arm64-jit/packages/SHA256SUMS
           if-no-files-found: error
 
@@ -463,14 +463,14 @@ jobs:
             echo "Release authentication requires a v* tag ref" >&2
             exit 1
           fi
-          if [[ "$GITHUB_REF_NAME" != "v1.2.0" ]]; then
-            echo "Release tag must equal project version v1.2.0" >&2
+          if [[ "$GITHUB_REF_NAME" != "v1.3.0" ]]; then
+            echo "Release tag must equal project version v1.3.0" >&2
             exit 1
           fi
       - name: Download same-run release archives
         uses: actions/download-artifact@v5
         with:
-          pattern: mparser-1.2.0-*
+          pattern: mparser-1.3.0-*
           path: release-authentication
       - name: Validate authentication inputs
         shell: bash
@@ -479,11 +479,11 @@ jobs:
           archive_list="$RUNNER_TEMP/mparser-release-archives.txt"
           : > "$archive_list"
           expected_archives=(
-            mparser-1.2.0-windows-x86_64.zip
-            mparser-1.2.0-linux-x86_64.tar.gz
-            mparser-1.2.0-linux-aarch64.tar.gz
-            mparser-1.2.0-macos-x86_64.tar.gz
-            mparser-1.2.0-macos-arm64.tar.gz
+            mparser-1.3.0-windows-x86_64.zip
+            mparser-1.3.0-linux-x86_64.tar.gz
+            mparser-1.3.0-linux-aarch64.tar.gz
+            mparser-1.3.0-macos-x86_64.tar.gz
+            mparser-1.3.0-macos-arm64.tar.gz
           )
           for archive_name in "${expected_archives[@]}"; do
             mapfile -t matches < <(
@@ -502,7 +502,7 @@ jobs:
               "-DMPARSER_PROJECT_ROOT=$PWD" \
               "-DMPARSER_EXPECTED_REVISION=$GITHUB_SHA" \
               "-DMPARSER_SOURCE_REPOSITORY=https://github.com/$GITHUB_REPOSITORY" \
-              -DMPARSER_PROJECT_VERSION=1.2.0 \
+              -DMPARSER_PROJECT_VERSION=1.3.0 \
               -DMPARSER_EXPECTED_CONFIGURATION=Release \
               -DMPARSER_EXPECTED_NATIVE_JIT=ON \
               -DMPARSER_REQUIRE_CLEAN_SOURCE=ON \
@@ -531,7 +531,7 @@ jobs:
       - name: Upload authenticated release set
         uses: actions/upload-artifact@v7
         with:
-          name: mparser-1.2.0-authenticated-${{ github.ref_name }}
+          name: mparser-1.3.0-authenticated-${{ github.ref_name }}
           path: release-authentication
           if-no-files-found: error
           retention-days: 90

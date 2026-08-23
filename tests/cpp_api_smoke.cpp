@@ -515,7 +515,7 @@ int main(int argc, char** argv) {
     constexpr auto sourceApiVersion =
         mparser::sdk::sourceApiVersion();
     static_assert(sourceApiVersion.major == 1);
-    static_assert(sourceApiVersion.minor == 2);
+    static_assert(sourceApiVersion.minor == 3);
     assert(mparser::sdk::abiGeneration() == 2);
     assert(mparser::sdk::abiRevision() == 1);
     runValueSmoke();

@@ -1806,15 +1806,14 @@ ordinary vector subscript whose orientation follows the existing target and
 subscript rules. Existing overloads retain the old no-colon entry points, so
 the implementation correction does not invent a new public ABI.
 
-v1.2 deliberately advances the host value transport while the project remains
-in active development. C source API 1.2, C ABI generation 2, and C++ source
-API 1.2 expose
+v1.2 deliberately advanced the host value transport while the project remained
+in active development. C source API 1.2, C ABI generation 2 revision 0, and
+C++ source API 1.2 expose
 typed numeric buffers and separate complex components; machine protocol 1.1
-carries the same classes without losing 64-bit integer precision. The product
-and installed SDK both report development version 1.2.0. Historical v1.0
-snapshots remain unchanged, but they do not require compatibility adapters in
-the current kernel. The active contracts freeze together only after the full
-v1.2 numeric, function, sample, regression, and platform train is complete.
+carries the same classes without losing 64-bit integer precision. That
+historical candidate reports product and SDK version 1.2.0. Its snapshots and
+the earlier v1.0 snapshots remain archived unchanged, but they do not require
+compatibility adapters in the current kernel.
 
 The v1.2 host-console slice keeps one semantic authority across all engine and
 embedding projections. `runtime_output` owns bounded display/printf formatting
@@ -1838,7 +1837,7 @@ reinterpreting source. Assignments continue through the workspace snapshot.
 unknown and records primary-function, pure-function-file, and top-level flags.
 `SourceLoader::loadSource` combines an owned in-memory entry with the same
 normalized search/package/private/class-folder discovery as a filesystem
-entry. C API 1.2 exposes borrowed metadata views, synchronous callback fields,
+entry. The v1.2 C API introduced borrowed metadata views, synchronous callback fields,
 and owned expression values; the C++ facade copies metadata/events and contains
 callback exceptions. Machine protocol 1.1 frames optional event/expression
 arrays, while ordinary CLI mode prints the merged human stream. Typed/native
@@ -1855,7 +1854,7 @@ builtin has a second engine-specific implementation. The production CLI uses
 the native adapter, while deterministic tests inject an in-memory adapter and
 isolated embedding requests can omit every process-facing capability.
 
-The active v1.3 embedding layer projects this internal authority through an
+The v1.3 candidate embedding layer projects this internal authority through an
 opaque `mparser_system_context` and header-only C++ `SystemContext`. A rooted
 native constructor validates root/current/temporary/search directories,
 canonicalizes the longest existing path ancestor, and rejects path operations

@@ -167,6 +167,7 @@ set(contract_paths
     CMakeLists.txt
     CMakePresets.json
     .github/workflows/ci.yml
+    docs/public-contract-v1.3.json
     docs/public-contract-v1.2.json
     docs/public-contract-v1.json
     docs/cli-contract-v1.json
