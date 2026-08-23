@@ -1,8 +1,8 @@
 #include "mparser/runtime/io/runtime_file_io.h"
 
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <algorithm>
 #include <bit>

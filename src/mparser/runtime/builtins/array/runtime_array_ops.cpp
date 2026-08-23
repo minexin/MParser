@@ -1,9 +1,9 @@
 #include "mparser/runtime/builtins/array/runtime_array_ops.h"
 
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_object.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <algorithm>
 #include <bit>
@@ -1525,144 +1525,6 @@ RuntimeArrayOutputsResult runtimeSizeBuiltin(
             makeRuntimeNumberValue(static_cast<double>(dimension)));
     }
     return outputsSuccess(std::move(outputs));
-}
-
-RuntimeArrayOperationResult runtimeReshapeValue(
-    const RuntimeValue& value, std::vector<size_t> dimensions,
-    const RuntimeObjectArrayPolicy& objectPolicy) {
-    if (!isSupportedArray(value)) {
-        return failure(
-            "reshape supports missing, numeric, text, cell, and object arrays");
-    }
-    dimensions = normalizeRuntimeDimensions(std::move(dimensions));
-    const auto count = checkedRuntimeDimensionProduct(dimensions);
-    if (!count) {
-        return failure("reshape dimensions are too large");
-    }
-    if (*count != runtimeShapeElementCount(value)) {
-        return failure("reshape cannot change the number of elements");
-    }
-
-    if (isMissingArray(value)) {
-        return success(makeRuntimeMissingArrayValue(
-            std::move(dimensions)));
-    }
-
-    if (isNumeric(value)) {
-        std::vector<RuntimeNumericElementValue> elements(*count);
-        for (size_t logicalIndex = 0; logicalIndex < *count;
-             ++logicalIndex) {
-            const auto sourceOffset = isNumber(value)
-                                          ? std::optional<size_t>(0)
-                                          : runtimeColumnMajorLinearToStorageOffset(
-                                                value, logicalIndex);
-            const auto targetCoordinates = runtimeColumnMajorCoordinates(
-                logicalIndex, dimensions);
-            const auto targetOffset = targetCoordinates
-                                          ? runtimeRowMajorStorageOffset(
-                                                *targetCoordinates, dimensions)
-                                          : std::nullopt;
-            const auto element = sourceOffset
-                                     ? runtimeNumericStorageElementValue(
-                                           value, *sourceOffset)
-                                     : std::nullopt;
-            if (!sourceOffset || !targetOffset || !element) {
-                return failure("reshape could not preserve logical element order");
-            }
-            elements[*targetOffset] = *element;
-        }
-        auto result = numericResult(
-            dimensions, std::move(elements), isNumber(value),
-            value.numericClass);
-        return result
-                   ? success(std::move(*result))
-                   : failure("reshape could not construct a numeric result");
-    }
-
-    if (isRuntimeCharacterArray(value)) {
-        std::u16string elements(*count, u'\0');
-        for (size_t logicalIndex = 0; logicalIndex < *count;
-             ++logicalIndex) {
-            const auto sourceOffset =
-                runtimeColumnMajorLinearToStorageOffset(value, logicalIndex);
-            const auto targetCoordinates = runtimeColumnMajorCoordinates(
-                logicalIndex, dimensions);
-            const auto targetOffset = targetCoordinates
-                                          ? runtimeRowMajorStorageOffset(
-                                                *targetCoordinates, dimensions)
-                                          : std::nullopt;
-            if (!sourceOffset || !targetOffset ||
-                *sourceOffset >= value.characterElements.size()) {
-                return failure(
-                    "reshape could not preserve logical character order");
-            }
-            elements[*targetOffset] = value.characterElements[*sourceOffset];
-        }
-        return success(makeRuntimeCharacterArray(
-            dimensions, std::move(elements)));
-    }
-
-    if (isRuntimeStringArray(value)) {
-        std::vector<RuntimeStringElement> elements(*count);
-        for (size_t logicalIndex = 0; logicalIndex < *count;
-             ++logicalIndex) {
-            const auto sourceOffset =
-                runtimeColumnMajorLinearToStorageOffset(value, logicalIndex);
-            const auto targetCoordinates = runtimeColumnMajorCoordinates(
-                logicalIndex, dimensions);
-            const auto targetOffset = targetCoordinates
-                                          ? runtimeRowMajorStorageOffset(
-                                                *targetCoordinates, dimensions)
-                                          : std::nullopt;
-            if (!sourceOffset || !targetOffset ||
-                *sourceOffset >= value.stringElements.size()) {
-                return failure(
-                    "reshape could not preserve logical string order");
-            }
-            elements[*targetOffset] = value.stringElements[*sourceOffset];
-        }
-        return success(makeRuntimeStringArray(
-            dimensions, std::move(elements)));
-    }
-
-    if (isRuntimeClassObject(value)) {
-        std::vector<RuntimeValue> elements;
-        elements.reserve(*count);
-        for (size_t logicalIndex = 0; logicalIndex < *count;
-             ++logicalIndex) {
-            const auto* element =
-                runtimeObjectLogicalElement(value, logicalIndex);
-            if (!element) {
-                return failure(
-                    "reshape could not preserve logical object order");
-            }
-            elements.push_back(*element);
-        }
-        auto result = runtimeMakeObjectArrayFromLogicalOrder(
-            std::move(elements), dimensions, value.className,
-            value.handleObject, objectPolicy, value.className);
-        return result.succeeded
-                   ? success(std::move(result.value))
-                   : failure(std::move(result.error));
-    }
-
-    std::vector<RuntimeValue> cells(*count);
-    for (size_t logicalIndex = 0; logicalIndex < *count; ++logicalIndex) {
-        const auto sourceOffset =
-            runtimeColumnMajorLinearToStorageOffset(value, logicalIndex);
-        const auto targetCoordinates = runtimeColumnMajorCoordinates(
-            logicalIndex, dimensions);
-        const auto targetOffset = targetCoordinates
-                                      ? runtimeRowMajorStorageOffset(
-                                            *targetCoordinates, dimensions)
-                                      : std::nullopt;
-        if (!sourceOffset || !targetOffset ||
-            *sourceOffset >= value.cells.size()) {
-            return failure("reshape could not preserve logical cell order");
-        }
-        cells[*targetOffset] = value.cells[*sourceOffset];
-    }
-    return success(cellResult(dimensions, std::move(cells)));
 }
 
 } // namespace mparser

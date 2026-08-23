@@ -6,7 +6,7 @@
 #include "mparser/frontend/lexer.h"
 #include "mparser/execution/jit/optimization_plan.h"
 #include "mparser/frontend/parser.h"
-#include "mparser/runtime/core/runtime_argument_validation.h"
+#include "mparser/runtime/core/object_model/runtime_argument_validation.h"
 #include "mparser/execution/jit/typed_ir.h"
 
 #include <algorithm>

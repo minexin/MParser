@@ -1,6 +1,6 @@
 #include "mparser/execution/bytecode/adaptive_bytecode_vm.h"
 #include "mparser/embedding/compiled_module.h"
-#include "mparser/runtime/core/runtime_session_state.h"
+#include "mparser/runtime/core/session/runtime_session_state.h"
 
 #include <cassert>
 #include <cstdint>

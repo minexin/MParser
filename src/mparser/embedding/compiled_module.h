@@ -4,7 +4,7 @@
 #include "mparser/execution/bytecode/bytecode.h"
 #include "mparser/semantic/function_signature.h"
 #include "mparser/embedding/module_execution.h"
-#include "mparser/runtime/core/runtime_session_state.h"
+#include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/frontend/source.h"
 
 #include <memory>

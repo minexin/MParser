@@ -3,8 +3,8 @@
 #include "mparser/execution/interpreter.h"
 #include "mparser/frontend/lexer.h"
 #include "mparser/frontend/parser.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/semantic/semantic.h"
 
 #include <cassert>

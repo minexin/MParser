@@ -1,9 +1,9 @@
 #include "mparser/execution/runtime_benchmark.h"
 #include "mparser/execution/jit/optimization_plan.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_object.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/execution/jit/typed_ir.h"
 
 #include <algorithm>

@@ -2,10 +2,10 @@
 
 #include "mparser/execution/bytecode/bytecode.h"
 #include "mparser/execution/runtime_source_evaluation.h"
-#include "mparser/runtime/core/runtime_execution_control.h"
-#include "mparser/runtime/core/runtime_output.h"
-#include "mparser/runtime/core/runtime_session_state.h"
-#include "mparser/runtime/core/runtime_value.h"
+#include "mparser/runtime/core/session/runtime_execution_control.h"
+#include "mparser/runtime/core/session/runtime_output.h"
+#include "mparser/runtime/core/session/runtime_session_state.h"
+#include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/semantic/semantic.h"
 #include "mparser/execution/jit/typed_region_executor.h"
 

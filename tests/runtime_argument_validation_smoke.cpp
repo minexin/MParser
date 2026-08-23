@@ -1,7 +1,7 @@
-#include "mparser/runtime/core/runtime_argument_validation.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/object_model/runtime_argument_validation.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <cassert>
 #include <cmath>

@@ -1,9 +1,9 @@
 #include "mparser/embedding/compiled_module.h"
-#include "mparser/runtime/core/runtime_call_frame.h"
+#include "mparser/runtime/core/session/runtime_call_frame.h"
 #include "mparser/execution/runtime_fallback.h"
-#include "mparser/runtime/core/runtime_object.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <cassert>
 #include <cmath>

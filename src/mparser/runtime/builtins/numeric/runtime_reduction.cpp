@@ -1,8 +1,8 @@
 #include "mparser/runtime/builtins/numeric/runtime_reduction.h"
 
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <algorithm>
 #include <cmath>

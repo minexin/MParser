@@ -1,9 +1,9 @@
 #include "mparser/embedding/machine_protocol.h"
 
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_struct.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <bit>
 #include <charconv>

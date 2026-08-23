@@ -1,16 +1,16 @@
 #include "mparser/runtime/builtins/system/runtime_system_builtins.h"
 
 #include "mparser/runtime/io/filesystem_utf8.h"
-#include "mparser/runtime/core/runtime_execution_control.h"
+#include "mparser/runtime/core/session/runtime_execution_control.h"
 #include "mparser/runtime/io/runtime_file_io.h"
-#include "mparser/runtime/core/runtime_metadata.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_output.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_struct.h"
+#include "mparser/runtime/core/object_model/runtime_metadata.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/session/runtime_output.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/io/runtime_system.h"
-#include "mparser/runtime/core/runtime_text.h"
-#include "mparser/runtime/core/runtime_warning.h"
+#include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/session/runtime_warning.h"
 
 #include <algorithm>
 #include <array>

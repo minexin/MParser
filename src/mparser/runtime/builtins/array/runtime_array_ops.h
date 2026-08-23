@@ -1,19 +1,12 @@
 #pragma once
 
-#include "mparser/runtime/core/runtime_value.h"
-#include "mparser/runtime/core/runtime_object.h"
+#include "mparser/runtime/core/value/runtime_array.h"
 
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace mparser {
-
-struct RuntimeArrayOperationResult {
-    bool succeeded = false;
-    RuntimeValue value;
-    std::string error;
-};
 
 struct RuntimeArrayOutputsResult {
     bool succeeded = false;
@@ -38,9 +31,5 @@ RuntimeArrayOperationResult runtimeLinspaceBuiltin(
 RuntimeArrayOutputsResult runtimeSizeBuiltin(
     const std::vector<RuntimeValue>& arguments,
     size_t requestedOutputCount);
-
-RuntimeArrayOperationResult runtimeReshapeValue(
-    const RuntimeValue& value, std::vector<size_t> dimensions,
-    const RuntimeObjectArrayPolicy& objectPolicy = {});
 
 } // namespace mparser

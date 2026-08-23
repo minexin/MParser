@@ -1,9 +1,9 @@
 #include "mparser/runtime/builtins/text/runtime_text_query_builtins.h"
 
-#include "mparser/runtime/core/runtime_execution_control.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/session/runtime_execution_control.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <algorithm>
 #include <optional>

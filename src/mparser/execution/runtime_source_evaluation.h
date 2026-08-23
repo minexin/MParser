@@ -1,9 +1,9 @@
 #pragma once
 
 #include "mparser/runtime/builtins/builtin_registry.h"
-#include "mparser/runtime/core/runtime_call_frame.h"
-#include "mparser/runtime/core/runtime_execution_control.h"
-#include "mparser/runtime/core/runtime_session_state.h"
+#include "mparser/runtime/core/session/runtime_call_frame.h"
+#include "mparser/runtime/core/session/runtime_execution_control.h"
+#include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/execution/jit/typed_region_executor.h"
 
 #include <cstddef>

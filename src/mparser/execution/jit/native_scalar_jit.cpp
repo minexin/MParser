@@ -1,5 +1,5 @@
 #include "mparser/execution/jit/native_scalar_jit.h"
-#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
 
 #include <algorithm>
 #include <cmath>

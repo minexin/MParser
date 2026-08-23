@@ -5,8 +5,8 @@
 #include "mparser/frontend/lexer.h"
 #include "mparser/execution/jit/optimization_plan.h"
 #include "mparser/frontend/parser.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/semantic/semantic.h"
 #include "mparser/execution/jit/typed_ir.h"
 

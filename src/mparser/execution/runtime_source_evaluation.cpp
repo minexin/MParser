@@ -2,7 +2,7 @@
 
 #include "mparser/embedding/compiled_module.h"
 #include "mparser/frontend/lexer.h"
-#include "mparser/runtime/core/runtime_output.h"
+#include "mparser/runtime/core/session/runtime_output.h"
 #include "mparser/runtime/io/runtime_system.h"
 
 #include <algorithm>

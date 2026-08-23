@@ -4,7 +4,7 @@
 #include "mparser/execution/jit/native_scalar_jit.h"
 #include "mparser/execution/jit/optimization_plan.h"
 #include "mparser/frontend/parser.h"
-#include "mparser/runtime/core/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/semantic/semantic.h"
 #include "mparser/execution/jit/typed_ir.h"
 #include "mparser/execution/jit/typed_region_executor.h"

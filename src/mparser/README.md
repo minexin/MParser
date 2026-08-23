@@ -10,7 +10,11 @@ remain under `include/mparser`; paths in this tree are not public API or ABI.
 | `execution` | Reference interpreter and execution behavior shared across engines |
 | `execution/bytecode` | Bytecode IR, verifier, VM, regions, and adaptive bytecode execution |
 | `execution/jit` | Typed IR, optimization planning, portable kernels, and native lowering |
-| `runtime/core` | Runtime values, shapes, indexing, assignment, objects, text, and session state |
+| `runtime/core` | Stable internal runtime facades and ownership rules |
+| `runtime/core/value` | Runtime values, shapes, text, containers, numeric storage, and repository-owned dense numeric algorithms |
+| `runtime/core/indexing` | Index planning, indexed assignment, and lvalue copyback |
+| `runtime/core/object_model` | Object arrays, metadata, and argument/property validation |
+| `runtime/core/session` | Call frames, session state, execution control, diagnostics, warnings, and output formatting |
 | `runtime/builtins` | Builtin registry and family composition entry point |
 | `runtime/builtins/numeric` | Native C++ numeric, reduction, and scan builtins |
 | `runtime/builtins/array` | Array helpers, collections, and set-family builtins |
@@ -21,9 +25,12 @@ remain under `include/mparser`; paths in this tree are not public API or ABI.
 | `runtime/io` | Filesystem, file, MAT-file, and operating-system integration |
 | `embedding` | Compiled modules, C ABI implementation, machine protocol, and module execution |
 
-Keep a `.cpp`/`.h` pair in the same owning directory. New code should have one
-clear owner instead of adding files directly under `src/mparser`. Include
-internal headers from the `src` include root, for example
-`mparser/runtime/core/runtime_value.h`; do not depend on relative `../` paths.
-Builtin family placement and dependency rules are documented in
-`runtime/builtins/README.md`.
+Keep a `.cpp`/`.h` pair in the same owning directory. The only root core
+headers are the registry-facing `runtime_value.h` and `runtime_output.h`
+facades; their definitions remain in the owning subdirectories. New code
+should have one clear owner instead of adding files directly under
+`src/mparser`. Include internal headers from the `src` include root, for
+example `mparser/runtime/core/value/runtime_value.h`; do not depend on
+relative `../` paths. Core must not include builtin-family headers. Detailed
+runtime and builtin dependency rules are documented in `runtime/core/README.md`
+and `runtime/builtins/README.md`.

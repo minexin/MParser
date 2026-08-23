@@ -1,9 +1,9 @@
 #include "mparser/runtime/builtins/numeric/runtime_advanced_numeric.h"
 
-#include "mparser/runtime/core/runtime_execution_control.h"
-#include "mparser/execution/jit/runtime_native_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/session/runtime_execution_control.h"
+#include "mparser/runtime/core/value/runtime_dense_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <algorithm>
 #include <cmath>
@@ -41,14 +41,6 @@ BuiltinResult outputsFor(const BuiltinCall& call,
                        "MParser:AdvancedNumericContractViolation");
     }
     return BuiltinResult::success(std::move(outputs));
-}
-
-RuntimeNumericOperationResult operationFailure(std::string message) {
-    return RuntimeNumericOperationResult{false, {}, std::move(message)};
-}
-
-RuntimeNumericOperationResult operationSuccess(RuntimeValue value) {
-    return RuntimeNumericOperationResult{true, std::move(value), {}};
 }
 
 bool checkpoint(const BuiltinCall& call) {
@@ -91,21 +83,6 @@ BuiltinResult stopped(const BuiltinCall& call, std::string_view name) {
                    "MParser:ExecutionStopped");
 }
 
-bool isFloatingNumeric(const RuntimeValue& value) {
-    return isRuntimeNumericValue(value) &&
-           runtimeNumericClassIsFloating(value.numericClass);
-}
-
-RuntimeNumericClass floatingResultClass(
-    const std::vector<const RuntimeValue*>& values) {
-    for (const RuntimeValue* value : values) {
-        if (value && value->numericClass == RuntimeNumericClass::Single) {
-            return RuntimeNumericClass::Single;
-        }
-    }
-    return RuntimeNumericClass::Double;
-}
-
 std::optional<size_t> positiveDimension(const RuntimeValue& value) {
     if (!isRuntimeNumericValue(value) ||
         runtimeShapeElementCount(value) != 1) {
@@ -146,153 +123,9 @@ std::optional<double> realScalar(const RuntimeValue& value) {
     return element->real;
 }
 
-std::optional<Complex> numericElement(const RuntimeValue& value,
-                                      size_t logicalIndex) {
-    const auto element = runtimeNumericElementValue(value, logicalIndex);
-    if (!element) {
-        return std::nullopt;
-    }
-    return Complex(element->real,
-                   element->complex ? element->imaginary : 0.0);
-}
-
-RuntimeNumericElementValue numericElementValue(
-    Complex value, RuntimeNumericClass numericClass,
-    bool preserveComplex = false) {
-    RuntimeNumericElementValue result;
-    result.numericClass = numericClass;
-    if (numericClass == RuntimeNumericClass::Single) {
-        result.real = static_cast<double>(
-            static_cast<float>(value.real()));
-        result.imaginary = static_cast<double>(
-            static_cast<float>(value.imag()));
-    } else {
-        result.real = value.real();
-        result.imaginary = value.imag();
-    }
-    result.complex = preserveComplex || result.imaginary != 0.0;
-    return result;
-}
-
-std::optional<RuntimeValue> makeNumericValue(
-    std::vector<size_t> dimensions, const std::vector<Complex>& values,
-    RuntimeNumericClass numericClass, bool preserveComplex = false) {
-    std::vector<RuntimeNumericElementValue> elements;
-    elements.reserve(values.size());
-    for (const Complex value : values) {
-        elements.push_back(numericElementValue(
-            value, numericClass, preserveComplex));
-    }
-    return runtimeNumericValueFromElements(
-        std::move(dimensions), std::move(elements), numericClass);
-}
-
-std::optional<RuntimeValue> makeNumericValue(
-    std::vector<size_t> dimensions, const ComplexMatrix& matrix,
-    RuntimeNumericClass numericClass, bool preserveComplex = false) {
-    return makeNumericValue(std::move(dimensions), matrix.values(),
-                            numericClass, preserveComplex);
-}
-
-struct MatrixInput {
-    ComplexMatrix matrix;
-    RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
-    bool complex = false;
-};
-
-std::optional<MatrixInput> matrixInput(const RuntimeValue& value,
-                                       std::string& error) {
-    if (!isFloatingNumeric(value)) {
-        error = "input must be a single or double numeric array";
-        return std::nullopt;
-    }
-    const auto dimensions = runtimeDimensions(value);
-    if (dimensions.size() != 2) {
-        error = "input must be two-dimensional";
-        return std::nullopt;
-    }
-    ComplexMatrix matrix(dimensions[0], dimensions[1]);
-    for (size_t column = 0; column < dimensions[1]; ++column) {
-        for (size_t row = 0; row < dimensions[0]; ++row) {
-            const auto element = numericElement(
-                value, row + column * dimensions[0]);
-            if (!element) {
-                error = "matrix input contains an unreadable element";
-                return std::nullopt;
-            }
-            matrix(row, column) = *element;
-        }
-    }
-    return MatrixInput{std::move(matrix), value.numericClass,
-                       value.numericComplex};
-}
-
-RuntimeNumericOperationResult solveMatrices(
-    const RuntimeValue& left, const RuntimeValue& right,
-    bool rightDivision) {
-    std::string error;
-    const auto leftInput = matrixInput(left, error);
-    if (!leftInput) {
-        return operationFailure("left matrix " + error);
-    }
-    const auto rightInput = matrixInput(right, error);
-    if (!rightInput) {
-        return operationFailure("right matrix " + error);
-    }
-
-    const RuntimeNumericClass outputClass =
-        floatingResultClass({&left, &right});
-    native_numeric::SolveResult solved;
-    std::vector<size_t> dimensions;
-    if (!rightDivision) {
-        if (leftInput->matrix.rows() != rightInput->matrix.rows()) {
-            return operationFailure(
-                "matrix left division requires equal row counts");
-        }
-        solved = native_numeric::solve(
-            leftInput->matrix, rightInput->matrix,
-            left.numericClass == RuntimeNumericClass::Single ||
-                    right.numericClass == RuntimeNumericClass::Single
-                ? static_cast<double>(std::numeric_limits<float>::epsilon())
-                : std::numeric_limits<double>::epsilon());
-        dimensions = {
-            leftInput->matrix.columns(), rightInput->matrix.columns()};
-    } else {
-        if (leftInput->matrix.columns() != rightInput->matrix.columns()) {
-            return operationFailure(
-                "matrix right division requires equal column counts");
-        }
-        const ComplexMatrix transposedRight =
-            native_numeric::adjoint(rightInput->matrix);
-        const ComplexMatrix transposedLeft =
-            native_numeric::adjoint(leftInput->matrix);
-        solved = native_numeric::solve(
-            transposedRight, transposedLeft,
-            left.numericClass == RuntimeNumericClass::Single ||
-                    right.numericClass == RuntimeNumericClass::Single
-                ? static_cast<double>(std::numeric_limits<float>::epsilon())
-                : std::numeric_limits<double>::epsilon());
-        dimensions = {
-            leftInput->matrix.rows(), rightInput->matrix.rows()};
-    }
-    if (!solved.succeeded) {
-        return operationFailure("matrix division failed: " + solved.error);
-    }
-    ComplexMatrix solution = rightDivision
-                                 ? native_numeric::adjoint(solved.solution)
-                                 : std::move(solved.solution);
-    const bool preserveComplex =
-        leftInput->complex || rightInput->complex;
-    auto value = makeNumericValue(dimensions, solution, outputClass,
-                                  preserveComplex);
-    return value ? operationSuccess(std::move(*value))
-                 : operationFailure(
-                       "matrix division could not construct its result");
-}
-
 BuiltinResult detBuiltin(const BuiltinCall& call) {
     std::string error;
-    const auto input = matrixInput(call.arguments.front(), error);
+    const auto input = runtimeDenseMatrixInput(call.arguments.front(), error);
     if (!input || input->matrix.rows() != input->matrix.columns()) {
         return failure(call,
                        "det expects a square single or double matrix" +
@@ -312,7 +145,7 @@ BuiltinResult detBuiltin(const BuiltinCall& call) {
         return failure(call, "det could not factor its input",
                        "MParser:InvalidDetResult");
     }
-    auto value = makeNumericValue({1, 1}, {*determinant},
+    auto value = makeRuntimeDenseNumericValue({1, 1}, {*determinant},
                                   input->numericClass, input->complex);
     return value ? outputsFor(call, {std::move(*value)})
                  : failure(call, "det could not construct its result",
@@ -321,7 +154,7 @@ BuiltinResult detBuiltin(const BuiltinCall& call) {
 
 BuiltinResult invBuiltin(const BuiltinCall& call) {
     std::string error;
-    const auto input = matrixInput(call.arguments.front(), error);
+    const auto input = runtimeDenseMatrixInput(call.arguments.front(), error);
     if (!input || input->matrix.rows() != input->matrix.columns()) {
         return failure(call,
                        "inv expects a square single or double matrix" +
@@ -342,7 +175,7 @@ BuiltinResult invBuiltin(const BuiltinCall& call) {
         return failure(call, "inv input matrix is singular",
                        "MParser:SingularMatrix");
     }
-    auto value = makeNumericValue(runtimeDimensions(call.arguments.front()),
+    auto value = makeRuntimeDenseNumericValue(runtimeDimensions(call.arguments.front()),
                                   *inverse, input->numericClass,
                                   input->complex);
     return value ? outputsFor(call, {std::move(*value)})
@@ -387,7 +220,7 @@ BuiltinResult traceBuiltin(const BuiltinCall& call) {
 
 BuiltinResult normBuiltin(const BuiltinCall& call) {
     std::string error;
-    const auto input = matrixInput(call.arguments.front(), error);
+    const auto input = runtimeDenseMatrixInput(call.arguments.front(), error);
     if (!input) {
         return failure(call, "norm " + error,
                        "MParser:InvalidNormInput");
@@ -481,7 +314,7 @@ BuiltinResult normBuiltin(const BuiltinCall& call) {
         !observeOutput(call, 1, input->numericClass)) {
         return stopped(call, "norm");
     }
-    auto value = makeNumericValue({1, 1}, {Complex(result, 0.0)},
+    auto value = makeRuntimeDenseNumericValue({1, 1}, {Complex(result, 0.0)},
                                   input->numericClass);
     return value ? outputsFor(call, {std::move(*value)})
                  : failure(call, "norm could not construct its result",
@@ -490,7 +323,7 @@ BuiltinResult normBuiltin(const BuiltinCall& call) {
 
 BuiltinResult rankBuiltin(const BuiltinCall& call) {
     std::string error;
-    const auto input = matrixInput(call.arguments.front(), error);
+    const auto input = runtimeDenseMatrixInput(call.arguments.front(), error);
     if (!input) {
         return failure(call, "rank " + error,
                        "MParser:InvalidRankInput");
@@ -532,7 +365,7 @@ BuiltinResult rankBuiltin(const BuiltinCall& call) {
 
 BuiltinResult eigBuiltin(const BuiltinCall& call) {
     std::string error;
-    const auto input = matrixInput(call.arguments.front(), error);
+    const auto input = runtimeDenseMatrixInput(call.arguments.front(), error);
     if (!input || input->matrix.rows() != input->matrix.columns()) {
         return failure(call,
                        "eig expects a square single or double matrix" +
@@ -579,7 +412,7 @@ BuiltinResult eigBuiltin(const BuiltinCall& call) {
         complexResult = complexResult || value.imag() != 0.0;
     }
     if (call.requestedOutputCount <= 1) {
-        auto values = makeNumericValue({size, 1}, diagonalValues,
+        auto values = makeRuntimeDenseNumericValue({size, 1}, diagonalValues,
                                        input->numericClass, complexResult);
         return values ? outputsFor(call, {std::move(*values)})
                       : failure(call, "eig could not construct eigenvalues",
@@ -589,9 +422,9 @@ BuiltinResult eigBuiltin(const BuiltinCall& call) {
     for (size_t index = 0; index < size; ++index) {
         diagonal(index, index) = diagonalValues[index];
     }
-    auto vectors = makeNumericValue({size, size}, decomposition.vectors,
+    auto vectors = makeRuntimeDenseNumericValue({size, size}, decomposition.vectors,
                                     input->numericClass, complexResult);
-    auto values = makeNumericValue({size, size}, diagonal,
+    auto values = makeRuntimeDenseNumericValue({size, size}, diagonal,
                                    input->numericClass, complexResult);
     if (!vectors || !values) {
         return failure(call, "eig could not construct its outputs",
@@ -881,7 +714,7 @@ struct VarianceBucket {
 BuiltinResult varianceBuiltin(std::string_view name,
                               const BuiltinCall& call) {
     const RuntimeValue& input = call.arguments.front();
-    if (!isFloatingNumeric(input)) {
+    if (!isRuntimeFloatingNumericValue(input)) {
         return failure(call,
                        std::string(name) +
                            " expects a single or double numeric array",
@@ -996,7 +829,7 @@ BuiltinResult varianceBuiltin(std::string_view name,
         }
         values.emplace_back(value, 0.0);
     }
-    auto result = makeNumericValue(layout->outputDimensions, values,
+    auto result = makeRuntimeDenseNumericValue(layout->outputDimensions, values,
                                    input.numericClass);
     return result ? outputsFor(call, {std::move(*result)})
                   : failure(call,
@@ -1018,7 +851,7 @@ size_t firstNonsingletonDimension(
 BuiltinResult dotBuiltin(const BuiltinCall& call) {
     const RuntimeValue& left = call.arguments[0];
     const RuntimeValue& right = call.arguments[1];
-    if (!isFloatingNumeric(left) || !isFloatingNumeric(right)) {
+    if (!isRuntimeFloatingNumericValue(left) || !isRuntimeFloatingNumericValue(right)) {
         return failure(call,
                        "dot inputs must be single or double numeric arrays",
                        "MParser:InvalidDotInput");
@@ -1048,7 +881,7 @@ BuiltinResult dotBuiltin(const BuiltinCall& call) {
     const auto outputCount =
         checkedRuntimeDimensionProduct(outputDimensions);
     const RuntimeNumericClass outputClass =
-        floatingResultClass({&left, &right});
+        runtimeFloatingNumericResultClass({&left, &right});
     if (!outputCount || !checkpoint(call) ||
         !observeOutput(call, outputCount.value_or(0), outputClass,
                        left.numericComplex || right.numericComplex)) {
@@ -1100,7 +933,7 @@ BuiltinResult dotBuiltin(const BuiltinCall& call) {
             rightValue->complex ? rightValue->imaginary : 0.0);
         values[*outputIndex] += std::conj(leftComplex) * rightComplex;
     }
-    auto result = makeNumericValue(
+    auto result = makeRuntimeDenseNumericValue(
         outputDimensions, values, outputClass,
         left.numericComplex || right.numericComplex);
     return result ? outputsFor(call, {std::move(*result)})
@@ -1111,7 +944,7 @@ BuiltinResult dotBuiltin(const BuiltinCall& call) {
 BuiltinResult crossBuiltin(const BuiltinCall& call) {
     const RuntimeValue& left = call.arguments[0];
     const RuntimeValue& right = call.arguments[1];
-    if (!isFloatingNumeric(left) || !isFloatingNumeric(right)) {
+    if (!isRuntimeFloatingNumericValue(left) || !isRuntimeFloatingNumericValue(right)) {
         return failure(call,
                        "cross inputs must be single or double numeric arrays",
                        "MParser:InvalidCrossInput");
@@ -1176,7 +1009,7 @@ BuiltinResult crossBuiltin(const BuiltinCall& call) {
         std::move(outputDimensions));
     const auto count = checkedRuntimeDimensionProduct(outputDimensions);
     const RuntimeNumericClass outputClass =
-        floatingResultClass({&left, &right});
+        runtimeFloatingNumericResultClass({&left, &right});
     if (!count || !checkpoint(call) ||
         !observeOutput(call, count.value_or(0), outputClass,
                        left.numericComplex || right.numericComplex)) {
@@ -1223,8 +1056,8 @@ BuiltinResult crossBuiltin(const BuiltinCall& call) {
                                "cross could not read an input element",
                                "MParser:InvalidCrossShape");
             }
-            const auto leftValue = numericElement(left, *leftIndex);
-            const auto rightValue = numericElement(right, *rightIndex);
+            const auto leftValue = runtimeDenseNumericElement(left, *leftIndex);
+            const auto rightValue = runtimeDenseNumericElement(right, *rightIndex);
             if (!leftValue || !rightValue) {
                 return failure(call,
                                "cross could not read an input element",
@@ -1250,7 +1083,7 @@ BuiltinResult crossBuiltin(const BuiltinCall& call) {
             values[*outputIndex] = result[component];
         }
     }
-    auto result = makeNumericValue(
+    auto result = makeRuntimeDenseNumericValue(
         outputDimensions, values, outputClass,
         left.numericComplex || right.numericComplex);
     return result ? outputsFor(call, {std::move(*result)})
@@ -1260,7 +1093,7 @@ BuiltinResult crossBuiltin(const BuiltinCall& call) {
 
 BuiltinResult fftBuiltin(std::string_view name, const BuiltinCall& call) {
     const RuntimeValue& input = call.arguments.front();
-    if (!isFloatingNumeric(input)) {
+    if (!isRuntimeFloatingNumericValue(input)) {
         return failure(call,
                        std::string(name) +
                            " expects a single or double numeric array",
@@ -1310,7 +1143,7 @@ BuiltinResult fftBuiltin(std::string_view name, const BuiltinCall& call) {
                                      "MParser:InvalidFftShape");
     }
     if (transformLength == 0) {
-        auto result = makeNumericValue(outputDimensions,
+        auto result = makeRuntimeDenseNumericValue(outputDimensions,
                                        std::vector<Complex>{},
                                        input.numericClass,
                                        input.numericComplex);
@@ -1355,7 +1188,7 @@ BuiltinResult fftBuiltin(std::string_view name, const BuiltinCall& call) {
                                    " could not read an input element",
                                "MParser:InvalidFftInput");
             }
-            const auto element = numericElement(input, *inputIndex);
+            const auto element = runtimeDenseNumericElement(input, *inputIndex);
             if (!element) {
                 return failure(call,
                                std::string(name) +
@@ -1386,7 +1219,7 @@ BuiltinResult fftBuiltin(std::string_view name, const BuiltinCall& call) {
             values[*outputIndex] = transformed[index];
         }
     }
-    auto result = makeNumericValue(outputDimensions, values,
+    auto result = makeRuntimeDenseNumericValue(outputDimensions, values,
                                    input.numericClass,
                                    input.numericComplex);
     return result ? outputsFor(call, {std::move(*result)})
@@ -1397,7 +1230,7 @@ BuiltinResult fftBuiltin(std::string_view name, const BuiltinCall& call) {
 }
 
 bool numericVector(const RuntimeValue& value) {
-    if (!isFloatingNumeric(value)) {
+    if (!isRuntimeFloatingNumericValue(value)) {
         return false;
     }
     const auto dimensions = runtimeDimensions(value);
@@ -1447,7 +1280,7 @@ BuiltinResult convBuiltin(const BuiltinCall& call) {
                     : 0;
     }
     const RuntimeNumericClass outputClass =
-        floatingResultClass({&left, &right});
+        runtimeFloatingNumericResultClass({&left, &right});
     if (!checkpoint(call) ||
         !observeOutput(call, count, outputClass,
                        left.numericComplex || right.numericComplex)) {
@@ -1458,13 +1291,13 @@ BuiltinResult convBuiltin(const BuiltinCall& call) {
         if (!periodicCheckpoint(call, leftIndex, 1024U)) {
             return stopped(call, "conv");
         }
-        const auto leftValue = numericElement(left, leftIndex);
+        const auto leftValue = runtimeDenseNumericElement(left, leftIndex);
         if (!leftValue) {
             return failure(call, "conv could not read its first input",
                            "MParser:InvalidConvInput");
         }
         for (size_t rightIndex = 0; rightIndex < rightCount; ++rightIndex) {
-            const auto rightValue = numericElement(right, rightIndex);
+            const auto rightValue = runtimeDenseNumericElement(right, rightIndex);
             if (!rightValue) {
                 return failure(call, "conv could not read its second input",
                                "MParser:InvalidConvInput");
@@ -1481,7 +1314,7 @@ BuiltinResult convBuiltin(const BuiltinCall& call) {
     const auto leftDimensions = runtimeDimensions(left);
     const auto rightDimensions = runtimeDimensions(right);
     const bool row = leftDimensions[0] == 1 && rightDimensions[0] == 1;
-    auto result = makeNumericValue(row ? std::vector<size_t>{1, count}
+    auto result = makeRuntimeDenseNumericValue(row ? std::vector<size_t>{1, count}
                                        : std::vector<size_t>{count, 1},
                                    values, outputClass,
                                    left.numericComplex || right.numericComplex);
@@ -1522,7 +1355,7 @@ BuiltinResult trapzBuiltin(const BuiltinCall& call) {
         }
         dimension = *requested;
     }
-    if (!isFloatingNumeric(*y) || (x && !isFloatingNumeric(*x))) {
+    if (!isRuntimeFloatingNumericValue(*y) || (x && !isRuntimeFloatingNumericValue(*x))) {
         return failure(call,
                        "trapz inputs must be single or double numeric arrays",
                        "MParser:InvalidTrapzInput");
@@ -1544,7 +1377,7 @@ BuiltinResult trapzBuiltin(const BuiltinCall& call) {
     const auto outputCount =
         checkedRuntimeDimensionProduct(outputDimensions);
     const RuntimeNumericClass outputClass =
-        x ? floatingResultClass({x, y}) : y->numericClass;
+        x ? runtimeFloatingNumericResultClass({x, y}) : y->numericClass;
     if (!outputCount || !checkpoint(call) ||
         !observeOutput(call, outputCount.value_or(0), outputClass,
                        y->numericComplex)) {
@@ -1572,16 +1405,16 @@ BuiltinResult trapzBuiltin(const BuiltinCall& call) {
                 return failure(call, "trapz could not read an input element",
                                "MParser:InvalidTrapzInput");
             }
-            const auto leftValue = numericElement(*y, *leftIndex);
-            const auto rightValue = numericElement(*y, *rightIndex);
+            const auto leftValue = runtimeDenseNumericElement(*y, *leftIndex);
+            const auto rightValue = runtimeDenseNumericElement(*y, *rightIndex);
             if (!leftValue || !rightValue) {
                 return failure(call, "trapz could not read an input element",
                                "MParser:InvalidTrapzInput");
             }
             double spacing = 1.0;
             if (x) {
-                const auto x0 = numericElement(*x, index);
-                const auto x1 = numericElement(*x, index + 1);
+                const auto x0 = runtimeDenseNumericElement(*x, index);
+                const auto x1 = runtimeDenseNumericElement(*x, index + 1);
                 if (!x0 || !x1 || x0->imag() != 0.0 ||
                     x1->imag() != 0.0) {
                     return failure(call,
@@ -1594,7 +1427,7 @@ BuiltinResult trapzBuiltin(const BuiltinCall& call) {
                 (*leftValue + *rightValue) * (0.5 * spacing);
         }
     }
-    auto result = makeNumericValue(outputDimensions, values, outputClass,
+    auto result = makeRuntimeDenseNumericValue(outputDimensions, values, outputClass,
                                    y->numericComplex);
     return result ? outputsFor(call, {std::move(*result)})
                   : failure(call, "trapz could not construct its result",
@@ -1604,14 +1437,14 @@ BuiltinResult trapzBuiltin(const BuiltinCall& call) {
 BuiltinResult polyvalBuiltin(const BuiltinCall& call) {
     const RuntimeValue& coefficients = call.arguments[0];
     const RuntimeValue& input = call.arguments[1];
-    if (!numericVector(coefficients) || !isFloatingNumeric(input)) {
+    if (!numericVector(coefficients) || !isRuntimeFloatingNumericValue(input)) {
         return failure(call,
                        "polyval expects a floating-point coefficient vector "
                        "and numeric input array",
                        "MParser:InvalidPolyvalInput");
     }
     const RuntimeNumericClass outputClass =
-        floatingResultClass({&coefficients, &input});
+        runtimeFloatingNumericResultClass({&coefficients, &input});
     const size_t count = runtimeShapeElementCount(input);
     if (!checkpoint(call) ||
         !observeOutput(call, count, outputClass,
@@ -1622,7 +1455,7 @@ BuiltinResult polyvalBuiltin(const BuiltinCall& call) {
     coefficientValues.reserve(runtimeShapeElementCount(coefficients));
     for (size_t index = 0;
          index < runtimeShapeElementCount(coefficients); ++index) {
-        const auto coefficient = numericElement(coefficients, index);
+        const auto coefficient = runtimeDenseNumericElement(coefficients, index);
         if (!coefficient) {
             return failure(call, "polyval could not read a coefficient",
                            "MParser:InvalidPolyvalInput");
@@ -1635,7 +1468,7 @@ BuiltinResult polyvalBuiltin(const BuiltinCall& call) {
         if (!periodicCheckpoint(call, index)) {
             return stopped(call, "polyval");
         }
-        const auto x = numericElement(input, index);
+        const auto x = runtimeDenseNumericElement(input, index);
         if (!x) {
             return failure(call, "polyval could not read an input element",
                            "MParser:InvalidPolyvalInput");
@@ -1646,7 +1479,7 @@ BuiltinResult polyvalBuiltin(const BuiltinCall& call) {
         }
         values.push_back(value);
     }
-    auto result = makeNumericValue(
+    auto result = makeRuntimeDenseNumericValue(
         runtimeDimensions(input), values, outputClass,
         coefficients.numericComplex || input.numericComplex);
     return result ? outputsFor(call, {std::move(*result)})
@@ -1673,7 +1506,7 @@ BuiltinResult polyfitBuiltin(const BuiltinCall& call) {
     }
     const size_t coefficientCount = *degree + 1;
     const RuntimeNumericClass outputClass =
-        floatingResultClass({&x, &y});
+        runtimeFloatingNumericResultClass({&x, &y});
     size_t outputElements = coefficientCount;
     if (call.requestedOutputCount > 1) {
         if (coefficientCount != 0 &&
@@ -1707,8 +1540,8 @@ BuiltinResult polyfitBuiltin(const BuiltinCall& call) {
     ComplexMatrix yValues(sampleCount, 1);
     double mean = 0.0;
     for (size_t index = 0; index < sampleCount; ++index) {
-        const auto xValue = numericElement(x, index);
-        const auto yValue = numericElement(y, index);
+        const auto xValue = runtimeDenseNumericElement(x, index);
+        const auto yValue = runtimeDenseNumericElement(y, index);
         if (!xValue || !yValue || xValue->imag() != 0.0) {
             return failure(call, "polyfit could not read an input element",
                            "MParser:InvalidPolyfitInput");
@@ -1774,7 +1607,7 @@ BuiltinResult polyfitBuiltin(const BuiltinCall& call) {
     for (size_t index = 0; index < coefficientCount; ++index) {
         coefficientValues.push_back(decomposition.solution(index, 0));
     }
-    auto coefficientValue = makeNumericValue(
+    auto coefficientValue = makeRuntimeDenseNumericValue(
         {1, coefficientCount}, coefficientValues, outputClass,
         y.numericComplex);
     if (!coefficientValue) {
@@ -1795,7 +1628,7 @@ BuiltinResult polyfitBuiltin(const BuiltinCall& call) {
             r(row, column) = decomposition.upperTriangular(row, column);
         }
     }
-    auto rValue = makeNumericValue(
+    auto rValue = makeRuntimeDenseNumericValue(
         {coefficientCount, coefficientCount}, r, outputClass,
         y.numericComplex);
     if (!rValue) {
@@ -1808,7 +1641,7 @@ BuiltinResult polyfitBuiltin(const BuiltinCall& call) {
                              sampleCount > coefficientCount
                                  ? sampleCount - coefficientCount
                                  : 0)));
-    auto normValue = makeNumericValue(
+    auto normValue = makeRuntimeDenseNumericValue(
         {1, 1}, {Complex(residualNorm, 0.0)}, outputClass);
     if (!normValue) {
         return failure(call, "polyfit could not construct normr",
@@ -1821,7 +1654,7 @@ BuiltinResult polyfitBuiltin(const BuiltinCall& call) {
                           {std::move(*coefficientValue),
                            std::move(stats)});
     }
-    auto mu = makeNumericValue(
+    auto mu = makeRuntimeDenseNumericValue(
         {1, 2},
         std::vector<Complex>{Complex(mean, 0.0),
                              Complex(scale, 0.0)},
@@ -1895,19 +1728,6 @@ BuiltinResult invokeRuntimeAdvancedNumericBuiltin(
     }
     return failure(call, "unknown advanced numeric builtin",
                    "MParser:UnknownBuiltin");
-}
-
-RuntimeNumericOperationResult runtimeApplyDenseMatrixDivision(
-    std::string_view operation, const RuntimeValue& left,
-    const RuntimeValue& right) {
-    if (operation == "\\") {
-        return solveMatrices(left, right, false);
-    }
-    if (operation == "/") {
-        return solveMatrices(left, right, true);
-    }
-    return operationFailure("unsupported dense matrix division operator: " +
-                            std::string(operation));
 }
 
 } // namespace mparser

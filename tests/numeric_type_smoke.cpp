@@ -5,8 +5,8 @@
 #include "mparser/embedding/machine_protocol.h"
 #include "mparser/execution/jit/optimization_plan.h"
 #include "mparser/frontend/parser.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/semantic/semantic.h"
 #include "mparser/execution/jit/typed_ir.h"
 

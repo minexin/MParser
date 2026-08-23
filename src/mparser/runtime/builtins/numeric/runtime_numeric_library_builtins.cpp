@@ -1,8 +1,8 @@
 #include "mparser/runtime/builtins/numeric/runtime_numeric_library_builtins.h"
 
-#include "mparser/runtime/core/runtime_execution_control.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/session/runtime_execution_control.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
 
 #include <algorithm>
 #include <bit>

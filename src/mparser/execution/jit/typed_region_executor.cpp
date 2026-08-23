@@ -1,8 +1,8 @@
 #include "mparser/execution/jit/typed_region_executor.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
 #include "mparser/execution/jit/native_scalar_jit.h"
-#include "mparser/runtime/core/runtime_range.h"
-#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_range.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/execution/jit/typed_scalar_kernel.h"
 
 #include <algorithm>

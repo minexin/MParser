@@ -224,7 +224,7 @@ add_library(mparser_core STATIC
     src/mparser/semantic/argument_contract.cpp
     src/mparser/runtime/builtins/builtin_registry.cpp
     src/mparser/runtime/builtins/numeric/runtime_advanced_numeric.cpp
-    src/mparser/execution/jit/runtime_native_numeric.cpp
+    src/mparser/runtime/core/value/runtime_native_numeric.cpp
     src/mparser/execution/bytecode/bytecode.cpp
     src/mparser/execution/bytecode/bytecode_dump.cpp
     src/mparser/execution/bytecode/bytecode_region.cpp
@@ -241,46 +241,48 @@ add_library(mparser_core STATIC
     src/mparser/execution/jit/optimization_plan.cpp
     src/mparser/frontend/parser.cpp
     src/mparser/runtime/builtins/array/runtime_array_ops.cpp
-    src/mparser/runtime/core/runtime_argument_validation.cpp
-    src/mparser/runtime/core/runtime_assignment.cpp
+    src/mparser/runtime/core/object_model/runtime_argument_validation.cpp
+    src/mparser/runtime/core/value/runtime_array.cpp
+    src/mparser/runtime/core/indexing/runtime_assignment.cpp
     src/mparser/execution/runtime_benchmark.cpp
-    src/mparser/runtime/core/runtime_call_frame.cpp
+    src/mparser/runtime/core/session/runtime_call_frame.cpp
     src/mparser/runtime/builtins/callback/runtime_callback_builtins.cpp
-    src/mparser/runtime/core/runtime_cell.cpp
+    src/mparser/runtime/core/value/runtime_cell.cpp
     src/mparser/runtime/builtins/array/runtime_collection_builtins.cpp
     src/mparser/runtime/builtins/conversion/runtime_conversion_builtins.cpp
-    src/mparser/runtime/core/runtime_exception.cpp
-    src/mparser/runtime/core/runtime_execution_control.cpp
+    src/mparser/runtime/core/value/runtime_dense_numeric.cpp
+    src/mparser/runtime/core/session/runtime_exception.cpp
+    src/mparser/runtime/core/session/runtime_execution_control.cpp
     src/mparser/runtime/io/runtime_file_io.cpp
     src/mparser/execution/runtime_fallback.cpp
-    src/mparser/runtime/core/runtime_warning.cpp
-    src/mparser/runtime/core/runtime_index.cpp
-    src/mparser/runtime/core/runtime_lvalue.cpp
+    src/mparser/runtime/core/session/runtime_warning.cpp
+    src/mparser/runtime/core/indexing/runtime_index.cpp
+    src/mparser/runtime/core/indexing/runtime_lvalue.cpp
     src/mparser/runtime/builtins/system/runtime_mat_builtins.cpp
     src/mparser/runtime/io/runtime_mat_file.cpp
     src/mparser/runtime/builtins/numeric/runtime_math.cpp
-    src/mparser/runtime/core/runtime_metadata.cpp
-    src/mparser/runtime/core/runtime_mixed_integer.cpp
-    src/mparser/runtime/core/runtime_numeric.cpp
+    src/mparser/runtime/core/object_model/runtime_metadata.cpp
+    src/mparser/runtime/core/value/runtime_mixed_integer.cpp
+    src/mparser/runtime/core/value/runtime_numeric.cpp
     src/mparser/runtime/builtins/numeric/runtime_numeric_library_builtins.cpp
-    src/mparser/runtime/core/runtime_object.cpp
-    src/mparser/runtime/core/runtime_output.cpp
-    src/mparser/runtime/core/runtime_range.cpp
+    src/mparser/runtime/core/object_model/runtime_object.cpp
+    src/mparser/runtime/core/session/runtime_output.cpp
+    src/mparser/runtime/core/value/runtime_range.cpp
     src/mparser/runtime/builtins/numeric/runtime_reduction.cpp
     src/mparser/runtime/builtins/numeric/runtime_scan.cpp
     src/mparser/runtime/builtins/array/runtime_set_builtins.cpp
-    src/mparser/runtime/core/runtime_session_state.cpp
-    src/mparser/runtime/core/runtime_shape.cpp
+    src/mparser/runtime/core/session/runtime_session_state.cpp
+    src/mparser/runtime/core/value/runtime_shape.cpp
     src/mparser/execution/runtime_source_evaluation.cpp
     src/mparser/execution/runtime_source_storage.cpp
-    src/mparser/runtime/core/runtime_struct.cpp
+    src/mparser/runtime/core/value/runtime_struct.cpp
     src/mparser/runtime/io/runtime_system.cpp
     src/mparser/runtime/builtins/system/runtime_system_builtins.cpp
-    src/mparser/runtime/core/runtime_text.cpp
+    src/mparser/runtime/core/value/runtime_text.cpp
     src/mparser/runtime/builtins/text/runtime_text_builtins.cpp
     src/mparser/runtime/builtins/text/runtime_text_query_builtins.cpp
-    src/mparser/runtime/core/runtime_value.cpp
-    src/mparser/runtime/core/runtime_value_ops.cpp
+    src/mparser/runtime/core/value/runtime_value.cpp
+    src/mparser/runtime/core/value/runtime_value_ops.cpp
     src/mparser/semantic/semantic.cpp
     src/mparser/semantic/semantic_dump.cpp
     src/mparser/frontend/source.cpp
@@ -642,6 +644,15 @@ add_test(NAME compatibility_matrix_smoke
         -DTEST_REGISTRY=${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_compatibility_matrix.cmake)
+
+add_test(NAME source_layout_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_source_layout.cmake)
+set_tests_properties(source_layout_smoke PROPERTIES
+    LABELS "documentation"
+    PASS_REGULAR_EXPRESSION
+        "MParser source layout validated: [0-9]+ runtime pairs, four owners, two facades, and no core-to-builtin dependency")
 
 add_test(NAME project_license_smoke
     COMMAND ${CMAKE_COMMAND}

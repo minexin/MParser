@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mparser/execution/bytecode/bytecode_region.h"
-#include "mparser/runtime/core/runtime_value.h"
+#include "mparser/runtime/core/value/runtime_value.h"
 
 #include <cstddef>
 #include <map>

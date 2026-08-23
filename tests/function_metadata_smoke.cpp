@@ -1,6 +1,6 @@
 #include "mparser/embedding/compiled_module.h"
-#include "mparser/runtime/core/runtime_metadata.h"
-#include "mparser/runtime/core/runtime_text.h"
+#include "mparser/runtime/core/object_model/runtime_metadata.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 
 #include <cmath>
 #include <iostream>

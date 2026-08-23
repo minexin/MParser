@@ -1,8 +1,8 @@
 #include "mparser/embedding/compiled_module.h"
 #include "mparser/execution/jit/native_scalar_jit.h"
-#include "mparser/runtime/core/runtime_struct.h"
-#include "mparser/runtime/core/runtime_text.h"
-#include "mparser/runtime/core/runtime_value.h"
+#include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_value.h"
 
 #include <cmath>
 #include <iostream>

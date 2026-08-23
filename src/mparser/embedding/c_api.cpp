@@ -3,12 +3,12 @@
 #include "mparser/embedding/c_api_test_hooks.h"
 #include "mparser/embedding/compiled_module.h"
 #include "mparser/runtime/io/filesystem_utf8.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_session_state.h"
-#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/session/runtime_session_state.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/io/runtime_system.h"
-#include "mparser/runtime/core/runtime_text.h"
-#include "mparser/runtime/core/runtime_value.h"
+#include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/frontend/source_loader.h"
 
 #include <algorithm>

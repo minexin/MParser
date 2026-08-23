@@ -1,8 +1,8 @@
 #pragma once
 
 #include "mparser/execution/runtime_source_evaluation.h"
-#include "mparser/runtime/core/runtime_call_frame.h"
-#include "mparser/runtime/core/runtime_session_state.h"
+#include "mparser/runtime/core/session/runtime_call_frame.h"
+#include "mparser/runtime/core/session/runtime_session_state.h"
 
 #include <optional>
 #include <string_view>

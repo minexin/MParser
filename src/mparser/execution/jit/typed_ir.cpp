@@ -1,6 +1,6 @@
 #include "mparser/execution/jit/typed_ir.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_shape.h"
 
 #include <optional>
 #include <string>

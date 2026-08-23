@@ -5,7 +5,7 @@
 #include "mparser/frontend/lexer.h"
 #include "mparser/frontend/parser.h"
 #include "mparser/execution/runtime_fallback.h"
-#include "mparser/runtime/core/runtime_value.h"
+#include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/semantic/semantic.h"
 #include "mparser/execution/jit/typed_ir.h"
 #include "mparser/execution/jit/typed_region_executor.h"

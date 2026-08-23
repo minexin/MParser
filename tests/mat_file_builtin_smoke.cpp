@@ -3,8 +3,8 @@
 #include "mparser/execution/interpreter.h"
 #include "mparser/frontend/lexer.h"
 #include "mparser/frontend/parser.h"
-#include "mparser/runtime/core/runtime_numeric.h"
-#include "mparser/runtime/core/runtime_session_state.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/runtime/io/runtime_system.h"
 #include "mparser/semantic/semantic.h"
 
