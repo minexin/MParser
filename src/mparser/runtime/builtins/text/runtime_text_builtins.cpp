@@ -1,4 +1,4 @@
-#include "mparser/runtime/builtins/runtime_text_builtins.h"
+#include "mparser/runtime/builtins/text/runtime_text_builtins.h"
 
 #include "mparser/runtime/core/runtime_numeric.h"
 #include "mparser/runtime/core/runtime_output.h"

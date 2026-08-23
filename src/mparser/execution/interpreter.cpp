@@ -3,7 +3,7 @@
 #include "mparser/runtime/builtins/builtin_registry.h"
 #include "mparser/semantic/function_signature.h"
 #include "mparser/runtime/core/runtime_call_frame.h"
-#include "mparser/runtime/builtins/runtime_array_ops.h"
+#include "mparser/runtime/builtins/array/runtime_array_ops.h"
 #include "mparser/runtime/core/runtime_argument_validation.h"
 #include "mparser/runtime/core/runtime_assignment.h"
 #include "mparser/runtime/core/runtime_cell.h"

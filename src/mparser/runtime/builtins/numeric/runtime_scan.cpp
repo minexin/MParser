@@ -1,4 +1,4 @@
-#include "mparser/runtime/builtins/runtime_scan.h"
+#include "mparser/runtime/builtins/numeric/runtime_scan.h"
 
 #include "mparser/runtime/core/runtime_numeric.h"
 #include "mparser/runtime/core/runtime_shape.h"

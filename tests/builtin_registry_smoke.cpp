@@ -2,7 +2,7 @@
 
 #include "mparser/execution/jit/native_scalar_jit.h"
 #include "mparser/execution/jit/optimization_plan.h"
-#include "mparser/runtime/builtins/runtime_math.h"
+#include "mparser/runtime/builtins/numeric/runtime_math.h"
 #include "mparser/execution/jit/typed_ir.h"
 
 #include <algorithm>

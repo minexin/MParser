@@ -1,4 +1,4 @@
-#include "mparser/runtime/builtins/runtime_array_ops.h"
+#include "mparser/runtime/builtins/array/runtime_array_ops.h"
 
 #include "mparser/runtime/core/runtime_numeric.h"
 #include "mparser/runtime/core/runtime_object.h"

@@ -1,6 +1,6 @@
 #include "mparser/runtime/core/runtime_argument_validation.h"
 
-#include "mparser/runtime/builtins/runtime_array_ops.h"
+#include "mparser/runtime/builtins/array/runtime_array_ops.h"
 #include "mparser/runtime/core/runtime_numeric.h"
 #include "mparser/runtime/core/runtime_shape.h"
 #include "mparser/runtime/core/runtime_text.h"
