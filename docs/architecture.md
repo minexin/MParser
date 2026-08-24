@@ -1462,8 +1462,9 @@ families; its historical development snapshot contains 275 descriptors and
 277 registered names. Active contract 1.11 kept that catalog size and added the
 declarative `sum` reduction identity. Active contract 1.12 kept the catalog
 size and added declarative `prod` and `mean` reduction identities. Active
-contract 1.13 adds the shared datetime/duration family and has 291 descriptors
-and 293 registered names. Dense-region analysis may
+contract 1.13 adds the shared datetime/duration family and contract 1.14
+adds the repository-owned CSC sparse family; the active catalog has 299
+descriptors and 301 registered names. Dense-region analysis may
 consume them only through
 the same descriptor purity, shadowing, arity, shape, numeric-class, and
 resource guards used by the VM fallback boundary. A generator-backed

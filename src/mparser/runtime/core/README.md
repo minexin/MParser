@@ -6,7 +6,7 @@ independent of builtin registration and engine-specific execution policy.
 
 | Directory | Ownership |
 | --- | --- |
-| `value` | `RuntimeValue`, shapes, numeric classes and dense algorithms, text, Cell/Struct containers, datetime/duration value objects, ranges, and generic array reshape |
+| `value` | `RuntimeValue`, shapes, dense and CSC sparse numeric storage/algorithms, text, Cell/Struct containers, datetime/duration value objects, ranges, and generic array reshape |
 | `indexing` | Index normalization, indexed mutation, deletion, and lvalue copyback |
 | `object_model` | Object-array behavior, metadata/reflection values, and argument/property validation |
 | `session` | Call frames, session state, execution limits, exceptions, warnings, output events, and formatting |

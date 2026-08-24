@@ -2,6 +2,7 @@
 
 #include "mparser/runtime/core/value/runtime_dense_numeric.h"
 #include "mparser/runtime/core/value/runtime_mixed_integer.h"
+#include "mparser/runtime/core/value/runtime_sparse.h"
 
 #include "mparser/runtime/core/value/runtime_shape.h"
 
@@ -420,7 +421,8 @@ std::optional<RuntimeNumericElementValue> convertNumericElement(
 bool isRuntimeNumericValue(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Number ||
            value.kind == RuntimeValueKind::Vector ||
-           value.kind == RuntimeValueKind::Matrix;
+           value.kind == RuntimeValueKind::Matrix ||
+           isRuntimeSparseValue(value);
 }
 
 bool isRuntimeLogical(const RuntimeValue& value) {
@@ -591,6 +593,9 @@ std::optional<RuntimeNumericElementValue> runtimeNumericElementValue(
     if (!isRuntimeNumericValue(value)) {
         return std::nullopt;
     }
+    if (isRuntimeSparseValue(value)) {
+        return runtimeSparseElementValue(value, logicalIndex);
+    }
     if (value.kind == RuntimeValueKind::Number) {
         return logicalIndex == 0
                    ? runtimeNumericStorageElementValue(value, 0)
@@ -639,6 +644,9 @@ std::optional<RuntimeNumericElementValue> runtimeNumericStorageElementValue(
     const RuntimeValue& value, size_t storageOffset) {
     if (!isRuntimeNumericValue(value)) {
         return std::nullopt;
+    }
+    if (isRuntimeSparseValue(value)) {
+        return runtimeSparseStorageElementValue(value, storageOffset);
     }
 
     double real = 0.0;
@@ -701,6 +709,9 @@ bool runtimeStoreNumericElementValue(
     const RuntimeNumericElementValue& value) {
     if (!isRuntimeNumericValue(target)) {
         return false;
+    }
+    if (isRuntimeSparseValue(target)) {
+        return runtimeStoreSparseElementValue(target, logicalIndex, value);
     }
     const auto converted =
         convertNumericElement(value, target.numericClass);
@@ -910,6 +921,13 @@ std::optional<RuntimeValue> runtimeConvertNumericClass(
         return std::nullopt;
     }
 
+    if (isRuntimeSparseValue(value)) {
+        const auto converted = runtimeSparseConvertClass(value, numericClass);
+        return converted.succeeded
+                   ? std::optional<RuntimeValue>(std::move(converted.value))
+                   : std::nullopt;
+    }
+
     if (value.numericClass == numericClass) {
         return value;
     }
@@ -1091,7 +1109,8 @@ namespace {
 
 bool isRuntimeNumericArray(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Vector ||
-           value.kind == RuntimeValueKind::Matrix;
+           value.kind == RuntimeValueKind::Matrix ||
+           isRuntimeSparseValue(value);
 }
 
 bool isRelationalOperation(std::string_view operation) {
@@ -1911,6 +1930,12 @@ RuntimeNumericOperationResult runtimeApplyNumericUnary(
         return numericOperationFailure(
             "unsupported unary operator: " + std::string(operation));
     }
+    if (isRuntimeSparseValue(value) && operation != "~") {
+        const auto sparse = runtimeSparseUnary(operation, value);
+        return sparse.succeeded
+                   ? numericOperationSuccess(std::move(sparse.value))
+                   : numericOperationFailure(std::move(sparse.error));
+    }
     if (value.numericComplex && operation == "~") {
         return numericOperationFailure(
             "logical operators require real numeric operands");
@@ -2107,6 +2132,12 @@ RuntimeNumericOperationResult runtimeTransposeNumeric(
     if (!isRuntimeNumericValue(value)) {
         return numericOperationFailure(
             "transpose requires numeric input");
+    }
+    if (isRuntimeSparseValue(value)) {
+        const auto sparse = runtimeSparseTranspose(value, conjugate);
+        return sparse.succeeded
+                   ? numericOperationSuccess(std::move(sparse.value))
+                   : numericOperationFailure(std::move(sparse.error));
     }
     const auto dimensions = runtimeDimensions(value);
     if (dimensions.size() != 2) {

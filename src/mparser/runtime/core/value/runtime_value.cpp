@@ -4,6 +4,7 @@
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/value/runtime_sparse.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_text.h"
@@ -183,6 +184,34 @@ private:
         if (value.className.empty()) {
             return fail(path, "object class name is empty");
         }
+        if (value.className == kRuntimeSparseClassName) {
+            if (!isRuntimeSparseValue(value)) {
+                return fail(path, "sparse value has no CSC storage");
+            }
+            if (value.handleObject || value.number != 0.0 ||
+                !value.text.empty() || !value.elements.empty() ||
+                !value.imaginaryElements.empty() ||
+                !value.exactIntegerElements.empty() ||
+                !value.exactIntegerImaginaryElements.empty() ||
+                !value.characterElements.empty() ||
+                !value.stringElements.empty() || !value.cells.empty() ||
+                !value.fields.empty() || !value.structElements.empty() ||
+                !value.objectElements.empty() || !value.fieldOrder.empty() ||
+                value.sharedFields || value.functionHandle) {
+                return fail(path,
+                            "sparse value uses incompatible object storage");
+            }
+            const RuntimeSparseStorage* storage =
+                runtimeSparseStorage(value);
+            if (!storage || storage->numericClass != value.numericClass ||
+                storage->complex != value.numericComplex ||
+                storage->rows != value.rows || storage->columns != value.columns) {
+                return fail(path, "sparse metadata does not match CSC storage");
+            }
+            std::string sparseError;
+            return validateRuntimeSparseStorage(value, sparseError) ||
+                   fail(path, std::move(sparseError));
+        }
         const bool temporal = isRuntimeTemporalValue(value);
         if (temporal &&
             (value.handleObject || value.sharedFields || !value.fields.empty() ||
@@ -318,6 +347,10 @@ private:
         size_t count = 0;
         if (!validateShape(value, path, count)) {
             return false;
+        }
+        if (value.sparseStorage && !isRuntimeSparseValue(value)) {
+            return fail(path,
+                        "non-sparse value carries CSC sparse storage");
         }
 
         switch (value.kind) {
@@ -501,6 +534,20 @@ private:
             }
             return true;
         case RuntimeValueKind::Object:
+            if (isRuntimeSparseValue(value)) {
+                const void* identity = value.sparseStorage.get();
+                if (!visitedSparseStorages_.insert(identity).second) {
+                    return true;
+                }
+                const auto& storage = *value.sparseStorage;
+                return addElements(storage.columnPointers.size(),
+                                   sizeof(size_t)) &&
+                       addElements(storage.rowIndices.size(),
+                                   sizeof(size_t)) &&
+                       addElements(storage.values.size(), sizeof(double)) &&
+                       addElements(storage.imaginaryValues.size(),
+                                   sizeof(double));
+            }
             if (!value.objectElements.empty()) {
                 for (const auto& element : value.objectElements) {
                     if (!countValue(element)) {
@@ -521,6 +568,7 @@ private:
     size_t bytes_ = 0;
     std::set<const void*> visitedFunctionHandles_;
     std::set<const void*> visitedSharedFields_;
+    std::set<const void*> visitedSparseStorages_;
 };
 
 } // namespace
@@ -1104,6 +1152,11 @@ std::string runtimeValueToString(const RuntimeValue& value) {
                     ? std::string("<missing>")
                     : runtimeValueToString(value.cells.front()));
     case RuntimeValueKind::Object:
+        if (isRuntimeSparseValue(value)) {
+            output << "<sparse " << value.rows << "x" << value.columns
+                   << " nnz=" << value.sparseStorage->values.size() << ">";
+            return output.str();
+        }
         if (isRuntimeTemporalValue(value)) {
             if (runtimeShapeElementCount(value) == 1) {
                 const auto formatted = runtimeTemporalFormat(value, false);

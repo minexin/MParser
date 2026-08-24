@@ -446,11 +446,13 @@ the VM/portable semantic path; no Typed/JIT lowering is claimed, and the
 machine protocol continues to expose ordinary objects as opaque values.
 
 The next batches close the remaining class and ownership boundaries that fit
-the existing contracts, then select sparse numeric storage, categorical, or
-table/timetable from measured differential workloads. Debugger stack/local
-inspection remains an additive, separately gated public contract. The current
-external suite still records `table`, `sparse`, and graphics as open, and a
-fresh rerun is required before any imported capability is marked closed.
+the existing contracts. The sparse numeric first batch is recorded in
+[v1.6.md](v1.6.md); categorical and table/timetable remain measured,
+separately gated candidates. Debugger stack/local inspection remains an
+additive, separately gated public contract. The current external suite still
+records `table` and graphics as open, while the sparse and temporal local
+implementations await a fresh differential rerun before any imported
+capability is marked closed.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 

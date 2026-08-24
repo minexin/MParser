@@ -1,6 +1,7 @@
 #include "mparser/runtime/core/indexing/runtime_index.h"
 
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_sparse.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 
 #include <algorithm>
@@ -229,6 +230,12 @@ RuntimeIndexOperationResult runtimeIndexNumeric(
         target.numericClass);
     if (!result) {
         return operationFailure("indexed result has an invalid shape");
+    }
+    if (isRuntimeSparseValue(target)) {
+        const auto sparse = runtimeSparseFromNumeric(*result);
+        return sparse.succeeded
+                   ? operationSuccess(std::move(sparse.value))
+                   : operationFailure(std::move(sparse.error));
     }
     return operationSuccess(*result);
 }

@@ -32,7 +32,7 @@ unreleased development interfaces.
 | C ABI | generation 2, revision 1; archived v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.3 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
-| Builtin source contract | 1.13 | Registry/descriptor/call semantics compiled with the engine |
+| Builtin source contract | 1.14 | Registry/descriptor/call semantics compiled with the engine |
 
 ## CLI 1.0
 
@@ -94,7 +94,7 @@ Consumers check the protocol major and tolerate documented additive minor
 fields. A change that removes a required field or changes its meaning requires
 a protocol-major change.
 
-## Builtin Source Contract 1.13
+## Builtin Source Contract 1.14
 
 `BuiltinRegistry`, `BuiltinDescriptor`, `BuiltinCall`, and `BuiltinResult`
 form a source-integration contract for builtins compiled with the engine. They
@@ -115,11 +115,14 @@ conversion, set, and text-query metadata. The v1.3 contract 1.10 catalog has
 `mean` Typed reduction identities used by guarded Dense regions. Active contract
 1.13 adds the shared native C++ datetime/duration family: explicit civil-date
 and H/M/S construction, `NaT` arrays, component and unit operations, temporal
-predicates, ISO formatting, and VM/interpreter arithmetic. The active catalog
-contains 291 descriptors and 293 registered names. Temporal values remain
-VM/portable values with no Typed/JIT lowering in this batch; timezone databases,
-calendar-month arithmetic, and table/sparse/graphics domains remain outside
-this contract.
+predicates, ISO formatting, and VM/interpreter arithmetic. Contract 1.14 adds
+the native C++ CSC sparse family (`sparse`, `spalloc`, `speye`, `spones`,
+`full`, `nonzeros`, `nnz`, and `issparse`) with shared RuntimeValue access and
+opaque embedding transport. The active catalog contains 299 descriptors and
+301 registered names. Temporal and sparse values remain VM/portable values
+with no Typed/JIT lowering in this batch; timezone databases,
+calendar-month arithmetic, sparse MAT persistence, tables, and graphics remain
+outside this contract.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry

@@ -15,8 +15,7 @@ bool isNumber(const RuntimeValue& value) {
 }
 
 bool isNumeric(const RuntimeValue& value) {
-    return isNumber(value) || value.kind == RuntimeValueKind::Vector ||
-           value.kind == RuntimeValueKind::Matrix;
+    return isRuntimeNumericValue(value);
 }
 
 bool isMissingArray(const RuntimeValue& value) {

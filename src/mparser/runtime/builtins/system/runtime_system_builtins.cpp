@@ -5,6 +5,7 @@
 #include "mparser/runtime/io/runtime_file_io.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_sparse.h"
 #include "mparser/runtime/core/session/runtime_output.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
@@ -232,7 +233,8 @@ RuntimeValue workspaceDetailsValue(
             {"class", makeRuntimeCharacterVectorUtf8(
                           runtimeValueClassName(value))},
             {"global", makeRuntimeLogicalValue(false)},
-            {"sparse", makeRuntimeLogicalValue(false)},
+            {"sparse", makeRuntimeLogicalValue(
+                           isRuntimeSparseValue(value))},
             {"complex", makeRuntimeLogicalValue(value.numericComplex)},
             {"nesting", makeRuntimeStructValue()},
             {"persistent", makeRuntimeLogicalValue(false)},

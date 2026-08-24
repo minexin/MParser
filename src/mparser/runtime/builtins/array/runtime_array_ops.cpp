@@ -25,7 +25,7 @@ bool isNumericArray(const RuntimeValue& value) {
 }
 
 bool isNumeric(const RuntimeValue& value) {
-    return isNumber(value) || isNumericArray(value);
+    return isRuntimeNumericValue(value);
 }
 
 bool isCell(const RuntimeValue& value) {

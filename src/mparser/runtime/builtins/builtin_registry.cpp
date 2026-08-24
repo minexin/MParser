@@ -6,6 +6,7 @@
 #include "mparser/runtime/builtins/callback/runtime_callback_builtins.h"
 #include "mparser/runtime/builtins/conversion/runtime_conversion_builtins.h"
 #include "mparser/runtime/builtins/datetime/runtime_datetime_builtins.h"
+#include "mparser/runtime/builtins/sparse/runtime_sparse_builtins.h"
 #include "mparser/runtime/builtins/numeric/runtime_advanced_numeric.h"
 #include "mparser/runtime/builtins/numeric/runtime_math.h"
 #include "mparser/runtime/builtins/numeric/runtime_numeric_library_builtins.h"
@@ -136,6 +137,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "fseek",
     "ftell",
     "fwrite",
+    "full",
     "fullfile",
     "func2str",
     "functions",
@@ -183,6 +185,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "isnat",
     "isreal",
     "isrow",
+    "issparse",
     "isscalar",
     "isequal",
     "isequaln",
@@ -226,11 +229,13 @@ constexpr std::string_view kBuiltinNames[] = {
     "nargout",
     "ndims",
     "nextpow2",
+    "nnz",
     "notify",
     "norm",
     "num2str",
     "num2cell",
     "numel",
+    "nonzeros",
     "ones",
     "path",
     "pathsep",
@@ -270,6 +275,10 @@ constexpr std::string_view kBuiltinNames[] = {
     "sinh",
     "size",
     "sort",
+    "spalloc",
+    "speye",
+    "spones",
+    "sparse",
     "days",
     "hours",
     "minutes",
@@ -1886,6 +1895,48 @@ BuiltinDescriptor temporalDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor sparseDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "sparse") {
+        descriptor.inputs = BuiltinArity::range(1, 6);
+    } else if (name == "spalloc") {
+        descriptor.inputs = BuiltinArity::fixed(3);
+    } else if (name == "speye") {
+        descriptor.inputs = BuiltinArity::range(1, 2);
+    } else {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    }
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints.assign(
+        descriptor.inputs.maximum.value_or(descriptor.inputs.minimum),
+        BuiltinArgumentConstraint{
+            name == "issparse" ? BuiltinValueConstraint::Any
+                               : BuiltinValueConstraint::Numeric,
+                                  BuiltinShapeConstraint::Any});
+    if (name == "nnz" || name == "issparse") {
+        descriptor.outputConstraints = {{BuiltinValueConstraint::Numeric,
+                                         BuiltinShapeConstraint::Scalar}};
+    } else if (name == "full" || name == "nonzeros") {
+        descriptor.outputConstraints = {{BuiltinValueConstraint::Numeric,
+                                         BuiltinShapeConstraint::Any}};
+    } else {
+        descriptor.outputConstraints = {{BuiltinValueConstraint::Any,
+                                         BuiltinShapeConstraint::Any}};
+    }
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidSparseCall";
+    descriptor.summary =
+        "Native C++ CSC sparse construction, inspection, and dense fallback.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeSparseBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isRuntimeSystemBuiltin(name)) {
         return systemDescriptor(name);
@@ -1913,6 +1964,9 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isRuntimeDateTimeBuiltin(name)) {
         return temporalDescriptor(name);
+    }
+    if (isRuntimeSparseBuiltin(name)) {
+        return sparseDescriptor(name);
     }
     if (isRuntimeNumericLibraryBuiltin(name)) {
         return numericLibraryDescriptor(name);
@@ -1998,9 +2052,7 @@ Diagnostic contractDiagnostic(SourceSpan span, std::string message) {
 }
 
 bool isNumeric(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::Number ||
-           value.kind == RuntimeValueKind::Vector ||
-           value.kind == RuntimeValueKind::Matrix;
+    return isRuntimeNumericValue(value);
 }
 
 bool isText(const RuntimeValue& value) {

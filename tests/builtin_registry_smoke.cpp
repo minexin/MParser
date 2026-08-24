@@ -186,11 +186,11 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 13,
+                mparser::kBuiltinSourceContractMinor == 14,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 291,
+    require(registry->descriptors().size() == 299,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 293,
+    require(registry->names().size() == 301,
             "default builtin name catalog changed unexpectedly");
 
     for (std::string_view name : {"eval", "evalc", "evalin"}) {

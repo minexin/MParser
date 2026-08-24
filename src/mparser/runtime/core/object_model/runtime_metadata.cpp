@@ -1,6 +1,7 @@
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_sparse.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 
 #include <algorithm>
@@ -452,6 +453,9 @@ bool runtimeMetadataIsa(const RuntimeValue& value,
 }
 
 std::string runtimeValueClassName(const RuntimeValue& value) {
+    if (isRuntimeSparseValue(value)) {
+        return std::string(runtimeNumericClassName(value.numericClass));
+    }
     switch (value.kind) {
     case RuntimeValueKind::Missing:
     case RuntimeValueKind::MissingArray:

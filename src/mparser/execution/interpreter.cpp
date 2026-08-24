@@ -127,7 +127,7 @@ const std::map<std::string, RuntimeValue>& objectFields(
 }
 
 bool isNumeric(const RuntimeValue& value) {
-    return isNumber(value) || isVector(value) || isMatrix(value);
+    return isRuntimeNumericValue(value);
 }
 
 std::string trimAscii(std::string_view text) {

@@ -5,6 +5,7 @@
 #include "mparser/runtime/io/filesystem_utf8.h"
 #include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_sparse.h"
 #include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/io/runtime_system.h"
@@ -584,6 +585,11 @@ bool runtimeValueRequiresModule(
         }
         return false;
     case mparser::RuntimeValueKind::Object:
+        if (mparser::isRuntimeSparseValue(value)) {
+            // CSC storage is immutable/value-owned and does not retain a
+            // module graph; the C API intentionally keeps it opaque.
+            return false;
+        }
         if (mparser::isRuntimeTemporalValue(value)) {
             // datetime and duration are immutable value objects. They do not
             // retain a module graph and can cross a C API module boundary.

@@ -183,11 +183,11 @@ capabilities, not a claim of complete MATLAB system or file I/O.
 The latest 2026-08-23 MATLAB R2024b differential rerun records 219 matches and
 4 gaps across its 223 accepted cases. It closes MAT-file save/load after the
 preceding 218-match class/reflection/event run, with no prior match regressing.
-The remaining imported differential gaps are `table`, `sparse`, and graphics;
-the active tree also contains a datetime/duration implementation whose MATLAB
-differential case is pending rerun. Local v1.5 evidence covers the temporal
-runtime and embedding boundary, but it is not counted as an external match
-until that rerun completes.
+The remaining imported differential gaps are `table` and graphics. The
+datetime and sparse cases were also rerun individually against the native
+production CLI on 2026-08-24 and passed; the full 223-case report has not been
+regenerated, so the suite-wide 219-match count remains the last published
+aggregate rather than being silently changed by two targeted results.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT v4/v7.3, strict v6/append/ASCII MAT modes,
 filesystem recycle integration and broader platform-specific attributes,
@@ -207,6 +207,7 @@ regexp/Unicode behavior remain open. The product and public SDK report
 | Functions | Local/cross-file and nested lexical calls, argument contracts, `nargin`/`nargout`, multiple outputs, and supported handles | `FUN-001`, `HANDLE-001` |
 | Source graph | Search paths, packages, private functions, and class folders | `SRC-001` |
 | Numeric/logical arrays | Dense core numeric classes and complex double/single through N-D shape/index rules, logical/colon/`end` indexing, growth, and deletion within recorded limits | `ARR-001`, `ARR-002` |
+| Sparse numeric arrays | Partial two-dimensional CSC values with construction, inspection, transpose, common indexing, and dense conversion; VM/portable fallback only | `BUILTIN-001` |
 | Text | Distinct UTF-16 character and string arrays with shared conversion/formatting rules | `TEXT-001` |
 | Missing values | First-class scalar and N-D `missing` arrays with shape-preserving transforms, indexing/mutation, floating/string promotion, and same-shape `ismissing` masks | `MISSING-001` |
 | Date/time values | Native C++ `datetime`, `duration`, and shaped `NaT` values with civil components, unit conversion, formatting, arithmetic, comparisons, dual-engine parity, and ownerless C API transport | `BUILTIN-001`, `BUILTIN-002` |
@@ -244,7 +245,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.3 over ABI generation 2 revision 1 with 117 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, and caller-sized roots; v1.2 revision 0 remains archived |
 | C++ API | Header-only C++20 source API 1.3 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | active source contract 1.13 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, guarded `sum`/`prod`/`mean` Typed lowering, and the VM/portable datetime/duration family; v1.2 contract 1.1 remains archived |
+| Builtin extension | active source contract 1.14 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, guarded `sum`/`prod`/`mean` Typed lowering, VM/portable datetime/duration values, and the CSC sparse family; v1.2 contract 1.1 remains archived |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
@@ -294,7 +295,7 @@ contract.
 - complete MATLAB language or behavioral compatibility;
 - complete MATLAB builtin and toolbox catalogs;
 - Live Scripts, P-code, MEX, Simulink, graphics, and MATLAB desktop features;
-- sparse and complex-integer numeric arrays;
+- complex-integer numeric arrays;
 - GPU arrays, tables, timetables, and unlisted domain value types;
 - true parallel `parfor`;
 - arbitrary MATLAB metaclass, Java, or .NET behavior;
@@ -315,6 +316,6 @@ version drift.
 
 The v1.0 and v1.2 snapshots remain immutable historical evidence. The current
 v1.3 candidate freezes C source API 1.3, ABI generation 2 revision 1, C++
-source API 1.3, protocol 1.1, and builtin source contract 1.13 in
+source API 1.3, protocol 1.1, and builtin source contract 1.14 in
 [public-contract-v1.3.json](public-contract-v1.3.json). See
 [v1.x Roadmap](roadmap-v1.x.md).

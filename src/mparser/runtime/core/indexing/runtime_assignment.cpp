@@ -22,7 +22,7 @@ bool isArray(const RuntimeValue& value) {
 }
 
 bool isNumeric(const RuntimeValue& value) {
-    return isNumber(value) || isArray(value);
+    return isRuntimeNumericValue(value);
 }
 
 RuntimeNumericAssignmentResult failure(std::string message) {

@@ -16,6 +16,7 @@
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_range.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_sparse.h"
 #include "mparser/execution/runtime_source_evaluation.h"
 #include "mparser/execution/runtime_source_storage.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
@@ -345,7 +346,7 @@ bool isArray(const RuntimeValue& value) {
 }
 
 bool isNumeric(const RuntimeValue& value) {
-    return isNumber(value) || isArray(value);
+    return isRuntimeNumericValue(value);
 }
 
 size_t rowCount(const RuntimeValue& value) {
@@ -10453,6 +10454,18 @@ private:
             return;
         }
 
+        // Sparse values use the object kind to keep their CSC storage opaque,
+        // but their operators follow the numeric path and may densify.
+        if (isRuntimeSparseValue(*left) || isRuntimeSparseValue(*right)) {
+            if (!isNumeric(*left) || !isNumeric(*right)) {
+                addDiagnostic(instruction,
+                              "bytecode sparse operators require numeric values");
+                return;
+            }
+            pushRuntime(applyNumericBinary(instruction, *left, *right));
+            return;
+        }
+
         if (isObject(*left) || isObject(*right)) {
             const bool classMetadataOperands =
                 isRuntimeMetadataScalar(*left) &&
@@ -14876,17 +14889,17 @@ private:
                 canonicalRuntimeMetadataClassName(
                     *runtimeTextScalarUtf8(arguments[1]));
             bool matches = false;
-            if (isRuntimeMetadataObject(value)) {
-                matches = runtimeMetadataIsa(value, target);
-            } else if (isObject(value)) {
-                matches =
-                    reflectableClassDerivesFrom(value.className, target);
-            } else if (isNumeric(value)) {
+            if (isNumeric(value)) {
                 matches = target ==
                               runtimeNumericClassName(value.numericClass) ||
                           (target == "numeric" &&
                            value.numericClass !=
                                RuntimeNumericClass::Logical);
+            } else if (isRuntimeMetadataObject(value)) {
+                matches = runtimeMetadataIsa(value, target);
+            } else if (isObject(value)) {
+                matches =
+                    reflectableClassDerivesFrom(value.className, target);
             } else if (isRuntimeCharacterArray(value)) {
                 matches = target == "char";
             } else if (isRuntimeStringArray(value)) {

@@ -12,6 +12,7 @@ primary MATLAB-like responsibility:
 | `conversion` | Conversions that cross numeric, text, Cell, or array families |
 | `callback` | Higher-order functions that invoke user or builtin callables |
 | `datetime` | Immutable datetime, duration, NaT, component, unit, and temporal predicates |
+| `sparse` | CSC sparse construction, inspection, pattern operations, and dense conversion |
 | `system` | Workspace/context, filesystem/process, and MAT-file operations |
 
 Keep descriptor registration in `builtin_registry.cpp` and executable behavior

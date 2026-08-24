@@ -13,7 +13,7 @@ remain under `include/mparser`; paths in this tree are not public API or ABI.
 | `execution/bytecode/vm` | Bytecode dispatch, call frames, adaptive execution, and VM-specific runtime integration |
 | `execution/jit` | Typed IR, optimization planning, portable kernels, and native lowering |
 | `runtime/core` | Stable internal runtime facades and ownership rules |
-| `runtime/core/value` | Runtime values, shapes, text, containers, numeric storage, and repository-owned dense numeric algorithms |
+| `runtime/core/value` | Runtime values, shapes, text, containers, dense/CSC sparse numeric storage, and repository-owned numeric algorithms |
 | `runtime/core/indexing` | Index planning, indexed assignment, and lvalue copyback |
 | `runtime/core/object_model` | Object arrays, metadata, and argument/property validation |
 | `runtime/core/session` | Call frames, session state, execution control, diagnostics, warnings, and output formatting |
@@ -24,6 +24,7 @@ remain under `include/mparser`; paths in this tree are not public API or ABI.
 | `runtime/builtins/conversion` | Cross-family value and text conversion builtins |
 | `runtime/builtins/callback` | Higher-order callback builtins such as `arrayfun` |
 | `runtime/builtins/datetime` | Native C++ datetime, duration, NaT, component, and temporal-unit builtins |
+| `runtime/builtins/sparse` | CSC sparse construction, inspection, pattern operations, and dense conversion |
 | `runtime/builtins/system` | Context, filesystem, process, and MAT-file builtins |
 | `runtime/io` | Filesystem, file, MAT-file, and operating-system integration |
 | `embedding` | Compiled modules, C ABI implementation, machine protocol, and module execution |
@@ -39,3 +40,19 @@ example `mparser/runtime/core/value/runtime_value.h`; do not depend on
 relative `../` paths. Core must not include builtin-family headers. Detailed
 runtime and builtin dependency rules are documented in `runtime/core/README.md`
 and `runtime/builtins/README.md`.
+
+## Incremental Decomposition
+
+Directory ownership is the primary organization rule; files should not be
+moved only because a line-count threshold was crossed. When a large
+translation unit has a stable responsibility boundary, split it by behavior
+while keeping its public facade and include path stable. The preferred order
+is system builtin services, C API implementation sections, builtin registry
+catalog helpers, and then VM helper groups. The VM dispatch loop and the
+registry entry point should remain easy to locate rather than being scattered
+across generic `common` or `utils` directories.
+
+Every physical split must update the CMake source list, this ownership map,
+the source-layout validator, and the focused plus full regression suites in
+the same change. Runtime semantics, builtin registration, and public SDK
+headers must not be duplicated as a side effect of source organization.
