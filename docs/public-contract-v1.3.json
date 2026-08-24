@@ -113,7 +113,7 @@
   },
   "versioning_and_deprecation": {
     "path": "docs/versioning-and-deprecation.md",
-    "sha256_lf": "481a9b6542548badf252843d1f71897b6b0add9728038e998f71fd6703442434"
+    "sha256_lf": "e3cbf04aa3e1cc305e11924ea3f61abe5b5020c570a24608b46e3f0306ae47ff"
   },
   "cmake_package": {
     "config_template": {

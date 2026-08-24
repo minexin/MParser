@@ -125,14 +125,14 @@ shaped missing arrays and row-structured multidimensional cell literals, so
 forms such as `[missing missing]` and `{'a'; 'b'}` use ordinary array/cell
 construction rather than scalar-only exceptions. Large domain families require
 separate storage and container semantics beyond a numeric class tag. The later
-v1.5-v1.7 batches now provide datetime/duration, CSC sparse, and table slices;
-categorical and timetable families remain staged.
+v1.5-v1.8 batches now provide datetime/duration, CSC sparse, table,
+categorical, and timetable slices.
 
 ## v1.3: System And Broad Standard Library
 
 **Status: implemented; candidate scope and current contract are recorded in
 [v1.3.md](v1.3.md) and
-[public-contract-v1.3.json](public-contract-v1.3.json). Subsequent v1.4-v1.7
+[public-contract-v1.3.json](public-contract-v1.3.json). Subsequent v1.4-v1.8
 internal batches are recorded below.**
 
 v1.3 builds on the v1.2 host boundary and closes a substantial system-function

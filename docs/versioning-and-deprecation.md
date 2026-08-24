@@ -10,7 +10,7 @@ Those numbers are never SDK product versions.
 MParser uses semantic versions for release tags and packages. The active
 source tree, product metadata, and installed SDK report candidate version
 `1.3.0`. The complete fifteen-batch v1.3 train has reached its internal
-candidate gate. Subsequent v1.4-v1.7 internal development batches extend that
+candidate gate. Subsequent v1.4-v1.8 internal development batches extend that
 candidate without changing the product or public C/C++ API identity.
 
 This project is not currently using the v1.3 interfaces in production.
