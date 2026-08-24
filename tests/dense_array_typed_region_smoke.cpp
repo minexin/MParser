@@ -183,6 +183,16 @@ mparser::RuntimeValue denseValue(std::vector<size_t> dimensions,
     return std::move(*value);
 }
 
+mparser::RuntimeValue denseValue(
+    std::vector<size_t> dimensions,
+    std::vector<mparser::RuntimeNumericElementValue> logicalValues,
+    mparser::RuntimeNumericClass numericClass) {
+    auto value = mparser::runtimeNumericValueFromElements(
+        std::move(dimensions), std::move(logicalValues), numericClass);
+    require(value.has_value(), "failed to construct typed dense test value");
+    return std::move(*value);
+}
+
 void runProfiledFusionAndReductionSmoke() {
     const auto pipeline = prepare(R"(
 x = [1 2 3; 4 5 6];
@@ -396,7 +406,7 @@ sum_all = sum(out, "all");
     }
 }
 
-void runTransactionalComplexFallbackSmoke() {
+void runComplexPortableSmoke() {
     const auto pipeline = prepare(R"(
 x = [-1 4];
 y = [99 99];
@@ -411,13 +421,12 @@ checksum = sum(abs(y), "all");
     requireVariableMatch(pipeline, typed, "checksum");
     const auto* y = findVariable(typed.variables, "y");
     require(y != nullptr && y->numericComplex,
-            "complex fallback result was not committed by the VM");
+            "portable complex result was not committed");
     const auto* execution = findExecution(typed, "y");
-    require(execution != nullptr && execution->executionCount == 0 &&
-                execution->fallbackCount == 1 &&
-                execution->lastFallbackKind ==
-                    mparser::RuntimeFallbackKind::RuntimeFailed,
-            "complex dense domain did not fall back transactionally");
+    require(execution != nullptr && execution->executionCount == 1 &&
+                execution->fallbackCount == 0 &&
+                execution->backend == "portable",
+            "complex dense domain did not execute in the portable kernel");
 
     if (mparser::nativeScalarJitAvailable()) {
         const auto automatic = runTyped(
@@ -425,16 +434,42 @@ checksum = sum(abs(y), "all");
         requireVariableMatch(pipeline, automatic, "y");
         const auto* autoExecution = findExecution(automatic, "y");
         require(autoExecution != nullptr &&
-                    autoExecution->executionCount == 0 &&
-                    autoExecution->fallbackCount == 1 &&
+                    autoExecution->executionCount == 1 &&
+                    autoExecution->fallbackCount == 0 &&
+                    autoExecution->backend == "portable" &&
                     autoExecution->nativeFallbackKind ==
-                        mparser::RuntimeFallbackKind::RuntimeFailed &&
-                    autoExecution->nativeCodeSize != 0 &&
-                    autoExecution->nativeCompilationCount +
-                            autoExecution->nativeCacheHitCount !=
-                        0 &&
+                        mparser::RuntimeFallbackKind::BackendUnsupported &&
+                    autoExecution->nativeCodeSize == 0 &&
+                    autoExecution->nativeCompilationCount == 0 &&
+                    autoExecution->nativeCacheHitCount == 0 &&
+                    autoExecution->nativeFallbackReason.find("complex") !=
+                        std::string::npos &&
                     !autoExecution->nativePlatform.empty(),
-                "auto complex fallback lost native attempt metadata");
+                std::string("auto complex input did not fall back to portable Typed: ") +
+                    (autoExecution == nullptr
+                         ? "missing"
+                         : "backend=" + autoExecution->backend +
+                               " executions=" +
+                               std::to_string(autoExecution->executionCount) +
+                               " fallbacks=" +
+                               std::to_string(autoExecution->fallbackCount) +
+                               " nativeKind=" +
+                               std::string(mparser::runtimeFallbackKindName(
+                                   autoExecution->nativeFallbackKind)) +
+                               " nativeReason=" +
+                               autoExecution->nativeFallbackReason));
+
+        const auto explicitNative = runTyped(
+            pipeline, mparser::TypedRegionBackend::Native);
+        requireVariableMatch(pipeline, explicitNative, "y");
+        const auto* nativeExecution = findExecution(explicitNative, "y");
+        require(nativeExecution != nullptr &&
+                    nativeExecution->executionCount == 0 &&
+                    nativeExecution->fallbackCount == 1 &&
+                    nativeExecution->lastFallbackKind ==
+                        mparser::RuntimeFallbackKind::BackendUnsupported &&
+                    nativeExecution->nativeCodeSize == 0,
+                "explicit native complex input did not return to the VM");
     }
 }
 
@@ -504,22 +539,115 @@ void runNonDoubleFallbackSmoke() {
     const auto pipeline = prepare(R"(
 input = single([1 2 3]);
 out = input .* 2;
+total = sum(out, "all");
 )", {}, true);
     const auto typed = runTyped(
         pipeline, mparser::TypedRegionBackend::Portable);
     require(!mparser::hasErrorDiagnostics(typed.diagnostics),
-            "single dense fallback failed");
-    requireVariableMatch(pipeline, typed, "out");
+            "single dense portable execution failed");
+    for (std::string_view name : {"out", "total"}) {
+        requireVariableMatch(pipeline, typed, name);
+        const auto* execution = findExecution(typed, name);
+        require(execution != nullptr && execution->executionCount == 1 &&
+                    execution->fallbackCount == 0 &&
+                    execution->backend == "portable",
+                std::string("single dense region did not execute in the portable kernel: ") +
+                    std::string(name) +
+                    (execution == nullptr
+                         ? " missing"
+                         : " backend=" + execution->backend +
+                               " executions=" +
+                               std::to_string(execution->executionCount) +
+                               " fallbacks=" +
+                               std::to_string(execution->fallbackCount) +
+                               " reason=" + execution->lastReason));
+    }
     const auto* output = findVariable(typed.variables, "out");
     require(output != nullptr &&
                 output->numericClass == mparser::RuntimeNumericClass::Single,
-            "single dense fallback changed numeric class");
-    const auto* execution = findExecution(typed, "out");
-    require(execution != nullptr && execution->executionCount == 0 &&
-                execution->fallbackCount == 1 &&
-                execution->lastFallbackKind ==
-                    mparser::RuntimeFallbackKind::UnsupportedInput,
-            "single dense input did not remain in the VM");
+            "single dense portable execution changed numeric class");
+    const auto* total = findVariable(typed.variables, "total");
+    require(total != nullptr &&
+                total->numericClass == mparser::RuntimeNumericClass::Single,
+            "single dense reduction changed numeric class");
+}
+
+void runProfiledNumericTypeGuardSmoke() {
+    const auto singlePipeline = prepare(R"(
+input = single([1 2 3]);
+out = input .* 2;
+)");
+    const auto* singleRegion = findRegion(
+        singlePipeline.typedModule, "out");
+    require(singleRegion != nullptr && singleRegion->guards.size() == 1 &&
+                singleRegion->guards.front().value.numericClass == "single" &&
+                singleRegion->guards.front().value.numericClassKnown &&
+                singleRegion->guards.front().value.complexKnown &&
+                !singleRegion->guards.front().value.numericComplex,
+            "profiled single dense guard lost its type contract");
+    const auto singleTyped = runTyped(
+        singlePipeline, mparser::TypedRegionBackend::Portable);
+    requireVariableMatch(singlePipeline, singleTyped, "out");
+    const auto* singleExecution = findExecution(singleTyped, "out");
+    require(singleExecution != nullptr &&
+                singleExecution->executionCount == 1 &&
+                singleExecution->fallbackCount == 0 &&
+                singleExecution->backend == "portable",
+            "profiled single dense region did not execute portably");
+
+    const auto complexPipeline = prepare(R"(
+input = [1 + 2i, 3 - 4i];
+out = input .* 2;
+)");
+    const auto* complexRegion = findRegion(
+        complexPipeline.typedModule, "out");
+    require(complexRegion != nullptr && complexRegion->guards.size() == 1 &&
+                complexRegion->guards.front().value.numericClass == "double" &&
+                complexRegion->guards.front().value.numericClassKnown &&
+                complexRegion->guards.front().value.complexKnown &&
+                complexRegion->guards.front().value.numericComplex,
+            "profiled complex dense guard lost its complexity contract");
+    const auto complexTyped = runTyped(
+        complexPipeline, mparser::TypedRegionBackend::Portable);
+    requireVariableMatch(complexPipeline, complexTyped, "out");
+    const auto* complexExecution = findExecution(complexTyped, "out");
+    require(complexExecution != nullptr &&
+                complexExecution->executionCount == 1 &&
+                complexExecution->fallbackCount == 0 &&
+                complexExecution->backend == "portable",
+            "profiled complex dense region did not execute portably");
+}
+
+void runComplexInputPortableSmoke() {
+    const auto pipeline = prepare(R"(
+input = [1 + 2i, 3 - 4i];
+out = input .* (2 - i) + 1i;
+total = sum(out, "all");
+)", {}, true);
+    const auto typed = runTyped(
+        pipeline, mparser::TypedRegionBackend::Portable);
+    require(!mparser::hasErrorDiagnostics(typed.diagnostics),
+            "complex input portable execution failed");
+    for (std::string_view name : {"out", "total"}) {
+        requireVariableMatch(pipeline, typed, name);
+        const auto* execution = findExecution(typed, name);
+        require(execution != nullptr && execution->executionCount == 1 &&
+                    execution->fallbackCount == 0 &&
+                    execution->backend == "portable",
+                std::string("complex input region did not execute portably: ") +
+                    std::string(name) +
+                    (execution == nullptr
+                         ? " missing"
+                         : " backend=" + execution->backend +
+                               " executions=" +
+                               std::to_string(execution->executionCount) +
+                               " fallbacks=" +
+                               std::to_string(execution->fallbackCount) +
+                               " reason=" + execution->lastReason));
+    }
+    const auto* output = findVariable(typed.variables, "out");
+    require(output != nullptr && output->numericComplex,
+            "complex input result lost its imaginary channel");
 }
 
 void runMatrixOperatorFallbackSmoke() {
@@ -655,10 +783,12 @@ int main() {
         runProfiledFusionAndReductionSmoke();
         runStaticNativeAndTamperSmoke();
         runNdImplicitExpansionSmoke();
-        runTransactionalComplexFallbackSmoke();
+        runComplexPortableSmoke();
         runShadowedBuiltinFallbackSmoke();
         runProfileShapeGuardFallbackSmoke();
         runNonDoubleFallbackSmoke();
+        runProfiledNumericTypeGuardSmoke();
+        runComplexInputPortableSmoke();
         runMatrixOperatorFallbackSmoke();
         runEmptyAndAliasedInputSmoke();
         runDiagnosticAndResourceBoundarySmoke();

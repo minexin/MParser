@@ -409,9 +409,12 @@ intermediate before integer conversion. This avoids relying on `long double`,
 whose precision differs between MSVC, x86 Linux, and ARM64 targets, and
 preserves integer bits above `flintmax` in both operand orders and across
 implicit array expansion.
-Typed/native regions currently specialize dense real doubles; numeric-class,
-shape, and complexity guards return unsupported values to the VM before an
-optimized region can publish mutation.
+Dense Typed regions now specialize floating `double`/`single` values,
+including complex arrays, through a portable C++ element/reduction kernel.
+The native SLJIT tier remains deliberately restricted to real `double`
+inputs and scalar reductions; numeric-class, complexity, shape, and domain
+guards select portable or VM fallback before an optimized region can publish
+mutation.
 
 `runtime_scan` owns cumulative and finite-difference array traversal. The four
 cumulative operations retain the complete input shape and walk independent

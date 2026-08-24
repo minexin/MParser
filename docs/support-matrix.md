@@ -65,7 +65,8 @@ The archived v1.2 candidate established one end-to-end numeric foundation:
   output events, and suppressed/unsuppressed top-level expression results;
 - in-memory source compilation with search paths plus script/function/class,
   primary-function, pure-function-file, and top-level-statement metadata;
-- guarded portable/native fallback for types not represented by Typed IR;
+- guarded portable Typed execution for floating/complex dense values, with
+  native fallback for classes or domains not yet lowered to machine code;
 - C/C++ source API 1.2, C ABI generation 2, and machine protocol 1.1
   transport.
 

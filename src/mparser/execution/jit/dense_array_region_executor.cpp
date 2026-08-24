@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <limits>
 #include <map>
 #include <optional>
@@ -34,7 +35,7 @@ struct DenseNode {
     size_t left = 0;
     size_t right = 0;
     std::string input;
-    double literal = 0.0;
+    RuntimeNumericElementValue literal;
     bool matrixOperator = false;
 };
 
@@ -173,14 +174,38 @@ std::optional<size_t> expressionBegin(
     return std::nullopt;
 }
 
-std::optional<double> doubleLiteral(std::string_view text) {
+std::optional<RuntimeNumericElementValue> numericLiteral(
+    std::string_view text) {
     const auto value = runtimeParseNumericLiteral(text);
     if (!value || value->kind != RuntimeValueKind::Number ||
-        value->numericClass != RuntimeNumericClass::Double ||
-        value->numericComplex) {
+        !runtimeNumericClassIsFloating(value->numericClass)) {
         return std::nullopt;
     }
-    return value->number;
+    return runtimeNumericElementValue(*value, 0);
+}
+
+std::optional<RuntimeNumericElementValue> numericBuiltinConstant(
+    std::string_view name) {
+    if (name == "i" || name == "j") {
+        return numericLiteral("1i");
+    }
+    if (name == "pi") {
+        return numericLiteral("3.141592653589793238462643383279502884");
+    }
+    if (name == "eps") {
+        return numericLiteral("2.220446049250313080847263336181640625e-16");
+    }
+    if (name == "inf") {
+        RuntimeNumericElementValue value;
+        value.real = std::numeric_limits<double>::infinity();
+        return value;
+    }
+    if (name == "nan") {
+        RuntimeNumericElementValue value;
+        value.real = std::numeric_limits<double>::quiet_NaN();
+        return value;
+    }
+    return std::nullopt;
 }
 
 bool isAllLiteral(std::string_view text) {
@@ -250,6 +275,17 @@ ParsedDenseRegion parseDenseRegion(
         switch (instruction.op) {
         case BytecodeOp::LoadName: {
             if (instruction.binding.kind == BindingKind::Builtin) {
+                if (const auto constant =
+                        numericBuiltinConstant(instruction.operand)) {
+                    DenseNode node;
+                    node.kind = DenseNodeKind::Literal;
+                    node.literal = *constant;
+                    parsed.nodes.push_back(std::move(node));
+                    stack.push_back(ParseStackValue{
+                        ParseStackKind::Node,
+                        parsed.nodes.size() - 1, {}});
+                    break;
+                }
                 const BuiltinDescriptor* descriptor =
                     builtinRegistry.find(instruction.operand);
                 if (!descriptor || descriptor->purity != BuiltinPurity::Pure ||
@@ -288,10 +324,10 @@ ParsedDenseRegion parseDenseRegion(
                     ParseStackKind::AllOption, 0, {}});
                 break;
             }
-            const auto value = doubleLiteral(instruction.operand);
+            const auto value = numericLiteral(instruction.operand);
             if (!value) {
                 return reject(
-                    "dense expression contains a nondouble literal");
+                    "dense expression contains a non-floating literal");
             }
             DenseNode node;
             node.kind = DenseNodeKind::Literal;
@@ -420,9 +456,10 @@ ParsedDenseRegion parseDenseRegion(
                     } else if (option.kind == ParseStackKind::Node) {
                         const auto& optionNode = parsed.nodes[option.node];
                         const auto dimension =
-                            optionNode.kind == DenseNodeKind::Literal
+                            optionNode.kind == DenseNodeKind::Literal &&
+                                    !optionNode.literal.complex
                                 ? checkedRuntimeNonnegativeInteger(
-                                      optionNode.literal)
+                                      optionNode.literal.real)
                                 : std::nullopt;
                         if (!dimension || *dimension == 0) {
                             return reject(
@@ -496,6 +533,7 @@ struct PreparedDenseRegion {
     std::vector<size_t> workingDimensions;
     std::vector<size_t> outputDimensions;
     std::vector<size_t> reducedDimensions;
+    RuntimeNumericClass numericClass = RuntimeNumericClass::Double;
     size_t sourceElementCount = 0;
     size_t outputElementCount = 0;
 };
@@ -555,17 +593,25 @@ std::optional<PreparedDenseRegion> prepareDenseRegion(
         input.name = name;
         input.value = &value;
         input.dimensions = runtimeDimensions(value);
-        if (value.kind == RuntimeValueKind::Number &&
-            value.numericClass == RuntimeNumericClass::Double &&
-            !value.numericComplex) {
+        if (!isRuntimeNumericValue(value) ||
+            !runtimeNumericClassIsFloating(value.numericClass)) {
+            failureReason =
+                "typed dense input is not a single or double numeric value: " +
+                name;
+            return std::nullopt;
+        }
+        if (value.numericClass == RuntimeNumericClass::Single) {
+            prepared.numericClass = RuntimeNumericClass::Single;
+        }
+        if (value.kind == RuntimeValueKind::Number) {
             input.scalar = true;
         } else if ((value.kind == RuntimeValueKind::Vector ||
-                    value.kind == RuntimeValueKind::Matrix) &&
-                   value.numericClass == RuntimeNumericClass::Double &&
-                   !value.numericComplex) {
+                    value.kind == RuntimeValueKind::Matrix)) {
             const auto count =
                 checkedRuntimeDimensionProduct(input.dimensions);
-            if (!count || *count != value.elements.size()) {
+            if (!count || *count != value.elements.size() ||
+                (value.numericComplex &&
+                 value.imaginaryElements.size() != *count)) {
                 failureReason =
                     "typed dense input has inconsistent shape storage: " +
                     name;
@@ -576,7 +622,7 @@ std::optional<PreparedDenseRegion> prepareDenseRegion(
             hasArrayInput = true;
         } else {
             failureReason =
-                "typed dense input is not a real double scalar or dense array: " +
+                "typed dense input is not a dense scalar or array: " +
                 name;
             return std::nullopt;
         }
@@ -732,133 +778,248 @@ std::optional<size_t> inputStorageOffset(
     return offset;
 }
 
-bool evaluateUnary(ScalarKernelOp operation, double input,
-                   double& result, std::string& failureReason) {
-    const bool inverseDomain =
-        (operation == ScalarKernelOp::ArcCosine ||
-         operation == ScalarKernelOp::ArcSine) &&
-        std::fabs(input) > 1.0;
-    const bool negativeDomain =
-        (operation == ScalarKernelOp::Logarithm ||
-         operation == ScalarKernelOp::SquareRoot) &&
-        input < 0.0;
-    if (inverseDomain || negativeDomain) {
-        failureReason =
-            "typed dense math operation requires a complex result";
-        return false;
+std::optional<RuntimeNumericElementValue> evaluateUnary(
+    ScalarKernelOp operation, const RuntimeNumericElementValue& input,
+    RuntimeNumericClass resultClass, std::string& failureReason) {
+    const auto converted = runtimeConvertNumericElementValue(
+        input, resultClass);
+    if (!converted) {
+        failureReason = "typed dense unary input could not be represented";
+        return std::nullopt;
     }
+
+    if (operation == ScalarKernelOp::Copy ||
+        operation == ScalarKernelOp::UnaryPlus) {
+        return converted;
+    }
+    if (operation == ScalarKernelOp::UnaryMinus) {
+        RuntimeNumericElementValue result = *converted;
+        result.real = -result.real;
+        if (result.complex) {
+            result.imaginary = -result.imaginary;
+        }
+        return result;
+    }
+
+    const std::complex<double> complexInput(
+        converted->real,
+        converted->complex ? converted->imaginary : 0.0);
+    RuntimeNumericElementValue result;
+    result.numericClass = resultClass;
     switch (operation) {
-    case ScalarKernelOp::Copy:
-    case ScalarKernelOp::UnaryPlus:
-        result = input;
-        return true;
-    case ScalarKernelOp::UnaryMinus:
-        result = -input;
-        return true;
     case ScalarKernelOp::Absolute:
-        result = std::fabs(input);
-        return true;
+        result.real = std::abs(complexInput);
+        result.complex = false;
+        break;
     case ScalarKernelOp::ArcCosine:
-        result = std::acos(input);
-        return true;
+        if (!converted->complex && std::fabs(converted->real) <= 1.0) {
+            result.real = std::acos(converted->real);
+            result.complex = false;
+        } else {
+            const auto raw = std::acos(complexInput);
+            result.real = raw.real();
+            result.imaginary = raw.imag();
+            if (!converted->complex &&
+                std::fabs(converted->real) > 1.0) {
+                result.imaginary = std::copysign(
+                    std::fabs(result.imaginary), converted->real);
+            }
+            result.complex = converted->complex || result.imaginary != 0.0;
+        }
+        break;
     case ScalarKernelOp::ArcSine:
-        result = std::asin(input);
-        return true;
+        if (!converted->complex && std::fabs(converted->real) <= 1.0) {
+            result.real = std::asin(converted->real);
+            result.complex = false;
+        } else {
+            const auto raw = std::asin(complexInput);
+            result.real = raw.real();
+            result.imaginary = raw.imag();
+            if (!converted->complex &&
+                std::fabs(converted->real) > 1.0) {
+                result.imaginary = std::copysign(
+                    std::fabs(result.imaginary), -converted->real);
+            }
+            result.complex = converted->complex || result.imaginary != 0.0;
+        }
+        break;
     case ScalarKernelOp::ArcTangent:
-        result = std::atan(input);
-        return true;
-    case ScalarKernelOp::Cosine:
-        result = std::cos(input);
-        return true;
-    case ScalarKernelOp::Exponential:
-        result = std::exp(input);
-        return true;
+        if (!converted->complex) {
+            result.real = std::atan(converted->real);
+            result.complex = false;
+        } else {
+            const auto raw = std::atan(complexInput);
+            result.real = raw.real();
+            result.imaginary = raw.imag();
+            result.complex = true;
+        }
+        break;
+    case ScalarKernelOp::Cosine: {
+        const auto raw = converted->complex
+                             ? std::cos(complexInput)
+                             : std::complex<double>{
+                                   std::cos(converted->real), 0.0};
+        result.real = raw.real();
+        result.imaginary = raw.imag();
+        result.complex = converted->complex || result.imaginary != 0.0;
+        break;
+    }
+    case ScalarKernelOp::Exponential: {
+        const auto raw = converted->complex
+                             ? std::exp(complexInput)
+                             : std::complex<double>{
+                                   std::exp(converted->real), 0.0};
+        result.real = raw.real();
+        result.imaginary = raw.imag();
+        result.complex = converted->complex || result.imaginary != 0.0;
+        break;
+    }
     case ScalarKernelOp::Logarithm:
-        result = std::log(input);
-        return true;
-    case ScalarKernelOp::Sine:
-        result = std::sin(input);
-        return true;
+        if (!converted->complex && converted->real >= 0.0) {
+            result.real = std::log(converted->real);
+            result.complex = false;
+        } else {
+            const auto raw = std::log(complexInput);
+            result.real = raw.real();
+            result.imaginary = raw.imag();
+            result.complex = converted->complex || result.imaginary != 0.0;
+        }
+        break;
+    case ScalarKernelOp::Sine: {
+        const auto raw = converted->complex
+                             ? std::sin(complexInput)
+                             : std::complex<double>{
+                                   std::sin(converted->real), 0.0};
+        result.real = raw.real();
+        result.imaginary = raw.imag();
+        result.complex = converted->complex || result.imaginary != 0.0;
+        break;
+    }
     case ScalarKernelOp::SquareRoot:
-        result = std::sqrt(input);
-        return true;
-    case ScalarKernelOp::Tangent:
-        result = std::tan(input);
-        return true;
+        if (!converted->complex && converted->real >= 0.0) {
+            result.real = std::sqrt(converted->real);
+            result.complex = false;
+        } else {
+            const auto raw = std::sqrt(complexInput);
+            result.real = raw.real();
+            result.imaginary = raw.imag();
+            result.complex = converted->complex || result.imaginary != 0.0;
+        }
+        break;
+    case ScalarKernelOp::Tangent: {
+        const auto raw = converted->complex
+                             ? std::tan(complexInput)
+                             : std::complex<double>{
+                                   std::tan(converted->real), 0.0};
+        result.real = raw.real();
+        result.imaginary = raw.imag();
+        result.complex = converted->complex || result.imaginary != 0.0;
+        break;
+    }
     default:
         failureReason = "typed dense unary operation is unsupported";
-        return false;
+        return std::nullopt;
     }
+    const auto convertedResult = runtimeConvertNumericElementValue(
+        result, resultClass);
+    if (!convertedResult) {
+        failureReason = "typed dense unary result could not be represented";
+    }
+    return convertedResult;
 }
 
-bool evaluateBinary(ScalarKernelOp operation, double left, double right,
-                    double& result, std::string& failureReason) {
-    if (operation == ScalarKernelOp::Power && left < 0.0 &&
-        std::isfinite(right) && std::floor(right) != right) {
-        failureReason =
-            "typed dense power requires a complex result";
-        return false;
-    }
+std::optional<RuntimeNumericElementValue> evaluateBinary(
+    ScalarKernelOp operation, const RuntimeNumericElementValue& left,
+    const RuntimeNumericElementValue& right, RuntimeNumericClass resultClass,
+    std::string& failureReason) {
+    std::string_view operationName;
     switch (operation) {
     case ScalarKernelOp::Add:
-        result = left + right;
-        return true;
+        operationName = "+";
+        break;
     case ScalarKernelOp::Subtract:
-        result = left - right;
-        return true;
+        operationName = "-";
+        break;
     case ScalarKernelOp::Multiply:
-        result = left * right;
-        return true;
+        operationName = "*";
+        break;
     case ScalarKernelOp::Divide:
-        result = left / right;
-        return true;
+        operationName = "/";
+        break;
     case ScalarKernelOp::Power:
-        result = std::pow(left, right);
-        return true;
+        operationName = "^";
+        break;
     default:
         failureReason = "typed dense binary operation is unsupported";
-        return false;
+        return std::nullopt;
     }
+    const auto result = runtimeApplyNumericElementBinary(
+        operationName, left, right, resultClass);
+    if (!result) {
+        failureReason = "typed dense binary result could not be represented";
+    }
+    return result;
 }
 
 bool evaluatePreparedNodes(
     const PreparedDenseRegion& prepared,
     const std::vector<size_t>& coordinates,
-    std::vector<double>& registers, double& result,
-    std::string& failureReason) {
+    std::vector<RuntimeNumericElementValue>& registers,
+    RuntimeNumericElementValue& result, std::string& failureReason) {
     for (size_t index = 0; index < prepared.nodes.size(); ++index) {
         const auto& node = prepared.nodes[index];
         switch (node.node.kind) {
         case DenseNodeKind::Input: {
             const auto& input = prepared.inputs[node.inputIndex];
-            if (input.scalar) {
-                registers[index] = input.value->number;
-                break;
-            }
-            const auto offset = inputStorageOffset(input, coordinates);
-            if (!offset || *offset >= input.value->elements.size()) {
+            const auto offset = input.scalar
+                                    ? std::optional<size_t>(0)
+                                    : inputStorageOffset(input, coordinates);
+            if (!offset) {
                 failureReason =
                     "typed dense input offset is outside its guarded shape";
                 return false;
             }
-            registers[index] = input.value->elements[*offset];
+            const auto element = runtimeNumericStorageElementValue(
+                *input.value, *offset);
+            const auto converted = element
+                                       ? runtimeConvertNumericElementValue(
+                                             *element, prepared.numericClass)
+                                       : std::nullopt;
+            if (!converted) {
+                failureReason =
+                    "typed dense input element could not be represented";
+                return false;
+            }
+            registers[index] = *converted;
             break;
         }
         case DenseNodeKind::Literal:
-            registers[index] = node.node.literal;
+            if (const auto converted =
+                    runtimeConvertNumericElementValue(
+                        node.node.literal, prepared.numericClass)) {
+                registers[index] = *converted;
+            } else {
+                failureReason =
+                    "typed dense literal could not be represented";
+                return false;
+            }
             break;
         case DenseNodeKind::Unary:
-            if (!evaluateUnary(node.node.operation,
-                               registers[node.node.left],
-                               registers[index], failureReason)) {
+            if (const auto value = evaluateUnary(
+                    node.node.operation, registers[node.node.left],
+                    prepared.numericClass, failureReason)) {
+                registers[index] = *value;
+            } else {
                 return false;
             }
             break;
         case DenseNodeKind::Binary:
-            if (!evaluateBinary(node.node.operation,
-                                registers[node.node.left],
-                                registers[node.node.right],
-                                registers[index], failureReason)) {
+            if (const auto value = evaluateBinary(
+                    node.node.operation, registers[node.node.left],
+                    registers[node.node.right], prepared.numericClass,
+                    failureReason)) {
+                registers[index] = *value;
+            } else {
                 return false;
             }
             break;
@@ -896,28 +1057,54 @@ std::optional<size_t> outputBucketIndex(
     return runtimeColumnMajorLinearIndex(coordinates, outputDimensions);
 }
 
-RuntimeValue doubleValueFromStorage(
-    std::vector<size_t> dimensions, std::vector<double> storage) {
+std::optional<RuntimeValue> numericValueFromStorage(
+    std::vector<size_t> dimensions,
+    const std::vector<RuntimeNumericElementValue>& storage,
+    RuntimeNumericClass numericClass) {
     dimensions = normalizeRuntimeDimensions(std::move(dimensions));
-    RuntimeValue result;
-    result.numericClass = RuntimeNumericClass::Double;
-    if (storage.size() == 1) {
-        result.kind = RuntimeValueKind::Number;
-        result.number = storage.front();
-    } else {
-        result.kind = dimensions.size() == 2 && dimensions[0] == 1
-                          ? RuntimeValueKind::Vector
-                          : RuntimeValueKind::Matrix;
-        result.elements = std::move(storage);
+    const auto count = checkedRuntimeDimensionProduct(dimensions);
+    if (!count || *count != storage.size()) {
+        return std::nullopt;
     }
-    setRuntimeDimensions(result, std::move(dimensions));
-    return result;
+    std::vector<RuntimeNumericElementValue> logical;
+    logical.reserve(storage.size());
+    for (size_t logicalIndex = 0; logicalIndex < *count;
+         ++logicalIndex) {
+        const auto coordinates = runtimeColumnMajorCoordinates(
+            logicalIndex, dimensions);
+        const auto storageOffset = coordinates
+                                       ? runtimeRowMajorStorageOffset(
+                                             *coordinates, dimensions)
+                                       : std::nullopt;
+        if (!storageOffset || *storageOffset >= storage.size()) {
+            return std::nullopt;
+        }
+        logical.push_back(storage[*storageOffset]);
+    }
+    return runtimeNumericValueFromElements(
+        std::move(dimensions), std::move(logical), numericClass);
+}
+
+std::optional<RuntimeValue> numericValueFromStorage(
+    std::vector<size_t> dimensions, const std::vector<double>& storage,
+    RuntimeNumericClass numericClass) {
+    std::vector<RuntimeNumericElementValue> elements;
+    elements.reserve(storage.size());
+    for (const double value : storage) {
+        RuntimeNumericElementValue element;
+        element.numericClass = RuntimeNumericClass::Double;
+        element.real = value;
+        elements.push_back(element);
+    }
+    return numericValueFromStorage(
+        std::move(dimensions), elements, numericClass);
 }
 
 DenseArrayRegionExecutionResult executePortable(
     const PreparedDenseRegion& prepared,
     const BytecodeRegionContract& region) {
-    std::vector<double> registers(prepared.nodes.size(), 0.0);
+    std::vector<RuntimeNumericElementValue> registers(
+        prepared.nodes.size());
     std::vector<size_t> coordinates(
         prepared.sourceDimensions.size(), 0);
     std::string failureReason;
@@ -925,10 +1112,11 @@ DenseArrayRegionExecutionResult executePortable(
     size_t kernelInstructions = 0;
 
     if (prepared.parsed.reduction == DenseReductionSelection::None) {
-        std::vector<double> storage(prepared.sourceElementCount, 0.0);
+        std::vector<RuntimeNumericElementValue> storage(
+            prepared.sourceElementCount);
         for (size_t logicalIndex = 0;
              logicalIndex < prepared.sourceElementCount; ++logicalIndex) {
-            double value = 0.0;
+            RuntimeNumericElementValue value;
             if (!evaluatePreparedNodes(prepared, coordinates, registers,
                                        value, failureReason)) {
                 auto result = executionFallback(
@@ -948,13 +1136,24 @@ DenseArrayRegionExecutionResult executePortable(
             incrementColumnMajorCoordinates(
                 coordinates, prepared.sourceDimensions);
         }
-        output = doubleValueFromStorage(
-            prepared.sourceDimensions, std::move(storage));
+        const auto value = numericValueFromStorage(
+            prepared.sourceDimensions, storage, prepared.numericClass);
+        if (!value) {
+            return executionFallback(
+                RuntimeFallbackKind::RuntimeFailed,
+                "typed dense result could not be represented");
+        }
+        output = *value;
     } else {
-        std::vector<double> buckets(prepared.outputElementCount, 0.0);
+        std::vector<RuntimeNumericElementValue> buckets(
+            prepared.outputElementCount);
+        std::vector<bool> complexSeen(prepared.outputElementCount, false);
+        for (auto& bucket : buckets) {
+            bucket.numericClass = prepared.numericClass;
+        }
         for (size_t logicalIndex = 0;
              logicalIndex < prepared.sourceElementCount; ++logicalIndex) {
-            double value = 0.0;
+            RuntimeNumericElementValue value;
             if (!evaluatePreparedNodes(prepared, coordinates, registers,
                                        value, failureReason)) {
                 auto result = executionFallback(
@@ -968,14 +1167,30 @@ DenseArrayRegionExecutionResult executePortable(
                     RuntimeFallbackKind::RuntimeFailed,
                     "typed sum output bucket is invalid");
             }
-            buckets[*bucket] += value;
+            const auto accumulated = runtimeApplyNumericElementBinary(
+                "+", buckets[*bucket], value, prepared.numericClass);
+            if (!accumulated) {
+                return executionFallback(
+                    RuntimeFallbackKind::RuntimeFailed,
+                    "typed dense sum result could not be represented");
+            }
+            buckets[*bucket] = *accumulated;
+            complexSeen[*bucket] =
+                complexSeen[*bucket] || value.complex;
             kernelInstructions += prepared.nodes.size() + 1;
             incrementColumnMajorCoordinates(
                 coordinates, prepared.sourceDimensions);
         }
-        const auto value = runtimeNumericValueFromLogicalOrder(
+        for (size_t index = 0; index < buckets.size(); ++index) {
+            if (complexSeen[index] &&
+                (buckets[index].imaginary != 0.0 ||
+                 std::isnan(buckets[index].imaginary))) {
+                buckets[index].complex = true;
+            }
+        }
+        const auto value = runtimeNumericValueFromElements(
             prepared.outputDimensions, std::move(buckets),
-            RuntimeNumericClass::Double);
+            prepared.numericClass);
         if (!value) {
             return executionFallback(
                 RuntimeFallbackKind::RuntimeFailed,
@@ -996,6 +1211,60 @@ DenseArrayRegionExecutionResult executePortable(
                         ? "fused portable dense element-wise kernel executed"
                         : "fused portable dense sum kernel executed";
     return result;
+}
+
+bool nativeDomainSensitiveOperation(ScalarKernelOp operation) {
+    return operation == ScalarKernelOp::ArcCosine ||
+           operation == ScalarKernelOp::ArcSine ||
+           operation == ScalarKernelOp::Logarithm ||
+           operation == ScalarKernelOp::SquareRoot ||
+           operation == ScalarKernelOp::Power;
+}
+
+bool nativeDenseDomainIsRealSafe(
+    const PreparedDenseRegion& prepared, std::string& failureReason) {
+    bool needsDomainCheck = false;
+    for (const auto& node : prepared.nodes) {
+        if (node.node.kind == DenseNodeKind::Literal &&
+            node.node.literal.complex) {
+            failureReason =
+                "native dense kernel requires a real-valued literal domain";
+            return false;
+        }
+        if ((node.node.kind == DenseNodeKind::Unary ||
+             node.node.kind == DenseNodeKind::Binary) &&
+            nativeDomainSensitiveOperation(node.node.operation)) {
+            needsDomainCheck = true;
+        }
+    }
+    if (!needsDomainCheck) {
+        return true;
+    }
+
+    std::vector<RuntimeNumericElementValue> registers(
+        prepared.nodes.size());
+    std::vector<size_t> coordinates(
+        prepared.sourceDimensions.size(), 0);
+    std::string evaluationFailure;
+    for (size_t index = 0; index < prepared.sourceElementCount; ++index) {
+        RuntimeNumericElementValue result;
+        if (!evaluatePreparedNodes(prepared, coordinates, registers, result,
+                                   evaluationFailure)) {
+            failureReason =
+                "native dense domain preflight could not evaluate the region";
+            return false;
+        }
+        for (const auto& value : registers) {
+            if (value.complex) {
+                failureReason =
+                    "native dense kernel requires VM fallback for a complex-valued domain";
+                return false;
+            }
+        }
+        incrementColumnMajorCoordinates(
+            coordinates, prepared.sourceDimensions);
+    }
+    return true;
 }
 
 RuntimeFallbackKind nativeFailureKind(NativeScalarJitStatus status) {
@@ -1047,7 +1316,8 @@ std::optional<NativeDenseKernel> buildNativeDenseKernel(
         if (input.scalar) {
             scalarSlots[index] = kernel.slots.size();
             kernel.slotNames.push_back(input.name);
-            kernel.slots.push_back(TypedScalar{input.value->number});
+            kernel.slots.push_back(TypedScalar{
+                input.value->number, RuntimeNumericClass::Double});
             kernel.initialized.push_back(true);
         } else {
             arraySlots[index] = kernel.arrays.size();
@@ -1085,7 +1355,8 @@ std::optional<NativeDenseKernel> buildNativeDenseKernel(
         case DenseNodeKind::Literal:
             operands[index] = ScalarKernelOperand{
                 ScalarKernelStorage::Literal, 0,
-                TypedScalar{node.node.literal}};
+                TypedScalar{node.node.literal.real,
+                            RuntimeNumericClass::Double}};
             break;
         case DenseNodeKind::Unary: {
             const size_t resultRegister = kernel.registerCount++;
@@ -1191,6 +1462,24 @@ DenseArrayRegionExecutionResult executeNative(
     DenseArrayRegionExecutionResult result;
     result.backend = TypedRegionBackend::Native;
     result.nativePlatform = std::string(nativeScalarJitPlatform());
+    if (prepared.numericClass != RuntimeNumericClass::Double) {
+        result.fallbackKind = RuntimeFallbackKind::BackendUnsupported;
+        result.nativeFallbackKind = result.fallbackKind;
+        result.reason =
+            "native dense kernel currently requires double numeric inputs";
+        result.nativeFallbackReason = result.reason;
+        return result;
+    }
+    for (const auto& input : prepared.inputs) {
+        if (input.value->numericComplex) {
+            result.fallbackKind = RuntimeFallbackKind::BackendUnsupported;
+            result.nativeFallbackKind = result.fallbackKind;
+            result.reason =
+                "native dense kernel currently requires real numeric inputs";
+            result.nativeFallbackReason = result.reason;
+            return result;
+        }
+    }
     if (prepared.parsed.reduction != DenseReductionSelection::None &&
         prepared.outputElementCount != 1) {
         result.fallbackKind = RuntimeFallbackKind::BackendUnsupported;
@@ -1201,6 +1490,13 @@ DenseArrayRegionExecutionResult executeNative(
         return result;
     }
     std::string failureReason;
+    if (!nativeDenseDomainIsRealSafe(prepared, failureReason)) {
+        result.fallbackKind = RuntimeFallbackKind::BackendUnsupported;
+        result.nativeFallbackKind = result.fallbackKind;
+        result.reason = std::move(failureReason);
+        result.nativeFallbackReason = result.reason;
+        return result;
+    }
     auto nativeKernel = buildNativeDenseKernel(prepared, failureReason);
     if (!nativeKernel) {
         result.fallbackKind = RuntimeFallbackKind::BackendUnsupported;
@@ -1228,8 +1524,18 @@ DenseArrayRegionExecutionResult executeNative(
         }
         const auto& output =
             nativeKernel->kernel.arrays[nativeKernel->outputArraySlot];
-        result.value = doubleValueFromStorage(
-            output.dimensions, output.elements);
+        const auto value = numericValueFromStorage(
+            output.dimensions, output.elements,
+            RuntimeNumericClass::Double);
+        if (!value) {
+            result.fallbackKind = RuntimeFallbackKind::RuntimeFailed;
+            result.nativeFallbackKind = result.fallbackKind;
+            result.reason =
+                "native dense result could not be represented";
+            result.nativeFallbackReason = result.reason;
+            return result;
+        }
+        result.value = *value;
     } else {
         std::vector<double> storageOffsets;
         storageOffsets.reserve(prepared.sourceElementCount);

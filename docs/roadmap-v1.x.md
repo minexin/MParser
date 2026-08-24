@@ -410,14 +410,15 @@ signal to add guarded pure local scalar-function specialization through the
 existing portable/SLJIT kernel. The same suite keeps straight-line scalar,
 dense element-wise, reduction, and dense-linear-algebra coverage visibly
 measured. The second implementation batch closes the first high-value array
-slice with guarded real-double N-dimensional element-wise fusion, MATLAB
-column-major implicit expansion, exact/profiled versus dynamic shape guards,
-and source-contract-1.11 terminal `sum` lowering. Portable execution handles
-array-valued reductions; native lowering is restricted to exact-shape
+slice with guarded N-dimensional element-wise fusion for floating
+`double`/`single` values, real/complex portable execution, MATLAB
+column-major implicit expansion, exact/profiled versus dynamic
+type/complexity/shape guards, and source-contract-1.11 terminal `sum`
+lowering. Native lowering remains restricted to real-double exact-shape
 element-wise kernels and scalar reductions, with native-to-portable or VM
 fallback preserving results. The measured Dense workload moves from about
 79.7 ms in bytecode to 4.05 ms in portable execution on the recorded host.
-Straight-line scalar, nested reductions, general matrix kernels, additional
+Straight-line scalar, nested reductions, general matrix kernels, broader
 numeric classes, and dense linear algebra remain visible candidates; the v1.4
 milestone stays open and the project version is not advanced for either
 internal batch. A behavior-neutral source-ownership batch also places the VM

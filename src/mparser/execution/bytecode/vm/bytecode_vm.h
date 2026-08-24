@@ -41,6 +41,7 @@ struct BytecodeValueObservation {
     std::vector<size_t> dimensions;
     size_t observationCount = 0;
     bool stable = true;
+    bool numericComplex = false;
 };
 
 struct BytecodeLoopProfile {

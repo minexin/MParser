@@ -1040,9 +1040,10 @@ local validation evidence are indexed in
 The active v1.4 train adds a versioned seven-workload suite so optimization
 work is selected from repeatable scalar, array, reduction, function-call, and
 dense-linear-algebra evidence. It now inlines strictly proven pure local
-scalar functions and fuses guarded N-dimensional dense-double element-wise
-expressions. `sum` is the first registry-declared Typed reduction; portable
-and native paths retain transactional VM fallback:
+scalar functions and fuses guarded N-dimensional floating dense element-wise
+expressions, with portable support for `single` and complex values. `sum` is
+the first registry-declared Typed reduction; native remains real-double-only
+and portable/native paths retain transactional VM fallback:
 
 ```powershell
 ctest --test-dir build/windows-msvc-release `
@@ -1053,6 +1054,8 @@ build\windows-msvc-release\mparser.exe --run-typed-bytecode `
   --typed-backend=native samples\scalar_function_jit_demo.m
 build\windows-msvc-release\mparser.exe --run --jit=portable `
   samples\dense_array_jit_demo.m
+build\windows-msvc-release\mparser.exe --run --jit=portable `
+  samples\dense_numeric_types_jit_demo.m
 ```
 
 See [docs/v1.4.md](docs/v1.4.md) for the exact specialization boundaries,

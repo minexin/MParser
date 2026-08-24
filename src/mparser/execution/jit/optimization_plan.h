@@ -20,6 +20,9 @@ struct BytecodeOptimizationGuard {
     std::vector<size_t> dimensions;
     size_t observationCount = 0;
     bool shapeKnown = true;
+    bool numericClassKnown = true;
+    bool complexKnown = true;
+    bool numericComplex = false;
 };
 
 struct BytecodeOptimizationCandidate {

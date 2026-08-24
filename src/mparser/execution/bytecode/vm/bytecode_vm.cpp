@@ -391,6 +391,8 @@ void observeValue(BytecodeValueObservation& observation,
         isRuntimeNumericValue(value)
             ? std::string(runtimeNumericClassName(value.numericClass))
             : std::string{};
+    const bool numericComplex =
+        isRuntimeNumericValue(value) && value.numericComplex;
     const size_t rows = rowCount(value);
     const size_t columns = columnCount(value);
     const auto dimensions = runtimeDimensions(value);
@@ -403,6 +405,7 @@ void observeValue(BytecodeValueObservation& observation,
         observation.dimensions = dimensions;
         observation.observationCount = 1;
         observation.stable = true;
+        observation.numericComplex = numericComplex;
         return;
     }
 
@@ -413,6 +416,7 @@ void observeValue(BytecodeValueObservation& observation,
 
     if (observation.kind != kind ||
         observation.numericClass != numericClass ||
+        observation.numericComplex != numericComplex ||
         observation.rows != rows ||
         observation.columns != columns ||
         observation.dimensions != dimensions) {
@@ -422,6 +426,7 @@ void observeValue(BytecodeValueObservation& observation,
         observation.columns = 0;
         observation.dimensions.clear();
         observation.stable = false;
+        observation.numericComplex = false;
     }
 }
 
@@ -442,6 +447,7 @@ void observeValues(std::vector<BytecodeValueObservation>& observations,
             observations[index].kind = "mixed";
             observations[index].numericClass.clear();
             observations[index].dimensions.clear();
+            observations[index].numericComplex = false;
         }
     }
 }
@@ -4360,10 +4366,15 @@ private:
                         guard.value.kind == "number" ||
                         guard.value.kind == "vector" ||
                         guard.value.kind == "matrix";
+                    const bool numericClassContract =
+                        guard.value.numericClass == "double" ||
+                        guard.value.numericClass == "single" ||
+                        (guard.value.numericClass == "floating" &&
+                         !guard.value.numericClassKnown);
                     guardsMatch = guardsMatch &&
                                   guard.source == "region-input" &&
                                   knownInput && numericKind &&
-                                  guard.value.numericClass == "double" &&
+                                  numericClassContract &&
                                   guardedInputs.insert(guard.role).second;
                 }
                 const bool unique =
@@ -5596,11 +5607,18 @@ private:
                           {guard.value.rows, guard.value.columns})
                     : normalizeRuntimeDimensions(
                           guard.value.dimensions);
+            const bool numericClassMatches =
+                !guard.value.numericClassKnown ||
+                actualNumericClass == guard.value.numericClass;
+            const bool complexMatches =
+                !guard.value.complexKnown ||
+                !isRuntimeNumericValue(value) ||
+                value.numericComplex == guard.value.numericComplex;
             const bool shapeMatches =
                 !guard.value.shapeKnown ||
                 runtimeDimensions(value) == expectedDimensions;
             if (!kindMatches ||
-                actualNumericClass != guard.value.numericClass ||
+                !numericClassMatches || !complexMatches ||
                 !shapeMatches) {
                 failureReason =
                     "typed dense guard failed for input: " + guard.role;

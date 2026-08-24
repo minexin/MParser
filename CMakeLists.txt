@@ -1025,6 +1025,18 @@ set_tests_properties(dense_array_jit_diagnostic_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "fused portable dense sum kernel executed")
 
+add_test(NAME dense_numeric_types_jit_off_cli_smoke
+    COMMAND mparser --run --jit=off
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_numeric_types_jit_demo.m)
+set_tests_properties(dense_numeric_types_jit_off_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 1")
+
+add_test(NAME dense_numeric_types_jit_portable_cli_smoke
+    COMMAND mparser --run --jit=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_numeric_types_jit_demo.m)
+set_tests_properties(dense_numeric_types_jit_portable_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 1")
+
 add_test(NAME production_run_jit_off_cli_smoke
     COMMAND mparser --run --jit=off --native-cache-stats
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/production_run_demo.m)
@@ -1097,6 +1109,12 @@ set_tests_properties(scalar_function_specialization_portable_cli_smoke
         "summary = 334835500.*backend=portable.*baseline outputs: match")
 
 if(MPARSER_ENABLE_NATIVE_JIT)
+    add_test(NAME dense_numeric_types_jit_native_cli_smoke
+        COMMAND mparser --run --jit=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_numeric_types_jit_demo.m)
+    set_tests_properties(dense_numeric_types_jit_native_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "summary = 1")
+
     add_test(NAME dense_array_jit_native_cli_smoke
         COMMAND mparser --run --jit=native
             ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_array_jit_demo.m)
@@ -2940,6 +2958,7 @@ install(FILES
     samples/performance_array_workload.m
     samples/scalar_function_jit_demo.m
     samples/dense_array_jit_demo.m
+    samples/dense_numeric_types_jit_demo.m
     samples/reliability_boundary_demo.m
     samples/v1_1_core_compatibility_demo.m
     samples/filesystem_management_demo.m

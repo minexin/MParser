@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace mparser {
 namespace {
@@ -56,12 +57,14 @@ BytecodeTypedIrGuard typedGuard(
         guard.dimensions.empty()
             ? normalizeRuntimeDimensions({guard.rows, guard.columns})
             : normalizeRuntimeDimensions(guard.dimensions);
+    BytecodeTypedValue value{
+        guard.kind, guard.numericClass, guard.rows, guard.columns,
+        dimensions, guard.shapeKnown, guard.numericClassKnown,
+        guard.complexKnown, guard.numericComplex};
     return BytecodeTypedIrGuard{
         guard.source,
         guard.role,
-        BytecodeTypedValue{guard.kind, guard.numericClass, guard.rows,
-                           guard.columns,
-                           dimensions, guard.shapeKnown},
+        std::move(value),
         guard.observationCount};
 }
 
@@ -248,12 +251,18 @@ BytecodeTypedIrGuardCheck evaluateGuard(
         guard.value.kind == "numeric"
             ? isRuntimeNumericValue(*value)
             : actualKind == guard.value.kind;
+    const bool numericClassMatches =
+        !guard.value.numericClassKnown ||
+        actualNumericClass == guard.value.numericClass;
+    const bool complexMatches =
+        !guard.value.complexKnown ||
+        !isRuntimeNumericValue(*value) ||
+        value->numericComplex == guard.value.numericComplex;
     const bool shapeMatches =
         !guard.value.shapeKnown ||
         actualDimensions == expectedDimensions;
-    check.passed = kindMatches &&
-                   actualNumericClass == guard.value.numericClass &&
-                   shapeMatches;
+    check.passed = kindMatches && numericClassMatches &&
+                   complexMatches && shapeMatches;
     if (check.passed) {
         check.reason = "matched " +
                        shapeText(actualKind, actualNumericClass,

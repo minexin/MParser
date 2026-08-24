@@ -53,6 +53,8 @@ void mergeObservation(BytecodeValueObservation& destination,
 
     const bool sameShape = destination.kind == source.kind &&
                            destination.numericClass == source.numericClass &&
+                           destination.numericComplex ==
+                               source.numericComplex &&
                            destination.rows == source.rows &&
                            destination.columns == source.columns &&
                            destination.dimensions == source.dimensions;
@@ -64,6 +66,7 @@ void mergeObservation(BytecodeValueObservation& destination,
         destination.columns = 0;
         destination.dimensions.clear();
         destination.stable = false;
+        destination.numericComplex = false;
     }
 }
 
@@ -91,6 +94,7 @@ void mergeObservations(
             destination[index].columns = 0;
             destination[index].dimensions.clear();
             destination[index].stable = false;
+            destination[index].numericComplex = false;
         }
     } else if (destination.size() > source.size()) {
         for (size_t index = source.size(); index < destination.size();
@@ -101,6 +105,7 @@ void mergeObservations(
             destination[index].columns = 0;
             destination[index].dimensions.clear();
             destination[index].stable = false;
+            destination[index].numericComplex = false;
         }
     }
 }
@@ -456,6 +461,7 @@ void AdaptiveBytecodeVmSession::mergeProfile(
                 observation.columns = 0;
                 observation.dimensions.clear();
                 observation.stable = false;
+                observation.numericComplex = false;
             }
             for (auto& observation : destination->resultObservations) {
                 observation.kind = "mixed";
@@ -464,6 +470,7 @@ void AdaptiveBytecodeVmSession::mergeProfile(
                 observation.columns = 0;
                 observation.dimensions.clear();
                 observation.stable = false;
+                observation.numericComplex = false;
             }
             continue;
         }

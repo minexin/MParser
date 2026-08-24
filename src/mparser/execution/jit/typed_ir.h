@@ -14,6 +14,9 @@ struct BytecodeTypedValue {
     size_t columns = 0;
     std::vector<size_t> dimensions;
     bool shapeKnown = true;
+    bool numericClassKnown = true;
+    bool complexKnown = true;
+    bool numericComplex = false;
 };
 
 struct BytecodeTypedIrGuard {

@@ -22,7 +22,7 @@ void addGuard(BytecodeOptimizationCandidate& candidate, size_t pc,
         return;
     }
 
-    candidate.guards.push_back(BytecodeOptimizationGuard{
+    BytecodeOptimizationGuard guard{
         pc,
         std::move(source),
         std::move(role),
@@ -31,7 +31,9 @@ void addGuard(BytecodeOptimizationCandidate& candidate, size_t pc,
         observation.rows,
         observation.columns,
         observation.dimensions,
-        observation.observationCount});
+        observation.observationCount};
+    guard.numericComplex = observation.numericComplex;
+    candidate.guards.push_back(std::move(guard));
 }
 
 void addValueGuards(BytecodeOptimizationCandidate& candidate, size_t pc,
@@ -59,6 +61,7 @@ bool sameObservedTypeAndShape(const BytecodeValueObservation& left,
                               const BytecodeValueObservation& right) {
     return left.kind == right.kind &&
            left.numericClass == right.numericClass &&
+           left.numericComplex == right.numericComplex &&
            left.rows == right.rows &&
            left.columns == right.columns &&
            left.dimensions == right.dimensions;
@@ -121,9 +124,12 @@ void addDenseInputGuard(BytecodeOptimizationCandidate& candidate,
                  *observation);
         return;
     }
-    candidate.guards.push_back(BytecodeOptimizationGuard{
-        storePc, "region-input", std::string(name), "numeric", "double",
-        0, 0, {}, 0, false});
+    BytecodeOptimizationGuard guard{
+        storePc, "region-input", std::string(name), "numeric", "floating",
+        0, 0, {}, 0, false};
+    guard.numericClassKnown = false;
+    guard.complexKnown = false;
+    candidate.guards.push_back(std::move(guard));
 }
 
 void addDenseCandidate(
@@ -144,7 +150,8 @@ void addDenseCandidate(
     }
     const bool observedDenseOutput =
         assignment &&
-        assignment->valueObservation.numericClass == "double" &&
+        (assignment->valueObservation.numericClass == "double" ||
+         assignment->valueObservation.numericClass == "single") &&
         (assignment->valueObservation.kind == "vector" ||
          assignment->valueObservation.kind == "matrix");
     if (!staticPlanning && !observedDenseOutput &&
@@ -163,8 +170,8 @@ void addDenseCandidate(
     candidate.executionCount =
         assignment ? assignment->executionCount : 0;
     candidate.reason = staticPlanning
-                           ? "statically closed dense assignment with runtime shape guards"
-                           : "profiled dense assignment with stable double-array output";
+                           ? "statically closed dense assignment with runtime type and shape guards"
+                           : "profiled dense assignment with stable floating-array output";
     BytecodeRegionAnalyzer analyzer(builtinRegistry);
     candidate.region = analyzer.analyze(
         program, candidate.kind, storePc, candidate.target);
