@@ -458,14 +458,47 @@ protocol boundaries. The current target subset includes:
   creation such as `s(1).a = 1`, and comma-separated field results;
 - two-dimensional CSC sparse numeric values with construction, inspection,
   common indexing, transpose, and explicit dense conversion;
+- N-dimensional categorical arrays with category dictionaries, undefined
+  elements, ordinal/protected policies, indexing, mutation, and concatenation;
 - ordered tables with named variables, row/variable indexing, metadata,
-  transactional assignment, and array/structure conversions;
+  transactional assignment/deletion, concatenation, sorting, and
+  array/structure conversions;
+- timetables with datetime/duration RowTimes, exact-time selection,
+  synchronized row operations, and table/array conversion;
 - value, handle, and supported heterogeneous object arrays.
 
 Indexing and nested assignment use transactional root-and-path semantics. A
 failed nested mutation does not commit a partially modified root value.
-Complex integer arrays, categorical arrays, timetables, GPU arrays, and
-arbitrary MATLAB domain objects are outside the current contract.
+Complex integer arrays, GPU arrays, and arbitrary unlisted MATLAB domain
+objects are outside the current contract.
+
+## Categorical Arrays
+
+`categorical` stores an N-dimensional shape, an ordered dictionary, and one
+category code per element. Code zero is undefined. Construction accepts
+numeric, text, Cell, missing, or existing categorical data, optional explicit
+values/category names, and `Ordinal` or `Protected` options:
+
+```matlab
+c = categorical({'b', 'a', 'b', ''});
+c = addcats(c, {'c'}, 'Before', 'b');
+c(4) = 'c';
+mask = isundefined(c);
+counts = countcats(c);
+
+o = categorical([1 2 1], [1 2], {'low', 'high'}, ...
+    'Ordinal', true);
+assert(o(1) < o(2));
+```
+
+Parenthesis indexing, growth, deletion, concatenation, equality, ordinal
+comparison, `categories`, `addcats`, `removecats`, `renamecats`,
+`reordercats`, `mergecats`, `countcats`, `isordinal`, and `isprotected` share
+one copy-on-write runtime representation. Assignment gaps become undefined.
+`double` returns category codes and `string` returns labels with missing state.
+Table variables may be categorical and participate in nested assignment and
+`sortrows`. Locale-specific collation and the complete MATLAB categorical
+conversion/display surface remain outside this batch.
 
 ## Tables
 
@@ -495,12 +528,14 @@ row and variable selectors and returns a table. Brace indexing returns the
 selected contents. Numeric, logical, colon, variable-name, and row-name
 selectors are supported within the documented rectangular limits.
 Indexed variable deletion requires a literal colon row selector; explicit
-full-row numeric indices do not stand in for `:`. Row deletion is not yet in
-this slice. Repeated read selectors are made unique with deterministic `_1`,
-`_2`, and later suffixes.
+full-row numeric indices do not stand in for `:`. `t(rows, :) = []` deletes
+rows, while rectangular brace assignment may replace several selected
+variables at once. Horizontal/vertical concatenation validates row counts,
+variable names, and compatible variable values. Repeated read selectors are
+made unique with deterministic `_1`, `_2`, and later suffixes.
 
 `height`, `width`, `istable`, `array2table`, `table2array`, `struct2table`,
-and `table2struct` share the builtin registry. `table2array` requires variables
+`table2struct`, and `sortrows` share the builtin registry. `table2array` requires variables
 that can form one homogeneous array. Tables may contain dense, text, temporal,
 Cell, structure, object, nested-table, or missing arrays that provide stable
 first-dimension row indexing, and a multi-column value remains one table
@@ -511,11 +546,38 @@ numeric, text, temporal, or nested-table variables and return a logical table.
 Tables execute through the VM/portable fallback and are opaque objects at C,
 C++, and machine-protocol boundaries. Recursively module-independent tables
 can be retained and passed between compiled modules, but their variables are
-not projected as an ABI layout. Timetables, categorical variables,
-joins/grouping/sorting, row deletion, general multi-variable brace assignment,
-table MAT persistence, and exact MATLAB display or `TableProperties` object
-identity are not part of this first slice. Run `samples/table_demo.m` for the
-multi-tier parity example.
+not projected as an ABI layout. Joins/grouping, stacking, table MAT
+persistence, and exact MATLAB display or `TableProperties` object identity
+remain outside this batch. Run `samples/table_demo.m` and
+`samples/categorical_demo.m` for multi-tier parity examples.
+
+## Timetables
+
+A timetable is a distinct tabular value whose first dimension is a datetime
+or duration RowTimes vector:
+
+```matlab
+rt = datetime(2024, 1, [2; 1; 2]);
+tt = timetable(rt, [3; 1; 2], 'VariableNames', {'X'});
+allOnSecond = tt(datetime(2024, 1, 2), :); % both duplicate matches
+[sorted, order] = sortrows(tt, 'X');
+[byTime, timeOrder] = sortrows(tt); % default key is RowTimes
+asTable = timetable2table(tt);
+roundTrip = table2timetable(asTable);
+```
+
+Duplicate, out-of-order, and `NaT` row times are legal. Exact temporal
+selectors return every matching row. The first dimension is available through
+its dimension name (default `Time`) and `Properties.RowTimes`; assignment,
+deletion, concatenation, and sorting transform RowTimes and variables
+together. `array2timetable` requires `RowTimes`.
+
+`timetable`, `istimetable`, `array2timetable`, `table2timetable`, and
+`timetable2table` use the shared builtin registry. Caller-expression name
+inference is not available, so generated `Time`/`VarN` names may differ from
+MATLAB. `retime`, `synchronize`, `timerange`, joins/grouping, calendar-duration
+row times, timezone databases, timetable MAT persistence, and exact MATLAB
+display/property-object identity remain open. Run `samples/timetable_demo.m`.
 
 ## Control Flow And Exceptions
 
@@ -595,7 +657,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.3, ABI generation 2 revision 1 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.3 |
-| Builtin compiled into the engine | active source contract 1.15; archived v1.2 contract 1.1 |
+| Builtin compiled into the engine | active source contract 1.16; archived v1.2 contract 1.1 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,
@@ -616,7 +678,7 @@ The following are not v1.0 release claims:
 - complete MATLAB compatibility;
 - Live Scripts, P-code, MEX, Simulink, graphics, or desktop UI integration;
 - MATLAB toolboxes and their long-tail function catalogs;
-- complex-integer, GPU, categorical, timetable, or every domain-specific value;
+- complex-integer, GPU, or every unlisted domain-specific value;
 - parallel `parfor`;
 - an external binary plugin ABI or zero-copy borrowed array ABI;
 - a persistent on-disk native-code cache.

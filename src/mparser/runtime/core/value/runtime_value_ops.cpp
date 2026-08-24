@@ -1,5 +1,6 @@
 #include "mparser/runtime/core/value/runtime_value_ops.h"
 
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
@@ -8,6 +9,7 @@
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_timetable.h"
 
 #include <unordered_map>
 #include <utility>
@@ -103,6 +105,14 @@ bool runtimeValuesEqualImpl(
         return runtimeTemporalValuesEqual(
             left, right, nanEquality == RuntimeNaNEquality::Equal);
     }
+    if (isRuntimeCategoricalValue(left) ||
+        isRuntimeCategoricalValue(right)) {
+        return isRuntimeCategoricalValue(left) &&
+               isRuntimeCategoricalValue(right) &&
+               runtimeCategoricalValuesEqual(
+                   left, right,
+                   nanEquality == RuntimeNaNEquality::Equal);
+    }
     if (isRuntimeNumericValue(left) &&
         isRuntimeNumericValue(right)) {
         return runtimeNumericValuesEqual(
@@ -115,27 +125,29 @@ bool runtimeValuesEqualImpl(
         runtimeDimensions(left) != runtimeDimensions(right)) {
         return false;
     }
-    if (isRuntimeTableValue(left) || isRuntimeTableValue(right)) {
-        if (!isRuntimeTableValue(left) ||
-            !isRuntimeTableValue(right)) {
+    if (isRuntimeTabularValue(left) || isRuntimeTabularValue(right)) {
+        if (!isRuntimeTabularValue(left) ||
+            !isRuntimeTabularValue(right) ||
+            left.className != right.className) {
             return false;
         }
         const RuntimeTablePair pair{
-            runtimeTableStorage(left), runtimeTableStorage(right)};
+            runtimeTabularStorage(left), runtimeTabularStorage(right)};
         if (const auto found = context.tablePairs.find(pair);
             found != context.tablePairs.end()) {
             return found->second != RuntimeEqualityState::Unequal;
         }
         context.tablePairs.emplace(
             pair, RuntimeEqualityState::Visiting);
-        const bool equal = runtimeTableValuesEqual(
-            left, right,
-            [nanEquality, &context](
+        const auto valueEquality = [nanEquality, &context](
                 const RuntimeValue& leftValue,
                 const RuntimeValue& rightValue) {
                 return runtimeValuesEqualImpl(
                     leftValue, rightValue, nanEquality, context);
-            });
+            };
+        const bool equal = isRuntimeTimetableValue(left)
+            ? runtimeTimetableValuesEqual(left, right, valueEquality)
+            : runtimeTableValuesEqual(left, right, valueEquality);
         context.tablePairs[pair] =
             equal ? RuntimeEqualityState::Equal
                   : RuntimeEqualityState::Unequal;

@@ -6,6 +6,7 @@
 #include "mparser/runtime/builtins/array/runtime_array_ops.h"
 #include "mparser/runtime/core/object_model/runtime_argument_validation.h"
 #include "mparser/runtime/core/indexing/runtime_assignment.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_cell.h"
 #include "mparser/runtime/core/session/runtime_exception.h"
 #include "mparser/runtime/core/indexing/runtime_index.h"
@@ -177,6 +178,12 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     }
     if (isNumeric(left) && isNumeric(right)) {
         return runtimeNumericValuesIdentical(left, right);
+    }
+    if (isRuntimeCategoricalValue(left) ||
+        isRuntimeCategoricalValue(right)) {
+        return isRuntimeCategoricalValue(left) &&
+               isRuntimeCategoricalValue(right) &&
+               runtimeCategoricalValuesEqual(left, right, false);
     }
     if (isText(left) && isText(right)) {
         return runtimeTextPayloadEqual(left, right);
@@ -2083,7 +2090,7 @@ private:
         const auto variable = loadStoredVariable(root);
         RuntimeValue updated =
             variable ? *variable : makeRuntimeStructValue();
-        if (isRuntimeTableValue(updated)) {
+        if (isRuntimeTabularValue(updated)) {
             auto assigned = runtimeSetTableMember(
                 updated, std::move(fieldName), value, nullAssignment);
             if (!assigned.succeeded) {
@@ -2146,7 +2153,21 @@ private:
                 subscript.kind == HirKind::Literal &&
                 subscript.label == ":");
         }
-        if (isRuntimeTableValue(targetValue)) {
+        if (isRuntimeCategoricalValue(targetValue)) {
+            auto result = nullAssignment
+                              ? runtimeDeleteCategoricalIndexed(
+                                    targetValue, arguments,
+                                    colonSubscripts)
+                              : runtimeAssignCategoricalIndexed(
+                                    targetValue, arguments, value);
+            if (!result.succeeded) {
+                addDiagnostic(target, std::move(result.error));
+                return;
+            }
+            storeVariable(callee, std::move(result.value));
+            return;
+        }
+        if (isRuntimeTabularValue(targetValue)) {
             auto result = nullAssignment
                               ? runtimeDeleteTableIndexed(
                                     targetValue, arguments,
@@ -2265,7 +2286,7 @@ private:
 
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(target, indexed);
-        if (isRuntimeTableValue(indexed)) {
+        if (isRuntimeTabularValue(indexed)) {
             if (nullAssignment) {
                 addDiagnostic(
                     target,
@@ -2759,7 +2780,7 @@ private:
             return missingValue();
         }
         const RuntimeValue target = evaluate(*node.children.front());
-        if (!isStruct(target) && !isRuntimeTableValue(target) &&
+        if (!isStruct(target) && !isRuntimeTabularValue(target) &&
             !isRuntimeException(target) &&
             !isRuntimeTemporalValue(target)) {
             addDiagnostic(node,
@@ -2792,7 +2813,7 @@ private:
             }
             return std::move(property.value);
         }
-        if (isRuntimeTableValue(target)) {
+        if (isRuntimeTabularValue(target)) {
             auto member = runtimeTableMemberValue(target, fieldName);
             if (!member.succeeded) {
                 addDiagnostic(node, std::move(member.error));
@@ -3071,6 +3092,16 @@ private:
         }
 
         const RuntimeValue right = evaluate(*node.children[1]);
+        if (isRuntimeCategoricalValue(left) ||
+            isRuntimeCategoricalValue(right)) {
+            auto result = runtimeCompareCategorical(
+                node.label, left, right);
+            if (result.succeeded) {
+                return std::move(result.value);
+            }
+            addDiagnostic(node, std::move(result.error));
+            return missingValue();
+        }
         if (isRuntimeTableValue(left) ||
             isRuntimeTableValue(right)) {
             auto result = runtimeCompareTables(
@@ -3730,7 +3761,7 @@ private:
         const RuntimeValue target = evaluate(*node.children.front());
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(node, target);
-        if (isRuntimeTableValue(target)) {
+        if (isRuntimeTabularValue(target)) {
             auto contents = runtimeTableContentsValue(target, arguments);
             if (!contents.succeeded) {
                 addDiagnostic(node, std::move(contents.error));
@@ -3766,8 +3797,17 @@ private:
             node.children[1]->kind == HirKind::Literal &&
             node.children[1]->label == ":";
 
-        if (isRuntimeTableValue(target)) {
+        if (isRuntimeTabularValue(target)) {
             auto result = runtimeIndexTable(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (isRuntimeCategoricalValue(target)) {
+            auto result = runtimeIndexCategorical(
+                target, arguments, linearColon);
             if (!result.succeeded) {
                 addDiagnostic(node, std::move(result.error));
                 return missingValue();
@@ -4335,7 +4375,36 @@ private:
                 return FunctionCallResult{{missingValue()}};
             }
             RuntimeTextOperationResult result;
-            if (name == "char") {
+            if (isRuntimeCategoricalValue(arguments.front())) {
+                if (name == "ismissing") {
+                    auto categorical = runtimeCategoricalMissingMask(
+                        arguments.front());
+                    if (!categorical.succeeded) {
+                        addDiagnostic(node, std::move(categorical.error));
+                        return FunctionCallResult{{missingValue()}};
+                    }
+                    return FunctionCallResult{
+                        {std::move(categorical.value)}};
+                }
+                auto categorical = runtimeCategoricalToString(
+                    arguments.front());
+                if (!categorical.succeeded) {
+                    addDiagnostic(node, std::move(categorical.error));
+                    return FunctionCallResult{{missingValue()}};
+                }
+                if (name == "string") {
+                    return FunctionCallResult{
+                        {std::move(categorical.value)}};
+                }
+                if (name == "char") {
+                    result = runtimeConvertToCharacter(
+                        categorical.value);
+                } else if (name == "cellstr") {
+                    result = runtimeCellstr(categorical.value);
+                } else if (name == "strlength") {
+                    result = runtimeStringLengths(categorical.value);
+                }
+            } else if (name == "char") {
                 if (isRuntimeTemporalValue(arguments.front())) {
                     auto temporal = runtimeTemporalFormat(
                         arguments.front(), false);

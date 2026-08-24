@@ -4,15 +4,19 @@
 #include "mparser/runtime/core/indexing/runtime_index.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_array.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_cell.h"
 #include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_timetable.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -32,10 +36,25 @@ RuntimeTableOperationResult success(RuntimeValue value) {
 
 RuntimeTableOperationResult validatedTable(RuntimeValue value) {
     std::string error;
-    if (!validateRuntimeTableStorage(value, error)) {
+    const bool valid = isRuntimeTableValue(value)
+                           ? validateRuntimeTableStorage(value, error)
+                       : isRuntimeTimetableValue(value)
+                           ? validateRuntimeTimetableStorage(value, error)
+                           : false;
+    if (!valid) {
+        if (error.empty()) {
+            error = "tabular value has no recognized storage";
+        }
         return failure(std::move(error));
     }
     return success(std::move(value));
+}
+
+RuntimeValue makeTabularValue(
+    std::shared_ptr<RuntimeTabularStorage> storage) {
+    return storage && storage->kind == RuntimeTabularKind::Timetable
+               ? makeRuntimeTimetableValue(std::move(storage))
+               : makeRuntimeTableValue(std::move(storage));
 }
 
 RuntimeTableContentsResult contentsFailure(std::string error) {
@@ -158,14 +177,10 @@ bool hasDuplicateIndices(const std::vector<size_t>& indices) {
            indices.size();
 }
 
-bool tableVariableSupportsRows(const RuntimeValue& value) {
-    return isRuntimeTableValue(value) ||
-           value.kind == RuntimeValueKind::Struct ||
-           value.kind == RuntimeValueKind::Cell ||
-           isRuntimeTextValue(value) ||
-           value.kind == RuntimeValueKind::MissingArray ||
-           isRuntimeClassObject(value) ||
-           isRuntimeNumericValue(value);
+std::vector<size_t> uniqueIndices(std::vector<size_t> indices) {
+    std::sort(indices.begin(), indices.end());
+    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+    return indices;
 }
 
 std::vector<std::string> defaultVariableNames(size_t count) {
@@ -239,10 +254,10 @@ SelectorResult resolveSelector(
 TableSelections resolveTableSelections(
     const RuntimeValue& table,
     const std::vector<RuntimeValue>& subscripts) {
-    const RuntimeTableStorage* storage = runtimeTableStorage(table);
+    const RuntimeTableStorage* storage = runtimeTabularStorage(table);
     if (!storage) {
         return TableSelections{false, {}, {},
-                               "table indexing requires a table target"};
+                               "tabular indexing requires a table or timetable target"};
     }
     if (subscripts.size() != 2) {
         return TableSelections{
@@ -250,8 +265,18 @@ TableSelections resolveTableSelections(
             "table indexing requires exactly two subscripts"};
     }
 
-    const auto rows = resolveSelector(
-        subscripts[0], storage->rowCount, storage->rowNames, "row");
+    SelectorResult rows;
+    if (isRuntimeTimetableValue(table) &&
+        isRuntimeTemporalValue(subscripts[0])) {
+        auto selected = runtimeResolveTimetableRowSelector(
+            table, subscripts[0]);
+        rows = SelectorResult{selected.succeeded,
+                              std::move(selected.indices),
+                              std::move(selected.error)};
+    } else {
+        rows = resolveSelector(
+            subscripts[0], storage->rowCount, storage->rowNames, "row");
+    }
     if (!rows.succeeded) {
         return TableSelections{false, {}, {}, rows.error};
     }
@@ -287,8 +312,8 @@ RuntimeTableOperationResult selectRows(
     const RuntimeValue& value,
     const std::vector<size_t>& rowSelection) {
     const auto subscripts = rowSubscripts(value, rowSelection);
-    if (isRuntimeTableValue(value)) {
-        const auto* storage = runtimeTableStorage(value);
+    if (isRuntimeTabularValue(value)) {
+        const auto* storage = runtimeTabularStorage(value);
         return runtimeIndexTable(
             value,
             {oneBasedSelection(rowSelection),
@@ -319,6 +344,12 @@ RuntimeTableOperationResult selectRows(
                    ? success(std::move(result.value))
                    : failure(std::move(result.error));
     }
+    if (isRuntimeCategoricalValue(value)) {
+        auto result = runtimeIndexCategorical(value, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
     if (isRuntimeClassObject(value)) {
         auto result = runtimeIndexObject(value, subscripts);
         return result.succeeded
@@ -339,8 +370,8 @@ RuntimeTableOperationResult assignRows(
     const std::vector<size_t>& rowSelection,
     const RuntimeValue& value) {
     const auto subscripts = rowSubscripts(target, rowSelection);
-    if (isRuntimeTableValue(target)) {
-        const auto* storage = runtimeTableStorage(target);
+    if (isRuntimeTabularValue(target)) {
+        const auto* storage = runtimeTabularStorage(target);
         return runtimeAssignTableIndexed(
             target,
             {oneBasedSelection(rowSelection),
@@ -375,6 +406,13 @@ RuntimeTableOperationResult assignRows(
                    ? success(std::move(updated))
                    : failure(std::move(result.error));
     }
+    if (isRuntimeCategoricalValue(target)) {
+        auto result = runtimeAssignCategoricalIndexed(
+            target, subscripts, value);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
     if (isRuntimeClassObject(target)) {
         auto result = runtimeAssignObjectIndexed(
             target, subscripts, value);
@@ -393,6 +431,251 @@ RuntimeTableOperationResult assignRows(
     return failure("table variables must support row assignment");
 }
 
+RuntimeTableOperationResult deleteRows(
+    const RuntimeValue& target,
+    const std::vector<size_t>& rowSelection) {
+    const auto subscripts = rowSubscripts(target, rowSelection);
+    std::vector<bool> colonSubscripts(subscripts.size(), true);
+    if (!colonSubscripts.empty()) {
+        colonSubscripts.front() = false;
+    }
+    if (isRuntimeTabularValue(target)) {
+        const auto* storage = runtimeTabularStorage(target);
+        auto result = runtimeDeleteTableIndexed(
+            target,
+            {oneBasedSelection(rowSelection),
+             oneBasedSelection(fullSelection(
+                 storage ? storage->variables.size() : 0))},
+            {false, true});
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (target.kind == RuntimeValueKind::Struct) {
+        auto result = runtimeDeleteStructIndexed(target, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (target.kind == RuntimeValueKind::Cell) {
+        auto result = runtimeDeleteCellIndexed(
+            target, subscripts, colonSubscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (isRuntimeTextValue(target)) {
+        RuntimeValue updated = target;
+        auto result = runtimeDeleteTextIndexed(
+            updated, subscripts, colonSubscripts);
+        return result.succeeded
+                   ? success(std::move(updated))
+                   : failure(std::move(result.error));
+    }
+    if (target.kind == RuntimeValueKind::MissingArray) {
+        RuntimeValue updated = target;
+        auto result = runtimeDeleteMissingIndexed(
+            updated, subscripts, colonSubscripts);
+        return result.succeeded
+                   ? success(std::move(updated))
+                   : failure(std::move(result.error));
+    }
+    if (isRuntimeCategoricalValue(target)) {
+        auto result = runtimeDeleteCategoricalIndexed(
+            target, subscripts, colonSubscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (isRuntimeClassObject(target)) {
+        auto result = runtimeDeleteObjectIndexed(
+            target, subscripts, colonSubscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (isRuntimeNumericValue(target)) {
+        RuntimeValue updated = target;
+        auto result = runtimeDeleteNumericIndexed(
+            updated, subscripts, colonSubscripts);
+        return result.succeeded
+                   ? success(std::move(updated))
+                   : failure(std::move(result.error));
+    }
+    return failure("table variables must support row deletion");
+}
+
+RuntimeTableOperationResult selectColumns(
+    const RuntimeValue& value, size_t firstColumn,
+    size_t columnCount) {
+    if (runtimeDimensionCount(value) != 2 ||
+        firstColumn > runtimeDimension(value, 1) ||
+        columnCount > runtimeDimension(value, 1) - firstColumn) {
+        return failure(
+            "table brace assignment requires two-dimensional column slices");
+    }
+    const std::vector<RuntimeValue> subscripts{
+        oneBasedSelection(fullSelection(runtimeDimension(value, 0))),
+        oneBasedSelection([&] {
+            std::vector<size_t> columns(columnCount);
+            for (size_t index = 0; index < columnCount; ++index) {
+                columns[index] = firstColumn + index;
+            }
+            return columns;
+        }())};
+    if (value.kind == RuntimeValueKind::Struct) {
+        auto result = runtimeIndexStruct(value, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (value.kind == RuntimeValueKind::Cell) {
+        auto result = runtimeIndexCell(value, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (isRuntimeTextValue(value)) {
+        auto result = runtimeIndexText(value, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (value.kind == RuntimeValueKind::MissingArray) {
+        auto result = runtimeIndexMissingArray(value, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (isRuntimeCategoricalValue(value)) {
+        auto result = runtimeIndexCategorical(value, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (isRuntimeClassObject(value)) {
+        auto result = runtimeIndexObject(value, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    if (isRuntimeNumericValue(value)) {
+        auto result = runtimeIndexNumeric(value, subscripts);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    return failure(
+        "table brace assignment value does not support column slicing");
+}
+
+int compareMissingLast(bool leftMissing, bool rightMissing) {
+    if (leftMissing == rightMissing) {
+        return 0;
+    }
+    return leftMissing ? 1 : -1;
+}
+
+std::optional<int> compareTableVariableRows(
+    const RuntimeValue& value, size_t leftRow, size_t rightRow) {
+    const size_t rows = runtimeDimension(value, 0);
+    if (leftRow >= rows || rightRow >= rows) {
+        return std::nullopt;
+    }
+    const size_t trailingCount = rows == 0
+                                     ? 0
+                                     : runtimeShapeElementCount(value) / rows;
+    for (size_t trailing = 0; trailing < trailingCount; ++trailing) {
+        const size_t leftIndex = leftRow + rows * trailing;
+        const size_t rightIndex = rightRow + rows * trailing;
+        int comparison = 0;
+        if (isRuntimeNumericValue(value)) {
+            const auto left = runtimeNumericElementValue(value, leftIndex);
+            const auto right = runtimeNumericElementValue(value, rightIndex);
+            if (!left || !right) {
+                return std::nullopt;
+            }
+            const bool leftMissing =
+                !runtimeNumericClassIsInteger(left->numericClass) &&
+                left->numericClass != RuntimeNumericClass::Logical &&
+                (std::isnan(left->real) ||
+                 (left->complex && std::isnan(left->imaginary)));
+            const bool rightMissing =
+                !runtimeNumericClassIsInteger(right->numericClass) &&
+                right->numericClass != RuntimeNumericClass::Logical &&
+                (std::isnan(right->real) ||
+                 (right->complex && std::isnan(right->imaginary)));
+            comparison = compareMissingLast(leftMissing, rightMissing);
+            if (comparison == 0 && !leftMissing) {
+                comparison = runtimeCompareNumericElementsForExtrema(
+                    *left, *right);
+            }
+        } else if (isRuntimeCategoricalValue(value)) {
+            const std::uint32_t left = runtimeCategoricalCode(
+                value, leftIndex);
+            const std::uint32_t right = runtimeCategoricalCode(
+                value, rightIndex);
+            comparison = compareMissingLast(left == 0, right == 0);
+            if (comparison == 0 && left != 0) {
+                comparison = left < right ? -1 : left > right ? 1 : 0;
+            }
+        } else if (isRuntimeTemporalValue(value)) {
+            const auto left = runtimeTemporalPayload(value, leftIndex);
+            const auto right = runtimeTemporalPayload(value, rightIndex);
+            if (!left || !right) {
+                return std::nullopt;
+            }
+            comparison = compareMissingLast(
+                std::isnan(*left), std::isnan(*right));
+            if (comparison == 0 && !std::isnan(*left)) {
+                comparison = *left < *right ? -1 : *left > *right ? 1 : 0;
+            }
+        } else if (isRuntimeStringArray(value)) {
+            const auto* left = runtimeStringElement(value, leftIndex);
+            const auto* right = runtimeStringElement(value, rightIndex);
+            if (!left || !right) {
+                return std::nullopt;
+            }
+            comparison = compareMissingLast(left->missing, right->missing);
+            if (comparison == 0 && !left->missing) {
+                comparison = left->value < right->value
+                                 ? -1
+                                 : left->value > right->value ? 1 : 0;
+            }
+        } else if (isRuntimeCharacterArray(value)) {
+            const auto left = runtimeCharacterElement(value, leftIndex);
+            const auto right = runtimeCharacterElement(value, rightIndex);
+            if (!left || !right) {
+                return std::nullopt;
+            }
+            comparison = *left < *right ? -1 : *left > *right ? 1 : 0;
+        } else if (value.kind == RuntimeValueKind::Cell) {
+            const auto leftOffset = runtimeColumnMajorLinearToStorageOffset(
+                value, leftIndex);
+            const auto rightOffset = runtimeColumnMajorLinearToStorageOffset(
+                value, rightIndex);
+            const auto left = leftOffset && *leftOffset < value.cells.size()
+                                  ? runtimeTextScalarUtf8(
+                                        value.cells[*leftOffset])
+                                  : std::nullopt;
+            const auto right = rightOffset && *rightOffset < value.cells.size()
+                                   ? runtimeTextScalarUtf8(
+                                         value.cells[*rightOffset])
+                                   : std::nullopt;
+            if (!left || !right) {
+                return std::nullopt;
+            }
+            comparison = *left < *right ? -1 : *left > *right ? 1 : 0;
+        } else {
+            return std::nullopt;
+        }
+        if (comparison != 0) {
+            return comparison;
+        }
+    }
+    return 0;
+}
+
 RuntimeTableOperationResult propertiesValue(
     const RuntimeTableStorage& storage) {
     std::vector<std::string> variableNames;
@@ -405,40 +688,54 @@ RuntimeTableOperationResult propertiesValue(
     fields.emplace("VariableNames",
                    textCell(variableNames,
                             {1, variableNames.size()}));
-    fields.emplace("RowNames",
-                   textCell(storage.rowNames,
-                            {storage.rowNames.size(), 1}));
+    std::vector<std::string> fieldOrder{"VariableNames"};
+    if (storage.kind == RuntimeTabularKind::Timetable) {
+        fields.emplace("RowTimes", storage.rowTimes);
+        fieldOrder.push_back("RowTimes");
+    } else {
+        fields.emplace("RowNames",
+                       textCell(storage.rowNames,
+                                {storage.rowNames.size(), 1}));
+        fieldOrder.push_back("RowNames");
+    }
     fields.emplace("DimensionNames",
                    textCell(storage.dimensionNames,
                             {1, storage.dimensionNames.size()}));
     fields.emplace("Description",
                    makeRuntimeCharacterVectorUtf8(storage.description));
     fields.emplace("UserData", storage.userData);
+    fieldOrder.insert(fieldOrder.end(),
+                      {"DimensionNames", "Description", "UserData"});
     return success(makeRuntimeStructArrayValue(
-        {"VariableNames", "RowNames", "DimensionNames",
-         "Description", "UserData"},
+        std::move(fieldOrder),
         {std::move(fields)}, {1, 1}));
 }
 
 RuntimeTableOperationResult applyProperties(
     const RuntimeValue& table, const RuntimeValue& value) {
+    const bool timetable = isRuntimeTimetableValue(table);
     if (!isRuntimeScalarStruct(value)) {
         return failure(
-            "table Properties assignment requires a scalar structure");
+            "tabular Properties assignment requires a scalar structure");
     }
-    static const std::set<std::string, std::less<>> allowed{
-        "VariableNames", "RowNames", "DimensionNames",
-        "Description", "UserData"};
+    const std::set<std::string, std::less<>> allowed = timetable
+        ? std::set<std::string, std::less<>>{
+              "VariableNames", "RowTimes", "DimensionNames",
+              "Description", "UserData"}
+        : std::set<std::string, std::less<>>{
+              "VariableNames", "RowNames", "DimensionNames",
+              "Description", "UserData"};
     for (const std::string& field : runtimeStructFieldOrder(value)) {
         if (!allowed.contains(field)) {
-            return failure("table property is not available: " + field);
+            return failure("tabular property is not available: " + field);
         }
     }
 
     RuntimeValue result = table;
-    RuntimeTableStorage* storage = runtimeMutableTableStorage(result);
+    RuntimeTableStorage* storage = runtimeMutableTabularStorage(result);
     if (!storage) {
-        return failure("table Properties assignment requires a table");
+        return failure(
+            "Properties assignment requires a table or timetable");
     }
     if (const RuntimeValue* names = runtimeStructField(
             value, "VariableNames")) {
@@ -467,6 +764,18 @@ RuntimeTableOperationResult applyProperties(
                                : parsed.error);
         }
         storage->rowNames = std::move(parsed.names);
+        storage->rowAxisKind = storage->rowNames.empty()
+                                   ? RuntimeTabularRowAxisKind::None
+                                   : RuntimeTabularRowAxisKind::Names;
+    }
+    if (const RuntimeValue* rowTimes = runtimeStructField(
+            value, "RowTimes")) {
+        auto updated = runtimeSetTimetableRowTimes(result, *rowTimes);
+        if (!updated.succeeded) {
+            return failure(std::move(updated.error));
+        }
+        result = std::move(updated.value);
+        storage = runtimeMutableTabularStorage(result);
     }
     if (const RuntimeValue* names = runtimeStructField(
             value, "DimensionNames")) {
@@ -485,14 +794,14 @@ RuntimeTableOperationResult applyProperties(
         const auto text = runtimeTextScalarUtf8(*description);
         if (!text) {
             return failure(
-                "table Description must be a character vector or string scalar");
+                "tabular Description must be a character vector or string scalar");
         }
         storage->description = *text;
     }
     if (const RuntimeValue* userData = runtimeStructField(
             value, "UserData")) {
         if (!runtimeValueIsStorable(*userData)) {
-            return failure("table UserData must be a storable value");
+            return failure("tabular UserData must be a storable value");
         }
         storage->userData = *userData;
     }
@@ -508,7 +817,7 @@ RuntimeTableOperationResult applyProperties(
     }
     setRuntimeDimensions(result,
                          {storage->rowCount, storage->variables.size()});
-    return success(std::move(result));
+    return validatedTable(std::move(result));
 }
 
 RuntimeTableOperationResult scalarFieldColumn(
@@ -580,6 +889,9 @@ RuntimeTableOperationResult scalarFieldColumn(
                 first.kind == RuntimeValueKind::MissingArray) {
                 return value.kind == first.kind;
             }
+            if (isRuntimeCategoricalValue(first)) {
+                return isRuntimeCategoricalValue(value);
+            }
             if (isRuntimeClassObject(first)) {
                 return isRuntimeClassObject(value) &&
                        value.className == first.className &&
@@ -613,41 +925,45 @@ RuntimeTableOperationResult scalarFieldColumn(
 bool isRuntimeTableValue(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Object &&
            value.className == kRuntimeTableClassName &&
-           value.tableStorage != nullptr;
+           value.tabularStorage != nullptr &&
+           value.tabularStorage->kind == RuntimeTabularKind::Table;
 }
 
-const RuntimeTableStorage* runtimeTableStorage(
+const RuntimeTabularStorage* runtimeTableStorage(
     const RuntimeValue& value) {
-    return isRuntimeTableValue(value) ? value.tableStorage.get() : nullptr;
+    return isRuntimeTableValue(value) ? value.tabularStorage.get() : nullptr;
 }
 
-RuntimeTableStorage* runtimeMutableTableStorage(RuntimeValue& value) {
+RuntimeTabularStorage* runtimeMutableTableStorage(RuntimeValue& value) {
     if (!isRuntimeTableValue(value)) {
         return nullptr;
     }
-    if (value.tableStorage.use_count() != 1) {
-        value.tableStorage =
-            std::make_shared<RuntimeTableStorage>(*value.tableStorage);
-    }
-    return value.tableStorage.get();
+    return runtimeMutableTabularStorage(value);
 }
 
 RuntimeValue makeRuntimeTableValue(
-    std::shared_ptr<RuntimeTableStorage> storage) {
+    std::shared_ptr<RuntimeTabularStorage> storage) {
     RuntimeValue result;
     result.kind = RuntimeValueKind::Object;
     result.className = std::string(kRuntimeTableClassName);
     result.handleObject = false;
-    result.tableStorage = std::move(storage);
-    if (result.tableStorage &&
-        result.tableStorage->userData.kind == RuntimeValueKind::Missing) {
-        result.tableStorage->userData = emptyDoubleValue();
+    result.tabularStorage = std::move(storage);
+    if (result.tabularStorage) {
+        result.tabularStorage->kind = RuntimeTabularKind::Table;
+        result.tabularStorage->rowAxisKind =
+            result.tabularStorage->rowNames.empty()
+                ? RuntimeTabularRowAxisKind::None
+                : RuntimeTabularRowAxisKind::Names;
+    }
+    if (result.tabularStorage &&
+        result.tabularStorage->userData.kind == RuntimeValueKind::Missing) {
+        result.tabularStorage->userData = emptyDoubleValue();
     }
     setRuntimeDimensions(
         result,
-        result.tableStorage
-            ? std::vector<size_t>{result.tableStorage->rowCount,
-                                  result.tableStorage->variables.size()}
+        result.tabularStorage
+            ? std::vector<size_t>{result.tabularStorage->rowCount,
+                                  result.tabularStorage->variables.size()}
             : std::vector<size_t>{0, 0});
     return result;
 }
@@ -662,7 +978,7 @@ RuntimeTableOperationResult runtimeMakeTable(
                                 : runtimeDimension(variables.front(), 0);
     for (const RuntimeValue& variable : variables) {
         if (!runtimeValueIsStorable(variable) ||
-            !tableVariableSupportsRows(variable)) {
+            !runtimeTabularVariableSupportsRows(variable)) {
             return failure(
                 "table variables must be storable arrays with row indexing");
         }
@@ -757,12 +1073,18 @@ RuntimeTableNamesResult runtimeTableNames(
 
 RuntimeTableOperationResult runtimeTableMemberValue(
     const RuntimeValue& table, std::string_view member) {
-    const RuntimeTableStorage* storage = runtimeTableStorage(table);
+    const RuntimeTableStorage* storage = runtimeTabularStorage(table);
     if (!storage) {
-        return failure("table member access requires a table target");
+        return failure(
+            "tabular member access requires a table or timetable target");
     }
     if (member == "Properties") {
         return propertiesValue(*storage);
+    }
+    if (storage->kind == RuntimeTabularKind::Timetable &&
+        !storage->dimensionNames.empty() &&
+        member == storage->dimensionNames.front()) {
+        return success(storage->rowTimes);
     }
     const auto variable = std::find_if(
         storage->variables.begin(), storage->variables.end(),
@@ -784,13 +1106,23 @@ RuntimeTableOperationResult runtimeSetTableMember(
         }
         return applyProperties(table, value);
     }
+    const RuntimeTableStorage* source = runtimeTabularStorage(table);
+    if (source && source->kind == RuntimeTabularKind::Timetable &&
+        !source->dimensionNames.empty() &&
+        member == source->dimensionNames.front()) {
+        if (nullAssignment) {
+            return failure("timetable RowTimes cannot be deleted");
+        }
+        return runtimeSetTimetableRowTimes(table, value);
+    }
     if (member.empty()) {
         return failure("table variable name must not be empty");
     }
     RuntimeValue result = table;
-    RuntimeTableStorage* storage = runtimeMutableTableStorage(result);
+    RuntimeTableStorage* storage = runtimeMutableTabularStorage(result);
     if (!storage) {
-        return failure("table member assignment requires a table target");
+        return failure(
+            "tabular member assignment requires a table or timetable target");
     }
     auto variable = std::find_if(
         storage->variables.begin(), storage->variables.end(),
@@ -808,12 +1140,13 @@ RuntimeTableOperationResult runtimeSetTableMember(
         return validatedTable(std::move(result));
     }
     if (!runtimeValueIsStorable(value) ||
-        !tableVariableSupportsRows(value)) {
+        !runtimeTabularVariableSupportsRows(value)) {
         return failure(
             "table variables must be storable arrays with row indexing");
     }
     const size_t valueRows = runtimeDimension(value, 0);
-    if (storage->variables.empty() && storage->rowCount == 0 &&
+    if (storage->kind == RuntimeTabularKind::Table &&
+        storage->variables.empty() && storage->rowCount == 0 &&
         storage->rowNames.empty()) {
         storage->rowCount = valueRows;
     }
@@ -842,13 +1175,14 @@ RuntimeTableOperationResult runtimeSetTableMember(
 RuntimeTableOperationResult runtimeIndexTable(
     const RuntimeValue& table,
     const std::vector<RuntimeValue>& subscripts) {
-    const RuntimeTableStorage* storage = runtimeTableStorage(table);
+    const RuntimeTableStorage* storage = runtimeTabularStorage(table);
     const auto selections = resolveTableSelections(table, subscripts);
     if (!storage || !selections.succeeded) {
         return failure(selections.error);
     }
 
     auto resultStorage = std::make_shared<RuntimeTableStorage>();
+    resultStorage->kind = storage->kind;
     resultStorage->rowCount = selections.rows.size();
     resultStorage->dimensionNames = storage->dimensionNames;
     resultStorage->description = storage->description;
@@ -860,6 +1194,16 @@ RuntimeTableOperationResult runtimeIndexTable(
             selectedRowNames.push_back(storage->rowNames[row]);
         }
         resultStorage->rowNames = makeUniqueNames(selectedRowNames);
+    }
+    if (storage->kind == RuntimeTabularKind::Timetable) {
+        auto selectedTimes = selectRows(
+            storage->rowTimes, selections.rows);
+        if (!selectedTimes.succeeded) {
+            return failure("timetable RowTimes: " +
+                           selectedTimes.error);
+        }
+        resultStorage->rowAxisKind = RuntimeTabularRowAxisKind::Times;
+        resultStorage->rowTimes = std::move(selectedTimes.value);
     }
     std::vector<std::string> selectedVariableNames;
     selectedVariableNames.reserve(selections.variables.size());
@@ -885,13 +1229,13 @@ RuntimeTableOperationResult runtimeIndexTable(
                                  std::move(selected.value)});
     }
     return validatedTable(
-        makeRuntimeTableValue(std::move(resultStorage)));
+        makeTabularValue(std::move(resultStorage)));
 }
 
 RuntimeTableContentsResult runtimeTableContents(
     const RuntimeValue& table,
     const std::vector<RuntimeValue>& subscripts) {
-    const RuntimeTableStorage* storage = runtimeTableStorage(table);
+    const RuntimeTableStorage* storage = runtimeTabularStorage(table);
     const auto selections = resolveTableSelections(table, subscripts);
     if (!storage || !selections.succeeded) {
         return contentsFailure(selections.error);
@@ -937,11 +1281,16 @@ RuntimeTableOperationResult runtimeAssignTableIndexed(
     const RuntimeValue& table,
     const std::vector<RuntimeValue>& subscripts,
     const RuntimeValue& value) {
-    const RuntimeTableStorage* source = runtimeTableStorage(value);
+    const RuntimeTableStorage* source = runtimeTabularStorage(value);
+    const RuntimeTableStorage* destination = runtimeTabularStorage(table);
     const auto selections = resolveTableSelections(table, subscripts);
     if (!source) {
         return failure(
-            "table parenthesis assignment requires a table value");
+            "tabular parenthesis assignment requires a table or timetable value");
+    }
+    if (!destination || destination->kind != source->kind) {
+        return failure(
+            "tabular parenthesis assignment requires matching table kinds");
     }
     if (!selections.succeeded) {
         return failure(selections.error);
@@ -955,9 +1304,17 @@ RuntimeTableOperationResult runtimeAssignTableIndexed(
         return failure(
             "table assignment dimensions do not match the selected rows and variables");
     }
+    if (destination->kind == RuntimeTabularKind::Timetable &&
+        (source->dimensionNames.empty() ||
+         destination->dimensionNames.empty() ||
+         source->dimensionNames.front() !=
+             destination->dimensionNames.front())) {
+        return failure(
+            "timetable assignment requires matching row dimension names");
+    }
 
     RuntimeValue result = table;
-    RuntimeTableStorage* target = runtimeMutableTableStorage(result);
+    RuntimeTableStorage* target = runtimeMutableTabularStorage(result);
     if (!target) {
         return failure("table assignment requires a table target");
     }
@@ -979,7 +1336,7 @@ RuntimeTableOperationResult runtimeDeleteTableIndexed(
     const RuntimeValue& table,
     const std::vector<RuntimeValue>& subscripts,
     const std::vector<bool>& colonSubscripts) {
-    const RuntimeTableStorage* source = runtimeTableStorage(table);
+    const RuntimeTableStorage* source = runtimeTabularStorage(table);
     const auto selections = resolveTableSelections(table, subscripts);
     if (!source || !selections.succeeded) {
         return failure(selections.error);
@@ -988,17 +1345,69 @@ RuntimeTableOperationResult runtimeDeleteTableIndexed(
         return failure(
             "table deletion variable subscripts must not contain duplicates");
     }
-    if (colonSubscripts.size() != 2 || !colonSubscripts.front() ||
-        !isFullSelection(selections.rows, source->rowCount)) {
+    if (colonSubscripts.size() != 2) {
+        return failure("table deletion subscript metadata is invalid");
+    }
+
+    const bool rowDeletion = colonSubscripts[1] &&
+        isFullSelection(selections.variables, source->variables.size());
+    const bool variableDeletion = colonSubscripts[0] &&
+        isFullSelection(selections.rows, source->rowCount);
+    if (!rowDeletion && !variableDeletion) {
         return failure(
-            "table variable deletion requires a literal colon row selector; row deletion is not supported");
+            "table deletion requires rows with a colon variable selector or variables with a colon row selector");
     }
 
     RuntimeValue result = table;
-    RuntimeTableStorage* storage = runtimeMutableTableStorage(result);
+    RuntimeTableStorage* storage = runtimeMutableTabularStorage(result);
     if (!storage) {
         return failure("table null assignment requires a table target");
     }
+    if (rowDeletion) {
+        const auto removedRows = uniqueIndices(selections.rows);
+        for (auto& variable : storage->variables) {
+            auto deleted = deleteRows(variable.value, removedRows);
+            if (!deleted.succeeded) {
+                return failure("table variable " + variable.name +
+                               ": " + deleted.error);
+            }
+            variable.value = std::move(deleted.value);
+        }
+        if (!storage->rowNames.empty()) {
+            std::vector<bool> removed(storage->rowCount, false);
+            for (const size_t row : removedRows) {
+                removed[row] = true;
+            }
+            std::vector<std::string> names;
+            names.reserve(storage->rowCount - removedRows.size());
+            for (size_t row = 0; row < storage->rowCount; ++row) {
+                if (!removed[row]) {
+                    names.push_back(std::move(storage->rowNames[row]));
+                }
+            }
+            storage->rowNames = std::move(names);
+        }
+        if (storage->kind == RuntimeTabularKind::Timetable) {
+            auto deletedTimes = deleteRows(
+                storage->rowTimes, removedRows);
+            if (!deletedTimes.succeeded) {
+                return failure("timetable RowTimes: " +
+                               deletedTimes.error);
+            }
+            storage->rowTimes = std::move(deletedTimes.value);
+        }
+        storage->rowCount -= removedRows.size();
+        storage->rowAxisKind =
+            storage->kind == RuntimeTabularKind::Timetable
+                ? RuntimeTabularRowAxisKind::Times
+                : storage->rowNames.empty()
+                      ? RuntimeTabularRowAxisKind::None
+                      : RuntimeTabularRowAxisKind::Names;
+        setRuntimeDimensions(
+            result, {storage->rowCount, storage->variables.size()});
+        return validatedTable(std::move(result));
+    }
+
     std::vector<bool> removed(storage->variables.size(), false);
     for (const size_t index : selections.variables) {
         removed[index] = true;
@@ -1024,24 +1433,70 @@ RuntimeTableOperationResult runtimeAssignTableContents(
     if (!selections.succeeded) {
         return failure(selections.error);
     }
-    if (selections.variables.size() != 1) {
-        return failure(
-            "table brace assignment currently requires one selected variable");
-    }
 
     RuntimeValue result = table;
-    RuntimeTableStorage* storage = runtimeMutableTableStorage(result);
+    RuntimeTableStorage* storage = runtimeMutableTabularStorage(result);
     if (!storage) {
         return failure("table brace assignment requires a table target");
     }
-    auto assigned = assignRows(
-        storage->variables[selections.variables.front()].value,
-        selections.rows, value);
-    if (!assigned.succeeded) {
-        return failure(std::move(assigned.error));
+    if (hasDuplicateIndices(selections.variables)) {
+        return failure(
+            "table brace assignment variable subscripts must not contain duplicates");
     }
-    storage->variables[selections.variables.front()].value =
-        std::move(assigned.value);
+    if (selections.variables.empty()) {
+        return validatedTable(std::move(result));
+    }
+
+    const bool scalarExpansion = runtimeShapeElementCount(value) == 1;
+    size_t requiredColumns = 0;
+    for (const size_t variableIndex : selections.variables) {
+        const RuntimeValue& variable =
+            storage->variables[variableIndex].value;
+        if (runtimeDimensionCount(variable) != 2) {
+            return failure(
+                "multi-variable table brace assignment currently requires two-dimensional variables");
+        }
+        if (runtimeDimension(variable, 1) >
+            std::numeric_limits<size_t>::max() - requiredColumns) {
+            return failure(
+                "table brace assignment width is too large");
+        }
+        requiredColumns += runtimeDimension(variable, 1);
+    }
+    if (!scalarExpansion &&
+        (runtimeDimensionCount(value) != 2 ||
+         runtimeDimension(value, 0) != selections.rows.size() ||
+         runtimeDimension(value, 1) != requiredColumns)) {
+        return failure(
+            "table brace assignment value does not match the selected row and variable widths");
+    }
+
+    size_t firstColumn = 0;
+    for (const size_t variableIndex : selections.variables) {
+        const size_t columnCount = runtimeDimension(
+            storage->variables[variableIndex].value, 1);
+        RuntimeValue assignedValue = value;
+        if (!scalarExpansion) {
+            auto selected = selectColumns(
+                value, firstColumn, columnCount);
+            if (!selected.succeeded) {
+                return failure(std::move(selected.error));
+            }
+            assignedValue = std::move(selected.value);
+        }
+        auto assigned = assignRows(
+            storage->variables[variableIndex].value,
+            selections.rows, assignedValue);
+        if (!assigned.succeeded) {
+            return failure(
+                "table variable " +
+                storage->variables[variableIndex].name + ": " +
+                assigned.error);
+        }
+        storage->variables[variableIndex].value =
+            std::move(assigned.value);
+        firstColumn += columnCount;
+    }
     return validatedTable(std::move(result));
 }
 
@@ -1081,6 +1536,11 @@ RuntimeTableOperationResult runtimeArrayToTable(
                            : failure(std::move(result.error));
         } else if (value.kind == RuntimeValueKind::MissingArray) {
             auto result = runtimeIndexMissingArray(value, subscripts);
+            selected = result.succeeded
+                           ? success(std::move(result.value))
+                           : failure(std::move(result.error));
+        } else if (isRuntimeCategoricalValue(value)) {
+            auto result = runtimeIndexCategorical(value, subscripts);
             selected = result.succeeded
                            ? success(std::move(result.value))
                            : failure(std::move(result.error));
@@ -1222,6 +1682,215 @@ RuntimeTableOperationResult runtimeTableToStruct(
         {storage->rowCount, 1}));
 }
 
+RuntimeTableOperationResult runtimeConcatenateTables(
+    size_t dimension, const std::vector<RuntimeValue>& values) {
+    if ((dimension != 1 && dimension != 2) || values.empty() ||
+        !std::all_of(values.begin(), values.end(), isRuntimeTableValue)) {
+        return failure(
+            "table concatenation supports table inputs along dimensions 1 and 2");
+    }
+    const RuntimeTableStorage* first = runtimeTableStorage(values.front());
+    if (!first) {
+        return failure("table concatenation has an invalid first input");
+    }
+
+    auto storage = std::make_shared<RuntimeTableStorage>();
+    storage->kind = RuntimeTabularKind::Table;
+    storage->dimensionNames = first->dimensionNames;
+    storage->description = first->description;
+    storage->userData = first->userData;
+    if (dimension == 1) {
+        storage->variables.reserve(first->variables.size());
+        std::vector<std::vector<RuntimeValue>> columns(
+            first->variables.size());
+        bool anyRowNames = false;
+        bool allRowNames = true;
+        for (const RuntimeValue& value : values) {
+            const auto* current = runtimeTableStorage(value);
+            if (!current ||
+                current->variables.size() != first->variables.size()) {
+                return failure(
+                    "vertical table concatenation requires matching variable counts");
+            }
+            if (current->rowCount >
+                std::numeric_limits<size_t>::max() - storage->rowCount) {
+                return failure(
+                    "vertical table concatenation height is too large");
+            }
+            storage->rowCount += current->rowCount;
+            anyRowNames = anyRowNames || !current->rowNames.empty();
+            allRowNames = allRowNames && !current->rowNames.empty();
+            for (size_t index = 0; index < current->variables.size(); ++index) {
+                if (current->variables[index].name !=
+                    first->variables[index].name) {
+                    return failure(
+                        "vertical table concatenation requires matching variable names and order");
+                }
+                columns[index].push_back(current->variables[index].value);
+            }
+        }
+        if (anyRowNames && !allRowNames) {
+            return failure(
+                "vertical table concatenation requires RowNames on every input or none");
+        }
+        if (allRowNames) {
+            for (const RuntimeValue& value : values) {
+                const auto* current = runtimeTableStorage(value);
+                storage->rowNames.insert(storage->rowNames.end(),
+                                         current->rowNames.begin(),
+                                         current->rowNames.end());
+            }
+            if (!uniqueNonemptyNames(storage->rowNames)) {
+                return failure(
+                    "vertical table concatenation produces duplicate RowNames");
+            }
+        }
+        for (size_t index = 0; index < columns.size(); ++index) {
+            auto concatenated = runtimeConcatenateValues(1, columns[index]);
+            if (!concatenated.succeeded) {
+                return failure(
+                    "vertical table variable " +
+                    first->variables[index].name + ": " +
+                    concatenated.error);
+            }
+            storage->variables.push_back(RuntimeTableVariable{
+                first->variables[index].name,
+                std::move(concatenated.value)});
+        }
+    } else {
+        storage->rowCount = first->rowCount;
+        storage->rowNames = first->rowNames;
+        std::set<std::string> names;
+        for (const RuntimeValue& value : values) {
+            const auto* current = runtimeTableStorage(value);
+            if (!current || current->rowCount != storage->rowCount) {
+                return failure(
+                    "horizontal table concatenation requires matching heights");
+            }
+            if (!storage->rowNames.empty() &&
+                !current->rowNames.empty() &&
+                storage->rowNames != current->rowNames) {
+                return failure(
+                    "horizontal table concatenation requires matching RowNames");
+            }
+            if (storage->rowNames.empty() && !current->rowNames.empty()) {
+                storage->rowNames = current->rowNames;
+            }
+            for (const auto& variable : current->variables) {
+                if (!names.insert(variable.name).second) {
+                    return failure(
+                        "horizontal table concatenation has duplicate variable name: " +
+                        variable.name);
+                }
+                storage->variables.push_back(variable);
+            }
+        }
+    }
+    storage->rowAxisKind = storage->rowNames.empty()
+                               ? RuntimeTabularRowAxisKind::None
+                               : RuntimeTabularRowAxisKind::Names;
+    return validatedTable(makeRuntimeTableValue(std::move(storage)));
+}
+
+RuntimeTableSortResult runtimeSortTable(
+    const RuntimeValue& table,
+    const std::vector<RuntimeTableSortKey>& keys) {
+    const RuntimeTableStorage* storage = runtimeTabularStorage(table);
+    if (!storage) {
+        return RuntimeTableSortResult{
+            false, {}, {},
+            "sortrows expects a table or timetable input"};
+    }
+    std::set<std::pair<RuntimeTableSortKeyKind, size_t>> uniqueKeys;
+    for (const RuntimeTableSortKey& key : keys) {
+        if (key.kind == RuntimeTableSortKeyKind::RowAxis) {
+            if (storage->kind != RuntimeTabularKind::Timetable) {
+                return RuntimeTableSortResult{
+                    false, {}, {},
+                    "sortrows row-axis keys require a timetable"};
+            }
+            if (!uniqueKeys.emplace(key.kind, 0).second) {
+                return RuntimeTableSortResult{
+                    false, {}, {},
+                    "sortrows keys must not contain duplicates"};
+            }
+            continue;
+        }
+        if (key.variableIndex >= storage->variables.size()) {
+            return RuntimeTableSortResult{
+                false, {}, {},
+                "sortrows variable index is out of bounds"};
+        }
+        if (!uniqueKeys.emplace(key.kind, key.variableIndex).second) {
+            return RuntimeTableSortResult{
+                false, {}, {},
+                "sortrows keys must not contain duplicates"};
+        }
+        const RuntimeValue& value =
+            storage->variables[key.variableIndex].value;
+        const bool supported =
+            isRuntimeNumericValue(value) ||
+            isRuntimeCategoricalValue(value) ||
+            isRuntimeTemporalValue(value) ||
+            isRuntimeStringArray(value) ||
+            isRuntimeCharacterArray(value) ||
+            value.kind == RuntimeValueKind::Cell;
+        if (!supported) {
+            return RuntimeTableSortResult{
+                false, {}, {},
+                "sortrows does not support table variable: " +
+                    storage->variables[key.variableIndex].name};
+        }
+        if (value.kind == RuntimeValueKind::Cell) {
+            for (const RuntimeValue& element : value.cells) {
+                if (!runtimeTextScalarUtf8(element)) {
+                    return RuntimeTableSortResult{
+                        false, {}, {},
+                        "sortrows Cell variables must contain text scalars"};
+                }
+            }
+        }
+    }
+
+    std::vector<size_t> order = fullSelection(storage->rowCount);
+    bool comparisonFailed = false;
+    std::stable_sort(
+        order.begin(), order.end(), [&](size_t left, size_t right) {
+            for (const RuntimeTableSortKey& key : keys) {
+                const RuntimeValue& value =
+                    key.kind == RuntimeTableSortKeyKind::RowAxis
+                        ? storage->rowTimes
+                        : storage->variables[key.variableIndex].value;
+                const auto comparison = compareTableVariableRows(
+                    value, left, right);
+                if (!comparison) {
+                    comparisonFailed = true;
+                    return false;
+                }
+                if (*comparison != 0) {
+                    return key.descending ? *comparison > 0
+                                          : *comparison < 0;
+                }
+            }
+            return false;
+        });
+    if (comparisonFailed) {
+        return RuntimeTableSortResult{
+            false, {}, {},
+            "sortrows could not compare a table variable element"};
+    }
+    auto sorted = runtimeIndexTable(
+        table,
+        {oneBasedSelection(order),
+         oneBasedSelection(fullSelection(storage->variables.size()))});
+    if (!sorted.succeeded) {
+        return RuntimeTableSortResult{
+            false, {}, {}, std::move(sorted.error)};
+    }
+    return RuntimeTableSortResult{
+        true, std::move(sorted.value), std::move(order), {}};
+}
+
 namespace {
 
 struct RuntimeTablePair {
@@ -1294,7 +1963,14 @@ RuntimeTableOperationResult compareTables(
         }
 
         RuntimeTableOperationResult compared;
-        if (isRuntimeTableValue(leftVariable.value) ||
+        if (isRuntimeCategoricalValue(leftVariable.value) ||
+            isRuntimeCategoricalValue(rightVariable.value)) {
+            auto result = runtimeCompareCategorical(
+                operation, leftVariable.value, rightVariable.value);
+            compared = result.succeeded
+                           ? success(std::move(result.value))
+                           : failure(std::move(result.error));
+        } else if (isRuntimeTableValue(leftVariable.value) ||
             isRuntimeTableValue(rightVariable.value)) {
             compared = compareTables(
                 operation, leftVariable.value, rightVariable.value,
@@ -1360,6 +2036,10 @@ bool validateRuntimeTableStorage(const RuntimeValue& value,
         error = "table value has no storage";
         return false;
     }
+    if (storage->kind != RuntimeTabularKind::Table) {
+        error = "table value uses a non-table tabular storage kind";
+        return false;
+    }
     if (runtimeDimensions(value) !=
         std::vector<size_t>{storage->rowCount,
                             storage->variables.size()}) {
@@ -1371,7 +2051,7 @@ bool validateRuntimeTableStorage(const RuntimeValue& value,
     for (const auto& variable : storage->variables) {
         variableNames.push_back(variable.name);
         if (!runtimeValueIsStorable(variable.value) ||
-            !tableVariableSupportsRows(variable.value) ||
+            !runtimeTabularVariableSupportsRows(variable.value) ||
             runtimeDimension(variable.value, 0) != storage->rowCount) {
             error = "table variable storage has an invalid row count or value";
             return false;
@@ -1381,6 +2061,15 @@ bool validateRuntimeTableStorage(const RuntimeValue& value,
         (storage->rowNames.size() != storage->rowCount ||
          !uniqueNonemptyNames(storage->rowNames))) {
         error = "table row names do not match its height";
+        return false;
+    }
+    const RuntimeTabularRowAxisKind expectedRowAxis =
+        storage->rowNames.empty()
+            ? RuntimeTabularRowAxisKind::None
+            : RuntimeTabularRowAxisKind::Names;
+    if (storage->rowAxisKind != expectedRowAxis ||
+        storage->rowTimes.kind != RuntimeValueKind::Missing) {
+        error = "table row axis storage is inconsistent";
         return false;
     }
     if (!validateTableNameLayout(

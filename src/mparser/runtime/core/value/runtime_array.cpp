@@ -1,8 +1,11 @@
 #include "mparser/runtime/core/value/runtime_array.h"
 
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_timetable.h"
 
 #include <algorithm>
 #include <limits>
@@ -347,6 +350,44 @@ RuntimeArrayOperationResult runtimeConcatenateValues(
             return failure(
                 "missing concatenation inputs have incompatible types");
         }
+    }
+    const bool timetable = isRuntimeTimetableValue(values.front());
+    if (timetable || std::any_of(values.begin(), values.end(),
+                                isRuntimeTimetableValue)) {
+        if (!std::all_of(values.begin(), values.end(),
+                         isRuntimeTimetableValue)) {
+            return failure(
+                "timetable concatenation requires timetable inputs");
+        }
+        auto result = runtimeConcatenateTimetables(dimension, values);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    const bool table = isRuntimeTableValue(values.front());
+    if (table || std::any_of(values.begin(), values.end(),
+                            isRuntimeTableValue)) {
+        if (!std::all_of(values.begin(), values.end(),
+                         isRuntimeTableValue)) {
+            return failure("table concatenation requires table inputs");
+        }
+        auto result = runtimeConcatenateTables(dimension, values);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
+    }
+    const bool categorical = isRuntimeCategoricalValue(values.front());
+    if (categorical || std::any_of(values.begin(), values.end(),
+                                  isRuntimeCategoricalValue)) {
+        if (!std::all_of(values.begin(), values.end(),
+                         isRuntimeCategoricalValue)) {
+            return failure(
+                "categorical concatenation requires categorical inputs");
+        }
+        auto result = runtimeConcatenateCategorical(dimension, values);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
     }
     const bool text = isRuntimeTextValue(values.front());
     if (text || std::any_of(values.begin(), values.end(),

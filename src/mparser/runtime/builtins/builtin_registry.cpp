@@ -4,10 +4,12 @@
 #include "mparser/runtime/builtins/array/runtime_collection_builtins.h"
 #include "mparser/runtime/builtins/array/runtime_set_builtins.h"
 #include "mparser/runtime/builtins/callback/runtime_callback_builtins.h"
+#include "mparser/runtime/builtins/categorical/runtime_categorical_builtins.h"
 #include "mparser/runtime/builtins/conversion/runtime_conversion_builtins.h"
 #include "mparser/runtime/builtins/datetime/runtime_datetime_builtins.h"
 #include "mparser/runtime/builtins/sparse/runtime_sparse_builtins.h"
 #include "mparser/runtime/builtins/table/runtime_table_builtins.h"
+#include "mparser/runtime/builtins/timetable/runtime_timetable_builtins.h"
 #include "mparser/runtime/builtins/numeric/runtime_advanced_numeric.h"
 #include "mparser/runtime/builtins/numeric/runtime_math.h"
 #include "mparser/runtime/builtins/numeric/runtime_numeric_library_builtins.h"
@@ -19,6 +21,7 @@
 #include "mparser/runtime/builtins/text/runtime_text_query_builtins.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
@@ -43,6 +46,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "acosh",
     "addCause",
     "addCorrection",
+    "addcats",
     "addlistener",
     "addpath",
     "addprop",
@@ -52,12 +56,15 @@ constexpr std::string_view kBuiltinNames[] = {
     "asinh",
     "arrayfun",
     "array2table",
+    "array2timetable",
     "assignin",
     "assert",
     "atan",
     "atan2",
     "atanh",
     "cat",
+    "categorical",
+    "categories",
     "cell",
     "cell2mat",
     "cell2struct",
@@ -74,6 +81,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "computer",
     "conj",
     "contains",
+    "countcats",
     "conv",
     "copyfile",
     "cos",
@@ -164,6 +172,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "ipermute",
     "isa",
     "iscell",
+    "iscategorical",
     "iscellstr",
     "isenum",
     "isempty",
@@ -183,7 +192,9 @@ constexpr std::string_view kBuiltinNames[] = {
     "ismatrix",
     "ismethod",
     "isnumeric",
+    "isordinal",
     "isprime",
+    "isprotected",
     "isnan",
     "isnat",
     "isreal",
@@ -198,6 +209,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "isStringScalar",
     "isstruct",
     "istable",
+    "istimetable",
+    "isundefined",
     "isvalid",
     "isvector",
     "j",
@@ -215,6 +228,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "lower",
     "max",
     "mean",
+    "mergecats",
     "median",
     "minute",
     "month",
@@ -261,6 +275,9 @@ constexpr std::string_view kBuiltinNames[] = {
     "real",
     "regexp",
     "rem",
+    "removecats",
+    "renamecats",
+    "reordercats",
     "repmat",
     "reshape",
     "rmdir",
@@ -279,6 +296,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "sinh",
     "size",
     "sort",
+    "sortrows",
     "spalloc",
     "speye",
     "spones",
@@ -311,11 +329,14 @@ constexpr std::string_view kBuiltinNames[] = {
     "table",
     "table2array",
     "table2struct",
+    "table2timetable",
     "tan",
     "tanh",
     "throw",
     "throwAsCaller",
     "tic",
+    "timetable",
+    "timetable2table",
     "toc",
     "tempdir",
     "tempname",
@@ -584,6 +605,20 @@ BuiltinDescriptor numericConversionDescriptor(std::string_view name) {
             isRuntimeStringArray(call.arguments.front())) {
             auto result =
                 runtimeConvertStringToDouble(call.arguments.front());
+            if (!result.succeeded) {
+                return helperFailure(
+                    call.span, std::move(result.error),
+                    "MParser:InvalidNumericConversion");
+            }
+            return call.requestedOutputCount == 0
+                       ? BuiltinResult::success()
+                       : BuiltinResult::success(
+                             {std::move(result.value)});
+        }
+        if (builtin == "double" &&
+            isRuntimeCategoricalValue(call.arguments.front())) {
+            auto result = runtimeCategoricalToDouble(
+                call.arguments.front());
             if (!result.succeeded) {
                 return helperFailure(
                     call.span, std::move(result.error),
@@ -1945,16 +1980,67 @@ BuiltinDescriptor sparseDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor categoricalDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "categorical") {
+        descriptor.inputs = BuiltinArity::variadic(1);
+    } else if (name == "addcats") {
+        descriptor.inputs = BuiltinArity::range(2, 4);
+    } else if (name == "removecats" || name == "reordercats") {
+        descriptor.inputs = BuiltinArity::fixed(2);
+    } else if (name == "renamecats" || name == "mergecats") {
+        descriptor.inputs = BuiltinArity::fixed(3);
+    } else {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    }
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints.assign(
+        descriptor.inputs.maximum.value_or(descriptor.inputs.minimum),
+        BuiltinArgumentConstraint{BuiltinValueConstraint::Any,
+                                  BuiltinShapeConstraint::Any});
+    if (name == "iscategorical" || name == "isundefined" ||
+        name == "isordinal" || name == "isprotected") {
+        descriptor.outputConstraints = {
+            {BuiltinValueConstraint::Numeric,
+             name == "isundefined" ? BuiltinShapeConstraint::Any
+                                     : BuiltinShapeConstraint::Scalar}};
+    } else if (name == "countcats") {
+        descriptor.outputConstraints = {
+            {BuiltinValueConstraint::Numeric,
+             BuiltinShapeConstraint::Any}};
+    } else {
+        descriptor.outputConstraints = {
+            {BuiltinValueConstraint::Any,
+             BuiltinShapeConstraint::Any}};
+    }
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidCategoricalCall";
+    descriptor.summary =
+        "Native C++ categorical dictionary, undefined, indexing, and category management.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeCategoricalBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor tableDescriptor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
     if (name == "table") {
         descriptor.inputs = BuiltinArity::variadic();
+    } else if (name == "sortrows") {
+        descriptor.inputs = BuiltinArity::variadic(1);
     } else if (name == "array2table" || name == "struct2table") {
         descriptor.inputs = BuiltinArity::variadic(1);
     } else {
         descriptor.inputs = BuiltinArity::fixed(1);
     }
-    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.outputs = name == "sortrows"
+                             ? BuiltinArity::range(0, 2)
+                             : BuiltinArity::range(0, 1);
     descriptor.argumentConstraints.assign(
         descriptor.inputs.maximum.value_or(descriptor.inputs.minimum),
         BuiltinArgumentConstraint{BuiltinValueConstraint::Any,
@@ -1976,6 +2062,43 @@ BuiltinDescriptor tableDescriptor(std::string_view name) {
     descriptor.handler = [builtin = std::string(name)](
                              const BuiltinCall& call) {
         return invokeRuntimeTableBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
+BuiltinDescriptor timetableDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "timetable") {
+        descriptor.inputs = BuiltinArity::variadic();
+    } else if (name == "array2timetable" ||
+               name == "table2timetable" ||
+               name == "timetable2table") {
+        descriptor.inputs = BuiltinArity::variadic(1);
+    } else {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    }
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints.assign(
+        descriptor.inputs.maximum.value_or(descriptor.inputs.minimum),
+        BuiltinArgumentConstraint{BuiltinValueConstraint::Any,
+                                  BuiltinShapeConstraint::Any});
+    descriptor.outputConstraints = name == "istimetable"
+        ? std::vector<BuiltinOutputConstraint>{
+              {BuiltinValueConstraint::Numeric,
+               BuiltinShapeConstraint::Scalar}}
+        : std::vector<BuiltinOutputConstraint>{
+              {BuiltinValueConstraint::Any,
+               BuiltinShapeConstraint::Any}};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidTimetableCall";
+    descriptor.summary =
+        "Native C++ timetable RowTimes, indexing, conversion, and concatenation.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeTimetableBuiltin(builtin, call);
     };
     return descriptor;
 }
@@ -2011,8 +2134,14 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isRuntimeSparseBuiltin(name)) {
         return sparseDescriptor(name);
     }
+    if (isRuntimeCategoricalBuiltin(name)) {
+        return categoricalDescriptor(name);
+    }
     if (isRuntimeTableBuiltin(name)) {
         return tableDescriptor(name);
+    }
+    if (isRuntimeTimetableBuiltin(name)) {
+        return timetableDescriptor(name);
     }
     if (isRuntimeNumericLibraryBuiltin(name)) {
         return numericLibraryDescriptor(name);

@@ -445,9 +445,12 @@ The next batches close the remaining class and ownership boundaries that fit
 the existing contracts. The sparse numeric first batch is recorded in
 [v1.6.md](v1.6.md), and the table runtime first batch is recorded in
 [v1.7.md](v1.7.md). The full 223-case differential rerun confirms temporal,
-sparse, and table closure with graphics as the sole imported gap. Categorical
-and timetable remain separately gated candidates. Debugger stack/local
-inspection remains an additive, separately gated public contract.
+sparse, and table closure with graphics as the sole imported gap. The v1.8
+batch recorded in [v1.8.md](v1.8.md) then adds a complete categorical vertical
+slice, closes table row/multi-variable/concatenation/sorting gaps, and adds the
+first timetable RowTimes/conversion slice on shared tabular storage. Advanced
+tabular algorithms and debugger stack/local inspection remain additive,
+separately gated work.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 

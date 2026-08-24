@@ -1,5 +1,6 @@
 #include "mparser/runtime/builtins/array/runtime_array_ops.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
@@ -183,6 +184,45 @@ int main() {
                  .succeeded,
             "explicit full-row indices incorrectly acted as a colon deletion");
 
+    auto rowDeleted = runtimeDeleteTableIndexed(
+        table,
+        {column({1.0}), column({1.0, 2.0})}, {false, true});
+    require(rowDeleted.succeeded &&
+                runtimeDimensions(rowDeleted.value) ==
+                    std::vector<size_t>({1, 2}) &&
+                runtimeTableStorage(rowDeleted.value)->rowNames ==
+                    std::vector<std::string>({"r2"}),
+            "table row deletion failed");
+    member = runtimeTableMemberValue(rowDeleted.value, "B");
+    require(member.succeeded && numberAt(member.value) == 4.0,
+            "table row deletion selected the wrong remaining row");
+    auto allRowsDeleted = runtimeDeleteTableIndexed(
+        table,
+        {column({1.0, 2.0}), column({1.0, 2.0})}, {true, true});
+    require(allRowsDeleted.succeeded &&
+                runtimeDimensions(allRowsDeleted.value) ==
+                    std::vector<size_t>({0, 2}) &&
+                runtimeTableStorage(allRowsDeleted.value)->variables.size() == 2,
+            "T(:,:)=[] did not preserve variables while deleting rows");
+
+    auto braceMatrix = runtimeNumericValueFromLogicalOrder(
+        {2, 2}, {10.0, 20.0, 30.0, 40.0},
+        RuntimeNumericClass::Double);
+    require(braceMatrix.has_value(),
+            "multi-variable brace assignment setup failed");
+    auto multiBrace = runtimeAssignTableContents(
+        table,
+        {column({1.0, 2.0}), column({1.0, 2.0})}, *braceMatrix);
+    require(multiBrace.succeeded, multiBrace.error);
+    member = runtimeTableMemberValue(multiBrace.value, "A");
+    require(member.succeeded && numberAt(member.value, 0) == 10.0 &&
+                numberAt(member.value, 1) == 20.0,
+            "multi-variable brace assignment did not split the first column");
+    member = runtimeTableMemberValue(multiBrace.value, "B");
+    require(member.succeeded && numberAt(member.value, 0) == 30.0 &&
+                numberAt(member.value, 1) == 40.0,
+            "multi-variable brace assignment did not split the second column");
+
     auto withEmptyWide = runtimeSetTableMember(
         table, "EmptyWide", makeRuntimeMatrixValue(2, 0, {}));
     require(withEmptyWide.succeeded &&
@@ -310,6 +350,65 @@ int main() {
     require(arrayResult.succeeded && arrayResult.outputs.size() == 1 &&
                 runtimeValuesEqual(arrayResult.outputs.front(), matrix),
             "array2table/table2array round trip failed");
+
+    auto horizontalLeft = runtimeMakeTable(
+        {column({1.0, 2.0})}, {"Left"});
+    auto horizontalRight = runtimeMakeTable(
+        {column({3.0, 4.0})}, {"Right"});
+    auto horizontal = runtimeConcatenateTables(
+        2, {horizontalLeft.value, horizontalRight.value});
+    require(horizontal.succeeded &&
+                runtimeDimensions(horizontal.value) ==
+                    std::vector<size_t>({2, 2}) &&
+                runtimeTableStorage(horizontal.value)->variables[1].name ==
+                    "Right",
+            "horizontal table concatenation failed");
+    require(!runtimeConcatenateTables(
+                 2, {horizontalLeft.value, horizontalLeft.value})
+                 .succeeded,
+            "horizontal table concatenation accepted duplicate names");
+    auto verticalBottom = runtimeMakeTable(
+        {column({5.0, 6.0})}, {"Left"});
+    auto vertical = runtimeConcatenateTables(
+        1, {horizontalLeft.value, verticalBottom.value});
+    require(vertical.succeeded &&
+                runtimeDimensions(vertical.value) ==
+                    std::vector<size_t>({4, 1}),
+            "vertical table concatenation failed");
+    member = runtimeTableMemberValue(vertical.value, "Left");
+    require(member.succeeded && numberAt(member.value, 3) == 6.0,
+            "vertical table concatenation lost the final row");
+
+    const RuntimeValue categoryCells = makeRuntimeCellValue(
+        {3, 1}, {text("b"), text("a"), text("b")});
+    auto categories = runtimeConstructCategorical(categoryCells);
+    require(categories.succeeded, categories.error);
+    auto sortable = runtimeMakeTable(
+        {column({3.0, 1.0, 2.0}), categories.value},
+        {"X", "C"});
+    require(sortable.succeeded, sortable.error);
+    auto sorted = runtimeSortTable(
+        sortable.value,
+        {{RuntimeTableSortKeyKind::Variable, 1, false},
+         {RuntimeTableSortKeyKind::Variable, 0, false}});
+    require(sorted.succeeded &&
+                sorted.order == std::vector<size_t>({1, 2, 0}),
+            "sortrows categorical/numeric key order failed");
+    member = runtimeTableMemberValue(sorted.value, "X");
+    require(member.succeeded && numberAt(member.value, 0) == 1.0 &&
+                numberAt(member.value, 2) == 3.0,
+            "sortrows table row permutation failed");
+    auto categoricalRowsDeleted = runtimeDeleteTableIndexed(
+        sortable.value,
+        {column({2.0}), column({1.0, 2.0})}, {false, true});
+    require(categoricalRowsDeleted.succeeded,
+            categoricalRowsDeleted.error);
+    member = runtimeTableMemberValue(categoricalRowsDeleted.value, "C");
+    require(member.succeeded && isRuntimeCategoricalValue(member.value) &&
+                runtimeDimensions(member.value) ==
+                    std::vector<size_t>({2, 1}) &&
+                runtimeCategoricalLabel(member.value, 0) == "b",
+            "table row deletion did not preserve categorical variables");
 
     const RuntimeValue zeroColumnMatrix =
         makeRuntimeMatrixValue(2, 0, {});
@@ -499,7 +598,7 @@ int main() {
     const auto registry = defaultBuiltinRegistry();
     for (const std::string_view name : {
              "table", "height", "width", "istable", "array2table",
-             "table2array", "struct2table", "table2struct"}) {
+             "table2array", "struct2table", "table2struct", "sortrows"}) {
         const BuiltinDescriptor* descriptor = registry->find(name);
         require(descriptor &&
                     descriptor->implementation ==
@@ -518,6 +617,20 @@ int main() {
                 numberAt(width.outputs.front()) == 2.0 &&
                 numberAt(isTable.outputs.front()) == 1.0,
             "table query builtins returned incorrect values");
+    auto sortedBuiltin = invoke(
+        "sortrows", {sortable.value, text("C")}, 2);
+    require(sortedBuiltin.succeeded &&
+                sortedBuiltin.outputs.size() == 2 &&
+                numberAt(sortedBuiltin.outputs[1], 0) == 2.0 &&
+                numberAt(sortedBuiltin.outputs[1], 1) == 1.0 &&
+                numberAt(sortedBuiltin.outputs[1], 2) == 3.0,
+            "sortrows builtin outputs are incorrect: " +
+                (sortedBuiltin.succeeded &&
+                         sortedBuiltin.outputs.size() == 2
+                     ? runtimeValueToString(sortedBuiltin.outputs[1])
+                     : (!sortedBuiltin.diagnostics.empty()
+                            ? sortedBuiltin.diagnostics.front().message
+                            : std::string("call failed"))));
 
     const RuntimeValue emptyNames = makeRuntimeCellValue({0, 0}, {});
     require(!invoke(

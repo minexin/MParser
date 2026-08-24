@@ -13,7 +13,7 @@ remain under `include/mparser`; paths in this tree are not public API or ABI.
 | `execution/bytecode/vm` | Bytecode dispatch, call frames, adaptive execution, and VM-specific runtime integration |
 | `execution/jit` | Typed IR, optimization planning, portable kernels, and native lowering |
 | `runtime/core` | Stable internal runtime facades and ownership rules |
-| `runtime/core/value` | Runtime values, shapes, text, containers, dense/CSC sparse numeric storage, table storage, and repository-owned numeric algorithms |
+| `runtime/core/value` | Runtime values, shapes, text, containers, dense/CSC sparse numeric storage, categorical and shared table/timetable storage, and repository-owned numeric algorithms |
 | `runtime/core/indexing` | Index planning, indexed assignment, and lvalue copyback |
 | `runtime/core/object_model` | Object arrays, metadata, and argument/property validation |
 | `runtime/core/session` | Call frames, session state, execution control, diagnostics, warnings, and output formatting |
@@ -25,7 +25,9 @@ remain under `include/mparser`; paths in this tree are not public API or ABI.
 | `runtime/builtins/callback` | Higher-order callback builtins such as `arrayfun` |
 | `runtime/builtins/datetime` | Native C++ datetime, duration, NaT, component, and temporal-unit builtins |
 | `runtime/builtins/sparse` | CSC sparse construction, inspection, pattern operations, and dense conversion |
+| `runtime/builtins/categorical` | Categorical construction, category management, predicates, and conversions |
 | `runtime/builtins/table` | Table construction, metadata, conversion, and tabular query builtins |
+| `runtime/builtins/timetable` | Timetable construction, RowTimes, and table/timetable conversion builtins |
 | `runtime/builtins/system` | Context, filesystem, process, and MAT-file builtins |
 | `runtime/io` | Filesystem, file, MAT-file, and operating-system integration |
 | `embedding` | Compiled modules, C ABI implementation, machine protocol, and module execution |

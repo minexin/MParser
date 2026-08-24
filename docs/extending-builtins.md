@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.15. Contract 1.0 established
+identify active source contract 1.16. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -346,12 +346,17 @@ the repository-owned table family: ordered variable storage, metadata,
 row/variable indexing, transactional assignment, `height`, `width`,
 `istable`, and array/structure conversions. Tables use the same call/result
 and fallback contracts, and their storage also remains opaque to public
-embedding boundaries. The active catalog contains 306 descriptors and 308
-registered names.
+embedding boundaries. The contract 1.15 catalog contains 306 descriptors and
+308 registered names. Contract 1.16 adds categorical construction and
+category management, table completion, and timetable RowTimes/conversion
+through the same descriptor and opaque embedding paths. The active catalog
+contains 324 descriptors and 326 registered names. These rich values remain
+VM/portable fallback values until independently measured Typed lowering can
+preserve their complete semantics.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The current v1.3 candidate snapshot is
-`tests/public_contract/builtin/1.15/default_catalog.json`; earlier files remain
+`tests/public_contract/builtin/1.16/default_catalog.json`; earlier files remain
 historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output

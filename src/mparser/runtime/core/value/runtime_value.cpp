@@ -1,5 +1,6 @@
 #include "mparser/runtime/core/value/runtime_value.h"
 
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
@@ -9,6 +10,7 @@
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_timetable.h"
 
 #include <atomic>
 #include <bit>
@@ -185,11 +187,39 @@ private:
         if (value.className.empty()) {
             return fail(path, "object class name is empty");
         }
-        if (value.className == kRuntimeTableClassName) {
-            if (!isRuntimeTableValue(value)) {
-                return fail(path, "table value has no table storage");
+        if (value.className == kRuntimeCategoricalClassName) {
+            if (!isRuntimeCategoricalValue(value)) {
+                return fail(path,
+                            "categorical value has no categorical storage");
             }
             if (value.handleObject || value.sparseStorage ||
+                value.tabularStorage || value.number != 0.0 ||
+                !value.text.empty() || !value.elements.empty() ||
+                !value.imaginaryElements.empty() ||
+                !value.exactIntegerElements.empty() ||
+                !value.exactIntegerImaginaryElements.empty() ||
+                !value.characterElements.empty() ||
+                !value.stringElements.empty() || !value.cells.empty() ||
+                !value.fields.empty() || !value.structElements.empty() ||
+                !value.objectElements.empty() || !value.fieldOrder.empty() ||
+                value.sharedFields || value.functionHandle) {
+                return fail(
+                    path,
+                    "categorical value uses incompatible object storage");
+            }
+            std::string categoricalError;
+            return validateRuntimeCategoricalStorage(
+                       value, categoricalError)
+                       ? true
+                       : fail(path, std::move(categoricalError));
+        }
+        if (value.className == kRuntimeTableClassName ||
+            value.className == kRuntimeTimetableClassName) {
+            if (!isRuntimeTabularValue(value)) {
+                return fail(path, "tabular value has no tabular storage");
+            }
+            if (value.handleObject || value.sparseStorage ||
+                value.categoricalStorage ||
                 value.number != 0.0 || !value.text.empty() ||
                 !value.elements.empty() ||
                 !value.imaginaryElements.empty() ||
@@ -201,16 +231,25 @@ private:
                 !value.objectElements.empty() || !value.fieldOrder.empty() ||
                 value.sharedFields || value.functionHandle) {
                 return fail(path,
-                            "table value uses incompatible object storage");
+                            "tabular value uses incompatible object storage");
             }
-            std::string tableError;
-            if (!validateRuntimeTableStorage(value, tableError)) {
-                return fail(path, std::move(tableError));
+            std::string tabularError;
+            const bool valid = isRuntimeTableValue(value)
+                ? validateRuntimeTableStorage(value, tabularError)
+                : validateRuntimeTimetableStorage(value, tabularError);
+            if (!valid) {
+                return fail(path, std::move(tabularError));
             }
-            const RuntimeTableStorage* storage = runtimeTableStorage(value);
+            const RuntimeTableStorage* storage =
+                runtimeTabularStorage(value);
             const void* identity = storage;
             if (!visitedTableStorages_.insert(identity).second) {
                 return true;
+            }
+            if (isRuntimeTimetableValue(value) &&
+                !validateValue(storage->rowTimes,
+                               path + ".Properties.RowTimes")) {
+                return false;
             }
             for (const auto& variable : storage->variables) {
                 if (!validateValue(variable.value,
@@ -389,9 +428,14 @@ private:
             return fail(path,
                         "non-sparse value carries CSC sparse storage");
         }
-        if (value.tableStorage && !isRuntimeTableValue(value)) {
+        if (value.categoricalStorage &&
+            !isRuntimeCategoricalValue(value)) {
             return fail(path,
-                        "non-table value carries table storage");
+                        "non-categorical value carries categorical storage");
+        }
+        if (value.tabularStorage && !isRuntimeTabularValue(value)) {
+            return fail(path,
+                        "non-tabular value carries tabular storage");
         }
 
         switch (value.kind) {
@@ -576,12 +620,22 @@ private:
             }
             return true;
         case RuntimeValueKind::Object:
-            if (isRuntimeTableValue(value)) {
-                const void* identity = value.tableStorage.get();
+            if (isRuntimeCategoricalValue(value)) {
+                const auto& storage = *value.categoricalStorage;
+                for (const std::string& category : storage.categories) {
+                    if (!addElements(category.size(), sizeof(char))) {
+                        return false;
+                    }
+                }
+                return addElements(storage.codes.size(),
+                                   sizeof(std::uint32_t));
+            }
+            if (isRuntimeTabularValue(value)) {
+                const void* identity = value.tabularStorage.get();
                 if (!visitedTableStorages_.insert(identity).second) {
                     return true;
                 }
-                const auto& storage = *value.tableStorage;
+                const auto& storage = *value.tabularStorage;
                 for (const auto& variable : storage.variables) {
                     if (!addElements(variable.name.size(), sizeof(char)) ||
                         !countValue(variable.value)) {
@@ -598,7 +652,9 @@ private:
                         return false;
                     }
                 }
-                return addElements(storage.description.size(), sizeof(char)) &&
+                return (!isRuntimeTimetableValue(value) ||
+                        countValue(storage.rowTimes)) &&
+                       addElements(storage.description.size(), sizeof(char)) &&
                        countValue(storage.userData);
             }
             if (isRuntimeSparseValue(value)) {
@@ -1220,17 +1276,24 @@ std::string runtimeValueToString(const RuntimeValue& value) {
                     ? std::string("<missing>")
                     : runtimeValueToString(value.cells.front()));
     case RuntimeValueKind::Object:
-        if (isRuntimeTableValue(value)) {
-            output << "<table " << value.rows << "x" << value.columns;
-            if (value.tableStorage &&
-                !value.tableStorage->variables.empty()) {
+        if (isRuntimeCategoricalValue(value)) {
+            output << "<categorical " << value.rows << "x"
+                   << value.columns << " categories="
+                   << value.categoricalStorage->categories.size() << ">";
+            return output.str();
+        }
+        if (isRuntimeTabularValue(value)) {
+            output << "<" << value.className << " " << value.rows
+                   << "x" << value.columns;
+            if (value.tabularStorage &&
+                !value.tabularStorage->variables.empty()) {
                 output << " variables=";
                 for (size_t index = 0;
-                     index < value.tableStorage->variables.size(); ++index) {
+                     index < value.tabularStorage->variables.size(); ++index) {
                     if (index != 0) {
                         output << ',';
                     }
-                    output << value.tableStorage->variables[index].name;
+                    output << value.tabularStorage->variables[index].name;
                 }
             }
             output << ">";

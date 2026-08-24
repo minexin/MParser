@@ -1,6 +1,7 @@
 #include "mparser/runtime/core/indexing/runtime_lvalue.h"
 
 #include "mparser/runtime/core/indexing/runtime_assignment.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_cell.h"
 #include "mparser/runtime/core/session/runtime_exception.h"
 #include "mparser/runtime/core/indexing/runtime_index.h"
@@ -50,7 +51,7 @@ RuntimeLvalueOperationResult readMember(
         }
         return success(std::move(field.value));
     }
-    if (isRuntimeTableValue(parent)) {
+    if (isRuntimeTabularValue(parent)) {
         auto member = runtimeTableMemberValue(parent, name);
         return member.succeeded
                    ? success(std::move(member.value))
@@ -83,7 +84,14 @@ RuntimeLvalueOperationResult readSegment(
         return readMember(parent, segment.memberName, hooks, missingSeed);
     case RuntimeLvalueSegmentKind::Parenthesis: {
         const bool linearColon = isLinearColon(segment);
-        if (isRuntimeTableValue(parent)) {
+        if (isRuntimeCategoricalValue(parent)) {
+            auto result = runtimeIndexCategorical(
+                parent, segment.subscripts, linearColon);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
+        if (isRuntimeTabularValue(parent)) {
             auto result = runtimeIndexTable(parent, segment.subscripts);
             return result.succeeded
                        ? success(std::move(result.value))
@@ -134,7 +142,7 @@ RuntimeLvalueOperationResult readSegment(
         }
     }
     case RuntimeLvalueSegmentKind::Brace: {
-        if (isRuntimeTableValue(parent)) {
+        if (isRuntimeTabularValue(parent)) {
             auto result = runtimeTableContents(parent, segment.subscripts);
             if (!result.succeeded) {
                 return failure(std::move(result.error));
@@ -177,7 +185,7 @@ RuntimeLvalueOperationResult writeMember(
         }
         return success(std::move(parent));
     }
-    if (isRuntimeTableValue(parent)) {
+    if (isRuntimeTabularValue(parent)) {
         auto result = runtimeSetTableMember(
             parent, std::move(name), value, nullAssignment);
         return result.succeeded
@@ -206,7 +214,18 @@ RuntimeLvalueOperationResult writeSegment(
         return writeMember(std::move(parent), segment.memberName, value,
                            nullAssignment, hooks);
     case RuntimeLvalueSegmentKind::Parenthesis:
-        if (isRuntimeTableValue(parent)) {
+        if (isRuntimeCategoricalValue(parent)) {
+            auto result = nullAssignment
+                              ? runtimeDeleteCategoricalIndexed(
+                                    parent, segment.subscripts,
+                                    segment.colonSubscripts)
+                              : runtimeAssignCategoricalIndexed(
+                                    parent, segment.subscripts, value);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
+        if (isRuntimeTabularValue(parent)) {
             auto result = nullAssignment
                               ? runtimeDeleteTableIndexed(
                                     parent, segment.subscripts,
@@ -288,7 +307,7 @@ RuntimeLvalueOperationResult writeSegment(
                        : failure(std::move(result.error));
         }
     case RuntimeLvalueSegmentKind::Brace: {
-        if (isRuntimeTableValue(parent)) {
+        if (isRuntimeTabularValue(parent)) {
             if (nullAssignment) {
                 return failure(
                     "table brace null assignment is not supported");

@@ -1,14 +1,16 @@
 #include "mparser/runtime/builtins/table/runtime_table_builtins.h"
 
 #include "mparser/runtime/builtins/array/runtime_array_ops.h"
+#include "mparser/runtime/core/indexing/runtime_index.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/value/runtime_timetable.h"
 
 #include <algorithm>
 #include <initializer_list>
-#include <set>
 #include <string>
 #include <utility>
 
@@ -197,11 +199,12 @@ ConversionArguments parseConversionArguments(
 
 BuiltinResult tableToArray(const BuiltinCall& call) {
     if (call.arguments.size() != 1 ||
-        !isRuntimeTableValue(call.arguments.front())) {
-        return failure(call, "table2array expects one table input");
+        !isRuntimeTabularValue(call.arguments.front())) {
+        return failure(
+            call, "table2array expects one table or timetable input");
     }
     const RuntimeTableStorage* storage =
-        runtimeTableStorage(call.arguments.front());
+        runtimeTabularStorage(call.arguments.front());
     auto contents = runtimeTableContents(
         call.arguments.front(),
         {oneBasedRange(storage->rowCount),
@@ -232,12 +235,127 @@ BuiltinResult tableToArray(const BuiltinCall& call) {
     return scalarOutput(call, std::move(value));
 }
 
+BuiltinResult sortRows(const BuiltinCall& call) {
+    if (call.arguments.empty() || call.arguments.size() > 3 ||
+        !isRuntimeTabularValue(call.arguments.front())) {
+        return failure(
+            call,
+            "sortrows expects a table or timetable and optional variables/directions");
+    }
+    const RuntimeTableStorage* storage =
+        runtimeTabularStorage(call.arguments.front());
+    std::vector<RuntimeTableSortKey> keys;
+    if (call.arguments.size() == 1) {
+        if (isRuntimeTimetableValue(call.arguments.front())) {
+            keys.push_back(RuntimeTableSortKey{
+                RuntimeTableSortKeyKind::RowAxis, 0, false});
+        } else {
+            keys.reserve(storage->variables.size());
+            for (size_t index = 0; index < storage->variables.size();
+                 ++index) {
+                keys.push_back(RuntimeTableSortKey{
+                    RuntimeTableSortKeyKind::Variable, index, false});
+            }
+        }
+    } else if (isRuntimeNumericValue(call.arguments[1])) {
+        auto resolved = runtimeResolveIndexSelection(
+            call.arguments[1], storage->variables.size(), false);
+        if (!resolved.succeeded) {
+            return failure(call, std::move(resolved.error));
+        }
+        keys.reserve(resolved.indices.size());
+        for (const size_t index : resolved.indices) {
+            keys.push_back(RuntimeTableSortKey{
+                RuntimeTableSortKeyKind::Variable, index, false});
+        }
+    } else {
+        auto names = runtimeTableNames(call.arguments[1], "variable");
+        if (!names.succeeded) {
+            return failure(call, std::move(names.error));
+        }
+        keys.reserve(names.names.size());
+        for (const std::string& name : names.names) {
+            if (isRuntimeTimetableValue(call.arguments.front()) &&
+                !storage->dimensionNames.empty() &&
+                name == storage->dimensionNames.front()) {
+                keys.push_back(RuntimeTableSortKey{
+                    RuntimeTableSortKeyKind::RowAxis, 0, false});
+                continue;
+            }
+            const auto found = std::find_if(
+                storage->variables.begin(), storage->variables.end(),
+                [&](const RuntimeTableVariable& variable) {
+                    return variable.name == name;
+                });
+            if (found == storage->variables.end()) {
+                return failure(
+                    call, "sortrows variable is not available: " + name);
+            }
+            keys.push_back(RuntimeTableSortKey{
+                RuntimeTableSortKeyKind::Variable,
+                static_cast<size_t>(std::distance(
+                    storage->variables.begin(), found)),
+                false});
+        }
+    }
+
+    if (call.arguments.size() == 3) {
+        auto directions = runtimeTableNames(
+            call.arguments[2], "sort direction");
+        if (!directions.succeeded ||
+            (directions.names.size() != 1 &&
+             directions.names.size() != keys.size())) {
+            return failure(
+                call,
+                directions.succeeded
+                    ? "sortrows directions must be scalar or match the variable count"
+                    : std::move(directions.error));
+        }
+        for (size_t index = 0; index < keys.size(); ++index) {
+            const std::string& direction = directions.names[
+                directions.names.size() == 1 ? 0 : index];
+            if (direction != "ascend" && direction != "descend") {
+                return failure(
+                    call,
+                    "sortrows direction must be ascend or descend");
+            }
+            keys[index].descending = direction == "descend";
+        }
+    }
+
+    auto sorted = runtimeSortTable(call.arguments.front(), keys);
+    if (!sorted.succeeded) {
+        return failure(call, std::move(sorted.error));
+    }
+    if (call.requestedOutputCount == 0) {
+        return BuiltinResult::success();
+    }
+    std::vector<RuntimeValue> outputs;
+    outputs.push_back(std::move(sorted.value));
+    if (call.requestedOutputCount > 1) {
+        std::vector<double> indices;
+        indices.reserve(sorted.order.size());
+        for (const size_t index : sorted.order) {
+            indices.push_back(static_cast<double>(index + 1));
+        }
+        const size_t indexCount = indices.size();
+        auto indexValue = runtimeNumericValueFromLogicalOrder(
+            {indexCount, 1}, std::move(indices),
+            RuntimeNumericClass::Double);
+        if (!indexValue) {
+            return failure(call, "sortrows index output is invalid");
+        }
+        outputs.push_back(std::move(*indexValue));
+    }
+    return BuiltinResult::success(std::move(outputs));
+}
+
 } // namespace
 
 bool isRuntimeTableBuiltin(std::string_view name) {
     return matches(name, {"table", "height", "width", "istable",
                           "array2table", "table2array",
-                          "struct2table", "table2struct"});
+                          "struct2table", "table2struct", "sortrows"});
 }
 
 BuiltinResult invokeRuntimeTableBuiltin(
@@ -286,6 +404,9 @@ BuiltinResult invokeRuntimeTableBuiltin(
     }
     if (name == "table2array") {
         return tableToArray(call);
+    }
+    if (name == "sortrows") {
+        return sortRows(call);
     }
     if (name == "table2struct") {
         if (call.arguments.size() != 1) {

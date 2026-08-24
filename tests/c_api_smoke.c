@@ -1688,6 +1688,11 @@ static int run_table_value_transport_smoke(void) {
         "factor = 2;\n"
         "callback = @(x) x * factor;\n"
         "bound = table({callback}, "
+        "VariableNames={'Callback'});\n"
+        "categories = categorical({'a'; 'b'});\n"
+        "schedule = timetable(datetime([2024; 2024], [1; 1], [1; 2]), "
+        "categories, VariableNames={'Category'});\n"
+        "bound_schedule = timetable(datetime(2024, 1, 1), {callback}, "
         "VariableNames={'Callback'});\n";
     static const char consumer_source[] =
         "function out = identity(value)\n"
@@ -1699,7 +1704,11 @@ static int run_table_value_transport_smoke(void) {
     mparser_value* table = NULL;
     mparser_value* shared = NULL;
     mparser_value* bound = NULL;
+    mparser_value* categories = NULL;
+    mparser_value* schedule = NULL;
+    mparser_value* bound_schedule = NULL;
     mparser_value* roundtrip = NULL;
+    mparser_value* schedule_roundtrip = NULL;
     const mparser_value* arguments[1];
     mparser_invocation_options options;
     size_t dimension = 0;
@@ -1731,6 +1740,21 @@ static int run_table_value_transport_smoke(void) {
     CHECK(mparser_value_get_kind(bound) == MPARSER_VALUE_OBJECT);
     CHECK(view_equals(mparser_value_class_name(bound), "table"));
     CHECK(mparser_value_is_module_bound(bound) == 1);
+    CHECK(find_variable(result, "categories", &categories) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(view_equals(mparser_value_class_name(categories), "categorical"));
+    CHECK(mparser_value_is_module_bound(categories) == 0);
+    CHECK(find_variable(result, "schedule", &schedule) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(view_equals(mparser_value_class_name(schedule), "timetable"));
+    CHECK(mparser_value_is_module_bound(schedule) == 0);
+    CHECK(mparser_value_dimension(schedule, 0, &dimension) ==
+          MPARSER_API_STATUS_OK && dimension == 2);
+    CHECK(find_variable(result, "bound_schedule", &bound_schedule) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(view_equals(
+              mparser_value_class_name(bound_schedule), "timetable"));
+    CHECK(mparser_value_is_module_bound(bound_schedule) == 1);
     mparser_result_release(result);
     result = NULL;
 
@@ -1749,7 +1773,23 @@ static int run_table_value_transport_smoke(void) {
           MPARSER_API_STATUS_OK && dimension == 1);
 
     mparser_value_release(roundtrip);
+    roundtrip = NULL;
     mparser_result_release(result);
+    result = NULL;
+    arguments[0] = schedule;
+    CHECK(mparser_module_execute(consumer, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_result_output(result, 0, &schedule_roundtrip) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(view_equals(
+              mparser_value_class_name(schedule_roundtrip), "timetable"));
+    CHECK(mparser_value_is_module_bound(schedule_roundtrip) == 0);
+
+    mparser_value_release(schedule_roundtrip);
+    mparser_result_release(result);
+    mparser_value_release(bound_schedule);
+    mparser_value_release(schedule);
+    mparser_value_release(categories);
     mparser_value_release(bound);
     mparser_value_release(shared);
     mparser_value_release(table);

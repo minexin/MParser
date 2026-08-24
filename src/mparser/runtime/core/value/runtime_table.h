@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mparser/runtime/core/value/runtime_value.h"
+#include "mparser/runtime/core/value/runtime_tabular.h"
 
 #include <cstddef>
 #include <functional>
@@ -11,21 +11,8 @@
 
 namespace mparser {
 
-inline constexpr std::string_view kRuntimeTableClassName = "table";
-
-struct RuntimeTableVariable {
-    std::string name;
-    RuntimeValue value;
-};
-
-struct RuntimeTableStorage {
-    size_t rowCount = 0;
-    std::vector<RuntimeTableVariable> variables;
-    std::vector<std::string> rowNames;
-    std::vector<std::string> dimensionNames{"Row", "Variables"};
-    std::string description;
-    RuntimeValue userData;
-};
+using RuntimeTableVariable = RuntimeTabularVariable;
+using RuntimeTableStorage = RuntimeTabularStorage;
 
 struct RuntimeTableOperationResult {
     bool succeeded = false;
@@ -46,17 +33,35 @@ struct RuntimeTableNamesResult {
     std::string error;
 };
 
+struct RuntimeTableSortResult {
+    bool succeeded = false;
+    RuntimeValue value;
+    std::vector<size_t> order;
+    std::string error;
+};
+
+enum class RuntimeTableSortKeyKind {
+    RowAxis,
+    Variable,
+};
+
+struct RuntimeTableSortKey {
+    RuntimeTableSortKeyKind kind = RuntimeTableSortKeyKind::Variable;
+    size_t variableIndex = 0;
+    bool descending = false;
+};
+
 using RuntimeTableValueEquality = std::function<
     bool(const RuntimeValue&, const RuntimeValue&)>;
 
 bool isRuntimeTableValue(const RuntimeValue& value);
 
-const RuntimeTableStorage* runtimeTableStorage(
+const RuntimeTabularStorage* runtimeTableStorage(
     const RuntimeValue& value);
-RuntimeTableStorage* runtimeMutableTableStorage(RuntimeValue& value);
+RuntimeTabularStorage* runtimeMutableTableStorage(RuntimeValue& value);
 
 RuntimeValue makeRuntimeTableValue(
-    std::shared_ptr<RuntimeTableStorage> storage);
+    std::shared_ptr<RuntimeTabularStorage> storage);
 
 RuntimeTableOperationResult runtimeMakeTable(
     std::vector<RuntimeValue> variables,
@@ -106,6 +111,12 @@ RuntimeTableOperationResult runtimeStructToTable(
     std::vector<std::string> rowNames = {});
 RuntimeTableOperationResult runtimeTableToStruct(
     const RuntimeValue& table);
+
+RuntimeTableOperationResult runtimeConcatenateTables(
+    size_t dimension, const std::vector<RuntimeValue>& values);
+RuntimeTableSortResult runtimeSortTable(
+    const RuntimeValue& table,
+    const std::vector<RuntimeTableSortKey>& keys);
 
 RuntimeTableOperationResult runtimeCompareTables(
     std::string_view operation, const RuntimeValue& left,

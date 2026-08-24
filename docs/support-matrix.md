@@ -205,7 +205,9 @@ regexp/Unicode behavior remain open. The product and public SDK report
 | Source graph | Search paths, packages, private functions, and class folders | `SRC-001` |
 | Numeric/logical arrays | Dense core numeric classes and complex double/single through N-D shape/index rules, logical/colon/`end` indexing, growth, and deletion within recorded limits | `ARR-001`, `ARR-002` |
 | Sparse numeric arrays | Partial two-dimensional CSC values with construction, inspection, transpose, common indexing, and dense conversion; VM/portable fallback only | `BUILTIN-001` |
-| Tables | Partial ordered variable storage with names/properties, two-subscript row/variable indexing, brace extraction, transactional assignment/deletion, and array/structure conversions; VM/portable fallback only | `BUILTIN-006` |
+| Categorical arrays | Partial N-dimensional dictionary/codes storage with undefined, ordinal/protected policies, indexing/growth/deletion, concatenation, comparison, category management, conversions, and table integration; VM/portable fallback only | `BUILTIN-006` |
+| Tables | Partial ordered variable storage with names/properties, two-subscript row/variable indexing, brace extraction/assignment, row/variable deletion, concatenation, sorting, and array/structure conversions; VM/portable fallback only | `BUILTIN-006` |
+| Timetables | Partial shared tabular storage with datetime/duration RowTimes, exact-time selection, synchronized assignment/deletion/sort, concatenation, and table/array conversions; VM/portable fallback only | `BUILTIN-006` |
 | Text | Distinct UTF-16 character and string arrays with shared conversion/formatting rules | `TEXT-001` |
 | Missing values | First-class scalar and N-D `missing` arrays with shape-preserving transforms, indexing/mutation, floating/string promotion, and same-shape `ismissing` masks | `MISSING-001` |
 | Date/time values | Native C++ `datetime`, `duration`, and shaped `NaT` values with civil components, unit conversion, formatting, arithmetic, comparisons, dual-engine parity, and ownerless C API transport | `BUILTIN-001`, `BUILTIN-002` |
@@ -243,7 +245,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.3 over ABI generation 2 revision 1 with 117 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, and caller-sized roots; v1.2 revision 0 remains archived |
 | C++ API | Header-only C++20 source API 1.3 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | active source contract 1.15 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, guarded `sum`/`prod`/`mean` Typed lowering, and VM/portable datetime/duration, CSC sparse, and table families; v1.2 contract 1.1 remains archived |
+| Builtin extension | active source contract 1.16 with 324 descriptors and 326 names, using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, guarded `sum`/`prod`/`mean` Typed lowering, and VM/portable datetime/duration, CSC sparse, categorical, table, and timetable families; v1.2 contract 1.1 remains archived |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
@@ -294,7 +296,7 @@ contract.
 - complete MATLAB builtin and toolbox catalogs;
 - Live Scripts, P-code, MEX, Simulink, graphics, and MATLAB desktop features;
 - complex-integer numeric arrays;
-- GPU arrays, categorical arrays, timetables, and unlisted domain value types;
+- GPU arrays and unlisted domain value types;
 - true parallel `parfor`;
 - arbitrary MATLAB metaclass, Java, or .NET behavior;
 - independently compiled external builtin callbacks;
@@ -314,6 +316,6 @@ version drift.
 
 The v1.0 and v1.2 snapshots remain immutable historical evidence. The current
 v1.3 candidate freezes C source API 1.3, ABI generation 2 revision 1, C++
-source API 1.3, protocol 1.1, and builtin source contract 1.15 in
+source API 1.3, protocol 1.1, and builtin source contract 1.16 in
 [public-contract-v1.3.json](public-contract-v1.3.json). See
 [v1.x Roadmap](roadmap-v1.x.md).

@@ -4,9 +4,11 @@
 #include "mparser/embedding/compiled_module.h"
 #include "mparser/runtime/io/filesystem_utf8.h"
 #include "mparser/runtime/core/value/runtime_datetime.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/value/runtime_sparse.h"
 #include "mparser/runtime/core/value/runtime_table.h"
+#include "mparser/runtime/core/value/runtime_timetable.h"
 #include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/io/runtime_system.h"
@@ -587,13 +589,19 @@ bool runtimeValueRequiresModule(
         }
         return false;
     case mparser::RuntimeValueKind::Object:
-        if (mparser::isRuntimeTableValue(value)) {
-            const auto* storage = mparser::runtimeTableStorage(value);
+        if (mparser::isRuntimeTabularValue(value)) {
+            const auto* storage = mparser::runtimeTabularStorage(value);
             if (!storage) {
                 return false;
             }
             if (!tableStorages.insert(storage).second) {
                 return false;
+            }
+            if (mparser::isRuntimeTimetableValue(value) &&
+                runtimeValueRequiresModule(
+                    storage->rowTimes, functionHandles,
+                    tableStorages)) {
+                return true;
             }
             for (const auto& variable : storage->variables) {
                 if (runtimeValueRequiresModule(
@@ -604,6 +612,11 @@ bool runtimeValueRequiresModule(
             }
             return runtimeValueRequiresModule(
                 storage->userData, functionHandles, tableStorages);
+        }
+        if (mparser::isRuntimeCategoricalValue(value)) {
+            // Dictionary/codes storage is immutable, value-owned, and opaque
+            // to the C ABI, so it does not retain a compiled module graph.
+            return false;
         }
         if (mparser::isRuntimeSparseValue(value)) {
             // CSC storage is immutable/value-owned and does not retain a

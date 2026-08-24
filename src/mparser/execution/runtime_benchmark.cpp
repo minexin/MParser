@@ -1,10 +1,12 @@
 #include "mparser/execution/runtime_benchmark.h"
 #include "mparser/execution/jit/optimization_plan.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_table.h"
+#include "mparser/runtime/core/value/runtime_timetable.h"
 #include "mparser/execution/jit/typed_ir.h"
 
 #include <algorithm>
@@ -48,25 +50,35 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
     if (isRuntimeNumericValue(left)) {
         return runtimeNumericValuesIdentical(left, right);
     }
-    if (isRuntimeTableValue(left) || isRuntimeTableValue(right)) {
-        if (!isRuntimeTableValue(left) ||
-            !isRuntimeTableValue(right)) {
+    if (isRuntimeCategoricalValue(left) ||
+        isRuntimeCategoricalValue(right)) {
+        return isRuntimeCategoricalValue(left) &&
+               isRuntimeCategoricalValue(right) &&
+               runtimeCategoricalValuesEqual(left, right, true);
+    }
+    if (isRuntimeTabularValue(left) || isRuntimeTabularValue(right)) {
+        if (!isRuntimeTabularValue(left) ||
+            !isRuntimeTabularValue(right) ||
+            left.className != right.className) {
             return false;
         }
         const auto pair = std::pair{
-            runtimeTableStorage(left), runtimeTableStorage(right)};
+            runtimeTabularStorage(left), runtimeTabularStorage(right)};
         if (!comparedTables.insert(pair).second) {
             return true;
         }
-        return runtimeTableValuesEqual(
-            left, right,
-            [&comparedHandles, &comparedTables](
+        const auto valueEquality = [&comparedHandles, &comparedTables](
                 const RuntimeValue& leftValue,
                 const RuntimeValue& rightValue) {
                 return runtimeValuesEqualImpl(
                     leftValue, rightValue, comparedHandles,
                     comparedTables);
-            });
+            };
+        return isRuntimeTimetableValue(left)
+                   ? runtimeTimetableValuesEqual(
+                         left, right, valueEquality)
+                   : runtimeTableValuesEqual(
+                         left, right, valueEquality);
     }
 
     switch (left.kind) {

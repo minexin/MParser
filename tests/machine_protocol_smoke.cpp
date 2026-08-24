@@ -1,10 +1,12 @@
 #include "mparser/embedding/machine_protocol.h"
 
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_table.h"
+#include "mparser/runtime/core/value/runtime_timetable.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 
@@ -386,6 +388,47 @@ int main(int argc, char** argv) {
                 tableJson.find("variables=A") ==
                     std::string::npos,
             "machine protocol table object boundary changed");
+
+        const auto categorical = mparser::runtimeConstructCategorical(
+            mparser::makeRuntimeCellValue(
+                {2, 1},
+                {mparser::makeRuntimeCharacterVectorUtf8("a"),
+                 mparser::makeRuntimeCharacterVectorUtf8("b")}));
+        require(categorical.succeeded,
+                "failed to construct categorical protocol fixture");
+        const auto rowTimes = mparser::runtimeConstructDateTime({
+            mparser::makeRuntimeNumberValue(2024),
+            mparser::makeRuntimeNumberValue(1),
+            mparser::makeRuntimeMatrixValue(2, 1, {1, 2}),
+        });
+        require(rowTimes.succeeded,
+                "failed to construct timetable RowTimes fixture");
+        const auto timetable = mparser::runtimeMakeTimetable(
+            rowTimes.value, {categorical.value}, {"Category"});
+        require(timetable.succeeded,
+                "failed to construct timetable protocol fixture");
+        mparser::ModuleInvocationResult richValueResult;
+        richValueResult.status =
+            mparser::ModuleInvocationStatus::Succeeded;
+        richValueResult.variables.push_back(
+            {"category", categorical.value});
+        richValueResult.variables.push_back(
+            {"schedule", timetable.value});
+        const std::string richValueJson =
+            mparser::serializeMachineResultJsonV1(
+                richValueResult, "1.8.0-test");
+        require(
+            richValueJson.find(
+                R"("kind":"object","class":"categorical","dimensions":[2,1])") !=
+                std::string::npos &&
+                richValueJson.find(
+                    R"("kind":"object","class":"timetable","dimensions":[2,1])") !=
+                    std::string::npos &&
+                richValueJson.find(R"("representation":"opaque")") !=
+                    std::string::npos &&
+                richValueJson.find(R"("Category")") ==
+                    std::string::npos,
+            "machine protocol categorical/timetable opaque boundary changed");
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";

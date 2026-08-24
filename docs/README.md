@@ -3,7 +3,7 @@
 MParser is a documented, embeddable, and sustainably extensible MATLAB-like
 subset runtime. The published baseline is v1.0, v1.2 is the frozen historical
 candidate, and v1.3 is the current candidate contract while the source roadmap
-advances through the v1.4 performance train into v1.5 rich-data work. It does
+advances through the v1.4 performance train into v1.5-v1.8 rich-data work. It does
 not claim complete MATLAB compatibility.
 
 Start with the task that matches your role.
@@ -46,7 +46,7 @@ Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 ## Extend The Runtime
 
 - [Extending Builtins](extending-builtins.md): current v1.3 builtin source
-  contract 1.15 plus archived v1.2 contract 1.1, descriptor rules, registry
+  contract 1.16 plus archived v1.2 contract 1.1, descriptor rules, registry
   behavior, ownership, threading, resources, and conformance tests.
 - [Architecture](architecture.md): Lexer to Parser to semantic HIR to
   verified bytecode to VM/typed/native execution.
@@ -67,6 +67,7 @@ adapter is Post-v1.0.
 - [v1.5 Rich Data First Batch](v1.5.md)
 - [v1.6 Sparse Numeric First Batch](v1.6.md)
 - [v1.7 Table Runtime First Batch](v1.7.md)
+- [v1.8 Categorical And Timetable Batch](v1.8.md)
 - [v1 Release Process](release-process.md)
 - [Release Authentication](release-authentication.md): opt-in release-tag
   signing, public-transparency boundary, and consumer verification.
@@ -95,11 +96,12 @@ These files are release contracts, not generated prose:
 | `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
 The current candidate contract freezes the protocol, headers, ABI 2.1 symbol
-set, and builtin 1.15 catalog. The v1.3 implementation train originally closed
+set, and builtin 1.16 catalog. The v1.3 implementation train originally closed
 with 1.10; 1.11 added the guarded `sum` Typed reduction identity, 1.12 added
 guarded `prod` and `mean` reduction identities, and 1.13 adds the shared
-datetime/duration family, 1.14 adds the CSC sparse numeric family, and 1.15
-adds the first table runtime and conversion family while preserving the
+datetime/duration family, 1.14 adds the CSC sparse numeric family, 1.15
+adds the first table runtime and conversion family, and 1.16 adds categorical,
+table-completion, and timetable families while preserving the
 independent public API versions.
 These changes are not folded back into the v1.2 artifact. The earlier v1 and
 v1.2 contracts remain authorities only for their archived boundaries.
@@ -112,6 +114,8 @@ v1.2 contracts remain authorities only for their archived boundaries.
   dual-engine parity, and the opaque embedding boundary.
 - [v1.7 Table Runtime First Batch](v1.7.md): ordered variables, metadata,
   row/variable indexing, assignment, conversions, and differential evidence.
+- [v1.8 Rich Tabular Data Batch](v1.8.md): categorical values, table row and
+  concatenation completion, timetable RowTimes semantics, and opaque embedding.
 
 - [v1.4 Development Milestone](v1.4.md): versioned numerical workload suite,
   evidence-selected local scalar-function specialization, N-dimensional

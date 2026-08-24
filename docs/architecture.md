@@ -15,10 +15,15 @@ files are grouped by subsystem under `src/mparser`: `frontend`, `semantic`,
 `execution/bytecode/vm` ownership boundary, alongside the existing JIT,
 core/builtin, and I/O subdirectories. The complete placement rules are
 recorded in `src/mparser/README.md`; internal paths are not public API or ABI.
-The current rich-data temporal slice follows the same rule: civil-date value
-storage lives in `runtime/core/value`, while registry adapters live in
-`runtime/builtins/datetime`. It does not introduce a second object or builtin
-dispatch path.
+Rich-data slices follow the same rule: datetime, sparse, categorical, shared
+tabular, table, and timetable value/storage semantics live in
+`runtime/core/value`, while callable adapters live in the corresponding
+`runtime/builtins/<family>` directory. Shared indexing and lvalue behavior
+stays in `runtime/core/indexing`. This progressive ownership split keeps the
+top-level source tree navigable without turning internal file placement into a
+public API or introducing a second object/builtin dispatch path. Larger
+interpreter or VM file splits are performed only along established execution
+ownership boundaries and must remain behavior-neutral.
 
 ## Frontend stages
 
@@ -473,21 +478,27 @@ order while retaining row-major physical payloads. Typed/native recognition
 does not lower text operations and falls back to the bytecode VM before
 mutation or output publication.
 
-Tables are object-kind runtime values with a dedicated
-`RuntimeTableStorage`, not generic class instances. The storage owns ordered
-named variables plus row count, row names, dimension names, description, and
-`UserData`. Member, parenthesis, and brace operations delegate to
-`runtime_table`; lvalue copyback detaches shared storage before mutation, so a
-failed nested write cannot publish a partial table. Variables retain their own
-RuntimeValue shape and class, allowing one multi-column value to remain one
-table variable. Null assignment is an explicit lvalue property: a literal
-colon is retained through HIR/bytecode for variable deletion, and an empty
+Categorical, table, and timetable values are object-kind runtime values with
+dedicated value-owned storage, not generic class instances. Categorical
+storage owns the category dictionary and compact codes. Tables and timetables
+share `RuntimeTabularStorage`, whose explicit kind and row-axis policy keep
+their runtime classes distinct while reusing ordered variables, dimensions,
+metadata, validation, and copy-on-write machinery. Tables use optional unique
+row names; timetables use a datetime or duration `RowTimes` value.
+
+Member, parenthesis, and brace operations delegate to the shared tabular
+runtime; lvalue copyback detaches storage before mutation, so a failed nested
+write cannot publish a partial value. Variables retain their own RuntimeValue
+shape and class, allowing one multi-column value to remain one tabular
+variable. Null assignment is an explicit lvalue property: a literal colon is
+retained through HIR/bytecode for variable or row deletion, and an empty
 right-hand value is not inferred from the assigned value's shape. Shared
 runtime comparison produces logical tables for `==` and `~=` and recursively
 honors the selected NaN-equality policy for internal identity checks.
-Typed/native regions do not lower table operations and return to the VM before
-mutation. Public embedding surfaces keep the storage opaque; module-independent
-storage can cross the C/C++ compiled-module boundary without exposing layout.
+Typed/native regions do not lower rich tabular operations and return to the VM
+before mutation. Public embedding surfaces keep storage opaque;
+module-independent values can cross the C/C++ compiled-module boundary without
+exposing layout.
 
 Object arrays use the same visible shape contract through `runtime_object`, but
 retain scalar objects as the established fast representation. A nonscalar
@@ -1479,9 +1490,11 @@ families; its historical development snapshot contains 275 descriptors and
 declarative `sum` reduction identity. Active contract 1.12 kept the catalog
 size and added declarative `prod` and `mean` reduction identities. Active
 contract 1.13 adds the shared datetime/duration family, contract 1.14 adds the
-repository-owned CSC sparse family, and contract 1.15 adds table storage,
-metadata, indexing, assignment, and conversion builtins; the active catalog
-has 306 descriptors and 308 registered names. Dense-region analysis may
+repository-owned CSC sparse family, contract 1.15 adds table storage, metadata,
+indexing, assignment, and conversion builtins, and contract 1.16 adds
+categorical storage/category operations, table completion, and timetable
+RowTimes/conversion builtins; the active catalog has 324 descriptors and 326
+registered names. Dense-region analysis may
 consume them only through
 the same descriptor purity, shadowing, arity, shape, numeric-class, and
 resource guards used by the VM fallback boundary. A generator-backed

@@ -5,7 +5,7 @@ session-owned system boundary, broad standard-library coverage, dynamic
 workspace and language semantics, MAT v5 persistence, and repository-owned
 C++20 advanced numerical algorithms without Eigen. The public identities are
 C/C++ source API 1.3, C ABI generation 2 revision 1, CLI 1.0, machine result
-protocol 1.1, and Builtin source contract 1.15. They are frozen together in the
+protocol 1.1, and Builtin source contract 1.16. They are frozen together in the
 [v1.3 candidate contract](docs/public-contract-v1.3.json). The v1.2 and
 released v1.0 contracts remain immutable archived evidence; unreleased
 interfaces do not require compatibility adapters. See
@@ -20,7 +20,8 @@ shared active-frame captures, direct Cell brace comma-list outputs, and
 implicit indexed Struct creation. Later in-tree batches add literal class-name
 source discovery, enumeration arrays, output-aware callbacks, MAT v5
 persistence, native C++ datetime/duration values, two-dimensional CSC sparse
-storage, and the first ordered table runtime slice. The 2026-08-24 MATLAB
+storage, categorical arrays, completed rectangular table operations, and the
+first timetable runtime slice. The 2026-08-24 MATLAB
 R2024b differential run records 222 matches and one gap across 223 accepted
 cases, with no prior match regressing. Datetime, table, and sparse now pass;
 graphics is the observed remainder.
@@ -1931,6 +1932,21 @@ portable C++20. MParser does not link, vendor, or copy Eigen code; published
 algorithms and external implementations may inform algorithm selection, but
 the maintained implementation and tests live in this repository. Legal inputs
 outside a typed/JIT region execute through the shared runtime implementation.
+
+Run categorical, completed rectangular-table, and timetable semantics with:
+
+```powershell
+build\mparser.exe --run samples\categorical_demo.m
+build\mparser.exe --run samples\timetable_demo.m
+```
+
+The first demo reports `categorical summary=9` and `tabular summary=29`; the
+second reports `timetable summary=45`. They cover N-dimensional categorical
+indexing and category management, row deletion, multi-variable brace
+assignment, table concatenation and sorting, temporal RowTimes, duplicate-time
+selection, table/timetable conversion, and synchronized timetable transforms.
+These rich values execute through the VM authority when a typed region cannot
+represent them, preserving portable/native transactional fallback.
 
 Run the active v1.3 system, random-state, and bounded text-file slices with:
 

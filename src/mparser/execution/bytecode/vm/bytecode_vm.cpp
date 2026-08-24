@@ -6,6 +6,7 @@
 #include "mparser/runtime/core/object_model/runtime_argument_validation.h"
 #include "mparser/runtime/core/indexing/runtime_assignment.h"
 #include "mparser/runtime/core/session/runtime_call_frame.h"
+#include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_cell.h"
 #include "mparser/runtime/core/session/runtime_exception.h"
 #include "mparser/runtime/core/indexing/runtime_index.h"
@@ -185,6 +186,7 @@ bool isBuiltinReflectableClass(std::string_view name) {
     const std::string canonical =
         canonicalRuntimeMetadataClassName(name);
     return canonical == "double" || canonical == "logical" ||
+           canonical == kRuntimeCategoricalClassName ||
            canonical == kRuntimeDateTimeClassName ||
            canonical == kRuntimeDurationClassName ||
            canonical == "char" || canonical == "string" ||
@@ -517,6 +519,12 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     }
     if (isNumeric(left) && isNumeric(right)) {
         return runtimeNumericValuesIdentical(left, right);
+    }
+    if (isRuntimeCategoricalValue(left) ||
+        isRuntimeCategoricalValue(right)) {
+        return isRuntimeCategoricalValue(left) &&
+               isRuntimeCategoricalValue(right) &&
+               runtimeCategoricalValuesEqual(left, right, false);
     }
     if (isString(left) && isString(right)) {
         return runtimeTextPayloadEqual(left, right);
@@ -6061,7 +6069,8 @@ private:
             !isNumeric(target.value) && !isCell(target.value) &&
             !isRuntimeTextValue(target.value) &&
             target.value.kind != RuntimeValueKind::Struct &&
-            !isRuntimeTableValue(target.value) &&
+            !isRuntimeCategoricalValue(target.value) &&
+            !isRuntimeTabularValue(target.value) &&
             !isRuntimeClassObject(target.value) &&
             !isRuntimeMetadataObject(target.value)) {
             addDiagnostic(instruction,
@@ -9576,7 +9585,7 @@ private:
             }
             return;
         }
-        if (isRuntimeTableValue(target->value)) {
+        if (isRuntimeTabularValue(target->value)) {
             auto member = runtimeTableMemberValue(
                 target->value, instruction.operand);
             if (!member.succeeded) {
@@ -9934,7 +9943,7 @@ private:
             recordAssignment(instruction, "struct-member", updated);
             return;
         }
-        if (isRuntimeTableValue(target->value)) {
+        if (isRuntimeTabularValue(target->value)) {
             if (instruction.receiverName.empty()) {
                 addDiagnostic(
                     instruction,
@@ -10298,6 +10307,23 @@ private:
             return;
         }
 
+        if (isRuntimeCategoricalValue(*target)) {
+            auto result = instruction.nullAssignment
+                              ? runtimeDeleteCategoricalIndexed(
+                                    *target, arguments,
+                                    instruction.colonSubscripts)
+                              : runtimeAssignCategoricalIndexed(
+                                    *target, arguments, single.value);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return;
+            }
+            recordAssignment(instruction, "categorical-index",
+                             result.value);
+            storeVariable(instruction, std::move(result.value));
+            return;
+        }
         if (target->kind == RuntimeValueKind::Struct) {
             auto result = instruction.nullAssignment
                               ? runtimeDeleteStructIndexed(*target, arguments)
@@ -10311,7 +10337,7 @@ private:
             storeVariable(instruction, std::move(result.value));
             return;
         }
-        if (isRuntimeTableValue(*target)) {
+        if (isRuntimeTabularValue(*target)) {
             auto result = instruction.nullAssignment
                               ? runtimeDeleteTableIndexed(
                                     *target, arguments,
@@ -10465,6 +10491,19 @@ private:
         const auto right = popRuntime(instruction, "binary operator");
         const auto left = popRuntime(instruction, "binary operator");
         if (!left || !right) {
+            return;
+        }
+
+        if (isRuntimeCategoricalValue(*left) ||
+            isRuntimeCategoricalValue(*right)) {
+            auto compared = runtimeCompareCategorical(
+                instruction.operand, *left, *right);
+            if (!compared.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + compared.error);
+                return;
+            }
+            pushRuntime(std::move(compared.value));
             return;
         }
 
@@ -10728,7 +10767,7 @@ private:
         if (!arguments || !target) {
             return;
         }
-        if (isRuntimeTableValue(*target)) {
+        if (isRuntimeTabularValue(*target)) {
             auto contents = runtimeTableContentsValue(
                 *target, runtimeExpandedValues(*arguments));
             if (!contents.succeeded) {
@@ -10818,7 +10857,7 @@ private:
                           "cell assignment requires a variable target");
             return;
         }
-        if (isRuntimeTableValue(*target)) {
+        if (isRuntimeTabularValue(*target)) {
             if (instruction.nullAssignment) {
                 addDiagnostic(
                     instruction,
@@ -11166,7 +11205,8 @@ private:
             !isRuntimeTextValue(callee->value) &&
             callee->value.kind != RuntimeValueKind::Struct &&
             callee->value.kind != RuntimeValueKind::Cell &&
-            !isRuntimeTableValue(callee->value) &&
+            !isRuntimeCategoricalValue(callee->value) &&
+            !isRuntimeTabularValue(callee->value) &&
             !isRuntimeClassObject(callee->value) &&
             !isRuntimeMetadataObject(callee->value)) {
             finishCallOrIndexContext(instruction);
@@ -15067,7 +15107,19 @@ private:
                 return missingValue();
             }
             RuntimeTextOperationResult result;
-            if (isRuntimeTemporalValue(arguments.front())) {
+            if (isRuntimeCategoricalValue(arguments.front())) {
+                auto categorical = runtimeCategoricalToString(
+                    arguments.front());
+                if (!categorical.succeeded) {
+                    addDiagnostic(instruction,
+                                  "bytecode " + categorical.error);
+                    return missingValue();
+                }
+                if (name == "string") {
+                    return std::move(categorical.value);
+                }
+                result = runtimeConvertToCharacter(categorical.value);
+            } else if (isRuntimeTemporalValue(arguments.front())) {
                 auto temporal = runtimeTemporalFormat(
                     arguments.front(), name == "string");
                 result.succeeded = temporal.succeeded;
@@ -15101,7 +15153,28 @@ private:
                 return missingValue();
             }
             RuntimeTextOperationResult result;
-            if (name == "cellstr") {
+            if (isRuntimeCategoricalValue(arguments.front())) {
+                if (name == "ismissing") {
+                    auto categorical = runtimeCategoricalMissingMask(
+                        arguments.front());
+                    if (!categorical.succeeded) {
+                        addDiagnostic(instruction,
+                                      "bytecode " + categorical.error);
+                        return missingValue();
+                    }
+                    return std::move(categorical.value);
+                }
+                auto categorical = runtimeCategoricalToString(
+                    arguments.front());
+                if (!categorical.succeeded) {
+                    addDiagnostic(instruction,
+                                  "bytecode " + categorical.error);
+                    return missingValue();
+                }
+                result = name == "cellstr"
+                             ? runtimeCellstr(categorical.value)
+                             : runtimeStringLengths(categorical.value);
+            } else if (name == "cellstr") {
                 result = runtimeCellstr(arguments.front());
             } else if (name == "strlength") {
                 result = runtimeStringLengths(arguments.front());
@@ -15185,7 +15258,17 @@ private:
         if (isRuntimeMetadataObject(target)) {
             return indexMetadataValue(instruction, target, arguments);
         }
-        if (isRuntimeTableValue(target)) {
+        if (isRuntimeCategoricalValue(target)) {
+            auto result = runtimeIndexCategorical(
+                target, arguments, linearColon);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (isRuntimeTabularValue(target)) {
             auto result = runtimeIndexTable(target, arguments);
             if (!result.succeeded) {
                 addDiagnostic(instruction,

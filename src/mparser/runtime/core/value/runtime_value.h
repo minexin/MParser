@@ -79,8 +79,9 @@ struct RuntimeStringElement {
 };
 
 struct RuntimeFunctionHandle;
+struct RuntimeCategoricalStorage;
 struct RuntimeSparseStorage;
-struct RuntimeTableStorage;
+struct RuntimeTabularStorage;
 
 struct RuntimeValue {
   RuntimeValueKind kind = RuntimeValueKind::Missing;
@@ -105,9 +106,12 @@ struct RuntimeValue {
   // immutable runtime values.  The payload is intentionally opaque to the
   // public C ABI and machine result protocol.
   std::shared_ptr<RuntimeSparseStorage> sparseStorage;
-  // Table payloads are immutable value storage with copy-on-write mutation.
+  // Categorical payloads keep a shared dictionary and compact codes. Code 0
+  // represents MATLAB's undefined categorical element.
+  std::shared_ptr<RuntimeCategoricalStorage> categoricalStorage;
+  // Table and timetable payloads share immutable copy-on-write storage.
   // Their layout stays internal to the runtime and is opaque to the C ABI.
-  std::shared_ptr<RuntimeTableStorage> tableStorage;
+  std::shared_ptr<RuntimeTabularStorage> tabularStorage;
   bool handleObject = false;
   size_t opaqueId = 0;
   size_t rows = 0;
