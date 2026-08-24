@@ -4,6 +4,7 @@
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/execution/jit/typed_ir.h"
 
 #include <algorithm>
@@ -31,10 +32,13 @@ const std::map<std::string, RuntimeValue>& objectFields(
 }
 
 using ComparedHandleObjects = std::set<std::pair<const void*, const void*>>;
+using ComparedTables = std::set<
+    std::pair<const RuntimeTableStorage*, const RuntimeTableStorage*>>;
 
 bool runtimeValuesEqualImpl(const RuntimeValue& left,
                             const RuntimeValue& right,
-                            ComparedHandleObjects& comparedHandles) {
+                            ComparedHandleObjects& comparedHandles,
+                            ComparedTables& comparedTables) {
     if (left.kind != right.kind ||
         left.numericClass != right.numericClass ||
         runtimeDimensions(left) != runtimeDimensions(right)) {
@@ -43,6 +47,26 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
 
     if (isRuntimeNumericValue(left)) {
         return runtimeNumericValuesIdentical(left, right);
+    }
+    if (isRuntimeTableValue(left) || isRuntimeTableValue(right)) {
+        if (!isRuntimeTableValue(left) ||
+            !isRuntimeTableValue(right)) {
+            return false;
+        }
+        const auto pair = std::pair{
+            runtimeTableStorage(left), runtimeTableStorage(right)};
+        if (!comparedTables.insert(pair).second) {
+            return true;
+        }
+        return runtimeTableValuesEqual(
+            left, right,
+            [&comparedHandles, &comparedTables](
+                const RuntimeValue& leftValue,
+                const RuntimeValue& rightValue) {
+                return runtimeValuesEqualImpl(
+                    leftValue, rightValue, comparedHandles,
+                    comparedTables);
+            });
     }
 
     switch (left.kind) {
@@ -64,8 +88,9 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
             return false;
         }
         for (size_t index = 0; index < left.cells.size(); ++index) {
-            if (!runtimeValuesEqualImpl(left.cells[index], right.cells[index],
-                                        comparedHandles)) {
+            if (!runtimeValuesEqualImpl(
+                    left.cells[index], right.cells[index],
+                    comparedHandles, comparedTables)) {
                 return false;
             }
         }
@@ -78,7 +103,7 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
         return left.text == right.text && left.cells.size() == 1 &&
                right.cells.size() == 1 &&
                runtimeValuesEqualImpl(left.cells.front(), right.cells.front(),
-                                      comparedHandles);
+                                      comparedHandles, comparedTables);
     case RuntimeValueKind::Struct:
         if (runtimeStructFieldOrder(left) !=
                 runtimeStructFieldOrder(right) ||
@@ -98,7 +123,8 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
                 const auto other = rightElement->find(name);
                 if (other == rightElement->end() ||
                     !runtimeValuesEqualImpl(value, other->second,
-                                            comparedHandles)) {
+                                            comparedHandles,
+                                            comparedTables)) {
                     return false;
                 }
             }
@@ -124,7 +150,8 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
                     runtimeObjectLogicalElement(right, logicalIndex);
                 if (!leftElement || !rightElement ||
                     !runtimeValuesEqualImpl(
-                        *leftElement, *rightElement, comparedHandles)) {
+                        *leftElement, *rightElement, comparedHandles,
+                        comparedTables)) {
                     return false;
                 }
             }
@@ -148,7 +175,8 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
             const auto other = rightFields.find(name);
             if (other == rightFields.end() ||
                 !runtimeValuesEqualImpl(value, other->second,
-                                        comparedHandles)) {
+                                        comparedHandles,
+                                        comparedTables)) {
                 return false;
             }
         }
@@ -161,7 +189,9 @@ bool runtimeValuesEqualImpl(const RuntimeValue& left,
 bool runtimeValuesEqual(const RuntimeValue& left,
                         const RuntimeValue& right) {
     ComparedHandleObjects comparedHandles;
-    return runtimeValuesEqualImpl(left, right, comparedHandles);
+    ComparedTables comparedTables;
+    return runtimeValuesEqualImpl(
+        left, right, comparedHandles, comparedTables);
 }
 
 std::pair<bool, std::string> compareVariables(

@@ -123,17 +123,17 @@ Character/string, cell, struct, function-handle, and object values remain part
 of the stable value model. The v1.2 correctness inventory includes first-class
 shaped missing arrays and row-structured multidimensional cell literals, so
 forms such as `[missing missing]` and `{'a'; 'b'}` use ordinary array/cell
-construction rather than scalar-only exceptions. Large domain families such
-as sparse arrays, datetime/duration, categorical, table, and timetable remain
-separately staged because they add storage and container semantics beyond a
-numeric class tag.
+construction rather than scalar-only exceptions. Large domain families require
+separate storage and container semantics beyond a numeric class tag. The later
+v1.5-v1.7 batches now provide datetime/duration, CSC sparse, and table slices;
+categorical and timetable families remain staged.
 
 ## v1.3: System And Broad Standard Library
 
 **Status: implemented; candidate scope and current contract are recorded in
 [v1.3.md](v1.3.md) and
-[public-contract-v1.3.json](public-contract-v1.3.json). v1.4 is the next
-active development train.**
+[public-contract-v1.3.json](public-contract-v1.3.json). Subsequent v1.4-v1.7
+internal batches are recorded below.**
 
 v1.3 builds on the v1.2 host boundary and closes a substantial system-function
 and general-library bundle:
@@ -322,14 +322,10 @@ Recycle-bin integration, parent-component wildcards, selectable link policy,
 and broader platform-specific attributes remain later boundaries.
 
 The latest MATLAB R2024b external differential rerun at
-`MParserV1.0Test/results/20260823-091751-v1.3-candidate` records 219
-matches and 4 gaps across all 223 MATLAB-accepted cases. It preserves the
-`cap_271_io_save_load` closure first recorded by the preceding MAT v5 run,
-with no prior match regressing. The remaining observed gaps are `datetime`,
-`table`, `sparse`, and graphics. The current v1.5 first rich-data batch
-implements the datetime/duration runtime slice and its local evidence, but the
-external differential suite must be rerun before `cap_029_types_datetime` is
-declared closed. The thirteenth batch closes dynamic
+`MParserV1.0Test/results/20260824-232112-v1.7-table-final` records 222
+matches and one gap across all 223 MATLAB-accepted cases, with no prior match
+regressing. Datetime, table, and sparse now pass; graphics is the only imported
+gap. The thirteenth batch closes dynamic
 parent-module local, nested, path, package, private, and module-bound-handle invocation across HIR
 and bytecode parents, including recursive evaluation, output capture, captured
 workspace updates, and source-scoped private isolation. MATLAB R2024b reference
@@ -447,12 +443,11 @@ machine protocol continues to expose ordinary objects as opaque values.
 
 The next batches close the remaining class and ownership boundaries that fit
 the existing contracts. The sparse numeric first batch is recorded in
-[v1.6.md](v1.6.md); categorical and table/timetable remain measured,
-separately gated candidates. Debugger stack/local inspection remains an
-additive, separately gated public contract. The current external suite still
-records `table` and graphics as open, while the sparse and temporal local
-implementations await a fresh differential rerun before any imported
-capability is marked closed.
+[v1.6.md](v1.6.md), and the table runtime first batch is recorded in
+[v1.7.md](v1.7.md). The full 223-case differential rerun confirms temporal,
+sparse, and table closure with graphics as the sole imported gap. Categorical
+and timetable remain separately gated candidates. Debugger stack/local
+inspection remains an additive, separately gated public contract.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 

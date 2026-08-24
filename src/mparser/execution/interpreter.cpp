@@ -19,6 +19,7 @@
 #include "mparser/execution/runtime_source_evaluation.h"
 #include "mparser/execution/runtime_source_storage.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
 #include "mparser/runtime/core/session/runtime_warning.h"
@@ -179,6 +180,9 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     }
     if (isText(left) && isText(right)) {
         return runtimeTextPayloadEqual(left, right);
+    }
+    if (isRuntimeTableValue(left) || isRuntimeTableValue(right)) {
+        return runtimeValuesEqual(left, right);
     }
     if (isCell(left) && isCell(right)) {
         if (runtimeDimensions(left) != runtimeDimensions(right) ||
@@ -1723,7 +1727,6 @@ private:
         }
 
         const bool nullAssignment =
-            target.kind == HirKind::CallOrIndex &&
             value.kind == HirKind::Matrix && value.children.empty();
         const auto single = runtimeRequireSingleValue(
             evaluate(value), "assignment right-hand side");
@@ -2034,13 +2037,13 @@ private:
             addDiagnostic(target, "unsupported assignment target");
             break;
         case HirKind::MemberAccess:
-            assignMemberTarget(target, value);
+            assignMemberTarget(target, value, nullAssignment);
             break;
         case HirKind::CallOrIndex:
             assignIndexedTarget(target, value, nullAssignment);
             break;
         case HirKind::BraceIndex:
-            assignBraceIndexedTarget(target, value);
+            assignBraceIndexedTarget(target, value, nullAssignment);
             break;
         default:
             addDiagnostic(target, "unsupported assignment target");
@@ -2049,7 +2052,8 @@ private:
     }
 
     void assignMemberTarget(const HirNode& target,
-                            const RuntimeValue& value) {
+                            const RuntimeValue& value,
+                            bool nullAssignment) {
         if (target.children.empty() ||
             target.children.front()->kind != HirKind::NameRef) {
             addDiagnostic(target,
@@ -2079,6 +2083,16 @@ private:
         const auto variable = loadStoredVariable(root);
         RuntimeValue updated =
             variable ? *variable : makeRuntimeStructValue();
+        if (isRuntimeTableValue(updated)) {
+            auto assigned = runtimeSetTableMember(
+                updated, std::move(fieldName), value, nullAssignment);
+            if (!assigned.succeeded) {
+                addDiagnostic(target, std::move(assigned.error));
+                return;
+            }
+            storeVariable(root, std::move(assigned.value));
+            return;
+        }
         if (!isStruct(updated)) {
             addDiagnostic(target,
                           "member assignment requires a structure target: " +
@@ -2124,6 +2138,28 @@ private:
                           "indexed assignment requires subscripts");
             return;
         }
+        std::vector<bool> colonSubscripts;
+        colonSubscripts.reserve(target.children.size() - 1);
+        for (size_t index = 1; index < target.children.size(); ++index) {
+            const HirNode& subscript = *target.children[index];
+            colonSubscripts.push_back(
+                subscript.kind == HirKind::Literal &&
+                subscript.label == ":");
+        }
+        if (isRuntimeTableValue(targetValue)) {
+            auto result = nullAssignment
+                              ? runtimeDeleteTableIndexed(
+                                    targetValue, arguments,
+                                    colonSubscripts)
+                              : runtimeAssignTableIndexed(
+                                    targetValue, arguments, value);
+            if (!result.succeeded) {
+                addDiagnostic(target, std::move(result.error));
+                return;
+            }
+            storeVariable(callee, std::move(result.value));
+            return;
+        }
         if (isStruct(targetValue)) {
             RuntimeStructOperationResult result;
             if (nullAssignment) {
@@ -2140,14 +2176,6 @@ private:
             return;
         }
 
-        std::vector<bool> colonSubscripts;
-        colonSubscripts.reserve(target.children.size() - 1);
-        for (size_t index = 1; index < target.children.size(); ++index) {
-            const HirNode& subscript = *target.children[index];
-            colonSubscripts.push_back(
-                subscript.kind == HirKind::Literal &&
-                subscript.label == ":");
-        }
         if (isCell(targetValue)) {
             auto result = nullAssignment
                               ? runtimeDeleteCellIndexed(
@@ -2217,7 +2245,8 @@ private:
     }
 
     void assignBraceIndexedTarget(const HirNode& target,
-                                  const RuntimeValue& value) {
+                                  const RuntimeValue& value,
+                                  bool nullAssignment) {
         if (target.children.empty() ||
             target.children.front()->kind != HirKind::NameRef) {
             addDiagnostic(target,
@@ -2236,6 +2265,22 @@ private:
 
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(target, indexed);
+        if (isRuntimeTableValue(indexed)) {
+            if (nullAssignment) {
+                addDiagnostic(
+                    target,
+                    "table brace null assignment is not supported");
+                return;
+            }
+            auto result = runtimeAssignTableContents(
+                indexed, arguments, value);
+            if (!result.succeeded) {
+                addDiagnostic(target, std::move(result.error));
+                return;
+            }
+            storeVariable(root, std::move(result.value));
+            return;
+        }
         if (isRuntimeStringArray(indexed)) {
             const auto result = runtimeAssignStringContents(
                 indexed, arguments, value);
@@ -2714,11 +2759,13 @@ private:
             return missingValue();
         }
         const RuntimeValue target = evaluate(*node.children.front());
-        if (!isStruct(target) && !isRuntimeException(target) &&
+        if (!isStruct(target) && !isRuntimeTableValue(target) &&
+            !isRuntimeException(target) &&
             !isRuntimeTemporalValue(target)) {
             addDiagnostic(node,
-                          "member access requires a structure, temporal "
-                          "value, or MException in the reference interpreter");
+                          "member access requires a structure, table, "
+                          "temporal value, or MException in the reference "
+                          "interpreter");
             return missingValue();
         }
         std::string fieldName = node.label;
@@ -2744,6 +2791,14 @@ private:
                 return missingValue();
             }
             return std::move(property.value);
+        }
+        if (isRuntimeTableValue(target)) {
+            auto member = runtimeTableMemberValue(target, fieldName);
+            if (!member.succeeded) {
+                addDiagnostic(node, std::move(member.error));
+                return missingValue();
+            }
+            return std::move(member.value);
         }
         if (isRuntimeException(target)) {
             const RuntimeValue* property =
@@ -3016,6 +3071,16 @@ private:
         }
 
         const RuntimeValue right = evaluate(*node.children[1]);
+        if (isRuntimeTableValue(left) ||
+            isRuntimeTableValue(right)) {
+            auto result = runtimeCompareTables(
+                node.label, left, right);
+            if (result.succeeded) {
+                return std::move(result.value);
+            }
+            addDiagnostic(node, std::move(result.error));
+            return missingValue();
+        }
         if (isRuntimeTemporalValue(left) ||
             isRuntimeTemporalValue(right)) {
             auto result = runtimeApplyTemporalBinary(
@@ -3665,6 +3730,14 @@ private:
         const RuntimeValue target = evaluate(*node.children.front());
         const std::vector<RuntimeValue> arguments =
             evaluateIndexArguments(node, target);
+        if (isRuntimeTableValue(target)) {
+            auto contents = runtimeTableContentsValue(target, arguments);
+            if (!contents.succeeded) {
+                addDiagnostic(node, std::move(contents.error));
+                return missingValue();
+            }
+            return std::move(contents.value);
+        }
         if (isRuntimeStringArray(target)) {
             auto result = runtimeIndexStringContents(target, arguments);
             if (!result.succeeded) {
@@ -3693,6 +3766,14 @@ private:
             node.children[1]->kind == HirKind::Literal &&
             node.children[1]->label == ":";
 
+        if (isRuntimeTableValue(target)) {
+            auto result = runtimeIndexTable(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
         if (isStruct(target)) {
             auto result = runtimeIndexStruct(target, arguments, linearColon);
             if (!result.succeeded) {

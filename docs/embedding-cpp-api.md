@@ -35,7 +35,7 @@ executable. The package exports `MParser_CPP_FOUND`,
 `MParser_CPP_INCLUDE_DIR`, engine/C API version components, and C ABI
 generation/revision metadata. It also exports C++ source API `1.3`, machine
 result protocol `1.1`,
-CLI contract `1.0`, builtin source contract `1.14`, and checked paths to the
+CLI contract `1.0`, builtin source contract `1.15`, and checked paths to the
 public/CLI contracts, protocol schema, builtin catalog/author guide, and
 versioning policy. On Windows, deploy `mparser_c.dll` beside the host
 executable or add the installed `bin` directory to the runtime loader path.

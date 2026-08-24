@@ -17,6 +17,7 @@ foreach(required_directory IN ITEMS
         "${PROJECT_ROOT}/src/mparser/cli"
         "${PROJECT_ROOT}/src/mparser/runtime/builtins/datetime"
         "${PROJECT_ROOT}/src/mparser/runtime/builtins/sparse"
+        "${PROJECT_ROOT}/src/mparser/runtime/builtins/table"
         "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm")
     if(NOT IS_DIRECTORY "${required_directory}")
         message(FATAL_ERROR
@@ -34,8 +35,12 @@ foreach(required_file IN ITEMS
         "${PROJECT_ROOT}/src/mparser/runtime/builtins/datetime/runtime_datetime_builtins.h"
         "${PROJECT_ROOT}/src/mparser/runtime/builtins/sparse/runtime_sparse_builtins.cpp"
         "${PROJECT_ROOT}/src/mparser/runtime/builtins/sparse/runtime_sparse_builtins.h"
+        "${PROJECT_ROOT}/src/mparser/runtime/builtins/table/runtime_table_builtins.cpp"
+        "${PROJECT_ROOT}/src/mparser/runtime/builtins/table/runtime_table_builtins.h"
         "${PROJECT_ROOT}/src/mparser/runtime/core/value/runtime_sparse.cpp"
-        "${PROJECT_ROOT}/src/mparser/runtime/core/value/runtime_sparse.h")
+        "${PROJECT_ROOT}/src/mparser/runtime/core/value/runtime_sparse.h"
+        "${PROJECT_ROOT}/src/mparser/runtime/core/value/runtime_table.cpp"
+        "${PROJECT_ROOT}/src/mparser/runtime/core/value/runtime_table.h")
     if(NOT EXISTS "${required_file}")
         message(FATAL_ERROR
             "required source ownership file is missing: ${required_file}")

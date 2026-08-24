@@ -5,7 +5,7 @@ session-owned system boundary, broad standard-library coverage, dynamic
 workspace and language semantics, MAT v5 persistence, and repository-owned
 C++20 advanced numerical algorithms without Eigen. The public identities are
 C/C++ source API 1.3, C ABI generation 2 revision 1, CLI 1.0, machine result
-protocol 1.1, and Builtin source contract 1.12. They are frozen together in the
+protocol 1.1, and Builtin source contract 1.15. They are frozen together in the
 [v1.3 candidate contract](docs/public-contract-v1.3.json). The v1.2 and
 released v1.0 contracts remain immutable archived evidence; unreleased
 interfaces do not require compatibility adapters. See
@@ -17,16 +17,13 @@ v1.3 advances C ABI generation 2 additively to revision 1 with a public,
 rooted runtime-system context for C and C++ hosts. It also closes Cell-valued
 `switch` cases, lexically nested functions with
 shared active-frame captures, direct Cell brace comma-list outputs, and
-implicit indexed Struct creation. The latest in-tree batch adds literal
-class-name source discovery for reflection queries, column enumeration object
-arrays, output-context-aware anonymous callbacks, and Cell-text
-`strcmp`/`strcmpi`, followed by resource-bounded compressed and uncompressed
-MAT v5 `save`/`load` for dense numeric, logical, complex, UTF-16 character,
-Cell, and Struct values. Its 2026-08-23 MATLAB R2024b differential run records
-219 matches and 4 gaps across 223 accepted cases. It closes
-`cap_271_io_save_load` after the preceding 218-match run with no prior match
-regressing. The observed remainder is `datetime`, `table`, `sparse`, and
-graphics.
+implicit indexed Struct creation. Later in-tree batches add literal class-name
+source discovery, enumeration arrays, output-aware callbacks, MAT v5
+persistence, native C++ datetime/duration values, two-dimensional CSC sparse
+storage, and the first ordered table runtime slice. The 2026-08-24 MATLAB
+R2024b differential run records 222 matches and one gap across 223 accepted
+cases, with no prior match regressing. Datetime, table, and sparse now pass;
+graphics is the observed remainder.
 
 The published release baseline remains v1.0.0. Its reliability and
 release-documentation gates were cross-platform confirmed at revision
@@ -1179,8 +1176,7 @@ comma-separated field results, and transactional nested path copy-back. It is
 intentionally not a full MATLAB runtime yet. On this reference HIR path,
 classes,
 method handles, other builtin multi-output conventions beyond the
-implemented `size`/`min`/`max`/`find` subset, complex numbers, sparse arrays,
-class reflection, and object dispatch
+implemented subset, class reflection, and object dispatch
 still report runtime diagnostics instead of guessing; the production
 bytecode VM has the separate classdef support recorded in the compatibility
 matrix.

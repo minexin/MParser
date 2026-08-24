@@ -6,6 +6,7 @@
 #include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/value/runtime_sparse.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/io/runtime_system.h"
@@ -555,7 +556,8 @@ mparser_api_status copySystemContextOptions(
 
 bool runtimeValueRequiresModule(
     const mparser::RuntimeValue& value,
-    std::set<const void*>& functionHandles) {
+    std::set<const void*>& functionHandles,
+    std::set<const mparser::RuntimeTableStorage*>& tableStorages) {
     switch (value.kind) {
     case mparser::RuntimeValueKind::FunctionHandle:
         if (!value.functionHandle) {
@@ -572,19 +574,37 @@ bool runtimeValueRequiresModule(
         if (value.functionHandle->receiver &&
             runtimeValueRequiresModule(
                 *value.functionHandle->receiver,
-                functionHandles)) {
+                functionHandles, tableStorages)) {
             return true;
         }
         for (const auto& [name, captured] :
              value.functionHandle->capturedVariables) {
             (void)name;
             if (runtimeValueRequiresModule(
-                    captured, functionHandles)) {
+                    captured, functionHandles, tableStorages)) {
                 return true;
             }
         }
         return false;
     case mparser::RuntimeValueKind::Object:
+        if (mparser::isRuntimeTableValue(value)) {
+            const auto* storage = mparser::runtimeTableStorage(value);
+            if (!storage) {
+                return false;
+            }
+            if (!tableStorages.insert(storage).second) {
+                return false;
+            }
+            for (const auto& variable : storage->variables) {
+                if (runtimeValueRequiresModule(
+                        variable.value, functionHandles,
+                        tableStorages)) {
+                    return true;
+                }
+            }
+            return runtimeValueRequiresModule(
+                storage->userData, functionHandles, tableStorages);
+        }
         if (mparser::isRuntimeSparseValue(value)) {
             // CSC storage is immutable/value-owned and does not retain a
             // module graph; the C API intentionally keeps it opaque.
@@ -598,7 +618,8 @@ bool runtimeValueRequiresModule(
         if (mparser::isRuntimeMetadataObject(value)) {
             for (const auto& element : value.cells) {
                 if (runtimeValueRequiresModule(element,
-                                                functionHandles)) {
+                                                functionHandles,
+                                                tableStorages)) {
                     return true;
                 }
             }
@@ -610,7 +631,7 @@ bool runtimeValueRequiresModule(
     case mparser::RuntimeValueKind::NameValueArgument:
         for (const auto& element : value.cells) {
             if (runtimeValueRequiresModule(
-                    element, functionHandles)) {
+                    element, functionHandles, tableStorages)) {
                 return true;
             }
         }
@@ -620,7 +641,7 @@ bool runtimeValueRequiresModule(
             for (const auto& [name, field] : element) {
                 (void)name;
                 if (runtimeValueRequiresModule(
-                        field, functionHandles)) {
+                        field, functionHandles, tableStorages)) {
                     return true;
                 }
             }
@@ -628,7 +649,7 @@ bool runtimeValueRequiresModule(
         for (const auto& [name, field] : value.fields) {
             (void)name;
             if (runtimeValueRequiresModule(
-                    field, functionHandles)) {
+                    field, functionHandles, tableStorages)) {
                 return true;
             }
         }
@@ -648,8 +669,9 @@ bool runtimeValueRequiresModule(
 bool runtimeValueRequiresModule(
     const mparser::RuntimeValue& value) {
     std::set<const void*> functionHandles;
+    std::set<const mparser::RuntimeTableStorage*> tableStorages;
     return runtimeValueRequiresModule(
-        value, functionHandles);
+        value, functionHandles, tableStorages);
 }
 
 bool externallyTransportable(

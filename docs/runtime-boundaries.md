@@ -283,6 +283,11 @@ Escaped function handles and objects retain the module/runtime state required
 for invocation. Handle objects preserve shared identity; value objects copy
 according to their value semantics.
 
+Sparse, temporal, and table values use value-owned opaque storage. A table is
+module-independent only when every recursively contained variable and its
+`UserData` are module-independent; otherwise the retained C/C++ value keeps
+the producing module lifetime anchor just like another composite value.
+
 Listener ownership does not form a source/listener/callback reference cycle.
 Explicit deletion invalidates handle objects and performs supported lifecycle
 notification. Using an invalid or deleted object produces a diagnostic.
@@ -339,7 +344,7 @@ C source API 1.3 and ABI generation 2 ownership, sealed/extensible structure
 rules, and symbol meanings are checked against current headers and consumers.
 The C++ source API is 1.3 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
 typed and complex numeric values. Builtin source contract 1.1 is frozen with
-the archived v1.2 candidate; the active candidate descriptor contract is 1.14 and remains
+the archived v1.2 candidate; the active candidate descriptor contract is 1.15 and remains
 a compiled-in source extension surface, not an external plugin ABI. Archived
 v1.0 and frozen v1.2 contracts remain historical evidence rather than
 compatibility gates for development changes.

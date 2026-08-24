@@ -3,6 +3,7 @@
 #include "mparser/execution/interpreter.h"
 #include "mparser/frontend/lexer.h"
 #include "mparser/frontend/parser.h"
+#include "mparser/runtime/core/value/runtime_array.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/semantic/semantic.h"
 
@@ -164,6 +165,12 @@ void verifyTransforms(const Result& result) {
 }
 
 void runTransformSmoke() {
+    const auto invalidDimension = mparser::runtimeConcatenateValues(
+        0, {mparser::makeRuntimeNumberValue(1.0)});
+    require(!invalidDimension.succeeded &&
+                invalidDimension.error.find("positive") != std::string::npos,
+            "core concatenation accepted dimension zero");
+
     const auto result = runBoth(R"(A = zeros(2, 3, 2);
 for k = 1:numel(A)
     A(k) = k;

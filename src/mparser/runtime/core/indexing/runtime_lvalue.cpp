@@ -6,6 +6,7 @@
 #include "mparser/runtime/core/indexing/runtime_index.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
 
@@ -49,6 +50,12 @@ RuntimeLvalueOperationResult readMember(
         }
         return success(std::move(field.value));
     }
+    if (isRuntimeTableValue(parent)) {
+        auto member = runtimeTableMemberValue(parent, name);
+        return member.succeeded
+                   ? success(std::move(member.value))
+                   : failure(std::move(member.error));
+    }
     if (isRuntimeException(parent)) {
         const RuntimeValue* property =
             runtimeExceptionProperty(parent, name);
@@ -76,6 +83,12 @@ RuntimeLvalueOperationResult readSegment(
         return readMember(parent, segment.memberName, hooks, missingSeed);
     case RuntimeLvalueSegmentKind::Parenthesis: {
         const bool linearColon = isLinearColon(segment);
+        if (isRuntimeTableValue(parent)) {
+            auto result = runtimeIndexTable(parent, segment.subscripts);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
         if (parent.kind == RuntimeValueKind::Struct) {
             auto result = runtimeIndexStruct(parent, segment.subscripts,
                                              linearColon);
@@ -121,6 +134,20 @@ RuntimeLvalueOperationResult readSegment(
         }
     }
     case RuntimeLvalueSegmentKind::Brace: {
+        if (isRuntimeTableValue(parent)) {
+            auto result = runtimeTableContents(parent, segment.subscripts);
+            if (!result.succeeded) {
+                return failure(std::move(result.error));
+            }
+            if (result.values.empty()) {
+                return success(makeRuntimeMatrixValue(0, 0, {}));
+            }
+            if (result.values.size() == 1) {
+                return success(std::move(result.values.front()));
+            }
+            return success(makeRuntimeCommaSeparatedList(
+                std::move(result.values)));
+        }
         if (isRuntimeStringArray(parent)) {
             auto result = runtimeIndexStringContents(
                 parent, segment.subscripts);
@@ -139,7 +166,7 @@ RuntimeLvalueOperationResult readSegment(
 
 RuntimeLvalueOperationResult writeMember(
     RuntimeValue parent, std::string name, const RuntimeValue& value,
-    const RuntimeLvalueHooks& hooks) {
+    bool nullAssignment, const RuntimeLvalueHooks& hooks) {
     if (parent.kind == RuntimeValueKind::Missing) {
         parent = makeRuntimeStructValue();
     }
@@ -149,6 +176,13 @@ RuntimeLvalueOperationResult writeMember(
                 "direct field assignment requires a scalar structure");
         }
         return success(std::move(parent));
+    }
+    if (isRuntimeTableValue(parent)) {
+        auto result = runtimeSetTableMember(
+            parent, std::move(name), value, nullAssignment);
+        return result.succeeded
+                   ? success(std::move(result.value))
+                   : failure(std::move(result.error));
     }
     if (isRuntimeException(parent)) {
         return failure("MException properties are read-only: " + name);
@@ -170,8 +204,19 @@ RuntimeLvalueOperationResult writeSegment(
     switch (segment.kind) {
     case RuntimeLvalueSegmentKind::Member:
         return writeMember(std::move(parent), segment.memberName, value,
-                           hooks);
+                           nullAssignment, hooks);
     case RuntimeLvalueSegmentKind::Parenthesis:
+        if (isRuntimeTableValue(parent)) {
+            auto result = nullAssignment
+                              ? runtimeDeleteTableIndexed(
+                                    parent, segment.subscripts,
+                                    segment.colonSubscripts)
+                              : runtimeAssignTableIndexed(
+                                    parent, segment.subscripts, value);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
         if (parent.kind == RuntimeValueKind::Struct) {
             auto result = nullAssignment
                               ? runtimeDeleteStructIndexed(
@@ -243,6 +288,17 @@ RuntimeLvalueOperationResult writeSegment(
                        : failure(std::move(result.error));
         }
     case RuntimeLvalueSegmentKind::Brace: {
+        if (isRuntimeTableValue(parent)) {
+            if (nullAssignment) {
+                return failure(
+                    "table brace null assignment is not supported");
+            }
+            auto result = runtimeAssignTableContents(
+                parent, segment.subscripts, value);
+            return result.succeeded
+                       ? success(std::move(result.value))
+                       : failure(std::move(result.error));
+        }
         if (isRuntimeStringArray(parent)) {
             auto result = runtimeAssignStringContents(
                 parent, segment.subscripts, value);

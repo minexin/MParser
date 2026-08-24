@@ -6,8 +6,10 @@
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 
+#include <unordered_map>
 #include <utility>
 
 namespace mparser {
@@ -61,9 +63,42 @@ RuntimeSingleValueResult runtimeRequireSingleValue(
     return RuntimeSingleValueResult{false, {}, std::move(error)};
 }
 
-bool runtimeValuesEqual(
+namespace {
+
+struct RuntimeTablePair {
+    const RuntimeTableStorage* left = nullptr;
+    const RuntimeTableStorage* right = nullptr;
+
+    bool operator==(const RuntimeTablePair&) const = default;
+};
+
+struct RuntimeTablePairHash {
+    size_t operator()(const RuntimeTablePair& pair) const noexcept {
+        const size_t left =
+            std::hash<const void*>{}(pair.left);
+        const size_t right =
+            std::hash<const void*>{}(pair.right);
+        return left ^ (right + static_cast<size_t>(0x9e3779b9U) +
+                       (left << 6U) + (left >> 2U));
+    }
+};
+
+enum class RuntimeEqualityState {
+    Visiting,
+    Equal,
+    Unequal,
+};
+
+struct RuntimeEqualityContext {
+    std::unordered_map<RuntimeTablePair, RuntimeEqualityState,
+                       RuntimeTablePairHash>
+        tablePairs;
+};
+
+bool runtimeValuesEqualImpl(
     const RuntimeValue& left, const RuntimeValue& right,
-    RuntimeNaNEquality nanEquality) {
+    RuntimeNaNEquality nanEquality,
+    RuntimeEqualityContext& context) {
     if (isRuntimeTemporalValue(left) || isRuntimeTemporalValue(right)) {
         return runtimeTemporalValuesEqual(
             left, right, nanEquality == RuntimeNaNEquality::Equal);
@@ -79,6 +114,32 @@ bool runtimeValuesEqual(
     if (left.kind != right.kind ||
         runtimeDimensions(left) != runtimeDimensions(right)) {
         return false;
+    }
+    if (isRuntimeTableValue(left) || isRuntimeTableValue(right)) {
+        if (!isRuntimeTableValue(left) ||
+            !isRuntimeTableValue(right)) {
+            return false;
+        }
+        const RuntimeTablePair pair{
+            runtimeTableStorage(left), runtimeTableStorage(right)};
+        if (const auto found = context.tablePairs.find(pair);
+            found != context.tablePairs.end()) {
+            return found->second != RuntimeEqualityState::Unequal;
+        }
+        context.tablePairs.emplace(
+            pair, RuntimeEqualityState::Visiting);
+        const bool equal = runtimeTableValuesEqual(
+            left, right,
+            [nanEquality, &context](
+                const RuntimeValue& leftValue,
+                const RuntimeValue& rightValue) {
+                return runtimeValuesEqualImpl(
+                    leftValue, rightValue, nanEquality, context);
+            });
+        context.tablePairs[pair] =
+            equal ? RuntimeEqualityState::Equal
+                  : RuntimeEqualityState::Unequal;
+        return equal;
     }
 
     switch (left.kind) {
@@ -98,9 +159,9 @@ bool runtimeValuesEqual(
             return false;
         }
         for (size_t index = 0; index < left.cells.size(); ++index) {
-            if (!runtimeValuesEqual(
+            if (!runtimeValuesEqualImpl(
                     left.cells[index], right.cells[index],
-                    nanEquality)) {
+                    nanEquality, context)) {
                 return false;
             }
         }
@@ -112,8 +173,9 @@ bool runtimeValuesEqual(
     case RuntimeValueKind::NameValueArgument:
         return left.text == right.text && left.cells.size() == 1 &&
                right.cells.size() == 1 &&
-               runtimeValuesEqual(
-                   left.cells.front(), right.cells.front(), nanEquality);
+               runtimeValuesEqualImpl(
+                   left.cells.front(), right.cells.front(), nanEquality,
+                   context);
     case RuntimeValueKind::Struct:
         if (runtimeStructFieldOrder(left) !=
                 runtimeStructFieldOrder(right) ||
@@ -132,8 +194,8 @@ bool runtimeValuesEqual(
             for (const auto& [name, value] : *leftElement) {
                 const auto other = rightElement->find(name);
                 if (other == rightElement->end() ||
-                    !runtimeValuesEqual(
-                        value, other->second, nanEquality)) {
+                    !runtimeValuesEqualImpl(
+                        value, other->second, nanEquality, context)) {
                     return false;
                 }
             }
@@ -161,9 +223,9 @@ bool runtimeValuesEqual(
             return false;
         }
         for (size_t index = 0; index < left.cells.size(); ++index) {
-            if (!runtimeValuesEqual(
+            if (!runtimeValuesEqualImpl(
                     left.cells[index], right.cells[index],
-                    nanEquality)) {
+                    nanEquality, context)) {
                 return false;
             }
         }
@@ -176,10 +238,11 @@ bool runtimeValuesEqual(
          !isRuntimeScalarObject(right))) {
         return runtimeObjectArraysEqual(
             left, right,
-            [nanEquality](const RuntimeValue& leftElement,
-                          const RuntimeValue& rightElement) {
-                return runtimeValuesEqual(
-                    leftElement, rightElement, nanEquality);
+            [nanEquality, &context](
+                const RuntimeValue& leftElement,
+                const RuntimeValue& rightElement) {
+                return runtimeValuesEqualImpl(
+                    leftElement, rightElement, nanEquality, context);
             });
     }
     if (!left.enumerationMemberName.empty() ||
@@ -205,11 +268,22 @@ bool runtimeValuesEqual(
     for (const auto& [name, value] : leftFields) {
         const auto other = rightFields.find(name);
         if (other == rightFields.end() ||
-            !runtimeValuesEqual(value, other->second, nanEquality)) {
+            !runtimeValuesEqualImpl(
+                value, other->second, nanEquality, context)) {
             return false;
         }
     }
     return true;
+}
+
+} // namespace
+
+bool runtimeValuesEqual(
+    const RuntimeValue& left, const RuntimeValue& right,
+    RuntimeNaNEquality nanEquality) {
+    RuntimeEqualityContext context;
+    return runtimeValuesEqualImpl(
+        left, right, nanEquality, context);
 }
 
 } // namespace mparser

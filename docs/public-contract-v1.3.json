@@ -15,7 +15,7 @@
   },
   "milestone": {
     "path": "docs/v1.3.md",
-    "sha256_lf": "6aea3eb710f418954452a497baed2030b37481399ad31203a2594ff972cb1a81"
+    "sha256_lf": "f477f448902c53e3c959c6eb0329bc4ccc5efb5b767f6ae6b57a54446f8ee626"
   },
   "cli": {
     "major": 1,
@@ -93,32 +93,32 @@
   },
   "builtin_source_contract": {
     "major": 1,
-    "minor": 14,
+    "minor": 15,
     "binary_abi": "none",
     "integration": "compiled together with the engine",
-    "descriptor_count": 299,
-    "registered_name_count": 301,
+    "descriptor_count": 306,
+    "registered_name_count": 308,
     "header": {
       "path": "src/mparser/runtime/builtins/builtin_registry.h",
-      "sha256_lf": "f48a5c2243da50fd58346b15bf30c72e9913bfb31fb8db7dfb07b1e0ba193061"
+      "sha256_lf": "349ef0e83db596b7794831ccd00a69d13d28614bd61c6360036df1fb1cccc523"
     },
     "default_catalog": {
-      "path": "tests/public_contract/builtin/1.14/default_catalog.json",
-      "sha256_lf": "917839ac2e0051e820572a94632a95a5b58b22de0ea31bec80fe659290753f1c"
+      "path": "tests/public_contract/builtin/1.15/default_catalog.json",
+      "sha256_lf": "caaf095852c45c25247c77769eb93a7a8e0e91bfcab6db9461f5d200c9b0ec02"
     },
     "author_guide": {
       "path": "docs/extending-builtins.md",
-      "sha256_lf": "609098138e5e182181c827d99a22c826fb4961fe6527f71bc10ee9942218aae6"
+      "sha256_lf": "38ddb2e1c2b94f9a9e8fe905787977c7d448b6052cdd4c579be6060f850f4da5"
     }
   },
   "versioning_and_deprecation": {
     "path": "docs/versioning-and-deprecation.md",
-    "sha256_lf": "0939e4bacaaa6cd53c7118ec37f1e8c91430f608e006321288ad56c73f633f13"
+    "sha256_lf": "4c1a256026ffd9f13b009db277ca3c2d14c251f74b683f18704f3ed5f7a69dcc"
   },
   "cmake_package": {
     "config_template": {
       "path": "cmake/MParserConfig.cmake.in",
-      "sha256_lf": "1c4a962a93f38a8b9632e2a6f728efbaba656569a6f9f4055f928500fd59ebc2"
+      "sha256_lf": "39081bfd3a2d969c7bc3c6373b904cbe646d0437a99120160fd029113b4aab73"
     },
     "compatibility": "SameMajorVersion",
     "current_contract_file": "public-contract-v1.3.json",

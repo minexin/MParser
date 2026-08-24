@@ -18,4 +18,8 @@ RuntimeArrayOperationResult runtimeReshapeValue(
     const RuntimeValue& value, std::vector<size_t> dimensions,
     const RuntimeObjectArrayPolicy& objectPolicy = {});
 
+RuntimeArrayOperationResult runtimeConcatenateValues(
+    size_t dimension, const std::vector<RuntimeValue>& values,
+    const RuntimeObjectArrayPolicy& objectPolicy = {});
+
 } // namespace mparser

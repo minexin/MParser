@@ -13,6 +13,7 @@ primary MATLAB-like responsibility:
 | `callback` | Higher-order functions that invoke user or builtin callables |
 | `datetime` | Immutable datetime, duration, NaT, component, unit, and temporal predicates |
 | `sparse` | CSC sparse construction, inspection, pattern operations, and dense conversion |
+| `table` | Table construction, metadata, conversion, and tabular queries |
 | `system` | Workspace/context, filesystem/process, and MAT-file operations |
 
 Keep descriptor registration in `builtin_registry.cpp` and executable behavior

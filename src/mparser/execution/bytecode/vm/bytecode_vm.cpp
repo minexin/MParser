@@ -20,6 +20,7 @@
 #include "mparser/execution/runtime_source_evaluation.h"
 #include "mparser/execution/runtime_source_storage.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
 #include "mparser/runtime/core/session/runtime_warning.h"
@@ -519,6 +520,9 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
     }
     if (isString(left) && isString(right)) {
         return runtimeTextPayloadEqual(left, right);
+    }
+    if (isRuntimeTableValue(left) || isRuntimeTableValue(right)) {
+        return runtimeValuesEqual(left, right);
     }
     if (isCell(left) && isCell(right)) {
         if (runtimeDimensions(left) != runtimeDimensions(right) ||
@@ -6057,6 +6061,7 @@ private:
             !isNumeric(target.value) && !isCell(target.value) &&
             !isRuntimeTextValue(target.value) &&
             target.value.kind != RuntimeValueKind::Struct &&
+            !isRuntimeTableValue(target.value) &&
             !isRuntimeClassObject(target.value) &&
             !isRuntimeMetadataObject(target.value)) {
             addDiagnostic(instruction,
@@ -9571,6 +9576,25 @@ private:
             }
             return;
         }
+        if (isRuntimeTableValue(target->value)) {
+            auto member = runtimeTableMemberValue(
+                target->value, instruction.operand);
+            if (!member.succeeded) {
+                addDiagnostic(instruction, std::move(member.error));
+                return;
+            }
+            if (instruction.resultCount == 0) {
+                return;
+            }
+            if (instruction.resultCount != 1) {
+                addDiagnostic(
+                    instruction,
+                    "table member access supports at most one output");
+                return;
+            }
+            pushRuntime(std::move(member.value));
+            return;
+        }
         if (isRuntimeException(target->value)) {
             if (isRuntimeExceptionMethodName(instruction.operand)) {
                 stack_.push_back(builtinStackValue(
@@ -9908,6 +9932,27 @@ private:
                           instruction.receiverBinding,
                           updated, instruction);
             recordAssignment(instruction, "struct-member", updated);
+            return;
+        }
+        if (isRuntimeTableValue(target->value)) {
+            if (instruction.receiverName.empty()) {
+                addDiagnostic(
+                    instruction,
+                    "table member assignment requires a variable target");
+                return;
+            }
+            auto assigned = runtimeSetTableMember(
+                target->value, instruction.operand, *value,
+                instruction.nullAssignment);
+            if (!assigned.succeeded) {
+                addDiagnostic(instruction, std::move(assigned.error));
+                return;
+            }
+            storeVariable(instruction.receiverName,
+                          instruction.receiverBinding,
+                          assigned.value, instruction);
+            recordAssignment(instruction, "table-member",
+                             assigned.value);
             return;
         }
         if (isRuntimeException(target->value)) {
@@ -10266,6 +10311,22 @@ private:
             storeVariable(instruction, std::move(result.value));
             return;
         }
+        if (isRuntimeTableValue(*target)) {
+            auto result = instruction.nullAssignment
+                              ? runtimeDeleteTableIndexed(
+                                    *target, arguments,
+                                    instruction.colonSubscripts)
+                              : runtimeAssignTableIndexed(
+                                    *target, arguments, single.value);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return;
+            }
+            recordAssignment(instruction, "table-index", result.value);
+            storeVariable(instruction, std::move(result.value));
+            return;
+        }
         if (target->kind == RuntimeValueKind::Cell) {
             auto result = instruction.nullAssignment
                               ? runtimeDeleteCellIndexed(
@@ -10404,6 +10465,19 @@ private:
         const auto right = popRuntime(instruction, "binary operator");
         const auto left = popRuntime(instruction, "binary operator");
         if (!left || !right) {
+            return;
+        }
+
+        if (isRuntimeTableValue(*left) ||
+            isRuntimeTableValue(*right)) {
+            auto compared = runtimeCompareTables(
+                instruction.operand, *left, *right);
+            if (!compared.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + compared.error);
+                return;
+            }
+            pushRuntime(std::move(compared.value));
             return;
         }
 
@@ -10654,6 +10728,22 @@ private:
         if (!arguments || !target) {
             return;
         }
+        if (isRuntimeTableValue(*target)) {
+            auto contents = runtimeTableContentsValue(
+                *target, runtimeExpandedValues(*arguments));
+            if (!contents.succeeded) {
+                addDiagnostic(instruction, std::move(contents.error));
+                return;
+            }
+            if (instruction.resultCount == 1) {
+                pushRuntime(std::move(contents.value));
+            } else if (instruction.resultCount > 1) {
+                addDiagnostic(
+                    instruction,
+                    "table contents indexing supports at most one output");
+            }
+            return;
+        }
         if (isRuntimeStringArray(*target)) {
             auto result = runtimeIndexStringContents(
                 *target, runtimeExpandedValues(*arguments));
@@ -10726,6 +10816,23 @@ private:
         if (instruction.operand.empty()) {
             addDiagnostic(instruction,
                           "cell assignment requires a variable target");
+            return;
+        }
+        if (isRuntimeTableValue(*target)) {
+            if (instruction.nullAssignment) {
+                addDiagnostic(
+                    instruction,
+                    "bytecode table brace null assignment is not supported");
+                return;
+            }
+            auto result = runtimeAssignTableContents(
+                *target, runtimeExpandedValues(*arguments), single.value);
+            if (!result.succeeded) {
+                addDiagnostic(instruction, std::move(result.error));
+                return;
+            }
+            storeVariable(instruction, result.value);
+            recordAssignment(instruction, "table-content", result.value);
             return;
         }
         if (isRuntimeStringArray(*target)) {
@@ -11059,6 +11166,7 @@ private:
             !isRuntimeTextValue(callee->value) &&
             callee->value.kind != RuntimeValueKind::Struct &&
             callee->value.kind != RuntimeValueKind::Cell &&
+            !isRuntimeTableValue(callee->value) &&
             !isRuntimeClassObject(callee->value) &&
             !isRuntimeMetadataObject(callee->value)) {
             finishCallOrIndexContext(instruction);
@@ -15076,6 +15184,15 @@ private:
 
         if (isRuntimeMetadataObject(target)) {
             return indexMetadataValue(instruction, target, arguments);
+        }
+        if (isRuntimeTableValue(target)) {
+            auto result = runtimeIndexTable(target, arguments);
+            if (!result.succeeded) {
+                addDiagnostic(instruction,
+                              "bytecode " + result.error);
+                return missingValue();
+            }
+            return std::move(result.value);
         }
         if (target.kind == RuntimeValueKind::Struct) {
             auto result = runtimeIndexStruct(target, arguments,

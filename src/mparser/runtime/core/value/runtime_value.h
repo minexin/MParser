@@ -80,6 +80,7 @@ struct RuntimeStringElement {
 
 struct RuntimeFunctionHandle;
 struct RuntimeSparseStorage;
+struct RuntimeTableStorage;
 
 struct RuntimeValue {
   RuntimeValueKind kind = RuntimeValueKind::Missing;
@@ -104,6 +105,9 @@ struct RuntimeValue {
   // immutable runtime values.  The payload is intentionally opaque to the
   // public C ABI and machine result protocol.
   std::shared_ptr<RuntimeSparseStorage> sparseStorage;
+  // Table payloads are immutable value storage with copy-on-write mutation.
+  // Their layout stays internal to the runtime and is opaque to the C ABI.
+  std::shared_ptr<RuntimeTableStorage> tableStorage;
   bool handleObject = false;
   size_t opaqueId = 0;
   size_t rows = 0;

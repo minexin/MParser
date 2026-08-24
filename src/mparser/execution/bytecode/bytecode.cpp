@@ -1050,6 +1050,7 @@ private:
             }
             const size_t store =
                 emit(BytecodeOp::StoreMember, node, childCount(node));
+            program_.instructions[store].nullAssignment = nullAssignment;
             if (directVariableReceiver) {
                 program_.instructions[store].receiverName =
                     node.children.front()->label;
@@ -1087,13 +1088,22 @@ private:
             break;
         case HirKind::BraceIndex:
             if (node.children.empty()) {
-                emit(BytecodeOp::StoreBraceIndex, node, argumentCount(node));
+                const size_t store = emit(
+                    BytecodeOp::StoreBraceIndex, node,
+                    argumentCount(node));
+                program_.instructions[store].nullAssignment =
+                    nullAssignment;
                 break;
             }
             lowerNode(*node.children.front());
             lowerIndexArguments(node);
-            emit(BytecodeOp::StoreBraceIndex, *node.children.front(),
-                 argumentCount(node));
+            {
+                const size_t store = emit(
+                    BytecodeOp::StoreBraceIndex,
+                    *node.children.front(), argumentCount(node));
+                program_.instructions[store].nullAssignment =
+                    nullAssignment;
+            }
             break;
         default:
             lowerNode(node);

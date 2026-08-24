@@ -456,12 +456,66 @@ protocol boundaries. The current target subset includes:
   output lists, and numeric or Cell literals;
 - ordered structures, structure arrays, dynamic fields, implicit indexed
   creation such as `s(1).a = 1`, and comma-separated field results;
+- two-dimensional CSC sparse numeric values with construction, inspection,
+  common indexing, transpose, and explicit dense conversion;
+- ordered tables with named variables, row/variable indexing, metadata,
+  transactional assignment, and array/structure conversions;
 - value, handle, and supported heterogeneous object arrays.
 
 Indexing and nested assignment use transactional root-and-path semantics. A
 failed nested mutation does not commit a partially modified root value.
-Sparse arrays, complex integer arrays, tables, timetables, GPU arrays, and
+Complex integer arrays, categorical arrays, timetables, GPU arrays, and
 arbitrary MATLAB domain objects are outside the current contract.
+
+## Tables
+
+The first table runtime slice supports ordinary rectangular workflows:
+
+```matlab
+t = table([1; 2], [3; 4], ...
+    VariableNames={'Left', 'Right'}, ...
+    RowNames={'r1'; 'r2'});
+
+last = t(2, :);                 % table result
+right = t{:, 'Right'};          % variable contents
+t.Left(2) = 9;
+t.extra = [5; 6];
+t{:, 'Right'} = [11; 12];
+t(:, 'extra') = [];             % delete a complete variable
+t.EmptyWide = zeros(height(t), 0); % valid zero-width variable
+t.EmptyWide = [];               % explicit member deletion
+t.Properties.Description = 'demo';
+same = t == t;                  % logical table result
+```
+
+`table` accepts `VariableNames`, `RowNames`, and `DimensionNames` as paired or
+name-value arguments. Without explicit names it uses `Var1`, `Var2`, and so
+on; source expression names are not inferred. Parenthesis indexing requires
+row and variable selectors and returns a table. Brace indexing returns the
+selected contents. Numeric, logical, colon, variable-name, and row-name
+selectors are supported within the documented rectangular limits.
+Indexed variable deletion requires a literal colon row selector; explicit
+full-row numeric indices do not stand in for `:`. Row deletion is not yet in
+this slice. Repeated read selectors are made unique with deterministic `_1`,
+`_2`, and later suffixes.
+
+`height`, `width`, `istable`, `array2table`, `table2array`, `struct2table`,
+and `table2struct` share the builtin registry. `table2array` requires variables
+that can form one homogeneous array. Tables may contain dense, text, temporal,
+Cell, structure, object, nested-table, or missing arrays that provide stable
+first-dimension row indexing, and a multi-column value remains one table
+variable. Function handles and other scalar descriptors without row-indexing
+semantics are rejected as variables. `==` and `~=` currently compare matching
+numeric, text, temporal, or nested-table variables and return a logical table.
+
+Tables execute through the VM/portable fallback and are opaque objects at C,
+C++, and machine-protocol boundaries. Recursively module-independent tables
+can be retained and passed between compiled modules, but their variables are
+not projected as an ABI layout. Timetables, categorical variables,
+joins/grouping/sorting, row deletion, general multi-variable brace assignment,
+table MAT persistence, and exact MATLAB display or `TableProperties` object
+identity are not part of this first slice. Run `samples/table_demo.m` for the
+multi-tier parity example.
 
 ## Control Flow And Exceptions
 
@@ -541,7 +595,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.3, ABI generation 2 revision 1 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.3 |
-| Builtin compiled into the engine | active source contract 1.14; archived v1.2 contract 1.1 |
+| Builtin compiled into the engine | active source contract 1.15; archived v1.2 contract 1.1 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,
@@ -562,7 +616,7 @@ The following are not v1.0 release claims:
 - complete MATLAB compatibility;
 - Live Scripts, P-code, MEX, Simulink, graphics, or desktop UI integration;
 - MATLAB toolboxes and their long-tail function catalogs;
-- sparse, complex-integer, GPU, table, timetable, or every domain-specific value;
+- complex-integer, GPU, categorical, timetable, or every domain-specific value;
 - parallel `parfor`;
 - an external binary plugin ABI or zero-copy borrowed array ABI;
 - a persistent on-disk native-code cache.

@@ -1676,6 +1676,88 @@ static int run_temporal_value_transport_smoke(void) {
     return 1;
 }
 
+static int run_table_value_transport_smoke(void) {
+    static const char source[] =
+        "data = table([1; 2], [3; 4], "
+        "VariableNames={'A', 'B'});\n"
+        "shared = data;\n"
+        "for depth = 1:20\n"
+        "shared = table({shared; shared}, "
+        "VariableNames={'Nested'});\n"
+        "end\n"
+        "factor = 2;\n"
+        "callback = @(x) x * factor;\n"
+        "bound = table({callback}, "
+        "VariableNames={'Callback'});\n";
+    static const char consumer_source[] =
+        "function out = identity(value)\n"
+        "out = value;\n"
+        "end\n";
+    mparser_module* module = NULL;
+    mparser_module* consumer = NULL;
+    mparser_result* result = NULL;
+    mparser_value* table = NULL;
+    mparser_value* shared = NULL;
+    mparser_value* bound = NULL;
+    mparser_value* roundtrip = NULL;
+    const mparser_value* arguments[1];
+    mparser_invocation_options options;
+    size_t dimension = 0;
+
+    CHECK(compile_valid(source, "table_transport.m", &module));
+    CHECK(compile_valid(
+              consumer_source, "table_consumer.m", &consumer));
+    options = options_for("");
+    options.requested_output_count = 0;
+    CHECK(mparser_module_execute(module, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(find_variable(result, "data", &table) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_value_get_kind(table) == MPARSER_VALUE_OBJECT);
+    CHECK(view_equals(mparser_value_class_name(table), "table"));
+    CHECK(mparser_value_is_module_bound(table) == 0);
+    CHECK(mparser_value_rank(table) == 2);
+    CHECK(mparser_value_dimension(table, 0, &dimension) ==
+          MPARSER_API_STATUS_OK && dimension == 2);
+    CHECK(mparser_value_dimension(table, 1, &dimension) ==
+          MPARSER_API_STATUS_OK && dimension == 2);
+    CHECK(find_variable(result, "shared", &shared) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_value_get_kind(shared) == MPARSER_VALUE_OBJECT);
+    CHECK(view_equals(mparser_value_class_name(shared), "table"));
+    CHECK(mparser_value_is_module_bound(shared) == 0);
+    CHECK(find_variable(result, "bound", &bound) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_value_get_kind(bound) == MPARSER_VALUE_OBJECT);
+    CHECK(view_equals(mparser_value_class_name(bound), "table"));
+    CHECK(mparser_value_is_module_bound(bound) == 1);
+    mparser_result_release(result);
+    result = NULL;
+
+    arguments[0] = shared;
+    options = options_for("identity");
+    options.arguments = arguments;
+    options.argument_count = 1;
+    CHECK(mparser_module_execute(consumer, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_result_output(result, 0, &roundtrip) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_value_get_kind(roundtrip) == MPARSER_VALUE_OBJECT);
+    CHECK(view_equals(mparser_value_class_name(roundtrip), "table"));
+    CHECK(mparser_value_is_module_bound(roundtrip) == 0);
+    CHECK(mparser_value_dimension(roundtrip, 1, &dimension) ==
+          MPARSER_API_STATUS_OK && dimension == 1);
+
+    mparser_value_release(roundtrip);
+    mparser_result_release(result);
+    mparser_value_release(bound);
+    mparser_value_release(shared);
+    mparser_value_release(table);
+    mparser_module_release(consumer);
+    mparser_module_release(module);
+    return 1;
+}
+
 static int run_request_validation_smoke(mparser_module* module) {
     mparser_invocation_options options = options_for("spin");
     mparser_result* result = NULL;
@@ -1833,6 +1915,7 @@ int main(int argc, char** argv) {
         !run_function_handle_ownership_smoke(module) ||
         !run_object_transport_smoke() ||
         !run_temporal_value_transport_smoke() ||
+        !run_table_value_transport_smoke() ||
         !run_request_validation_smoke(module)) {
         mparser_module_release(module);
         return 1;

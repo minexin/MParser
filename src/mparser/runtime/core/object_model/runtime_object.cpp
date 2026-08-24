@@ -1,6 +1,7 @@
 #include "mparser/runtime/core/object_model/runtime_object.h"
 
 #include "mparser/runtime/core/value/runtime_sparse.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 
 #include "mparser/runtime/core/session/runtime_exception.h"
 #include "mparser/runtime/core/indexing/runtime_index.h"
@@ -362,6 +363,7 @@ std::vector<size_t> uniqueIndices(std::vector<size_t> indices) {
 bool isRuntimeClassObject(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Object &&
            !isRuntimeSparseValue(value) &&
+           !isRuntimeTableValue(value) &&
            !isRuntimeMetadataObject(value) &&
            !isRuntimeException(value);
 }

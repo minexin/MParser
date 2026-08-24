@@ -10,7 +10,8 @@ Those numbers are never SDK product versions.
 MParser uses semantic versions for release tags and packages. The active
 source tree, product metadata, and installed SDK report candidate version
 `1.3.0`. The complete fifteen-batch v1.3 train has reached its internal
-candidate gate; the next implementation train is v1.4.
+candidate gate. Subsequent v1.4-v1.7 internal development batches extend that
+candidate without changing the product or public C/C++ API identity.
 
 This project is not currently using the v1.3 interfaces in production.
 Implementation, in-repository consumers, tests, samples, and documentation may
@@ -32,7 +33,7 @@ unreleased development interfaces.
 | C ABI | generation 2, revision 1; archived v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.3 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
-| Builtin source contract | 1.14 | Registry/descriptor/call semantics compiled with the engine |
+| Builtin source contract | 1.15 | Registry/descriptor/call semantics compiled with the engine |
 
 ## CLI 1.0
 
@@ -94,7 +95,7 @@ Consumers check the protocol major and tolerate documented additive minor
 fields. A change that removes a required field or changes its meaning requires
 a protocol-major change.
 
-## Builtin Source Contract 1.14
+## Builtin Source Contract 1.15
 
 `BuiltinRegistry`, `BuiltinDescriptor`, `BuiltinCall`, and `BuiltinResult`
 form a source-integration contract for builtins compiled with the engine. They
@@ -118,11 +119,13 @@ and H/M/S construction, `NaT` arrays, component and unit operations, temporal
 predicates, ISO formatting, and VM/interpreter arithmetic. Contract 1.14 adds
 the native C++ CSC sparse family (`sparse`, `spalloc`, `speye`, `spones`,
 `full`, `nonzeros`, `nnz`, and `issparse`) with shared RuntimeValue access and
-opaque embedding transport. The active catalog contains 299 descriptors and
-301 registered names. Temporal and sparse values remain VM/portable values
-with no Typed/JIT lowering in this batch; timezone databases,
-calendar-month arithmetic, sparse MAT persistence, tables, and graphics remain
-outside this contract.
+opaque embedding transport. Contract 1.15 adds ordered table storage,
+metadata, indexing and assignment, `height`, `width`, `istable`, and
+array/structure conversions through the same registry. The active catalog
+contains 306 descriptors and 308 registered names. Temporal, sparse, and table
+values remain VM/portable values with no Typed/JIT lowering in these batches;
+timezone databases, calendar-month arithmetic, sparse/table MAT persistence,
+categorical/timetable families, and graphics remain outside this contract.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry

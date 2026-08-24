@@ -509,6 +509,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/LICENSE"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/NOTICE"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/README.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/THIRD_PARTY_NOTICES.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/documentation-index.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/user-manual.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/build-and-install.md"
@@ -526,8 +527,14 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.x.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-cross-platform-validation.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-reliability.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.1.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.2.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.3.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.4.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.5.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.6.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.7.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.2.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.3.json"
@@ -546,9 +553,17 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-contract-freeze.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/architecture.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/embedding-c-api.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/embedding-cpp-api.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/extending-builtins.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-protocol.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.x-external-gap-plan.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_CMAKEDIR}/MParserConfig.cmake"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/machine_protocol_demo.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/datetime_duration_demo.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/sparse_demo.m"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/table_demo.m"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/performance_scalar_loop.m"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/performance_array_workload.m"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4/manifest.json"
@@ -559,10 +574,94 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/benchmarks/v1.4/dense_linear_algebra.m"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/samples/performance_scalar_loop.m"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/samples/performance_array_workload.m")
+set(builtin_contract_archive_versions
+    1.0 1.1 1.3 1.4 1.5 1.6 1.7 1.8 1.9 1.10
+    1.11 1.12 1.13 1.14 1.15)
+set(builtin_contract_archive_sha256
+    3f8a0f6b1ce60e68962b8241abe90652c615bb45f88de426b4a9ad80505d640e
+    7ef24f45164c0142a1afb48a3cd513dd34b6e8118812a5b22fda9d334a99b543
+    c5d6edfd05d4e70e57c7bac0d8f0e0f1be7be5e9f68d3656f64c5f276e39ffed
+    269bcda183fe3cfb89a6bb0e79a5a078cf167c9233299aa6d2b71fba09fe66ca
+    dd56d5b6595e051e831bdbd36e43436110ae0dc7534a6a49a7889cacdc4f72e1
+    12e73897941e3d281803baf71b55fe9675d544c3e5a9bb78e141e5daea6d1ce4
+    74590699a10d966091cb5b14312841199eabd4d536c0838cfb823d8bf5eb06ac
+    f182eee3b5b5219de75cb5d7aa1e47d95da856bc640db84c004f30220476ad06
+    b8466c98ce02895f94da6cc1b45154e8956eb45ab14df08e92db9aa34afbd7c0
+    2ca21d18a03bc72660e4a5282db45f14701a6ce654040700a212f51b5d4257f6
+    531e07c024c3b532a258a8cdfa7eae341a4e5211995a1e0b543b8acde48e2b6d
+    0f296471defb3a4c0f841013629f68e55359d6b419037e44b6b092442e1330fa
+    8caa383cace2c30025aae48e551f9bfb53023594f5fa16d4b6f78cf461213b21
+    917839ac2e0051e820572a94632a95a5b58b22de0ea31bec80fe659290753f1c
+    caaf095852c45c25247c77769eb93a7a8e0e91bfcab6db9461f5d200c9b0ec02)
+foreach(version IN LISTS builtin_contract_archive_versions)
+    list(APPEND required_paths
+        "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/builtin-contract/${version}/default_catalog.json")
+endforeach()
 foreach(path IN LISTS required_paths)
     if(NOT EXISTS "${path}")
         message(FATAL_ERROR
             "Required unpacked release artifact is missing: ${path}")
+    endif()
+endforeach()
+
+set(installed_builtin_catalog
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/default_catalog.json")
+file(READ "${installed_builtin_catalog}" installed_builtin_catalog_json)
+string(JSON installed_builtin_contract_major GET
+    "${installed_builtin_catalog_json}" source_contract major)
+string(JSON installed_builtin_contract_minor GET
+    "${installed_builtin_catalog_json}" source_contract minor)
+string(JSON installed_builtin_descriptor_count GET
+    "${installed_builtin_catalog_json}" descriptor_count)
+set(installed_builtin_registered_name_count 0)
+if(installed_builtin_descriptor_count GREATER 0)
+    math(EXPR installed_builtin_descriptor_last
+        "${installed_builtin_descriptor_count} - 1")
+    foreach(index RANGE 0 ${installed_builtin_descriptor_last})
+        math(EXPR installed_builtin_registered_name_count
+            "${installed_builtin_registered_name_count} + 1")
+        string(JSON installed_builtin_alias_count LENGTH
+            "${installed_builtin_catalog_json}" descriptors ${index} aliases)
+        math(EXPR installed_builtin_registered_name_count
+            "${installed_builtin_registered_name_count} + ${installed_builtin_alias_count}")
+    endforeach()
+endif()
+file(SHA256 "${installed_builtin_catalog}"
+    installed_builtin_catalog_sha256)
+if(NOT installed_builtin_contract_major EQUAL 1 OR
+   NOT installed_builtin_contract_minor EQUAL 15 OR
+   NOT installed_builtin_descriptor_count EQUAL 306 OR
+   NOT installed_builtin_registered_name_count EQUAL 308 OR
+   NOT installed_builtin_catalog_sha256 STREQUAL
+       "caaf095852c45c25247c77769eb93a7a8e0e91bfcab6db9461f5d200c9b0ec02")
+    message(FATAL_ERROR
+        "Installed default builtin catalog is not the active "
+        "1.15/306-descriptor/308-name snapshot")
+endif()
+list(LENGTH builtin_contract_archive_versions builtin_contract_version_count)
+list(LENGTH builtin_contract_archive_sha256 builtin_contract_hash_count)
+if(NOT builtin_contract_version_count EQUAL builtin_contract_hash_count)
+    message(FATAL_ERROR
+        "Builtin contract archive version/hash lists differ in length")
+endif()
+math(EXPR builtin_contract_last_index
+    "${builtin_contract_version_count} - 1")
+foreach(index RANGE 0 ${builtin_contract_last_index})
+    list(GET builtin_contract_archive_versions ${index} version)
+    list(GET builtin_contract_archive_sha256 ${index} expected_snapshot_sha256)
+    set(installed_snapshot
+        "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/builtin-contract/${version}/default_catalog.json")
+    set(source_snapshot
+        "${MPARSER_PROJECT_ROOT}/tests/public_contract/builtin/${version}/default_catalog.json")
+    file(SHA256 "${installed_snapshot}" installed_snapshot_sha256)
+    file(SHA256 "${source_snapshot}" source_snapshot_sha256)
+    if(NOT source_snapshot_sha256 STREQUAL expected_snapshot_sha256)
+        message(FATAL_ERROR
+            "Source builtin contract ${version} differs from its frozen SHA-256")
+    endif()
+    if(NOT installed_snapshot_sha256 STREQUAL expected_snapshot_sha256)
+        message(FATAL_ERROR
+            "Installed builtin contract ${version} differs from its frozen SHA-256")
     endif()
 endforeach()
 execute_process(
@@ -601,34 +700,152 @@ set(unpacked_cli
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_BINDIR}/mparser${MPARSER_EXECUTABLE_SUFFIX}")
 set(unpacked_sample
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/examples/machine_protocol_demo.m")
-execute_process(
-    COMMAND "${unpacked_cli}" --run --jit=off
-        --result-format=json-v1 "${unpacked_sample}"
-    RESULT_VARIABLE cli_status
-    OUTPUT_VARIABLE cli_output
-    ERROR_VARIABLE cli_error)
-if(NOT cli_status EQUAL 0 OR NOT cli_error STREQUAL "")
-    message(FATAL_ERROR
-        "Unpacked CLI protocol execution failed\n"
-        "exit: ${cli_status}\nstdout: ${cli_output}\n"
-        "stderr: ${cli_error}")
-endif()
-string(LENGTH "${cli_output}" cli_length)
-math(EXPR cli_terminal_index "${cli_length} - 1")
-string(SUBSTRING "${cli_output}" ${cli_terminal_index} 1 cli_terminal)
-string(SUBSTRING "${cli_output}" 0 ${cli_terminal_index} cli_document)
-if(NOT cli_terminal STREQUAL "\n" OR cli_document MATCHES "[\r\n]")
-    message(FATAL_ERROR
-        "Unpacked CLI did not emit one JSON line followed by one LF byte")
-endif()
-string(JSON cli_protocol GET "${cli_document}" protocol name)
-string(JSON cli_version GET "${cli_document}" engine version)
-string(JSON cli_result_status GET "${cli_document}" status)
-if(NOT cli_protocol STREQUAL "mparser.result" OR
-   NOT cli_version STREQUAL MPARSER_PROJECT_VERSION OR
-   NOT cli_result_status STREQUAL "succeeded")
-    message(FATAL_ERROR
-        "Unpacked CLI protocol contract changed")
+
+function(validate_unpacked_cli_mode
+         mode expected_backend expected_tier execution_expectation)
+    execute_process(
+        COMMAND "${unpacked_cli}" --run "--jit=${mode}"
+            --result-format=json-v1 "${unpacked_sample}"
+        RESULT_VARIABLE cli_status
+        OUTPUT_VARIABLE cli_output
+        ERROR_VARIABLE cli_error)
+    if(NOT cli_status EQUAL 0 OR NOT cli_error STREQUAL "")
+        message(FATAL_ERROR
+            "Unpacked CLI ${mode} protocol execution failed\n"
+            "exit: ${cli_status}\nstdout: ${cli_output}\n"
+            "stderr: ${cli_error}")
+    endif()
+    string(LENGTH "${cli_output}" cli_length)
+    math(EXPR cli_terminal_index "${cli_length} - 1")
+    string(SUBSTRING "${cli_output}" ${cli_terminal_index} 1 cli_terminal)
+    string(SUBSTRING "${cli_output}" 0 ${cli_terminal_index} cli_document)
+    if(NOT cli_terminal STREQUAL "\n" OR
+       cli_document MATCHES "[\r\n]")
+        message(FATAL_ERROR
+            "Unpacked CLI ${mode} did not emit one JSON line followed by one LF byte")
+    endif()
+    string(JSON cli_protocol GET "${cli_document}" protocol name)
+    string(JSON cli_version GET "${cli_document}" engine version)
+    string(JSON cli_result_status GET "${cli_document}" status)
+    string(JSON cli_requested_backend
+        GET "${cli_document}" execution requested_backend)
+    string(JSON cli_effective_tier
+        GET "${cli_document}" execution effective_tier)
+    string(JSON cli_fallback
+        GET "${cli_document}" execution fallback_occurred)
+    string(JSON cli_typed_region_count
+        GET "${cli_document}" execution typed_region_count)
+    string(JSON cli_typed_region_attempt_count
+        GET "${cli_document}" execution typed_region_attempt_count)
+    string(JSON cli_typed_region_execution_count
+        GET "${cli_document}" execution typed_region_execution_count)
+    string(JSON cli_typed_region_fallback_count
+        GET "${cli_document}" execution typed_region_fallback_count)
+    string(JSON cli_native_compilation_count
+        GET "${cli_document}" execution native_compilation_count)
+    if(NOT cli_protocol STREQUAL "mparser.result" OR
+       NOT cli_version STREQUAL MPARSER_PROJECT_VERSION OR
+       NOT cli_result_status STREQUAL "succeeded" OR
+       NOT cli_requested_backend STREQUAL expected_backend OR
+       NOT cli_effective_tier STREQUAL expected_tier)
+        message(FATAL_ERROR
+            "Unpacked CLI ${mode} protocol contract changed")
+    endif()
+
+    string(JSON cli_workspace_count LENGTH
+        "${cli_document}" workspace)
+    set(cli_summary_valid FALSE)
+    if(cli_workspace_count GREATER 0)
+        math(EXPR cli_workspace_last "${cli_workspace_count} - 1")
+        foreach(index RANGE 0 ${cli_workspace_last})
+            string(JSON cli_workspace_name GET
+                "${cli_document}" workspace ${index} name)
+            if(cli_workspace_name STREQUAL "summary")
+                string(JSON cli_summary_kind GET
+                    "${cli_document}" workspace ${index} value kind)
+                string(JSON cli_summary_class GET
+                    "${cli_document}" workspace ${index} value class)
+                string(JSON cli_summary_dimension_count LENGTH
+                    "${cli_document}" workspace ${index} value dimensions)
+                string(JSON cli_summary_data_count LENGTH
+                    "${cli_document}" workspace ${index} value data)
+                if(cli_summary_dimension_count EQUAL 2 AND
+                   cli_summary_data_count EQUAL 1)
+                    string(JSON cli_summary_rows GET
+                        "${cli_document}" workspace ${index} value dimensions 0)
+                    string(JSON cli_summary_columns GET
+                        "${cli_document}" workspace ${index} value dimensions 1)
+                    string(JSON cli_summary_value GET
+                        "${cli_document}" workspace ${index} value data 0)
+                    if(cli_summary_kind STREQUAL "numeric" AND
+                       cli_summary_class STREQUAL "double" AND
+                       cli_summary_rows EQUAL 1 AND
+                       cli_summary_columns EQUAL 1 AND
+                       cli_summary_value EQUAL 10)
+                        set(cli_summary_valid TRUE)
+                    endif()
+                endif()
+            endif()
+        endforeach()
+    endif()
+    if(NOT cli_summary_valid)
+        message(FATAL_ERROR
+            "Unpacked CLI ${mode} did not produce scalar summary=10")
+    endif()
+
+    if(execution_expectation STREQUAL "bytecode")
+        if(cli_fallback OR
+           NOT cli_typed_region_count EQUAL 0 OR
+           NOT cli_typed_region_attempt_count EQUAL 0 OR
+           NOT cli_typed_region_execution_count EQUAL 0 OR
+           NOT cli_typed_region_fallback_count EQUAL 0 OR
+           NOT cli_native_compilation_count EQUAL 0)
+            message(FATAL_ERROR
+                "Unpacked CLI ${mode} did not remain in bytecode")
+        endif()
+    elseif(execution_expectation STREQUAL "portable")
+        if(cli_fallback OR
+           NOT cli_typed_region_count GREATER 0 OR
+           NOT cli_typed_region_attempt_count GREATER 0 OR
+           NOT cli_typed_region_execution_count GREATER 0 OR
+           NOT cli_typed_region_fallback_count EQUAL 0 OR
+           NOT cli_native_compilation_count EQUAL 0)
+            message(FATAL_ERROR
+                "Unpacked CLI ${mode} did not execute a portable typed region")
+        endif()
+    elseif(execution_expectation STREQUAL "native")
+        if(cli_fallback OR
+           NOT cli_typed_region_count GREATER 0 OR
+           NOT cli_typed_region_attempt_count GREATER 0 OR
+           NOT cli_typed_region_execution_count GREATER 0 OR
+           NOT cli_typed_region_fallback_count EQUAL 0 OR
+           NOT cli_native_compilation_count GREATER 0)
+            message(FATAL_ERROR
+                "Unpacked CLI ${mode} did not compile and execute native code")
+        endif()
+    elseif(execution_expectation STREQUAL "native-unavailable")
+        if(NOT cli_fallback OR
+           NOT cli_typed_region_count GREATER 0 OR
+           NOT cli_typed_region_attempt_count GREATER 0 OR
+           NOT cli_typed_region_execution_count EQUAL 0 OR
+           NOT cli_typed_region_fallback_count GREATER 0 OR
+           NOT cli_native_compilation_count EQUAL 0)
+            message(FATAL_ERROR
+                "Unpacked CLI ${mode} did not report native unavailability")
+        endif()
+    else()
+        message(FATAL_ERROR
+            "Unknown unpacked CLI expectation: ${execution_expectation}")
+    endif()
+endfunction()
+
+validate_unpacked_cli_mode(off bytecode bytecode bytecode)
+validate_unpacked_cli_mode(portable portable portable portable)
+if(MPARSER_NATIVE_JIT)
+    validate_unpacked_cli_mode(native native native native)
+else()
+    validate_unpacked_cli_mode(
+        native native bytecode native-unavailable)
 endif()
 
 message(STATUS
@@ -637,4 +854,4 @@ message(STATUS
     "SHA-256 ${first_hash}, reproducible fixed payload, "
     "tamper-rejecting unsigned SLSA provenance, "
     "tamper-rejecting release-authentication input, "
-    "relocated C11/C++20/CLI consumers")
+    "relocated C11/C++20/CLI off-portable-native consumers")

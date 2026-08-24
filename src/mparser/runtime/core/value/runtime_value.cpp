@@ -7,6 +7,7 @@
 #include "mparser/runtime/core/value/runtime_sparse.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 
 #include <atomic>
@@ -184,6 +185,42 @@ private:
         if (value.className.empty()) {
             return fail(path, "object class name is empty");
         }
+        if (value.className == kRuntimeTableClassName) {
+            if (!isRuntimeTableValue(value)) {
+                return fail(path, "table value has no table storage");
+            }
+            if (value.handleObject || value.sparseStorage ||
+                value.number != 0.0 || !value.text.empty() ||
+                !value.elements.empty() ||
+                !value.imaginaryElements.empty() ||
+                !value.exactIntegerElements.empty() ||
+                !value.exactIntegerImaginaryElements.empty() ||
+                !value.characterElements.empty() ||
+                !value.stringElements.empty() || !value.cells.empty() ||
+                !value.fields.empty() || !value.structElements.empty() ||
+                !value.objectElements.empty() || !value.fieldOrder.empty() ||
+                value.sharedFields || value.functionHandle) {
+                return fail(path,
+                            "table value uses incompatible object storage");
+            }
+            std::string tableError;
+            if (!validateRuntimeTableStorage(value, tableError)) {
+                return fail(path, std::move(tableError));
+            }
+            const RuntimeTableStorage* storage = runtimeTableStorage(value);
+            const void* identity = storage;
+            if (!visitedTableStorages_.insert(identity).second) {
+                return true;
+            }
+            for (const auto& variable : storage->variables) {
+                if (!validateValue(variable.value,
+                                   path + "." + variable.name)) {
+                    return false;
+                }
+            }
+            return validateValue(storage->userData,
+                                 path + ".Properties.UserData");
+        }
         if (value.className == kRuntimeSparseClassName) {
             if (!isRuntimeSparseValue(value)) {
                 return fail(path, "sparse value has no CSC storage");
@@ -352,6 +389,10 @@ private:
             return fail(path,
                         "non-sparse value carries CSC sparse storage");
         }
+        if (value.tableStorage && !isRuntimeTableValue(value)) {
+            return fail(path,
+                        "non-table value carries table storage");
+        }
 
         switch (value.kind) {
         case RuntimeValueKind::Missing:
@@ -403,6 +444,7 @@ private:
 
     std::set<const void*> visitedFunctionHandles_;
     std::set<const void*> visitedSharedFields_;
+    std::set<const void*> visitedTableStorages_;
     std::string errorPath_;
     std::string error_;
 };
@@ -534,6 +576,31 @@ private:
             }
             return true;
         case RuntimeValueKind::Object:
+            if (isRuntimeTableValue(value)) {
+                const void* identity = value.tableStorage.get();
+                if (!visitedTableStorages_.insert(identity).second) {
+                    return true;
+                }
+                const auto& storage = *value.tableStorage;
+                for (const auto& variable : storage.variables) {
+                    if (!addElements(variable.name.size(), sizeof(char)) ||
+                        !countValue(variable.value)) {
+                        return false;
+                    }
+                }
+                for (const std::string& name : storage.rowNames) {
+                    if (!addElements(name.size(), sizeof(char))) {
+                        return false;
+                    }
+                }
+                for (const std::string& name : storage.dimensionNames) {
+                    if (!addElements(name.size(), sizeof(char))) {
+                        return false;
+                    }
+                }
+                return addElements(storage.description.size(), sizeof(char)) &&
+                       countValue(storage.userData);
+            }
             if (isRuntimeSparseValue(value)) {
                 const void* identity = value.sparseStorage.get();
                 if (!visitedSparseStorages_.insert(identity).second) {
@@ -569,6 +636,7 @@ private:
     std::set<const void*> visitedFunctionHandles_;
     std::set<const void*> visitedSharedFields_;
     std::set<const void*> visitedSparseStorages_;
+    std::set<const void*> visitedTableStorages_;
 };
 
 } // namespace
@@ -1152,6 +1220,22 @@ std::string runtimeValueToString(const RuntimeValue& value) {
                     ? std::string("<missing>")
                     : runtimeValueToString(value.cells.front()));
     case RuntimeValueKind::Object:
+        if (isRuntimeTableValue(value)) {
+            output << "<table " << value.rows << "x" << value.columns;
+            if (value.tableStorage &&
+                !value.tableStorage->variables.empty()) {
+                output << " variables=";
+                for (size_t index = 0;
+                     index < value.tableStorage->variables.size(); ++index) {
+                    if (index != 0) {
+                        output << ',';
+                    }
+                    output << value.tableStorage->variables[index].name;
+                }
+            }
+            output << ">";
+            return output.str();
+        }
         if (isRuntimeSparseValue(value)) {
             output << "<sparse " << value.rows << "x" << value.columns
                    << " nnz=" << value.sparseStorage->values.size() << ">";

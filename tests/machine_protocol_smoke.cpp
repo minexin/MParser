@@ -4,6 +4,7 @@
 #include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
+#include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 
@@ -366,6 +367,25 @@ int main(int argc, char** argv) {
                 temporalJson.find(R"("representation":"opaque")") !=
                     std::string::npos,
             "machine protocol temporal object boundary changed");
+
+        const auto table = mparser::runtimeMakeTable(
+            {mparser::makeRuntimeMatrixValue(2, 1, {1, 2})}, {"A"});
+        require(table.succeeded,
+                "failed to construct table protocol fixture");
+        mparser::ModuleInvocationResult tableResult;
+        tableResult.status =
+            mparser::ModuleInvocationStatus::Succeeded;
+        tableResult.variables.push_back({"data", table.value});
+        const std::string tableJson =
+            mparser::serializeMachineResultJsonV1(
+                tableResult, "1.3.0-test");
+        require(
+            tableJson.find(
+                R"("kind":"object","class":"table","dimensions":[2,1],"handle":false,"enumeration_member":null,"representation":"opaque")") !=
+                std::string::npos &&
+                tableJson.find("variables=A") ==
+                    std::string::npos,
+            "machine protocol table object boundary changed");
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";

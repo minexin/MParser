@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.14. Contract 1.0 established
+identify active source contract 1.15. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -341,12 +341,17 @@ preserving lowering is available. Contract 1.14 adds the repository-owned CSC
 `sparse`, `spalloc`, `speye`, `spones`, `full`, `nonzeros`, `nnz`, and
 `issparse` family. Sparse values use the ordinary RuntimeValue and
 BuiltinCall/BuiltinResult paths, remain VM/portable fallback values, and keep
-their CSC payload opaque to the C API and machine protocol. The active catalog
-contains 299 descriptors and 301 registered names.
+their CSC payload opaque to the C API and machine protocol. Contract 1.15 adds
+the repository-owned table family: ordered variable storage, metadata,
+row/variable indexing, transactional assignment, `height`, `width`,
+`istable`, and array/structure conversions. Tables use the same call/result
+and fallback contracts, and their storage also remains opaque to public
+embedding boundaries. The active catalog contains 306 descriptors and 308
+registered names.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The current v1.3 candidate snapshot is
-`tests/public_contract/builtin/1.14/default_catalog.json`; earlier files remain
+`tests/public_contract/builtin/1.15/default_catalog.json`; earlier files remain
 historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output

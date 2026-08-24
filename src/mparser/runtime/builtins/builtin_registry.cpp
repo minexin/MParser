@@ -7,6 +7,7 @@
 #include "mparser/runtime/builtins/conversion/runtime_conversion_builtins.h"
 #include "mparser/runtime/builtins/datetime/runtime_datetime_builtins.h"
 #include "mparser/runtime/builtins/sparse/runtime_sparse_builtins.h"
+#include "mparser/runtime/builtins/table/runtime_table_builtins.h"
 #include "mparser/runtime/builtins/numeric/runtime_advanced_numeric.h"
 #include "mparser/runtime/builtins/numeric/runtime_math.h"
 #include "mparser/runtime/builtins/numeric/runtime_numeric_library_builtins.h"
@@ -50,6 +51,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "asin",
     "asinh",
     "arrayfun",
+    "array2table",
     "assignin",
     "assert",
     "atan",
@@ -144,6 +146,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "gcd",
     "getReport",
     "getenv",
+    "height",
     "horzcat",
     "hypot",
     "hour",
@@ -194,6 +197,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "isstring",
     "isStringScalar",
     "isstruct",
+    "istable",
     "isvalid",
     "isvector",
     "j",
@@ -301,9 +305,12 @@ constexpr std::string_view kBuiltinNames[] = {
     "strlength",
     "struct",
     "struct2cell",
+    "struct2table",
     "sum",
     "system",
     "table",
+    "table2array",
+    "table2struct",
     "tan",
     "tanh",
     "throw",
@@ -330,6 +337,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "which",
     "who",
     "whos",
+    "width",
     "year",
     "zeros",
     "matlab.metadata.Class.fromName",
@@ -1937,6 +1945,41 @@ BuiltinDescriptor sparseDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor tableDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "table") {
+        descriptor.inputs = BuiltinArity::variadic();
+    } else if (name == "array2table" || name == "struct2table") {
+        descriptor.inputs = BuiltinArity::variadic(1);
+    } else {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    }
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints.assign(
+        descriptor.inputs.maximum.value_or(descriptor.inputs.minimum),
+        BuiltinArgumentConstraint{BuiltinValueConstraint::Any,
+                                  BuiltinShapeConstraint::Any});
+    if (name == "height" || name == "width" || name == "istable") {
+        descriptor.outputConstraints = {{BuiltinValueConstraint::Numeric,
+                                         BuiltinShapeConstraint::Scalar}};
+    } else {
+        descriptor.outputConstraints = {{BuiltinValueConstraint::Any,
+                                         BuiltinShapeConstraint::Any}};
+    }
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidTableCall";
+    descriptor.summary =
+        "Native C++ table construction, shape query, indexing, and conversion.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeTableBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isRuntimeSystemBuiltin(name)) {
         return systemDescriptor(name);
@@ -1967,6 +2010,9 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isRuntimeSparseBuiltin(name)) {
         return sparseDescriptor(name);
+    }
+    if (isRuntimeTableBuiltin(name)) {
+        return tableDescriptor(name);
     }
     if (isRuntimeNumericLibraryBuiltin(name)) {
         return numericLibraryDescriptor(name);
@@ -2034,8 +2080,7 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
 
     BuiltinDescriptor descriptor = baseDescriptor(name);
     descriptor.sideEffects = BuiltinSideEffect::External;
-    if (matches(name, {"empty", "plot",
-                       "rand", "randn", "table"})) {
+    if (matches(name, {"empty", "plot", "rand", "randn"})) {
         descriptor.implementation =
             BuiltinImplementationKind::Unsupported;
         descriptor.sideEffects = BuiltinSideEffect::None;
