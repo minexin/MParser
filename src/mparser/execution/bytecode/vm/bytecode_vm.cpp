@@ -307,14 +307,6 @@ bool isString(const RuntimeValue& value) {
     return runtimeTextScalarCodeUnits(value).has_value();
 }
 
-bool isVector(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::Vector;
-}
-
-bool isMatrix(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::Matrix;
-}
-
 bool isCell(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Cell;
 }
@@ -339,10 +331,6 @@ const std::map<std::string, RuntimeValue>& objectFields(
     const RuntimeValue& value) {
     const auto* fields = runtimeObjectFields(value);
     return fields ? *fields : value.fields;
-}
-
-bool isArray(const RuntimeValue& value) {
-    return isVector(value) || isMatrix(value);
 }
 
 bool isNumeric(const RuntimeValue& value) {

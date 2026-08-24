@@ -89,20 +89,8 @@ RuntimeValue cellValueForDimensions(std::vector<size_t> dimensions,
                                 std::move(values));
 }
 
-bool isNumber(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::Number;
-}
-
 bool isText(const RuntimeValue& value) {
     return isRuntimeTextValue(value);
-}
-
-bool isVector(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::Vector;
-}
-
-bool isMatrix(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::Matrix;
 }
 
 bool isCell(const RuntimeValue& value) {

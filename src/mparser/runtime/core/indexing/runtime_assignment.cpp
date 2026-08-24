@@ -16,11 +16,6 @@ bool isNumber(const RuntimeValue& value) {
     return value.kind == RuntimeValueKind::Number;
 }
 
-bool isArray(const RuntimeValue& value) {
-    return value.kind == RuntimeValueKind::Vector ||
-           value.kind == RuntimeValueKind::Matrix;
-}
-
 bool isNumeric(const RuntimeValue& value) {
     return isRuntimeNumericValue(value);
 }

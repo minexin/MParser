@@ -823,10 +823,12 @@ RuntimeTemporalOperationResult runtimeApplyTemporalBinary(
     if (!leftTemporal && !rightTemporal) {
         return failure("temporal binary operation requires a temporal value");
     }
-    const auto leftKind = leftTemporal ? runtimeTemporalKind(left)
-                                      : std::nullopt;
-    const auto rightKind = rightTemporal ? runtimeTemporalKind(right)
-                                         : std::nullopt;
+    const auto leftKind = runtimeTemporalKind(left);
+    const auto rightKind = runtimeTemporalKind(right);
+    if (leftTemporal != leftKind.has_value() ||
+        rightTemporal != rightKind.has_value()) {
+        return failure("temporal value kind is inconsistent");
+    }
     if (leftKind && rightKind && *leftKind != *rightKind &&
         isRelational(operation)) {
         return failure("datetime and duration cannot be compared");
