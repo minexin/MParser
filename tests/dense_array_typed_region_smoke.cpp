@@ -264,6 +264,121 @@ sum_all = sum(scaled, "all");
     }
 }
 
+void runProductAndMeanReductionSmoke() {
+    const auto pipeline = prepare(R"(
+x = [1 2 3; 4 5 6];
+product_default = prod(x);
+product_second = prod(x, 2);
+product_all = prod(x, "all");
+mean_default = mean(x);
+mean_second = mean(x, 2);
+mean_all = mean(x, "all");
+nested_mean = mean(sin(x), "all");
+empty = zeros(0, 2);
+empty_product = prod(empty, "all");
+empty_mean = mean(empty, "all");
+)");
+
+    for (std::string_view name : {"product_default", "product_second",
+                                  "product_all", "mean_default",
+                                  "mean_second", "mean_all", "nested_mean",
+                                  "empty_product", "empty_mean"}) {
+        const auto* region = findRegion(pipeline.typedModule, name);
+        require(region != nullptr &&
+                    region->region.reductionOperationCount == 1,
+                "product/mean reduction region was not planned");
+    }
+    const auto* productRegion =
+        findRegion(pipeline.typedModule, "product_all");
+    const auto* meanRegion = findRegion(pipeline.typedModule, "mean_all");
+    const auto* nestedMeanRegion =
+        findRegion(pipeline.typedModule, "nested_mean");
+    require(productRegion != nullptr && meanRegion != nullptr &&
+                nestedMeanRegion != nullptr,
+            "product/mean typed regions are missing");
+    require(std::any_of(
+                productRegion->operations.begin(),
+                productRegion->operations.end(),
+                [](const mparser::BytecodeTypedIrOperation& operation) {
+                    return operation.opcode == "lower-reduction" &&
+                           operation.operand.find("kind=prod") !=
+                               std::string::npos;
+                }),
+            "Typed IR did not retain the product reduction identity");
+    require(std::any_of(
+                meanRegion->operations.begin(), meanRegion->operations.end(),
+                [](const mparser::BytecodeTypedIrOperation& operation) {
+                    return operation.opcode == "lower-reduction" &&
+                           operation.operand.find("kind=mean") !=
+                               std::string::npos;
+                }),
+            "Typed IR did not retain the mean reduction identity");
+    require(std::any_of(
+                nestedMeanRegion->operations.begin(),
+                nestedMeanRegion->operations.end(),
+                [](const mparser::BytecodeTypedIrOperation& operation) {
+                    return operation.opcode == "lower-reduction" &&
+                           operation.operand.find("kind=mean") !=
+                               std::string::npos;
+                }),
+            "Typed IR lost the reduction identity with a nested builtin");
+
+    const auto portable = runTyped(
+        pipeline, mparser::TypedRegionBackend::Portable);
+        require(!mparser::hasErrorDiagnostics(portable.diagnostics),
+            "portable product/mean reduction failed");
+    for (std::string_view name : {"product_default", "product_second",
+                                  "product_all", "mean_default",
+                                  "mean_second", "mean_all", "nested_mean",
+                                  "empty_product", "empty_mean"}) {
+        requireVariableMatch(pipeline, portable, name);
+        const auto* execution = findExecution(portable, name);
+        require(execution != nullptr && execution->executionCount == 1 &&
+                    execution->fallbackCount == 0 &&
+                    execution->backend == "portable",
+                "portable product/mean reduction did not execute");
+    }
+
+    const auto* productAll =
+        findVariable(portable.variables, "product_all");
+    const auto* meanAll = findVariable(portable.variables, "mean_all");
+    require(productAll && meanAll,
+            "portable product/mean scalar outputs are missing");
+    const auto productValue =
+        mparser::runtimeNumericElementValue(*productAll, 0);
+    const auto meanValue = mparser::runtimeNumericElementValue(*meanAll, 0);
+    require(productValue && closeDouble(productValue->real, 720.0) &&
+                meanValue && closeDouble(meanValue->real, 3.5),
+            "portable product/mean scalar values are incorrect");
+
+    if (mparser::nativeScalarJitAvailable()) {
+        const auto native = runTyped(
+            pipeline, mparser::TypedRegionBackend::Native);
+        require(!mparser::hasErrorDiagnostics(native.diagnostics),
+                "native product/mean reduction failed");
+        for (std::string_view name : {"product_all", "mean_all", "nested_mean",
+                                      "empty_product", "empty_mean"}) {
+            requireVariableMatch(pipeline, native, name);
+            const auto* execution = findExecution(native, name);
+            require(execution != nullptr &&
+                        execution->executionCount == 1 &&
+                        execution->fallbackCount == 0 &&
+                        execution->backend == "native",
+                    "native scalar product/mean reduction did not execute");
+        }
+        for (std::string_view name : {"product_default", "product_second",
+                                      "mean_default", "mean_second"}) {
+            const auto* execution = findExecution(native, name);
+            require(execution != nullptr &&
+                        execution->executionCount == 0 &&
+                        execution->fallbackCount == 1 &&
+                        execution->lastFallbackKind ==
+                            mparser::RuntimeFallbackKind::BackendUnsupported,
+                    "native array-valued product/mean did not fall back");
+        }
+    }
+}
+
 void runStaticNativeAndTamperSmoke() {
     const auto pipeline = prepare(R"(
 x = linspace(-1, 1, 64);
@@ -771,6 +886,7 @@ checksum = sum(out, "all");
 int main() {
     try {
         runProfiledFusionAndReductionSmoke();
+        runProductAndMeanReductionSmoke();
         runStaticNativeAndTamperSmoke();
         runNdImplicitExpansionSmoke();
         runComplexPortableSmoke();

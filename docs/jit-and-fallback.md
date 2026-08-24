@@ -83,10 +83,10 @@ execution fuses supported element-wise arithmetic and pure unary builtin calls
 into one N-dimensional pass with MATLAB column-major implicit expansion,
 preserving numeric class and the imaginary channel. Exact-shape real-double
 expressions may use the existing SLJIT scalar kernel. Builtin source contract
-1.11 also declares `sum` as a Typed reduction: portable supports default,
-explicit-dimension, and all-element results for the supported floating and
-complex classes, while native lowering remains restricted to real double and
-scalar results. Broadcast/native mismatch, domain transitions, changed
+1.12 declares `sum`, `prod`, and `mean` as Typed reductions: portable supports
+default, explicit-dimension, and all-element results for the supported floating
+and complex classes, while native lowering remains restricted to real double
+and scalar results. Broadcast/native mismatch, domain transitions, changed
 shapes, shadowing, unsupported operations, and active checkpoints retain
 transactional portable or VM fallback.
 

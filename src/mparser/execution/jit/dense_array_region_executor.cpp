@@ -52,7 +52,22 @@ struct ParsedDenseRegion {
     size_t resultNode = 0;
     DenseReductionSelection reduction = DenseReductionSelection::None;
     size_t reductionDimension = 0;
+    BuiltinTypedLowering reductionLowering =
+        BuiltinTypedLowering::None;
 };
+
+std::string_view reductionName(BuiltinTypedLowering lowering) {
+    switch (lowering) {
+    case BuiltinTypedLowering::Sum:
+        return "sum";
+    case BuiltinTypedLowering::Product:
+        return "prod";
+    case BuiltinTypedLowering::Mean:
+        return "mean";
+    default:
+        return "reduction";
+    }
+}
 
 enum class ParseStackKind {
     Node,
@@ -127,6 +142,8 @@ std::optional<ScalarKernelOp> builtinOperation(
         return ScalarKernelOp::Tangent;
     case BuiltinTypedLowering::None:
     case BuiltinTypedLowering::Sum:
+    case BuiltinTypedLowering::Product:
+    case BuiltinTypedLowering::Mean:
         return std::nullopt;
     }
     return std::nullopt;
@@ -448,6 +465,7 @@ ParsedDenseRegion parseDenseRegion(
                         "typed reduction must terminate one dense assignment",
                         true);
                 }
+                parsed.reductionLowering = descriptor->typedLowering;
                 parsed.reduction = DenseReductionSelection::Default;
                 if (argumentCount == 2) {
                     const auto& option = stack[callableIndex + 2];
@@ -463,7 +481,7 @@ ParsedDenseRegion parseDenseRegion(
                                 : std::nullopt;
                         if (!dimension || *dimension == 0) {
                             return reject(
-                                "typed sum dimension must be a positive integer literal",
+                                "typed reduction dimension must be a positive integer literal",
                                 true);
                         }
                         parsed.reduction =
@@ -471,7 +489,7 @@ ParsedDenseRegion parseDenseRegion(
                         parsed.reductionDimension = *dimension - 1;
                     } else {
                         return reject(
-                            "typed sum option must be a dimension or \"all\"",
+                            "typed reduction option must be a dimension or \"all\"",
                             true);
                     }
                 }
@@ -507,7 +525,10 @@ ParsedDenseRegion parseDenseRegion(
     analysis.fallbackKind = RuntimeFallbackKind::None;
     analysis.reason = analysis.reductionOperationCount == 0
                           ? "eligible closed dense element-wise assignment"
-                          : "eligible closed fused dense sum assignment";
+                          : "eligible closed fused dense " +
+                                std::string(reductionName(
+                                    parsed.reductionLowering)) +
+                                " assignment";
     return parsed;
 }
 
@@ -1145,11 +1166,19 @@ DenseArrayRegionExecutionResult executePortable(
         }
         output = *value;
     } else {
+        const bool productReduction =
+            prepared.parsed.reductionLowering ==
+            BuiltinTypedLowering::Product;
+        const bool meanReduction =
+            prepared.parsed.reductionLowering ==
+            BuiltinTypedLowering::Mean;
         std::vector<RuntimeNumericElementValue> buckets(
             prepared.outputElementCount);
         std::vector<bool> complexSeen(prepared.outputElementCount, false);
+        std::vector<size_t> validCounts(prepared.outputElementCount, 0);
         for (auto& bucket : buckets) {
             bucket.numericClass = prepared.numericClass;
+            bucket.real = productReduction ? 1.0 : 0.0;
         }
         for (size_t logicalIndex = 0;
              logicalIndex < prepared.sourceElementCount; ++logicalIndex) {
@@ -1165,23 +1194,37 @@ DenseArrayRegionExecutionResult executePortable(
             if (!bucket || *bucket >= buckets.size()) {
                 return executionFallback(
                     RuntimeFallbackKind::RuntimeFailed,
-                    "typed sum output bucket is invalid");
+                    "typed reduction output bucket is invalid");
             }
             const auto accumulated = runtimeApplyNumericElementBinary(
-                "+", buckets[*bucket], value, prepared.numericClass);
+                productReduction ? "*" : "+", buckets[*bucket], value,
+                prepared.numericClass);
             if (!accumulated) {
                 return executionFallback(
                     RuntimeFallbackKind::RuntimeFailed,
-                    "typed dense sum result could not be represented");
+                    "typed dense reduction result could not be represented");
             }
             buckets[*bucket] = *accumulated;
             complexSeen[*bucket] =
                 complexSeen[*bucket] || value.complex;
+            ++validCounts[*bucket];
             kernelInstructions += prepared.nodes.size() + 1;
             incrementColumnMajorCoordinates(
                 coordinates, prepared.sourceDimensions);
         }
         for (size_t index = 0; index < buckets.size(); ++index) {
+            if (meanReduction) {
+                if (validCounts[index] == 0) {
+                    buckets[index].real =
+                        std::numeric_limits<double>::quiet_NaN();
+                    buckets[index].imaginary = 0.0;
+                } else {
+                    const double count =
+                        static_cast<double>(validCounts[index]);
+                    buckets[index].real /= count;
+                    buckets[index].imaginary /= count;
+                }
+            }
             if (complexSeen[index] &&
                 (buckets[index].imaginary != 0.0 ||
                  std::isnan(buckets[index].imaginary))) {
@@ -1194,7 +1237,7 @@ DenseArrayRegionExecutionResult executePortable(
         if (!value) {
             return executionFallback(
                 RuntimeFallbackKind::RuntimeFailed,
-                "typed sum result could not be represented");
+                "typed reduction result could not be represented");
         }
         output = *value;
     }
@@ -1209,7 +1252,10 @@ DenseArrayRegionExecutionResult executePortable(
     result.reason = prepared.parsed.reduction ==
                             DenseReductionSelection::None
                         ? "fused portable dense element-wise kernel executed"
-                        : "fused portable dense sum kernel executed";
+                        : "fused portable dense " +
+                              std::string(reductionName(
+                                  prepared.parsed.reductionLowering)) +
+                              " kernel executed";
     return result;
 }
 
@@ -1408,12 +1454,21 @@ std::optional<NativeDenseKernel> buildNativeDenseKernel(
         store.sourceInstructionCount = 1;
         kernel.instructions.push_back(std::move(store));
     } else {
+        const bool productReduction =
+            prepared.parsed.reductionLowering ==
+            BuiltinTypedLowering::Product;
         native.accumulatorSlot = kernel.slots.size();
-        kernel.slotNames.push_back("$dense-sum");
-        kernel.slots.push_back(TypedScalar{});
+        kernel.slotNames.push_back(
+            "$dense-" +
+            std::string(reductionName(
+                prepared.parsed.reductionLowering)));
+        kernel.slots.push_back(TypedScalar{
+            productReduction ? 1.0 : 0.0,
+            RuntimeNumericClass::Double});
         kernel.initialized.push_back(true);
         ScalarKernelInstruction accumulate;
-        accumulate.op = ScalarKernelOp::Add;
+        accumulate.op = productReduction ? ScalarKernelOp::Multiply
+                                          : ScalarKernelOp::Add;
         accumulate.destination = {
             ScalarKernelStorage::Slot, native.accumulatorSlot};
         accumulate.left = {ScalarKernelStorage::Slot,
@@ -1550,7 +1605,7 @@ DenseArrayRegionExecutionResult executeNative(
                 result.fallbackKind = RuntimeFallbackKind::RuntimeFailed;
                 result.nativeFallbackKind = result.fallbackKind;
                 result.reason =
-                    "native typed sum could not map a source element";
+                    "native typed reduction could not map a source element";
                 result.nativeFallbackReason = result.reason;
                 return result;
             }
@@ -1560,8 +1615,16 @@ DenseArrayRegionExecutionResult executeNative(
                 coordinates, prepared.sourceDimensions);
         }
 
-        nativeKernel->kernel.slots[
-            nativeKernel->accumulatorSlot] = TypedScalar{};
+        const bool meanReduction =
+            prepared.parsed.reductionLowering ==
+            BuiltinTypedLowering::Mean;
+        nativeKernel->kernel.slots[nativeKernel->accumulatorSlot] =
+            TypedScalar{
+                prepared.parsed.reductionLowering ==
+                        BuiltinTypedLowering::Product
+                    ? 1.0
+                    : 0.0,
+                RuntimeNumericClass::Double};
         auto native = executeNativeScalarKernel(
             nativeKernel->kernel, storageOffsets.data(),
             storageOffsets.size());
@@ -1573,16 +1636,24 @@ DenseArrayRegionExecutionResult executeNative(
             result.nativeFallbackReason = result.reason;
             return result;
         }
+        double accumulatedValue = nativeKernel->kernel.slots[
+            nativeKernel->accumulatorSlot].value;
+        if (meanReduction) {
+            accumulatedValue = prepared.sourceElementCount == 0
+                                   ? std::numeric_limits<double>::quiet_NaN()
+                                   : accumulatedValue /
+                                         static_cast<double>(
+                                             prepared.sourceElementCount);
+        }
         const auto value = runtimeNumericValueFromLogicalOrder(
             prepared.outputDimensions,
-            {nativeKernel->kernel.slots[
-                 nativeKernel->accumulatorSlot].value},
+            {accumulatedValue},
             RuntimeNumericClass::Double);
         if (!value) {
             result.fallbackKind = RuntimeFallbackKind::RuntimeFailed;
             result.nativeFallbackKind = result.fallbackKind;
             result.reason =
-                "native typed sum result could not be represented";
+                "native typed reduction result could not be represented";
             result.nativeFallbackReason = result.reason;
             return result;
         }
@@ -1595,7 +1666,10 @@ DenseArrayRegionExecutionResult executeNative(
     result.reason = prepared.parsed.reduction ==
                             DenseReductionSelection::None
                         ? "fused native dense element-wise kernel executed"
-                        : "fused native dense sum kernel executed";
+                        : "fused native dense " +
+                              std::string(reductionName(
+                                  prepared.parsed.reductionLowering)) +
+                              " kernel executed";
     return result;
 }
 

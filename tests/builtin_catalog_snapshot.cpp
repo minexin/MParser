@@ -133,6 +133,10 @@ std::string_view typedLoweringName(
         return "tangent";
     case Lowering::Sum:
         return "sum";
+    case Lowering::Product:
+        return "product";
+    case Lowering::Mean:
+        return "mean";
     }
     return "unknown";
 }

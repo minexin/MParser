@@ -541,7 +541,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.3, ABI generation 2 revision 1 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.3 |
-| Builtin compiled into the engine | active source contract 1.11; archived v1.2 contract 1.1 |
+| Builtin compiled into the engine | active source contract 1.12; archived v1.2 contract 1.1 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

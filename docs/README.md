@@ -45,7 +45,7 @@ Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 ## Extend The Runtime
 
 - [Extending Builtins](extending-builtins.md): current v1.3 builtin source
-  contract 1.11 plus archived v1.2 contract 1.1, descriptor rules, registry
+  contract 1.12 plus archived v1.2 contract 1.1, descriptor rules, registry
   behavior, ownership, threading, resources, and conformance tests.
 - [Architecture](architecture.md): Lexer to Parser to semantic HIR to
   verified bytecode to VM/typed/native execution.
@@ -91,8 +91,9 @@ These files are release contracts, not generated prose:
 | `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
 The current candidate contract freezes the protocol, headers, ABI 2.1 symbol
-set, and builtin 1.11 catalog. The v1.3 implementation train originally closed
-with 1.10; 1.11 adds the guarded `sum` Typed reduction identity while
+set, and builtin 1.12 catalog. The v1.3 implementation train originally closed
+with 1.10; 1.11 added the guarded `sum` Typed reduction identity, while 1.12
+adds guarded `prod` and `mean` reduction identities while
 preserving descriptor/name counts. These changes are not folded back into the
 v1.2 artifact. The earlier v1 and v1.2 contracts remain authorities only for
 their archived boundaries.
@@ -101,7 +102,8 @@ their archived boundaries.
 
 - [v1.4 Development Milestone](v1.4.md): versioned numerical workload suite,
   evidence-selected local scalar-function specialization, N-dimensional
-  dense fusion and `sum` lowering, current performance characterization, and
+  dense fusion and `sum`/`prod`/`mean` lowering, current performance
+  characterization, and
   remaining release-train scope.
 - [v1.3 Candidate](v1.3.md): system/runtime capabilities, broad standard
   library, dynamic semantics, MAT persistence, and current contract freeze.

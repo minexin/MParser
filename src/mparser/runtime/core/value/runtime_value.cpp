@@ -146,6 +146,16 @@ private:
 
     bool validateObjectFields(const RuntimeValue& value,
                               const std::string& path) {
+        // Metadata values are immutable descriptor snapshots.  They use the
+        // object representation for member dispatch, but do not own a
+        // mutable property workspace like ordinary handle objects do.
+        if (isRuntimeMetadataObject(value)) {
+            if (!value.fields.empty() || value.sharedFields) {
+                return fail(path,
+                            "metadata object must not carry property storage");
+            }
+            return true;
+        }
         const RuntimeWorkspace* fields = nullptr;
         if (value.handleObject) {
             if (!value.sharedFields || !value.fields.empty()) {
@@ -171,6 +181,30 @@ private:
                         const std::string& path, size_t count) {
         if (value.className.empty()) {
             return fail(path, "object class name is empty");
+        }
+        if (isRuntimeMetadataObject(value)) {
+            if (!value.objectElements.empty()) {
+                return fail(path,
+                            "metadata object cannot use object element storage");
+            }
+            if (value.cells.size() != 0 && value.cells.size() != count) {
+                return fail(path,
+                            "metadata array element count does not match shape");
+            }
+            for (size_t index = 0; index < value.cells.size(); ++index) {
+                const RuntimeValue& element = value.cells[index];
+                if (!isRuntimeMetadataScalar(element) ||
+                    canonicalRuntimeMetadataClassName(element.className) !=
+                        canonicalRuntimeMetadataClassName(value.className)) {
+                    return fail(path + "[" + std::to_string(index) + "]",
+                                "metadata array contains an incompatible element");
+                }
+                if (!validateValue(element,
+                                   path + "[" + std::to_string(index) + "]")) {
+                    return false;
+                }
+            }
+            return validateObjectFields(value, path);
         }
         if (!value.objectElements.empty()) {
             if (value.objectElements.size() != count) {

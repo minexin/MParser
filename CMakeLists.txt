@@ -694,7 +694,7 @@ add_test(NAME v1_3_public_contract_smoke
 set_tests_properties(v1_3_public_contract_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.11, 275 descriptors and 277 names")
+        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.12, 275 descriptors and 277 names")
 
 add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -1025,6 +1025,25 @@ set_tests_properties(dense_array_jit_diagnostic_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "fused portable dense sum kernel executed")
 
+add_test(NAME dense_reduction_jit_off_cli_smoke
+    COMMAND mparser --run --jit=off
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_reduction_jit_demo.m)
+set_tests_properties(dense_reduction_jit_off_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "reduction_jit_checksum = 901")
+
+add_test(NAME dense_reduction_jit_portable_cli_smoke
+    COMMAND mparser --run --jit=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_reduction_jit_demo.m)
+set_tests_properties(dense_reduction_jit_portable_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "reduction_jit_checksum = 901")
+
+add_test(NAME dense_reduction_jit_diagnostic_cli_smoke
+    COMMAND mparser --run-jit --typed-backend=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_reduction_jit_demo.m)
+set_tests_properties(dense_reduction_jit_diagnostic_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "fused portable dense prod kernel executed")
+
 add_test(NAME dense_numeric_types_jit_off_cli_smoke
     COMMAND mparser --run --jit=off
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_numeric_types_jit_demo.m)
@@ -1121,6 +1140,12 @@ if(MPARSER_ENABLE_NATIVE_JIT)
     set_tests_properties(dense_array_jit_native_cli_smoke PROPERTIES
         PASS_REGULAR_EXPRESSION
             "dense_jit_checksum = 31568\\.8646463556")
+
+    add_test(NAME dense_reduction_jit_native_cli_smoke
+        COMMAND mparser --run --jit=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/dense_reduction_jit_demo.m)
+    set_tests_properties(dense_reduction_jit_native_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "reduction_jit_checksum = 901")
 
     add_test(NAME production_run_native_jit_cli_smoke
         COMMAND mparser --run --jit=native --native-cache-stats
@@ -2204,10 +2229,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.11/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.12/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.11 catalog validated: 275 descriptors")
+        "builtin source contract 1.12 catalog validated: 275 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2933,6 +2958,7 @@ install(FILES
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
     tests/public_contract/builtin/1.11/default_catalog.json
+    tests/public_contract/builtin/1.12/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
@@ -2959,6 +2985,7 @@ install(FILES
     samples/scalar_function_jit_demo.m
     samples/dense_array_jit_demo.m
     samples/dense_numeric_types_jit_demo.m
+    samples/dense_reduction_jit_demo.m
     samples/reliability_boundary_demo.m
     samples/v1_1_core_compatibility_demo.m
     samples/filesystem_management_demo.m

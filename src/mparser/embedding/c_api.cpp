@@ -7,6 +7,7 @@
 #include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/io/runtime_system.h"
+#include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/frontend/source_loader.h"
@@ -582,6 +583,15 @@ bool runtimeValueRequiresModule(
         }
         return false;
     case mparser::RuntimeValueKind::Object:
+        if (mparser::isRuntimeMetadataObject(value)) {
+            for (const auto& element : value.cells) {
+                if (runtimeValueRequiresModule(element,
+                                                functionHandles)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         return true;
     case mparser::RuntimeValueKind::Cell:
     case mparser::RuntimeValueKind::CommaSeparatedList:
@@ -632,6 +642,9 @@ bool runtimeValueRequiresModule(
 
 bool externallyTransportable(
     const mparser::RuntimeValue& value) {
+    if (mparser::isRuntimeMetadataObject(value)) {
+        return true;
+    }
     if (value.kind == mparser::RuntimeValueKind::Missing) {
         return true;
     }

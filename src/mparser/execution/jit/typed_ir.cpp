@@ -2,6 +2,7 @@
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -115,9 +116,22 @@ void addCommonOperations(BytecodeTypedIrRegion& region,
                 std::to_string(
                     contract.denseElementwiseOperationCount)});
         if (contract.reductionOperationCount > 0) {
+            std::string reductionKind = "reduction";
+            for (const std::string_view reductionCandidate :
+                 {"sum", "prod", "mean"}) {
+                if (std::any_of(
+                        contract.callTargets.begin(),
+                        contract.callTargets.end(),
+                        [reductionCandidate](const std::string& target) {
+                            return target == reductionCandidate;
+                        })) {
+                    reductionKind = std::string(reductionCandidate);
+                    break;
+                }
+            }
             region.operations.push_back(BytecodeTypedIrOperation{
                 "lower-reduction",
-                "kind=sum, operations=" +
+                "kind=" + reductionKind + ", operations=" +
                     std::to_string(contract.reductionOperationCount)});
         }
         region.operations.push_back(BytecodeTypedIrOperation{

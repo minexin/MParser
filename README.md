@@ -5,7 +5,7 @@ session-owned system boundary, broad standard-library coverage, dynamic
 workspace and language semantics, MAT v5 persistence, and repository-owned
 C++20 advanced numerical algorithms without Eigen. The public identities are
 C/C++ source API 1.3, C ABI generation 2 revision 1, CLI 1.0, machine result
-protocol 1.1, and Builtin source contract 1.11. They are frozen together in the
+protocol 1.1, and Builtin source contract 1.12. They are frozen together in the
 [v1.3 candidate contract](docs/public-contract-v1.3.json). The v1.2 and
 released v1.0 contracts remain immutable archived evidence; unreleased
 interfaces do not require compatibility adapters. See
@@ -1056,6 +1056,8 @@ build\windows-msvc-release\mparser.exe --run --jit=portable `
   samples\dense_array_jit_demo.m
 build\windows-msvc-release\mparser.exe --run --jit=portable `
   samples\dense_numeric_types_jit_demo.m
+build\windows-msvc-release\mparser.exe --run --jit=portable `
+  samples\dense_reduction_jit_demo.m
 ```
 
 See [docs/v1.4.md](docs/v1.4.md) for the exact specialization boundaries,

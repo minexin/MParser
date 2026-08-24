@@ -351,6 +351,39 @@ written = fprintf("pi=%.1f\n", 3.14);
     assert(propagated);
 }
 
+void runMetadataExportSmoke() {
+    const auto module = Module::compile(
+        R"(classdef ExportMetadata < handle
+end
+
+class_info = ?ExportMetadata;
+superclass_info = class_info.SuperclassList;
+)",
+        "metadata_export_cpp.m");
+    assert(module.isValid());
+
+    const auto result = module.execute();
+    assert(result.succeeded());
+    const auto variables = result.variables();
+    const auto* classInfo = findVariable(variables, "class_info");
+    const auto* superclassInfo =
+        findVariable(variables, "superclass_info");
+    assert(classInfo && superclassInfo);
+
+    assert(classInfo->value.kind() == ValueKind::Object);
+    assert(classInfo->value.className() == "matlab.metadata.Class");
+    assert(classInfo->value.dimensions() ==
+           std::vector<std::size_t>({1, 1}));
+    assert(!classInfo->value.isModuleBound());
+
+    assert(superclassInfo->value.kind() == ValueKind::Object);
+    assert(superclassInfo->value.className() ==
+           "matlab.metadata.Class");
+    assert(superclassInfo->value.dimensions() ==
+           std::vector<std::size_t>({1, 1}));
+    assert(!superclassInfo->value.isModuleBound());
+}
+
 Result invoke(
     const Module& module, std::string entry,
     std::vector<Value> arguments = {},
@@ -520,6 +553,7 @@ int main(int argc, char** argv) {
     assert(mparser::sdk::abiRevision() == 1);
     runValueSmoke();
     runHostOutputSmoke();
+    runMetadataExportSmoke();
     runModuleSmoke(argv[1], argv[2]);
     std::cout << "cpp api smoke = 5050,42,21,abi-generation-"
               << mparser::sdk::abiGeneration() << "-revision-"

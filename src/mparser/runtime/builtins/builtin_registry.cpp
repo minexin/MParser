@@ -810,6 +810,10 @@ BuiltinDescriptor reductionDescriptor(std::string_view name) {
     descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
     if (name == "sum") {
         descriptor.typedLowering = BuiltinTypedLowering::Sum;
+    } else if (name == "prod") {
+        descriptor.typedLowering = BuiltinTypedLowering::Product;
+    } else if (name == "mean") {
+        descriptor.typedLowering = BuiltinTypedLowering::Mean;
     }
     descriptor.summary =
         "Numeric reduction with MATLAB-like dimension and output rules.";
@@ -2082,13 +2086,17 @@ bool builtinTypedLoweringIsElementwiseUnary(
         return true;
     case BuiltinTypedLowering::None:
     case BuiltinTypedLowering::Sum:
+    case BuiltinTypedLowering::Product:
+    case BuiltinTypedLowering::Mean:
         return false;
     }
     return false;
 }
 
 bool builtinTypedLoweringIsReduction(BuiltinTypedLowering lowering) {
-    return lowering == BuiltinTypedLowering::Sum;
+    return lowering == BuiltinTypedLowering::Sum ||
+           lowering == BuiltinTypedLowering::Product ||
+           lowering == BuiltinTypedLowering::Mean;
 }
 
 BuiltinArity BuiltinArity::fixed(size_t count) {

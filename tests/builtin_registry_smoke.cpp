@@ -186,7 +186,7 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 11,
+                mparser::kBuiltinSourceContractMinor == 12,
             "builtin source contract version changed");
     require(registry->descriptors().size() == 275,
             "default builtin descriptor catalog changed unexpectedly");
@@ -339,6 +339,21 @@ void runDefaultCatalogSmoke() {
                 mparser::builtinTypedLoweringIsReduction(
                     sum->typedLowering),
             "sum descriptor typed reduction metadata mismatch");
+
+    const auto* product = registry->find("prod");
+    require(product &&
+                product->typedLowering ==
+                    mparser::BuiltinTypedLowering::Product &&
+                mparser::builtinTypedLoweringIsReduction(
+                    product->typedLowering),
+            "prod descriptor typed reduction metadata mismatch");
+    const auto* mean = registry->find("mean");
+    require(mean &&
+                mean->typedLowering ==
+                    mparser::BuiltinTypedLowering::Mean &&
+                mparser::builtinTypedLoweringIsReduction(
+                    mean->typedLowering),
+            "mean descriptor typed reduction metadata mismatch");
 
     const auto* maximum = registry->find("max");
     require(maximum && maximum->outputs.maximum == 2,
