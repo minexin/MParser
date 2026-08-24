@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.12. Contract 1.0 established
+identify active source contract 1.13. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -330,12 +330,18 @@ callable-based dynamic invocation through `cellfun`, execution-controlled
 numeric utilities, session-random `randperm`, and the `eval`/`evalc`/`evalin`/
 `assignin` family plus shared text/binary, managed filesystem, and advanced
 numeric operations plus MAT persistence, file metadata, conversion, set,
-callback, and text-query operations; it contains 275 descriptors and 277
-registered names.
+callback, and text-query operations; the historical 1.10 snapshot contained
+275 descriptors and 277 registered names. Contract 1.13 adds the
+`datetime`/`duration` family through
+the same registry path, including explicit temporal construction, array-shaped
+`NaT`, component/unit functions, formatting, predicates, and VM arithmetic.
+It deliberately does not claim timezone or calendar-month support, and keeps
+temporal values out of Typed/JIT lowering until a measured, semantics-
+preserving lowering is available.
 
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The current v1.3 candidate snapshot is
-`tests/public_contract/builtin/1.12/default_catalog.json`; earlier files remain
+`tests/public_contract/builtin/1.13/default_catalog.json`; earlier files remain
 historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output

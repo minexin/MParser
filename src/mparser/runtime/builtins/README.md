@@ -11,6 +11,7 @@ primary MATLAB-like responsibility:
 | `text` | Character, string, and text-query operations |
 | `conversion` | Conversions that cross numeric, text, Cell, or array families |
 | `callback` | Higher-order functions that invoke user or builtin callables |
+| `datetime` | Immutable datetime, duration, NaT, component, unit, and temporal predicates |
 | `system` | Workspace/context, filesystem/process, and MAT-file operations |
 
 Keep descriptor registration in `builtin_registry.cpp` and executable behavior

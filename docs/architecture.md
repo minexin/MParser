@@ -15,6 +15,10 @@ files are grouped by subsystem under `src/mparser`: `frontend`, `semantic`,
 `execution/bytecode/vm` ownership boundary, alongside the existing JIT,
 core/builtin, and I/O subdirectories. The complete placement rules are
 recorded in `src/mparser/README.md`; internal paths are not public API or ABI.
+The current rich-data temporal slice follows the same rule: civil-date value
+storage lives in `runtime/core/value`, while registry adapters live in
+`runtime/builtins/datetime`. It does not introduce a second object or builtin
+dispatch path.
 
 ## Frontend stages
 
@@ -1454,10 +1458,12 @@ numeric family, and active contract 1.8 adds capability-bound MAT workspace
 persistence. Active contract 1.9 adds file metadata/removal descriptors and
 records the dual file/object dispatch contract for `delete`. Active contract
 1.10 adds conversion, dynamic array callback, dense set, and text-query
-families; its development snapshot contains 275 descriptors and 277 registered
-names. Active contract 1.11 kept that catalog size and added the declarative
-`sum` reduction identity. Active contract 1.12 keeps the catalog size and adds
-declarative `prod` and `mean` reduction identities. Dense-region analysis may
+families; its historical development snapshot contains 275 descriptors and
+277 registered names. Active contract 1.11 kept that catalog size and added the
+declarative `sum` reduction identity. Active contract 1.12 kept the catalog
+size and added declarative `prod` and `mean` reduction identities. Active
+contract 1.13 adds the shared datetime/duration family and has 291 descriptors
+and 293 registered names. Dense-region analysis may
 consume them only through
 the same descriptor purity, shadowing, arity, shape, numeric-class, and
 resource guards used by the VM fallback boundary. A generator-backed

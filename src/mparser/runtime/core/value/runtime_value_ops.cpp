@@ -1,5 +1,6 @@
 #include "mparser/runtime/core/value/runtime_value_ops.h"
 
+#include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
@@ -63,6 +64,10 @@ RuntimeSingleValueResult runtimeRequireSingleValue(
 bool runtimeValuesEqual(
     const RuntimeValue& left, const RuntimeValue& right,
     RuntimeNaNEquality nanEquality) {
+    if (isRuntimeTemporalValue(left) || isRuntimeTemporalValue(right)) {
+        return runtimeTemporalValuesEqual(
+            left, right, nanEquality == RuntimeNaNEquality::Equal);
+    }
     if (isRuntimeNumericValue(left) &&
         isRuntimeNumericValue(right)) {
         return runtimeNumericValuesEqual(

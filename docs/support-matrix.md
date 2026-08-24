@@ -183,7 +183,11 @@ capabilities, not a claim of complete MATLAB system or file I/O.
 The latest 2026-08-23 MATLAB R2024b differential rerun records 219 matches and
 4 gaps across its 223 accepted cases. It closes MAT-file save/load after the
 preceding 218-match class/reflection/event run, with no prior match regressing.
-The remaining observed gaps are `datetime`, `table`, `sparse`, and graphics.
+The remaining imported differential gaps are `table`, `sparse`, and graphics;
+the active tree also contains a datetime/duration implementation whose MATLAB
+differential case is pending rerun. Local v1.5 evidence covers the temporal
+runtime and embedding boundary, but it is not counted as an external match
+until that rerun completes.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT v4/v7.3, strict v6/append/ASCII MAT modes,
 filesystem recycle integration and broader platform-specific attributes,
@@ -205,12 +209,13 @@ regexp/Unicode behavior remain open. The product and public SDK report
 | Numeric/logical arrays | Dense core numeric classes and complex double/single through N-D shape/index rules, logical/colon/`end` indexing, growth, and deletion within recorded limits | `ARR-001`, `ARR-002` |
 | Text | Distinct UTF-16 character and string arrays with shared conversion/formatting rules | `TEXT-001` |
 | Missing values | First-class scalar and N-D `missing` arrays with shape-preserving transforms, indexing/mutation, floating/string promotion, and same-shape `ismissing` masks | `MISSING-001` |
+| Date/time values | Native C++ `datetime`, `duration`, and shaped `NaT` values with civil components, unit conversion, formatting, arithmetic, comparisons, dual-engine parity, and ownerless C API transport | `BUILTIN-001`, `BUILTIN-002` |
 | Cell and Struct | N-D Cells, brace comma-list expansion and multi-output assignment, ordered structures, implicit indexed creation, structure arrays, dynamic fields, and comma-separated field results | `CELL-001`, `STRUCT-001`, `STRUCT-002` |
 | Assignment | Transactional nested member/parenthesis/brace copy-back | `LVAL-001` |
 | Workspace | Scoped global/persistent bindings, reusable sessions, and bounded current/caller/base dynamic evaluation | `WORKSPACE-001`, `WORKSPACE-002` |
 | Exceptions | Structured exceptions, causes/stacks, warning state, assertions, and embedding diagnostics within explicit correction limits | `EXC-001` |
 | Classes | Target `classdef` syntax, value/handle semantics, properties, events/listeners, reflection, and object arrays | `CLASS-001` through `CLASS-006` |
-| Builtins | Representative math, reduction, scan, constructor, and array-transform families through one registry contract | `BUILTIN-001`, `BUILTIN-002` |
+| Builtins | Representative math, reduction, scan, constructor, array-transform, and datetime/duration families through one registry contract | `BUILTIN-001`, `BUILTIN-002` |
 
 Entries marked partial describe intentional subset boundaries, not an
 invitation to infer MATLAB behavior. Read each entry's `limits` field before
@@ -239,7 +244,7 @@ script fail; it returns to a less specialized tier.
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
 | C API/ABI | C source API 1.3 over ABI generation 2 revision 1 with 117 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, and caller-sized roots; v1.2 revision 0 remains archived |
 | C++ API | Header-only C++20 source API 1.3 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
-| Builtin extension | active source contract 1.12 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, and guarded `sum`/`prod`/`mean` Typed lowering; v1.2 contract 1.1 remains archived |
+| Builtin extension | active source contract 1.13 using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, guarded `sum`/`prod`/`mean` Typed lowering, and the VM/portable datetime/duration family; v1.2 contract 1.1 remains archived |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
@@ -310,6 +315,6 @@ version drift.
 
 The v1.0 and v1.2 snapshots remain immutable historical evidence. The current
 v1.3 candidate freezes C source API 1.3, ABI generation 2 revision 1, C++
-source API 1.3, protocol 1.1, and builtin source contract 1.12 in
+source API 1.3, protocol 1.1, and builtin source contract 1.13 in
 [public-contract-v1.3.json](public-contract-v1.3.json). See
 [v1.x Roadmap](roadmap-v1.x.md).

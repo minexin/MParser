@@ -251,10 +251,12 @@ add_library(mparser_core STATIC
     src/mparser/execution/runtime_benchmark.cpp
     src/mparser/runtime/core/session/runtime_call_frame.cpp
     src/mparser/runtime/builtins/callback/runtime_callback_builtins.cpp
+    src/mparser/runtime/builtins/datetime/runtime_datetime_builtins.cpp
     src/mparser/runtime/core/value/runtime_cell.cpp
     src/mparser/runtime/builtins/array/runtime_collection_builtins.cpp
     src/mparser/runtime/builtins/conversion/runtime_conversion_builtins.cpp
     src/mparser/runtime/core/value/runtime_dense_numeric.cpp
+    src/mparser/runtime/core/value/runtime_datetime.cpp
     src/mparser/runtime/core/session/runtime_exception.cpp
     src/mparser/runtime/core/session/runtime_execution_control.cpp
     src/mparser/runtime/io/runtime_file_io.cpp
@@ -694,7 +696,7 @@ add_test(NAME v1_3_public_contract_smoke
 set_tests_properties(v1_3_public_contract_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.12, 275 descriptors and 277 names")
+        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.13, 291 descriptors and 293 names")
 
 add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -2207,6 +2209,31 @@ add_test(NAME advanced_numeric_production_cli_smoke
 set_tests_properties(advanced_numeric_production_cli_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION "advanced_numeric_summary = 174")
 
+add_executable(datetime_duration_smoke_tests
+    tests/datetime_duration_smoke.cpp)
+target_link_libraries(datetime_duration_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME datetime_duration_smoke
+    COMMAND datetime_duration_smoke_tests)
+
+add_test(NAME datetime_duration_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/datetime_duration_demo.m)
+set_tests_properties(datetime_duration_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2024.5")
+
+add_test(NAME datetime_duration_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/datetime_duration_demo.m)
+set_tests_properties(datetime_duration_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2024.5")
+
+add_test(NAME datetime_duration_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/datetime_duration_demo.m)
+set_tests_properties(datetime_duration_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "summary = 2024.5")
+
 add_executable(builtin_registry_smoke_tests
     tests/builtin_registry_smoke.cpp)
 target_link_libraries(builtin_registry_smoke_tests PRIVATE
@@ -2229,10 +2256,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.12/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.13/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.12 catalog validated: 275 descriptors")
+        "builtin source contract 1.13 catalog validated: 291 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2943,6 +2970,7 @@ install(FILES
     docs/v1.2.md
     docs/v1.3.md
     docs/v1.4.md
+    docs/v1.5.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -2959,6 +2987,7 @@ install(FILES
     docs/v1.x-external-gap-plan.md
     tests/public_contract/builtin/1.11/default_catalog.json
     tests/public_contract/builtin/1.12/default_catalog.json
+    tests/public_contract/builtin/1.13/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES docs/README.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
@@ -2977,6 +3006,7 @@ install(FILES
     samples/complex_numeric_demo.m
     samples/core_numeric_builtins_demo.m
     samples/advanced_numeric_demo.m
+    samples/datetime_duration_demo.m
     samples/conversion_set_callback_demo.m
     samples/dynamic_language_semantics_demo.m
     samples/dynamic_workspace_demo.m

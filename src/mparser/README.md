@@ -23,6 +23,7 @@ remain under `include/mparser`; paths in this tree are not public API or ABI.
 | `runtime/builtins/text` | Text construction, transformation, and query builtins |
 | `runtime/builtins/conversion` | Cross-family value and text conversion builtins |
 | `runtime/builtins/callback` | Higher-order callback builtins such as `arrayfun` |
+| `runtime/builtins/datetime` | Native C++ datetime, duration, NaT, component, and temporal-unit builtins |
 | `runtime/builtins/system` | Context, filesystem, process, and MAT-file builtins |
 | `runtime/io` | Filesystem, file, MAT-file, and operating-system integration |
 | `embedding` | Compiled modules, C ABI implementation, machine protocol, and module execution |

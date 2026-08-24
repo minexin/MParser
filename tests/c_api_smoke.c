@@ -1612,6 +1612,70 @@ static int run_object_transport_smoke(void) {
     return 1;
 }
 
+static int run_temporal_value_transport_smoke(void) {
+    static const char source[] =
+        "stamp = datetime(2020, 1, 2, 3, 4, 5);\n"
+        "dates = datetime([2020; 2021], [1; 2], [2; 3]);\n";
+    static const char consumer_source[] =
+        "function out = identity(value)\n"
+        "out = value;\n"
+        "end\n";
+    mparser_module* module = NULL;
+    mparser_module* consumer = NULL;
+    mparser_result* result = NULL;
+    mparser_value* stamp = NULL;
+    mparser_value* dates = NULL;
+    mparser_value* roundtrip = NULL;
+    const mparser_value* arguments[1];
+    mparser_invocation_options options;
+    size_t dimension = 0;
+
+    CHECK(compile_valid(source, "temporal_transport.m", &module));
+    CHECK(compile_valid(
+              consumer_source, "temporal_consumer.m", &consumer));
+    options = options_for("");
+    options.requested_output_count = 0;
+    CHECK(mparser_module_execute(module, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(find_variable(result, "stamp", &stamp) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(find_variable(result, "dates", &dates) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_value_get_kind(stamp) == MPARSER_VALUE_OBJECT);
+    CHECK(mparser_value_get_kind(dates) == MPARSER_VALUE_OBJECT);
+    CHECK(view_equals(mparser_value_class_name(stamp), "datetime"));
+    CHECK(view_equals(mparser_value_class_name(dates), "datetime"));
+    CHECK(mparser_value_is_module_bound(stamp) == 0);
+    CHECK(mparser_value_is_module_bound(dates) == 0);
+    CHECK(mparser_value_rank(dates) == 2);
+    CHECK(mparser_value_dimension(dates, 0, &dimension) ==
+          MPARSER_API_STATUS_OK && dimension == 2);
+    CHECK(mparser_value_dimension(dates, 1, &dimension) ==
+          MPARSER_API_STATUS_OK && dimension == 1);
+    mparser_result_release(result);
+    result = NULL;
+
+    arguments[0] = stamp;
+    options = options_for("identity");
+    options.arguments = arguments;
+    options.argument_count = 1;
+    CHECK(mparser_module_execute(consumer, &options, &result) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_result_output(result, 0, &roundtrip) ==
+          MPARSER_API_STATUS_OK);
+    CHECK(mparser_value_get_kind(roundtrip) == MPARSER_VALUE_OBJECT);
+    CHECK(view_equals(mparser_value_class_name(roundtrip), "datetime"));
+    CHECK(mparser_value_is_module_bound(roundtrip) == 0);
+
+    mparser_value_release(roundtrip);
+    mparser_result_release(result);
+    mparser_value_release(dates);
+    mparser_value_release(stamp);
+    mparser_module_release(consumer);
+    mparser_module_release(module);
+    return 1;
+}
+
 static int run_request_validation_smoke(mparser_module* module) {
     mparser_invocation_options options = options_for("spin");
     mparser_result* result = NULL;
@@ -1768,6 +1832,7 @@ int main(int argc, char** argv) {
         !run_array_text_and_composite_smoke(module) ||
         !run_function_handle_ownership_smoke(module) ||
         !run_object_transport_smoke() ||
+        !run_temporal_value_transport_smoke() ||
         !run_request_validation_smoke(module)) {
         mparser_module_release(module);
         return 1;

@@ -1,5 +1,6 @@
 #include "mparser/runtime/core/value/runtime_value.h"
 
+#include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
@@ -182,6 +183,16 @@ private:
         if (value.className.empty()) {
             return fail(path, "object class name is empty");
         }
+        const bool temporal = isRuntimeTemporalValue(value);
+        if (temporal &&
+            (value.handleObject || value.sharedFields || !value.fields.empty() ||
+             !value.cells.empty() || !value.characterElements.empty() ||
+             !value.stringElements.empty() || !value.imaginaryElements.empty() ||
+             !value.exactIntegerElements.empty() ||
+             !value.exactIntegerImaginaryElements.empty())) {
+            return fail(path,
+                        "temporal value uses incompatible object storage");
+        }
         if (isRuntimeMetadataObject(value)) {
             if (!value.objectElements.empty()) {
                 return fail(path,
@@ -207,6 +218,10 @@ private:
             return validateObjectFields(value, path);
         }
         if (!value.objectElements.empty()) {
+            if (temporal && !value.elements.empty()) {
+                return fail(path,
+                            "temporal array container carries scalar payload");
+            }
             if (value.objectElements.size() != count) {
                 return fail(path,
                             "object element count does not match shape");
@@ -232,11 +247,17 @@ private:
             return true;
         }
         if (count == 0) {
-            return true;
+            return !temporal || value.elements.empty() ||
+                   fail(path, "empty temporal value carries scalar payload");
         }
         if (count != 1) {
             return fail(path,
                         "nonscalar object has no element storage");
+        }
+        if (temporal) {
+            return value.elements.size() == 1 ||
+                   fail(path,
+                        "temporal scalar must carry one numeric payload");
         }
         return validateObjectFields(value, path);
     }
@@ -487,6 +508,10 @@ private:
                     }
                 }
                 return true;
+            }
+            if (isRuntimeTemporalValue(value)) {
+                return addElements(value.elements.size(), sizeof(double)) &&
+                       countObjectFields(value);
             }
             return countObjectFields(value);
         }
@@ -1079,6 +1104,36 @@ std::string runtimeValueToString(const RuntimeValue& value) {
                     ? std::string("<missing>")
                     : runtimeValueToString(value.cells.front()));
     case RuntimeValueKind::Object:
+        if (isRuntimeTemporalValue(value)) {
+            if (runtimeShapeElementCount(value) == 1) {
+                const auto formatted = runtimeTemporalFormat(value, false);
+                if (formatted.succeeded) {
+                    const auto text = runtimeTextScalarUtf8(
+                        formatted.value);
+                    if (text) {
+                        return *text;
+                    }
+                }
+            }
+            const auto payload = runtimeTemporalPayload(value);
+            if (runtimeShapeElementCount(value) != 1) {
+                output << "<" << value.className << " ";
+                const auto dimensions = runtimeDimensions(value);
+                for (size_t index = 0; index < dimensions.size(); ++index) {
+                    if (index != 0) {
+                        output << "x";
+                    }
+                    output << dimensions[index];
+                }
+                output << ">";
+                return output.str();
+            }
+            return payload && std::isnan(*payload)
+                       ? (value.className == kRuntimeDateTimeClassName
+                              ? std::string("NaT")
+                              : std::string("NaN"))
+                       : std::string("<temporal>");
+        }
         if (isRuntimeMetadataObject(value)) {
             output << "<"
                    << canonicalRuntimeMetadataClassName(value.className);

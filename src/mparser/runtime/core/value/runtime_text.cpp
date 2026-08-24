@@ -1,6 +1,7 @@
 #include "mparser/runtime/core/value/runtime_text.h"
 
 #include "mparser/runtime/core/indexing/runtime_index.h"
+#include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
@@ -12,6 +13,7 @@
 #include <cstdlib>
 #include <limits>
 #include <string>
+#include <utility>
 
 namespace mparser {
 namespace {
@@ -1512,6 +1514,12 @@ RuntimeTextOperationResult runtimeAppendText(const RuntimeValue &left,
 
 RuntimeTextOperationResult
 runtimeConvertToCharacter(const RuntimeValue &value) {
+  if (isRuntimeTemporalValue(value)) {
+    auto temporal = runtimeTemporalFormat(value, false);
+    return RuntimeTextOperationResult{temporal.succeeded,
+                                      std::move(temporal.value),
+                                      std::move(temporal.error)};
+  }
   if (isRuntimeCharacterArray(value)) {
     return textSuccess(value);
   }
@@ -1576,6 +1584,12 @@ runtimeConvertToCharacter(const RuntimeValue &value) {
 }
 
 RuntimeTextOperationResult runtimeConvertToString(const RuntimeValue &value) {
+  if (isRuntimeTemporalValue(value)) {
+    auto temporal = runtimeTemporalFormat(value, true);
+    return RuntimeTextOperationResult{temporal.succeeded,
+                                      std::move(temporal.value),
+                                      std::move(temporal.error)};
+  }
   if (value.kind == RuntimeValueKind::MissingArray) {
     return textSuccess(makeRuntimeStringArray(
         runtimeDimensions(value),

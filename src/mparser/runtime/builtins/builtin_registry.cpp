@@ -5,6 +5,7 @@
 #include "mparser/runtime/builtins/array/runtime_set_builtins.h"
 #include "mparser/runtime/builtins/callback/runtime_callback_builtins.h"
 #include "mparser/runtime/builtins/conversion/runtime_conversion_builtins.h"
+#include "mparser/runtime/builtins/datetime/runtime_datetime_builtins.h"
 #include "mparser/runtime/builtins/numeric/runtime_advanced_numeric.h"
 #include "mparser/runtime/builtins/numeric/runtime_math.h"
 #include "mparser/runtime/builtins/numeric/runtime_numeric_library_builtins.h"
@@ -80,6 +81,10 @@ constexpr std::string_view kBuiltinNames[] = {
     "cumprod",
     "cumsum",
     "date",
+    "datetime",
+    "duration",
+    "NaT",
+    "day",
     "delete",
     "det",
     "disp",
@@ -139,6 +144,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "getenv",
     "horzcat",
     "hypot",
+    "hour",
     "i",
     "ifft",
     "imag",
@@ -158,6 +164,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "isempty",
     "ischar",
     "iscolumn",
+    "isdatetime",
+    "isduration",
     "isfield",
     "isfile",
     "isfinite",
@@ -172,6 +180,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "isnumeric",
     "isprime",
     "isnan",
+    "isnat",
     "isreal",
     "isrow",
     "isscalar",
@@ -200,6 +209,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "max",
     "mean",
     "median",
+    "minute",
+    "month",
     "meshgrid",
     "mat2str",
     "metaclass",
@@ -249,6 +260,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "rng",
     "round",
     "save",
+    "second",
+    "seconds",
     "setdiff",
     "setxor",
     "sign",
@@ -257,6 +270,9 @@ constexpr std::string_view kBuiltinNames[] = {
     "sinh",
     "size",
     "sort",
+    "days",
+    "hours",
+    "minutes",
     "sqrt",
     "squeeze",
     "sprintf",
@@ -305,6 +321,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "which",
     "who",
     "whos",
+    "year",
     "zeros",
     "matlab.metadata.Class.fromName",
     "meta.class.fromName",
@@ -1836,6 +1853,39 @@ BuiltinDescriptor textQueryDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinDescriptor temporalDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    if (name == "datetime") {
+        descriptor.inputs = BuiltinArity::range(1, 6);
+    } else if (name == "duration") {
+        descriptor.inputs = BuiltinArity::fixed(3);
+    } else if (name == "NaT") {
+        descriptor.inputs = BuiltinArity::variadic(0);
+    } else {
+        descriptor.inputs = BuiltinArity::fixed(1);
+    }
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.argumentConstraints.assign(
+        descriptor.inputs.maximum.value_or(descriptor.inputs.minimum),
+        BuiltinArgumentConstraint{BuiltinValueConstraint::Any,
+                                  BuiltinShapeConstraint::Any});
+    descriptor.outputConstraints = {{BuiltinValueConstraint::Any,
+                                    BuiltinShapeConstraint::Any}};
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidTemporalCall";
+    descriptor.summary =
+        "Native MATLAB-like datetime/duration construction, component, "
+        "unit, and missing-value operation.";
+    descriptor.handler = [builtin = std::string(name)](
+                             const BuiltinCall& call) {
+        return invokeRuntimeDateTimeBuiltin(builtin, call);
+    };
+    return descriptor;
+}
+
 BuiltinDescriptor descriptorFor(std::string_view name) {
     if (isRuntimeSystemBuiltin(name)) {
         return systemDescriptor(name);
@@ -1860,6 +1910,9 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (isRuntimeTextQueryBuiltin(name)) {
         return textQueryDescriptor(name);
+    }
+    if (isRuntimeDateTimeBuiltin(name)) {
+        return temporalDescriptor(name);
     }
     if (isRuntimeNumericLibraryBuiltin(name)) {
         return numericLibraryDescriptor(name);

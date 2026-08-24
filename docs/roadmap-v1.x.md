@@ -326,7 +326,10 @@ The latest MATLAB R2024b external differential rerun at
 matches and 4 gaps across all 223 MATLAB-accepted cases. It preserves the
 `cap_271_io_save_load` closure first recorded by the preceding MAT v5 run,
 with no prior match regressing. The remaining observed gaps are `datetime`,
-`table`, `sparse`, and graphics. The thirteenth batch closes dynamic
+`table`, `sparse`, and graphics. The current v1.5 first rich-data batch
+implements the datetime/duration runtime slice and its local evidence, but the
+external differential suite must be rerun before `cap_029_types_datetime` is
+declared closed. The thirteenth batch closes dynamic
 parent-module local, nested, path, package, private, and module-bound-handle invocation across HIR
 and bytecode parents, including recursive evaluation, output capture, captured
 workspace updates, and source-scoped private isolation. MATLAB R2024b reference
@@ -428,12 +431,26 @@ internal include boundary; larger monolith splits remain separately gated.
 
 ## v1.5: Rich Data, Ownership, And Inspection
 
-Close the remaining Cell, Struct, class, enum, event, and reflection gaps that
-fit the stable contracts. Define safe cross-module ownership for module-bound
-handles, objects, and globals. Add rich data families in coherent vertical
-slices, prioritizing sparse numeric values, datetime/duration, categorical,
-table, and timetable according to real workloads. Debugger stack/local
-inspection remains an additive, separately gated public contract.
+v1.5 is organized as complete rich-data vertical slices rather than isolated
+class-name registrations. Every slice must define RuntimeValue storage,
+shape/index behavior, construction and conversion, BuiltinRegistry metadata,
+interpreter/VM parity, embedding and machine-protocol limits, a runnable
+sample, and applicable x64/ARM64 evidence.
+
+The first batch is recorded in [v1.5.md](v1.5.md). It adds native C++
+`datetime`/`duration`/`NaT` values, shaped component and unit operations,
+temporal arithmetic/comparison, ISO-like formatting, and owner-independent C
+API transport. It advances the builtin source contract to 1.13 with 291
+descriptors and 293 registered names. Temporal values intentionally remain in
+the VM/portable semantic path; no Typed/JIT lowering is claimed, and the
+machine protocol continues to expose ordinary objects as opaque values.
+
+The next batches close the remaining class and ownership boundaries that fit
+the existing contracts, then select sparse numeric storage, categorical, or
+table/timetable from measured differential workloads. Debugger stack/local
+inspection remains an additive, separately gated public contract. The current
+external suite still records `table`, `sparse`, and graphics as open, and a
+fresh rerun is required before any imported capability is marked closed.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 

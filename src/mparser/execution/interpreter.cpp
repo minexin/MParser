@@ -12,6 +12,7 @@
 #include "mparser/runtime/core/indexing/runtime_lvalue.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_range.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
@@ -182,6 +183,9 @@ std::string decodeStringLiteral(std::string_view text) {
 }
 
 bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
+    if (isRuntimeTemporalValue(left) || isRuntimeTemporalValue(right)) {
+        return runtimeTemporalValuesEqual(left, right);
+    }
     if (isNumeric(left) && isNumeric(right)) {
         return runtimeNumericValuesIdentical(left, right);
     }
@@ -2722,10 +2726,11 @@ private:
             return missingValue();
         }
         const RuntimeValue target = evaluate(*node.children.front());
-        if (!isStruct(target) && !isRuntimeException(target)) {
+        if (!isStruct(target) && !isRuntimeException(target) &&
+            !isRuntimeTemporalValue(target)) {
             addDiagnostic(node,
-                          "member access requires a structure or MException "
-                          "in the reference interpreter");
+                          "member access requires a structure, temporal "
+                          "value, or MException in the reference interpreter");
             return missingValue();
         }
         std::string fieldName = node.label;
@@ -2743,6 +2748,14 @@ private:
                 return missingValue();
             }
             fieldName = dynamicName.name;
+        }
+        if (isRuntimeTemporalValue(target)) {
+            auto property = runtimeTemporalMemberValue(target, fieldName);
+            if (!property.succeeded) {
+                addDiagnostic(node, std::move(property.error));
+                return missingValue();
+            }
+            return std::move(property.value);
         }
         if (isRuntimeException(target)) {
             const RuntimeValue* property =
@@ -2900,6 +2913,14 @@ private:
         }
 
         const RuntimeValue value = evaluate(*node.children.front());
+        if (isRuntimeTemporalValue(value)) {
+            auto temporal = runtimeApplyTemporalUnary(node.label, value);
+            if (!temporal.succeeded) {
+                addDiagnostic(node, std::move(temporal.error));
+                return missingValue();
+            }
+            return std::move(temporal.value);
+        }
         if (!isNumeric(value)) {
             addDiagnostic(node, "unary operator requires numeric input");
             return missingValue();
@@ -3007,6 +3028,16 @@ private:
         }
 
         const RuntimeValue right = evaluate(*node.children[1]);
+        if (isRuntimeTemporalValue(left) ||
+            isRuntimeTemporalValue(right)) {
+            auto result = runtimeApplyTemporalBinary(
+                node.label, left, right);
+            if (result.succeeded) {
+                return std::move(result.value);
+            }
+            addDiagnostic(node, std::move(result.error));
+            return missingValue();
+        }
         if (isText(left) || isText(right)) {
             if (isText(left) && isText(right)) {
                 RuntimeTextOperationResult result;
@@ -3153,6 +3184,14 @@ private:
         const RuntimeValue value =
             evaluateWithIndexContext(*node.children.front(), target, position,
                                      total);
+        if (isRuntimeTemporalValue(value)) {
+            auto temporal = runtimeApplyTemporalUnary(node.label, value);
+            if (!temporal.succeeded) {
+                addDiagnostic(node, std::move(temporal.error));
+                return missingValue();
+            }
+            return std::move(temporal.value);
+        }
         if (!isNumeric(value)) {
             addDiagnostic(node, "unary operator requires numeric input");
             return missingValue();
@@ -3182,6 +3221,16 @@ private:
         const RuntimeValue right =
             evaluateWithIndexContext(*node.children[1], target, position,
                                      total);
+        if (isRuntimeTemporalValue(left) ||
+            isRuntimeTemporalValue(right)) {
+            auto temporal = runtimeApplyTemporalBinary(
+                node.label, left, right);
+            if (!temporal.succeeded) {
+                addDiagnostic(node, std::move(temporal.error));
+                return missingValue();
+            }
+            return std::move(temporal.value);
+        }
         if (!isNumeric(left) || !isNumeric(right)) {
             addDiagnostic(node, "binary operator requires numeric values");
             return missingValue();
@@ -4218,15 +4267,39 @@ private:
             }
             RuntimeTextOperationResult result;
             if (name == "char") {
-                result = runtimeConvertToCharacter(arguments.front());
+                if (isRuntimeTemporalValue(arguments.front())) {
+                    auto temporal = runtimeTemporalFormat(
+                        arguments.front(), false);
+                    result.succeeded = temporal.succeeded;
+                    result.value = std::move(temporal.value);
+                    result.error = std::move(temporal.error);
+                } else {
+                    result = runtimeConvertToCharacter(arguments.front());
+                }
             } else if (name == "string") {
-                result = runtimeConvertToString(arguments.front());
+                if (isRuntimeTemporalValue(arguments.front())) {
+                    auto temporal = runtimeTemporalFormat(
+                        arguments.front(), true);
+                    result.succeeded = temporal.succeeded;
+                    result.value = std::move(temporal.value);
+                    result.error = std::move(temporal.error);
+                } else {
+                    result = runtimeConvertToString(arguments.front());
+                }
             } else if (name == "cellstr") {
                 result = runtimeCellstr(arguments.front());
             } else if (name == "strlength") {
                 result = runtimeStringLengths(arguments.front());
             } else {
-                result = runtimeTextMissingMask(arguments.front());
+                if (isRuntimeTemporalValue(arguments.front())) {
+                    auto temporal = runtimeTemporalPredicate(
+                        "isnat", arguments.front());
+                    result.succeeded = temporal.succeeded;
+                    result.value = std::move(temporal.value);
+                    result.error = std::move(temporal.error);
+                } else {
+                    result = runtimeTextMissingMask(arguments.front());
+                }
             }
             if (!result.succeeded) {
                 addDiagnostic(node, result.error);
@@ -4368,6 +4441,8 @@ private:
                 matches = *target == "struct";
             } else if (isRuntimeException(value)) {
                 matches = *target == kRuntimeExceptionClassName;
+            } else if (isRuntimeClassObject(value)) {
+                matches = value.className == *target;
             }
             return FunctionCallResult{{logicalValue(matches)}};
         }

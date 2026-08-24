@@ -1,0 +1,26 @@
+clear;
+clc;
+
+stamp = datetime(2020, 1, 2, 3, 4, 5);
+offset = duration(1, 30, 0);
+shifted = stamp + offset;
+elapsed = shifted - stamp;
+date_parts = [year(shifted), month(shifted), day(shifted), hour(shifted), minute(shifted)];
+duration_parts = [hours(elapsed), minutes(elapsed), seconds(elapsed)];
+missing_stamp = NaT();
+iso_char = char(shifted);
+iso_string = string(shifted);
+is_datetime = isdatetime(stamp);
+is_duration = isduration(offset);
+is_nat = isnat(missing_stamp);
+is_same = isequal(stamp, datetime(2020, 1, 2, 3, 4, 5));
+member_year = stamp.Year;
+vector_dates = datetime([2020; 2021], [1; 2], [2; 3]);
+vector_years = year(vector_dates);
+nat_matrix = NaT(2, 2);
+nat_mask = ismissing(nat_matrix);
+object_dates = [stamp, shifted];
+object_years = year(object_dates);
+comparison = stamp < shifted;
+scaled_offset = 2 * offset;
+summary = year(stamp) + month(stamp) + day(stamp) + hours(elapsed);

@@ -12,6 +12,7 @@
 #include "mparser/runtime/core/indexing/runtime_lvalue.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_range.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
@@ -182,6 +183,8 @@ bool isBuiltinReflectableClass(std::string_view name) {
     const std::string canonical =
         canonicalRuntimeMetadataClassName(name);
     return canonical == "double" || canonical == "logical" ||
+           canonical == kRuntimeDateTimeClassName ||
+           canonical == kRuntimeDurationClassName ||
            canonical == "char" || canonical == "string" ||
            canonical == "cell" ||
            canonical == "struct" || canonical == "function_handle" ||
@@ -519,6 +522,9 @@ std::string decodeStringLiteral(std::string_view text) {
 }
 
 bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
+    if (isRuntimeTemporalValue(left) || isRuntimeTemporalValue(right)) {
+        return runtimeTemporalValuesEqual(left, right);
+    }
     if (isNumeric(left) && isNumeric(right)) {
         return runtimeNumericValuesIdentical(left, right);
     }
@@ -9593,6 +9599,38 @@ private:
             stack_.push_back(runtimeStackValue(*property));
             return;
         }
+        if (isRuntimeTemporalValue(target->value)) {
+            auto property = runtimeTemporalMemberValue(
+                target->value, instruction.operand);
+            if (!property.succeeded) {
+                addDiagnostic(instruction, std::move(property.error));
+                return;
+            }
+            if (instruction.resultCount == 0) {
+                return;
+            }
+            if (instruction.resultCount == 1) {
+                pushRuntime(std::move(property.value));
+                return;
+            }
+            std::vector<RuntimeValue> values;
+            appendRuntimeExpandedValues(values, property.value);
+            if (values.size() !=
+                static_cast<size_t>(instruction.resultCount)) {
+                addDiagnostic(
+                    instruction,
+                    "temporal property produced " +
+                        std::to_string(values.size()) +
+                        " values for " +
+                        std::to_string(instruction.resultCount) +
+                        " outputs");
+                return;
+            }
+            for (auto& value : values) {
+                pushRuntime(std::move(value));
+            }
+            return;
+        }
         if (!isObject(target->value)) {
             addDiagnostic(instruction,
                           "member access requires a class object target");
@@ -10341,6 +10379,16 @@ private:
         if (!value) {
             return;
         }
+        if (isRuntimeTemporalValue(*value)) {
+            auto temporal = runtimeApplyTemporalUnary(
+                instruction.operand, *value);
+            if (!temporal.succeeded) {
+                addDiagnostic(instruction, std::move(temporal.error));
+                return;
+            }
+            pushRuntime(std::move(temporal.value));
+            return;
+        }
         if (!isNumeric(*value)) {
             addDiagnostic(instruction,
                           "bytecode unary operator requires numeric input");
@@ -10367,6 +10415,18 @@ private:
         const auto right = popRuntime(instruction, "binary operator");
         const auto left = popRuntime(instruction, "binary operator");
         if (!left || !right) {
+            return;
+        }
+
+        if (isRuntimeTemporalValue(*left) ||
+            isRuntimeTemporalValue(*right)) {
+            auto temporal = runtimeApplyTemporalBinary(
+                instruction.operand, *left, *right);
+            if (!temporal.succeeded) {
+                addDiagnostic(instruction, std::move(temporal.error));
+                return;
+            }
+            pushRuntime(std::move(temporal.value));
             return;
         }
 
@@ -14897,9 +14957,18 @@ private:
                                   " expects one argument");
                 return missingValue();
             }
-            auto result = name == "char"
-                              ? runtimeConvertToCharacter(arguments.front())
-                              : runtimeConvertToString(arguments.front());
+            RuntimeTextOperationResult result;
+            if (isRuntimeTemporalValue(arguments.front())) {
+                auto temporal = runtimeTemporalFormat(
+                    arguments.front(), name == "string");
+                result.succeeded = temporal.succeeded;
+                result.value = std::move(temporal.value);
+                result.error = std::move(temporal.error);
+            } else {
+                result = name == "char"
+                             ? runtimeConvertToCharacter(arguments.front())
+                             : runtimeConvertToString(arguments.front());
+            }
             if (result.succeeded) {
                 return std::move(result.value);
             }
@@ -14922,10 +14991,20 @@ private:
                               "bytecode " + name + " expects one argument");
                 return missingValue();
             }
-            RuntimeTextOperationResult result =
-                name == "cellstr" ? runtimeCellstr(arguments.front())
-                : name == "strlength" ? runtimeStringLengths(arguments.front())
-                                      : runtimeTextMissingMask(arguments.front());
+            RuntimeTextOperationResult result;
+            if (name == "cellstr") {
+                result = runtimeCellstr(arguments.front());
+            } else if (name == "strlength") {
+                result = runtimeStringLengths(arguments.front());
+            } else if (isRuntimeTemporalValue(arguments.front())) {
+                auto temporal = runtimeTemporalPredicate(
+                    "isnat", arguments.front());
+                result.succeeded = temporal.succeeded;
+                result.value = std::move(temporal.value);
+                result.error = std::move(temporal.error);
+            } else {
+                result = runtimeTextMissingMask(arguments.front());
+            }
             if (!result.succeeded) {
                 addDiagnostic(instruction,
                               "bytecode " + result.error);

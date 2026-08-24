@@ -1,6 +1,7 @@
 #include "mparser/embedding/machine_protocol.h"
 
 #include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_datetime.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_text.h"
@@ -342,6 +343,29 @@ int main(int argc, char** argv) {
                 R"("missing_grid","value":{"kind":"missing","dimensions":[2,3]})") !=
                 std::string::npos,
             "machine protocol omitted missing-array dimensions");
+
+        const auto temporal = mparser::runtimeConstructDateTime({
+            mparser::makeRuntimeNumberValue(2020),
+            mparser::makeRuntimeNumberValue(1),
+            mparser::makeRuntimeNumberValue(2),
+        });
+        require(temporal.succeeded,
+                "failed to construct temporal protocol fixture");
+        mparser::ModuleInvocationResult temporalResult;
+        temporalResult.status =
+            mparser::ModuleInvocationStatus::Succeeded;
+        temporalResult.variables.push_back({
+            "stamp", temporal.value});
+        const std::string temporalJson =
+            mparser::serializeMachineResultJsonV1(
+                temporalResult, "1.3.0-test");
+        require(
+            temporalJson.find(
+                R"("kind":"object","class":"datetime")") !=
+                std::string::npos &&
+                temporalJson.find(R"("representation":"opaque")") !=
+                    std::string::npos,
+            "machine protocol temporal object boundary changed");
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";

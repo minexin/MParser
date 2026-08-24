@@ -15,6 +15,7 @@ endforeach()
 
 foreach(required_directory IN ITEMS
         "${PROJECT_ROOT}/src/mparser/cli"
+        "${PROJECT_ROOT}/src/mparser/runtime/builtins/datetime"
         "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm")
     if(NOT IS_DIRECTORY "${required_directory}")
         message(FATAL_ERROR
@@ -27,7 +28,9 @@ foreach(required_file IN ITEMS
         "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/bytecode_vm.cpp"
         "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/bytecode_vm.h"
         "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/adaptive_bytecode_vm.cpp"
-        "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/adaptive_bytecode_vm.h")
+        "${PROJECT_ROOT}/src/mparser/execution/bytecode/vm/adaptive_bytecode_vm.h"
+        "${PROJECT_ROOT}/src/mparser/runtime/builtins/datetime/runtime_datetime_builtins.cpp"
+        "${PROJECT_ROOT}/src/mparser/runtime/builtins/datetime/runtime_datetime_builtins.h")
     if(NOT EXISTS "${required_file}")
         message(FATAL_ERROR
             "required source ownership file is missing: ${required_file}")
@@ -135,4 +138,4 @@ endforeach()
 message(STATUS
     "MParser source layout validated: ${pair_count} runtime pairs, "
     "four owners, two facades, and no core-to-builtin dependency; "
-    "CLI and VM ownership boundaries are present")
+    "CLI, builtin-family, and VM ownership boundaries are present")
