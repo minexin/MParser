@@ -183,16 +183,6 @@ mparser::RuntimeValue denseValue(std::vector<size_t> dimensions,
     return std::move(*value);
 }
 
-mparser::RuntimeValue denseValue(
-    std::vector<size_t> dimensions,
-    std::vector<mparser::RuntimeNumericElementValue> logicalValues,
-    mparser::RuntimeNumericClass numericClass) {
-    auto value = mparser::runtimeNumericValueFromElements(
-        std::move(dimensions), std::move(logicalValues), numericClass);
-    require(value.has_value(), "failed to construct typed dense test value");
-    return std::move(*value);
-}
-
 void runProfiledFusionAndReductionSmoke() {
     const auto pipeline = prepare(R"(
 x = [1 2 3; 4 5 6];
