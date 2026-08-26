@@ -526,6 +526,13 @@ std::optional<double> runtimeTemporalPayload(const RuntimeValue& value,
     return scalar->elements.front();
 }
 
+RuntimeTemporalOperationResult runtimeMakeTemporalValue(
+    RuntimeTemporalKind kind, std::vector<size_t> dimensions,
+    std::vector<double> payloads) {
+    return makeTemporal(kind, std::move(dimensions),
+                        std::move(payloads));
+}
+
 RuntimeTemporalOperationResult runtimeConstructDateTime(
     const std::vector<RuntimeValue>& arguments) {
     if (arguments.size() == 1 && isRuntimeTextValue(arguments.front())) {

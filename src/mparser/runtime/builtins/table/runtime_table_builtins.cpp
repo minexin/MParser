@@ -1,5 +1,7 @@
 #include "mparser/runtime/builtins/table/runtime_table_builtins.h"
 
+#include "mparser/runtime/builtins/table/runtime_table_relational_builtins.h"
+
 #include "mparser/runtime/builtins/array/runtime_array_ops.h"
 #include "mparser/runtime/core/indexing/runtime_index.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
@@ -353,13 +355,17 @@ BuiltinResult sortRows(const BuiltinCall& call) {
 } // namespace
 
 bool isRuntimeTableBuiltin(std::string_view name) {
-    return matches(name, {"table", "height", "width", "istable",
+    return isRuntimeTableRelationalBuiltin(name) ||
+           matches(name, {"table", "height", "width", "istable",
                           "array2table", "table2array",
                           "struct2table", "table2struct", "sortrows"});
 }
 
 BuiltinResult invokeRuntimeTableBuiltin(
     std::string_view name, const BuiltinCall& call) {
+    if (isRuntimeTableRelationalBuiltin(name)) {
+        return invokeRuntimeTableRelationalBuiltin(name, call);
+    }
     if (name == "table") {
         auto parsed = parseTableConstructor(call.arguments);
         if (!parsed.succeeded) {

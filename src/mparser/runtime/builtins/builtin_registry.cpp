@@ -152,6 +152,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "func2str",
     "functions",
     "gcd",
+    "groupcounts",
+    "groupsummary",
     "getReport",
     "getenv",
     "height",
@@ -169,6 +171,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "int2str",
     "inv",
     "intersect",
+    "innerjoin",
     "ipermute",
     "isa",
     "iscell",
@@ -255,6 +258,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "numel",
     "nonzeros",
     "ones",
+    "outerjoin",
     "path",
     "pathsep",
     "pause",
@@ -2029,18 +2033,29 @@ BuiltinDescriptor categoricalDescriptor(std::string_view name) {
 
 BuiltinDescriptor tableDescriptor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
+    const bool relational =
+        name == "innerjoin" || name == "outerjoin" ||
+        name == "groupcounts" || name == "groupsummary";
     if (name == "table") {
         descriptor.inputs = BuiltinArity::variadic();
     } else if (name == "sortrows") {
         descriptor.inputs = BuiltinArity::variadic(1);
     } else if (name == "array2table" || name == "struct2table") {
         descriptor.inputs = BuiltinArity::variadic(1);
+    } else if (name == "innerjoin" || name == "outerjoin") {
+        descriptor.inputs = BuiltinArity::variadic(2);
+    } else if (name == "groupcounts") {
+        descriptor.inputs = BuiltinArity::fixed(2);
+    } else if (name == "groupsummary") {
+        descriptor.inputs = BuiltinArity::range(2, 4);
     } else {
         descriptor.inputs = BuiltinArity::fixed(1);
     }
-    descriptor.outputs = name == "sortrows"
-                             ? BuiltinArity::range(0, 2)
-                             : BuiltinArity::range(0, 1);
+    descriptor.outputs = name == "innerjoin" || name == "outerjoin"
+                             ? BuiltinArity::range(0, 3)
+                             : name == "sortrows"
+                                   ? BuiltinArity::range(0, 2)
+                                   : BuiltinArity::range(0, 1);
     descriptor.argumentConstraints.assign(
         descriptor.inputs.maximum.value_or(descriptor.inputs.minimum),
         BuiltinArgumentConstraint{BuiltinValueConstraint::Any,
@@ -2052,13 +2067,24 @@ BuiltinDescriptor tableDescriptor(std::string_view name) {
         descriptor.outputConstraints = {{BuiltinValueConstraint::Any,
                                          BuiltinShapeConstraint::Any}};
     }
-    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.implementation = relational
+                                    ? BuiltinImplementationKind::Context
+                                    : BuiltinImplementationKind::Shared;
     descriptor.purity = BuiltinPurity::Pure;
     descriptor.determinism = BuiltinDeterminism::Deterministic;
     descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
-    descriptor.errorIdentifier = "MParser:InvalidTableCall";
+    if (relational) {
+        descriptor.contextPermissions =
+            BuiltinContextPermission::ExecutionControl;
+    }
+    descriptor.errorIdentifier =
+        relational
+            ? "MParser:InvalidTableRelationalCall"
+            : "MParser:InvalidTableCall";
     descriptor.summary =
-        "Native C++ table construction, shape query, indexing, and conversion.";
+        relational
+            ? "Native C++ relational table joins and grouped summaries."
+            : "Native C++ table construction, shape query, indexing, and conversion.";
     descriptor.handler = [builtin = std::string(name)](
                              const BuiltinCall& call) {
         return invokeRuntimeTableBuiltin(builtin, call);

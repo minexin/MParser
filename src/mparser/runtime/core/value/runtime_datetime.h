@@ -31,6 +31,10 @@ runtimeTemporalKind(const RuntimeValue& value);
 std::optional<double> runtimeTemporalPayload(
     const RuntimeValue& value, size_t logicalIndex = 0);
 
+RuntimeTemporalOperationResult runtimeMakeTemporalValue(
+    RuntimeTemporalKind kind, std::vector<size_t> dimensions,
+    std::vector<double> payloads);
+
 RuntimeTemporalOperationResult runtimeConstructDateTime(
     const std::vector<RuntimeValue>& arguments);
 RuntimeTemporalOperationResult runtimeConstructDuration(

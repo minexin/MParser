@@ -576,6 +576,32 @@ int compareMissingLast(bool leftMissing, bool rightMissing) {
     return leftMissing ? 1 : -1;
 }
 
+enum class CellSortFamily {
+    Missing,
+    Numeric,
+    Text,
+};
+
+std::optional<CellSortFamily> cellSortFamily(
+    const RuntimeValue& value) {
+    if (value.kind == RuntimeValueKind::Missing) {
+        return CellSortFamily::Missing;
+    }
+    if (runtimeShapeElementCount(value) != 1) {
+        return std::nullopt;
+    }
+    if (value.kind == RuntimeValueKind::MissingArray) {
+        return CellSortFamily::Missing;
+    }
+    if (isRuntimeNumericValue(value)) {
+        return CellSortFamily::Numeric;
+    }
+    if (runtimeTextScalarUtf8(value)) {
+        return CellSortFamily::Text;
+    }
+    return std::nullopt;
+}
+
 std::optional<int> compareTableVariableRows(
     const RuntimeValue& value, size_t leftRow, size_t rightRow) {
     const size_t rows = runtimeDimension(value, 0);
@@ -654,18 +680,48 @@ std::optional<int> compareTableVariableRows(
                 value, leftIndex);
             const auto rightOffset = runtimeColumnMajorLinearToStorageOffset(
                 value, rightIndex);
-            const auto left = leftOffset && *leftOffset < value.cells.size()
-                                  ? runtimeTextScalarUtf8(
-                                        value.cells[*leftOffset])
-                                  : std::nullopt;
-            const auto right = rightOffset && *rightOffset < value.cells.size()
-                                   ? runtimeTextScalarUtf8(
-                                         value.cells[*rightOffset])
-                                   : std::nullopt;
-            if (!left || !right) {
+            if (!leftOffset || !rightOffset ||
+                *leftOffset >= value.cells.size() ||
+                *rightOffset >= value.cells.size()) {
                 return std::nullopt;
             }
-            comparison = *left < *right ? -1 : *left > *right ? 1 : 0;
+            const RuntimeValue& leftValue = value.cells[*leftOffset];
+            const RuntimeValue& rightValue = value.cells[*rightOffset];
+            const auto leftFamily = cellSortFamily(leftValue);
+            const auto rightFamily = cellSortFamily(rightValue);
+            if (!leftFamily || !rightFamily) {
+                return std::nullopt;
+            }
+            const bool leftMissing =
+                *leftFamily == CellSortFamily::Missing;
+            const bool rightMissing =
+                *rightFamily == CellSortFamily::Missing;
+            comparison = compareMissingLast(leftMissing, rightMissing);
+            if (comparison == 0 && !leftMissing) {
+                if (*leftFamily != *rightFamily) {
+                    return std::nullopt;
+                }
+                if (*leftFamily == CellSortFamily::Numeric) {
+                    const auto left =
+                        runtimeNumericElementValue(leftValue, 0);
+                    const auto right =
+                        runtimeNumericElementValue(rightValue, 0);
+                    if (!left || !right) {
+                        return std::nullopt;
+                    }
+                    comparison = runtimeCompareNumericElementsForExtrema(
+                        *left, *right);
+                } else {
+                    const auto left = runtimeTextScalarUtf8(leftValue);
+                    const auto right = runtimeTextScalarUtf8(rightValue);
+                    if (!left || !right) {
+                        return std::nullopt;
+                    }
+                    comparison = *left < *right
+                                     ? -1
+                                     : *left > *right ? 1 : 0;
+                }
+            }
         } else {
             return std::nullopt;
         }
@@ -1022,6 +1078,22 @@ RuntimeTableOperationResult runtimeMakeTable(
     return validatedTable(makeRuntimeTableValue(std::move(storage)));
 }
 
+RuntimeTableOperationResult runtimeMakeEmptyTable(
+    size_t rowCount, std::vector<std::string> dimensionNames) {
+    if (dimensionNames.empty()) {
+        dimensionNames = {"Row", "Variables"};
+    }
+    std::string error;
+    if (!validateTableNameLayout({}, dimensionNames, error)) {
+        return failure(std::move(error));
+    }
+    auto storage = std::make_shared<RuntimeTableStorage>();
+    storage->rowCount = rowCount;
+    storage->dimensionNames = std::move(dimensionNames);
+    storage->userData = emptyDoubleValue();
+    return validatedTable(makeRuntimeTableValue(std::move(storage)));
+}
+
 RuntimeTableNamesResult runtimeTableNames(
     const RuntimeValue& value, std::string_view role) {
     if (runtimeShapeElementCount(value) == 0) {
@@ -1275,6 +1347,12 @@ RuntimeTableOperationResult runtimeTableContentsValue(
                ? success(std::move(concatenated.value))
                : failure("table contents cannot concatenate: " +
                          concatenated.error);
+}
+
+RuntimeTableOperationResult runtimeSelectTableVariableRows(
+    const RuntimeValue& value,
+    const std::vector<size_t>& rowSelection) {
+    return selectRows(value, rowSelection);
 }
 
 RuntimeTableOperationResult runtimeAssignTableIndexed(
@@ -1842,12 +1920,23 @@ RuntimeTableSortResult runtimeSortTable(
                     storage->variables[key.variableIndex].name};
         }
         if (value.kind == RuntimeValueKind::Cell) {
+            std::optional<CellSortFamily> family;
             for (const RuntimeValue& element : value.cells) {
-                if (!runtimeTextScalarUtf8(element)) {
+                const auto elementFamily = cellSortFamily(element);
+                if (!elementFamily) {
                     return RuntimeTableSortResult{
                         false, {}, {},
-                        "sortrows Cell variables must contain text scalars"};
+                        "sortrows Cell variables must contain scalar numeric, text, or missing values"};
                 }
+                if (*elementFamily == CellSortFamily::Missing) {
+                    continue;
+                }
+                if (family && *family != *elementFamily) {
+                    return RuntimeTableSortResult{
+                        false, {}, {},
+                        "sortrows Cell variables cannot mix numeric and text values"};
+                }
+                family = *elementFamily;
             }
         }
     }

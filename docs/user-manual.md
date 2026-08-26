@@ -546,10 +546,35 @@ numeric, text, temporal, or nested-table variables and return a logical table.
 Tables execute through the VM/portable fallback and are opaque objects at C,
 C++, and machine-protocol boundaries. Recursively module-independent tables
 can be retained and passed between compiled modules, but their variables are
-not projected as an ABI layout. Joins/grouping, stacking, table MAT
-persistence, and exact MATLAB display or `TableProperties` object identity
-remain outside this batch. Run `samples/table_demo.m` and
-`samples/categorical_demo.m` for multi-tier parity examples.
+not projected as an ABI layout.
+
+The relational slice supports table joins and grouping:
+
+```matlab
+[joined, leftRows, rightRows] = innerjoin(left, right, 'Keys', 'Id');
+full = outerjoin(left, right, 'Keys', 'Id', ...
+    'MergeKeys', true, 'Type', 'full');
+counts = groupcounts(source, {'Region', 'Kind'});
+summary = groupsummary(source, 'Region', {'mean', 'sum'}, 'Value');
+```
+
+Join selectors include `Keys`, paired `LeftKeys`/`RightKeys`,
+`LeftVariables`, and `RightVariables`. Duplicate matches expand in stable
+Cartesian order. Outer joins support `left`, `right`, and `full` row sets,
+class-appropriate missing fill, and one-based row maps with zero for unmatched
+rows. Numeric classes compare exactly across classes; char/string,
+categorical, datetime/duration, and scalar numeric/text/missing Cell keys are
+also supported. `NaN` and `NaT` do not join.
+
+`groupcounts` returns sorted keys, `GroupCount`, and `Percent` and coalesces
+missing keys. `groupsummary` delegates `sum`, `prod`, `mean`, `min`, `max`,
+`median`, `std`, `var`, `any`, and `all` to the shared registry; its current
+data-variable surface is numeric. Both functions accept tables or timetables,
+while joins currently require two tables. Stacking, table MAT persistence,
+arbitrary summary callbacks, and exact MATLAB display or `TableProperties`
+object identity remain open. Run `samples/table_demo.m`,
+`samples/categorical_demo.m`, and `samples/table_relational_demo.m` for
+multi-tier parity examples.
 
 ## Timetables
 
@@ -575,7 +600,7 @@ together. `array2timetable` requires `RowTimes`.
 `timetable`, `istimetable`, `array2timetable`, `table2timetable`, and
 `timetable2table` use the shared builtin registry. Caller-expression name
 inference is not available, so generated `Time`/`VarN` names may differ from
-MATLAB. `retime`, `synchronize`, `timerange`, joins/grouping, calendar-duration
+MATLAB. `retime`, `synchronize`, `timerange`, timetable joins, calendar-duration
 row times, timezone databases, timetable MAT persistence, and exact MATLAB
 display/property-object identity remain open. Run `samples/timetable_demo.m`.
 
@@ -657,7 +682,7 @@ Choose the narrowest boundary that fits the host:
 | One process invocation and JSON | CLI `--run --result-format=json-v1` |
 | Narrow binary boundary from C or another FFI | C source API 1.3, ABI generation 2 revision 1 |
 | C++20 RAII and copied STL-facing values | Header-only C++ source API 1.3 |
-| Builtin compiled into the engine | active source contract 1.16; archived v1.2 contract 1.1 |
+| Builtin compiled into the engine | active source contract 1.17; archived v1.2 contract 1.1 |
 
 The C and C++ APIs compile once and invoke many times, expose sessions,
 structured values, diagnostics, cancellation, limits, execution summaries,

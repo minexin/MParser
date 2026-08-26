@@ -1491,10 +1491,11 @@ declarative `sum` reduction identity. Active contract 1.12 kept the catalog
 size and added declarative `prod` and `mean` reduction identities. Active
 contract 1.13 adds the shared datetime/duration family, contract 1.14 adds the
 repository-owned CSC sparse family, contract 1.15 adds table storage, metadata,
-indexing, assignment, and conversion builtins, and contract 1.16 adds
-categorical storage/category operations, table completion, and timetable
-RowTimes/conversion builtins; the active catalog has 324 descriptors and 326
-registered names. Dense-region analysis may
+indexing, assignment, and conversion builtins, contract 1.16 adds categorical
+storage/category operations, table completion, and timetable
+RowTimes/conversion builtins, and contract 1.17 adds joins, stable row maps,
+grouping, and registry-delegated grouped reductions; the active catalog has 328
+descriptors and 330 registered names. Dense-region analysis may
 consume them only through
 the same descriptor purity, shadowing, arity, shape, numeric-class, and
 resource guards used by the VM fallback boundary. A generator-backed

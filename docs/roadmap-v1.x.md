@@ -125,14 +125,14 @@ shaped missing arrays and row-structured multidimensional cell literals, so
 forms such as `[missing missing]` and `{'a'; 'b'}` use ordinary array/cell
 construction rather than scalar-only exceptions. Large domain families require
 separate storage and container semantics beyond a numeric class tag. The later
-v1.5-v1.8 batches now provide datetime/duration, CSC sparse, table,
-categorical, and timetable slices.
+v1.5-v1.9 batches now provide datetime/duration, CSC sparse, table,
+categorical, timetable, join, and grouped-summary slices.
 
 ## v1.3: System And Broad Standard Library
 
 **Status: implemented; candidate scope and current contract are recorded in
 [v1.3.md](v1.3.md) and
-[public-contract-v1.3.json](public-contract-v1.3.json). Subsequent v1.4-v1.8
+[public-contract-v1.3.json](public-contract-v1.3.json). Subsequent v1.4-v1.9
 internal batches are recorded below.**
 
 v1.3 builds on the v1.2 host boundary and closes a substantial system-function
@@ -448,9 +448,12 @@ the existing contracts. The sparse numeric first batch is recorded in
 sparse, and table closure with graphics as the sole imported gap. The v1.8
 batch recorded in [v1.8.md](v1.8.md) then adds a complete categorical vertical
 slice, closes table row/multi-variable/concatenation/sorting gaps, and adds the
-first timetable RowTimes/conversion slice on shared tabular storage. Advanced
-tabular algorithms and debugger stack/local inspection remain additive,
-separately gated work.
+first timetable RowTimes/conversion slice on shared tabular storage. The v1.9
+batch recorded in [v1.9.md](v1.9.md) adds stable table joins, row maps,
+cross-class structured keys, `groupcounts`, and registry-delegated
+`groupsummary` with cancellation and five-mode parity. Further stacking,
+arbitrary aggregation, timetable alignment, and debugger stack/local
+inspection remain additive, separately gated work.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 

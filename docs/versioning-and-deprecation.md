@@ -10,7 +10,7 @@ Those numbers are never SDK product versions.
 MParser uses semantic versions for release tags and packages. The active
 source tree, product metadata, and installed SDK report candidate version
 `1.3.0`. The complete fifteen-batch v1.3 train has reached its internal
-candidate gate. Subsequent v1.4-v1.8 internal development batches extend that
+candidate gate. Subsequent v1.4-v1.9 internal development batches extend that
 candidate without changing the product or public C/C++ API identity.
 
 This project is not currently using the v1.3 interfaces in production.
@@ -33,7 +33,7 @@ unreleased development interfaces.
 | C ABI | generation 2, revision 1; archived v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.3 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
-| Builtin source contract | 1.16 | Registry/descriptor/call semantics compiled with the engine |
+| Builtin source contract | 1.17 | Registry/descriptor/call semantics compiled with the engine |
 
 ## CLI 1.0
 
@@ -95,7 +95,7 @@ Consumers check the protocol major and tolerate documented additive minor
 fields. A change that removes a required field or changes its meaning requires
 a protocol-major change.
 
-## Builtin Source Contract 1.16
+## Builtin Source Contract 1.17
 
 `BuiltinRegistry`, `BuiltinDescriptor`, `BuiltinCall`, and `BuiltinResult`
 form a source-integration contract for builtins compiled with the engine. They
@@ -126,11 +126,14 @@ at 1.15 contained 306 descriptors and 308 registered names. Contract 1.16 adds
 N-dimensional categorical storage and category-management builtins, closes
 table row deletion/multi-variable assignment/concatenation/sorting, and adds
 datetime/duration RowTimes plus table/timetable conversion. The active catalog
-contains 324 descriptors and 326 registered names. Temporal, sparse,
+contained 324 descriptors and 326 registered names. Contract 1.17 adds
+`innerjoin`, `outerjoin`, `groupcounts`, and `groupsummary` through the same
+context, execution-control, RuntimeValue, and registry paths. Its active
+catalog contains 328 descriptors and 330 registered names. Temporal, sparse,
 categorical, table, and timetable values remain VM/portable values with no
-Typed/JIT lowering in these batches; timezone databases, calendar-month
-arithmetic, rich-data MAT persistence, advanced timetable operations, and
-graphics remain outside this contract.
+Typed/JIT lowering in these batches; rich tabular aggregations, advanced
+timetable operations, timezone databases, calendar-month arithmetic,
+rich-data MAT persistence, and graphics remain outside this contract.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry

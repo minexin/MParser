@@ -186,12 +186,39 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 16,
+                mparser::kBuiltinSourceContractMinor == 17,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 324,
+    require(registry->descriptors().size() == 328,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 326,
+    require(registry->names().size() == 330,
             "default builtin name catalog changed unexpectedly");
+
+    for (std::string_view name : {"innerjoin", "outerjoin",
+                                  "groupcounts", "groupsummary"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor &&
+                    descriptor->implementation ==
+                        mparser::BuiltinImplementationKind::Context &&
+                    descriptor->purity == mparser::BuiltinPurity::Pure &&
+                    descriptor->determinism ==
+                        mparser::BuiltinDeterminism::Deterministic &&
+                    mparser::hasBuiltinContextPermission(
+                        descriptor->contextPermissions,
+                        mparser::BuiltinContextPermission::ExecutionControl) &&
+                    descriptor->errorIdentifier ==
+                        "MParser:InvalidTableRelationalCall",
+                "relational table builtin metadata mismatch: " +
+                    std::string(name));
+    }
+    require(registry->find("innerjoin")->inputs.minimum == 2 &&
+                !registry->find("innerjoin")->inputs.maximum &&
+                registry->find("innerjoin")->outputs.maximum == 3 &&
+                registry->find("outerjoin")->outputs.maximum == 3 &&
+                registry->find("groupcounts")->inputs.minimum == 2 &&
+                registry->find("groupcounts")->inputs.maximum == 2 &&
+                registry->find("groupsummary")->inputs.minimum == 2 &&
+                registry->find("groupsummary")->inputs.maximum == 4,
+            "relational table builtin arity metadata mismatch");
 
     for (std::string_view name : {"eval", "evalc", "evalin"}) {
         const auto* descriptor = registry->find(name);

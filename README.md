@@ -5,11 +5,12 @@ session-owned system boundary, broad standard-library coverage, dynamic
 workspace and language semantics, MAT v5 persistence, and repository-owned
 C++20 advanced numerical algorithms without Eigen. The public identities are
 C/C++ source API 1.3, C ABI generation 2 revision 1, CLI 1.0, machine result
-protocol 1.1, and Builtin source contract 1.16. They are frozen together in the
+protocol 1.1, and Builtin source contract 1.17. They are frozen together in the
 [v1.3 candidate contract](docs/public-contract-v1.3.json). The v1.2 and
 released v1.0 contracts remain immutable archived evidence; unreleased
 interfaces do not require compatibility adapters. See
 [docs/v1.3.md](docs/v1.3.md),
+[docs/v1.9.md](docs/v1.9.md),
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md), and the
 [external gap plan](docs/v1.x-external-gap-plan.md).
 

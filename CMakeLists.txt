@@ -255,6 +255,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/builtins/datetime/runtime_datetime_builtins.cpp
     src/mparser/runtime/builtins/sparse/runtime_sparse_builtins.cpp
     src/mparser/runtime/builtins/table/runtime_table_builtins.cpp
+    src/mparser/runtime/builtins/table/runtime_table_relational_builtins.cpp
     src/mparser/runtime/builtins/timetable/runtime_timetable_builtins.cpp
     src/mparser/runtime/core/value/runtime_cell.cpp
     src/mparser/runtime/core/value/runtime_categorical.cpp
@@ -289,6 +290,7 @@ add_library(mparser_core STATIC
     src/mparser/execution/runtime_source_storage.cpp
     src/mparser/runtime/core/value/runtime_struct.cpp
     src/mparser/runtime/core/value/runtime_table.cpp
+    src/mparser/runtime/core/value/runtime_table_relational.cpp
     src/mparser/runtime/core/value/runtime_tabular.cpp
     src/mparser/runtime/core/value/runtime_timetable.cpp
     src/mparser/runtime/io/runtime_system.cpp
@@ -705,7 +707,7 @@ add_test(NAME v1_3_public_contract_smoke
 set_tests_properties(v1_3_public_contract_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
-        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.16, 324 descriptors and 326 names")
+        "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.17, 328 descriptors and 330 names")
 
 add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -2275,6 +2277,45 @@ target_link_libraries(table_runtime_smoke_tests PRIVATE
 add_test(NAME table_runtime_smoke
     COMMAND table_runtime_smoke_tests)
 
+add_executable(table_relational_smoke_tests
+    tests/table_relational_smoke.cpp)
+target_link_libraries(table_relational_smoke_tests PRIVATE
+    mparser_core)
+add_test(NAME table_relational_smoke
+    COMMAND table_relational_smoke_tests)
+
+add_test(NAME table_relational_interpreter_cli_smoke
+    COMMAND mparser --run-hir
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/table_relational_demo.m)
+set_tests_properties(table_relational_interpreter_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "table relational summary=115.5")
+
+add_test(NAME table_relational_bytecode_cli_smoke
+    COMMAND mparser --run-bytecode
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/table_relational_demo.m)
+set_tests_properties(table_relational_bytecode_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "table relational summary=115.5")
+
+add_test(NAME table_relational_production_cli_smoke
+    COMMAND mparser --run
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/table_relational_demo.m)
+set_tests_properties(table_relational_production_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "table relational summary=115.5")
+
+add_test(NAME table_relational_portable_jit_cli_smoke
+    COMMAND mparser --run --jit=portable
+        ${CMAKE_CURRENT_SOURCE_DIR}/samples/table_relational_demo.m)
+set_tests_properties(table_relational_portable_jit_cli_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "table relational summary=115.5")
+
+if(MPARSER_ENABLE_NATIVE_JIT)
+    add_test(NAME table_relational_native_jit_cli_smoke
+        COMMAND mparser --run --jit=native
+            ${CMAKE_CURRENT_SOURCE_DIR}/samples/table_relational_demo.m)
+    set_tests_properties(table_relational_native_jit_cli_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "table relational summary=115.5")
+endif()
+
 add_executable(categorical_runtime_smoke_tests
     tests/categorical_runtime_smoke.cpp)
 target_link_libraries(categorical_runtime_smoke_tests PRIVATE
@@ -2407,10 +2448,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.16/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.17/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.16 catalog validated: 324 descriptors")
+        "builtin source contract 1.17 catalog validated: 328 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -3125,6 +3166,7 @@ install(FILES
     docs/v1.6.md
     docs/v1.7.md
     docs/v1.8.md
+    docs/v1.9.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -3141,11 +3183,11 @@ install(FILES
     docs/v1.x-external-gap-plan.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
-    tests/public_contract/builtin/1.16/default_catalog.json
+    tests/public_contract/builtin/1.17/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 foreach(mparser_builtin_contract_version IN ITEMS
         1.0 1.1 1.3 1.4 1.5 1.6 1.7 1.8 1.9 1.10
-        1.11 1.12 1.13 1.14 1.15 1.16)
+        1.11 1.12 1.13 1.14 1.15 1.16 1.17)
     install(FILES
         "tests/public_contract/builtin/${mparser_builtin_contract_version}/default_catalog.json"
         DESTINATION
@@ -3171,6 +3213,7 @@ install(FILES
     samples/datetime_duration_demo.m
     samples/sparse_demo.m
     samples/table_demo.m
+    samples/table_relational_demo.m
     samples/categorical_demo.m
     samples/timetable_demo.m
     samples/conversion_set_callback_demo.m

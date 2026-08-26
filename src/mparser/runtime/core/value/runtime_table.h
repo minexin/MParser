@@ -68,6 +68,8 @@ RuntimeTableOperationResult runtimeMakeTable(
     std::vector<std::string> variableNames = {},
     std::vector<std::string> rowNames = {},
     std::vector<std::string> dimensionNames = {});
+RuntimeTableOperationResult runtimeMakeEmptyTable(
+    size_t rowCount, std::vector<std::string> dimensionNames = {});
 
 RuntimeTableNamesResult runtimeTableNames(
     const RuntimeValue& value, std::string_view role);
@@ -87,6 +89,10 @@ RuntimeTableContentsResult runtimeTableContents(
 RuntimeTableOperationResult runtimeTableContentsValue(
     const RuntimeValue& table,
     const std::vector<RuntimeValue>& subscripts);
+
+RuntimeTableOperationResult runtimeSelectTableVariableRows(
+    const RuntimeValue& value,
+    const std::vector<size_t>& rowSelection);
 
 RuntimeTableOperationResult runtimeAssignTableIndexed(
     const RuntimeValue& table,
