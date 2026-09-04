@@ -627,7 +627,7 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
                 "MParser:MissingBuiltinContext"));
         } else if (!options.outputSink(RuntimeOutputEvent{
                        RuntimeOutputKind::StandardOutput,
-                       result.capturedOutput, request.span})) {
+                       result.capturedOutput, request.span, 0, {}})) {
             result.diagnostics.push_back(dynamicDiagnostic(
                 request.span,
                 "host output sink rejected dynamic source output",

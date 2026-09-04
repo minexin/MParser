@@ -17,7 +17,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");
-_Static_assert(MPARSER_C_ABI_REVISION == 1u,
+_Static_assert(MPARSER_C_ABI_REVISION == 2u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
                "allocation status changed");

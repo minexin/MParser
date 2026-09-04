@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 3u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 1u
+#define MPARSER_C_ABI_REVISION 2u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -145,11 +145,14 @@ typedef struct mparser_numeric_buffer {
  * - Stateless executions without module-bound values may run concurrently.
  * - Module-bound mutable graphs and all sessions from one module are
  *   serialized by that module. Operations on one session are also ordered.
+ * - A shared runtime serializes all attached module executions and is the
+ *   only boundary that permits module-bound values to cross modules.
  * - Do not concurrently overwrite, release, or otherwise mutate one host
  *   handle variable. Retain a separate reference for each thread.
  */
 typedef struct mparser_module mparser_module;
 typedef struct mparser_session mparser_session;
+typedef struct mparser_runtime mparser_runtime;
 typedef struct mparser_result mparser_result;
 typedef struct mparser_value mparser_value;
 typedef struct mparser_cancel_token mparser_cancel_token;
@@ -424,6 +427,25 @@ mparser_module_create_session_with_system_context(
     const mparser_module* module,
     const mparser_system_context* context,
     mparser_session** out_session);
+
+MPARSER_C_API mparser_api_status mparser_runtime_create(
+    const mparser_system_context* context,
+    mparser_runtime** out_runtime);
+MPARSER_C_API void mparser_runtime_retain(mparser_runtime* runtime);
+MPARSER_C_API void mparser_runtime_release(mparser_runtime* runtime);
+MPARSER_C_API mparser_api_status mparser_runtime_execute(
+    mparser_runtime* runtime,
+    const mparser_module* module,
+    const mparser_invocation_options* options,
+    mparser_result** out_result);
+MPARSER_C_API mparser_api_status mparser_runtime_clear_global(
+    mparser_runtime* runtime,
+    const char* name,
+    size_t name_size);
+MPARSER_C_API mparser_api_status
+mparser_runtime_clear_globals(mparser_runtime* runtime);
+MPARSER_C_API mparser_api_status
+mparser_runtime_reset(mparser_runtime* runtime);
 
 MPARSER_C_API void mparser_session_retain(mparser_session* session);
 MPARSER_C_API void mparser_session_release(mparser_session* session);

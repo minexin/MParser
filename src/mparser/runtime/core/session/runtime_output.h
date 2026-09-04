@@ -53,6 +53,8 @@ struct RuntimeOutputEvent {
     std::string text;
     SourceSpan span;
     std::uint64_t sequence = 0;
+    // Preserves source provenance across compiled-module boundaries.
+    std::string sourceName;
 };
 
 using RuntimeOutputSink =

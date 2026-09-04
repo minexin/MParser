@@ -1209,7 +1209,9 @@ BuiltinDescriptor outputDescriptor(std::string_view name) {
             builtin == "disp" ? RuntimeOutputKind::Display
                               : RuntimeOutputKind::StandardOutput,
             formatted.text,
-            call.span};
+            call.span,
+            0,
+            {}};
         if (!(*call.context->outputSink)(event)) {
             return helperFailure(
                 call.span,

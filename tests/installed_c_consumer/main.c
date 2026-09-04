@@ -258,6 +258,91 @@ cleanup:
     return succeeded;
 }
 
+static int run_shared_runtime_contract(void) {
+    static const char producer_source[] =
+        "function out = makeAffine(factor)\n"
+        "offset = 2;\n"
+        "out = @(x) x * factor + offset;\n"
+        "end\n";
+    static const char consumer_source[] =
+        "function out = apply(fn, value)\n"
+        "out = fn(value);\n"
+        "end\n";
+    mparser_runtime* runtime = NULL;
+    mparser_module* producer = NULL;
+    mparser_module* consumer = NULL;
+    mparser_value* factor = NULL;
+    mparser_value* input = NULL;
+    mparser_value* closure = NULL;
+    mparser_result* result = NULL;
+    mparser_invocation_options invocation;
+    const mparser_value* arguments[2];
+    int succeeded = 0;
+
+    if (mparser_runtime_create(NULL, &runtime) != MPARSER_API_STATUS_OK ||
+        mparser_module_compile_utf8(
+            producer_source, sizeof(producer_source) - 1,
+            "installed_runtime_producer.m",
+            sizeof("installed_runtime_producer.m") - 1,
+            &producer) != MPARSER_API_STATUS_OK ||
+        mparser_module_compile_utf8(
+            consumer_source, sizeof(consumer_source) - 1,
+            "installed_runtime_consumer.m",
+            sizeof("installed_runtime_consumer.m") - 1,
+            &consumer) != MPARSER_API_STATUS_OK ||
+        create_double_scalar(3.0, &factor) != MPARSER_API_STATUS_OK ||
+        create_double_scalar(4.0, &input) != MPARSER_API_STATUS_OK ||
+        MPARSER_INVOCATION_OPTIONS_INIT(&invocation) !=
+            MPARSER_API_STATUS_OK) {
+        goto cleanup;
+    }
+
+    invocation.entry_name = "makeAffine";
+    invocation.entry_name_size = sizeof("makeAffine") - 1;
+    arguments[0] = factor;
+    invocation.arguments = arguments;
+    invocation.argument_count = 1;
+    invocation.has_requested_output_count = 1;
+    invocation.requested_output_count = 1;
+    if (mparser_runtime_execute(
+            runtime, producer, &invocation, &result) !=
+            MPARSER_API_STATUS_OK ||
+        !result || !mparser_result_succeeded(result) ||
+        mparser_result_output(result, 0, &closure) !=
+            MPARSER_API_STATUS_OK) {
+        goto cleanup;
+    }
+    mparser_result_release(result);
+    result = NULL;
+    mparser_module_release(producer);
+    producer = NULL;
+
+    invocation.entry_name = "apply";
+    invocation.entry_name_size = sizeof("apply") - 1;
+    arguments[0] = closure;
+    arguments[1] = input;
+    invocation.arguments = arguments;
+    invocation.argument_count = 2;
+    if (mparser_runtime_execute(
+            runtime, consumer, &invocation, &result) !=
+            MPARSER_API_STATUS_OK ||
+        !result || !mparser_result_succeeded(result) ||
+        !read_scalar(result, 0, 14.0)) {
+        goto cleanup;
+    }
+    succeeded = 1;
+
+cleanup:
+    mparser_result_release(result);
+    mparser_value_release(closure);
+    mparser_value_release(input);
+    mparser_value_release(factor);
+    mparser_module_release(consumer);
+    mparser_module_release(producer);
+    mparser_runtime_release(runtime);
+    return succeeded;
+}
+
 int main(void) {
     mparser_module* module = NULL;
     mparser_value* left = NULL;
@@ -301,13 +386,14 @@ int main(void) {
         !read_scalar(result, 0, 42.0) ||
         !read_scalar(result, 1, 36.0) ||
         !run_host_contract() ||
-        !run_system_context_contract()) {
+        !run_system_context_contract() ||
+        !run_shared_runtime_contract()) {
         goto cleanup;
     }
 
     printf("installed-consumer = %u.%u.%u,42,36,"
            "abi-generation-%u-revision-%u,host-output-2-2,"
-           "system-context-rooted-retained\n",
+           "system-context-rooted-retained,shared-runtime-14\n",
            mparser_version_major(), mparser_version_minor(),
            mparser_version_patch(), mparser_c_abi_generation(),
            mparser_c_abi_revision());

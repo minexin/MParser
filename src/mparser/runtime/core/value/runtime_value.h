@@ -95,6 +95,9 @@ struct RuntimeValue {
   std::vector<RuntimeStringElement> stringElements;
   std::vector<RuntimeValue> cells;
   std::string className;
+  // User-defined class values retain the callable context that owns their
+  // method definitions. Builtin opaque object families leave this empty.
+  std::shared_ptr<RuntimeCallableContext> objectContext;
   std::string enumerationMemberName;
   std::map<std::string, RuntimeValue> fields;
   std::vector<std::map<std::string, RuntimeValue>> structElements;
@@ -135,6 +138,9 @@ struct RuntimeFunctionHandle {
   std::string methodName;
   std::string declaringClass;
   std::string lexicalClassName;
+  bool externalMethodDispatch = false;
+  bool externalMemberResolution = false;
+  bool externalMemberAssignment = false;
   std::string sourceFile;
   std::optional<RuntimeValue> receiver;
   std::vector<std::string> parameters;

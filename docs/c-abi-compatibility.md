@@ -1,14 +1,14 @@
 # MParser C ABI Development Contract
 
-MParser and its installed SDK use one product version. The current v1.3
-candidate reports product/SDK version `1.3.0`; the v1.2 candidate remains an
-archived contract.
+MParser and its installed SDK use one product version. The current v1.10
+development tree still reports product/SDK version `1.3.0`; the v1.3 and v1.2
+candidate contracts are archived snapshots.
 
 The embedding boundary has an independent technical contract level:
 
 - C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/3/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
-- active C ABI revision: `MPARSER_C_ABI_REVISION == 1`;
+- active C ABI revision: `MPARSER_C_ABI_REVISION == 2`;
 - shared-library full version: `1.3.0`, with SOVERSION/install-name generation
   `2`.
 
@@ -18,11 +18,12 @@ and revision are binary negotiation data rather than another SDK version.
 runtime. The three `mparser_version_*()` functions report product version
 `1.3.0`.
 
-Revision 1 is the v1.3 candidate's additive extension over the frozen v1.2
-revision-0 contract. It adds rooted runtime-system-context creation, ownership,
-capability queries, and context-bound module/session entry points. ABI 2.1 is
-frozen with 117 exports; the revision-0 header, 109-symbol manifest, and v1.2
-public-contract hashes remain unchanged.
+Revision 2 is the current v1.10 development extension over the v1.3 revision-1
+contract. It adds the explicit shared Runtime handle, cross-module callable and
+object routing, shared session-state controls, and matching lifecycle/consumer
+evidence. ABI 2.2 currently contains 124 exports. The v1.3 revision-1 header
+and 117-symbol manifest, revision-0 header and 109-symbol manifest, and their
+public-contract hashes remain unchanged archive evidence.
 
 ## Development Policy
 
@@ -31,14 +32,14 @@ implementation, in-repository callers, tests, examples, and documentation move
 together. Superseded development headers and binaries are not compatibility
 targets, and no adapters are added solely to preserve them.
 
-At the v1.3 candidate gate, the revision-1 header, layouts, symbols, package
-metadata, and independent consumers are frozen as one reviewed contract in
-`docs/public-contract-v1.3.json`. The revision-0 boundary remains archived in
-`docs/public-contract-v1.2.json`. An incompatible correction after this
-candidate requires a new ABI generation.
-An additive change within one frozen ABI generation requires a revision
-increase and
-updated consumer evidence.
+At each candidate gate, the active header, layouts, symbols, package metadata,
+and independent consumers are frozen as one reviewed contract. The v1.3
+revision-1 boundary is archived in `docs/public-contract-v1.3.json`, and the
+revision-0 boundary remains archived in `docs/public-contract-v1.2.json`.
+During this unreleased development line the current header and repository
+consumers move together. Once ABI 2.2 is frozen, an incompatible correction
+requires a new ABI generation; an additive change within the frozen generation
+requires a revision increase and updated consumer evidence.
 
 The released MParser 1.0.0 ABI 1.1 contract remains immutable historical
 evidence in `docs/public-contract-v1.json` and
@@ -53,9 +54,11 @@ The current ABI-generation library names are:
 - Windows: `mparser_c.dll` plus its import library.
 
 Internal compiler, VM, C++ facade, and SLJIT symbols have hidden visibility.
-The current revision-1 public export set is the 117-name manifest in
-`tests/c_api_generation2_revision1_symbols.txt`. The frozen revision-0
-109-name manifest remains `tests/c_api_generation2_symbols.txt`.
+The current revision-2 public export set is the 124-name manifest in
+`tests/c_api_generation2_revision2_symbols.txt`. The v1.3 revision-1
+117-name manifest remains `tests/c_api_generation2_revision1_symbols.txt`,
+and the frozen revision-0 109-name manifest remains
+`tests/c_api_generation2_symbols.txt`.
 
 ## Extensible Roots
 
@@ -153,7 +156,7 @@ values.
 
 `c_api_shared_library_abi` inspects the dynamic library with the platform
 toolchain, compares its exports with
-`tests/c_api_generation2_revision1_symbols.txt`, and checks SONAME/install-name
+`tests/c_api_generation2_revision2_symbols.txt`, and checks SONAME/install-name
 major 2. Lifecycle, unload, allocation-failure, named-fault,
 concurrency, and relocated C/C++ consumer tests exercise the same current
 headers. The complete platform matrix runs at a milestone candidate gate;

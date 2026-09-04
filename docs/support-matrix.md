@@ -2,8 +2,9 @@
 
 MParser v1.x is a MATLAB-like subset runtime, not a complete MATLAB
 replacement. This page summarizes the released v1.0 baseline, archived v1.2
-candidate, and current v1.3 candidate. Interfaces under a later development
-train are not compatibility promises until that milestone candidate is frozen.
+and v1.3 candidates, and the current v1.10 development train. Interfaces under
+an active development train are not compatibility promises until that milestone
+candidate is frozen.
 The machine-readable
 [compatibility-matrix.json](compatibility-matrix.json) is authoritative and
 links every supported or partial claim to source and executable evidence.
@@ -243,17 +244,18 @@ script fail; it returns to a less specialized tier.
 | --- | --- |
 | CLI | Production `--run`, strict options, stable exit classes, JSON protocol selector |
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
-| C API/ABI | C source API 1.3 over ABI generation 2 revision 1 with 117 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, opaque retained handles, and caller-sized roots; v1.2 revision 0 remains archived |
-| C++ API | Header-only C++20 source API 1.3 over C ABI generation 2, including RAII source metadata, host output projection, and rooted `SystemContext` binding |
+| C API/ABI | Current development C source API 1.3 over ABI generation 2 revision 2 with 124 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, shared Runtime ownership, opaque retained handles, and caller-sized roots; v1.3 revision 1 and v1.2 revision 0 remain archived |
+| C++ API | Header-only C++20 source API 1.3 over current C ABI generation 2 revision 2, including RAII source metadata, host output projection, rooted `SystemContext`, and shared `Runtime` binding |
 | Builtin extension | active source contract 1.17 with 328 descriptors and 330 names, using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text/tabular families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, guarded `sum`/`prod`/`mean` Typed lowering, and VM/portable datetime/duration, CSC sparse, categorical, table, timetable, join, and grouping families; v1.2 contract 1.1 remains archived |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
 invocation, sessions, diagnostics, cancellation, resource summaries,
 synchronous output routing, retained output events, and top-level expression
-results. Revision 1 additionally exposes capability-gated native contexts
-for stateless calls and retained sessions; the archived revision-0 snapshot
-remains unchanged.
+results. Revision 1 added capability-gated native contexts; current revision 2
+adds an explicit shared Runtime for cross-module closures, objects, and session
+state. The revision-1 and revision-0 snapshots remain unchanged archive
+evidence.
 Host-created array payloads are copy-in. Returned views remain owned by their
 value/result handles.
 
@@ -282,10 +284,11 @@ Resource stops are terminal request outcomes and are not catchable language
 exceptions.
 
 Independent stateless calls can run concurrently. Calls carrying module-bound
-mutable objects or closures serialize on their owner. Session operations are
-also ordered. Retained C/C++ wrappers may cross threads only when each thread
-owns its own retained reference; concurrently overwriting one host handle
-variable is invalid.
+mutable objects or closures serialize on their owner. Shared Runtime calls
+serialize all attached modules and support reentrant callbacks. Session
+operations are also ordered. Retained C/C++ wrappers may cross threads only
+when each thread owns its own retained reference; concurrently overwriting one
+host handle variable is invalid.
 
 See [Runtime Boundaries](runtime-boundaries.md) for the complete operational
 contract.
@@ -314,8 +317,8 @@ test and one source artifact. `compatibility_matrix_smoke` rejects missing
 sources, missing test registrations, duplicate IDs, invalid states, and
 version drift.
 
-The v1.0 and v1.2 snapshots remain immutable historical evidence. The current
-v1.3 candidate freezes C source API 1.3, ABI generation 2 revision 1, C++
-source API 1.3, protocol 1.1, and builtin source contract 1.17 in
-[public-contract-v1.3.json](public-contract-v1.3.json). See
-[v1.x Roadmap](roadmap-v1.x.md).
+The v1.0, v1.2, and v1.3 snapshots remain immutable historical evidence. The
+current v1.10 development header uses C source API 1.3, ABI generation 2
+revision 2, C++ source API 1.3, protocol 1.1, and builtin source contract 1.17;
+it is validated by the shared-runtime and relocated-consumer tests but is not
+yet a frozen release contract. See [v1.x Roadmap](roadmap-v1.x.md).

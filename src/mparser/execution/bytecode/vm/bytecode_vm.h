@@ -128,6 +128,7 @@ struct BytecodeVmOptions {
     std::vector<RuntimeVariable> initialWorkspace;
     std::vector<RuntimeWorkspace*> inheritedWorkspaceFrames;
     std::string entryFunction;
+    std::optional<RuntimeValue> entryCallable;
     std::vector<RuntimeValue> arguments;
     std::optional<size_t> requestedOutputCount;
     TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;

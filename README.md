@@ -1,21 +1,23 @@
 # MParser
 
-Current product and SDK candidate: v1.3.0. This fifteen-batch milestone adds a
-session-owned system boundary, broad standard-library coverage, dynamic
-workspace and language semantics, MAT v5 persistence, and repository-owned
-C++20 advanced numerical algorithms without Eigen. The public identities are
-C/C++ source API 1.3, C ABI generation 2 revision 1, CLI 1.0, machine result
-protocol 1.1, and Builtin source contract 1.17. They are frozen together in the
-[v1.3 candidate contract](docs/public-contract-v1.3.json). The v1.2 and
-released v1.0 contracts remain immutable archived evidence; unreleased
-interfaces do not require compatibility adapters. See
-[docs/v1.3.md](docs/v1.3.md),
+Current product and SDK development identity: v1.3.0. The v1.10 batch adds an
+explicit shared Runtime for cross-module closures, objects, globals, and
+persistent state on top of the existing session-owned system boundary,
+standard-library coverage, dynamic workspace semantics, MAT v5 persistence,
+and repository-owned C++20 numerical algorithms without Eigen. The active
+development identities are C/C++ source API 1.3, C ABI generation 2 revision 2
+with 124 exports, CLI 1.0, machine result protocol 1.1, and Builtin source
+contract 1.17. The v1.3 revision-1 contract is archived; the v1.2 and released
+v1.0 contracts remain immutable historical evidence. Unreleased interfaces move
+together with repository consumers. See
+[docs/v1.3.md](docs/v1.3.md), [docs/v1.10.md](docs/v1.10.md),
 [docs/v1.9.md](docs/v1.9.md),
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md), and the
 [external gap plan](docs/v1.x-external-gap-plan.md).
 
-v1.3 advances C ABI generation 2 additively to revision 1 with a public,
-rooted runtime-system context for C and C++ hosts. It also closes Cell-valued
+v1.3 advanced C ABI generation 2 additively to revision 1 with a public,
+rooted runtime-system context for C and C++ hosts. The current v1.10 extension
+advances the same generation to revision 2 with a shared Runtime graph. It also closes Cell-valued
 `switch` cases, lexically nested functions with
 shared active-frame captures, direct Cell brace comma-list outputs, and
 implicit indexed Struct creation. Later in-tree batches add literal class-name
@@ -76,7 +78,8 @@ notes,
 and publication boundaries,
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md) for current v1.x development,
 [docs/public-contract-v1.3.json](docs/public-contract-v1.3.json) for the
-current v1.3 candidate boundary,
+archived v1.3 candidate boundary and [docs/v1.10.md](docs/v1.10.md) for the
+current shared-Runtime development boundary,
 [docs/public-contract-v1.2.json](docs/public-contract-v1.2.json) for the
 archived v1.2 candidate boundary,
 [docs/public-contract-v1.json](docs/public-contract-v1.json) for the

@@ -13,10 +13,12 @@ handles, fixed-width constants, byte/code-unit views, and versioned plain C
 structures.
 
 The frozen v1.2 candidate uses C ABI generation 2 revision 0 and 109 exports.
-The v1.3 candidate advances that generation additively to revision 1 and 117
-exports for public system-context injection. These are binary-contract
-identifiers, not SDK product versions. MParser and the installed SDK report
-`1.3.0`, while the C source API reports `1.3`. Applications can query
+The v1.3 candidate added revision 1 and 117 exports for public system-context
+injection. The current v1.10 development boundary advances generation 2
+additively to revision 2 and 124 exports for a shared Runtime. These are
+binary-contract identifiers, not SDK product versions. MParser and the
+installed SDK report `1.3.0`, while the C source API reports `1.3`.
+Applications can query
 `mparser_c_abi_generation()`, `mparser_c_abi_revision()`, and the three
 MParser component-version functions rather than assuming that product, ABI,
 and machine protocol levels advance together. The released ABI 1.1 contract
@@ -62,7 +64,7 @@ target_link_libraries(host PRIVATE MParser::c_api)
 `MParser::cli` is the imported matching CLI executable. The package also
 exports project-version and C API version components,
 `MParser_C_ABI_GENERATION`, `MParser_C_ABI_REVISION`,
-`MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.2`, machine
+`MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.3`, machine
 protocol `1.1`, CLI contract `1.0`, builtin source contract `1.1`, and checked
 paths to the license, notices, public/CLI contracts, protocol schema, builtin
 catalog/author guide, and versioning policy. Its paths are relative to the
@@ -88,6 +90,7 @@ owned getter returns one reference. Release it with the matching function:
 | `mparser_value` | `mparser_value_retain/release` |
 | `mparser_cancel_token` | `mparser_cancel_token_retain/release` |
 | `mparser_system_context` | `mparser_system_context_retain/release` |
+| `mparser_runtime` | `mparser_runtime_retain/release` |
 
 `mparser_result_output`, `mparser_result_variable`,
 `mparser_value_cell_element`, and `mparser_value_struct_field` return owned
@@ -112,9 +115,14 @@ serialized by their producing module so shared handle fields cannot race.
 All execute, clear, and reset operations on every session from one module use
 that same graph lock and then the session lock. This conservative rule also
 serializes different sessions from one module; it preserves escaped handle
-objects even when they are retained in persistent or global state. A future
-finer-grained object lock may relax this without changing host-visible
-semantics.
+objects even when they are retained in persistent or global state.
+
+A shared `mparser_runtime` serializes every attached-module execution with
+one recursive Runtime lock. It is the only public boundary that permits
+module-bound values from one module to be consumed by another. Reentrant
+callbacks are supported while that lock is held. A Runtime retains registered
+module state and shared session state until release; `reset` clears globals,
+persistent values, and other session state but does not unregister modules.
 
 Invocation wall-time and cancellation accounting starts after lock admission.
 Time spent waiting behind an operation on the same module/session is not part
@@ -222,6 +230,24 @@ and JIT suppression rules are the same as the v0.82 C++ contract.
 calls and supports targeted global clearing, clearing all globals, and reset.
 Both paths return an owned `mparser_result`.
 
+`mparser_runtime_create` creates a shared execution graph. Pass the Runtime,
+the target module, and the same invocation options to
+`mparser_runtime_execute` for every module that should exchange module-bound
+closures or objects. The Runtime lazily registers each module's callable
+context, shares one session state, and retains registered module state until
+the Runtime is released. Runtime results and projected values retain the
+Runtime lifetime anchor, so a caller may release its original module handle
+after producing a value. `mparser_runtime_clear_global`,
+`mparser_runtime_clear_globals`, and `mparser_runtime_reset` operate on the
+shared state; reset does not unregister modules.
+
+An ordinary `mparser_module_execute`, module session, or a different Runtime
+continues to reject a value owned by another module/Runtime with
+`MPARSER_API_STATUS_OWNER_MISMATCH`. There is no implicit process-global
+module registry. The shared Runtime serializes attached module executions,
+including reentrant callback dispatch, to protect globals, persistent values,
+escaped handles, and object identity.
+
 The corresponding `*_with_system_context` entry points use the host-provided
 context described above. Execution-tier selection and VM fallback are
 unchanged; system builtins remain ordinary context-aware registry calls.
@@ -323,12 +349,15 @@ from named fields; structure arrays can be returned and inspected, but a
 general external structure-array constructor is not yet exposed.
 
 Objects and module-defined function handles may reference compiled callable
-metadata. Such values retain their producing module and report
-`mparser_value_is_module_bound() == 1`. They may be passed back to the same
-module after their producing result has been released. Passing them to a
-different module returns `MPARSER_API_STATUS_OWNER_MISMATCH` before execution.
-This ownership propagates through Cell/Struct values. Combining values bound
-to different modules is rejected. Independent builtin handles are not
+metadata. A value produced by an ordinary module invocation retains that
+module and reports `mparser_value_is_module_bound() == 1`; it can be passed
+back to that module after its producing result has been released. A value
+produced through `mparser_runtime_execute` retains the shared Runtime instead
+and can be consumed by any module registered in that same Runtime. Passing a
+module-bound value to an unrelated module, session, or different Runtime
+returns `MPARSER_API_STATUS_OWNER_MISMATCH` before execution. This ownership
+propagates through Cell/Struct values, and combining values from incompatible
+module or Runtime graphs is rejected. Independent builtin handles are not
 module-bound and can cross modules.
 
 ## Diagnostics And Failures
@@ -440,8 +469,10 @@ state, shared cancellation, and per-invocation resource isolation.
 loads, queries, and unloads the shared library 256 times.
 
 `c_api_shared_library_abi` compares the live dynamic export table against
-`tests/c_api_generation2_revision1_symbols.txt` and validates ELF SONAME or
-macOS install-name major 2. The frozen revision-0 manifest remains in
+`tests/c_api_generation2_revision2_symbols.txt` and validates ELF SONAME or
+macOS install-name major 2. The revision-1 117-symbol manifest remains
+immutable archive evidence in `tests/c_api_generation2_revision1_symbols.txt`,
+and the frozen revision-0 manifest remains in
 `tests/c_api_generation2_symbols.txt`. Internal compiler, VM, C++ facade, and
 SLJIT symbols use hidden
 visibility. Windows x64, Linux x64, macOS x64/ARM64, and focused Linux
@@ -475,13 +506,14 @@ Simplified BSD terms reproduced in the third-party notices.
 
 ## Current Candidate Boundary
 
-The v1.3 candidate host surface is C source API 1.3, C ABI generation 2
-revision 1 with 117 exports, header-only C++ source API 1.3, and machine
-protocol 1.1. It includes rooted system-context calls and reports product/SDK
-version 1.3.0. Current in-repository and relocated consumers validate the same
-boundary. The v1.3 snapshot is `docs/public-contract-v1.3.json`; the frozen
-v1.2 revision-0 snapshot remains archived in
-`docs/public-contract-v1.2.json`.
+The current v1.10 development host surface is C source API 1.3, C ABI
+generation 2 revision 2 with 124 exports, header-only C++ source API 1.3, and
+machine protocol 1.1. It includes rooted system-context calls and the shared
+Runtime graph, while reporting product/SDK version 1.3.0 until a later
+candidate stamp. Current in-repository and relocated consumers validate this
+development boundary. The v1.3 revision-1 snapshot is
+`docs/public-contract-v1.3.json`; the frozen v1.2 revision-0 snapshot remains
+archived in `docs/public-contract-v1.2.json`.
 
 The v1.0 contract, package, hashes, and authentication evidence remain
 available as a historical release record in `docs/public-contract-v1.json`

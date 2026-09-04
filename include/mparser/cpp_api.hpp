@@ -305,6 +305,7 @@ struct NamedValue;
 struct Invocation;
 class Result;
 class Session;
+class Runtime;
 class SystemContext;
 
 namespace detail {
@@ -445,6 +446,15 @@ struct SessionPolicy {
     }
     static void release(mparser_session* value) noexcept {
         mparser_session_release(value);
+    }
+};
+
+struct RuntimePolicy {
+    static void retain(mparser_runtime* value) noexcept {
+        mparser_runtime_retain(value);
+    }
+    static void release(mparser_runtime* value) noexcept {
+        mparser_runtime_release(value);
     }
 };
 
@@ -1039,6 +1049,7 @@ private:
     Handle handle_;
 
     friend class Module;
+    friend class Runtime;
 };
 
 struct Invocation {
@@ -1395,6 +1406,7 @@ private:
 
     friend class Module;
     friend class Session;
+    friend class Runtime;
 };
 
 class Module {
@@ -1586,6 +1598,8 @@ private:
     }
 
     Handle handle_;
+
+    friend class Runtime;
 };
 
 class Session {
@@ -1641,6 +1655,107 @@ private:
     Handle handle_;
 
     friend class Module;
+};
+
+class Runtime {
+public:
+    Runtime() noexcept = default;
+
+    [[nodiscard]] static Runtime create() {
+        mparser_runtime* runtime = nullptr;
+        const auto status = mparser_runtime_create(nullptr, &runtime);
+        return takeCreated(status, runtime, "create shared runtime");
+    }
+
+    [[nodiscard]] static Runtime create(
+        const SystemContext& context) {
+        mparser_runtime* runtime = nullptr;
+        const auto status = mparser_runtime_create(
+            context.requireRaw(), &runtime);
+        return takeCreated(
+            status, runtime, "create shared runtime with system context");
+    }
+
+    [[nodiscard]] bool hasHandle() const noexcept {
+        return static_cast<bool>(handle_);
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return hasHandle();
+    }
+
+    [[nodiscard]] Result execute(const Module& module) {
+        return execute(module, Invocation{});
+    }
+
+    [[nodiscard]] Result execute(
+        const Module& module, const Invocation& invocation) {
+        detail::InvocationBridge bridge(invocation);
+        mparser_result* result = nullptr;
+        const auto status = mparser_runtime_execute(
+            requireRaw(), module.requireRaw(), &bridge.options, &result);
+        try {
+            bridge.rethrowOutputSinkException();
+        } catch (...) {
+            mparser_result_release(result);
+            throw;
+        }
+        return Result::takeCreated(
+            status, result, "execute module in shared runtime");
+    }
+
+    void clearGlobal(std::string_view name) {
+        detail::checkStatus(
+            mparser_runtime_clear_global(
+                requireRaw(), name.data(), name.size()),
+            "clear shared-runtime global");
+    }
+
+    void clearGlobals() {
+        detail::checkStatus(
+            mparser_runtime_clear_globals(requireRaw()),
+            "clear shared-runtime globals");
+    }
+
+    void reset() {
+        detail::checkStatus(
+            mparser_runtime_reset(requireRaw()),
+            "reset shared runtime");
+    }
+
+private:
+    using Handle = detail::SharedHandle<
+        mparser_runtime, detail::RuntimePolicy>;
+
+    Runtime(mparser_runtime* value,
+            detail::AdoptHandle) noexcept
+        : handle_(value, detail::adoptHandle) {}
+
+    static Runtime takeCreated(
+        ApiStatus status, mparser_runtime* value,
+        std::string_view context) {
+        if (status != MPARSER_API_STATUS_OK) {
+            mparser_runtime_release(value);
+            detail::checkStatus(status, context);
+        }
+        if (!value) {
+            throw ApiError(
+                MPARSER_API_STATUS_INTERNAL_ERROR,
+                std::string(context) + " returned no runtime");
+        }
+        return Runtime(value, detail::adoptHandle);
+    }
+
+    [[nodiscard]] mparser_runtime* requireRaw() const {
+        if (!handle_) {
+            throw ApiError(
+                MPARSER_API_STATUS_INVALID_ARGUMENT,
+                "shared runtime handle is empty");
+        }
+        return handle_.get();
+    }
+
+    Handle handle_;
 };
 
 inline Result Module::execute() const {

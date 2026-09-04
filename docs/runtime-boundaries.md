@@ -127,12 +127,14 @@ Adapters must not re-enter that same context. Process execution and native
 filesystem access are capabilities, not sandboxing: an embedding host should
 grant them only when its own isolation policy allows the operation.
 
-The active v1.3 C ABI revision 1 and header-only C++ facade expose a rooted
-native context. The host selects capability bits, root/current/temporary/search
-directories, a random seed, and open/read limits, then binds that context to a
-stateless invocation or reusable session. The session retains the context;
-calls sharing it also share current-directory, path, random, and open-file
-state. Revision-0 entry points retain their isolated behavior.
+The current v1.10 development C ABI revision 2 and header-only C++ facade
+expose a rooted native context plus an explicit shared Runtime. The host
+selects capability bits, root/current/temporary/search directories, a random
+seed, and open/read limits, then binds that context to a stateless invocation,
+reusable session, or Runtime. A Runtime shares one session state and callable
+graph across explicitly registered modules; all Runtime calls are serialized
+by its recursive graph lock. Ordinary module/session entry points remain
+isolated owner domains and reject foreign module-bound values.
 
 Path-oriented adapter calls canonicalize the longest existing ancestor and
 reject `..` or existing symbolic-link targets that leave the configured root.
@@ -293,14 +295,20 @@ Explicit deletion invalidates handle objects and performs supported lifecycle
 notification. Using an invalid or deleted object produces a diagnostic.
 
 Returned opaque object/function-handle values remain tied to their owning
-module graph. Passing them back to another unrelated module is outside the
-contract.
+module graph. A Runtime-created value can cross only between modules attached
+to that same Runtime; a value from an ordinary module/session or another
+Runtime remains rejected with owner mismatch. Scalar user-object public member
+access routes through the defining module, while private members remain
+private. Cross-module object arrays and dynamic object registries are guarded
+until their complete lifetime/indexing contract is implemented.
 
 ## Concurrency
 
 Independent stateless invocations with no module-bound values may run
 concurrently. Invocations carrying mutable objects or closures from a module
-serialize on that module's graph lock so shared fields cannot race.
+serialize on that module's graph lock so shared fields cannot race. Calls
+through one shared Runtime serialize all attached modules and support
+reentrant owner callbacks while the recursive Runtime lock is held.
 
 Session operations are ordered. Different sessions from one module also take
 the module graph lock because escaped objects may connect their state. The
@@ -340,9 +348,10 @@ An embedding application remains responsible for:
 
 ## Current Candidate Boundaries
 
-C source API 1.3 and ABI generation 2 ownership, sealed/extensible structure
-rules, and symbol meanings are checked against current headers and consumers.
-The C++ source API is 1.3 and promises no C++ binary ABI. Machine protocol 1.1 carries exact
+C source API 1.3 and current ABI generation 2 revision 2 ownership,
+sealed/extensible structure rules, and symbol meanings are checked against
+current headers and consumers. The C++ source API is 1.3 and promises no C++
+binary ABI. Machine protocol 1.1 carries exact
 typed and complex numeric values. Builtin source contract 1.1 is frozen with
 the archived v1.2 candidate; the active candidate descriptor contract is 1.17 and remains
 a compiled-in source extension surface, not an external plugin ABI. Archived

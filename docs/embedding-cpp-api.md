@@ -1,9 +1,10 @@
 # MParser C++ Embedding SDK
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
-facade. The v1.3 candidate reports source API 1.3 over C ABI generation 2
-revision 1 and includes the public `SystemContext` facade. MParser and the
-installed SDK report product version `1.3.0`; source API, ABI, and protocol
+facade. The current v1.10 development boundary reports source API 1.3 over C
+ABI generation 2 revision 2 and includes the public `SystemContext` and
+`Runtime` facades. MParser and the installed SDK report product version
+`1.3.0` until the next candidate stamp; source API, ABI, and protocol
 identifiers remain independently queryable contract metadata.
 
 The facade does not expose Parser, HIR, Bytecode, `RuntimeValue`, VM, SLJIT,
@@ -87,11 +88,13 @@ moving transfers the reference, and destruction releases it. An extracted
 output, workspace value, Cell element, or Struct field remains valid after its
 parent wrapper is destroyed because the C API returns an owned reference.
 
-Module-bound objects and function handles retain their compiled module. They
-can be passed back to that module after the original result is destroyed.
-Passing a module-bound value to another module raises `ApiError` with
-`MPARSER_API_STATUS_OWNER_MISMATCH`. Module ownership also propagates through
-Cell and Struct values.
+Module-bound objects and function handles retain their compiled module when
+created by an ordinary module call. Values created through `Runtime::execute`
+retain the shared Runtime graph and may be passed between modules attached to
+that same Runtime. Passing a value to an unrelated module, session, or Runtime
+raises `ApiError` with `MPARSER_API_STATUS_OWNER_MISMATCH`. Ownership also
+propagates through Cell and Struct values; builtin handles without compiled
+module state remain independently portable.
 
 The wrapper performs no global initialization and holds no process-wide C++
 state. Copy a wrapper before handing it to another thread so each thread owns
@@ -106,6 +109,33 @@ serialized at the module graph boundary and then at the individual session.
 This also protects objects that escape from session state. Wall-time and
 cancellation accounting begins after this lock admission, so queue wait is
 not part of a request's wall-time budget.
+
+## Shared Runtime
+
+`Runtime::create()` creates one explicit cross-module execution graph. Execute
+every participating module through the same Runtime when a closure, object,
+global, persistent value, or other module-bound value must cross the module
+boundary:
+
+```cpp
+auto producer = mparser::sdk::Module::compile(producerSource, "producer.m");
+auto consumer = mparser::sdk::Module::compile(consumerSource, "consumer.m");
+auto runtime = mparser::sdk::Runtime::create();
+
+auto produced = runtime.execute(producer, producerRequest);
+auto value = produced.output(0);
+auto consumed = runtime.execute(consumer, makeConsumerRequest(value));
+```
+
+The Runtime lazily registers module callable contexts and retains their
+compiled state until the Runtime is released. `Runtime::reset()` clears shared
+globals, persistent values, and other session state but does not unregister
+modules. Calls are serialized by one recursive Runtime lock, so reentrant
+callbacks are supported while concurrent calls receive deterministic ordering;
+this first contract does not promise parallel execution. Public methods and
+properties of scalar user objects dispatch through the defining module and
+retain its access checks. Cross-module object arrays and dynamic object
+registries remain guarded until their indexing/lifetime contracts are complete.
 
 ## System Contexts
 
@@ -294,16 +324,18 @@ reference consumer spans multiple translation units and checks product, C ABI,
 C++ API, host output behavior, and protocol metadata after relocation.
 
 Lifecycle and concurrency stress covers pure calls, shared handle mutation,
-same and independent sessions, cross-session escaped objects, shared
-cancellation, isolated limits, and concurrent retain/release. The v1.3
-candidate library contract is revision 1 with an exact 117-symbol manifest;
-the archived v1.2 boundary remains revision 0 with 109 exports. The
-C++ facade remains header-only rather than a C++ binary ABI.
+same and independent sessions, cross-session escaped objects, shared Runtime
+closures/objects/state, reentrant callbacks, shared cancellation, isolated
+limits, and concurrent retain/release. The current development library
+contract is ABI generation 2 revision 2 with an exact 124-symbol manifest;
+the v1.3 revision-1 117-symbol boundary and archived v1.2 revision-0 109-symbol
+boundary remain immutable evidence. The C++ facade remains header-only rather
+than a C++ binary ABI.
 
-The current header and consumers move together. Source API 1.3 is frozen in
-the v1.3 candidate snapshot; source API 1.2 and 1.0 remain archived v1.2 and
-v1.0 evidence. The full Windows/Linux/macOS x64/ARM64 SDK matrix is likewise
-run at the milestone gate instead of after every internal batch.
+The current header and consumers move together during v1.x development. The
+v1.3 source API/ABI snapshot is archived; source API 1.2 and 1.0 remain
+archived v1.2 and v1.0 evidence. The full Windows/Linux/macOS x64/ARM64 SDK
+matrix is run at the milestone gate instead of after every internal batch.
 
 Distribution licensing is Apache-2.0 with `Copyright 2026 Wang Xin`.
 Candidate archives include the current headers, contract metadata, schema,

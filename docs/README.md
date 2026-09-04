@@ -1,10 +1,10 @@
 # MParser Documentation
 
 MParser is a documented, embeddable, and sustainably extensible MATLAB-like
-subset runtime. The published baseline is v1.0, v1.2 is the frozen historical
-candidate, and v1.3 is the current candidate contract while the source roadmap
-advances through the v1.4 performance train into v1.5-v1.9 rich-data and
-relational-table work. It does not claim complete MATLAB compatibility.
+subset runtime. The published baseline is v1.0; v1.2 and v1.3 are frozen
+historical candidates, while the source roadmap advances through the v1.4
+performance train into v1.5-v1.10 rich-data, relational-table, and
+shared-runtime work. It does not claim complete MATLAB compatibility.
 
 Start with the task that matches your role.
 
@@ -31,12 +31,13 @@ mparser --run --result-format=json-v1 script.m
 
 ## Embed MParser
 
-- [C Embedding API](embedding-c-api.md): C source API 1.3 over ABI generation
-  2, with opaque handles, values, sessions, diagnostics, cancellation, and
-  limits.
+- [C Embedding API](embedding-c-api.md): C source API 1.3 over current ABI
+  generation 2 revision 2, with opaque handles, values, sessions, diagnostics,
+  cancellation, limits, and shared Runtime ownership.
 - [C ABI Compatibility](c-abi-compatibility.md): structure evolution,
   symbols, layouts, ownership, and candidate-freeze rules.
-- [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.3.
+- [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.3
+  over current ABI revision 2, including `Runtime`.
 - [Machine Result Protocol](machine-result-protocol.md): one-shot JSON
   protocol 1.1.
 
@@ -63,12 +64,14 @@ adapter is Post-v1.0.
 - [v1.0 Release Freeze](v1.0.md)
 - [v1.1 Core Compatibility](v1.1.md)
 - [v1.2 Core Runtime Candidate](v1.2.md)
-- [v1.3 System And Standard Library Candidate](v1.3.md)
+- [v1.3 System And Standard Library Candidate](v1.3.md) (archived contract)
 - [v1.5 Rich Data First Batch](v1.5.md)
 - [v1.6 Sparse Numeric First Batch](v1.6.md)
 - [v1.7 Table Runtime First Batch](v1.7.md)
 - [v1.8 Categorical And Timetable Batch](v1.8.md)
 - [v1.9 Relational Table Batch](v1.9.md)
+- [v1.10 Shared Runtime](v1.10.md): shared C/C++ Runtime ownership,
+  cross-module closures and objects, shared state, lifecycle, and ABI 2.2.
 - [v1 Release Process](release-process.md)
 - [Release Authentication](release-authentication.md): opt-in release-tag
   signing, public-transparency boundary, and consumer verification.
@@ -96,10 +99,12 @@ These files are release contracts, not generated prose:
 | [performance-suite-v1.schema.json](performance-suite-v1.schema.json) | Versioned multi-workload performance-suite index schema |
 | `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
-The current candidate contract freezes the protocol, headers, ABI 2.1 symbol
-set, and builtin 1.17 catalog. The v1.3 implementation train originally closed
-with 1.10; 1.11 added the guarded `sum` Typed reduction identity, 1.12 added
-guarded `prod` and `mean` reduction identities, and 1.13 adds the shared
+The archived v1.3 candidate contract freezes the protocol, headers, ABI 2.1
+symbol set, and builtin 1.17 catalog. The current v1.10 development boundary
+adds ABI 2.2 and the shared Runtime without mutating that snapshot. The v1.3
+implementation train originally closed with 1.10; 1.11 added the guarded `sum`
+Typed reduction identity, 1.12 added guarded `prod` and `mean` reduction
+identities, and 1.13 adds the shared
 datetime/duration family, 1.14 adds the CSC sparse numeric family, 1.15
 adds the first table runtime and conversion family, 1.16 adds categorical,
 table-completion, and timetable families, and 1.17 adds relational joins and

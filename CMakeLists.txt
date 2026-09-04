@@ -28,10 +28,10 @@ set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
 set(MPARSER_C_ABI_GENERATION 2)
-set(MPARSER_C_ABI_REVISION 1)
+set(MPARSER_C_ABI_REVISION 2)
 set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision1_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision2_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -358,10 +358,24 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 117)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 124)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 117 symbols")
+            "C ABI symbol manifest must contain exactly 124 symbols")
     endif()
+    file(STRINGS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision1_symbols.txt"
+        _mparser_previous_c_abi_symbols
+        REGEX "^mparser_[A-Za-z0-9_]+$")
+    foreach(_mparser_previous_c_abi_symbol IN LISTS
+            _mparser_previous_c_abi_symbols)
+        list(FIND _mparser_c_abi_symbols
+            "${_mparser_previous_c_abi_symbol}" _mparser_symbol_index)
+        if(_mparser_symbol_index EQUAL -1)
+            message(FATAL_ERROR
+                "C ABI revision 2 removed revision-1 symbol: "
+                "${_mparser_previous_c_abi_symbol}")
+        endif()
+    endforeach()
 
     if(APPLE)
         set(_mparser_c_api_export_file
@@ -678,9 +692,9 @@ add_test(NAME project_license_smoke
         -DTHIRD_PARTY_NOTICES_FILE=${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_project_license.cmake)
 
-# The v1.0 and v1.2 contracts remain archived under docs/tests. The v1.3
-# contract validates the current product, SDK, ABI, protocol, and builtin
-# source-contract candidate as one boundary.
+# The v1.0, v1.2, and v1.3 candidate contracts remain archived under
+# docs/tests. Current internal development advances additively from those
+# snapshots and is frozen only at the next complete milestone gate.
 set_tests_properties(project_license_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser project license validated: Apache-2.0, Copyright 2026 Wang Xin")
@@ -701,8 +715,8 @@ add_test(NAME v1_3_public_contract_smoke
     COMMAND ${CMAKE_COMMAND}
         -DCONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/docs/public-contract-v1.3.json
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -DEXPECTED_VERSION=${PROJECT_VERSION}
-        -DCONTRACT_STATE=current
+        -DEXPECTED_VERSION=1.3.0
+        -DCONTRACT_STATE=archived
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_v1_3_public_contract.cmake)
 set_tests_properties(v1_3_public_contract_smoke PROPERTIES
     LABELS "documentation;release"
@@ -2775,7 +2789,7 @@ add_test(NAME c_api_allocation_failure
     COMMAND c_api_allocation_failure_tests)
 set_tests_properties(c_api_allocation_failure PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "c api allocation failure = protocol,compile,value,token,system-context,session,execute,output")
+        "c api allocation failure = protocol,compile,value,token,system-context,runtime,session,execute,runtime-execute,output")
 
 add_executable(c_api_named_fault_smoke_tests
     tests/c_api_named_fault_smoke.cpp
@@ -2805,7 +2819,7 @@ add_test(NAME c_api_lifecycle_stress
     COMMAND c_api_lifecycle_stress_tests)
 set_tests_properties(c_api_lifecycle_stress PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "c api lifecycle stress = 160000,retained-session,retained-handle,retained-system-context"
+        "c api lifecycle stress = 160000,retained-session,retained-handle,retained-system-context,retained-runtime"
     TIMEOUT 120)
 
 add_executable(embedding_unload_stress_tests
@@ -2818,7 +2832,7 @@ add_test(NAME embedding_unload_stress
         $<TARGET_FILE:mparser_c_api>)
 set_tests_properties(embedding_unload_stress PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "embedding unload stress = 256,abi-generation-2-revision-1"
+        "embedding unload stress = 256,abi-generation-2-revision-2"
     TIMEOUT 120)
 
 add_test(NAME c_api_shared_library_abi
@@ -2830,7 +2844,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 117 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 124 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -2842,7 +2856,54 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-generation-2-revision-1,cpp-api-1.3")
+        "cpp api smoke = 5050,42,21,abi-generation-2-revision-2,cpp-api-1.3")
+
+add_executable(shared_runtime_smoke_tests
+    tests/shared_runtime_smoke.cpp)
+target_link_libraries(shared_runtime_smoke_tests PRIVATE
+    mparser_cpp_api)
+target_compile_definitions(shared_runtime_smoke_tests PRIVATE
+    MPARSER_SHARED_RUNTIME_NATIVE_AVAILABLE=$<BOOL:${MPARSER_ENABLE_NATIVE_JIT}>)
+add_test(NAME shared_runtime_smoke
+    COMMAND shared_runtime_smoke_tests)
+set_tests_properties(shared_runtime_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "shared runtime smoke = closure,ownership,composition,state,object,reentrant,limits")
+
+add_executable(shared_runtime_c_api_smoke_tests
+    tests/shared_runtime_c_api_smoke.c)
+target_link_libraries(shared_runtime_c_api_smoke_tests PRIVATE
+    mparser_c_api)
+set_target_properties(shared_runtime_c_api_smoke_tests PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+add_test(NAME shared_runtime_c_api_smoke
+    COMMAND shared_runtime_c_api_smoke_tests)
+set_tests_properties(shared_runtime_c_api_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "shared runtime c api = retained,ownership,composition,state")
+
+add_executable(shared_runtime_concurrency_stress_tests
+    tests/shared_runtime_concurrency_stress.cpp)
+target_link_libraries(shared_runtime_concurrency_stress_tests PRIVATE
+    mparser_cpp_api Threads::Threads)
+add_test(NAME shared_runtime_concurrency_stress
+    COMMAND shared_runtime_concurrency_stress_tests)
+set_tests_properties(shared_runtime_concurrency_stress PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "shared runtime concurrency = 400,serialized,reentrant"
+    TIMEOUT 120)
+
+add_executable(mparser_cpp_shared_runtime_demo
+    samples/cpp_shared_runtime_demo.cpp)
+target_link_libraries(mparser_cpp_shared_runtime_demo PRIVATE
+    mparser_cpp_api)
+add_test(NAME cpp_shared_runtime_demo_smoke
+    COMMAND mparser_cpp_shared_runtime_demo)
+set_tests_properties(cpp_shared_runtime_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "shared runtime sdk = closure-14,object-15-17,global-9,abi-generation-2-revision-2")
 
 add_executable(system_context_api_smoke_tests
     tests/system_context_api_smoke.cpp)
@@ -2883,7 +2944,7 @@ add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp sdk = 5050,5,abi-generation-2-revision-1,cpp-api-1.3,host-output-2-2")
+        "cpp sdk = 5050,5,abi-generation-2-revision-2,cpp-api-1.3,host-output-2-2")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
@@ -2932,7 +2993,7 @@ add_test(NAME c_abi_compat_demo_smoke
     COMMAND mparser_c_abi_compat_demo)
 set_tests_properties(c_abi_compat_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "api = 1.3, abi-generation = 2, revision = 1, result = 42, request-bytes = ")
+        "api = 1.3, abi-generation = 2, revision = 2, result = 42, request-bytes = ")
 
 add_executable(mparser_c_source_graph_demo
     samples/c_source_graph_demo.c)
@@ -3167,6 +3228,7 @@ install(FILES
     docs/v1.7.md
     docs/v1.8.md
     docs/v1.9.md
+    docs/v1.10.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -3202,6 +3264,7 @@ install(FILES
     samples/c_abi_compat_demo.c
     samples/c_embedding_demo.c
     samples/cpp_embedding_demo.cpp
+    samples/cpp_shared_runtime_demo.cpp
     samples/cpp_system_context_demo.cpp
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m

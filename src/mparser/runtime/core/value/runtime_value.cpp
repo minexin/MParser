@@ -344,6 +344,10 @@ private:
                     return fail(path + "[" + std::to_string(index) + "]",
                                 "object array mixes value and handle elements");
                 }
+                if (element.objectContext != value.objectContext) {
+                    return fail(path + "[" + std::to_string(index) + "]",
+                                "object array mixes class-definition contexts");
+                }
                 if (!validateValue(element,
                                    path + "[" + std::to_string(index) + "]")) {
                     return false;

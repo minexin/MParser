@@ -118,6 +118,7 @@ RuntimeObjectOperationResult makeObjectArrayFromStorageOrder(
     }
 
     const bool handleObject = elements.front().handleObject;
+    const auto objectContext = elements.front().objectContext;
     for (const auto& element : elements) {
         if (!isRuntimeScalarObject(element)) {
             return failure(
@@ -126,6 +127,10 @@ RuntimeObjectOperationResult makeObjectArrayFromStorageOrder(
         if (element.handleObject != handleObject) {
             return failure(
                 "object arrays cannot mix value and handle objects");
+        }
+        if (element.objectContext != objectContext) {
+            return failure(
+                "object arrays cannot mix class-definition contexts");
         }
     }
 
@@ -145,6 +150,7 @@ RuntimeObjectOperationResult makeObjectArrayFromStorageOrder(
     RuntimeValue result;
     result.kind = RuntimeValueKind::Object;
     result.className = std::move(common.className);
+    result.objectContext = objectContext;
     result.handleObject = handleObject;
     result.objectElements = std::move(elements);
     setRuntimeDimensions(result, std::move(dimensions));
@@ -255,6 +261,7 @@ RuntimeObjectOperationResult growObjectTarget(
     RuntimeValue result;
     result.kind = RuntimeValueKind::Object;
     result.className = target.className;
+    result.objectContext = target.objectContext;
     result.handleObject = target.handleObject;
     result.objectElements = std::move(elements);
     setRuntimeDimensions(result, std::move(newDimensions));

@@ -44,7 +44,7 @@ void runOneLoad(const std::filesystem::path& libraryPath) {
     assert(versionMajor && abiGeneration && abiRevision);
     assert(versionMajor() == 1);
     assert(abiGeneration() == 2);
-    assert(abiRevision() == 1);
+    assert(abiRevision() == 2);
 
     assert(FreeLibrary(library) != 0);
 }
@@ -74,7 +74,7 @@ void runOneLoad(const std::filesystem::path& libraryPath) {
     assert(versionMajor && abiGeneration && abiRevision);
     assert(versionMajor() == 1);
     assert(abiGeneration() == 2);
-    assert(abiRevision() == 1);
+    assert(abiRevision() == 2);
 
     assert(dlclose(library) == 0);
 }
@@ -94,6 +94,6 @@ int main(int argc, char** argv) {
 
     std::cout << "embedding unload stress = "
               << kLoadCount
-              << ",abi-generation-2-revision-1\n";
+              << ",abi-generation-2-revision-2\n";
     return 0;
 }

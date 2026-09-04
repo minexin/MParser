@@ -311,6 +311,12 @@ int main() {
             },
             "system-context creation did not translate std::bad_alloc");
 
+        requireAllocationFailure<mparser_runtime>(
+            [](mparser_runtime** output) {
+                return mparser_runtime_create(nullptr, output);
+            },
+            "runtime creation did not translate std::bad_alloc");
+
         mparser_module* module = nullptr;
         require(mparser_module_compile_utf8(
                     source, sizeof(source) - 1,
@@ -342,6 +348,28 @@ int main() {
             },
             "module execution did not translate std::bad_alloc");
 
+        mparser_runtime* runtime = nullptr;
+        require(mparser_runtime_create(nullptr, &runtime) ==
+                    MPARSER_API_STATUS_OK,
+                "failed to create allocation-test runtime");
+        requireAllocationFailure<mparser_result>(
+            [&](mparser_result** output) {
+                return mparser_runtime_execute(
+                    runtime, module, &options, output);
+            },
+            "runtime execution did not translate std::bad_alloc");
+
+        mparser_result* runtimeResult = nullptr;
+        require(mparser_runtime_execute(
+                    runtime, module, &options, &runtimeResult) ==
+                    MPARSER_API_STATUS_OK,
+                "runtime was not reusable after allocation failure");
+        require(runtimeResult != nullptr &&
+                    mparser_result_succeeded(runtimeResult) != 0,
+                "runtime execution after allocation failure failed");
+        mparser_result_release(runtimeResult);
+        mparser_runtime_release(runtime);
+
         mparser_result* result = nullptr;
         require(mparser_module_execute(module, &options, &result) ==
                     MPARSER_API_STATUS_OK,
@@ -360,8 +388,8 @@ int main() {
         mparser_result_release(result);
         mparser_module_release(module);
         std::cout << "c api allocation failure = "
-                     "protocol,compile,value,token,system-context,session,"
-                     "execute,output\n";
+                     "protocol,compile,value,token,system-context,runtime,"
+                     "session,execute,runtime-execute,output\n";
         return 0;
     } catch (const std::exception& exception) {
         disarmAllocationFailure();

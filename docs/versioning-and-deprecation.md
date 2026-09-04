@@ -30,7 +30,7 @@ unreleased development interfaces.
 | MParser product and SDK | `1.3.0` candidate snapshot | User-facing release identity |
 | Production CLI | 1.0 | Command, option, channel, and exit contract |
 | C source API | 1.3 | Header-level source contract for C hosts |
-| C ABI | generation 2, revision 1; archived v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
+| C ABI | generation 2, revision 2; archived v1.3 revision 1 and v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.3 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.1 | JSON producer/consumer contract |
 | Builtin source contract | 1.17 | Registry/descriptor/call semantics compiled with the engine |
@@ -50,7 +50,7 @@ separate execution products.
 
 `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.3.0`.
 `MPARSER_C_ABI_GENERATION` contains generation `2`, and
-the active header's `MPARSER_C_ABI_REVISION` contains revision `1`.
+the active header's `MPARSER_C_ABI_REVISION` contains revision `2`.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` expose the same
 binary compatibility identifiers at runtime. The generation terminology is
 deliberately distinct from the MParser product version and source API.
@@ -61,10 +61,11 @@ Caller-sized root records permit future tails; fixed-stride records remain
 sealed. Exact rules and validation are in `c-abi-compatibility.md`.
 
 The frozen v1.2 candidate is generation 2 revision 0 with 109 exports. The
-v1.3 candidate adds eight context-related exports and freezes revision 1 with
-117 exports. It retains generation/SOVERSION 2 because all revision-0 layouts
-and symbols remain present. Frozen v1.2 snapshots are archive evidence, not
-live header inputs.
+v1.3 candidate added eight context-related exports and froze revision 1 with
+117 exports. The current v1.10 development tree adds seven shared-Runtime
+exports and uses revision 2 with 124 exports. It retains generation/SOVERSION 2
+because all earlier layouts and symbols remain present. The v1.2 and v1.3
+snapshots are archive evidence, not live header inputs.
 
 Repository consumers move with unreleased development headers. An incompatible
 binary change advances the generation; an additive change within a frozen
@@ -80,7 +81,8 @@ object or C++ class layout crosses the shared-library boundary.
 
 The v1.3 candidate header, C dependency snapshot, and relocated
 multi-translation-unit consumer are frozen together. They include rooted
-system contexts over ABI revision 1. Unreleased development interfaces may
+system contexts over ABI revision 1. The current v1.x header additionally
+exposes shared Runtime ownership over revision 2. Unreleased development interfaces may
 move together without compatibility wrappers.
 
 ## Machine Result Protocol 1.1
@@ -142,9 +144,11 @@ classes, or VM pointers.
 ## Freeze And Deprecation
 
 A contract snapshot is created at a release-candidate gate, not after every
-internal batch. The current v1.3 candidate is frozen in
-`public-contract-v1.3.json`; the v1.2 artifact remains archived. Once a
-contract is released, incompatible changes require an explicit replacement
+internal batch. The v1.3 candidate is frozen in `public-contract-v1.3.json`; the
+v1.2 artifact remains archived. The active v1.10 Runtime extension is still an
+unreleased development contract and is validated by its current header,
+manifest, tests, and consumers rather than by mutating the v1.3 snapshot. Once
+a contract is released, incompatible changes require an explicit replacement
 contract and migration record. Unreleased development interfaces do not
 require a deprecation window; repository callers are simply updated to the
 cleaner current form.

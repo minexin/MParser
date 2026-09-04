@@ -1218,6 +1218,7 @@ public:
         inheritedSourceStorageWorkspace_ =
             options.inheritedStorageWorkspace;
         requestedEntryFunction_ = options.entryFunction;
+        entryCallable_ = options.entryCallable;
         entryArguments_ = options.arguments;
         requestedEntryOutputCount_ = options.requestedOutputCount;
         executedEntryFunction_.clear();
@@ -1280,10 +1281,22 @@ public:
             }
         }
 
-        const bool scriptMode = validation.succeeded &&
-                                requestedEntryFunction_.empty() &&
-                                hasTopLevelExecutable(program);
-        if (scriptMode && !entryArguments_.empty()) {
+        const bool callableMode =
+            validation.succeeded && entryCallable_.has_value();
+        const bool scriptMode = validation.succeeded && !callableMode &&
+                                 requestedEntryFunction_.empty() &&
+                                 hasTopLevelExecutable(program);
+        if (callableMode && !requestedEntryFunction_.empty()) {
+            diagnostics_.push_back(Diagnostic{
+                SourceSpan{},
+                "callable entry cannot be combined with a named entry"});
+        } else if (callableMode &&
+                   requestedEntryOutputCount_.value_or(1) >
+                       static_cast<size_t>(
+                           std::numeric_limits<int>::max())) {
+            diagnostics_.push_back(Diagnostic{
+                SourceSpan{}, "callable entry requested too many outputs"});
+        } else if (scriptMode && !entryArguments_.empty()) {
             diagnostics_.push_back(Diagnostic{
                 SourceSpan{}, "script entry does not accept arguments"});
         } else if (scriptMode && requestedEntryOutputCount_.value_or(0) > 0) {
@@ -1291,16 +1304,34 @@ public:
                 SourceSpan{}, "script entry does not declare outputs"});
         } else if (diagnostics_.empty()) {
             const SourceSpan entrySpan =
-                program.instructions.empty()
-                    ? SourceSpan{}
-                    : program.instructions.front().span;
+                callableMode && entryCallable_->functionHandle
+                    ? entryCallable_->functionHandle->span
+                    : program.instructions.empty()
+                          ? SourceSpan{}
+                          : program.instructions.front().span;
             if (prepareExecutionControl(entrySpan) &&
                 enterExecutionCall(entrySpan)) {
-                execute(scriptMode);
+                if (callableMode) {
+                    BytecodeInstruction instruction;
+                    instruction.span = entrySpan;
+                    instruction.resultCount = static_cast<int>(
+                        requestedEntryOutputCount_.value_or(1));
+                    executedEntryFunction_ =
+                        runtimeFunctionHandleText(*entryCallable_);
+                    executedRequestedOutputCount_ =
+                        requestedEntryOutputCount_.value_or(1);
+                    entryOutputs_ = callFunctionHandle(
+                        instruction, *entryCallable_, entryArguments_,
+                        instruction.resultCount);
+                } else {
+                    execute(scriptMode);
+                }
                 leaveExecutionCall();
             }
         }
-        finalizeEntryOutputs();
+        if (!callableMode) {
+            finalizeEntryOutputs();
+        }
 
         BytecodeVmResult result;
         auto variables = frames_.front().workspace;
@@ -9750,6 +9781,37 @@ private:
             stack_.push_back(runtimeStackValue(field->second));
             return;
         }
+        if (target->value.objectContext &&
+            target->value.objectContext != callableContext_ &&
+            inheritedSourceCallableInvoker_) {
+            if (!isRuntimeScalarObject(target->value)) {
+                addDiagnostic(
+                    instruction,
+                    "cross-module member access currently requires a "
+                    "scalar object");
+                return;
+            }
+            RuntimeFunctionHandle descriptor;
+            descriptor.kind = RuntimeFunctionHandleKind::Method;
+            descriptor.backend = RuntimeFunctionHandleBackend::Bytecode;
+            descriptor.context = target->value.objectContext;
+            descriptor.display = "@" + target->value.className + "." +
+                                 instruction.operand;
+            descriptor.className = target->value.className;
+            descriptor.methodName = instruction.operand;
+            descriptor.externalMemberResolution = true;
+            descriptor.receiver = target->value;
+            descriptor.span = instruction.span;
+            auto outputs = callInheritedSourceCallable(
+                instruction,
+                makeRuntimeFunctionHandleValue(std::move(descriptor)),
+                {}, 1);
+            if (!outputs.empty()) {
+                stack_.push_back(runtimeStackValue(
+                    std::move(outputs.front())));
+            }
+            return;
+        }
         const auto klass = classesByName_.find(target->value.className);
         if (klass == classesByName_.end()) {
             addDiagnostic(instruction, "class is not available: " +
@@ -10046,6 +10108,48 @@ private:
                               instruction);
             }
             recordAssignment(instruction, "listener-member", updated);
+            return;
+        }
+        if (updated.objectContext &&
+            updated.objectContext != callableContext_ &&
+            inheritedSourceCallableInvoker_) {
+            if (instruction.receiverName.empty() ||
+                !isRuntimeScalarObject(updated)) {
+                addDiagnostic(
+                    instruction,
+                    "cross-module member assignment requires a direct "
+                    "scalar object variable");
+                return;
+            }
+            RuntimeFunctionHandle descriptor;
+            descriptor.kind = RuntimeFunctionHandleKind::Method;
+            descriptor.backend = RuntimeFunctionHandleBackend::Bytecode;
+            descriptor.context = updated.objectContext;
+            descriptor.display = "@" + updated.className + "." +
+                                 instruction.operand;
+            descriptor.className = updated.className;
+            descriptor.methodName = instruction.operand;
+            descriptor.externalMemberAssignment = true;
+            descriptor.receiver = updated;
+            descriptor.span = instruction.span;
+            const size_t diagnosticCount = diagnostics_.size();
+            auto outputs = callInheritedSourceCallable(
+                instruction,
+                makeRuntimeFunctionHandleValue(std::move(descriptor)),
+                {*value}, 1);
+            if (outputs.size() != 1 || !isObject(outputs.front())) {
+                if (diagnostics_.size() == diagnosticCount) {
+                    addDiagnostic(
+                        instruction,
+                        "cross-module member assignment returned no object");
+                }
+                return;
+            }
+            storeVariable(
+                instruction.receiverName, instruction.receiverBinding,
+                outputs.front(), instruction);
+            recordAssignment(
+                instruction, "cross-module-member", outputs.front());
             return;
         }
         const auto klass = classesByName_.find(updated.className);
@@ -11387,6 +11491,142 @@ private:
         return std::move(result.outputs);
     }
 
+    std::vector<RuntimeValue> resolveExternalObjectMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeFunctionHandle& info, int requestedCount) {
+        if (requestedCount != 1 || !info.receiver ||
+            !isObject(*info.receiver) ||
+            !isRuntimeScalarObject(*info.receiver)) {
+            addDiagnostic(
+                instruction,
+                "cross-module member resolution requires one output and a "
+                "scalar object receiver");
+            return missingOutputs(requestedCount);
+        }
+
+        auto savedStack = std::move(stack_);
+        stack_.clear();
+        const size_t diagnosticCount = diagnostics_.size();
+        stack_.push_back(runtimeStackValue(*info.receiver));
+        BytecodeInstruction member = instruction;
+        member.operand = info.methodName;
+        member.resultCount = 1;
+        memberAccessResolved(member);
+
+        std::vector<RuntimeValue> outputs;
+        if (diagnostics_.size() == diagnosticCount &&
+            stack_.size() == 1) {
+            StackValue resolved = std::move(stack_.back());
+            if (resolved.isMethodReference) {
+                RuntimeFunctionHandle handle;
+                handle.kind = RuntimeFunctionHandleKind::Method;
+                handle.backend = RuntimeFunctionHandleBackend::Bytecode;
+                handle.context = callableContext_;
+                handle.display = "@" + resolved.methodClassName + "." +
+                                 resolved.methodName;
+                handle.className = std::move(resolved.methodClassName);
+                handle.methodName = std::move(resolved.methodName);
+                handle.declaringClass =
+                    std::move(resolved.methodDeclaringClass);
+                handle.receiver = std::move(resolved.receiver);
+                handle.span = instruction.span;
+                outputs.push_back(
+                    makeRuntimeFunctionHandleValue(std::move(handle)));
+            } else if (resolved.isBuiltinReference && resolved.receiver) {
+                RuntimeFunctionHandle handle;
+                handle.kind = RuntimeFunctionHandleKind::Builtin;
+                handle.backend =
+                    RuntimeFunctionHandleBackend::Independent;
+                handle.display = "@" + resolved.builtinName;
+                handle.targetName = std::move(resolved.builtinName);
+                handle.receiver = std::move(resolved.receiver);
+                handle.span = instruction.span;
+                outputs.push_back(
+                    makeRuntimeFunctionHandleValue(std::move(handle)));
+            } else if (!resolved.isBuiltinReference &&
+                       !resolved.isFunctionReference &&
+                       !resolved.isClassReference &&
+                       !resolved.isMethodReference) {
+                outputs.push_back(std::move(resolved.value));
+            } else {
+                addDiagnostic(
+                    instruction,
+                    "cross-module member did not resolve to a transportable "
+                    "value or callable");
+            }
+        } else if (diagnostics_.size() == diagnosticCount) {
+            addDiagnostic(
+                instruction,
+                "cross-module member resolution produced an invalid stack "
+                "result");
+        }
+        stack_ = std::move(savedStack);
+        return outputs.empty() ? missingOutputs(requestedCount)
+                               : outputs;
+    }
+
+    std::vector<RuntimeValue> assignExternalObjectMember(
+        const BytecodeInstruction& instruction,
+        const RuntimeFunctionHandle& info,
+        const std::vector<RuntimeValue>& arguments,
+        int requestedCount) {
+        if (requestedCount != 1 || arguments.size() != 1 ||
+            !info.receiver || !isObject(*info.receiver) ||
+            !isRuntimeScalarObject(*info.receiver)) {
+            addDiagnostic(
+                instruction,
+                "cross-module member assignment requires one value, one "
+                "output, and a scalar object receiver");
+            return missingOutputs(requestedCount);
+        }
+
+        constexpr std::string_view kReceiverName =
+            "$external-member-receiver";
+        RuntimeCallFrame& frame = frames_.back();
+        const auto previous = frame.workspace.find(
+            std::string(kReceiverName));
+        std::optional<RuntimeValue> previousValue;
+        if (previous != frame.workspace.end()) {
+            previousValue = previous->second;
+        }
+        frame.workspace[std::string(kReceiverName)] = *info.receiver;
+
+        auto savedStack = std::move(stack_);
+        stack_.clear();
+        stack_.push_back(runtimeStackValue(arguments.front()));
+        const size_t diagnosticCount = diagnostics_.size();
+        BytecodeInstruction member = instruction;
+        member.operand = info.methodName;
+        member.receiverName = std::string(kReceiverName);
+        member.receiverBinding = {};
+        storeMemberResolved(member);
+
+        std::vector<RuntimeValue> outputs;
+        if (diagnostics_.size() == diagnosticCount) {
+            const auto updated = frame.workspace.find(
+                std::string(kReceiverName));
+            if (updated != frame.workspace.end() &&
+                isObject(updated->second)) {
+                outputs.push_back(updated->second);
+            } else {
+                addDiagnostic(
+                    instruction,
+                    "cross-module member assignment did not produce an "
+                    "updated object");
+            }
+        }
+
+        if (previousValue) {
+            frame.workspace[std::string(kReceiverName)] =
+                std::move(*previousValue);
+        } else {
+            frame.workspace.erase(std::string(kReceiverName));
+        }
+        stack_ = std::move(savedStack);
+        return outputs.empty() ? missingOutputs(requestedCount)
+                               : outputs;
+    }
+
     std::vector<RuntimeValue> callFunctionHandle(
         const BytecodeInstruction& instruction, const RuntimeValue& handle,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
@@ -11413,7 +11653,13 @@ private:
         auto savedActiveClassFunctions = std::move(activeClassFunctions_);
         activeClassFunctions_.clear();
         std::vector<RuntimeValue> outputs;
-        if (info.kind == RuntimeFunctionHandleKind::Anonymous) {
+        if (info.externalMemberAssignment) {
+            outputs = assignExternalObjectMember(
+                instruction, info, arguments, requestedCount);
+        } else if (info.externalMemberResolution) {
+            outputs = resolveExternalObjectMember(
+                instruction, info, requestedCount);
+        } else if (info.kind == RuntimeFunctionHandleKind::Anonymous) {
             outputs = callAnonymousFunctionHandle(
                 instruction, info, arguments, requestedCount);
         } else if (
@@ -11423,8 +11669,14 @@ private:
                 instruction, info.targetName, arguments,
                 requestedCount);
         } else if (info.kind == RuntimeFunctionHandleKind::Builtin) {
-            outputs = callBuiltinOutputs(instruction, info.targetName,
-                                         arguments, requestedCount);
+            auto callArguments = arguments;
+            if (info.receiver) {
+                callArguments.insert(
+                    callArguments.begin(), *info.receiver);
+            }
+            outputs = callBuiltinOutputs(
+                instruction, info.targetName, callArguments,
+                requestedCount);
         } else {
             const FunctionInfo* callable = nullptr;
             if (info.kind == RuntimeFunctionHandleKind::Function) {
@@ -11433,20 +11685,40 @@ private:
                     callable = &function->second;
                 }
             } else if (info.kind == RuntimeFunctionHandleKind::Method) {
-                const auto declaring =
-                    classesByName_.find(info.declaringClass);
-                if (declaring != classesByName_.end()) {
+                const auto declaring = classesByName_.find(
+                    info.declaringClass.empty()
+                        ? info.className
+                        : info.declaringClass);
+                if (declaring != classesByName_.end() &&
+                    !info.declaringClass.empty()) {
                     const auto method = declaring->second.declaredMethods.find(
                         info.methodName);
                     if (method != declaring->second.declaredMethods.end()) {
                         callable = &method->second;
                     }
+                } else if (declaring != classesByName_.end()) {
+                    callable = selectMethod(
+                        declaring->second, info.methodName);
                 }
             }
             if (!callable) {
                 addDiagnostic(instruction,
                               "function handle target is unavailable: " +
                                   info.display);
+                activeClassFunctions_ =
+                    std::move(savedActiveClassFunctions);
+                return missingOutputs(requestedCount);
+            }
+            if (info.kind == RuntimeFunctionHandleKind::Method &&
+                info.externalMethodDispatch &&
+                callable->access.level != MemberAccessLevel::Public) {
+                addDiagnostic(
+                    instruction,
+                    "method access is denied: " +
+                        (callable->declaringClass.empty()
+                             ? info.className
+                             : callable->declaringClass) +
+                        "." + info.methodName);
                 activeClassFunctions_ =
                     std::move(savedActiveClassFunctions);
                 return missingOutputs(requestedCount);
@@ -11458,7 +11730,10 @@ private:
             }
             const std::string name =
                 info.kind == RuntimeFunctionHandleKind::Method
-                    ? info.declaringClass + "." + info.methodName
+                    ? (callable->declaringClass.empty()
+                           ? info.className
+                           : callable->declaringClass) +
+                          "." + info.methodName
                     : info.targetName;
             outputs = callFunctionInfo(
                 instruction, name, *callable, callArguments,
@@ -14334,6 +14609,7 @@ private:
         ConstructionContext construction;
         construction.object = objectValue(
             className, *properties, klass->second.handleClass);
+        construction.object.objectContext = callableContext_;
         if (construction.object.handleObject &&
             construction.object.sharedFields) {
             (*construction.object.sharedFields)[
@@ -14489,6 +14765,33 @@ private:
         const std::string& methodDeclaringClass,
         const std::optional<RuntimeValue>& receiver,
         const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        const RuntimeValue* invocationReceiver =
+            receiver ? &*receiver
+                     : arguments.empty() ? nullptr : &arguments.front();
+        if (invocationReceiver && invocationReceiver->objectContext &&
+            invocationReceiver->objectContext != callableContext_ &&
+            inheritedSourceCallableInvoker_) {
+            RuntimeFunctionHandle descriptor;
+            descriptor.kind = RuntimeFunctionHandleKind::Method;
+            descriptor.backend = RuntimeFunctionHandleBackend::Bytecode;
+            descriptor.context = invocationReceiver->objectContext;
+            descriptor.display = "@" + invocationReceiver->className +
+                                 "." + methodName;
+            descriptor.className = invocationReceiver->className;
+            descriptor.methodName = methodName;
+            descriptor.declaringClass = methodDeclaringClass;
+            descriptor.externalMethodDispatch = true;
+            descriptor.receiver = *invocationReceiver;
+            descriptor.span = instruction.span;
+            auto forwardedArguments = arguments;
+            if (!receiver && !forwardedArguments.empty()) {
+                forwardedArguments.erase(forwardedArguments.begin());
+            }
+            return callInheritedSourceCallable(
+                instruction,
+                makeRuntimeFunctionHandleValue(std::move(descriptor)),
+                forwardedArguments, requestedCount);
+        }
         const auto klass = classesByName_.find(className);
         if (klass == classesByName_.end()) {
             addDiagnostic(instruction, "class method is not available: " +
@@ -14513,7 +14816,7 @@ private:
                                           className + "." + methodName);
             return missingOutputs(requestedCount);
         }
-        const RuntimeValue* invocationReceiver = nullptr;
+        invocationReceiver = nullptr;
         if (!method->staticMethod) {
             if (receiver) {
                 invocationReceiver = &*receiver;
@@ -15792,6 +16095,7 @@ private:
     RuntimeSourceStorageClearer inheritedSourceStorageClearer_;
     RuntimeWorkspace* inheritedSourceStorageWorkspace_ = nullptr;
     std::string requestedEntryFunction_;
+    std::optional<RuntimeValue> entryCallable_;
     std::vector<RuntimeValue> entryArguments_;
     std::optional<size_t> requestedEntryOutputCount_;
     std::string executedEntryFunction_;

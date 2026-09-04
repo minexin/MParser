@@ -223,6 +223,36 @@ end
                     statelessRandom != sessionRandom,
                 "system context random/session lifetime differs");
 
+        auto runtimeProducer = mparser::sdk::Module::compile(R"(
+function out = makeAffine(factor)
+offset = 2;
+out = @(x) x * factor + offset;
+end
+)", "installed_runtime_producer.m");
+        const auto runtimeConsumer = mparser::sdk::Module::compile(R"(
+function out = apply(fn, value)
+out = fn(value);
+end
+)", "installed_runtime_consumer.m");
+        require(runtimeProducer.isValid() && runtimeConsumer.isValid(),
+                "shared runtime modules did not compile");
+        auto sharedRuntime = mparser::sdk::Runtime::create();
+        mparser::sdk::Invocation makeAffine;
+        makeAffine.entryFunction = "makeAffine";
+        makeAffine.arguments = {mparser::sdk::Value::scalar(3)};
+        makeAffine.requestedOutputCount = 1;
+        const auto closure =
+            sharedRuntime.execute(runtimeProducer, makeAffine).output(0);
+        runtimeProducer = {};
+        mparser::sdk::Invocation apply;
+        apply.entryFunction = "apply";
+        apply.arguments = {closure, mparser::sdk::Value::scalar(4)};
+        apply.requestedOutputCount = 1;
+        require(std::abs(scalar(
+                    sharedRuntime.execute(runtimeConsumer, apply).output(0)) -
+                    14.0) < kTolerance,
+                "shared runtime closure invocation differs");
+
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','
@@ -232,7 +262,8 @@ end
                   << ",cpp-api-" << sourceApiVersion.major << '.'
                   << sourceApiVersion.minor
                   << ",host-output-2-2"
-                  << ",system-context-rooted-retained\n";
+                  << ",system-context-rooted-retained"
+                  << ",shared-runtime-14\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

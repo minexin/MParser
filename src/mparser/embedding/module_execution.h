@@ -3,6 +3,7 @@
 #include "mparser/runtime/core/session/runtime_execution_control.h"
 #include "mparser/runtime/core/session/runtime_output.h"
 #include "mparser/runtime/core/value/runtime_value.h"
+#include "mparser/execution/runtime_source_evaluation.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -134,6 +135,8 @@ struct ModuleInvocationRequest {
     std::optional<RuntimeCancellationToken> cancellationToken;
     ModuleOutputSink outputSink;
     std::shared_ptr<RuntimeSystemContext> systemContext = {};
+    std::shared_ptr<RuntimeExecutionControl> executionControl = {};
+    RuntimeSourceCallableInvoker externalCallableInvoker;
 };
 
 struct ModuleExecutionSummary {

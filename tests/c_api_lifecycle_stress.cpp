@@ -39,6 +39,7 @@ struct Handles {
     mparser_value* value = nullptr;
     mparser_cancel_token* token = nullptr;
     mparser_system_context* systemContext = nullptr;
+    mparser_runtime* runtime = nullptr;
 };
 
 void waitForStart(const std::atomic<bool>& start) {
@@ -142,6 +143,11 @@ int main() {
            MPARSER_API_STATUS_OK);
     assert(session);
 
+    mparser_runtime* runtime = nullptr;
+    assert(mparser_runtime_create(systemContext, &runtime) ==
+           MPARSER_API_STATUS_OK);
+    assert(runtime);
+
     mparser_value* scalar = nullptr;
     assert(createDoubleScalar(42.0, &scalar) ==
            MPARSER_API_STATUS_OK);
@@ -173,7 +179,7 @@ int main() {
 
     const Handles handles{
         module, session, numericResult, functionHandle, token,
-        systemContext};
+        systemContext, runtime};
     std::atomic<bool> start{false};
     std::atomic<bool> failed{false};
     std::vector<std::thread> threads;
@@ -191,6 +197,7 @@ int main() {
                 mparser_value_retain(handles.value);
                 mparser_cancel_token_retain(handles.token);
                 mparser_system_context_retain(handles.systemContext);
+                mparser_runtime_retain(handles.runtime);
 
                 if (mparser_module_is_valid(handles.module) == 0 ||
                     mparser_result_succeeded(handles.result) == 0 ||
@@ -204,6 +211,7 @@ int main() {
                 }
 
                 mparser_system_context_release(handles.systemContext);
+                mparser_runtime_release(handles.runtime);
                 mparser_cancel_token_release(handles.token);
                 mparser_value_release(handles.value);
                 mparser_result_release(handles.result);
@@ -266,10 +274,11 @@ int main() {
     mparser_cancel_token_release(token);
     mparser_value_release(functionHandle);
     mparser_value_release(scalar);
+    mparser_runtime_release(runtime);
 
     std::cout << "c api lifecycle stress = "
               << kThreadCount * kRetainIterations
               << ",retained-session,retained-handle,"
-                 "retained-system-context\n";
+                 "retained-system-context,retained-runtime\n";
     return 0;
 }

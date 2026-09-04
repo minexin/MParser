@@ -351,14 +351,18 @@ ModuleSourcePosition projectSourcePosition(
 }
 
 ModuleSourceRange projectSourceRange(
-    SourceSpan span, const std::vector<SourceUnit>& sources) {
+    SourceSpan span, const std::vector<SourceUnit>& sources,
+    std::string_view explicitSourceName = {}) {
     ModuleSourceRange result;
     if (span.begin.sourceId == kInvalidSourceId ||
-        span.begin.sourceId >= sources.size()) {
+        (explicitSourceName.empty() &&
+         span.begin.sourceId >= sources.size())) {
         return result;
     }
     result.available = true;
-    result.sourceName = sources[span.begin.sourceId].name;
+    result.sourceName = explicitSourceName.empty()
+                            ? sources[span.begin.sourceId].name
+                            : std::string(explicitSourceName);
     result.begin = projectSourcePosition(span.begin);
     result.end = projectSourcePosition(span.end);
     return result;
@@ -372,7 +376,7 @@ ModuleOutputEvent projectOutputEvent(
             ? ModuleOutputKind::Display
             : ModuleOutputKind::StandardOutput,
         event.text,
-        projectSourceRange(event.span, sources),
+        projectSourceRange(event.span, sources, event.sourceName),
         event.sequence};
 }
 
@@ -422,7 +426,8 @@ ModuleDiagnostic projectDiagnostic(
                             ? std::string(fallbackIdentifier)
                             : diagnostic.identifier;
     result.message = diagnostic.message;
-    result.source = projectSourceRange(diagnostic.span, sources);
+    result.source = projectSourceRange(
+        diagnostic.span, sources, diagnostic.sourceName);
     for (const auto& frame : diagnostic.stack) {
         result.stack.push_back(projectDiagnosticFrame(frame));
     }
@@ -1042,9 +1047,13 @@ ModuleInvocationResult CompiledModule::execute(
     runtimeOptions.typedRegionBackend =
         typedBackendFor(request.backend);
     const auto executionControl =
-        std::make_shared<RuntimeExecutionControl>(
-            request.limits, request.cancellationToken);
+        request.executionControl
+            ? request.executionControl
+            : std::make_shared<RuntimeExecutionControl>(
+                  request.limits, request.cancellationToken);
     runtimeOptions.executionControl = executionControl;
+    runtimeOptions.inheritedCallableInvoker =
+        request.externalCallableInvoker;
     if (request.outputSink) {
         runtimeOptions.outputSink =
             [&sink = request.outputSink,
@@ -1150,6 +1159,70 @@ CompiledModuleSession CompiledModule::createSession(
         state = std::make_shared<RuntimeSessionState>();
     }
     return CompiledModuleSession(*this, std::move(state));
+}
+
+size_t CompiledModule::callableContextIdentity() const noexcept {
+    return callableContext_ ? callableContext_->identity : 0;
+}
+
+RuntimeSourceCallableInvocationResult CompiledModule::invokeCallable(
+    const RuntimeValue& callable,
+    const std::vector<RuntimeValue>& arguments,
+    size_t requestedOutputCount,
+    const std::shared_ptr<RuntimeSessionState>& state,
+    const std::shared_ptr<RuntimeExecutionControl>& executionControl,
+    ModuleExecutionBackend backend,
+    const RuntimeSourceCallableInvoker& externalInvoker) const {
+    RuntimeSourceCallableInvocationResult result;
+    if (!valid()) {
+        result.diagnostics = data_->diagnostics;
+        return result;
+    }
+
+    BytecodeVmOptions options;
+    options.profiling = BytecodeVmProfilingMode::Disabled;
+    options.callableContext = callableContext_;
+    options.sessionState = state;
+    options.entryCallable = callable;
+    options.arguments = arguments;
+    options.requestedOutputCount = requestedOutputCount;
+    options.typedRegionBackend = typedBackendFor(backend);
+    options.executionControl = executionControl;
+    options.inheritedCallableInvoker = externalInvoker;
+
+    BytecodeVm vm;
+    auto runtime = backend == ModuleExecutionBackend::Bytecode
+                       ? vm.runValidated(
+                             data_->bytecode, data_->semantic, options)
+                       : vm.runValidated(
+                             data_->bytecode, data_->semantic,
+                             data_->staticTypedModule, options);
+    for (auto& diagnostic : runtime.diagnostics) {
+        if (diagnostic.sourceName.empty() &&
+            diagnostic.span.begin.sourceId != kInvalidSourceId &&
+            diagnostic.span.begin.sourceId < data_->sources.size()) {
+            diagnostic.sourceName =
+                data_->sources[diagnostic.span.begin.sourceId].name;
+        }
+    }
+    for (auto& event : runtime.outputEvents) {
+        if (event.sourceName.empty() &&
+            event.span.begin.sourceId != kInvalidSourceId &&
+            event.span.begin.sourceId < data_->sources.size()) {
+            event.sourceName =
+                data_->sources[event.span.begin.sourceId].name;
+        }
+    }
+    result.outputs = std::move(runtime.outputs);
+    result.diagnostics = std::move(runtime.diagnostics);
+    result.outputEvents = std::move(runtime.outputEvents);
+    result.succeeded =
+        runtime.execution.stopReason == RuntimeExecutionStopReason::None &&
+        !hasErrorDiagnostics(result.diagnostics);
+    if (!result.succeeded) {
+        result.outputs.clear();
+    }
+    return result;
 }
 
 CompiledModuleSession::CompiledModuleSession(

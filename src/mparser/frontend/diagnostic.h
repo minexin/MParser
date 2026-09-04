@@ -33,6 +33,9 @@ struct Diagnostic {
     DiagnosticSeverity severity = DiagnosticSeverity::Error;
     std::vector<DiagnosticFrame> stack;
     std::vector<DiagnosticCause> causes;
+    // Set when a diagnostic crosses a compiled-module boundary and its
+    // source-id can no longer be interpreted against the caller's table.
+    std::string sourceName;
 
     Diagnostic() = default;
 

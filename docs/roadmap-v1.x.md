@@ -455,6 +455,48 @@ cross-class structured keys, `groupcounts`, and registry-delegated
 arbitrary aggregation, timetable alignment, and debugger stack/local
 inspection remain additive, separately gated work.
 
+## v1.10: Shared Runtime And Cross-Module Embedding
+
+**Status: implementation complete locally; candidate evidence is pending the
+full no-JIT, strict-warning, sanitizer, package, and applicable platform CI
+gate. The functional record is [v1.10.md](v1.10.md).**
+
+This batch closes the structural embedding gap left by isolated module owners.
+It adds an explicit shared `Runtime` to the C and header-only C++ APIs. A Runtime
+owns one session-state graph and a registry of compiled callable contexts, so
+closures, scalar user objects, globals, persistent values, diagnostics, and
+output provenance can cross explicitly attached modules without a process-wide
+registry or implicit ownership conversion.
+
+The boundary is deliberately narrow and testable:
+
+- ordinary module and session calls remain isolated and reject foreign values;
+- Runtime calls serialize through one recursive lock and support reentrant
+  owner callbacks, but do not claim parallel execution;
+- foreign function handles route through their defining module while inheriting
+  the active backend, cancellation, resource limits, session, and diagnostic
+  context;
+- scalar user-object public methods and properties route through the defining
+  module and preserve private-member checks, handle identity, and value-object
+  copy semantics;
+- Cell/Struct composition accepts one compatible owner graph, while mixed
+  module/Runtime values and cross-module object arrays remain rejected;
+- Runtime `clearGlobal`, `clearGlobals`, and `reset` operate on shared state;
+  reset keeps registered modules but clears language state.
+
+The C ABI advances generation 2 from revision 1 (the archived v1.3 candidate)
+to development revision 2 with 124 exports. The C++ facade adds the matching
+RAII `Runtime` wrapper. Focused C/C++ smoke tests, concurrent serialized
+callbacks, lifecycle/allocation-failure coverage, public/private object-member
+tests, relocated C11/C++20 consumers, and a runnable SDK sample exercise the
+same ownership rules. The active product identity remains 1.3.0 until a later
+candidate stamp; ABI and source-contract numbers are negotiated independently.
+
+The known debugger pause/stack/frame-local inspection gap remains open for a
+separate batch. Cross-module dynamic object arrays, dynamic object registries,
+external native callback ABI, and parallel Runtime scheduling are intentionally
+not hidden by this milestone.
+
 ## v1.6+: Remaining Semantics And Deeper Optimization
 
 Remaining in-scope parser, extended-persistence, nested-function, dynamic-source-graph,

@@ -606,7 +606,8 @@ template <typename Element>
 std::optional<std::vector<Element>> logicalToStorage(
     const std::vector<size_t>& dimensions,
     std::vector<Element> logical) {
-    std::vector<Element> storage(logical.size());
+    std::optional<std::vector<Element>> storage{
+        std::in_place, logical.size()};
     for (size_t index = 0; index < logical.size(); ++index) {
         const auto coordinates = runtimeColumnMajorCoordinates(
             index, dimensions);
@@ -614,10 +615,10 @@ std::optional<std::vector<Element>> logicalToStorage(
                                 ? runtimeRowMajorStorageOffset(
                                       *coordinates, dimensions)
                                 : std::nullopt;
-        if (!offset || *offset >= storage.size()) {
+        if (!offset || *offset >= storage->size()) {
             return std::nullopt;
         }
-        storage[*offset] = std::move(logical[index]);
+        (*storage)[*offset] = std::move(logical[index]);
     }
     return storage;
 }

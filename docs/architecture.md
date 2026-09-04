@@ -2101,6 +2101,25 @@ therefore share class, shape, NaN, Cell, Struct, and object-lifetime semantics;
 typed or native ineligibility returns to that same VM authority. The combined
 execution sample is `samples/core_numeric_builtins_demo.m`.
 
+The v1.10 embedding batch adds an explicit shared `Runtime` above the module
+boundary without introducing a second evaluator. A Runtime owns one
+`RuntimeSessionState` and a registry keyed by compiled callable-context
+identity. Runtime execution reuses the ordinary module request, bytecode VM,
+registry, execution-control, diagnostic, and output paths; only the owner
+resolver and lifetime anchor are extended so a foreign closure or scalar user
+object can be dispatched by its defining module. The Runtime lock is recursive
+to permit synchronous reentrant callbacks and serializes all attached calls.
+Ordinary module/session calls retain isolated owner domains, and mixed owner
+graphs are rejected before execution.
+
+Cross-module member access is deliberately owner-side: public scalar-object
+properties and methods are resolved and assigned by the defining module, so
+private checks, validators, setters, events, handle identity, and value-object
+copy semantics are not duplicated in the consumer. Cell and Struct composition
+propagates one Runtime owner. Cross-module object arrays and dynamic object
+registries remain guarded until their complete indexing and lifecycle rules can
+be expressed through the same path.
+
 The release gates, compatibility-matrix requirement, builtin-extension
 architecture, embedding boundary, platform matrix, and explicit v1.0
 non-goals are defined in [roadmap-v1.0.md](roadmap-v1.0.md). That roadmap is

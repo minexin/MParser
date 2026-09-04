@@ -92,6 +92,16 @@ public:
     CompiledModuleSession createSession(
         std::shared_ptr<RuntimeSessionState> state = {}) const;
 
+    size_t callableContextIdentity() const noexcept;
+    RuntimeSourceCallableInvocationResult invokeCallable(
+        const RuntimeValue& callable,
+        const std::vector<RuntimeValue>& arguments,
+        size_t requestedOutputCount,
+        const std::shared_ptr<RuntimeSessionState>& state,
+        const std::shared_ptr<RuntimeExecutionControl>& executionControl,
+        ModuleExecutionBackend backend,
+        const RuntimeSourceCallableInvoker& externalInvoker) const;
+
 private:
     CompiledModule();
     friend class CompiledModuleSession;

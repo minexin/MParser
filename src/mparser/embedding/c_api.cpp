@@ -118,6 +118,7 @@ struct DiagnosticFrame {
 };
 
 struct ModuleState;
+struct RuntimeState;
 
 using NumericColumnMajorStorage = std::variant<
     std::monostate,
@@ -135,6 +136,7 @@ using NumericColumnMajorStorage = std::variant<
 struct ValueState {
     mparser::RuntimeValue value;
     std::shared_ptr<ModuleState> owner;
+    std::shared_ptr<RuntimeState> runtimeOwner;
     std::vector<size_t> dimensions;
     size_t elementCount = 0;
     NumericColumnMajorStorage numericRealColumnMajor;
@@ -173,6 +175,22 @@ struct ModuleState {
     std::recursive_mutex sharedGraphMutex;
 };
 
+struct RuntimeState final
+    : std::enable_shared_from_this<RuntimeState> {
+    explicit RuntimeState(
+        std::shared_ptr<mparser::RuntimeSystemContext> systemContext)
+        : session(std::make_shared<mparser::RuntimeSessionState>(
+              std::move(systemContext))) {}
+
+    mparser::RuntimeSourceCallableInvoker callableInvoker(
+        mparser::ModuleExecutionBackend backend,
+        std::shared_ptr<mparser::RuntimeExecutionControl> executionControl);
+
+    std::shared_ptr<mparser::RuntimeSessionState> session;
+    std::map<size_t, std::shared_ptr<ModuleState>> modules;
+    std::recursive_mutex mutex;
+};
+
 struct SessionState {
     SessionState(std::shared_ptr<ModuleState> owner,
                  mparser::CompiledModuleSession created)
@@ -196,6 +214,11 @@ struct mparser_session {
     std::shared_ptr<mparser_c_detail::SessionState> state;
 };
 
+struct mparser_runtime {
+    std::atomic_size_t references{1};
+    std::shared_ptr<mparser_c_detail::RuntimeState> state;
+};
+
 struct mparser_system_context {
     std::atomic_size_t references{1};
     std::shared_ptr<mparser::RuntimeSystemContext> state;
@@ -205,6 +228,7 @@ struct mparser_result {
     std::atomic_size_t references{1};
     mparser::ModuleInvocationResult value;
     std::shared_ptr<mparser_c_detail::ModuleState> owner;
+    std::shared_ptr<mparser_c_detail::RuntimeState> runtimeOwner;
     std::vector<mparser_diagnostic> diagnostics;
 };
 
@@ -219,6 +243,51 @@ struct mparser_cancel_token {
 };
 
 namespace mparser_c_detail {
+
+mparser::RuntimeSourceCallableInvoker RuntimeState::callableInvoker(
+    mparser::ModuleExecutionBackend backend,
+    std::shared_ptr<mparser::RuntimeExecutionControl> executionControl) {
+    const std::weak_ptr<RuntimeState> weakRuntime = weak_from_this();
+    return [weakRuntime, backend,
+            executionControl = std::move(executionControl)](
+               const mparser::RuntimeValue& callable,
+               const std::vector<mparser::RuntimeValue>& arguments,
+               size_t requestedOutputCount, mparser::SourceSpan span,
+               mparser::RuntimeWorkspace*) {
+        mparser::RuntimeSourceCallableInvocationResult result;
+        const auto runtime = weakRuntime.lock();
+        if (!runtime) {
+            result.diagnostics.push_back(mparser::Diagnostic{
+                span, "shared runtime is no longer available",
+                "MParser:RuntimeUnavailable"});
+            return result;
+        }
+        if (!callable.functionHandle ||
+            callable.functionHandle->backend !=
+                mparser::RuntimeFunctionHandleBackend::Bytecode ||
+            !callable.functionHandle->context) {
+            result.diagnostics.push_back(mparser::Diagnostic{
+                span, "cross-module callable is not bytecode-backed",
+                "MParser:InvalidRuntimeCallable"});
+            return result;
+        }
+
+        std::lock_guard lock(runtime->mutex);
+        const auto target = runtime->modules.find(
+            callable.functionHandle->context->identity);
+        if (target == runtime->modules.end() || !target->second) {
+            result.diagnostics.push_back(mparser::Diagnostic{
+                span, "callable owner is not registered in this runtime",
+                "MParser:RuntimeOwnerUnavailable"});
+            return result;
+        }
+        return target->second->module.invokeCallable(
+            callable, arguments, requestedOutputCount, runtime->session,
+            executionControl, backend,
+            runtime->callableInvoker(backend, executionControl));
+    };
+}
+
 namespace {
 
 template <typename Handle>
@@ -939,7 +1008,8 @@ template <typename RuntimeValue>
 mparser_api_status makeValueHandle(
     RuntimeValue&& value,
     std::shared_ptr<ModuleState> owner,
-    mparser_value** outValue) {
+    mparser_value** outValue,
+    std::shared_ptr<RuntimeState> runtimeOwner = {}) {
     if (!outValue) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
@@ -948,9 +1018,13 @@ mparser_api_status makeValueHandle(
         mparser::c_api_test::inject(
             mparser::c_api_test::FaultPoint::ValuePublish);
         std::unique_lock<std::recursive_mutex> sharedGraphLock;
+        std::unique_lock<std::recursive_mutex> runtimeLock;
         const bool requiresModule =
-            owner && runtimeValueRequiresModule(value);
-        if (requiresModule) {
+            (owner || runtimeOwner) && runtimeValueRequiresModule(value);
+        if (requiresModule && runtimeOwner) {
+            runtimeLock = std::unique_lock<std::recursive_mutex>(
+                runtimeOwner->mutex);
+        } else if (requiresModule) {
             sharedGraphLock =
                 std::unique_lock<std::recursive_mutex>(
                     owner->sharedGraphMutex);
@@ -968,6 +1042,7 @@ mparser_api_status makeValueHandle(
             std::forward<RuntimeValue>(value);
         if (requiresModule) {
             state->owner = std::move(owner);
+            state->runtimeOwner = std::move(runtimeOwner);
         }
         mparser::c_api_test::inject(
             mparser::c_api_test::FaultPoint::ExternalValueCaches);
@@ -1131,8 +1206,10 @@ copyNumericBufferElements(
 mparser_api_status ownerForComposedValues(
     const mparser_value* const* values,
     size_t count,
-    std::shared_ptr<ModuleState>& owner) {
+    std::shared_ptr<ModuleState>& owner,
+    std::shared_ptr<RuntimeState>& runtimeOwner) {
     owner.reset();
+    runtimeOwner.reset();
     if (!values && count != 0) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
@@ -1140,14 +1217,23 @@ mparser_api_status ownerForComposedValues(
         if (!values[index] || !values[index]->state) {
             return MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
-        const auto& candidate = values[index]->state->owner;
-        if (!candidate) {
-            continue;
+        const auto& candidateOwner = values[index]->state->owner;
+        const auto& candidateRuntime =
+            values[index]->state->runtimeOwner;
+        if (candidateOwner) {
+            if (runtimeOwner ||
+                (owner && owner != candidateOwner)) {
+                return MPARSER_API_STATUS_OWNER_MISMATCH;
+            }
+            owner = candidateOwner;
         }
-        if (owner && owner != candidate) {
-            return MPARSER_API_STATUS_OWNER_MISMATCH;
+        if (candidateRuntime) {
+            if (owner ||
+                (runtimeOwner && runtimeOwner != candidateRuntime)) {
+                return MPARSER_API_STATUS_OWNER_MISMATCH;
+            }
+            runtimeOwner = candidateRuntime;
         }
-        owner = candidate;
     }
     return MPARSER_API_STATUS_OK;
 }
@@ -1156,8 +1242,17 @@ bool ownerCompatible(
     const mparser_value* value,
     const std::shared_ptr<ModuleState>& module) noexcept {
     return value && value->state &&
+           !value->state->runtimeOwner &&
            (!value->state->owner ||
             value->state->owner == module);
+}
+
+bool ownerCompatible(
+    const mparser_value* value,
+    const std::shared_ptr<RuntimeState>& runtime) noexcept {
+    return value && value->state && !value->state->owner &&
+           (!value->state->runtimeOwner ||
+            value->state->runtimeOwner == runtime);
 }
 
 std::optional<mparser::ModuleExecutionBackend> backend(
@@ -1198,9 +1293,10 @@ mparser_output_kind externalOutputKind(
                : MPARSER_OUTPUT_STANDARD;
 }
 
+template <typename OwnerState>
 mparser_api_status buildRequest(
     const mparser_invocation_options* options,
-    const std::shared_ptr<ModuleState>& module,
+    const std::shared_ptr<OwnerState>& owner,
     mparser::ModuleInvocationRequest& request,
     bool& usesSharedGraph) {
     usesSharedGraph = false;
@@ -1240,14 +1336,15 @@ mparser_api_status buildRequest(
     for (size_t index = 0;
          index < options->argument_count; ++index) {
         const auto* value = options->arguments[index];
-        if (!ownerCompatible(value, module)) {
+        if (!ownerCompatible(value, owner)) {
             return value && value->state
                        ? MPARSER_API_STATUS_OWNER_MISMATCH
                        : MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
         usesSharedGraph =
             usesSharedGraph ||
-            static_cast<bool>(value->state->owner);
+            static_cast<bool>(value->state->owner) ||
+            static_cast<bool>(value->state->runtimeOwner);
         request.arguments.push_back(value->state->value);
     }
     request.initialWorkspace.reserve(
@@ -1259,17 +1356,16 @@ mparser_api_status buildRequest(
         const auto name =
             copyBytes(variable.name, variable.name_size);
         if (!name || name->empty() ||
-            !ownerCompatible(variable.value, module)) {
-            if (variable.value && variable.value->state &&
-                variable.value->state->owner &&
-                variable.value->state->owner != module) {
+            !ownerCompatible(variable.value, owner)) {
+            if (variable.value && variable.value->state) {
                 return MPARSER_API_STATUS_OWNER_MISMATCH;
             }
             return MPARSER_API_STATUS_INVALID_ARGUMENT;
         }
         usesSharedGraph =
             usesSharedGraph ||
-            static_cast<bool>(variable.value->state->owner);
+            static_cast<bool>(variable.value->state->owner) ||
+            static_cast<bool>(variable.value->state->runtimeOwner);
         request.initialWorkspace.push_back(
             mparser::RuntimeVariable{
                 *name, variable.value->state->value});
@@ -1332,7 +1428,8 @@ mparser_api_status buildRequest(
 mparser_api_status makeResultHandle(
     mparser::ModuleInvocationResult result,
     std::shared_ptr<ModuleState> owner,
-    mparser_result** outResult) {
+    mparser_result** outResult,
+    std::shared_ptr<RuntimeState> runtimeOwner = {}) {
     if (!outResult) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
@@ -1343,6 +1440,7 @@ mparser_api_status makeResultHandle(
         auto handle = std::make_unique<mparser_result>();
         handle->value = std::move(result);
         handle->owner = std::move(owner);
+        handle->runtimeOwner = std::move(runtimeOwner);
         mparser::c_api_test::inject(
             mparser::c_api_test::FaultPoint::DiagnosticCopy);
         handle->diagnostics.reserve(
@@ -1395,6 +1493,61 @@ mparser_api_status executeModule(
             mparser::c_api_test::FaultPoint::ExecuteAfterCore);
         return makeResultHandle(
             std::move(result), module->state, outResult);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_api_status executeRuntime(
+    mparser_runtime* runtime,
+    const mparser_module* module,
+    const mparser_invocation_options* options,
+    mparser_result** outResult) {
+    if (!outResult) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *outResult = nullptr;
+    if (!runtime || !runtime->state || !module || !module->state) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (!module->state->module.valid()) {
+        return MPARSER_API_STATUS_COMPILATION_FAILED;
+    }
+    try {
+        std::lock_guard lock(runtime->state->mutex);
+        const size_t contextIdentity =
+            module->state->module.callableContextIdentity();
+        if (contextIdentity == 0) {
+            return MPARSER_API_STATUS_INTERNAL_ERROR;
+        }
+        runtime->state->modules[contextIdentity] = module->state;
+
+        mparser::ModuleInvocationRequest request;
+        bool usesSharedGraph = false;
+        const auto requestStatus = buildRequest(
+            options, runtime->state, request, usesSharedGraph);
+        (void)usesSharedGraph;
+        if (requestStatus != MPARSER_API_STATUS_OK) {
+            return requestStatus;
+        }
+        request.executionControl =
+            std::make_shared<mparser::RuntimeExecutionControl>(
+                request.limits, request.cancellationToken);
+        request.externalCallableInvoker =
+            runtime->state->callableInvoker(
+                request.backend, request.executionControl);
+
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExecuteBeforeCore);
+        auto session = module->state->module.createSession(
+            runtime->state->session);
+        auto result = session.execute(request);
+        mparser::c_api_test::inject(
+            mparser::c_api_test::FaultPoint::ExecuteAfterCore);
+        return makeResultHandle(
+            std::move(result), {}, outResult, runtime->state);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {
@@ -1781,6 +1934,38 @@ mparser_system_capability mparser_system_context_capabilities(
                : MPARSER_SYSTEM_CAPABILITY_NONE;
 }
 
+mparser_api_status mparser_runtime_create(
+    const mparser_system_context* context,
+    mparser_runtime** out_runtime) {
+    if (!out_runtime) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_runtime = nullptr;
+    if (context && !context->state) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        auto* handle = new mparser_runtime;
+        handle->state =
+            std::make_shared<mparser_c_detail::RuntimeState>(
+                context ? context->state : nullptr);
+        *out_runtime = handle;
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+void mparser_runtime_retain(mparser_runtime* runtime) {
+    mparser_c_detail::retainHandle(runtime);
+}
+
+void mparser_runtime_release(mparser_runtime* runtime) {
+    mparser_c_detail::releaseHandle(runtime);
+}
+
 mparser_api_status mparser_module_compile_utf8(
     const char* source,
     size_t source_size,
@@ -2101,6 +2286,69 @@ mparser_api_status mparser_module_execute_with_system_context(
         module, options, context->state, out_result);
 }
 
+mparser_api_status mparser_runtime_execute(
+    mparser_runtime* runtime,
+    const mparser_module* module,
+    const mparser_invocation_options* options,
+    mparser_result** out_result) {
+    return mparser_c_detail::executeRuntime(
+        runtime, module, options, out_result);
+}
+
+mparser_api_status mparser_runtime_clear_global(
+    mparser_runtime* runtime,
+    const char* name,
+    size_t name_size) {
+    if (!runtime || !runtime->state) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        const auto copied =
+            mparser_c_detail::copyBytes(name, name_size);
+        if (!copied || copied->empty()) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        std::lock_guard lock(runtime->state->mutex);
+        runtime->state->session->clearGlobal(*copied);
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_api_status
+mparser_runtime_clear_globals(mparser_runtime* runtime) {
+    if (!runtime || !runtime->state) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::lock_guard lock(runtime->state->mutex);
+        runtime->state->session->clearGlobals();
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_api_status mparser_runtime_reset(mparser_runtime* runtime) {
+    if (!runtime || !runtime->state) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::lock_guard lock(runtime->state->mutex);
+        runtime->state->session->reset();
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
 mparser_api_status mparser_module_create_session(
     const mparser_module* module,
     mparser_session** out_session) {
@@ -2300,7 +2548,8 @@ mparser_api_status mparser_result_output(
         return MPARSER_API_STATUS_OUT_OF_RANGE;
     }
     return mparser_c_detail::makeValueHandle(
-        result->value.outputs[index], result->owner, out_value);
+        result->value.outputs[index], result->owner, out_value,
+        result->runtimeOwner);
 }
 
 size_t
@@ -2392,7 +2641,7 @@ mparser_result_top_level_expression_value(
     }
     return mparser_c_detail::makeValueHandle(
         result->value.topLevelExpressions[index].value,
-        result->owner, out_value);
+        result->owner, out_value, result->runtimeOwner);
 }
 
 uint32_t
@@ -2469,7 +2718,8 @@ mparser_api_status mparser_result_variable(
     }
     const auto& variable = result->value.variables[index];
     const auto status = mparser_c_detail::makeValueHandle(
-        variable.value, result->owner, out_value);
+        variable.value, result->owner, out_value,
+        result->runtimeOwner);
     if (status == MPARSER_API_STATUS_OK) {
         *out_name =
             mparser_c_detail::utf8View(variable.name);
@@ -2867,8 +3117,9 @@ mparser_api_status mparser_value_create_cell(
             return shapeStatus;
         }
         std::shared_ptr<ModuleState> owner;
+        std::shared_ptr<RuntimeState> runtimeOwner;
         const auto ownerStatus = ownerForComposedValues(
-            column_major_elements, element_count, owner);
+            column_major_elements, element_count, owner, runtimeOwner);
         if (ownerStatus != MPARSER_API_STATUS_OK) {
             return ownerStatus;
         }
@@ -2889,7 +3140,8 @@ mparser_api_status mparser_value_create_cell(
                 column_major_elements[index]->state->value;
         }
         return makeValueHandle(
-            std::move(value), std::move(owner), out_value);
+            std::move(value), std::move(owner), out_value,
+            std::move(runtimeOwner));
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {
@@ -2916,6 +3168,7 @@ mparser_api_status mparser_value_create_struct(
         std::vector<std::string> fieldOrder;
         fieldOrder.reserve(field_count);
         std::shared_ptr<ModuleState> owner;
+        std::shared_ptr<RuntimeState> runtimeOwner;
         for (size_t index = 0;
              index < field_count; ++index) {
             const auto& field = fields[index];
@@ -2926,11 +3179,20 @@ mparser_api_status mparser_value_create_struct(
                 return MPARSER_API_STATUS_INVALID_ARGUMENT;
             }
             if (field.value->state->owner) {
-                if (owner &&
-                    owner != field.value->state->owner) {
+                if (runtimeOwner ||
+                    (owner &&
+                     owner != field.value->state->owner)) {
                     return MPARSER_API_STATUS_OWNER_MISMATCH;
                 }
                 owner = field.value->state->owner;
+            }
+            if (field.value->state->runtimeOwner) {
+                if (owner ||
+                    (runtimeOwner &&
+                     runtimeOwner != field.value->state->runtimeOwner)) {
+                    return MPARSER_API_STATUS_OWNER_MISMATCH;
+                }
+                runtimeOwner = field.value->state->runtimeOwner;
             }
             if (!runtimeFields.emplace(
                     *name, field.value->state->value).second) {
@@ -2943,7 +3205,8 @@ mparser_api_status mparser_value_create_struct(
         runtimeValue.fieldOrder = std::move(fieldOrder);
         return makeValueHandle(
             std::move(runtimeValue),
-            std::move(owner), out_value);
+            std::move(owner), out_value,
+            std::move(runtimeOwner));
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {
@@ -3005,7 +3268,9 @@ mparser_value_get_numeric_class(
 uint32_t
 mparser_value_is_module_bound(
     const mparser_value* value) {
-    return value && value->state && value->state->owner
+    return value && value->state &&
+                   (value->state->owner ||
+                    value->state->runtimeOwner)
                ? 1u
                : 0u;
 }
@@ -3157,7 +3422,8 @@ mparser_api_status mparser_value_cell_element(
     }
     return mparser_c_detail::makeValueHandle(
         value->state->value.cells[*offset],
-        value->state->owner, out_element);
+        value->state->owner, out_element,
+        value->state->runtimeOwner);
 }
 
 size_t
@@ -3216,7 +3482,8 @@ mparser_api_status mparser_value_struct_field(
         return MPARSER_API_STATUS_INTERNAL_ERROR;
     }
     return mparser_c_detail::makeValueHandle(
-        field->second, value->state->owner, out_field);
+        field->second, value->state->owner, out_field,
+        value->state->runtimeOwner);
 }
 
 mparser_utf8_view
