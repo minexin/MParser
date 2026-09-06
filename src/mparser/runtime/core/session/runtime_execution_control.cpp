@@ -1,6 +1,7 @@
 #include "mparser/runtime/core/session/runtime_execution_control.h"
 
 #include "mparser/runtime/core/value/runtime_value.h"
+#include "mparser/runtime/core/session/runtime_debugger.h"
 
 #include <algorithm>
 #include <limits>
@@ -56,10 +57,20 @@ bool RuntimeCancellationToken::cancellationRequested() const noexcept {
 
 RuntimeExecutionControl::RuntimeExecutionControl(
     RuntimeExecutionLimits limits,
-    std::optional<RuntimeCancellationToken> cancellation)
+    std::optional<RuntimeCancellationToken> cancellation,
+    std::shared_ptr<RuntimeDebugger> debugger)
     : limits_(limits),
       cancellation_(std::move(cancellation)),
+      debugger_(std::move(debugger)),
       startedAt_(std::chrono::steady_clock::now()) {}
+
+RuntimeDebugger* RuntimeExecutionControl::debugger() const noexcept {
+    return debugger_.get();
+}
+
+void RuntimeExecutionControl::stopFromDebugger() noexcept {
+    stop(RuntimeExecutionStopReason::Cancelled);
+}
 
 const RuntimeExecutionLimits&
 RuntimeExecutionControl::limits() const noexcept {
@@ -67,13 +78,13 @@ RuntimeExecutionControl::limits() const noexcept {
 }
 
 bool RuntimeExecutionControl::active() const noexcept {
-    return limits_.active() || cancellation_.has_value();
+    return limits_.active() || cancellation_.has_value() || debugger_;
 }
 
 bool RuntimeExecutionControl::requiresInstructionCheckpoints()
     const noexcept {
     return limits_.requiresInstructionCheckpoints() ||
-           cancellation_.has_value();
+           cancellation_.has_value() || debugger_;
 }
 
 bool RuntimeExecutionControl::hasArrayByteLimit() const noexcept {

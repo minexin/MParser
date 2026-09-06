@@ -2,6 +2,7 @@
 
 #include "mparser/frontend/diagnostic.h"
 #include "mparser/runtime/core/session/runtime_output.h"
+#include "mparser/runtime/core/session/runtime_execution_control.h"
 #include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/semantic/semantic.h"
@@ -23,6 +24,7 @@ struct InterpreterOptions {
     std::shared_ptr<RuntimeSessionState> sessionState;
     std::shared_ptr<RuntimeCallableContext> callableContext;
     RuntimeOutputSink outputSink;
+    std::shared_ptr<RuntimeExecutionControl> executionControl = {};
 };
 
 class Interpreter {

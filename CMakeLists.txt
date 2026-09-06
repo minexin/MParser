@@ -28,10 +28,10 @@ set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
 set(MPARSER_C_ABI_GENERATION 2)
-set(MPARSER_C_ABI_REVISION 2)
+set(MPARSER_C_ABI_REVISION 3)
 set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision2_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision3_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -265,6 +265,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/core/value/runtime_datetime.cpp
     src/mparser/runtime/core/session/runtime_exception.cpp
     src/mparser/runtime/core/session/runtime_execution_control.cpp
+    src/mparser/runtime/core/session/runtime_debugger.cpp
     src/mparser/runtime/io/runtime_file_io.cpp
     src/mparser/execution/runtime_fallback.cpp
     src/mparser/runtime/core/session/runtime_warning.cpp
@@ -358,12 +359,12 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 124)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 134)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 124 symbols")
+            "C ABI symbol manifest must contain exactly 134 symbols")
     endif()
     file(STRINGS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision1_symbols.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision2_symbols.txt"
         _mparser_previous_c_abi_symbols
         REGEX "^mparser_[A-Za-z0-9_]+$")
     foreach(_mparser_previous_c_abi_symbol IN LISTS
@@ -372,7 +373,7 @@ if(UNIX)
             "${_mparser_previous_c_abi_symbol}" _mparser_symbol_index)
         if(_mparser_symbol_index EQUAL -1)
             message(FATAL_ERROR
-                "C ABI revision 2 removed revision-1 symbol: "
+                "C ABI revision 3 removed revision-2 symbol: "
                 "${_mparser_previous_c_abi_symbol}")
         endif()
     endforeach()
@@ -2832,7 +2833,7 @@ add_test(NAME embedding_unload_stress
         $<TARGET_FILE:mparser_c_api>)
 set_tests_properties(embedding_unload_stress PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "embedding unload stress = 256,abi-generation-2-revision-2"
+        "embedding unload stress = 256,abi-generation-2-revision-3"
     TIMEOUT 120)
 
 add_test(NAME c_api_shared_library_abi
@@ -2844,7 +2845,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 124 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 134 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -2856,7 +2857,30 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-generation-2-revision-2,cpp-api-1.3")
+        "cpp api smoke = 5050,42,21,abi-generation-2-revision-3,cpp-api-1.3")
+
+add_executable(runtime_debugger_smoke_tests tests/runtime_debugger_smoke.cpp)
+target_link_libraries(runtime_debugger_smoke_tests PRIVATE
+    mparser_core Threads::Threads)
+add_test(NAME runtime_debugger_smoke COMMAND runtime_debugger_smoke_tests)
+set_tests_properties(runtime_debugger_smoke PROPERTIES TIMEOUT 30)
+
+add_executable(debugger_api_smoke_tests tests/debugger_api_smoke.cpp)
+target_link_libraries(debugger_api_smoke_tests PRIVATE mparser_cpp_api Threads::Threads)
+add_test(NAME debugger_api_smoke COMMAND debugger_api_smoke_tests)
+set_tests_properties(debugger_api_smoke PROPERTIES TIMEOUT 30)
+
+add_executable(debugger_c_api_smoke_tests tests/debugger_c_api_smoke.c)
+target_link_libraries(debugger_c_api_smoke_tests PRIVATE mparser_c_api)
+set_target_properties(debugger_c_api_smoke_tests PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+add_test(NAME debugger_c_api_smoke COMMAND debugger_c_api_smoke_tests)
+
+add_executable(mparser_cpp_debugger_demo samples/cpp_debugger_demo.cpp)
+target_link_libraries(mparser_cpp_debugger_demo PRIVATE mparser_cpp_api)
+add_test(NAME cpp_debugger_demo_smoke COMMAND mparser_cpp_debugger_demo)
+set_tests_properties(cpp_debugger_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "debugger sdk demo = breakpoint,step-into,step-out,3")
 
 add_executable(shared_runtime_smoke_tests
     tests/shared_runtime_smoke.cpp)
@@ -2903,7 +2927,7 @@ add_test(NAME cpp_shared_runtime_demo_smoke
     COMMAND mparser_cpp_shared_runtime_demo)
 set_tests_properties(cpp_shared_runtime_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "shared runtime sdk = closure-14,object-15-17,global-9,abi-generation-2-revision-2")
+        "shared runtime sdk = closure-14,object-15-17,global-9,abi-generation-2-revision-3")
 
 add_executable(system_context_api_smoke_tests
     tests/system_context_api_smoke.cpp)
@@ -2944,7 +2968,7 @@ add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp sdk = 5050,5,abi-generation-2-revision-2,cpp-api-1.3,host-output-2-2")
+        "cpp sdk = 5050,5,abi-generation-2-revision-3,cpp-api-1.3,host-output-2-2")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
@@ -2993,7 +3017,7 @@ add_test(NAME c_abi_compat_demo_smoke
     COMMAND mparser_c_abi_compat_demo)
 set_tests_properties(c_abi_compat_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "api = 1.3, abi-generation = 2, revision = 2, result = 42, request-bytes = ")
+        "api = 1.3, abi-generation = 2, revision = 3, result = 42, request-bytes = ")
 
 add_executable(mparser_c_source_graph_demo
     samples/c_source_graph_demo.c)
@@ -3229,6 +3253,8 @@ install(FILES
     docs/v1.8.md
     docs/v1.9.md
     docs/v1.10.md
+    docs/v1.11.md
+    docs/debugging-sdk.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -3265,6 +3291,7 @@ install(FILES
     samples/c_embedding_demo.c
     samples/cpp_embedding_demo.cpp
     samples/cpp_shared_runtime_demo.cpp
+    samples/cpp_debugger_demo.cpp
     samples/cpp_system_context_demo.cpp
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m

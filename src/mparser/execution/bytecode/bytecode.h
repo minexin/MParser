@@ -5,6 +5,7 @@
 #include "mparser/frontend/source.h"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -99,6 +100,7 @@ struct BytecodeInstruction {
     bool anonymousBodyOutput = false;
     bool calleeReference = false;
     bool hasIndexContext = false;
+    std::optional<SourceSpan> debugStatement = {};
 };
 
 struct BytecodeFunctionInfo {

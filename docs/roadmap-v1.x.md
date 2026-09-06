@@ -497,6 +497,30 @@ separate batch. Cross-module dynamic object arrays, dynamic object registries,
 external native callback ABI, and parallel Runtime scheduling are intentionally
 not hidden by this milestone.
 
+## v1.11: Host Debugging
+
+The refreshed 2026-09-05 MExecServer observation list confirms that shared
+Runtime, system contexts, meta.class export, workspace operations, and MAT v5
+persistence now work through REST. The next active batch targets its remaining
+SDK breakpoint/pause/stack/local-inspection gap, without modifying either host
+repository or reintroducing shims.
+
+The implementation provides exact-source line breakpoints, pause requests,
+step-into/over/out, cancellation, and read-only frame-local values through the
+public C/C++ SDK. HIR and VM statement checkpoints share a debugger; dynamic
+`eval`, anonymous functions, class/default initialization, and cross-module
+Runtime calls preserve dynamic stack ordering. Native optimization is suppressed
+only when debugging is installed. C ABI revision 3 adds ten symbols and an
+optional invocation tail. See [v1.11.md](v1.11.md) and
+[debugging-sdk.md](debugging-sdk.md) for boundaries and evidence still to collect.
+
+The host still needs to consume this interface in its UI. Script `input` and
+`keyboard` interaction remain subsequent work. The reported singular
+`superclass()` spelling must be checked against MATLAB `superclasses` before
+classifying the reflection request. Graphics remains explicitly out of scope;
+capability-policy denial and stateless SystemContext omission are host
+configuration concerns, not missing kernel builtin implementations.
+
 ## v1.6+: Remaining Semantics And Deeper Optimization
 
 Remaining in-scope parser, extended-persistence, nested-function, dynamic-source-graph,

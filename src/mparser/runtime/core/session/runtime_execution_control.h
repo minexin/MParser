@@ -11,6 +11,7 @@
 namespace mparser {
 
 struct RuntimeValue;
+class RuntimeDebugger;
 
 enum class RuntimeExecutionStopReason {
     None,
@@ -65,7 +66,11 @@ public:
     explicit RuntimeExecutionControl(
         RuntimeExecutionLimits limits = {},
         std::optional<RuntimeCancellationToken> cancellation =
-            std::nullopt);
+            std::nullopt,
+        std::shared_ptr<RuntimeDebugger> debugger = {});
+
+    RuntimeDebugger* debugger() const noexcept;
+    void stopFromDebugger() noexcept;
 
     const RuntimeExecutionLimits& limits() const noexcept;
     bool active() const noexcept;
@@ -91,6 +96,7 @@ private:
 
     RuntimeExecutionLimits limits_;
     std::optional<RuntimeCancellationToken> cancellation_;
+    std::shared_ptr<RuntimeDebugger> debugger_;
     std::chrono::steady_clock::time_point startedAt_;
     RuntimeExecutionStopReason stopReason_ =
         RuntimeExecutionStopReason::None;

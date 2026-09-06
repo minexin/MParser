@@ -1,23 +1,26 @@
 # MParser
 
-Current product and SDK development identity: v1.3.0. The v1.10 batch adds an
-explicit shared Runtime for cross-module closures, objects, globals, and
+Current product and SDK development identity: v1.3.0. The v1.11 batch adds
+host-driven C/C++ debugging with breakpoints, stepping, call stacks, and locals,
+building on the v1.10 shared Runtime for cross-module closures, objects, globals, and
 persistent state on top of the existing session-owned system boundary,
 standard-library coverage, dynamic workspace semantics, MAT v5 persistence,
 and repository-owned C++20 numerical algorithms without Eigen. The active
-development identities are C/C++ source API 1.3, C ABI generation 2 revision 2
-with 124 exports, CLI 1.0, machine result protocol 1.1, and Builtin source
+development identities are C/C++ source API 1.3, C ABI generation 2 revision 3
+with 134 exports, CLI 1.0, machine result protocol 1.1, and Builtin source
 contract 1.17. The v1.3 revision-1 contract is archived; the v1.2 and released
 v1.0 contracts remain immutable historical evidence. Unreleased interfaces move
 together with repository consumers. See
+[debugging SDK](docs/debugging-sdk.md), [docs/v1.11.md](docs/v1.11.md),
 [docs/v1.3.md](docs/v1.3.md), [docs/v1.10.md](docs/v1.10.md),
 [docs/v1.9.md](docs/v1.9.md),
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md), and the
 [external gap plan](docs/v1.x-external-gap-plan.md).
 
 v1.3 advanced C ABI generation 2 additively to revision 1 with a public,
-rooted runtime-system context for C and C++ hosts. The current v1.10 extension
-advances the same generation to revision 2 with a shared Runtime graph. It also closes Cell-valued
+rooted runtime-system context for C and C++ hosts. v1.10 advanced the same
+generation to revision 2 with a shared Runtime graph; v1.11 adds the revision-3
+debugger interface. The development line also closes Cell-valued
 `switch` cases, lexically nested functions with
 shared active-frame captures, direct Cell brace comma-list outputs, and
 implicit indexed Struct creation. Later in-tree batches add literal class-name

@@ -1,4 +1,5 @@
 #include "mparser/execution/bytecode/vm/bytecode_vm.h"
+#include "mparser/runtime/core/session/runtime_debugger.h"
 #include "mparser/semantic/argument_contract.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
 #include "mparser/semantic/function_signature.h"
@@ -1243,6 +1244,8 @@ public:
         scriptModeActive_ = false;
         frames_.clear();
         frames_.push_back(makeRuntimeScriptFrame());
+        RuntimeDebugScope debugScope(executionControl_->debugger(),
+            debugFrameProvider(frames_.back()));
         baseGlobalNames_.clear();
         activePersistentFunctionKeys_.clear();
         activeFunctionFrames_.clear();
@@ -1367,6 +1370,19 @@ public:
     }
 
 private:
+    RuntimeDebugFrameProvider debugFrameProvider(const RuntimeCallFrame& frame) {
+        if (!executionControl_->debugger()) {
+            return {};
+        }
+        return [this, &frame](std::vector<RuntimeDebugFrame>& destination) {
+            appendRuntimeDebugFrame(destination, frame,
+                [this](size_t id) {
+                    return id < semantic_->sources.size()
+                        ? semantic_->sources[id].name : std::string{};
+                }, *sessionState_, frames_);
+        };
+    }
+
     void resetProfiling(size_t instructionCount) {
         if (profilingEnabled_) {
             instructionExecutionCounts_.assign(instructionCount, 0);
@@ -5076,6 +5092,29 @@ private:
 
     std::optional<size_t>
     executeInstruction(const BytecodeInstruction& instruction) {
+        if (auto* debugger = executionControl_->debugger();
+            debugger && instruction.debugStatement && !frames_.empty()) {
+            frames_.back().debugLocation = instruction.debugStatement;
+            bool proceed = false;
+            try {
+                const size_t sourceId =
+                    instruction.debugStatement->begin.sourceId;
+                proceed = debugger->statement(
+                    sourceId < semantic_->sources.size()
+                        ? semantic_->sources[sourceId].name : std::string{},
+                    *instruction.debugStatement);
+            } catch (...) {
+                addDiagnostic(instruction, "debug pause callback failed",
+                              "MParser:DebugCallbackFailed");
+            }
+            if (!proceed) {
+                executionControl_->stopFromDebugger();
+            }
+            if (!executionControl_->checkpoint()) {
+                addExecutionStopDiagnostic(*instruction.debugStatement);
+                return std::nullopt;
+            }
+        }
         if (const auto typedTarget = executeTypedDenseRegion()) {
             return typedTarget;
         }
@@ -11389,6 +11428,8 @@ private:
                 ? 0
                 : static_cast<size_t>(requestedCount),
             info.capturedVariables));
+        RuntimeDebugScope debugScope(executionControl_->debugger(),
+            debugFrameProvider(frames_.back()));
         for (size_t index = 0; index < info.parameters.size(); ++index) {
             if (info.parameters[index] != "~") {
                 currentFrame()[info.parameters[index]] = arguments[index];
@@ -11421,6 +11462,7 @@ private:
                               info.display);
         }
         stack_.resize(stackBase);
+        debugScope.leave();
         frames_.pop_back();
         returnRequested_ = savedReturnRequested;
         currentPc_ = savedPc;
@@ -13991,6 +14033,8 @@ private:
         returnRequested_ = false;
         frames_.push_back(makeRuntimeInitializerFrame(
             member.declaringClass + "." + member.name, member.span));
+        RuntimeDebugScope debugScope(executionControl_->debugger(),
+            debugFrameProvider(frames_.back()));
         activeClassFunctions_.push_back(ActiveClassFunction{
             member.declaringClass,
             "<enumeration-member:" + member.name + ">", {}, nullptr});
@@ -14012,6 +14056,7 @@ private:
         }
 
         activeClassFunctions_.pop_back();
+        debugScope.leave();
         frames_.pop_back();
         stack_ = std::move(savedStack);
         forLoopStack_ = std::move(savedForLoops);
@@ -14428,6 +14473,8 @@ private:
         frames_.push_back(makeRuntimeInitializerFrame(
             property.declaringClass + "." + property.name,
             property.span));
+        RuntimeDebugScope debugScope(executionControl_->debugger(),
+            debugFrameProvider(frames_.back()));
         activeClassFunctions_.push_back(ActiveClassFunction{
             property.declaringClass,
             "<property-default:" + property.name + ">", {}, nullptr});
@@ -14447,6 +14494,7 @@ private:
         }
 
         activeClassFunctions_.pop_back();
+        debugScope.leave();
         frames_.pop_back();
         stack_ = std::move(savedStack);
         forLoopStack_ = std::move(savedForLoops);
@@ -14962,11 +15010,17 @@ private:
         frames_.push_back(makeRuntimeFunctionFrame(
             RuntimeCallFrameKind::Function, traceName, info.span,
             arguments.size(), callerOutputCount));
+        if (executionControl_->debugger()) {
+            frames_.back().debugCaptureOwners = &captureOwners;
+        }
+        RuntimeDebugScope debugScope(executionControl_->debugger(),
+            debugFrameProvider(frames_.back()));
         configurePersistentScope(frames_.back(), info);
         auto validatedArguments =
             validateFunctionArguments(instruction, name, info, arguments,
                                       callerOutputCount);
         if (!validatedArguments) {
+            debugScope.leave();
             frames_.pop_back();
             return missingOutputs(requestedCount);
         }
@@ -15043,6 +15097,7 @@ private:
             }
         }
         activeFunctionFrames_.pop_back();
+        debugScope.leave();
         frames_.pop_back();
         returnRequested_ = savedReturnRequested;
         forLoopStack_ = std::move(savedForLoopStack);

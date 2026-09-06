@@ -10,6 +10,7 @@
 #include "mparser/runtime/core/value/runtime_table.h"
 #include "mparser/runtime/core/value/runtime_timetable.h"
 #include "mparser/runtime/core/session/runtime_session_state.h"
+#include "mparser/runtime/core/session/runtime_debugger.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/io/runtime_system.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
@@ -34,6 +35,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <stdexcept>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -235,6 +237,34 @@ struct mparser_result {
 struct mparser_value {
     std::atomic_size_t references{1};
     std::shared_ptr<mparser_c_detail::ValueState> state;
+};
+
+struct mparser_debug_event {
+    const mparser::RuntimeDebugEvent* event = nullptr;
+    std::shared_ptr<mparser_c_detail::ModuleState> owner;
+    std::shared_ptr<mparser_c_detail::RuntimeState> runtimeOwner;
+};
+
+namespace mparser_c_detail {
+struct DebuggerState {
+    std::shared_ptr<mparser::RuntimeDebugger> debugger;
+    std::recursive_mutex executionMutex;
+    bool executing = false;
+    std::shared_ptr<ModuleState> owner;
+    std::shared_ptr<RuntimeState> runtimeOwner;
+};
+
+thread_local bool debugCallbackActive = false;
+
+struct DebugCallbackGuard {
+    DebugCallbackGuard() { debugCallbackActive = true; }
+    ~DebugCallbackGuard() { debugCallbackActive = false; }
+};
+} // namespace mparser_c_detail
+
+struct mparser_debugger {
+    std::atomic_size_t references{1};
+    std::shared_ptr<mparser_c_detail::DebuggerState> state;
 };
 
 struct mparser_cancel_token {
@@ -1300,6 +1330,9 @@ mparser_api_status buildRequest(
     mparser::ModuleInvocationRequest& request,
     bool& usesSharedGraph) {
     usesSharedGraph = false;
+    if (debugCallbackActive) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
     if (!options) {
         return MPARSER_API_STATUS_OK;
     }
@@ -1425,6 +1458,55 @@ mparser_api_status buildRequest(
     return MPARSER_API_STATUS_OK;
 }
 
+class DebugInvocationScope {
+public:
+    mparser_api_status start(const mparser_invocation_options* options,
+        std::shared_ptr<ModuleState> owner = {},
+        std::shared_ptr<RuntimeState> runtimeOwner = {}) {
+        if (!options || options->struct_size <
+                offsetof(mparser_invocation_options, debugger) +
+                    sizeof(options->debugger) || !options->debugger) {
+            return MPARSER_API_STATUS_OK;
+        }
+        state_ = options->debugger->state;
+        if (!state_ || !state_->debugger) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        lock_ = std::unique_lock(state_->executionMutex, std::try_to_lock);
+        if (!lock_.owns_lock()) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        if (state_->executing) {
+            lock_.unlock();
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        state_->executing = true;
+        state_->owner = std::move(owner);
+        state_->runtimeOwner = std::move(runtimeOwner);
+        return MPARSER_API_STATUS_OK;
+    }
+
+    void attach(mparser::ModuleInvocationRequest& request) const {
+        if (lock_.owns_lock()) {
+            request.executionControl =
+                std::make_shared<mparser::RuntimeExecutionControl>(
+                    request.limits, request.cancellationToken, state_->debugger);
+        }
+    }
+
+    ~DebugInvocationScope() {
+        if (lock_.owns_lock()) {
+            state_->owner.reset();
+            state_->runtimeOwner.reset();
+            state_->executing = false;
+        }
+    }
+
+private:
+    std::shared_ptr<DebuggerState> state_;
+    std::unique_lock<std::recursive_mutex> lock_;
+};
+
 mparser_api_status makeResultHandle(
     mparser::ModuleInvocationResult result,
     std::shared_ptr<ModuleState> owner,
@@ -1479,6 +1561,11 @@ mparser_api_status executeModule(
         if (requestStatus != MPARSER_API_STATUS_OK) {
             return requestStatus;
         }
+        DebugInvocationScope debugScope;
+        const auto debugStatus = debugScope.start(options, module->state);
+        if (debugStatus != MPARSER_API_STATUS_OK) {
+            return debugStatus;
+        }
         request.systemContext = std::move(systemContext);
         std::unique_lock<std::recursive_mutex> sharedGraphLock;
         if (usesSharedGraph) {
@@ -1486,6 +1573,7 @@ mparser_api_status executeModule(
                 std::unique_lock<std::recursive_mutex>(
                     module->state->sharedGraphMutex);
         }
+        debugScope.attach(request);
         mparser::c_api_test::inject(
             mparser::c_api_test::FaultPoint::ExecuteBeforeCore);
         auto result = module->state->module.execute(request);
@@ -1516,14 +1604,11 @@ mparser_api_status executeRuntime(
         return MPARSER_API_STATUS_COMPILATION_FAILED;
     }
     try {
-        std::lock_guard lock(runtime->state->mutex);
         const size_t contextIdentity =
             module->state->module.callableContextIdentity();
         if (contextIdentity == 0) {
             return MPARSER_API_STATUS_INTERNAL_ERROR;
         }
-        runtime->state->modules[contextIdentity] = module->state;
-
         mparser::ModuleInvocationRequest request;
         bool usesSharedGraph = false;
         const auto requestStatus = buildRequest(
@@ -1532,9 +1617,19 @@ mparser_api_status executeRuntime(
         if (requestStatus != MPARSER_API_STATUS_OK) {
             return requestStatus;
         }
-        request.executionControl =
-            std::make_shared<mparser::RuntimeExecutionControl>(
-                request.limits, request.cancellationToken);
+        DebugInvocationScope debugScope;
+        const auto debugStatus = debugScope.start(options, {}, runtime->state);
+        if (debugStatus != MPARSER_API_STATUS_OK) {
+            return debugStatus;
+        }
+        std::lock_guard lock(runtime->state->mutex);
+        runtime->state->modules[contextIdentity] = module->state;
+        debugScope.attach(request);
+        if (!request.executionControl) {
+            request.executionControl =
+                std::make_shared<mparser::RuntimeExecutionControl>(
+                    request.limits, request.cancellationToken);
+        }
         request.externalCallableInvoker =
             runtime->state->callableInvoker(
                 request.backend, request.executionControl);
@@ -2299,7 +2394,7 @@ mparser_api_status mparser_runtime_clear_global(
     mparser_runtime* runtime,
     const char* name,
     size_t name_size) {
-    if (!runtime || !runtime->state) {
+    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2320,7 +2415,7 @@ mparser_api_status mparser_runtime_clear_global(
 
 mparser_api_status
 mparser_runtime_clear_globals(mparser_runtime* runtime) {
-    if (!runtime || !runtime->state) {
+    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2335,7 +2430,7 @@ mparser_runtime_clear_globals(mparser_runtime* runtime) {
 }
 
 mparser_api_status mparser_runtime_reset(mparser_runtime* runtime) {
-    if (!runtime || !runtime->state) {
+    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2401,9 +2496,16 @@ mparser_api_status mparser_session_execute(
             return requestStatus;
         }
         (void)usesSharedGraph;
+        DebugInvocationScope debugScope;
+        const auto debugStatus = debugScope.start(
+            options, session->state->module);
+        if (debugStatus != MPARSER_API_STATUS_OK) {
+            return debugStatus;
+        }
         std::lock_guard sharedGraphLock(
             session->state->module->sharedGraphMutex);
         std::lock_guard lock(session->state->mutex);
+        debugScope.attach(request);
         mparser::c_api_test::inject(
             mparser::c_api_test::FaultPoint::ExecuteBeforeCore);
         auto result = session->state->session.execute(request);
@@ -2424,7 +2526,7 @@ mparser_session_clear_global(
     mparser_session* session,
     const char* name,
     size_t name_size) {
-    if (!session || !session->state) {
+    if (!session || !session->state || mparser_c_detail::debugCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2448,7 +2550,7 @@ mparser_session_clear_global(
 
 mparser_api_status
 mparser_session_clear_globals(mparser_session* session) {
-    if (!session || !session->state) {
+    if (!session || !session->state || mparser_c_detail::debugCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2466,7 +2568,7 @@ mparser_session_clear_globals(mparser_session* session) {
 
 mparser_api_status
 mparser_session_reset(mparser_session* session) {
-    if (!session || !session->state) {
+    if (!session || !session->state || mparser_c_detail::debugCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -3506,6 +3608,159 @@ mparser_value_function_text(const mparser_value* value) {
     }
     return mparser_c_detail::utf8View(
         value->state->functionText);
+}
+
+mparser_api_status mparser_debugger_create(
+    mparser_debug_sink_callback sink, void* user_data,
+    mparser_debugger** out_debugger) {
+    if (!out_debugger) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_debugger = nullptr;
+    if (!sink) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        auto state = std::make_shared<mparser_c_detail::DebuggerState>();
+        const std::weak_ptr<mparser_c_detail::DebuggerState> weak = state;
+        state->debugger = std::make_shared<mparser::RuntimeDebugger>(
+            [weak, sink, user_data](const mparser::RuntimeDebugEvent& event) {
+                const auto active = weak.lock();
+                if (!active) {
+                    return mparser::RuntimeDebugAction::Stop;
+                }
+                const mparser_debug_event view{&event, active->owner,
+                                               active->runtimeOwner};
+                const mparser_c_detail::DebugCallbackGuard callbackGuard;
+                const auto action = sink(user_data, &view);
+                if (action > MPARSER_DEBUG_STOP) {
+                    throw std::invalid_argument("invalid debugger resume action");
+                }
+                return static_cast<mparser::RuntimeDebugAction>(action);
+            });
+        auto handle = std::make_unique<mparser_debugger>();
+        handle->state = std::move(state);
+        *out_debugger = handle.release();
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+void mparser_debugger_retain(mparser_debugger* debugger) {
+    mparser_c_detail::retainHandle(debugger);
+}
+
+void mparser_debugger_release(mparser_debugger* debugger) {
+    mparser_c_detail::releaseHandle(debugger);
+}
+
+mparser_api_status mparser_debugger_set_breakpoints(
+    mparser_debugger* debugger, const mparser_breakpoint* points, size_t count) {
+    if (!debugger || !debugger->state || (!points && count != 0)) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::vector<mparser::RuntimeBreakpoint> breakpoints;
+        breakpoints.reserve(count);
+        for (size_t index = 0; index < count; ++index) {
+            const auto& point = points[index];
+            const auto name = mparser_c_detail::copyBytes(
+                point.source_name.data, point.source_name.size);
+            if (!name || name->empty() || point.line <= 0) {
+                return MPARSER_API_STATUS_INVALID_ARGUMENT;
+            }
+            breakpoints.push_back({*name, point.line});
+        }
+        debugger->state->debugger->setBreakpoints(std::move(breakpoints));
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_api_status mparser_debugger_request_pause(mparser_debugger* debugger) {
+    if (!debugger || !debugger->state) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        debugger->state->debugger->requestPause();
+        return MPARSER_API_STATUS_OK;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_debug_reason mparser_debug_event_reason(const mparser_debug_event* event) {
+    return event && event->event
+        ? static_cast<mparser_debug_reason>(event->event->reason)
+        : MPARSER_DEBUG_STEP;
+}
+
+uint64_t mparser_debug_event_sequence(const mparser_debug_event* event) {
+    return event && event->event ? event->event->sequence : 0;
+}
+
+size_t mparser_debug_event_frame_count(const mparser_debug_event* event) {
+    return event && event->event ? event->event->frames.size() : 0;
+}
+
+mparser_api_status mparser_debug_event_frame(
+    const mparser_debug_event* event, size_t frame_index,
+    mparser_debug_frame_info* out_info) {
+    if (!out_info) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_info = {};
+    if (!event || !event->event) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (frame_index >= event->event->frames.size()) {
+        return MPARSER_API_STATUS_OUT_OF_RANGE;
+    }
+    const auto& frame = event->event->frames[frame_index];
+    *out_info = mparser_debug_frame_info{
+        static_cast<mparser_debug_frame_kind>(frame.kind),
+        mparser_c_detail::utf8View(frame.functionName),
+        mparser_c_detail::utf8View(frame.sourceName),
+        mparser_c_detail::sourcePosition(frame.location.begin),
+        mparser_c_detail::sourcePosition(frame.location.end),
+        frame.suppliedArgumentCount, frame.requestedOutputCount,
+        frame.variables.size()};
+    return MPARSER_API_STATUS_OK;
+}
+
+mparser_api_status mparser_debug_event_variable(
+    const mparser_debug_event* event, size_t frame_index, size_t variable_index,
+    mparser_utf8_view* out_name, mparser_value** out_value) {
+    if (out_name) {
+        *out_name = {};
+    }
+    if (out_value) {
+        *out_value = nullptr;
+    }
+    if (!out_name || !out_value || !event || !event->event) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (frame_index >= event->event->frames.size()) {
+        return MPARSER_API_STATUS_OUT_OF_RANGE;
+    }
+    const auto& variables = event->event->frames[frame_index].variables;
+    if (variable_index >= variables.size()) {
+        return MPARSER_API_STATUS_OUT_OF_RANGE;
+    }
+    const auto variable = std::next(variables.begin(),
+        static_cast<std::ptrdiff_t>(variable_index));
+    const auto status = mparser_c_detail::makeValueHandle(
+        variable->second, event->owner, out_value, event->runtimeOwner);
+    if (status == MPARSER_API_STATUS_OK) {
+        *out_name = mparser_c_detail::utf8View(variable->first);
+    }
+    return status;
 }
 
 mparser_api_status

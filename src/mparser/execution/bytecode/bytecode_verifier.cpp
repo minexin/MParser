@@ -472,6 +472,9 @@ private:
             validateBinding(pc, "receiver binding",
                             instruction.receiverBinding);
             validateSpan(pc, instruction.span);
+            if (instruction.debugStatement) {
+                validateSpan(pc, *instruction.debugStatement);
+            }
             validateFunctionHandleMetadata(pc);
 
             if (instruction.operandCount < 0) {

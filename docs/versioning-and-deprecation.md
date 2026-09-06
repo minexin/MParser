@@ -50,7 +50,7 @@ separate execution products.
 
 `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.3.0`.
 `MPARSER_C_ABI_GENERATION` contains generation `2`, and
-the active header's `MPARSER_C_ABI_REVISION` contains revision `2`.
+the active header's `MPARSER_C_ABI_REVISION` contains revision `3`.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` expose the same
 binary compatibility identifiers at runtime. The generation terminology is
 deliberately distinct from the MParser product version and source API.
@@ -62,9 +62,10 @@ sealed. Exact rules and validation are in `c-abi-compatibility.md`.
 
 The frozen v1.2 candidate is generation 2 revision 0 with 109 exports. The
 v1.3 candidate added eight context-related exports and froze revision 1 with
-117 exports. The current v1.10 development tree adds seven shared-Runtime
-exports and uses revision 2 with 124 exports. It retains generation/SOVERSION 2
-because all earlier layouts and symbols remain present. The v1.2 and v1.3
+117 exports. v1.10 added seven shared-Runtime exports (revision 2, 124 exports).
+The current v1.11 development tree adds ten debugger exports (revision 3, 134
+exports) and an optional caller-sized invocation tail. It retains
+generation/SOVERSION 2 because all earlier prefixes and symbols remain present. The v1.2 and v1.3
 snapshots are archive evidence, not live header inputs.
 
 Repository consumers move with unreleased development headers. An incompatible

@@ -2137,6 +2137,23 @@ live `--help`, then runs both the documented human production sample and the
 `mparser.result` machine sample. Installed-consumer and release-archive gates
 require the same manual set from a relocated SDK.
 
+The v1.11 debugger adds optional statement spans to existing bytecode
+instructions, not a new opcode or alternative evaluator. The HIR interpreter
+and VM register one debug scope per live call frame with a shared
+`RuntimeDebugger` carried by `RuntimeExecutionControl`. Registration follows
+actual dynamic call order across `eval` and cross-module owner callbacks.
+Each scope is removed before its frame is popped. Snapshots refresh global and
+persistent bindings from their session state. Installing a debugger requires
+instruction checkpoints and suppresses Typed/native regions through the
+existing execution-control path; legal code still runs in the VM.
+
+The C boundary reserves a debugger before acquiring language execution locks,
+then starts the resource clock after lock admission. Pause callbacks inspect
+owned value exports with the active module/Runtime owner; same-thread SDK
+reexecution and state mutation are rejected. The host owns the blocking command
+queue and UI, while the kernel owns statement location and frame semantics.
+See [debugging-sdk.md](debugging-sdk.md) for the public contract.
+
 When dynamic features invalidate assumptions, execution should deopt back to
 the baseline bytecode VM. This preserves the declared MATLAB-like subset
 semantics while allowing guarded optimization.

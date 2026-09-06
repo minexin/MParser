@@ -248,10 +248,20 @@ end
         apply.entryFunction = "apply";
         apply.arguments = {closure, mparser::sdk::Value::scalar(4)};
         apply.requestedOutputCount = 1;
+        std::size_t debugPauses = 0;
+        apply.debugger.emplace([&](const mparser::sdk::DebugEvent& event) {
+            ++debugPauses;
+            require(!event.frames.empty() &&
+                        !event.frames.back().variables.empty(),
+                    "installed debugger lost frame locals");
+            return mparser::sdk::DebugAction::StepInto;
+        });
+        apply.debugger->requestPause();
         require(std::abs(scalar(
                     sharedRuntime.execute(runtimeConsumer, apply).output(0)) -
                     14.0) < kTolerance,
                 "shared runtime closure invocation differs");
+        require(debugPauses == 2, "installed cross-module debugger steps differ");
 
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'

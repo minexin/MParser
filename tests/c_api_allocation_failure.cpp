@@ -296,6 +296,15 @@ int main() {
             },
             "cancellation-token creation did not translate std::bad_alloc");
 
+        requireAllocationFailure<mparser_debugger>(
+            [](mparser_debugger** output) {
+                return mparser_debugger_create(
+                    [](void*, const mparser_debug_event*) -> mparser_debug_action {
+                        return MPARSER_DEBUG_CONTINUE;
+                    }, nullptr, output);
+            },
+            "debugger creation did not translate std::bad_alloc");
+
         mparser_system_context_options systemOptions{};
         require(mparser_system_context_options_init(&systemOptions) ==
                     MPARSER_API_STATUS_OK,

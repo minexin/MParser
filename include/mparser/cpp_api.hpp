@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -307,6 +308,7 @@ class Result;
 class Session;
 class Runtime;
 class SystemContext;
+class Debugger;
 
 namespace detail {
 
@@ -491,6 +493,15 @@ struct CancellationPolicy {
     }
     static void release(mparser_cancel_token* value) noexcept {
         mparser_cancel_token_release(value);
+    }
+};
+
+struct DebuggerPolicy {
+    static void retain(mparser_debugger* value) noexcept {
+        mparser_debugger_retain(value);
+    }
+    static void release(mparser_debugger* value) noexcept {
+        mparser_debugger_release(value);
     }
 };
 
@@ -884,6 +895,7 @@ private:
 
     friend struct detail::InvocationBridge;
     friend class Result;
+    friend class Debugger;
 };
 
 struct NamedValue {
@@ -913,6 +925,137 @@ inline Value Value::structure(
         descriptors.data(), descriptors.size(), &created);
     return takeCreated(status, created, "create structure value");
 }
+
+enum class DebugAction : std::uint32_t {
+    Continue = MPARSER_DEBUG_CONTINUE,
+    StepInto = MPARSER_DEBUG_STEP_INTO,
+    StepOver = MPARSER_DEBUG_STEP_OVER,
+    StepOut = MPARSER_DEBUG_STEP_OUT,
+    Stop = MPARSER_DEBUG_STOP,
+};
+
+enum class DebugReason : std::uint32_t {
+    Breakpoint = MPARSER_DEBUG_BREAKPOINT,
+    PauseRequest = MPARSER_DEBUG_PAUSE_REQUEST,
+    Step = MPARSER_DEBUG_STEP,
+};
+
+enum class DebugFrameKind : std::uint32_t {
+    Script = MPARSER_DEBUG_FRAME_SCRIPT,
+    Function = MPARSER_DEBUG_FRAME_FUNCTION,
+    AnonymousFunction = MPARSER_DEBUG_FRAME_ANONYMOUS,
+    Initializer = MPARSER_DEBUG_FRAME_INITIALIZER,
+};
+
+struct Breakpoint {
+    std::string sourceName;
+    std::int32_t line = 1;
+};
+
+struct DebugFrame {
+    DebugFrameKind kind = DebugFrameKind::Script;
+    std::string functionName;
+    SourceRange source;
+    std::size_t suppliedArgumentCount = 0;
+    std::size_t requestedOutputCount = 0;
+    std::vector<NamedValue> variables;
+};
+
+struct DebugEvent {
+    DebugReason reason = DebugReason::Step;
+    std::uint64_t sequence = 0;
+    std::vector<DebugFrame> frames;
+};
+
+using DebugSink = std::function<DebugAction(const DebugEvent&)>;
+
+class Debugger {
+public:
+    explicit Debugger(DebugSink sink)
+        : sink_(std::make_shared<DebugSink>(std::move(sink))) {
+        if (!*sink_) {
+            throw ApiError(MPARSER_API_STATUS_INVALID_ARGUMENT,
+                           "debugger requires a pause callback");
+        }
+        mparser_debugger* created = nullptr;
+        const auto status = mparser_debugger_create(
+            &Debugger::pause, sink_.get(), &created);
+        Handle result(created, detail::adoptHandle);
+        detail::checkStatus(status, "create debugger");
+        handle_ = std::move(result);
+    }
+
+    void setBreakpoints(std::span<const Breakpoint> points) const {
+        std::vector<mparser_breakpoint> descriptors;
+        descriptors.reserve(points.size());
+        for (const auto& point : points) {
+            descriptors.push_back({
+                {point.sourceName.data(), point.sourceName.size()}, point.line});
+        }
+        detail::checkStatus(mparser_debugger_set_breakpoints(
+            requireRaw(), descriptors.data(), descriptors.size()),
+            "set debugger breakpoints");
+    }
+
+    void requestPause() const {
+        detail::checkStatus(mparser_debugger_request_pause(requireRaw()),
+                            "request debugger pause");
+    }
+
+private:
+    using Handle = detail::SharedHandle<mparser_debugger, detail::DebuggerPolicy>;
+
+    [[nodiscard]] mparser_debugger* requireRaw() const {
+        if (!handle_) {
+            throw ApiError(MPARSER_API_STATUS_INVALID_ARGUMENT,
+                           "debugger handle is empty");
+        }
+        return handle_.get();
+    }
+
+    static mparser_debug_action pause(void* userData,
+        const mparser_debug_event* source) noexcept {
+        try {
+            DebugEvent event;
+            event.reason = static_cast<DebugReason>(mparser_debug_event_reason(source));
+            event.sequence = mparser_debug_event_sequence(source);
+            const auto count = mparser_debug_event_frame_count(source);
+            event.frames.reserve(count);
+            for (std::size_t index = 0; index < count; ++index) {
+                mparser_debug_frame_info info{};
+                detail::checkStatus(mparser_debug_event_frame(source, index, &info),
+                                    "read debug frame");
+                DebugFrame frame;
+                frame.kind = static_cast<DebugFrameKind>(info.kind);
+                frame.functionName = detail::copyUtf8(info.function_name);
+                frame.source = SourceRange{detail::copyUtf8(info.source_name),
+                    detail::copyPosition(info.source_begin),
+                    detail::copyPosition(info.source_end)};
+                frame.suppliedArgumentCount = info.supplied_argument_count;
+                frame.requestedOutputCount = info.requested_output_count;
+                frame.variables.reserve(info.variable_count);
+                for (std::size_t variable = 0; variable < info.variable_count; ++variable) {
+                    mparser_utf8_view name{};
+                    mparser_value* raw = nullptr;
+                    const auto status = mparser_debug_event_variable(
+                        source, index, variable, &name, &raw);
+                    auto value = Value::takeCreated(status, raw, "read debug variable");
+                    frame.variables.push_back({detail::copyUtf8(name), std::move(value)});
+                }
+                event.frames.push_back(std::move(frame));
+            }
+            return static_cast<mparser_debug_action>(
+                (*static_cast<DebugSink*>(userData))(event));
+        } catch (...) {
+            // The C boundary converts an invalid action to a debug diagnostic.
+            return static_cast<mparser_debug_action>(-1);
+        }
+    }
+
+    std::shared_ptr<DebugSink> sink_;
+    Handle handle_;
+    friend struct detail::InvocationBridge;
+};
 
 class CancellationToken {
 public:
@@ -1062,6 +1205,7 @@ struct Invocation {
     ExecutionLimits limits;
     std::optional<CancellationToken> cancellationToken;
     OutputSink outputSink;
+    std::optional<Debugger> debugger;
 };
 
 namespace detail {
@@ -1108,6 +1252,8 @@ struct InvocationBridge {
         options.cancellation_token = source.cancellationToken
             ? source.cancellationToken->raw()
             : nullptr;
+        debugger = source.debugger;
+        options.debugger = debugger ? debugger->requireRaw() : nullptr;
         outputSink = source.outputSink;
         if (outputSink) {
             options.output_sink = &InvocationBridge::emitOutput;
@@ -1162,6 +1308,7 @@ public:
     std::vector<mparser_named_value> workspace;
     OutputSink outputSink;
     std::exception_ptr outputSinkException;
+    std::optional<Debugger> debugger;
 };
 
 inline ExecutionSummary copyExecutionSummary(

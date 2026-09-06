@@ -1,4 +1,5 @@
 #include "mparser/execution/interpreter.h"
+#include "mparser/runtime/core/session/runtime_debugger.h"
 #include "mparser/semantic/argument_contract.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
 #include "mparser/semantic/function_signature.h"
@@ -317,6 +318,7 @@ public:
         sessionState_ = options.sessionState
                             ? options.sessionState
                             : std::make_shared<RuntimeSessionState>();
+        executionControl_ = options.executionControl;
         outputEvents_.clear();
         expressionResults_.clear();
         activeIndexContexts_.clear();
@@ -331,6 +333,9 @@ public:
         };
         pendingException_.reset();
         frames_.push_back(makeRuntimeScriptFrame());
+        RuntimeDebugScope debugScope(
+            executionControl_ ? executionControl_->debugger() : nullptr,
+            debugFrameProvider(frames_.back()));
         if (semantic.root) {
             argumentCatalog_ =
                 buildArgumentContractCatalog(*semantic.root);
@@ -363,6 +368,19 @@ public:
     }
 
 private:
+    RuntimeDebugFrameProvider debugFrameProvider(const RuntimeCallFrame& frame) {
+        if (!executionControl_ || !executionControl_->debugger()) {
+            return {};
+        }
+        return [this, &frame](std::vector<RuntimeDebugFrame>& destination) {
+            appendRuntimeDebugFrame(destination, frame,
+                [this](size_t id) {
+                    return id < semantic_->sources.size()
+                        ? semantic_->sources[id].name : std::string{};
+                }, *sessionState_, frames_);
+        };
+    }
+
     enum class ControlSignal {
         None,
         Break,
@@ -626,8 +644,38 @@ private:
     }
 
     bool diagnosticTrapTriggered() const {
-        return diagnosticTrapBase_ &&
-               diagnostics_.size() > *diagnosticTrapBase_;
+        return debugStopped_ || (diagnosticTrapBase_ &&
+               diagnostics_.size() > *diagnosticTrapBase_);
+    }
+
+    bool debugStatement(const HirNode& node) {
+        if (debugStopped_) {
+            return false;
+        }
+        auto* debugger = executionControl_ ? executionControl_->debugger()
+                                          : nullptr;
+        if (!debugger || frames_.empty()) {
+            return true;
+        }
+        frames_.back().debugLocation = node.span;
+        bool proceed = false;
+        try {
+            proceed = executionControl_->checkpoint() &&
+                debugger->statement(sourceFileName(node.span), node.span);
+        } catch (...) {
+            addDiagnostic(node, "debug pause callback failed",
+                          "MParser:DebugCallbackFailed");
+        }
+        if (!proceed) {
+            executionControl_->stopFromDebugger();
+        }
+        if (!executionControl_->checkpoint()) {
+            debugStopped_ = true;
+            addDiagnostic(node, "debug execution stopped",
+                          "MParser:ExecutionCancelled");
+            return false;
+        }
+        return true;
     }
 
     RuntimeWorkspace& currentFrame() {
@@ -769,6 +817,9 @@ private:
     }
 
     void storeVariable(const HirNode& node, RuntimeValue value) {
+        if (debugStopped_) {
+            return;
+        }
         const auto binding = storageBinding(node);
         if (!binding) {
             currentFrame()[node.label] = std::move(value);
@@ -1238,6 +1289,9 @@ private:
             return FunctionCallResult{
                 std::vector<RuntimeValue>(outputCount, missingValue())};
         };
+        if (debugStopped_) {
+            return missingOutputs();
+        }
         const auto resolution =
             resolveArgumentContracts(node, argumentCatalog_);
         if (!resolution.diagnostics.empty()) {
@@ -1353,6 +1407,12 @@ private:
             publicFunctionName(node.label), node.span,
             normalized.positionalArgumentCount, reportedOutputCount,
             std::move(capturedWorkspace)));
+        if (executionControl_ && executionControl_->debugger()) {
+            frames_.back().debugCaptureOwners = &captureOwners;
+        }
+        RuntimeDebugScope debugScope(
+            executionControl_ ? executionControl_->debugger() : nullptr,
+            debugFrameProvider(frames_.back()));
         frames_.back().persistentScope = RuntimePersistentScope{
             callableContext_->identity, persistentFunctionKey(node)};
         frames_.back().dynamicPersistentDeclarationsAllowed =
@@ -1399,21 +1459,25 @@ private:
                        contract->declaration != nullptr &&
                        !contract->declaration->children.empty()) {
                 const size_t diagnosticCount = diagnostics_.size();
-                value =
-                    evaluate(*contract->declaration->children.front());
+                value = debugStatement(*contract->declaration)
+                    ? evaluate(*contract->declaration->children.front())
+                    : missingValue();
                 if (diagnostics_.size() != diagnosticCount) {
+                    debugScope.leave();
                     frames_.pop_back();
                     return missingOutputs();
                 }
             } else {
                 addDiagnostic(node, "required argument is missing for " +
                                         node.label + ": " + parameterName);
+                debugScope.leave();
                 frames_.pop_back();
                 return missingOutputs();
             }
 
             auto validated = validateValue(std::move(value), contract);
             if (!validated) {
+                debugScope.leave();
                 frames_.pop_back();
                 return missingOutputs();
             }
@@ -1446,6 +1510,7 @@ private:
                         positionalArguments[argumentIndex], contract,
                         occurrence);
                     if (!validated) {
+                        debugScope.leave();
                         frames_.pop_back();
                         return missingOutputs();
                     }
@@ -1472,6 +1537,7 @@ private:
                     validateValue(positionalArguments[index], contract,
                                   index - begin);
                 if (!validated) {
+                    debugScope.leave();
                     frames_.pop_back();
                     return missingOutputs();
                 }
@@ -1510,9 +1576,11 @@ private:
                        contract.declaration != nullptr &&
                        !contract.declaration->children.empty()) {
                 const size_t diagnosticCount = diagnostics_.size();
-                value =
-                    evaluate(*contract.declaration->children.front());
+                value = debugStatement(*contract.declaration)
+                    ? evaluate(*contract.declaration->children.front())
+                    : missingValue();
                 if (diagnostics_.size() != diagnosticCount) {
+                    debugScope.leave();
                     frames_.pop_back();
                     return missingOutputs();
                 }
@@ -1522,6 +1590,7 @@ private:
             }
             auto validated = validateValue(std::move(*value), &contract);
             if (!validated) {
+                debugScope.leave();
                 frames_.pop_back();
                 return missingOutputs();
             }
@@ -1551,6 +1620,7 @@ private:
                 frames_[owner].workspace[name] = value->second;
             }
         }
+        debugScope.leave();
         frames_.pop_back();
         const auto outputValidation =
             validateRuntimeFunctionOutputs(completedFrame, outputContracts);
@@ -1574,6 +1644,21 @@ private:
     }
 
     void executeNode(const HirNode& node) {
+        if (debugStopped_) {
+            return;
+        }
+        if (node.kind == HirKind::Assignment ||
+            node.kind == HirKind::GlobalDeclaration ||
+            node.kind == HirKind::PersistentDeclaration ||
+            (node.kind == HirKind::Statement && !node.raw.empty() &&
+             (node.children.empty() ||
+              (node.children.front()->kind != HirKind::Assignment &&
+               node.children.front()->kind != HirKind::Control))) ||
+            (node.kind == HirKind::Control && node.label == "try")) {
+            if (!debugStatement(node)) {
+                return;
+            }
+        }
         switch (node.kind) {
         case HirKind::Module:
             executeModule(node);
@@ -1781,6 +1866,9 @@ private:
     std::vector<RuntimeValue> evaluateValues(
         const HirNode& node, size_t requestedOutputCount,
         bool implicitExpressionOutput = false) {
+        if (debugStopped_) {
+            return std::vector<RuntimeValue>(requestedOutputCount, missingValue());
+        }
         if (node.kind == HirKind::NameRef &&
             node.binding.kind == BindingKind::Builtin) {
             const BuiltinDescriptor* descriptor =
@@ -1889,6 +1977,9 @@ private:
 
     void assignTargetList(const HirNode& target,
                           const std::vector<RuntimeValue>& values) {
+        if (debugStopped_) {
+            return;
+        }
         if (values.size() != target.children.size()) {
             addDiagnostic(target,
                           values.size() < target.children.size()
@@ -1997,7 +2088,7 @@ private:
         for (size_t index = 0; index + 1 < segments.size(); ++index) {
             const auto segment = evaluateLvalueSegment(
                 *segments[index], transaction.current());
-            if (!segment) {
+            if (!segment || debugStopped_) {
                 return true;
             }
             auto descended = transaction.descend(
@@ -2010,7 +2101,7 @@ private:
 
         const auto finalSegment = evaluateLvalueSegment(
             *segments.back(), transaction.current());
-        if (!finalSegment) {
+        if (!finalSegment || debugStopped_) {
             return true;
         }
         auto assigned = transaction.assign(
@@ -2025,6 +2116,9 @@ private:
 
     void assignTarget(const HirNode& target, const RuntimeValue& value,
                       bool nullAssignment = false) {
+        if (debugStopped_) {
+            return;
+        }
         if (assignNestedTarget(target, value, nullAssignment)) {
             return;
         }
@@ -2351,6 +2445,9 @@ private:
     }
 
     void executeFor(const HirNode& node) {
+        if (!debugStatement(node)) {
+            return;
+        }
         if (node.children.empty() ||
             node.children.front()->kind != HirKind::ControlHeader) {
             addDiagnostic(node, "for loop is missing a header");
@@ -2393,9 +2490,15 @@ private:
             }
             if (controlSignal_ == ControlSignal::Continue) {
                 controlSignal_ = ControlSignal::None;
+                if (!debugStatement(node)) {
+                    return;
+                }
                 continue;
             }
             if (controlSignal_ != ControlSignal::None) {
+                return;
+            }
+            if (!debugStatement(node)) {
                 return;
             }
         }
@@ -2577,7 +2680,7 @@ private:
             executeRange(node, bodyBegin, bodyEnd);
         }
 
-        if (controlSignal_ != ControlSignal::None) {
+        if (debugStopped_ || controlSignal_ != ControlSignal::None) {
             return;
         }
         if (diagnostics_.size() == diagnosticBase) {
@@ -2644,6 +2747,9 @@ private:
     }
 
     RuntimeValue evaluateHeader(const HirNode& header) {
+        if (!debugStatement(header)) {
+            return missingValue();
+        }
         if (header.children.empty()) {
             return missingValue();
         }
@@ -2664,6 +2770,9 @@ private:
     }
 
     RuntimeValue evaluate(const HirNode& node) {
+        if (debugStopped_) {
+            return missingValue();
+        }
         switch (node.kind) {
         case HirKind::Statement:
         case HirKind::ControlHeader:
@@ -3598,6 +3707,9 @@ private:
             info.span, arguments.size(),
             callerOutputCount.value_or(requestedOutputCount),
             info.capturedVariables));
+        RuntimeDebugScope debugScope(
+            executionControl_ ? executionControl_->debugger() : nullptr,
+            debugFrameProvider(frames_.back()));
         for (size_t index = 0; index < info.parameters.size(); ++index) {
             if (info.parameters[index] != "~") {
                 currentFrame()[info.parameters[index]] = arguments[index];
@@ -3615,14 +3727,16 @@ private:
                                      : info.display);
             const bool implicitBodyOutput =
                 requestedOutputCount != 0 && callerOutputCount == 0;
-            auto outputs = evaluateValues(*info.hirBody,
-                                          requestedOutputCount,
-                                          implicitBodyOutput);
+            auto outputs = debugStatement(*info.hirBody)
+                ? evaluateValues(*info.hirBody, requestedOutputCount,
+                                 implicitBodyOutput)
+                : std::vector<RuntimeValue>{};
             if (requestedOutputCount != 0 && !outputs.empty()) {
                 output = std::move(outputs.front());
                 producedOutput = true;
             }
         }
+        debugScope.leave();
         frames_.pop_back();
         if (diagnostics_.size() != diagnosticCount) {
             return missingOutputs();
@@ -3922,6 +4036,9 @@ private:
             return FunctionCallResult{std::vector<RuntimeValue>(
                 requestedOutputCount, missingValue())};
         };
+        if (debugStopped_) {
+            return missingOutputs();
+        }
 
         if (const BuiltinDescriptor* descriptor =
                 builtinRegistry().find(name);
@@ -3960,6 +4077,7 @@ private:
                 return sessionState_->replaceDisplayFormat(value);
             };
             BuiltinCallContext context;
+            context.executionControl = executionControl_.get();
             context.workspace = &workspace;
             context.warningContext =
                 sessionState_->warningContext().get();
@@ -4053,6 +4171,7 @@ private:
                             ? semantic_->builtinRegistry
                             : defaultBuiltinRegistry();
                     options.sessionState = sessionState_;
+                    options.executionControl = executionControl_;
                     options.outputSink = runtimeOutputSink_;
                     options.inheritedWorkspaceFrames =
                         workspaceAncestorsFor(request.workspace);
@@ -4632,6 +4751,8 @@ private:
     const SemanticResult* semantic_ = nullptr;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
     std::shared_ptr<RuntimeSessionState> sessionState_;
+    std::shared_ptr<RuntimeExecutionControl> executionControl_;
+    bool debugStopped_ = false;
     std::deque<RuntimeCallFrame> frames_;
     std::vector<ActiveIndexContext> activeIndexContexts_;
     std::vector<std::string> activeFunctionNames_;

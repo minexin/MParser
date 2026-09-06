@@ -128,6 +128,8 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.2.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.3.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.10.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.11.md"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/debugging-sdk.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-documentation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-cross-platform-validation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/c-abi-compatibility.md"

@@ -17,7 +17,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");
-_Static_assert(MPARSER_C_ABI_REVISION == 2u,
+_Static_assert(MPARSER_C_ABI_REVISION == 3u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
                "allocation status changed");
@@ -107,7 +107,7 @@ REQUIRE_OFFSET(mparser_source_position, offset, 0);
 REQUIRE_OFFSET(mparser_source_position, line, 8);
 REQUIRE_OFFSET(mparser_source_position, column, 12);
 
-_Static_assert(sizeof(mparser_invocation_options) == 144,
+_Static_assert(sizeof(mparser_invocation_options) == 152,
                "mparser_invocation_options size changed");
 REQUIRE_OFFSET(mparser_invocation_options, struct_size, 0);
 REQUIRE_OFFSET(mparser_invocation_options, abi_generation, 4);
@@ -128,6 +128,22 @@ REQUIRE_OFFSET(mparser_invocation_options, max_array_bytes, 104);
 REQUIRE_OFFSET(mparser_invocation_options, max_diagnostic_count, 112);
 REQUIRE_OFFSET(mparser_invocation_options, cancellation_token, 120);
 REQUIRE_OFFSET(mparser_invocation_options, output_sink, 128);
+REQUIRE_OFFSET(mparser_invocation_options, debugger, 144);
+
+_Static_assert(sizeof(mparser_breakpoint) == 24,
+               "mparser_breakpoint size changed");
+REQUIRE_OFFSET(mparser_breakpoint, source_name, 0);
+REQUIRE_OFFSET(mparser_breakpoint, line, 16);
+_Static_assert(sizeof(mparser_debug_frame_info) == 96,
+               "mparser_debug_frame_info size changed");
+REQUIRE_OFFSET(mparser_debug_frame_info, kind, 0);
+REQUIRE_OFFSET(mparser_debug_frame_info, function_name, 8);
+REQUIRE_OFFSET(mparser_debug_frame_info, source_name, 24);
+REQUIRE_OFFSET(mparser_debug_frame_info, source_begin, 40);
+REQUIRE_OFFSET(mparser_debug_frame_info, source_end, 56);
+REQUIRE_OFFSET(mparser_debug_frame_info, supplied_argument_count, 72);
+REQUIRE_OFFSET(mparser_debug_frame_info, requested_output_count, 80);
+REQUIRE_OFFSET(mparser_debug_frame_info, variable_count, 88);
 REQUIRE_OFFSET(mparser_invocation_options, output_user_data, 136);
 
 _Static_assert(sizeof(mparser_execution_summary) == 128,

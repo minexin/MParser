@@ -2,7 +2,7 @@
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
 facade. The current v1.10 development boundary reports source API 1.3 over C
-ABI generation 2 revision 2 and includes the public `SystemContext` and
+ABI generation 2 revision 3 and includes the public debugger, `SystemContext`, and
 `Runtime` facades. MParser and the installed SDK report product version
 `1.3.0` until the next candidate stamp; source API, ABI, and protocol
 identifiers remain independently queryable contract metadata.
@@ -327,7 +327,7 @@ Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared Runtime
 closures/objects/state, reentrant callbacks, shared cancellation, isolated
 limits, and concurrent retain/release. The current development library
-contract is ABI generation 2 revision 2 with an exact 124-symbol manifest;
+contract is ABI generation 2 revision 3 with an exact 134-symbol manifest;
 the v1.3 revision-1 117-symbol boundary and archived v1.2 revision-0 109-symbol
 boundary remain immutable evidence. The C++ facade remains header-only rather
 than a C++ binary ABI.
@@ -340,3 +340,13 @@ matrix is run at the milestone gate instead of after every internal batch.
 Distribution licensing is Apache-2.0 with `Copyright 2026 Wang Xin`.
 Candidate archives include the current headers, contract metadata, schema,
 examples, and notices and are validated through their unpacked C/C++ SDK.
+
+## Host Debugger
+
+`Debugger` and `Invocation::debugger` provide source breakpoints, asynchronous
+pause requests, step-into/over/out, cancellation, and per-frame local Values
+through the same Module/Session/Runtime execution calls. The callback receives
+an owned `DebugEvent` suitable for copying to a UI thread. See
+[Debugging Through The SDK](debugging-sdk.md) for exact threading, lifetime,
+source-location, and error rules, and
+[cpp_debugger_demo.cpp](../samples/cpp_debugger_demo.cpp) for a runnable host.

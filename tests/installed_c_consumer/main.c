@@ -343,6 +343,22 @@ cleanup:
     return succeeded;
 }
 
+static mparser_debug_action inspect_installed_frame(
+    void* user_data, const mparser_debug_event* event) {
+    int* pauses = (int*)user_data;
+    mparser_debug_frame_info frame;
+    if (mparser_debug_event_frame_count(event) != 1 ||
+        mparser_debug_event_frame(event, 0, &frame) != MPARSER_API_STATUS_OK ||
+        frame.kind != MPARSER_DEBUG_FRAME_FUNCTION ||
+        frame.supplied_argument_count != 2 || frame.requested_output_count != 2 ||
+        frame.variable_count == 0) {
+        *pauses = -1;
+        return MPARSER_DEBUG_STOP;
+    }
+    ++*pauses;
+    return MPARSER_DEBUG_CONTINUE;
+}
+
 int main(void) {
     mparser_module* module = NULL;
     mparser_value* left = NULL;
@@ -351,6 +367,8 @@ int main(void) {
     mparser_invocation_options options;
     mparser_result* result = NULL;
     int succeeded = 0;
+    mparser_debugger* debugger = NULL;
+    int debug_pauses = 0;
 
     if (mparser_version_major() != MPARSER_EXPECTED_VERSION_MAJOR ||
         mparser_version_minor() != MPARSER_EXPECTED_VERSION_MINOR ||
@@ -379,9 +397,15 @@ int main(void) {
     options.argument_count = 2;
     options.has_requested_output_count = 1;
     options.requested_output_count = 2;
+    if (mparser_debugger_create(inspect_installed_frame, &debug_pauses, &debugger) !=
+            MPARSER_API_STATUS_OK ||
+        mparser_debugger_request_pause(debugger) != MPARSER_API_STATUS_OK) {
+        goto cleanup;
+    }
+    options.debugger = debugger;
     if (mparser_module_execute(module, &options, &result) !=
             MPARSER_API_STATUS_OK ||
-        !mparser_result_succeeded(result) ||
+        !mparser_result_succeeded(result) || debug_pauses != 1 ||
         mparser_result_output_count(result) != 2 ||
         !read_scalar(result, 0, 42.0) ||
         !read_scalar(result, 1, 36.0) ||
@@ -400,6 +424,7 @@ int main(void) {
     succeeded = 1;
 
 cleanup:
+    mparser_debugger_release(debugger);
     mparser_result_release(result);
     mparser_value_release(right);
     mparser_value_release(left);

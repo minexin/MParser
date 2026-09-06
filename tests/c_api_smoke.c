@@ -17,7 +17,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "unexpected C API version");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "unexpected C ABI generation");
-_Static_assert(MPARSER_C_ABI_REVISION == 2u,
+_Static_assert(MPARSER_C_ABI_REVISION == 3u,
                "unexpected C ABI revision");
 _Static_assert(MPARSER_NUMERIC_SINGLE == 2u &&
                    MPARSER_NUMERIC_INT8 == 3u &&
@@ -26,7 +26,7 @@ _Static_assert(MPARSER_NUMERIC_SINGLE == 2u &&
                    MPARSER_NUMERIC_UINT64 == 10u,
                "numeric class identifiers drifted");
 _Static_assert(MPARSER_INVOCATION_OPTIONS_SIZE ==
-                   sizeof(mparser_invocation_options),
+                   offsetof(mparser_invocation_options, debugger),
                "invocation options v1 size drift");
 _Static_assert(MPARSER_EXECUTION_SUMMARY_SIZE ==
                    sizeof(mparser_execution_summary),
@@ -522,7 +522,7 @@ static int run_header_and_diagnostic_smoke(void) {
           MPARSER_API_STATUS_INVALID_ARGUMENT);
     CHECK(mparser_invocation_options_init(&options) ==
           MPARSER_API_STATUS_OK);
-    CHECK(options.struct_size == sizeof(options));
+    CHECK(options.struct_size == MPARSER_INVOCATION_OPTIONS_SIZE);
     CHECK(options.abi_generation == MPARSER_C_ABI_GENERATION);
     CHECK(options.backend == MPARSER_BACKEND_AUTOMATIC);
     CHECK(mparser_execution_summary_init(&summary) ==

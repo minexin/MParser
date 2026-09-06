@@ -3,6 +3,7 @@
 #include "mparser/runtime/core/value/runtime_value.h"
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -33,6 +34,9 @@ struct RuntimeCallFrame {
     std::set<std::string> persistentBindings;
     std::optional<RuntimePersistentScope> persistentScope;
     bool dynamicPersistentDeclarationsAllowed = false;
+    std::optional<SourceSpan> debugLocation = {};
+    // Borrowed from the active function invocation; frames never outlive it.
+    const std::map<std::string, size_t>* debugCaptureOwners = nullptr;
 };
 
 RuntimeCallFrame makeRuntimeScriptFrame(

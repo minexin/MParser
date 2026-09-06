@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 3u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 2u
+#define MPARSER_C_ABI_REVISION 3u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -158,6 +158,8 @@ typedef struct mparser_value mparser_value;
 typedef struct mparser_cancel_token mparser_cancel_token;
 typedef struct mparser_diagnostic mparser_diagnostic;
 typedef struct mparser_system_context mparser_system_context;
+typedef struct mparser_debugger mparser_debugger;
+typedef struct mparser_debug_event mparser_debug_event;
 
 typedef struct mparser_utf8_view {
     const char* data;
@@ -218,6 +220,47 @@ typedef struct mparser_source_position {
     int32_t column;
 } mparser_source_position;
 
+typedef uint32_t mparser_debug_action;
+#define MPARSER_DEBUG_CONTINUE 0u
+#define MPARSER_DEBUG_STEP_INTO 1u
+#define MPARSER_DEBUG_STEP_OVER 2u
+#define MPARSER_DEBUG_STEP_OUT 3u
+#define MPARSER_DEBUG_STOP 4u
+
+typedef uint32_t mparser_debug_reason;
+#define MPARSER_DEBUG_BREAKPOINT 0u
+#define MPARSER_DEBUG_PAUSE_REQUEST 1u
+#define MPARSER_DEBUG_STEP 2u
+
+typedef uint32_t mparser_debug_frame_kind;
+#define MPARSER_DEBUG_FRAME_SCRIPT 0u
+#define MPARSER_DEBUG_FRAME_FUNCTION 1u
+#define MPARSER_DEBUG_FRAME_ANONYMOUS 2u
+#define MPARSER_DEBUG_FRAME_INITIALIZER 3u
+
+typedef struct mparser_breakpoint {
+    mparser_utf8_view source_name;
+    int32_t line;
+} mparser_breakpoint;
+
+typedef struct mparser_debug_frame_info {
+    mparser_debug_frame_kind kind;
+    mparser_utf8_view function_name;
+    mparser_utf8_view source_name;
+    mparser_source_position source_begin;
+    mparser_source_position source_end;
+    size_t supplied_argument_count;
+    size_t requested_output_count;
+    size_t variable_count;
+} mparser_debug_frame_info;
+
+/* The event and its views are borrowed on this thread until the callback returns. The host
+ * may block the execution thread here, inspect the event, then return a resume
+ * action. Do not execute or mutate the paused module/session/runtime from the
+ * callback, or wait for an operation requiring their execution locks. */
+typedef mparser_debug_action (*mparser_debug_sink_callback)(
+    void* user_data, const mparser_debug_event* event);
+
 typedef mparser_output_disposition (*mparser_output_sink_callback)(
     void* user_data,
     uint64_t sequence,
@@ -250,6 +293,8 @@ typedef struct mparser_invocation_options {
     const mparser_cancel_token* cancellation_token;
     mparser_output_sink_callback output_sink;
     void* output_user_data;
+    /* Optional ABI revision 3 tail; ignored when absent from struct_size. */
+    const mparser_debugger* debugger;
 } mparser_invocation_options;
 
 typedef struct mparser_execution_summary {
@@ -318,6 +363,37 @@ MPARSER_C_API uint32_t mparser_version_minor(void);
 MPARSER_C_API uint32_t mparser_version_patch(void);
 MPARSER_C_API mparser_utf8_view
 mparser_api_status_name(mparser_api_status status);
+
+/* A debugger is single-execution. Replace breakpoints and request pause may
+ * run concurrently with execution. Source names match the compiled source
+ * names exactly; a breakpoint stops before every executable statement on its
+ * line. Installing a debugger suppresses optimized regions for that call.
+ * User data must remain alive until all invocations using the handle finish.
+ * Invalid resume actions terminate with MParser:DebugCallbackFailed. */
+MPARSER_C_API mparser_api_status mparser_debugger_create(
+    mparser_debug_sink_callback sink, void* user_data,
+    mparser_debugger** out_debugger);
+MPARSER_C_API void mparser_debugger_retain(mparser_debugger* debugger);
+MPARSER_C_API void mparser_debugger_release(mparser_debugger* debugger);
+MPARSER_C_API mparser_api_status mparser_debugger_set_breakpoints(
+    mparser_debugger* debugger, const mparser_breakpoint* points, size_t count);
+MPARSER_C_API mparser_api_status mparser_debugger_request_pause(
+    mparser_debugger* debugger);
+MPARSER_C_API mparser_debug_reason mparser_debug_event_reason(
+    const mparser_debug_event* event);
+MPARSER_C_API uint64_t mparser_debug_event_sequence(
+    const mparser_debug_event* event);
+MPARSER_C_API size_t mparser_debug_event_frame_count(
+    const mparser_debug_event* event);
+/* Frames are ordered outermost to current. Frame info/views are borrowed. */
+MPARSER_C_API mparser_api_status mparser_debug_event_frame(
+    const mparser_debug_event* event, size_t frame_index,
+    mparser_debug_frame_info* out_info);
+/* The name is borrowed; the returned value is an owned regular SDK value.
+ * Mutable objects/handles retain the usual module/runtime ownership rules. */
+MPARSER_C_API mparser_api_status mparser_debug_event_variable(
+    const mparser_debug_event* event, size_t frame_index, size_t variable_index,
+    mparser_utf8_view* out_name, mparser_value** out_value);
 
 MPARSER_C_API mparser_api_status
 mparser_invocation_options_init(mparser_invocation_options* options);

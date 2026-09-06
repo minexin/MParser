@@ -86,6 +86,7 @@ private:
     }
 
     void lowerNode(const HirNode& node) {
+        const size_t firstInstruction = program_.instructions.size();
         switch (node.kind) {
         case HirKind::Module:
             emitBlock(BytecodeOp::EnterModule, BytecodeOp::LeaveModule, node);
@@ -142,6 +143,7 @@ private:
             if (node.property.hasExplicitDefault && !node.children.empty()) {
                 const size_t enter = emit(BytecodeOp::EnterArgumentDefault, node);
                 lowerExpression(*node.children.front());
+                markDebugStatement(enter + 1, node.span);
                 emit(BytecodeOp::LeaveArgumentDefault, node);
                 patchTarget(enter, program_.instructions.size());
             }
@@ -292,6 +294,7 @@ private:
             if (node.property.hasExplicitDefault) {
                 emitBlock(BytecodeOp::EnterPropertyInitializer,
                           BytecodeOp::LeavePropertyInitializer, node);
+                markDebugStatement(firstInstruction + 1, node.span);
             }
             break;
         case HirKind::Event:
@@ -301,10 +304,27 @@ private:
                  childCount(node));
             lowerChildren(node);
             emit(BytecodeOp::LeaveEnumerationMemberInitializer, node);
+            markDebugStatement(firstInstruction + 1, node.span);
             break;
         case HirKind::Unknown:
             lowerChildren(node);
             break;
+        }
+        if (node.kind == HirKind::Assignment ||
+            node.kind == HirKind::GlobalDeclaration ||
+            node.kind == HirKind::PersistentDeclaration ||
+            (node.kind == HirKind::Statement && !node.raw.empty()) ||
+            (node.kind == HirKind::Control &&
+             (node.label == "for" || node.label == "parfor" ||
+              node.label == "try"))) {
+            markDebugStatement(firstInstruction, node.span);
+        }
+    }
+
+    void markDebugStatement(size_t pc, SourceSpan span) {
+        if (pc < program_.instructions.size() &&
+            !program_.instructions[pc].debugStatement) {
+            program_.instructions[pc].debugStatement = span;
         }
     }
 
@@ -332,6 +352,7 @@ private:
         if (node.children.size() >= 2) {
             const size_t bodyBegin = program_.instructions.size();
             lowerExpression(*node.children[1]);
+            markDebugStatement(bodyBegin, node.children[1]->span);
             if (program_.instructions.size() > bodyBegin &&
                 (node.children[1]->kind == HirKind::CallOrIndex ||
                  node.children[1]->kind == HirKind::NameRef)) {
@@ -506,6 +527,7 @@ private:
         const size_t next =
             emit(BytecodeOp::ForNext, *assignment.children[0], 0,
                  static_cast<int>(body));
+        markDebugStatement(next, node.span);
         const size_t after = program_.instructions.size();
         patchTarget(begin, after);
         for (size_t jump : loop.breaks) {
@@ -613,12 +635,15 @@ private:
             return;
         }
         const HirNode& condition = *header.children.front();
+        const size_t firstInstruction = program_.instructions.size();
         if (condition.kind == HirKind::Statement &&
             condition.children.size() == 1) {
             lowerExpression(*condition.children.front());
+            markDebugStatement(firstInstruction, header.span);
             return;
         }
         lowerExpression(condition);
+        markDebugStatement(firstInstruction, header.span);
     }
 
     std::optional<size_t> findControlArm(

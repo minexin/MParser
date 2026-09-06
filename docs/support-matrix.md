@@ -244,17 +244,19 @@ script fail; it returns to a less specialized tier.
 | --- | --- |
 | CLI | Production `--run`, strict options, stable exit classes, JSON protocol selector |
 | Machine protocol | `mparser.result` 1.1, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
-| C API/ABI | Current development C source API 1.3 over ABI generation 2 revision 2 with 124 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, shared Runtime ownership, opaque retained handles, and caller-sized roots; v1.3 revision 1 and v1.2 revision 0 remain archived |
-| C++ API | Header-only C++20 source API 1.3 over current C ABI generation 2 revision 2, including RAII source metadata, host output projection, rooted `SystemContext`, and shared `Runtime` binding |
+| C API/ABI | Current development C source API 1.3 over ABI generation 2 revision 3 with 134 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, shared Runtime ownership, debugger events/frame locals, opaque retained handles, and caller-sized roots; v1.3 revision 1 and v1.2 revision 0 remain archived |
+| C++ API | Header-only C++20 source API 1.3 over current C ABI generation 2 revision 3, including RAII source metadata, host output projection, rooted `SystemContext`, shared `Runtime`, and `Debugger` binding |
 | Builtin extension | active source contract 1.17 with 328 descriptors and 330 names, using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text/tabular families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, guarded `sum`/`prod`/`mean` Typed lowering, and VM/portable datetime/duration, CSC sparse, categorical, table, timetable, join, and grouping families; v1.2 contract 1.1 remains archived |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
 The C ABI supports copied column-major values, source graphs, compile-once
 invocation, sessions, diagnostics, cancellation, resource summaries,
 synchronous output routing, retained output events, and top-level expression
-results. Revision 1 added capability-gated native contexts; current revision 2
-adds an explicit shared Runtime for cross-module closures, objects, and session
-state. The revision-1 and revision-0 snapshots remain unchanged archive
+results. Revision 1 added capability-gated native contexts; revision 2 added
+an explicit shared Runtime for cross-module closures, objects, and session
+state; revision 3 adds host-driven breakpoints/stepping and frame-local inspection.
+See [Debugging Through The SDK](debugging-sdk.md) for the bounded contract.
+The revision-1 and revision-0 snapshots remain unchanged archive
 evidence.
 Host-created array payloads are copy-in. Returned views remain owned by their
 value/result handles.
@@ -318,7 +320,7 @@ sources, missing test registrations, duplicate IDs, invalid states, and
 version drift.
 
 The v1.0, v1.2, and v1.3 snapshots remain immutable historical evidence. The
-current v1.10 development header uses C source API 1.3, ABI generation 2
-revision 2, C++ source API 1.3, protocol 1.1, and builtin source contract 1.17;
+current v1.11 development header uses C source API 1.3, ABI generation 2
+revision 3, C++ source API 1.3, protocol 1.1, and builtin source contract 1.17;
 it is validated by the shared-runtime and relocated-consumer tests but is not
 yet a frozen release contract. See [v1.x Roadmap](roadmap-v1.x.md).
