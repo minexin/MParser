@@ -532,8 +532,10 @@ Before the feature bundle below, prioritize two reproduced integration defects:
 `while/continue` lowering incorrectly emits a for-only bytecode instruction, and
 mutable `matlab.metadata.DynamicProperty` descriptors fail SDK workspace export.
 The latter also requires testing descriptor reuse across invocations, deletion,
-and owner expiration without reference cycles. These fixes are in progress and
-must pass broad native/no-JIT and applicable platform regression before closure.
+and owner expiration without reference cycles. These fixes landed in `cd55ee2`;
+[CI 34044939704](https://github.com/minexin/MParser/actions/runs/34044939704)
+passed all five native platforms (336/336 each) and Linux ASan/UBSan no-JIT
+(318/318). The interaction/reflection feature bundle below remains open.
 
 The next complete functional bundle addresses the remaining host-observed
 script interaction and class reflection needs:
