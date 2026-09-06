@@ -728,6 +728,11 @@ bool runtimeValueRequiresModule(
             return false;
         }
         if (mparser::isRuntimeMetadataObject(value)) {
+            if (mparser::runtimeMetadataKind(value) ==
+                    mparser::RuntimeMetadataKind::DynamicProperty &&
+                value.sharedFields) {
+                return true;
+            }
             for (const auto& element : value.cells) {
                 if (runtimeValueRequiresModule(element,
                                                 functionHandles,

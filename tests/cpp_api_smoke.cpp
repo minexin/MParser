@@ -384,6 +384,79 @@ superclass_info = class_info.SuperclassList;
     assert(!superclassInfo->value.isModuleBound());
 }
 
+void runDynamicPropertyExportSmoke() {
+    const auto module = Module::compile(R"(
+classdef ExportDynamic < dynamicprops
+end
+obj=ExportDynamic();
+p=addprop(obj,'Value');
+p.GetMethod=@(owner) 42;
+bundle={p,struct('descriptor',p)};
+summary=7;
+function out=inspect(desc)
+desc.Hidden=true;
+out=double(desc.Hidden)+10*isvalid(desc);
+end
+function out=remove(desc)
+delete(desc);
+out=double(isvalid(desc));
+end
+function out=valid(desc)
+out=double(isvalid(desc));
+end
+)", "dynamic_export_cpp.m");
+    assert(module.isValid());
+    for (const auto backend : {Backend::Bytecode, Backend::Automatic,
+                               Backend::Portable, Backend::Native}) {
+        Invocation request;
+        request.backend=backend;
+        const auto result=module.execute(request);
+        assert(result.succeeded());
+        const auto values=result.variables();
+        const auto* descriptor=findVariable(values,"p");
+        const auto* summary=findVariable(values,"summary");
+        const auto* bundle=findVariable(values,"bundle");
+        assert(descriptor && summary && bundle);
+        assert(scalar(summary->value)==7);
+        assert(descriptor->value.className()=="matlab.metadata.DynamicProperty");
+        assert(descriptor->value.isModuleBound());
+        const auto nested=bundle->value.cellElement(1).structField(0,0);
+        assert(nested.isModuleBound());
+        Invocation inspect;
+        inspect.entryFunction="inspect";
+        inspect.arguments={nested};
+        inspect.requestedOutputCount=1;
+        const auto inspected=module.execute(inspect);
+        if (!inspected.succeeded()) {
+            for (const auto& diagnostic : inspected.diagnostics()) {
+                std::cerr << diagnostic.message << '\n';
+            }
+            throw std::runtime_error("exported dynamic property invocation failed");
+        }
+        if (scalar(inspected.output(0)) != 11) {
+            throw std::runtime_error("exported dynamic property lost validity");
+        }
+        inspect.entryFunction = "remove";
+        const auto removed = module.execute(inspect);
+        if (!removed.succeeded() || scalar(removed.output(0)) != 0) {
+            throw std::runtime_error("exported dynamic property deletion failed");
+        }
+    }
+    const auto orphan = [&]() {
+        const auto result = module.execute();
+        const auto values = result.variables();
+        return findVariable(values, "p")->value;
+    }();
+    Invocation validity;
+    validity.entryFunction = "valid";
+    validity.arguments = {orphan};
+    validity.requestedOutputCount = 1;
+    const auto expired = module.execute(validity);
+    if (!expired.succeeded() || scalar(expired.output(0)) != 0) {
+        throw std::runtime_error("dynamic property retained its expired owner");
+    }
+}
+
 Result invoke(
     const Module& module, std::string entry,
     std::vector<Value> arguments = {},
@@ -554,6 +627,12 @@ int main(int argc, char** argv) {
     runValueSmoke();
     runHostOutputSmoke();
     runMetadataExportSmoke();
+    try {
+        runDynamicPropertyExportSmoke();
+    } catch (const std::exception& error) {
+        std::cerr << "dynamic property export: " << error.what() << '\n';
+        return 1;
+    }
     runModuleSmoke(argv[1], argv[2]);
     std::cout << "cpp api smoke = 5050,42,21,abi-generation-"
               << mparser::sdk::abiGeneration() << "-revision-"

@@ -151,10 +151,18 @@ private:
 
     bool validateObjectFields(const RuntimeValue& value,
                               const std::string& path) {
-        // Metadata values are immutable descriptor snapshots.  They use the
-        // object representation for member dispatch, but do not own a
-        // mutable property workspace like ordinary handle objects do.
-        if (isRuntimeMetadataObject(value)) {
+        // Dynamic properties are mutable metadata handles; other metadata
+        // descriptors carry only their immutable identity and array elements.
+        const bool dynamicProperty =
+            runtimeMetadataKind(value) == RuntimeMetadataKind::DynamicProperty &&
+            value.sharedFields;
+        if (dynamicProperty &&
+            (!isRuntimeMetadataScalar(value) || !value.handleObject ||
+             value.opaqueId == 0 || runtimeShapeElementCount(value) != 1 ||
+             !value.cells.empty())) {
+            return fail(path, "dynamic property has invalid handle identity or shape");
+        }
+        if (isRuntimeMetadataObject(value) && !dynamicProperty) {
             if (!value.fields.empty() || value.sharedFields) {
                 return fail(path,
                             "metadata object must not carry property storage");

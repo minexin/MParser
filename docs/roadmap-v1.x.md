@@ -523,6 +523,18 @@ configuration concerns, not missing kernel builtin implementations.
 
 ## v1.12: Script Interaction And Reflection
 
+The host integration notes refreshed on 2026-09-06 report that debugger REST/UI,
+cwd synchronization, and rooted SystemContext for stateless execution are now
+integrated. This supersedes the earlier host-configuration observations above;
+the host reports its own REST regression evidence, not a new kernel CI gate.
+
+Before the feature bundle below, prioritize two reproduced integration defects:
+`while/continue` lowering incorrectly emits a for-only bytecode instruction, and
+mutable `matlab.metadata.DynamicProperty` descriptors fail SDK workspace export.
+The latter also requires testing descriptor reuse across invocations, deletion,
+and owner expiration without reference cycles. These fixes are in progress and
+must pass broad native/no-JIT and applicable platform regression before closure.
+
 The next complete functional bundle addresses the remaining host-observed
 script interaction and class reflection needs:
 

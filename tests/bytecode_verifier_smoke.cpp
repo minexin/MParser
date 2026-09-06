@@ -5,6 +5,7 @@
 #include "mparser/frontend/lexer.h"
 #include "mparser/frontend/parser.h"
 #include "mparser/execution/runtime_fallback.h"
+#include "mparser/execution/interpreter.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/semantic/semantic.h"
 #include "mparser/execution/jit/typed_ir.h"
@@ -218,6 +219,68 @@ after_while = while_value;
     assert(afterFor != nullptr && afterFor->number == 4.0);
     assert(afterWhile != nullptr &&
            afterWhile->number == 1.0);
+}
+
+void runWhileContinueSmoke() {
+    const auto compiled = compile(R"(
+total=0;
+for i=1:2
+    j=0;
+    while j<4
+        j=j+1;
+        try
+            switch j
+                case 2
+                    continue
+                case 4
+                    break
+                otherwise
+                    total=total+i*j;
+            end
+        catch err
+            total=-100;
+        end
+    end
+end
+k=0;
+while k<3
+    k=k+1;
+    for j=1:3
+        if j==2
+            continue
+        end
+        total=total+1;
+    end
+    if k==2
+        continue
+    end
+    total=total+10;
+end
+)");
+    assert(compiled.bytecode.diagnostics.empty());
+    assert(mparser::validateBytecodeProgram(compiled.bytecode,
+                                           &compiled.semantic).succeeded);
+    const auto reference = mparser::Interpreter{}.run(compiled.semantic);
+    assert(reference.diagnostics.empty());
+    const auto hirTotal = std::find_if(reference.variables.begin(),
+        reference.variables.end(), [](const auto& item) { return item.name == "total"; });
+    assert(hirTotal != reference.variables.end() && hirTotal->value.number == 38);
+    const auto result = mparser::BytecodeVm{}.run(compiled.bytecode, compiled.semantic);
+    assert(result.diagnostics.empty());
+    assert(findVariable(result, "total") && findVariable(result, "total")->number == 38);
+
+    auto invalid = compile("j=0; while j<3; j=j+1; continue; end").bytecode;
+    bool changed = false;
+    for (auto& instruction : invalid.instructions) {
+        if (instruction.op == mparser::BytecodeOp::Jump &&
+            instruction.operand == "continue") {
+            instruction.op = mparser::BytecodeOp::Continue;
+            changed = true;
+            break;
+        }
+    }
+    assert(changed);
+    assertInvalid(invalid);
 }
 
 void runMetadataRejectionSmoke() {
@@ -940,6 +1003,7 @@ int main() {
     runValidLoweringSmoke();
     runMultilineDelimitedLoweringSmoke();
     runStructuredTransferSmoke();
+    runWhileContinueSmoke();
     runMetadataRejectionSmoke();
     runControlStructureRejectionSmoke();
     runContextAndStackRejectionSmoke();

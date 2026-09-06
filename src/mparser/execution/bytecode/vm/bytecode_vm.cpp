@@ -7432,7 +7432,7 @@ private:
                value.opaqueId != 0 && value.sharedFields;
     }
 
-    bool dynamicPropertyIsValid(const RuntimeValue& descriptor) const {
+    bool dynamicPropertyIsValid(const RuntimeValue& descriptor) {
         if (!isDynamicPropertyDescriptor(descriptor)) {
             return false;
         }
@@ -7441,6 +7441,22 @@ private:
         if (valid == descriptor.sharedFields->end() ||
             !truthy(valid->second)) {
             return false;
+        }
+        if (descriptor.dynamicPropertyOwner) {
+            const auto ownerFields = descriptor.dynamicPropertyOwner->fields.lock();
+            if (!ownerFields) {
+                return false;
+            }
+            const auto stored = ownerFields->find(
+                dynamicPropertyDescriptorKey(dynamicPropertyName(descriptor)));
+            if (stored == ownerFields->end() ||
+                stored->second.sharedFields != descriptor.sharedFields) {
+                return false;
+            }
+            RuntimeValue owner;
+            owner.sharedFields = ownerFields;
+            owner.className = descriptor.dynamicPropertyOwner->className;
+            registerDynamicProperty(owner, descriptor);
         }
         const auto record = dynamicProperties_.find(descriptor.opaqueId);
         if (record == dynamicProperties_.end() ||
@@ -7669,6 +7685,10 @@ private:
         const size_t id = nextDynamicPropertyId_++;
         RuntimeValue descriptor =
             makeDynamicPropertyDescriptor(id, name);
+        descriptor.dynamicPropertyOwner =
+            std::make_shared<RuntimeDynamicPropertyOwner>();
+        descriptor.dynamicPropertyOwner->fields = owner.sharedFields;
+        descriptor.dynamicPropertyOwner->className = owner.className;
         (*owner.sharedFields)[dynamicPropertyDescriptorKey(name)] =
             descriptor;
         (*owner.sharedFields)[dynamicPropertyValueKey(id)] =
@@ -13014,7 +13034,7 @@ private:
         return logicalValue(false);
     }
 
-    RuntimeValue eventListenerIsValid(const RuntimeValue& value) const {
+    RuntimeValue eventListenerIsValid(const RuntimeValue& value) {
         if (isRuntimeClassObject(value) &&
             !isRuntimeScalarObject(value)) {
             std::vector<double> valid;

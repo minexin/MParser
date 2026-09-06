@@ -82,6 +82,7 @@ struct RuntimeFunctionHandle;
 struct RuntimeCategoricalStorage;
 struct RuntimeSparseStorage;
 struct RuntimeTabularStorage;
+struct RuntimeDynamicPropertyOwner;
 
 struct RuntimeValue {
   RuntimeValueKind kind = RuntimeValueKind::Missing;
@@ -104,6 +105,7 @@ struct RuntimeValue {
   std::vector<RuntimeValue> objectElements;
   std::vector<std::string> fieldOrder;
   std::shared_ptr<std::map<std::string, RuntimeValue>> sharedFields;
+  std::shared_ptr<RuntimeDynamicPropertyOwner> dynamicPropertyOwner;
   std::shared_ptr<RuntimeFunctionHandle> functionHandle;
   // Sparse numeric payloads are shared and copied on write, just like other
   // immutable runtime values.  The payload is intentionally opaque to the
@@ -125,6 +127,12 @@ struct RuntimeValue {
 };
 
 using RuntimeWorkspace = std::map<std::string, RuntimeValue>;
+
+// Descriptors must survive invocation boundaries without keeping owners alive.
+struct RuntimeDynamicPropertyOwner {
+  std::weak_ptr<RuntimeWorkspace> fields;
+  std::string className;
+};
 
 struct RuntimeFunctionHandle {
   size_t identity = 0;

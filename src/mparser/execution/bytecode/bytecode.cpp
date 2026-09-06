@@ -375,7 +375,9 @@ private:
             return true;
         }
         if (node.label == "continue") {
-            const size_t index = emit(BytecodeOp::Continue, node);
+            const size_t index = emit(
+                !loopStack_.empty() && !loopStack_.back().isFor
+                    ? BytecodeOp::Jump : BytecodeOp::Continue, node);
             if (!loopStack_.empty()) {
                 loopStack_.back().continues.push_back(index);
             }

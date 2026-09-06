@@ -2,6 +2,7 @@
 #include "mparser/runtime/core/session/runtime_call_frame.h"
 #include "mparser/execution/runtime_fallback.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 
@@ -96,6 +97,32 @@ void runValueFactoryContractSmoke() {
     assert(mparser::runtimeValueKindName(
                mparser::RuntimeValueKind::FunctionHandle) ==
            "function-handle");
+}
+
+void runDynamicMetadataContractSmoke() {
+    auto descriptor = mparser::makeRuntimeMetadataObject(
+        mparser::RuntimeMetadataKind::DynamicProperty, "dynamic-property/1");
+    descriptor.opaqueId = 1;
+    descriptor.sharedFields = std::make_shared<mparser::RuntimeWorkspace>();
+    (*descriptor.sharedFields)["Name"] =
+        mparser::makeRuntimeCharacterVectorUtf8("Value");
+    assertValid(descriptor);
+    assertValid(mparser::makeRuntimeCellValue({descriptor}));
+
+    auto invalid = descriptor;
+    invalid.handleObject = false;
+    assertInvalid(invalid, "invalid handle identity or shape");
+    invalid = descriptor;
+    invalid.opaqueId = 0;
+    assertInvalid(invalid, "invalid handle identity or shape");
+    invalid = descriptor;
+    invalid.fields["Name"] = mparser::makeRuntimeNumberValue(1);
+    assertInvalid(invalid, "shared field storage");
+
+    auto immutable = mparser::makeRuntimeMetadataObject(
+        mparser::RuntimeMetadataKind::Class, "Example");
+    immutable.sharedFields = descriptor.sharedFields;
+    assertInvalid(immutable, "metadata object must not carry property storage");
 }
 
 void runCopyAndIdentityContractSmoke() {
@@ -321,6 +348,7 @@ end
 } // namespace
 
 int main() {
+    runDynamicMetadataContractSmoke();
     runValueFactoryContractSmoke();
     runCopyAndIdentityContractSmoke();
     runInvalidValueContractSmoke();
