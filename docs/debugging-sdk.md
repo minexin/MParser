@@ -93,5 +93,6 @@ Module/Session/Runtime entry points, retained Values, threaded pause/resume,
 reentry, callback failure, and cancellation. `debugger_c_api_smoke` independently
 builds as C11 and checks the raw callback and caller-sized tail contract.
 
-The development batch is not a cross-platform release claim until the native,
-no-JIT, sanitizer, installed-consumer, and applicable platform CI gates pass.
+The native, no-JIT, sanitizer, installed-consumer, and applicable platform CI
+gates passed for this development batch; see [v1.11.md](v1.11.md) for the exact
+commit and evidence. This does not claim completion of host UI integration.

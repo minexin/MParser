@@ -501,7 +501,7 @@ not hidden by this milestone.
 
 The refreshed 2026-09-05 MExecServer observation list confirms that shared
 Runtime, system contexts, meta.class export, workspace operations, and MAT v5
-persistence now work through REST. The next active batch targets its remaining
+persistence now work through REST. This completed batch addresses its remaining
 SDK breakpoint/pause/stack/local-inspection gap, without modifying either host
 repository or reintroducing shims.
 
@@ -512,14 +512,38 @@ public C/C++ SDK. HIR and VM statement checkpoints share a debugger; dynamic
 Runtime calls preserve dynamic stack ordering. Native optimization is suppressed
 only when debugging is installed. C ABI revision 3 adds ten symbols and an
 optional invocation tail. See [v1.11.md](v1.11.md) and
-[debugging-sdk.md](debugging-sdk.md) for boundaries and evidence still to collect.
+[debugging-sdk.md](debugging-sdk.md) for boundaries and completed local/CI evidence.
 
 The host still needs to consume this interface in its UI. Script `input` and
-`keyboard` interaction remain subsequent work. The reported singular
-`superclass()` spelling must be checked against MATLAB `superclasses` before
-classifying the reflection request. Graphics remains explicitly out of scope;
+`keyboard` interaction remain subsequent work. MATLAB R2024b verification confirms
+that the reflection function is `superclasses`; singular `superclass` is absent.
+Graphics remains explicitly out of scope;
 capability-policy denial and stateless SystemContext omission are host
 configuration concerns, not missing kernel builtin implementations.
+
+## v1.12: Script Interaction And Reflection
+
+The next complete functional bundle addresses the remaining host-observed
+script interaction and class reflection needs:
+
+- A host input callback shared by CLI and C/C++ invocation paths, with explicit
+  end-of-input, cancellation, callback errors, ownership, and nested-call rules.
+- `input(prompt)` evaluates expressions in the current workspace, returns an
+  empty matrix for empty input, and reports invalid expressions before retrying;
+  `input(prompt,'s')` returns the exact input as a character vector.
+- `keyboard` enters the current workspace, supports inspecting and changing
+  variables, continues with `dbcont`, and aborts with `dbquit`. Use the existing
+  source-evaluation and execution-control paths, with runnable CLI and SDK hosts.
+- `superclasses` supports documented class-name/object inputs and visibility
+  semantics through the existing class catalog and builtin registry.
+- Cover valid timetable construction with named variables and reject the
+  reported invalid form; do not introduce a compatibility alias for that form.
+
+The interaction semantics follow the official [input documentation](https://www.mathworks.com/help/matlab/ref/input.html)
+and [keyboard documentation](https://www.mathworks.com/help/matlab/ref/keyboard.html).
+The milestone requires current-workspace/function/handle cases, native/no-JIT
+agreement, unavailable-input and cancellation tests, installed SDK consumers,
+samples, documentation, and applicable platform CI before closure.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 
