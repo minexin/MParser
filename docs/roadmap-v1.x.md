@@ -559,6 +559,26 @@ The milestone requires current-workspace/function/handle cases, native/no-JIT
 agreement, unavailable-input and cancellation tests, installed SDK consumers,
 samples, documentation, and applicable platform CI before closure.
 
+Current implementation and local/external evidence are recorded in
+[v1.12.md](v1.12.md). Platform validation remains pending.
+
+## v1.13: Debugger Evaluation And Control
+
+The 2026-09-06 MExecServer section 4/12 refresh explicitly retains selected-frame
+expression evaluation, local assignment, conditional breakpoints, and source
+`db*` commands. Preserve these as subsequent work after v1.12. The v1.11 SDK
+supports read-only snapshots; v1.12 keyboard commands operate at the script's
+current workspace, so neither closes selected-frame debugger mutation.
+
+This batch must define paused-frame lifetime and identity, evaluate and assign
+on the execution thread, preserve lexical/global/persistent bindings, and expose
+deterministic errors and capability/cancellation behavior through public C/C++
+interfaces. Conditional breakpoints must evaluate in the stopped frame and
+report invalid conditions without silently continuing. Tests must cover nested
+and cross-module frames, interpreter/VM agreement, installed consumers, and
+host-consumable examples before closure. Specify the supported source debugger
+commands and their interaction with host control as part of that contract.
+
 ## v1.6+: Remaining Semantics And Deeper Optimization
 
 Remaining in-scope parser, extended-persistence, nested-function, dynamic-source-graph,

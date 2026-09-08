@@ -508,9 +508,80 @@ end
 
 } // namespace
 
+void runSuperclassesSmoke() {
+    const auto compiled = compile(R"(
+classdef HierarchyRoot < handle
+end
+classdef (Hidden) HierarchyHidden < HierarchyRoot
+end
+classdef HierarchyLeft < HierarchyHidden
+end
+classdef HierarchyRight < HierarchyRoot
+end
+classdef HierarchyLeaf < HierarchyLeft & HierarchyRight
+end
+names=superclasses('HierarchyLeaf');
+emptyNames=superclasses('double');
+integerNames=superclasses("int8");
+numericNames=superclasses(3);
+unknownNames=superclasses('UnavailableClass');
+metadataNames=superclasses('meta.DynamicProperty');
+)");
+    for (const bool reference : {false, true}) {
+        std::vector<mparser::RuntimeVariable> variables;
+        std::vector<mparser::Diagnostic> diagnostics;
+        if (reference) {
+            const auto result = mparser::Interpreter{}.run(compiled.semantic);
+            variables = result.variables;
+            diagnostics = result.diagnostics;
+        } else {
+            const auto result = mparser::BytecodeVm{}.run(compiled.bytecode, compiled.semantic);
+            variables = result.variables;
+            diagnostics = result.diagnostics;
+        }
+        require(diagnostics.empty(), diagnosticsText(diagnostics));
+        const auto check = [&](std::string_view name, std::vector<std::string> expected) {
+            const auto found = std::find_if(variables.begin(), variables.end(),
+                [&](const auto& value) { return value.name == name; });
+            require(found != variables.end(), "superclasses result missing");
+            const auto& value = found->value;
+            require(value.kind == mparser::RuntimeValueKind::Cell &&
+                        value.rows == expected.size() && value.columns == 1,
+                    "superclasses must return a column cell array");
+            require(value.cells.size() == expected.size(), "superclasses count mismatch");
+            for (size_t index = 0; index < expected.size(); ++index) {
+                require(mparser::runtimeTextScalarUtf8(value.cells[index]) == expected[index],
+                        "superclasses ancestor order or visibility mismatch");
+            }
+        };
+        check("names", {"HierarchyLeft", "HierarchyRoot", "handle", "HierarchyRight"});
+        check("emptyNames", {});
+        check("integerNames", {});
+        check("numericNames", {});
+        check("unknownNames", {});
+        check("metadataNames", {"matlab.metadata.Property", "matlab.metadata.MetaData",
+                                "handle", "matlab.mixin.Heterogeneous"});
+    }
+    const auto result = run(R"(
+classdef ReflectionObject < handle
+end
+obj=ReflectionObject();
+objectNames=superclasses([obj,obj]);
+metadataNames=superclasses(?ReflectionObject);
+objectParent=objectNames{1};
+metadataParent=metadataNames{1};
+)");
+    require(result.diagnostics.empty(), diagnosticsText(result.diagnostics));
+    requireText(result, "objectParent", "handle");
+    requireText(result, "metadataParent", "matlab.metadata.MetaData");
+    require(!run("x=superclasses([\"a\",\"b\"]);").diagnostics.empty(),
+            "nonscalar class-name string was accepted");
+}
+
 int main() {
     try {
         runSchemaSmoke();
+        runSuperclassesSmoke();
         runReflectionRuntimeSmoke();
         runReflectionDiagnosticSmoke();
         runValidationHandleIdentitySmoke();

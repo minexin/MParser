@@ -359,6 +359,51 @@ static mparser_debug_action inspect_installed_frame(
     return MPARSER_DEBUG_CONTINUE;
 }
 
+static mparser_input_status read_installed_input(
+    void* user_data, mparser_input_mode mode, mparser_utf8_view prompt,
+    mparser_utf8_view* text, mparser_utf8_view* error) {
+    unsigned* calls = (unsigned*)user_data;
+    (void)error;
+    if (mode != MPARSER_INPUT_TEXT ||
+        !bytes_equal(prompt.data, prompt.size, "sdk: ")) {
+        return MPARSER_INPUT_ERROR;
+    }
+    if (++*calls == 1) {
+        return MPARSER_INPUT_PENDING;
+    }
+    text->data = "  test  ";
+    text->size = 8;
+    return MPARSER_INPUT_READY;
+}
+
+static int run_input_contract(void) {
+    const char source[] = "function out=read_text(); out=length(input('sdk: ','s')); end";
+    mparser_module* module = NULL;
+    mparser_result* result = NULL;
+    mparser_invocation_options options;
+    unsigned calls = 0;
+    int succeeded = 0;
+    if (mparser_invocation_options_init_sized(&options, sizeof(options),
+            MPARSER_C_ABI_GENERATION) != MPARSER_API_STATUS_OK) {
+        return 0;
+    }
+    options.entry_name = "read_text";
+    options.entry_name_size = strlen(options.entry_name);
+    options.has_requested_output_count = 1;
+    options.requested_output_count = 1;
+    options.input_source = read_installed_input;
+    options.input_user_data = &calls;
+    if (mparser_module_compile_utf8(source, strlen(source), "input.m", 7, &module) ==
+            MPARSER_API_STATUS_OK &&
+        mparser_module_execute(module, &options, &result) == MPARSER_API_STATUS_OK &&
+        mparser_result_succeeded(result) && calls == 2 && read_scalar(result, 0, 8)) {
+        succeeded = 1;
+    }
+    mparser_result_release(result);
+    mparser_module_release(module);
+    return succeeded;
+}
+
 int main(void) {
     mparser_module* module = NULL;
     mparser_value* left = NULL;
@@ -411,7 +456,7 @@ int main(void) {
         !read_scalar(result, 1, 36.0) ||
         !run_host_contract() ||
         !run_system_context_contract() ||
-        !run_shared_runtime_contract()) {
+        !run_shared_runtime_contract() || !run_input_contract()) {
         goto cleanup;
     }
 

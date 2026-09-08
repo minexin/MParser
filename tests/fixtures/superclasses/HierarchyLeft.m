@@ -1,0 +1,2 @@
+classdef HierarchyLeft < HierarchyHidden
+end

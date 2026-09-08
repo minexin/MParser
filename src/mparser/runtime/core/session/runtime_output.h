@@ -55,6 +55,8 @@ struct RuntimeOutputEvent {
     std::uint64_t sequence = 0;
     // Preserves source provenance across compiled-module boundaries.
     std::string sourceName;
+    // Dynamic source forwards a recorded transcript after its live emission.
+    bool consoleEmitted = false;
 };
 
 using RuntimeOutputSink =

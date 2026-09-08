@@ -31,6 +31,9 @@ mparser --run --result-format=json-v1 script.m
 
 ## Embed MParser
 
+- [Interactive Script Input](interactive-input.md): host line callbacks for
+  `input` and `keyboard` in v1.12 development.
+- [Superclass Reflection](superclasses.md): visible ancestor queries in v1.12.
 - [C Embedding API](embedding-c-api.md): C source API 1.3 over current ABI
   generation 2 revision 2, with opaque handles, values, sessions, diagnostics,
   cancellation, limits, and shared Runtime ownership.

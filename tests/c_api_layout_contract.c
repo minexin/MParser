@@ -107,7 +107,7 @@ REQUIRE_OFFSET(mparser_source_position, offset, 0);
 REQUIRE_OFFSET(mparser_source_position, line, 8);
 REQUIRE_OFFSET(mparser_source_position, column, 12);
 
-_Static_assert(sizeof(mparser_invocation_options) == 152,
+_Static_assert(sizeof(mparser_invocation_options) == 168,
                "mparser_invocation_options size changed");
 REQUIRE_OFFSET(mparser_invocation_options, struct_size, 0);
 REQUIRE_OFFSET(mparser_invocation_options, abi_generation, 4);
@@ -128,7 +128,10 @@ REQUIRE_OFFSET(mparser_invocation_options, max_array_bytes, 104);
 REQUIRE_OFFSET(mparser_invocation_options, max_diagnostic_count, 112);
 REQUIRE_OFFSET(mparser_invocation_options, cancellation_token, 120);
 REQUIRE_OFFSET(mparser_invocation_options, output_sink, 128);
+REQUIRE_OFFSET(mparser_invocation_options, output_user_data, 136);
 REQUIRE_OFFSET(mparser_invocation_options, debugger, 144);
+REQUIRE_OFFSET(mparser_invocation_options, input_source, 152);
+REQUIRE_OFFSET(mparser_invocation_options, input_user_data, 160);
 
 _Static_assert(sizeof(mparser_breakpoint) == 24,
                "mparser_breakpoint size changed");

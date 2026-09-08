@@ -474,6 +474,106 @@ BuiltinSourceEvaluationResult evaluateSource(
             captureOutput, call.span});
 }
 
+BuiltinResult interactiveBuiltin(std::string_view name, const BuiltinCall& call) {
+    const bool commandMode = name == "keyboard";
+    if (!call.context || !call.context->executionControl ||
+        !call.context->sourceEvaluator) {
+        return failure(call, "interactive execution context is unavailable",
+                       "MParser:MissingBuiltinContext");
+    }
+    RuntimeInputRequest request;
+    request.span = call.span;
+    request.mode = commandMode ? RuntimeInputMode::Command : RuntimeInputMode::Expression;
+    request.prompt = "K>> ";
+    if (!commandMode) {
+        const auto prompt = textArgument(call.arguments[0]);
+        if (!prompt) {
+            return failure(call, "input prompt must be scalar text", "MParser:InvalidInputCall");
+        }
+        request.prompt.clear();
+        for (size_t index = 0; index < prompt->size(); ++index) {
+            const char character = (*prompt)[index];
+            if (character == '\\' && index + 1 < prompt->size()) {
+                const char escaped = (*prompt)[index + 1];
+                if (escaped == 'n' || escaped == '\\') {
+                    request.prompt.push_back(escaped == 'n' ? '\n' : '\\');
+                    ++index;
+                    continue;
+                }
+            }
+            request.prompt.push_back(character);
+        }
+        if (call.arguments.size() == 2) {
+            if (textArgument(call.arguments[1]) != std::optional<std::string>("s")) {
+                return failure(call, "input mode must be 's'", "MParser:InvalidInputCall");
+            }
+            request.mode = RuntimeInputMode::Text;
+        }
+    }
+    auto& control = *call.context->executionControl;
+    for (;;) {
+        auto line = control.readInput(request);
+        if (line.status == RuntimeInputStatus::Stopped) {
+            return failure(call, "interactive execution stopped", "MParser:ExecutionStopped");
+        }
+        if (line.status == RuntimeInputStatus::EndOfInput) {
+            return failure(call, "interactive input reached end of input", "MParser:EndOfInput");
+        }
+        if (line.status != RuntimeInputStatus::Ready) {
+            return failure(call, std::move(line.error), "MParser:InputFailed");
+        }
+        if (request.mode == RuntimeInputMode::Text) {
+            return selectedOutputs(call, {makeRuntimeCharacterVectorUtf8(line.text)});
+        }
+        const auto begin = line.text.find_first_not_of(" \t\r\n");
+        if (begin == std::string::npos) {
+            if (commandMode) {
+                continue;
+            }
+            return selectedOutputs(call, {makeRuntimeMatrixValue(0, 0, {})});
+        }
+        const auto end = line.text.find_last_not_of(" \t\r\n;");
+        const auto command = line.text.substr(begin, end - begin + 1);
+        if (commandMode && (command == "dbcont" || command == "return")) {
+            return BuiltinResult::success();
+        }
+        if (commandMode && command == "dbquit") {
+            control.stopFromDebugger();
+            return failure(call, "keyboard execution aborted", "MParser:ExecutionStopped");
+        }
+        auto evaluated = evaluateSource(call, BuiltinWorkspaceScope::Current,
+            std::move(line.text), commandMode ? 0 : 1, false);
+        if (evaluated.succeeded) {
+            if (commandMode) {
+                continue;
+            }
+            return selectedOutputs(call, std::move(evaluated.outputs));
+        }
+        if (!control.checkpoint()) {
+            return failure(call, "interactive execution stopped", "MParser:ExecutionStopped");
+        }
+        if (std::any_of(evaluated.diagnostics.begin(), evaluated.diagnostics.end(),
+                [](const auto& diagnostic) {
+                    return diagnostic.identifier == "MParser:SystemCapabilityDenied";
+                })) {
+            BuiltinResult denied;
+            denied.diagnostics = std::move(evaluated.diagnostics);
+            return denied;
+        }
+        for (const auto& diagnostic : evaluated.diagnostics) {
+            if (call.context->outputSink && *call.context->outputSink) {
+                RuntimeOutputEvent event;
+                event.text = diagnostic.message + "\n";
+                event.span = call.span;
+                if (!(*call.context->outputSink)(event)) {
+                    return failure(call, "interactive diagnostic output rejected",
+                                   "MParser:OutputSinkRejected");
+                }
+            }
+        }
+    }
+}
+
 BuiltinResult dynamicEvaluationBuiltin(
     std::string_view name, const BuiltinCall& call) {
     const bool evalc = name == "evalc";
@@ -3656,13 +3756,13 @@ BuiltinResult systemBuiltin(const BuiltinCall& call) {
 } // namespace
 
 bool isRuntimeSystemBuiltin(std::string_view name) {
-    static constexpr std::array<std::string_view, 56> names = {
+    static constexpr std::array<std::string_view, 58> names = {
         "addpath", "assignin", "cd", "clear", "clock", "computer",
         "copyfile", "date", "delete", "dir", "eval", "evalc", "evalin", "exist",
         "fclose", "feof", "ferror", "fgetl", "fgets", "fileparts",
         "fileattrib", "fileread", "filesep", "fopen", "format", "fprintf",
         "fread", "frewind", "fscanf", "fseek", "ftell", "fullfile", "fwrite",
-        "getenv", "isfile", "isfolder", "mkdir", "movefile", "path",
+        "getenv", "input", "keyboard", "isfile", "isfolder", "mkdir", "movefile", "path",
         "pathsep", "pause", "pwd", "rand", "randi", "randn",
         "randperm", "rmdir", "rmpath", "rng", "system", "tempdir",
         "tempname", "version", "which", "who", "whos"};
@@ -3671,6 +3771,9 @@ bool isRuntimeSystemBuiltin(std::string_view name) {
 
 BuiltinResult invokeRuntimeSystemBuiltin(
     std::string_view name, const BuiltinCall& call) {
+    if (name == "input" || name == "keyboard") {
+        return interactiveBuiltin(name, call);
+    }
     if (name == "clear") {
         return clearBuiltin(call);
     }

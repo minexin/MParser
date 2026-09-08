@@ -382,6 +382,79 @@ bool runtimeMetadataClassIsa(std::string_view actualClassName,
     return false;
 }
 
+std::optional<std::vector<std::string>> runtimeVisibleSuperclasses(
+    std::string_view name, const RuntimeClassHierarchyLookup& lookup) {
+    const auto hierarchy = [&](const std::string& className)
+        -> std::optional<RuntimeClassHierarchy> {
+        if (const auto userClass = lookup(className)) {
+            return userClass;
+        }
+        if (const auto* type = findRuntimeMetadataTypeDescriptor(className)) {
+            RuntimeClassHierarchy result{{}, type->hiddenClass};
+            if (type->superclass) {
+                result.parents.emplace_back(runtimeMetadataClassName(*type->superclass));
+            } else if (type->handleClass) {
+                result.parents.emplace_back("handle");
+                if (type->kind == RuntimeMetadataKind::MetaData) {
+                    result.parents.emplace_back("matlab.mixin.Heterogeneous");
+                }
+            }
+            return result;
+        }
+        if (className == "event.PropertyEvent") {
+            return RuntimeClassHierarchy{{"event.EventData"}};
+        }
+        if (className == "event.proplistener") {
+            return RuntimeClassHierarchy{{"event.listener"}};
+        }
+        if (className == "dynamicprops" || className == "event.EventData" ||
+            className == "event.listener") {
+            return RuntimeClassHierarchy{{"handle"}};
+        }
+        static constexpr std::string_view roots[] = {
+            "double", "single", "int8", "uint8", "int16", "uint16",
+            "int32", "uint32", "int64", "uint64", "logical", "char",
+            "string", "cell", "struct", "function_handle", "handle",
+            "matlab.mixin.Heterogeneous", "datetime", "duration",
+            "categorical", "table", "timetable", "MException"};
+        if (std::find(std::begin(roots), std::end(roots), className) != std::end(roots)) {
+            return RuntimeClassHierarchy{};
+        }
+        return std::nullopt;
+    };
+    const auto canonical = canonicalRuntimeMetadataClassName(name);
+    if (!hierarchy(canonical)) {
+        return std::vector<std::string>{};
+    }
+    std::vector<std::string> names;
+    std::set<std::string> visited{canonical};
+    // Visit hidden ancestors too, so their visible parents remain discoverable.
+    std::function<bool(const std::string&)> visit = [&](const std::string& current) {
+        const auto entry = hierarchy(current);
+        if (!entry) {
+            return false;
+        }
+        for (const auto& parent : entry->parents) {
+            const auto key = canonicalRuntimeMetadataClassName(parent);
+            if (!visited.insert(key).second) {
+                continue;
+            }
+            const auto parentEntry = hierarchy(key);
+            if (!parentEntry) {
+                return false;
+            }
+            if (!parentEntry->hidden) {
+                names.push_back(key);
+            }
+            if (!visit(key)) {
+                return false;
+            }
+        }
+        return true;
+    };
+    return visit(canonical) ? std::optional(std::move(names)) : std::nullopt;
+}
+
 std::string_view runtimeMetadataClassName(RuntimeMetadataKind kind) {
     return runtimeMetadataTypeDescriptor(kind).canonicalName;
 }

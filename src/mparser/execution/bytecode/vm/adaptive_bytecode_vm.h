@@ -57,6 +57,7 @@ struct AdaptiveBytecodeVmOptions {
     std::vector<RuntimeValue> arguments = {};
     std::optional<size_t> requestedOutputCount = {};
     TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
+    std::shared_ptr<RuntimeExecutionControl> executionControl = {};
 };
 
 struct AdaptiveBytecodeVmRunResult {

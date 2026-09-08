@@ -559,6 +559,10 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
         options.inheritedStorageWorkspace
             ? options.inheritedStorageWorkspace
             : &workspace;
+    const RuntimeConsoleCaptureScope consoleCapture(
+        options.executionControl.get(), request.captureOutput);
+    const bool consoleEmitted = options.executionControl &&
+        options.executionControl->consoleStreaming();
     BytecodeVmResult runtime =
         options.enableTypedRegions
             ? RuntimeSourceEvaluationAccess::invoke(module, vmOptions)
@@ -627,7 +631,7 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
                 "MParser:MissingBuiltinContext"));
         } else if (!options.outputSink(RuntimeOutputEvent{
                        RuntimeOutputKind::StandardOutput,
-                       result.capturedOutput, request.span, 0, {}})) {
+                       result.capturedOutput, request.span, 0, {}, consoleEmitted})) {
             result.diagnostics.push_back(dynamicDiagnostic(
                 request.span,
                 "host output sink rejected dynamic source output",

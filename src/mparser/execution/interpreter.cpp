@@ -328,6 +328,13 @@ public:
                                  const RuntimeOutputEvent& event) {
             auto recorded = event;
             recorded.sequence = nextConsoleSequence_++;
+            if (!recorded.consoleEmitted && executionControl_ &&
+                executionControl_->consoleStreaming()) {
+                if (!executionControl_->emitConsole(recorded.text)) {
+                    return false;
+                }
+                recorded.consoleEmitted = true;
+            }
             outputEvents_.push_back(recorded);
             return !external || external(recorded);
         };
@@ -879,6 +886,13 @@ private:
         if (node.kind == HirKind::Class) {
             className = node.label;
             classNames_.insert(className);
+            classSuperclassesByName_[className] = node.superclasses;
+            for (const auto& attribute : node.attributes) {
+                if (attribute.name == "Hidden") {
+                    classHiddenByName_[className] = attribute.value.empty()
+                        ? !attribute.negated : trimAscii(attribute.value) == "true";
+                }
+            }
         }
 
         std::string childLexicalParent = lexicalParent;
@@ -1696,6 +1710,12 @@ private:
                             node.outputSuppressed,
                             nextConsoleSequence_++, displayText,
                             displayFormat.spacing});
+                    if (executionControl_ && executionControl_->consoleStreaming() &&
+                        !executionControl_->emitConsole(
+                            runtimeRenderConsole({}, {expressionResults_.back()}))) {
+                        addDiagnostic(node, "host console sink rejected expression output",
+                                      "MParser:OutputSinkRejected");
+                    }
                 }
                 break;
             }
@@ -4671,6 +4691,48 @@ private:
             return FunctionCallResult{{characterValue(
                 runtimeValueClassName(arguments.front()))}};
         }
+        if (name == "superclasses") {
+            if (arguments.size() != 1) {
+                addDiagnostic(node,
+                              "superclasses expects a class-name string or object");
+                return FunctionCallResult{{missingValue()}};
+            }
+            std::string className;
+            const auto& value = arguments.front();
+            if (isText(value)) {
+                const auto text = runtimeTextScalarUtf8(value);
+                if (!text) {
+                    addDiagnostic(node,
+                                  "superclasses expects a scalar class name");
+                    return FunctionCallResult{{missingValue()}};
+                }
+                className = *text;
+            } else {
+                className = runtimeValueClassName(value);
+            }
+            const auto names = runtimeVisibleSuperclasses(className,
+                [&](const std::string& candidate) -> std::optional<RuntimeClassHierarchy> {
+                    const auto found = classSuperclassesByName_.find(candidate);
+                    if (found == classSuperclassesByName_.end()) {
+                        return std::nullopt;
+                    }
+                    const auto hidden = classHiddenByName_.find(candidate);
+                    return RuntimeClassHierarchy{found->second,
+                        hidden != classHiddenByName_.end() && hidden->second};
+                });
+            if (!names) {
+                addDiagnostic(node,
+                              "superclass class is not available: " + className);
+                return FunctionCallResult{{missingValue()}};
+            }
+            std::vector<RuntimeValue> cells;
+            cells.reserve(names->size());
+            for (const auto& superclass : *names) {
+                cells.push_back(characterValue(superclass));
+            }
+            return FunctionCallResult{{cellValueForDimensions(
+                {names->size(), 1}, std::move(cells))}};
+        }
         if (name == "isa") {
             const auto target = arguments.size() == 2
                                     ? runtimeTextScalarUtf8(arguments[1])
@@ -4768,6 +4830,8 @@ private:
     std::map<const HirNode*, std::vector<std::string>>
         functionCaptureNames_;
     std::set<std::string> classNames_;
+    std::map<std::string, std::vector<std::string>> classSuperclassesByName_;
+    std::map<std::string, bool> classHiddenByName_;
     ArgumentContractCatalog argumentCatalog_;
     RuntimeWorkspace resultFrame_;
     RuntimeOutputSink runtimeOutputSink_;

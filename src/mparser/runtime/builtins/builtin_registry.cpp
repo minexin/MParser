@@ -167,6 +167,8 @@ constexpr std::string_view kBuiltinNames[] = {
     "int16",
     "int32",
     "int64",
+    "input",
+    "keyboard",
     "int8",
     "int2str",
     "inv",
@@ -269,6 +271,7 @@ constexpr std::string_view kBuiltinNames[] = {
     "polyval",
     "prod",
     "properties",
+    "superclasses",
     "primes",
     "pwd",
     "rand",
@@ -1229,6 +1232,16 @@ bool isZeroOutputIntrinsic(std::string_view name) {
                           "throwAsCaller"});
 }
 
+BuiltinDescriptor reflectionIntrinsicDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.implementation = BuiltinImplementationKind::Intrinsic;
+    descriptor.outputs = BuiltinArity::fixed(1);
+    descriptor.inputs = BuiltinArity::fixed(1);
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.summary = "Class hierarchy reflection intrinsic.";
+    return descriptor;
+}
+
 BuiltinDescriptor zeroOutputIntrinsicDescriptor(std::string_view name) {
     BuiltinDescriptor descriptor = baseDescriptor(name);
     descriptor.outputs = BuiltinArity::fixed(0);
@@ -1246,7 +1259,25 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
     descriptor.summary =
         "Session-scoped MATLAB-like system and workspace operation.";
 
-    if (name == "clear") {
+    if (name == "input" || name == "keyboard") {
+        descriptor.inputs = name == "input" ? BuiltinArity::range(1, 2)
+                                            : BuiltinArity::fixed(0);
+        descriptor.outputs = name == "input" ? BuiltinArity::range(0, 1)
+                                             : BuiltinArity::fixed(0);
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::Workspace |
+            BuiltinSideEffect::Console | BuiltinSideEffect::External |
+            BuiltinSideEffect::ObjectState | BuiltinSideEffect::RandomState |
+            BuiltinSideEffect::WarningState | BuiltinSideEffect::Time |
+            BuiltinSideEffect::DisplayState;
+        descriptor.contextPermissions = BuiltinContextPermission::ExecutionControl |
+            BuiltinContextPermission::SourceEvaluation | BuiltinContextPermission::Output;
+        descriptor.requiredContext = BuiltinContextPermission::ExecutionControl |
+            BuiltinContextPermission::SourceEvaluation;
+        descriptor.implicitOutputPolicy = name == "input"
+            ? BuiltinImplicitOutputPolicy::FirstAvailable
+            : BuiltinImplicitOutputPolicy::None;
+    } else if (name == "clear") {
         descriptor.inputs = BuiltinArity::variadic(0);
         descriptor.outputs = BuiltinArity::fixed(0);
         descriptor.purity = BuiltinPurity::Impure;
@@ -2179,6 +2210,9 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (name == "missing") {
         return missingDescriptor();
+    }
+    if (name == "superclasses") {
+        return reflectionIntrinsicDescriptor(name);
     }
     if (isNumericConversionBuiltin(name)) {
         return numericConversionDescriptor(name);

@@ -183,6 +183,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
         vmOptions.arguments = arguments_;
         vmOptions.requestedOutputCount = options_.requestedOutputCount;
         vmOptions.typedRegionBackend = options_.typedRegionBackend;
+        vmOptions.executionControl = options_.executionControl;
         result.runtime = bytecodeValidated_
                              ? vm.runValidated(
                                    program_, semantic_,
@@ -210,6 +211,7 @@ AdaptiveBytecodeVmRunResult AdaptiveBytecodeVmSession::run() {
     vmOptions.arguments = arguments_;
     vmOptions.requestedOutputCount = options_.requestedOutputCount;
     vmOptions.typedRegionBackend = options_.typedRegionBackend;
+    vmOptions.executionControl = options_.executionControl;
     result.runtime =
         bytecodeValidated_
             ? vm.runValidated(program_, semantic_, vmOptions)

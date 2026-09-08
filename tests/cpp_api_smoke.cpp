@@ -20,6 +20,10 @@ using mparser::sdk::Backend;
 using mparser::sdk::CancellationToken;
 using mparser::sdk::DiagnosticPhase;
 using mparser::sdk::Invocation;
+using mparser::sdk::InputMode;
+using mparser::sdk::InputRequest;
+using mparser::sdk::InputResult;
+using mparser::sdk::InputStatus;
 using mparser::sdk::InvocationStatus;
 using mparser::sdk::Module;
 using mparser::sdk::NamedValue;
@@ -384,6 +388,51 @@ superclass_info = class_info.SuperclassList;
     assert(!superclassInfo->value.isModuleBound());
 }
 
+void runInputSourceSmoke() {
+    const auto module = Module::compile(
+        "answer=length(input('prompt\\npath\\\\end','s'));", "input_sdk.m");
+    for (const auto backend : {Backend::Bytecode, Backend::Automatic,
+                               Backend::Portable, Backend::Native}) {
+        Invocation request;
+        request.backend = backend;
+        size_t calls = 0;
+        request.inputSource = [&](const InputRequest& input) {
+            if (input.mode != InputMode::Text || input.prompt != "prompt\npath\\end") {
+                throw std::runtime_error("SDK input request mismatch");
+            }
+            if (++calls == 1) {
+                return InputResult{InputStatus::Pending, {}, {}};
+            }
+            return InputResult{InputStatus::Ready, "  hi  ", {}};
+        };
+        const auto result = module.execute(request);
+        if (!result.succeeded()) {
+            for (const auto& diagnostic : result.diagnostics()) {
+                std::cerr << diagnostic.message << '\n';
+            }
+            throw std::runtime_error("SDK input execution failed");
+        }
+        const auto values = result.variables();
+        const auto* answer = findVariable(values, "answer");
+        if (!answer || scalar(answer->value) != 6 || calls != 2) {
+            throw std::runtime_error("SDK input result mismatch");
+        }
+    }
+    Invocation request;
+    request.inputSource = [](const InputRequest&) -> InputResult {
+        throw std::runtime_error("input host exception");
+    };
+    bool propagated = false;
+    try {
+        (void)module.execute(request);
+    } catch (const std::runtime_error& error) {
+        propagated = std::string(error.what()) == "input host exception";
+    }
+    if (!propagated) {
+        throw std::runtime_error("SDK input exception was not propagated");
+    }
+}
+
 void runDynamicPropertyExportSmoke() {
     const auto module = Module::compile(R"(
 classdef ExportDynamic < dynamicprops
@@ -629,6 +678,7 @@ int main(int argc, char** argv) {
     runMetadataExportSmoke();
     try {
         runDynamicPropertyExportSmoke();
+        runInputSourceSmoke();
     } catch (const std::exception& error) {
         std::cerr << "dynamic property export: " << error.what() << '\n';
         return 1;

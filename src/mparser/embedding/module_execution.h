@@ -134,6 +134,7 @@ struct ModuleInvocationRequest {
     RuntimeExecutionLimits limits;
     std::optional<RuntimeCancellationToken> cancellationToken;
     ModuleOutputSink outputSink;
+    RuntimeInputSource inputSource;
     std::shared_ptr<RuntimeSystemContext> systemContext = {};
     std::shared_ptr<RuntimeExecutionControl> executionControl = {};
     RuntimeSourceCallableInvoker externalCallableInvoker;

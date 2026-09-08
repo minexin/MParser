@@ -531,3 +531,6 @@ builtins, or normal host invocation.
 
 The CLI schema and exit/channel contract are defined separately in
 [machine-result-protocol.md](machine-result-protocol.md).
+
+For the optional invocation input callback and its buffer lifetime, polling,
+and cancellation rules, see [Interactive Script Input](interactive-input.md).

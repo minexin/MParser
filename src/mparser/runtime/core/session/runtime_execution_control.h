@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mparser/runtime/core/session/runtime_input.h"
+
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -12,6 +14,9 @@ namespace mparser {
 
 struct RuntimeValue;
 class RuntimeDebugger;
+class RuntimeConsoleCaptureScope;
+
+using RuntimeConsoleSink = std::function<bool(std::string_view)>;
 
 enum class RuntimeExecutionStopReason {
     None,
@@ -67,7 +72,13 @@ public:
         RuntimeExecutionLimits limits = {},
         std::optional<RuntimeCancellationToken> cancellation =
             std::nullopt,
-        std::shared_ptr<RuntimeDebugger> debugger = {});
+        std::shared_ptr<RuntimeDebugger> debugger = {},
+        RuntimeInputSource inputSource = {},
+        RuntimeConsoleSink consoleSink = {});
+
+    RuntimeInputResult readInput(const RuntimeInputRequest& request);
+    bool consoleStreaming() const noexcept;
+    bool emitConsole(std::string_view text) const;
 
     RuntimeDebugger* debugger() const noexcept;
     void stopFromDebugger() noexcept;
@@ -97,6 +108,10 @@ private:
     RuntimeExecutionLimits limits_;
     std::optional<RuntimeCancellationToken> cancellation_;
     std::shared_ptr<RuntimeDebugger> debugger_;
+    RuntimeInputSource inputSource_;
+    RuntimeConsoleSink consoleSink_;
+    size_t consoleCaptureDepth_ = 0;
+    bool inputActive_ = false;
     std::chrono::steady_clock::time_point startedAt_;
     RuntimeExecutionStopReason stopReason_ =
         RuntimeExecutionStopReason::None;
@@ -106,6 +121,22 @@ private:
     size_t maximumArrayBytes_ = 0;
     size_t maximumDiagnosticCount_ = 0;
     bool optimizedExecutionSuppressed_ = false;
+    friend class RuntimeConsoleCaptureScope;
+};
+
+class RuntimeConsoleCaptureScope {
+public:
+    RuntimeConsoleCaptureScope(RuntimeExecutionControl* control, bool capture)
+        : control_(capture ? control : nullptr) {
+        if (control_) { ++control_->consoleCaptureDepth_; }
+    }
+    ~RuntimeConsoleCaptureScope() {
+        if (control_) { --control_->consoleCaptureDepth_; }
+    }
+    RuntimeConsoleCaptureScope(const RuntimeConsoleCaptureScope&) = delete;
+    RuntimeConsoleCaptureScope& operator=(const RuntimeConsoleCaptureScope&) = delete;
+private:
+    RuntimeExecutionControl* control_;
 };
 
 } // namespace mparser

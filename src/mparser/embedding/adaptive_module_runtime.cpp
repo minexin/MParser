@@ -56,6 +56,7 @@ AdaptiveModuleInvocationResult AdaptiveModuleRuntime::invoke(
                 options_.systemContext);
         sessionOptions.initialWorkspace = options_.initialWorkspace;
         sessionOptions.typedRegionBackend = options_.typedRegionBackend;
+        sessionOptions.executionControl = options_.executionControl;
         sessionOptions.entryFunction = entryFunction;
         sessionOptions.arguments = std::move(arguments);
         sessionOptions.requestedOutputCount = requestedOutputCount;

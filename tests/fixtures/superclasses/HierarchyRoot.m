@@ -1,0 +1,2 @@
+classdef HierarchyRoot < handle
+end

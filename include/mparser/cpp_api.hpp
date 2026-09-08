@@ -1195,6 +1195,21 @@ private:
     friend class Runtime;
 };
 
+enum class InputMode { Expression = MPARSER_INPUT_EXPRESSION,
+                       Text = MPARSER_INPUT_TEXT, Command = MPARSER_INPUT_COMMAND };
+enum class InputStatus { Ready = MPARSER_INPUT_READY, Pending = MPARSER_INPUT_PENDING,
+                         EndOfInput = MPARSER_INPUT_END, Error = MPARSER_INPUT_ERROR };
+struct InputRequest {
+    InputMode mode = InputMode::Expression;
+    std::string prompt;
+};
+struct InputResult {
+    InputStatus status = InputStatus::EndOfInput;
+    std::string text;
+    std::string error;
+};
+using InputSource = std::function<InputResult(const InputRequest&)>;
+
 struct Invocation {
     std::string entryFunction;
     std::vector<Value> arguments;
@@ -1206,6 +1221,7 @@ struct Invocation {
     std::optional<CancellationToken> cancellationToken;
     OutputSink outputSink;
     std::optional<Debugger> debugger;
+    InputSource inputSource;
 };
 
 namespace detail {
@@ -1255,6 +1271,11 @@ struct InvocationBridge {
         debugger = source.debugger;
         options.debugger = debugger ? debugger->requireRaw() : nullptr;
         outputSink = source.outputSink;
+        inputSource = source.inputSource;
+        if (inputSource) {
+            options.input_source = &InvocationBridge::readInput;
+            options.input_user_data = this;
+        }
         if (outputSink) {
             options.output_sink = &InvocationBridge::emitOutput;
             options.output_user_data = this;
@@ -1262,12 +1283,32 @@ struct InvocationBridge {
     }
 
     void rethrowOutputSinkException() const {
+        if (inputSourceException) {
+            std::rethrow_exception(inputSourceException);
+        }
         if (outputSinkException) {
             std::rethrow_exception(outputSinkException);
         }
     }
 
 private:
+    static mparser_input_status readInput(void* userData, mparser_input_mode mode,
+        mparser_utf8_view prompt, mparser_utf8_view* text,
+        mparser_utf8_view* error) noexcept {
+        auto* self = static_cast<InvocationBridge*>(userData);
+        try {
+            self->inputResult = self->inputSource(InputRequest{
+                static_cast<InputMode>(mode),
+                prompt.size ? std::string(prompt.data, prompt.size) : std::string{}});
+            *text = {self->inputResult.text.data(), self->inputResult.text.size()};
+            *error = {self->inputResult.error.data(), self->inputResult.error.size()};
+            return static_cast<mparser_input_status>(self->inputResult.status);
+        } catch (...) {
+            self->inputSourceException = std::current_exception();
+            return MPARSER_INPUT_ERROR;
+        }
+    }
+
     static mparser_output_disposition emitOutput(
         void* userData,
         std::uint64_t sequence,
@@ -1308,6 +1349,9 @@ public:
     std::vector<mparser_named_value> workspace;
     OutputSink outputSink;
     std::exception_ptr outputSinkException;
+    InputSource inputSource;
+    InputResult inputResult;
+    std::exception_ptr inputSourceException;
     std::optional<Debugger> debugger;
 };
 

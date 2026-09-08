@@ -20,6 +20,7 @@
 #include "mparser/frontend/syntax_dump.h"
 #include "mparser/execution/jit/typed_ir.h"
 #include "mparser/frontend/token.h"
+#include "mparser/cli/console_input.h"
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -1178,10 +1179,6 @@ void printRuntimeConsole(const mparser::BytecodeVmResult& runtime) {
     printRuntimeConsole(runtime.outputEvents, runtime.expressionResults);
 }
 
-void printRuntimeConsole(const mparser::InterpreterResult& runtime) {
-    printRuntimeConsole(runtime.outputEvents, runtime.expressionResults);
-}
-
 void printNameList(const std::vector<std::string>& names,
                    std::string_view open, std::string_view close) {
     std::cout << open;
@@ -1783,6 +1780,11 @@ int main(int argc, char** argv) {
             runtimeOptions.initialWorkspace = adaptiveInitialWorkspace;
             runtimeOptions.typedRegionBackend = typedRegionBackend;
             runtimeOptions.systemContext = cliSystemContext;
+            runtimeOptions.executionControl =
+                std::make_shared<mparser::RuntimeExecutionControl>(
+                    mparser::RuntimeExecutionLimits{}, std::nullopt, nullptr,
+                    mparser::makeConsoleInputSource(),
+                    mparser::makeConsoleOutputSink());
             mparser::AdaptiveModuleRuntime runtime(module, runtimeOptions);
 
             std::cout << "Adaptive module runtime:\n";
@@ -1806,7 +1808,6 @@ int main(int argc, char** argv) {
                         result.adaptive.runtime.diagnostics)) {
                     return 1;
                 }
-                printRuntimeConsole(result.adaptive.runtime);
                 printFunctionOutputs(result.adaptive.runtime);
             }
 
@@ -1869,6 +1870,11 @@ int main(int argc, char** argv) {
                         requestedOutputCount;
                     adaptiveOptions.typedRegionBackend =
                         typedRegionBackend;
+                    adaptiveOptions.executionControl =
+                        std::make_shared<mparser::RuntimeExecutionControl>(
+                            mparser::RuntimeExecutionLimits{}, std::nullopt,
+                            nullptr, mparser::makeConsoleInputSource(),
+                            mparser::makeConsoleOutputSink());
                     adaptiveOptions.sessionState =
                         std::make_shared<mparser::RuntimeSessionState>(
                             cliSystemContext);
@@ -1890,7 +1896,6 @@ int main(int argc, char** argv) {
                                 adaptive.runtime.diagnostics)) {
                             return 1;
                         }
-                        printRuntimeConsole(adaptive.runtime);
                         lastRuntime = std::move(adaptive.runtime);
                     }
                     printAdaptiveEvents(session.events());
@@ -1947,6 +1952,11 @@ int main(int argc, char** argv) {
                 }
                 mparser::BytecodeVm vm;
                 mparser::BytecodeVmOptions vmOptions;
+                vmOptions.executionControl = std::make_shared<mparser::RuntimeExecutionControl>(
+                    mparser::RuntimeExecutionLimits{}, std::nullopt, nullptr,
+                    mparser::makeConsoleInputSource(),
+                    runTypedBytecode ? mparser::RuntimeConsoleSink{}
+                                     : mparser::makeConsoleOutputSink());
                 vmOptions.entryFunction = entryFunction;
                 vmOptions.arguments = entryArguments;
                 vmOptions.requestedOutputCount = requestedOutputCount;
@@ -1997,7 +2007,9 @@ int main(int argc, char** argv) {
                         baselineVariables, runtime.variables,
                         nondeterministicTargets);
                 }
-                printRuntimeConsole(runtime);
+                if (runTypedBytecode) {
+                    printRuntimeConsole(runtime);
+                }
                 std::cout << "Variables:\n";
                 for (const auto& variable : runtime.variables) {
                     std::cout << "  " << variable.name << " = "
@@ -2052,12 +2064,15 @@ int main(int argc, char** argv) {
             } else if (runHir) {
                 mparser::Interpreter interpreter;
                 mparser::InterpreterOptions interpreterOptions;
+                interpreterOptions.executionControl = std::make_shared<mparser::RuntimeExecutionControl>(
+                    mparser::RuntimeExecutionLimits{}, std::nullopt, nullptr,
+                    mparser::makeConsoleInputSource(), mparser::makeConsoleOutputSink());
                 interpreterOptions.sessionState =
                     std::make_shared<mparser::RuntimeSessionState>(
                         cliSystemContext);
                 const auto runtime = interpreter.run(
                     semantic, interpreterOptions);
-                printRuntimeConsole(runtime);
+                // This invocation emitted its console transcript while running.
                 std::cout << "Variables:\n";
                 for (const auto& variable : runtime.variables) {
                     std::cout << "  " << variable.name << " = "

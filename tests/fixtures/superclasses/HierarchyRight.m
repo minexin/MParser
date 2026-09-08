@@ -1,0 +1,2 @@
+classdef HierarchyRight < HierarchyRoot
+end

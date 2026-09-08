@@ -280,6 +280,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/builtins/numeric/runtime_numeric_library_builtins.cpp
     src/mparser/runtime/core/object_model/runtime_object.cpp
     src/mparser/runtime/core/session/runtime_output.cpp
+    src/mparser/runtime/core/session/runtime_input.cpp
     src/mparser/runtime/core/value/runtime_range.cpp
     src/mparser/runtime/builtins/numeric/runtime_reduction.cpp
     src/mparser/runtime/builtins/numeric/runtime_scan.cpp
@@ -418,7 +419,7 @@ target_compile_features(mparser_cpp_api INTERFACE cxx_std_20)
 set_target_properties(mparser_cpp_api PROPERTIES
     EXPORT_NAME cpp_api)
 
-add_executable(mparser src/mparser/cli/main.cpp)
+add_executable(mparser src/mparser/cli/main.cpp src/mparser/cli/console_input.cpp)
 target_link_libraries(mparser PRIVATE mparser_core)
 target_compile_definitions(mparser PRIVATE MPARSER_VERSION="${PROJECT_VERSION}")
 set_target_properties(mparser PROPERTIES EXPORT_NAME cli)
@@ -1483,6 +1484,16 @@ add_executable(runtime_contract_smoke_tests
 target_link_libraries(runtime_contract_smoke_tests PRIVATE mparser_core)
 add_test(NAME runtime_contract_smoke COMMAND runtime_contract_smoke_tests)
 
+add_executable(runtime_input_smoke_tests tests/runtime_input_smoke.cpp)
+target_link_libraries(runtime_input_smoke_tests PRIVATE mparser_core)
+add_test(NAME runtime_input_smoke COMMAND runtime_input_smoke_tests)
+add_test(NAME interactive_input_cli_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DMPARSER=$<TARGET_FILE:mparser>
+        -DSAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/samples/interactive_input_demo.m
+        -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/interactive_input_lines.txt
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/interactive_input_cli.cmake)
+
 add_test(NAME runtime_contract_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/runtime_contract_demo.m)
@@ -2463,10 +2474,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.17/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.18/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.17 catalog validated: 328 descriptors")
+        "builtin source contract 1.18 catalog validated: 331 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2876,6 +2887,19 @@ set_target_properties(debugger_c_api_smoke_tests PROPERTIES
     C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 add_test(NAME debugger_c_api_smoke COMMAND debugger_c_api_smoke_tests)
 
+add_executable(input_c_api_smoke_tests tests/input_c_api_smoke.c)
+target_link_libraries(input_c_api_smoke_tests PRIVATE mparser_c_api)
+set_target_properties(input_c_api_smoke_tests PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+add_test(NAME input_c_api_smoke COMMAND input_c_api_smoke_tests)
+set_tests_properties(input_c_api_smoke PROPERTIES TIMEOUT 30)
+
+add_executable(mparser_cpp_input_demo samples/cpp_input_demo.cpp)
+target_link_libraries(mparser_cpp_input_demo PRIVATE mparser_cpp_api)
+add_test(NAME cpp_input_demo_smoke COMMAND mparser_cpp_input_demo)
+set_tests_properties(cpp_input_demo_smoke PROPERTIES
+    PASS_REGULAR_EXPRESSION "input sdk demo = pending,expression,keyboard,42")
+
 add_executable(mparser_cpp_debugger_demo samples/cpp_debugger_demo.cpp)
 target_link_libraries(mparser_cpp_debugger_demo PRIVATE mparser_cpp_api)
 add_test(NAME cpp_debugger_demo_smoke COMMAND mparser_cpp_debugger_demo)
@@ -3255,6 +3279,8 @@ install(FILES
     docs/v1.10.md
     docs/v1.11.md
     docs/debugging-sdk.md
+    docs/interactive-input.md
+    docs/superclasses.md
     docs/v1.0-contract-freeze.md
     docs/v1.0-cross-platform-validation.md
     docs/v1.0-reliability.md
@@ -3271,11 +3297,11 @@ install(FILES
     docs/v1.x-external-gap-plan.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
-    tests/public_contract/builtin/1.17/default_catalog.json
+    tests/public_contract/builtin/1.18/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 foreach(mparser_builtin_contract_version IN ITEMS
         1.0 1.1 1.3 1.4 1.5 1.6 1.7 1.8 1.9 1.10
-        1.11 1.12 1.13 1.14 1.15 1.16 1.17)
+        1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18)
     install(FILES
         "tests/public_contract/builtin/${mparser_builtin_contract_version}/default_catalog.json"
         DESTINATION
@@ -3292,6 +3318,9 @@ install(FILES
     samples/cpp_embedding_demo.cpp
     samples/cpp_shared_runtime_demo.cpp
     samples/cpp_debugger_demo.cpp
+    samples/cpp_input_demo.cpp
+    samples/interactive_input_demo.m
+    samples/superclasses_demo.m
     samples/cpp_system_context_demo.cpp
     samples/c_source_graph_demo.c
     samples/machine_protocol_demo.m

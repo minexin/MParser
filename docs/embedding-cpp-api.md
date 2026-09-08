@@ -343,6 +343,9 @@ examples, and notices and are validated through their unpacked C/C++ SDK.
 
 ## Host Debugger
 
+For script-driven line input through `Invocation::inputSource`, see
+[Interactive Script Input](interactive-input.md).
+
 `Debugger` and `Invocation::debugger` provide source breakpoints, asynchronous
 pause requests, step-into/over/out, cancellation, and per-frame local Values
 through the same Module/Session/Runtime execution calls. The callback receives

@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.17. Contract 1.0 established
+identify active source contract 1.18. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -353,15 +353,21 @@ through the same descriptor and opaque embedding paths. The active catalog
 contained 324 descriptors and 326 registered names. Contract 1.17 adds table
 joins, stable row maps, grouping, and registry-delegated grouped reductions.
 These context builtins cooperate with execution control and keep rich values on
-the shared VM/portable fallback path. The active catalog contains 328
+the shared VM/portable fallback path. The 1.17 catalog contains 328
 descriptors and 330 registered names. These rich values remain
 VM/portable fallback values until independently measured Typed lowering can
 preserve their complete semantics.
 
+Contract 1.18 adds `input`, `keyboard`, and `superclasses`, bringing the active
+catalog to 331 descriptors and 333 registered names. Input and keyboard use
+execution control, source evaluation, and output context permissions; their
+side effects prevent pure numeric lowering. Superclass reflection uses the
+interpreter/VM class catalog and a shared visible-ancestor traversal.
+
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
-v1.2 candidate snapshot. The current v1.3 candidate snapshot is
-`tests/public_contract/builtin/1.17/default_catalog.json`; earlier files remain
-historical evidence.
+v1.2 candidate snapshot. The frozen v1.3 candidate snapshot is
+`tests/public_contract/builtin/1.17/default_catalog.json`; the current development
+snapshot is `tests/public_contract/builtin/1.18/default_catalog.json`.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output
 constraint, behavioral classification, context permission, error identifier,

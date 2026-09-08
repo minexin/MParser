@@ -1189,6 +1189,12 @@ public:
                                  const RuntimeOutputEvent& event) {
             auto recorded = event;
             recorded.sequence = nextConsoleSequence_++;
+            if (!recorded.consoleEmitted && executionControl_->consoleStreaming()) {
+                if (!executionControl_->emitConsole(recorded.text)) {
+                    return false;
+                }
+                recorded.consoleEmitted = true;
+            }
             outputEvents_.push_back(recorded);
             return !external || external(recorded);
         };
@@ -6953,6 +6959,11 @@ private:
             instruction.outputSuppressed,
             nextConsoleSequence_++, displayText,
             displayFormat.spacing});
+        if (executionControl_->consoleStreaming() &&
+            !executionControl_->emitConsole(runtimeRenderConsole({}, {expressionResults_.back()}))) {
+            addDiagnostic(instruction, "host console sink rejected expression output",
+                          "MParser:OutputSinkRejected");
+        }
     }
 
     void declareWorkspaceVariable(
@@ -12857,6 +12868,44 @@ private:
         return stringColumnCell(names);
     }
 
+    RuntimeValue superclassesBuiltin(
+        const BytecodeInstruction& instruction,
+        const std::vector<RuntimeValue>& arguments) {
+        if (arguments.size() != 1) {
+            addDiagnostic(instruction,
+                          "superclasses expects a class-name string or object");
+            return missingValue();
+        }
+        std::string className;
+        const auto& value = arguments.front();
+        if (isRuntimeTextValue(value)) {
+            const auto text = runtimeTextScalarUtf8(value);
+            if (!text) {
+                addDiagnostic(instruction,
+                              "superclasses expects a scalar class name");
+                return missingValue();
+            }
+            className = *text;
+        } else {
+            className = runtimeValueClassName(value);
+        }
+        className = canonicalRuntimeMetadataClassName(className);
+        const auto names = runtimeVisibleSuperclasses(className,
+            [&](const std::string& candidate) -> std::optional<RuntimeClassHierarchy> {
+                const auto klass = classesByName_.find(candidate);
+                if (klass == classesByName_.end()) {
+                    return std::nullopt;
+                }
+                return RuntimeClassHierarchy{klass->second.superclasses, klass->second.hidden};
+            });
+        if (!names) {
+            addDiagnostic(instruction,
+                          "superclass class is not available: " + className);
+            return missingValue();
+        }
+        return stringColumnCell(*names);
+    }
+
     RuntimeValue methodNamesBuiltin(
         const BytecodeInstruction& instruction,
         const std::vector<RuntimeValue>& arguments) {
@@ -15291,6 +15340,9 @@ private:
         }
         if (name == "properties") {
             return propertyNamesBuiltin(instruction, arguments);
+        }
+        if (name == "superclasses") {
+            return superclassesBuiltin(instruction, arguments);
         }
         if (name == "methods") {
             return methodNamesBuiltin(instruction, arguments);

@@ -1050,7 +1050,8 @@ ModuleInvocationResult CompiledModule::execute(
         request.executionControl
             ? request.executionControl
             : std::make_shared<RuntimeExecutionControl>(
-                  request.limits, request.cancellationToken);
+                  request.limits, request.cancellationToken, nullptr,
+                  request.inputSource);
     runtimeOptions.executionControl = executionControl;
     runtimeOptions.inheritedCallableInvoker =
         request.externalCallableInvoker;

@@ -1437,6 +1437,43 @@ mparser_api_status buildRequest(
         request.cancellationToken =
             options->cancellation_token->token;
     }
+    if (options->struct_size >=
+            offsetof(mparser_invocation_options, input_source) +
+                sizeof(options->input_source) && options->input_source) {
+        const auto source = options->input_source;
+        void* const userData = options->struct_size >=
+                offsetof(mparser_invocation_options, input_user_data) +
+                    sizeof(options->input_user_data)
+            ? options->input_user_data : nullptr;
+        request.inputSource = [source, userData](const mparser::RuntimeInputRequest& input) {
+            mparser_utf8_view text{};
+            mparser_utf8_view error{};
+            const auto status = source(userData,
+                static_cast<mparser_input_mode>(input.mode),
+                {input.prompt.data(), input.prompt.size()}, &text, &error);
+            if (status == MPARSER_INPUT_PENDING || status == MPARSER_INPUT_END) {
+                return mparser::RuntimeInputResult{
+                    static_cast<mparser::RuntimeInputStatus>(status), {}, {}};
+            }
+            if (status != MPARSER_INPUT_READY && status != MPARSER_INPUT_ERROR) {
+                return mparser::RuntimeInputResult{mparser::RuntimeInputStatus::Error, {},
+                    "input callback returned an invalid status"};
+            }
+            if (status == MPARSER_INPUT_READY) {
+                error = {};
+            } else {
+                text = {};
+            }
+            if ((!text.data && text.size) || (!error.data && error.size)) {
+                return mparser::RuntimeInputResult{mparser::RuntimeInputStatus::Error, {},
+                    "input callback returned an invalid text view"};
+            }
+            return mparser::RuntimeInputResult{
+                static_cast<mparser::RuntimeInputStatus>(status),
+                text.size ? std::string(text.data, text.size) : std::string{},
+                error.size ? std::string(error.data, error.size) : std::string{}};
+        };
+    }
     if (options->output_sink) {
         const auto sink = options->output_sink;
         void* const userData = options->output_user_data;
@@ -1495,7 +1532,8 @@ public:
         if (lock_.owns_lock()) {
             request.executionControl =
                 std::make_shared<mparser::RuntimeExecutionControl>(
-                    request.limits, request.cancellationToken, state_->debugger);
+                    request.limits, request.cancellationToken, state_->debugger,
+                    request.inputSource);
         }
     }
 
@@ -1633,7 +1671,8 @@ mparser_api_status executeRuntime(
         if (!request.executionControl) {
             request.executionControl =
                 std::make_shared<mparser::RuntimeExecutionControl>(
-                    request.limits, request.cancellationToken);
+                    request.limits, request.cancellationToken, nullptr,
+                    request.inputSource);
         }
         request.externalCallableInvoker =
             runtime->state->callableInvoker(

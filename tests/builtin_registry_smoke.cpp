@@ -186,12 +186,31 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 17,
+                mparser::kBuiltinSourceContractMinor == 18,
             "builtin source contract version changed");
-    require(registry->descriptors().size() == 328,
+    require(registry->descriptors().size() == 331,
             "default builtin descriptor catalog changed unexpectedly");
-    require(registry->names().size() == 330,
+    require(registry->names().size() == 333,
             "default builtin name catalog changed unexpectedly");
+
+    for (std::string_view name : {"input", "keyboard"}) {
+        const auto* descriptor = registry->find(name);
+        require(descriptor && descriptor->implementation ==
+                    mparser::BuiltinImplementationKind::Context &&
+                    descriptor->purity == mparser::BuiltinPurity::Impure &&
+                    mparser::hasBuiltinContextPermission(descriptor->requiredContext,
+                        mparser::BuiltinContextPermission::ExecutionControl) &&
+                    mparser::hasBuiltinContextPermission(descriptor->requiredContext,
+                        mparser::BuiltinContextPermission::SourceEvaluation),
+                "interactive builtins must retain execution and workspace context");
+    }
+    require(registry->find("input")->inputs.minimum == 1 &&
+                registry->find("input")->inputs.maximum == 2 &&
+                registry->find("keyboard")->outputs.maximum == 0 &&
+                registry->find("superclasses")->inputs.maximum == 1 &&
+                registry->find("superclasses")->implementation ==
+                    mparser::BuiltinImplementationKind::Intrinsic,
+            "interaction/reflection descriptor contract changed");
 
     for (std::string_view name : {"innerjoin", "outerjoin",
                                   "groupcounts", "groupsummary"}) {

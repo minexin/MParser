@@ -214,6 +214,10 @@ An output-transport failure can leave stdout incomplete. See
 
 ## Compatibility
 
+Human-readable execution supports standard-input `input` and `keyboard`.
+Machine JSON output leaves interactive input unavailable. See
+[Interactive Script Input](interactive-input.md) for behavior and a sample.
+
 Production mode and option meanings are not removed or reinterpreted before
 v2. Diagnostic mode names remain available in v1.x, but their text is not a
 machine contract. The undocumented pre-v1 `--run-interpreter` alias was

@@ -272,6 +272,26 @@ typedef mparser_output_disposition (*mparser_output_sink_callback)(
     mparser_source_position source_begin,
     mparser_source_position source_end);
 
+typedef enum mparser_input_status {
+    MPARSER_INPUT_READY = 0,
+    MPARSER_INPUT_PENDING = 1,
+    MPARSER_INPUT_END = 2,
+    MPARSER_INPUT_ERROR = 3
+} mparser_input_status;
+
+typedef enum mparser_input_mode {
+    MPARSER_INPUT_EXPRESSION = 0,
+    MPARSER_INPUT_TEXT = 1,
+    MPARSER_INPUT_COMMAND = 2
+} mparser_input_mode;
+
+/* Return promptly; Pending allows cancellation and timeout checks. The prompt
+ * is borrowed for this call. Returned text/error buffers must remain valid
+ * until the next callback or completion of execution, whichever comes first. */
+typedef mparser_input_status (*mparser_input_source_callback)(
+    void* user_data, mparser_input_mode mode, mparser_utf8_view prompt,
+    mparser_utf8_view* text, mparser_utf8_view* error);
+
 typedef struct mparser_invocation_options {
     uint32_t struct_size;
     uint32_t abi_generation;
@@ -295,6 +315,8 @@ typedef struct mparser_invocation_options {
     void* output_user_data;
     /* Optional ABI revision 3 tail; ignored when absent from struct_size. */
     const mparser_debugger* debugger;
+    mparser_input_source_callback input_source;
+    void* input_user_data;
 } mparser_invocation_options;
 
 typedef struct mparser_execution_summary {

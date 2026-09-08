@@ -263,6 +263,24 @@ end
                 "shared runtime closure invocation differs");
         require(debugPauses == 2, "installed cross-module debugger steps differ");
 
+        const auto inputModule = mparser::sdk::Module::compile(
+            "function out=read_text(); out=length(input('sdk: ','s')); end");
+        mparser::sdk::Invocation inputRequest;
+        inputRequest.entryFunction = "read_text";
+        inputRequest.requestedOutputCount = 1;
+        size_t inputCalls = 0;
+        inputRequest.inputSource = [&](const mparser::sdk::InputRequest& request) {
+            require(request.mode == mparser::sdk::InputMode::Text && request.prompt == "sdk: ",
+                    "installed input request differs");
+            return ++inputCalls == 1
+                ? mparser::sdk::InputResult{mparser::sdk::InputStatus::Pending, {}, {}}
+                : mparser::sdk::InputResult{mparser::sdk::InputStatus::Ready, "  test  ", {}};
+        };
+        const auto inputResult = inputModule.execute(inputRequest);
+        require(inputResult.succeeded() && inputCalls == 2 &&
+                    scalar(inputResult.output(0)) == 8,
+                "installed input callback contract differs");
+
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','

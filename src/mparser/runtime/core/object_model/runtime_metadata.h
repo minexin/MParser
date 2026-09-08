@@ -3,11 +3,23 @@
 #include "mparser/runtime/core/value/runtime_value.h"
 
 #include <optional>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace mparser {
+
+struct RuntimeClassHierarchy {
+    std::vector<std::string> parents;
+    bool hidden = false;
+};
+
+using RuntimeClassHierarchyLookup =
+    std::function<std::optional<RuntimeClassHierarchy>(const std::string&)>;
+
+std::optional<std::vector<std::string>> runtimeVisibleSuperclasses(
+    std::string_view name, const RuntimeClassHierarchyLookup& lookup);
 
 enum class RuntimeMetadataKind {
     MetaData,

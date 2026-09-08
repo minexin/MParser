@@ -58,11 +58,36 @@ bool RuntimeCancellationToken::cancellationRequested() const noexcept {
 RuntimeExecutionControl::RuntimeExecutionControl(
     RuntimeExecutionLimits limits,
     std::optional<RuntimeCancellationToken> cancellation,
-    std::shared_ptr<RuntimeDebugger> debugger)
+    std::shared_ptr<RuntimeDebugger> debugger,
+    RuntimeInputSource inputSource, RuntimeConsoleSink consoleSink)
     : limits_(limits),
       cancellation_(std::move(cancellation)),
       debugger_(std::move(debugger)),
+      inputSource_(std::move(inputSource)),
+      consoleSink_(std::move(consoleSink)),
       startedAt_(std::chrono::steady_clock::now()) {}
+
+bool RuntimeExecutionControl::consoleStreaming() const noexcept {
+    return static_cast<bool>(consoleSink_) && consoleCaptureDepth_ == 0;
+}
+
+bool RuntimeExecutionControl::emitConsole(std::string_view text) const {
+    return !consoleStreaming() || text.empty() || consoleSink_(text);
+}
+
+RuntimeInputResult RuntimeExecutionControl::readInput(
+    const RuntimeInputRequest& request) {
+    if (inputActive_) {
+        return {RuntimeInputStatus::Error, {},
+                "interactive input callback cannot reenter input"};
+    }
+    struct InputScope {
+        bool& active;
+        explicit InputScope(bool& flag) : active(flag) { active = true; }
+        ~InputScope() { active = false; }
+    } scope(inputActive_);
+    return readRuntimeInput(inputSource_, request, *this);
+}
 
 RuntimeDebugger* RuntimeExecutionControl::debugger() const noexcept {
     return debugger_.get();

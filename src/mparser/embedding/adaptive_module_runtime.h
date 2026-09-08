@@ -18,6 +18,7 @@ struct AdaptiveModuleRuntimeOptions {
     std::vector<RuntimeVariable> initialWorkspace = {};
     TypedRegionBackend typedRegionBackend = TypedRegionBackend::Auto;
     std::shared_ptr<RuntimeSystemContext> systemContext = {};
+    std::shared_ptr<RuntimeExecutionControl> executionControl = {};
 };
 
 struct AdaptiveModuleFunctionState {
