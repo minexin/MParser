@@ -517,9 +517,23 @@ optional invocation tail. See [v1.11.md](v1.11.md) and
 The host still needs to consume this interface in its UI. Script `input` and
 `keyboard` interaction remain subsequent work. MATLAB R2024b verification confirms
 that the reflection function is `superclasses`; singular `superclass` is absent.
-Graphics remains explicitly out of scope;
+Desktop graphics rendering remains outside the kernel commitment;
 capability-policy denial and stateless SystemContext omission are host
 configuration concerns, not missing kernel builtin implementations.
+
+Graphics has two deliberately separate V1.x tracks. The kernel track will add
+a headless Graphics Object model: `plot` creates a handle-identity `Figure`,
+`Axes`, and `Line` graph with parent/child ownership, deterministic lifetime,
+property reads/writes, and a versioned deterministic serialization form. A
+pluggable MExecClient or external backend may consume that form to render a
+Canvas, SVG, image, or native window. The rendering track is optional and does
+not make desktop MATLAB graphics compatibility a V1.x promise. The minimum
+kernel slice must support the original `plot(1:3)` case and close
+`cap_291_out_graphics` only after the object identity,
+parent links, deletion/lifetime behavior, property validation, and interpreter
+/ bytecode / C++ and machine-protocol export have focused regressions.
+See [the graphics object contract](graphics-object-model.md). This kernel work
+is now in scope and remains open while current builds report unsupported graphics.
 
 ## v1.12: Script Interaction And Reflection
 
@@ -578,6 +592,16 @@ report invalid conditions without silently continuing. Tests must cover nested
 and cross-module frames, interpreter/VM agreement, installed consumers, and
 host-consumable examples before closure. Specify the supported source debugger
 commands and their interaction with host control as part of that contract.
+
+## v1.14: Headless Graphics Objects
+
+Implement the Graphics Object kernel slice described in
+[graphics-object-model.md](graphics-object-model.md), including `plot(y)` and
+`plot(x,y)`, Figure/Axes/Line handles, parent/child relationships, lifecycle,
+validated property access, and deterministic graph serialization. This is the
+closure milestone for `cap_291_out_graphics`; it is no longer an excluded
+inventory item. MExecClient and optional backends own rendering. Full MATLAB
+desktop graphics compatibility remains outside the commitment.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 

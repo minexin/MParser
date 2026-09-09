@@ -11,6 +11,10 @@ _Static_assert(sizeof(void*) == 8,
                "MParser v1 release platforms require 64-bit pointers");
 _Static_assert(sizeof(size_t) == 8,
                "MParser v1 release platforms require 64-bit size_t");
+_Static_assert(_Generic((mparser_input_status)0, uint32_t: 1, default: 0),
+               "input status must use the fixed-width C ABI representation");
+_Static_assert(_Generic((mparser_input_mode)0, uint32_t: 1, default: 0),
+               "input mode must use the fixed-width C ABI representation");
 
 _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                    MPARSER_C_API_VERSION_MINOR == 3u,

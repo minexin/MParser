@@ -272,18 +272,16 @@ typedef mparser_output_disposition (*mparser_output_sink_callback)(
     mparser_source_position source_begin,
     mparser_source_position source_end);
 
-typedef enum mparser_input_status {
-    MPARSER_INPUT_READY = 0,
-    MPARSER_INPUT_PENDING = 1,
-    MPARSER_INPUT_END = 2,
-    MPARSER_INPUT_ERROR = 3
-} mparser_input_status;
+typedef uint32_t mparser_input_status;
+#define MPARSER_INPUT_READY 0u
+#define MPARSER_INPUT_PENDING 1u
+#define MPARSER_INPUT_END 2u
+#define MPARSER_INPUT_ERROR 3u
 
-typedef enum mparser_input_mode {
-    MPARSER_INPUT_EXPRESSION = 0,
-    MPARSER_INPUT_TEXT = 1,
-    MPARSER_INPUT_COMMAND = 2
-} mparser_input_mode;
+typedef uint32_t mparser_input_mode;
+#define MPARSER_INPUT_EXPRESSION 0u
+#define MPARSER_INPUT_TEXT 1u
+#define MPARSER_INPUT_COMMAND 2u
 
 /* Return promptly; Pending allows cancellation and timeout checks. The prompt
  * is borrowed for this call. Returned text/error buffers must remain valid

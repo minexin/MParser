@@ -1,16 +1,18 @@
 # MParser
 
-Current product and SDK development identity: v1.3.0. The v1.11 batch adds
-host-driven C/C++ debugging with breakpoints, stepping, call stacks, and locals,
+Current product and SDK development identity: v1.3.0. The v1.12 batch adds
+host-driven script `input`/`keyboard` and `superclasses` reflection, following
+v1.11 C/C++ debugging with breakpoints, stepping, call stacks, and locals,
 building on the v1.10 shared Runtime for cross-module closures, objects, globals, and
 persistent state on top of the existing session-owned system boundary,
 standard-library coverage, dynamic workspace semantics, MAT v5 persistence,
 and repository-owned C++20 numerical algorithms without Eigen. The active
 development identities are C/C++ source API 1.3, C ABI generation 2 revision 3
 with 134 exports, CLI 1.0, machine result protocol 1.1, and Builtin source
-contract 1.17. The v1.3 revision-1 contract is archived; the v1.2 and released
+contract 1.18. The v1.3 revision-1 contract is archived; the v1.2 and released
 v1.0 contracts remain immutable historical evidence. Unreleased interfaces move
 together with repository consumers. See
+[interactive input](docs/interactive-input.md), [docs/v1.12.md](docs/v1.12.md),
 [debugging SDK](docs/debugging-sdk.md), [docs/v1.11.md](docs/v1.11.md),
 [docs/v1.3.md](docs/v1.3.md), [docs/v1.10.md](docs/v1.10.md),
 [docs/v1.9.md](docs/v1.9.md),

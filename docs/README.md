@@ -34,6 +34,8 @@ mparser --run --result-format=json-v1 script.m
 - [Interactive Script Input](interactive-input.md): host line callbacks for
   `input` and `keyboard` in v1.12 development.
 - [Superclass Reflection](superclasses.md): visible ancestor queries in v1.12.
+- [Graphics Object Model](graphics-object-model.md): planned headless object
+  semantics, deterministic serialization, and the separate rendering boundary.
 - [C Embedding API](embedding-c-api.md): C source API 1.3 over current ABI
   generation 2 revision 2, with opaque handles, values, sessions, diagnostics,
   cancellation, limits, and shared Runtime ownership.
@@ -103,9 +105,11 @@ These files are release contracts, not generated prose:
 | `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
 The archived v1.3 candidate contract freezes the protocol, headers, ABI 2.1
-symbol set, and builtin 1.17 catalog. The current v1.11 development boundary
-adds ABI 2.3 debugging above the v1.10 shared Runtime without mutating that snapshot. See
-[Debugging Through The SDK](debugging-sdk.md) and [v1.11](v1.11.md). The v1.3
+symbol set, and builtin 1.17 catalog. The current v1.12 development boundary
+adds script input and superclass reflection with builtin contract 1.18, following
+ABI 2.3 debugging and the v1.10 shared Runtime without mutating that snapshot. See
+[Interactive Script Input](interactive-input.md), [v1.12](v1.12.md), and
+[Debugging Through The SDK](debugging-sdk.md). The v1.3
 implementation train originally closed with 1.10; 1.11 added the guarded `sum`
 Typed reduction identity, 1.12 added guarded `prod` and `mean` reduction
 identities, and 1.13 adds the shared

@@ -100,5 +100,13 @@ the active version, counts, and frozen SHA-256 and adding 1.18 to the archive
 inventory made the release archive retest pass (1/1). All 340 native tests
 have therefore passed across the full run and focused archive retest.
 Both configurations passed installed and relocated C/C++ consumers.
-Historical snapshot hashes remain unchanged. External catalog revalidation
-and applicable platform CI remain pending.
+Historical snapshot hashes remain unchanged. The external catalog subsequently
+passed 222/223 cases, with only the declared graphics exclusion failing; see
+[v1.12](v1.12.md) for the historical MATLAB comparison limitation.
+
+Cross-platform run `34212502183` for `b041090` passed all five native platforms,
+but Clang UBSan rejected the ordinary C enum representation when the negative
+callback test returned status 999. Input status and mode now follow the existing
+fixed-width `uint32_t` C ABI convention so unknown callback values can be
+validated without an invalid enum load. The negative test remains enabled.
+Validation of that correction remains pending.

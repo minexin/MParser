@@ -3278,6 +3278,8 @@ install(FILES
     docs/v1.9.md
     docs/v1.10.md
     docs/v1.11.md
+    docs/v1.12.md
+    docs/graphics-object-model.md
     docs/debugging-sdk.md
     docs/interactive-input.md
     docs/superclasses.md
