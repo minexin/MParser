@@ -574,7 +574,10 @@ agreement, unavailable-input and cancellation tests, installed SDK consumers,
 samples, documentation, and applicable platform CI before closure.
 
 Current implementation and local/external evidence are recorded in
-[v1.12.md](v1.12.md). Platform validation remains pending.
+[v1.12.md](v1.12.md). Commit `4ac5cb2` passed all six required native/sanitizer
+jobs in [CI 34311756158](https://github.com/minexin/MParser/actions/runs/34311756158)
+and the documentation gate. This closes the interaction/reflection platform
+batch; the debugger and headless graphics milestones below remain open.
 
 ## v1.13: Debugger Evaluation And Control
 

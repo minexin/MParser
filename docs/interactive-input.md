@@ -109,4 +109,7 @@ but Clang UBSan rejected the ordinary C enum representation when the negative
 callback test returned status 999. Input status and mode now follow the existing
 fixed-width `uint32_t` C ABI convention so unknown callback values can be
 validated without an invalid enum load. The negative test remains enabled.
-Validation of that correction remains pending.
+The correction passed in `4ac5cb2`: all six required jobs succeeded in
+[CI 34311756158](https://github.com/minexin/MParser/actions/runs/34311756158).
+The Clang ASan/UBSan no-JIT log confirms 322/322 tests, including the retained
+invalid-status callback case. See [v1.12](v1.12.md) for the complete batch status.
