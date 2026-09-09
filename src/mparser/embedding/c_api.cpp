@@ -243,6 +243,9 @@ struct mparser_debug_event {
     const mparser::RuntimeDebugEvent* event = nullptr;
     std::shared_ptr<mparser_c_detail::ModuleState> owner;
     std::shared_ptr<mparser_c_detail::RuntimeState> runtimeOwner;
+    std::shared_ptr<mparser::RuntimeDebugger> debugger;
+    std::vector<mparser::ModuleDiagnostic> conditionDiagnostics;
+    std::vector<mparser_diagnostic> diagnosticViews;
 };
 
 namespace mparser_c_detail {
@@ -1549,6 +1552,45 @@ private:
     std::shared_ptr<DebuggerState> state_;
     std::unique_lock<std::recursive_mutex> lock_;
 };
+
+std::vector<mparser::ModuleDiagnostic> debugDiagnostics(
+    const std::vector<mparser::Diagnostic>& diagnostics) {
+    std::vector<mparser::ModuleDiagnostic> result;
+    const auto copyCause = [](const auto& self, const mparser::DiagnosticCause& cause)
+        -> mparser::ModuleDiagnosticCause {
+        mparser::ModuleDiagnosticCause copy;
+        copy.identifier = cause.identifier;
+        copy.message = cause.message;
+        for (const auto& frame : cause.stack) {
+            copy.stack.push_back({frame.file, frame.name, frame.line});
+        }
+        for (const auto& child : cause.causes) {
+            copy.causes.push_back(self(self, child));
+        }
+        return copy;
+    };
+    for (const auto& diagnostic : diagnostics) {
+        mparser::ModuleDiagnostic copy;
+        copy.severity = diagnostic.severity == mparser::DiagnosticSeverity::Warning
+            ? mparser::ModuleDiagnosticSeverity::Warning
+            : mparser::ModuleDiagnosticSeverity::Error;
+        copy.identifier = diagnostic.identifier;
+        copy.message = diagnostic.message;
+        copy.source = {true, diagnostic.sourceName,
+            {diagnostic.span.begin.offset, diagnostic.span.begin.line,
+             diagnostic.span.begin.column},
+            {diagnostic.span.end.offset, diagnostic.span.end.line,
+             diagnostic.span.end.column}};
+        for (const auto& frame : diagnostic.stack) {
+            copy.stack.push_back({frame.file, frame.name, frame.line});
+        }
+        for (const auto& cause : diagnostic.causes) {
+            copy.causes.push_back(copyCause(copyCause, cause));
+        }
+        result.push_back(std::move(copy));
+    }
+    return result;
+}
 
 mparser_api_status makeResultHandle(
     mparser::ModuleInvocationResult result,
@@ -3673,8 +3715,16 @@ mparser_api_status mparser_debugger_create(
                 if (!active) {
                     return mparser::RuntimeDebugAction::Stop;
                 }
-                const mparser_debug_event view{&event, active->owner,
-                                               active->runtimeOwner};
+                mparser_debug_event view;
+                view.event = &event;
+                view.owner = active->owner;
+                view.runtimeOwner = active->runtimeOwner;
+                view.debugger = active->debugger;
+                view.conditionDiagnostics = mparser_c_detail::debugDiagnostics(
+                    event.conditionDiagnostics);
+                for (const auto& diagnostic : view.conditionDiagnostics) {
+                    view.diagnosticViews.push_back(mparser_c_detail::externalDiagnostic(diagnostic));
+                }
                 const mparser_c_detail::DebugCallbackGuard callbackGuard;
                 const auto action = sink(user_data, &view);
                 if (action > MPARSER_DEBUG_STOP) {
@@ -3737,6 +3787,41 @@ mparser_api_status mparser_debugger_request_pause(mparser_debugger* debugger) {
     } catch (...) {
         return MPARSER_API_STATUS_INTERNAL_ERROR;
     }
+}
+
+mparser_api_status mparser_debugger_set_conditional_breakpoints(
+    mparser_debugger* debugger, const mparser_conditional_breakpoint* points, size_t count) {
+    if (!debugger || !debugger->state || (!points && count)) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::vector<mparser::RuntimeBreakpoint> breakpoints;
+        breakpoints.reserve(count);
+        for (size_t index = 0; index < count; ++index) {
+            const auto& point = points[index];
+            const auto name = mparser_c_detail::copyBytes(point.source_name.data, point.source_name.size);
+            const auto condition = mparser_c_detail::copyBytes(point.condition.data, point.condition.size);
+            if (!name || name->empty() || point.line <= 0 || !condition) {
+                return MPARSER_API_STATUS_INVALID_ARGUMENT;
+            }
+            breakpoints.push_back({*name, point.line, *condition});
+        }
+        debugger->state->debugger->setBreakpoints(std::move(breakpoints));
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+size_t mparser_debug_event_condition_diagnostic_count(const mparser_debug_event* event) {
+    return event ? event->diagnosticViews.size() : 0;
+}
+
+const mparser_diagnostic* mparser_debug_event_condition_diagnostic(
+    const mparser_debug_event* event, size_t index) {
+    return event && index < event->diagnosticViews.size() ? &event->diagnosticViews[index] : nullptr;
 }
 
 mparser_debug_reason mparser_debug_event_reason(const mparser_debug_event* event) {
@@ -3805,6 +3890,45 @@ mparser_api_status mparser_debug_event_variable(
         *out_name = mparser_c_detail::utf8View(variable->first);
     }
     return status;
+}
+
+mparser_api_status mparser_debug_event_evaluate(
+    const mparser_debug_event* event, size_t frame_index,
+    const char* source, size_t source_size, size_t requested_output_count,
+    mparser_result** out_result) {
+    if (!out_result) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    *out_result = nullptr;
+    if (!event || !event->event || !event->debugger || (!source && source_size)) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (frame_index != MPARSER_DEBUG_SELECTED_FRAME && frame_index >= event->event->frames.size()) {
+        return MPARSER_API_STATUS_OUT_OF_RANGE;
+    }
+    try {
+        auto evaluated = event->debugger->evaluate(event->event->sequence,
+            frame_index, {source ? std::string(source, source_size) : std::string{},
+                          requested_output_count});
+        mparser::ModuleInvocationResult result;
+        result.status = evaluated.succeeded
+            ? mparser::ModuleInvocationStatus::Succeeded
+            : mparser::ModuleInvocationStatus::RuntimeFailed;
+        result.requestedOutputCount = requested_output_count;
+        result.outputs = std::move(evaluated.outputs);
+        if (!evaluated.capturedOutput.empty()) {
+            mparser::ModuleOutputEvent output;
+            output.text = std::move(evaluated.capturedOutput);
+            result.outputEvents.push_back(std::move(output));
+        }
+        result.diagnostics = mparser_c_detail::debugDiagnostics(evaluated.diagnostics);
+        return mparser_c_detail::makeResultHandle(std::move(result), event->owner,
+            out_result, event->runtimeOwner);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
 }
 
 mparser_api_status

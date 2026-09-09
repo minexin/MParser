@@ -70,13 +70,18 @@ void checkEntryPoints() {
 }
 
 void checkSharedRuntimeOwnership() {
-    auto runtime = Runtime::create();
+    SystemContextOptions system;
+    system.rootDirectory = ".";
+    system.capabilities = SystemCapability::DynamicEvaluation;
+    auto runtime = Runtime::create(SystemContext::rootedNative(system));
     const auto producer = Module::compile(
         "factor=4;\nh=@(x) factor*x;\nz=0;\n", "producer.m");
     Value handle;
     size_t captureCount = 0;
     Debugger capture([&](const DebugEvent& event) {
-        handle = local(event.frames.back(), "h");
+        const auto evaluated = event.evaluate(event.frames.size() - 1, "h");
+        require(evaluated.succeeded(), "runtime debug handle evaluation failed");
+        handle = evaluated.output(0);
         ++captureCount;
         return DebugAction::Continue;
     });
@@ -94,6 +99,10 @@ void checkSharedRuntimeOwnership() {
                 event.frames[1].source.sourceName == "producer.m" &&
                 local(event.frames[1], "factor").numericData()[0] == 4,
                 "SDK cross-module stack or locals lost");
+        const auto evaluated = event.evaluate(1, "factor+2");
+        const auto output = evaluated.output(0);
+        require(evaluated.succeeded() && output.numericData()[0] == 6,
+                "SDK cross-module evaluation lost captured values");
         return DebugAction::Continue;
     });
     inspect.setBreakpoints(std::array{Breakpoint{"producer.m", 2}});
@@ -180,6 +189,177 @@ void checkStopAndFailure() {
             "cancellation during pause was not observed before mutation");
     require(result.variables().empty(), "cancelled paused statement mutated workspace");
 }
+
+void checkEvaluationLifetime() {
+    SystemContextOptions system;
+    system.rootDirectory = ".";
+    system.capabilities = SystemCapability::DynamicEvaluation;
+    const auto context = SystemContext::rootedNative(system);
+    const auto module = Module::compile("x=3;\ny=x+1;\n", "evaluate.m");
+    for (int scenario = 0; scenario < 6; ++scenario) {
+        const int mode = scenario / 2;
+        const bool fail = scenario % 2 != 0;
+        DebugEvent retained;
+        Result evaluated;
+        Result stackResult;
+        Debugger debugger([&](const DebugEvent& event) {
+            retained = event;
+            stackResult = event.evaluate(0, "dbstack()");
+            require(stackResult.succeeded(), "SDK stack query failed");
+            auto foreign = std::async(std::launch::async, [snapshot = event] {
+                try { (void)snapshot.evaluate(0, "x=99;", 0); }
+                catch (const ApiError& error) {
+                    return error.status() == MPARSER_API_STATUS_INVALID_ARGUMENT;
+                }
+                return false;
+            });
+            require(foreign.get(), "foreign-thread evaluation was accepted");
+            require(!event.evaluate(0, "unknown_debug_variable").succeeded(),
+                    "debug evaluation error was lost");
+            evaluated = event.evaluate(0, "x+2");
+            const auto output = evaluated.output(0);
+            require(evaluated.succeeded() && output.numericData()[0] == 5,
+                    "C++ debug expression result incorrect");
+            require(event.evaluate(0, "x=10;", 0).succeeded(), "C++ debug assignment failed");
+            require(local(event.frames[0], "x").numericData()[0] == 3,
+                    "evaluation changed the owned pause snapshot");
+            if (fail) { throw std::runtime_error("expire on unwind"); }
+            return DebugAction::Continue;
+        });
+        debugger.setBreakpoints(std::array{Breakpoint{"evaluate.m", 2}});
+        Invocation invocation;
+        invocation.debugger = debugger;
+        auto session = module.createSession(context);
+        auto runtime = Runtime::create(context);
+        const auto result = mode == 0 ? module.execute(invocation, context)
+            : mode == 1 ? session.execute(invocation)
+                        : runtime.execute(module, invocation);
+        require(result.succeeded() != fail, "evaluation callback outcome incorrect");
+        const auto retainedOutput = evaluated.output(0);
+        require(evaluated.succeeded() && retainedOutput.numericData()[0] == 5,
+                "owned evaluation result did not survive callback");
+        const auto stackValue = stackResult.output(0);
+        require(stackValue.structFieldNames() == std::vector<std::string>{"file", "name", "line"},
+                "owned stack query lost its field schema");
+        const auto stackLine = stackValue.structField(0, 2);
+        require(stackLine.numericData()[0] == 2,
+                "owned stack query lost paused line after callback");
+        bool expired = false;
+        try { (void)retained.evaluate(0, "x=99;", 0); }
+        catch (const ApiError& error) {
+            expired = error.status() == MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        require(expired, "retained event evaluated after resume or unwind");
+        if (!fail) {
+            bool found = false;
+            for (const auto& value : result.variables()) {
+                if (value.name == "y") { found = value.value.numericData()[0] == 11; }
+            }
+            require(found, "resumed execution lost C++ debug assignment");
+        }
+    }
+}
+
+void checkSourceNavigation() {
+    const auto module = Module::compile(
+        "x=3;\ny=f(4);\nz=x+y;\nfunction out=f(value)\nout=value*2;\nend\n", "navigate.m");
+    SystemContextOptions system;
+    system.rootDirectory = ".";
+    system.capabilities = SystemCapability::DynamicEvaluation;
+    const auto context = SystemContext::rootedNative(system);
+    size_t pauses = 0;
+    Debugger debugger([&](const DebugEvent& event) {
+        ++pauses;
+        auto command = [&](std::string_view source) {
+            return event.evaluate(DebugEvent::selectedFrame, source, 0);
+        };
+        require(command("assert(value==4); dbup;").succeeded(), "navigation to caller failed");
+        require(command("assert(x==3); x=10;").succeeded(), "selected caller write failed");
+        require(!command("dbup").succeeded(), "navigation exceeded outermost frame");
+        require(command("assert(x==10); dbdown;").succeeded(), "navigation corrupted caller selection");
+        require(command("value=5;").succeeded(), "selected callee write failed");
+        require(!command("dbdown").succeeded(), "navigation exceeded current frame");
+        return DebugAction::Continue;
+    });
+    debugger.setBreakpoints(std::array{Breakpoint{"navigate.m", 5}});
+    Invocation invocation;
+    invocation.debugger = debugger;
+    const auto result = module.execute(invocation, context);
+    require(result.succeeded() && pauses == 1, "navigation interrupted execution");
+    bool found = false;
+    for (const auto& variable : result.variables()) {
+        if (variable.name == "z") { found = variable.value.numericData()[0] == 20; }
+    }
+    require(found, "navigation writes did not survive resume");
+}
+
+void checkConditionalBreakpoints() {
+    const auto module = Module::compile(
+        "total=0;\nfor k=1:4\ntotal=total+k;\nend\n", "condition.m");
+    SystemContextOptions system;
+    system.rootDirectory = ".";
+    system.capabilities = SystemCapability::DynamicEvaluation;
+    const auto context = SystemContext::rootedNative(system);
+    for (int scenario = 0; scenario < 4; ++scenario) {
+        const bool denied = scenario == 3;
+        std::vector<DebugEvent> events;
+        Debugger debugger([&](const DebugEvent& event) {
+            events.push_back(event);
+            require(event.reason == DebugReason::Breakpoint, "condition pause reason incorrect");
+            return DebugAction::Continue;
+        });
+        debugger.setBreakpoints(std::array{
+            Breakpoint{"condition.m", 3, scenario == 1 ? "unknown_condition" :
+                scenario == 2 ? "'text'" : "k==3"}});
+        Invocation invocation;
+        invocation.debugger = debugger;
+        const auto result = denied ? module.execute(invocation) : module.execute(invocation, context);
+        require(result.succeeded(), "condition error aborted execution");
+        require(events.size() == (scenario == 0 ? 1u : 4u), "conditional pause count incorrect");
+        for (const auto& event : events) {
+            require(event.conditionDiagnostics.empty() == (scenario == 0),
+                    "condition diagnostics were lost or invented");
+            if (scenario == 2) {
+                require(event.conditionDiagnostics[0].source &&
+                        event.conditionDiagnostics[0].source->sourceName == "condition.m",
+                        "invalid condition diagnostic lost its source");
+            }
+            if (denied) {
+                require(event.conditionDiagnostics[0].identifier == "MParser:SystemCapabilityDenied",
+                        "condition bypassed the capability requirement");
+            }
+        }
+        if (scenario == 0) {
+            require(local(events[0].frames.back(), "k").numericData()[0] == 3,
+                    "condition did not use current loop variable");
+        }
+    }
+    size_t pauses = 0;
+    Debugger ordered([&](const DebugEvent& event) {
+        ++pauses;
+        require(event.conditionDiagnostics.empty(), "condition ordering evaluated an unreachable error");
+        return DebugAction::Continue;
+    });
+    ordered.setBreakpoints(std::array{Breakpoint{"condition.m", 3, "0"},
+        Breakpoint{"condition.m", 3, "1"}, Breakpoint{"condition.m", 3, "unknown_condition"}});
+    Invocation invocation;
+    invocation.debugger = ordered;
+    require(module.execute(invocation, context).succeeded() && pauses == 4,
+            "matching breakpoint conditions did not run in configuration order");
+
+    const auto stepping = Module::compile("x=1;\ny=x+1;\n", "step-condition.m");
+    std::vector<DebugReason> reasons;
+    Debugger stepper([&](const DebugEvent& event) {
+        reasons.push_back(event.reason);
+        return reasons.size() == 1 ? DebugAction::StepOver : DebugAction::Continue;
+    });
+    stepper.setBreakpoints(std::array{Breakpoint{"step-condition.m", 2, "0"}});
+    stepper.requestPause();
+    invocation.debugger = stepper;
+    require(stepping.execute(invocation, context).succeeded() &&
+            reasons == std::vector<DebugReason>{DebugReason::PauseRequest, DebugReason::Step},
+            "false condition swallowed a pause or step request");
+}
 } // namespace
 
 int main() {
@@ -188,7 +368,10 @@ int main() {
         checkSharedRuntimeOwnership();
         checkPauseAndReentry();
         checkStopAndFailure();
-        std::cout << "debugger SDK = steps,locals,runtime,retained,threads,reentry,cancel\n";
+        checkEvaluationLifetime();
+        checkConditionalBreakpoints();
+        checkSourceNavigation();
+        std::cout << "debugger SDK = steps,locals,evaluation,runtime,retained,threads,reentry,cancel\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

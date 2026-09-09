@@ -15,7 +15,8 @@ structures.
 The frozen v1.2 candidate uses C ABI generation 2 revision 0 and 109 exports.
 The v1.3 candidate added revision 1 and 117 exports for public system-context
 injection. v1.10 added revision 2 and 124 exports for a shared Runtime. The
-current v1.11 debugger extension adds revision 3 and 134 exports. These are
+v1.11 debugger extension added revision 3 and 134 exports. The v1.13 pause-event
+evaluation/conditional-breakpoint extension adds revision 4, currently with 138 exports. These are
 binary-contract identifiers, not SDK product versions. MParser and the
 installed SDK report `1.3.0`, while the C source API reports `1.3`.
 Applications can query
@@ -473,7 +474,7 @@ state, shared cancellation, and per-invocation resource isolation.
 loads, queries, and unloads the shared library 256 times.
 
 `c_api_shared_library_abi` compares the live dynamic export table against
-`tests/c_api_generation2_revision3_symbols.txt` and validates ELF SONAME or
+`tests/c_api_generation2_revision4_symbols.txt` and validates ELF SONAME or
 macOS install-name major 2. The revision-1 117-symbol manifest remains
 immutable archive evidence in `tests/c_api_generation2_revision1_symbols.txt`,
 and the frozen revision-0 manifest remains in
@@ -511,7 +512,7 @@ Simplified BSD terms reproduced in the third-party notices.
 ## Current Candidate Boundary
 
 The current v1.10 development host surface is C source API 1.3, C ABI
-generation 2 revision 3 with 134 exports, header-only C++ source API 1.3, and
+generation 2 revision 4 with 138 exports, header-only C++ source API 1.3, and
 machine protocol 1.1. It includes rooted system-context calls and the shared
 Runtime graph, while reporting product/SDK version 1.3.0 until a later
 candidate stamp. Current in-repository and relocated consumers validate this

@@ -596,6 +596,12 @@ and cross-module frames, interpreter/VM agreement, installed consumers, and
 host-consumable examples before closure. Specify the supported source debugger
 commands and their interaction with host control as part of that contract.
 
+The current implementation provides C/C++ paused evaluation, conditional
+breakpoints, and the documented `dbstop/dbclear/dbstatus/dbstep/dbcont/dbquit/
+dbstack/dbup/dbdown` subset. Local native 340/340, no-JIT 322/322 and external
+inventory 222/223 evidence is recorded in [v1.13.md](v1.13.md). Platform
+acceptance remains open; the sole external failure is the V1.14 graphics case.
+
 ## v1.14: Headless Graphics Objects
 
 Implement the Graphics Object kernel slice described in

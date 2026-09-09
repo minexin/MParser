@@ -2,6 +2,7 @@
 
 #include "mparser/runtime/io/filesystem_utf8.h"
 #include "mparser/runtime/core/session/runtime_execution_control.h"
+#include "mparser/runtime/core/session/runtime_debugger.h"
 #include "mparser/runtime/io/runtime_file_io.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
@@ -17,6 +18,7 @@
 #include <array>
 #include <bit>
 #include <chrono>
+#include <charconv>
 #include <cmath>
 #include <cctype>
 #include <cstdint>
@@ -472,6 +474,126 @@ BuiltinSourceEvaluationResult evaluateSource(
         BuiltinSourceEvaluationRequest{
             std::move(source), scope, requestedOutputCount,
             captureOutput, call.span});
+}
+
+BuiltinResult debuggerConfigurationBuiltin(std::string_view name, const BuiltinCall& call) {
+    auto* debugger = call.context && call.context->executionControl
+        ? call.context->executionControl->debugger() : nullptr;
+    if (!debugger) {
+        return failure(call, "source debugger commands require an attached debugger",
+                       "MParser:Debugger:Unavailable");
+    }
+    const auto invalid = [&] {
+        return failure(call, "invalid " + std::string(name) + " source debugger command",
+                       "MParser:Debugger:InvalidCommand");
+    };
+    if (name == "dbup" || name == "dbdown") {
+        if (!debugger->sourceStack()) {
+            return failure(call, "frame navigation requires explicit paused-frame evaluation",
+                           "MParser:Debugger:NotPausedEvaluation");
+        }
+        if (!debugger->moveSourceFrame(name == "dbup")) {
+            return failure(call, "frame navigation exceeds the paused stack",
+                           "MParser:Debugger:InvalidFrame");
+        }
+        return BuiltinResult::success();
+    }
+    if (name == "dbcont" || name == "dbquit" || name == "dbstep") {
+        auto action = name == "dbcont" ? RuntimeDebugAction::Continue
+            : name == "dbquit" ? RuntimeDebugAction::Stop : RuntimeDebugAction::StepOver;
+        if (!call.arguments.empty()) {
+            const auto mode = textArgument(call.arguments.front());
+            if (mode == "in") { action = RuntimeDebugAction::StepInto; }
+            else if (mode == "out") { action = RuntimeDebugAction::StepOut; }
+            else { return invalid(); }
+        }
+        if (!debugger->requestSourceAction(action)) {
+            return failure(call, "debugger control requires explicit paused-frame evaluation",
+                           "MParser:Debugger:NotPausedEvaluation");
+        }
+        return BuiltinResult::success();
+    }
+    if (name == "dbstack") {
+        const auto frames = debugger->sourceStack();
+        if (!frames) {
+            return failure(call, "stack query requires explicit paused-frame evaluation",
+                           "MParser:Debugger:NotPausedEvaluation");
+        }
+        std::vector<RuntimeStructElement> elements;
+        std::string listing;
+        for (auto frame = frames->rbegin(); frame != frames->rend(); ++frame) {
+            elements.push_back({
+                {"file", makeRuntimeCharacterVectorUtf8(frame->sourceName)},
+                {"name", makeRuntimeCharacterVectorUtf8(frame->functionName)},
+                {"line", makeRuntimeNumberValue(frame->location.begin.line)}});
+            listing += frame->functionName + " at " + frame->sourceName + ":" +
+                std::to_string(frame->location.begin.line) + '\n';
+        }
+        if (call.requestedOutputCount == 0) {
+            return emit(call, RuntimeOutputKind::StandardOutput, std::move(listing));
+        }
+        return selectedOutputs(call, {makeRuntimeStructArrayValue(
+            {"file", "name", "line"}, std::move(elements), {frames->size(), 1})});
+    }
+    if (name == "dbstatus") {
+        const auto points = debugger->breakpoints();
+        if (call.requestedOutputCount == 0) {
+            std::string listing;
+            for (const auto& point : points) {
+                listing += point.sourceName + ":" + std::to_string(point.line);
+                if (!point.condition.empty()) { listing += " if " + point.condition; }
+                listing += '\n';
+            }
+            return emit(call, RuntimeOutputKind::StandardOutput, std::move(listing));
+        }
+        std::vector<RuntimeStructElement> elements;
+        for (const auto& point : points) {
+            elements.push_back({
+                {"name", makeRuntimeCharacterVectorUtf8(point.sourceName)},
+                {"file", makeRuntimeCharacterVectorUtf8(point.sourceName)},
+                {"line", makeRuntimeNumberValue(point.line)},
+                {"expression", makeRuntimeCharacterVectorUtf8(point.condition)}});
+        }
+        return selectedOutputs(call, {makeRuntimeStructArrayValue(
+            {"name", "file", "line", "expression"}, std::move(elements), {1, points.size()})});
+    }
+    const auto& args = call.arguments;
+    if (name == "dbclear" && args.size() == 1 && textArgument(args[0]) == "all") {
+        debugger->setBreakpoints({});
+        return BuiltinResult::success();
+    }
+    if (args.size() < 2 || textArgument(args[0]) != "in") { return invalid(); }
+    const auto source = textArgument(args[1]);
+    if (!source || source->empty()) { return invalid(); }
+    if (name == "dbclear" && args.size() == 2) {
+        debugger->clearSourceBreakpoints(*source);
+        return BuiltinResult::success();
+    }
+    if ((args.size() != 4 && !(name == "dbstop" && args.size() == 6)) ||
+        textArgument(args[2]) != "at") { return invalid(); }
+    auto line = fileIdentifier(args[3]);
+    if (!line) {
+        if (const auto digits = textArgument(args[3])) {
+            int parsed = 0;
+            const auto converted = std::from_chars(digits->data(), digits->data() + digits->size(), parsed);
+            if (converted.ec == std::errc{} && converted.ptr == digits->data() + digits->size()) {
+                line = parsed;
+            }
+        }
+    }
+    if (!line || *line <= 0) { return invalid(); }
+    std::string condition;
+    if (args.size() == 6) {
+        const auto expression = textArgument(args[5]);
+        if (textArgument(args[4]) != "if" || !expression || expression->empty()) { return invalid(); }
+        condition = *expression;
+    }
+    if (name == "dbclear") {
+        debugger->clearSourceBreakpoints(*source, *line);
+        return BuiltinResult::success();
+    }
+    debugger->setSourceBreakpoint({*source, *line, std::move(condition)});
+    return selectedOutputs(call, {makeRuntimeNumberValue(*line)});
 }
 
 BuiltinResult interactiveBuiltin(std::string_view name, const BuiltinCall& call) {
@@ -3756,7 +3878,11 @@ BuiltinResult systemBuiltin(const BuiltinCall& call) {
 } // namespace
 
 bool isRuntimeSystemBuiltin(std::string_view name) {
-    static constexpr std::array<std::string_view, 58> names = {
+    static constexpr std::array<std::string_view, 67> names = {
+        "dbup", "dbdown",
+        "dbstack",
+        "dbcont", "dbquit", "dbstep",
+        "dbstop", "dbclear", "dbstatus",
         "addpath", "assignin", "cd", "clear", "clock", "computer",
         "copyfile", "date", "delete", "dir", "eval", "evalc", "evalin", "exist",
         "fclose", "feof", "ferror", "fgetl", "fgets", "fileparts",
@@ -3771,6 +3897,11 @@ bool isRuntimeSystemBuiltin(std::string_view name) {
 
 BuiltinResult invokeRuntimeSystemBuiltin(
     std::string_view name, const BuiltinCall& call) {
+    if (name == "dbstop" || name == "dbclear" || name == "dbstatus" ||
+        name == "dbcont" || name == "dbquit" || name == "dbstep" || name == "dbstack" ||
+        name == "dbup" || name == "dbdown") {
+        return debuggerConfigurationBuiltin(name, call);
+    }
     if (name == "input" || name == "keyboard") {
         return interactiveBuiltin(name, call);
     }

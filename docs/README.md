@@ -105,9 +105,10 @@ These files are release contracts, not generated prose:
 | `default_catalog.json` | Installed current normalized builtin catalog snapshot |
 
 The archived v1.3 candidate contract freezes the protocol, headers, ABI 2.1
-symbol set, and builtin 1.17 catalog. The current v1.12 development boundary
-adds script input and superclass reflection with builtin contract 1.18, following
-ABI 2.3 debugging and the v1.10 shared Runtime without mutating that snapshot. See
+symbol set, and builtin 1.17 catalog. The v1.12 boundary added script input
+and superclass reflection with builtin contract 1.18. Current v1.13 development
+adds pause-event evaluation and conditional breakpoints at ABI 2.4, plus source
+breakpoint commands at builtin contract 1.19, without mutating those snapshots. See
 [Interactive Script Input](interactive-input.md), [v1.12](v1.12.md), and
 [Debugging Through The SDK](debugging-sdk.md). The v1.3
 implementation train originally closed with 1.10; 1.11 added the guarded `sum`

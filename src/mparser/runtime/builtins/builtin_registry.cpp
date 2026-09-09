@@ -169,6 +169,15 @@ constexpr std::string_view kBuiltinNames[] = {
     "int64",
     "input",
     "keyboard",
+    "dbstop",
+    "dbclear",
+    "dbstatus",
+    "dbcont",
+    "dbquit",
+    "dbstep",
+    "dbstack",
+    "dbup",
+    "dbdown",
     "int8",
     "int2str",
     "inv",
@@ -1259,7 +1268,30 @@ BuiltinDescriptor systemDescriptor(std::string_view name) {
     descriptor.summary =
         "Session-scoped MATLAB-like system and workspace operation.";
 
-    if (name == "input" || name == "keyboard") {
+    if (name == "dbcont" || name == "dbquit" || name == "dbstep" ||
+        name == "dbup" || name == "dbdown") {
+        descriptor.inputs = name == "dbstep" ? BuiltinArity::range(0, 1) : BuiltinArity::fixed(0);
+        descriptor.outputs = BuiltinArity::fixed(0);
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::External;
+        descriptor.contextPermissions = BuiltinContextPermission::ExecutionControl;
+        descriptor.requiredContext = BuiltinContextPermission::ExecutionControl;
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.errorIdentifier = "MParser:Debugger:InvalidCommand";
+        descriptor.summary = "Queue a resume action from explicit paused-frame evaluation.";
+    } else if (name == "dbstop" || name == "dbclear" || name == "dbstatus" || name == "dbstack") {
+        descriptor.inputs = name == "dbstop" ? BuiltinArity::range(4, 6)
+            : name == "dbclear" ? BuiltinArity::range(1, 4) : BuiltinArity::fixed(0);
+        descriptor.outputs = name == "dbclear" ? BuiltinArity::fixed(0) : BuiltinArity::range(0, 1);
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::External | BuiltinSideEffect::Console;
+        descriptor.contextPermissions = BuiltinContextPermission::ExecutionControl |
+            BuiltinContextPermission::Output;
+        descriptor.requiredContext = BuiltinContextPermission::ExecutionControl;
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.errorIdentifier = "MParser:Debugger:InvalidCommand";
+        descriptor.summary = "Configure and inspect the attached source debugger's exact-line breakpoints.";
+    } else if (name == "input" || name == "keyboard") {
         descriptor.inputs = name == "input" ? BuiltinArity::range(1, 2)
                                             : BuiltinArity::fixed(0);
         descriptor.outputs = name == "input" ? BuiltinArity::range(0, 1)

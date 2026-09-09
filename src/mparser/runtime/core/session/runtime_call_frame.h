@@ -37,6 +37,8 @@ struct RuntimeCallFrame {
     std::optional<SourceSpan> debugLocation = {};
     // Borrowed from the active function invocation; frames never outlive it.
     const std::map<std::string, size_t>* debugCaptureOwners = nullptr;
+    // During an inherited source call, its parent owns the authoritative workspace.
+    RuntimeWorkspace* debugWorkspaceAlias = nullptr;
 };
 
 RuntimeCallFrame makeRuntimeScriptFrame(

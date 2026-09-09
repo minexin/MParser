@@ -2,7 +2,7 @@
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
 facade. The current v1.10 development boundary reports source API 1.3 over C
-ABI generation 2 revision 3 and includes the public debugger, `SystemContext`, and
+ABI generation 2 revision 4 and includes the public debugger, `SystemContext`, and
 `Runtime` facades. MParser and the installed SDK report product version
 `1.3.0` until the next candidate stamp; source API, ABI, and protocol
 identifiers remain independently queryable contract metadata.
@@ -327,7 +327,7 @@ Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared Runtime
 closures/objects/state, reentrant callbacks, shared cancellation, isolated
 limits, and concurrent retain/release. The current development library
-contract is ABI generation 2 revision 3 with an exact 134-symbol manifest;
+contract is ABI generation 2 revision 4 with an exact 138-symbol manifest;
 the v1.3 revision-1 117-symbol boundary and archived v1.2 revision-0 109-symbol
 boundary remain immutable evidence. The C++ facade remains header-only rather
 than a C++ binary ABI.

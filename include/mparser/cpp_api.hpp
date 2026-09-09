@@ -4,6 +4,7 @@
 #include "mparser/c_api.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -14,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -950,6 +952,7 @@ enum class DebugFrameKind : std::uint32_t {
 struct Breakpoint {
     std::string sourceName;
     std::int32_t line = 1;
+    std::string condition = {};
 };
 
 struct DebugFrame {
@@ -962,9 +965,24 @@ struct DebugFrame {
 };
 
 struct DebugEvent {
+    static constexpr std::size_t selectedFrame = MPARSER_DEBUG_SELECTED_FRAME;
     DebugReason reason = DebugReason::Step;
     std::uint64_t sequence = 0;
     std::vector<DebugFrame> frames;
+    std::vector<Diagnostic> conditionDiagnostics;
+
+    [[nodiscard]] Result evaluate(std::size_t frameIndex, std::string_view source,
+                                  std::size_t requestedOutputCount = 1) const;
+
+private:
+    struct EvaluationScope {
+        const mparser_debug_event* event;
+        const std::thread::id thread = std::this_thread::get_id();
+        std::atomic_bool active{true};
+        explicit EvaluationScope(const mparser_debug_event* source) : event(source) {}
+    };
+    std::shared_ptr<EvaluationScope> evaluation_;
+    friend class Debugger;
 };
 
 using DebugSink = std::function<DebugAction(const DebugEvent&)>;
@@ -986,13 +1004,14 @@ public:
     }
 
     void setBreakpoints(std::span<const Breakpoint> points) const {
-        std::vector<mparser_breakpoint> descriptors;
+        std::vector<mparser_conditional_breakpoint> descriptors;
         descriptors.reserve(points.size());
         for (const auto& point : points) {
             descriptors.push_back({
-                {point.sourceName.data(), point.sourceName.size()}, point.line});
+                {point.sourceName.data(), point.sourceName.size()}, point.line,
+                {point.condition.data(), point.condition.size()}});
         }
-        detail::checkStatus(mparser_debugger_set_breakpoints(
+        detail::checkStatus(mparser_debugger_set_conditional_breakpoints(
             requireRaw(), descriptors.data(), descriptors.size()),
             "set debugger breakpoints");
     }
@@ -1017,8 +1036,18 @@ private:
         const mparser_debug_event* source) noexcept {
         try {
             DebugEvent event;
+            event.evaluation_ = std::make_shared<DebugEvent::EvaluationScope>(source);
+            struct ExpireEvaluation {
+                std::shared_ptr<DebugEvent::EvaluationScope> scope;
+                ~ExpireEvaluation() { scope->active.store(false); }
+            } expire{event.evaluation_};
             event.reason = static_cast<DebugReason>(mparser_debug_event_reason(source));
             event.sequence = mparser_debug_event_sequence(source);
+            for (std::size_t index = 0;
+                 index < mparser_debug_event_condition_diagnostic_count(source); ++index) {
+                event.conditionDiagnostics.push_back(detail::copyDiagnostic(
+                    mparser_debug_event_condition_diagnostic(source, index)));
+            }
             const auto count = mparser_debug_event_frame_count(source);
             event.frames.reserve(count);
             for (std::size_t index = 0; index < count; ++index) {
@@ -1598,7 +1627,21 @@ private:
     friend class Module;
     friend class Session;
     friend class Runtime;
+    friend struct DebugEvent;
 };
+
+inline Result DebugEvent::evaluate(std::size_t frameIndex, std::string_view source,
+                                  std::size_t requestedOutputCount) const {
+    if (!evaluation_ || evaluation_->thread != std::this_thread::get_id() ||
+        !evaluation_->active.load()) {
+        throw ApiError(MPARSER_API_STATUS_INVALID_ARGUMENT,
+                       "debug evaluation requires the active callback on its execution thread");
+    }
+    mparser_result* result = nullptr;
+    const auto status = mparser_debug_event_evaluate(evaluation_->event, frameIndex,
+        source.data(), source.size(), requestedOutputCount, &result);
+    return Result::takeCreated(status, result, "evaluate debug frame");
+}
 
 class Module {
 public:

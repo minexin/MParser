@@ -281,6 +281,31 @@ end
                     scalar(inputResult.output(0)) == 8,
                 "installed input callback contract differs");
 
+        mparser::sdk::SystemContextOptions evaluationOptions;
+        evaluationOptions.rootDirectory = ".";
+        evaluationOptions.capabilities = mparser::sdk::SystemCapability::DynamicEvaluation;
+        const auto evaluationContext = mparser::sdk::SystemContext::rootedNative(evaluationOptions);
+        const auto evaluationModule = mparser::sdk::Module::compile(
+            "x=3;\ny=x+1;\n", "installed_evaluation.m");
+        mparser::sdk::DebugEvent retainedPause;
+        mparser::sdk::Invocation evaluationRequest;
+        evaluationRequest.debugger.emplace([&](const mparser::sdk::DebugEvent& event) {
+            retainedPause = event;
+            require(event.conditionDiagnostics.empty(), "installed condition unexpectedly failed");
+            require(event.evaluate(0, "x=10;", 0).succeeded(), "installed frame assignment failed");
+            require(scalar(event.evaluate(0, "x+1").output(0)) == 11,
+                    "installed frame expression differs");
+            return mparser::sdk::DebugAction::Continue;
+        });
+        evaluationRequest.debugger->setBreakpoints(std::array{
+            mparser::sdk::Breakpoint{"installed_evaluation.m", 2, "x==3"}});
+        require(evaluationModule.execute(evaluationRequest, evaluationContext).succeeded(),
+                "installed evaluation failed");
+        bool expired = false;
+        try { (void)retainedPause.evaluate(0, "x"); }
+        catch (const mparser::sdk::ApiError&) { expired = true; }
+        require(expired && !retainedPause.frames.empty(), "installed event lifetime guard failed");
+
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','

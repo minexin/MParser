@@ -1,6 +1,6 @@
 # MParser C ABI Development Contract
 
-MParser and its installed SDK use one product version. The current v1.11
+MParser and its installed SDK use one product version. The current v1.13
 development tree still reports product/SDK version `1.3.0`; the v1.3 and v1.2
 candidate contracts are archived snapshots.
 
@@ -8,7 +8,7 @@ The embedding boundary has an independent technical contract level:
 
 - C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/3/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
-- active C ABI revision: `MPARSER_C_ABI_REVISION == 3`;
+- active C ABI revision: `MPARSER_C_ABI_REVISION == 4`;
 - shared-library full version: `1.3.0`, with SOVERSION/install-name generation
   `2`.
 
@@ -19,12 +19,18 @@ runtime. The three `mparser_version_*()` functions report product version
 `1.3.0`.
 
 Revision 2 added the explicit shared Runtime handle, cross-module callable and
-object routing, and shared session-state controls. Revision 3 is the current
+object routing, and shared session-state controls. Revision 3 added the
 v1.11 extension: debugger creation/configuration, pause events, frame metadata,
 and local-value export. ABI 2.3 contains 134 exports; the invocation structure
 gains one optional pointer after its unchanged 144-byte minimum prefix. The v1.3 revision-1 header
 and 117-symbol manifest, revision-0 header and 109-symbol manifest, and their
 public-contract hashes remain unchanged archive evidence.
+
+Revision 4 adds `mparser_debug_event_evaluate`, an execution-thread-only
+pause-event entry point using the existing owned result interface. It requires
+dynamic-evaluation capability and does not permit ordinary execution reentry.
+It also adds conditional-breakpoint configuration and two event diagnostic
+accessors. The active development manifest currently contains 138 exports.
 
 ## Development Policy
 
@@ -38,7 +44,7 @@ and independent consumers are frozen as one reviewed contract. The v1.3
 revision-1 boundary is archived in `docs/public-contract-v1.3.json`, and the
 revision-0 boundary remains archived in `docs/public-contract-v1.2.json`.
 During this unreleased development line the current header and repository
-consumers move together. Once ABI 2.3 is frozen, an incompatible correction
+consumers move together. Once the active ABI is frozen, an incompatible correction
 requires a new ABI generation; an additive change within the frozen generation
 requires a revision increase and updated consumer evidence.
 
@@ -55,8 +61,9 @@ The current ABI-generation library names are:
 - Windows: `mparser_c.dll` plus its import library.
 
 Internal compiler, VM, C++ facade, and SLJIT symbols have hidden visibility.
-The current revision-3 public export set is the 134-name manifest in
-`tests/c_api_generation2_revision3_symbols.txt`. Revision 2 retains its
+The current revision-4 public export set is the 138-name manifest in
+`tests/c_api_generation2_revision4_symbols.txt`. Revision 3 retains its
+134-name manifest in `tests/c_api_generation2_revision3_symbols.txt`. Revision 2 retains its
 124-name manifest in `tests/c_api_generation2_revision2_symbols.txt`. The v1.3 revision-1
 117-name manifest remains `tests/c_api_generation2_revision1_symbols.txt`,
 and the frozen revision-0 109-name manifest remains
@@ -158,7 +165,7 @@ values.
 
 `c_api_shared_library_abi` inspects the dynamic library with the platform
 toolchain, compares its exports with
-`tests/c_api_generation2_revision3_symbols.txt`, and checks SONAME/install-name
+`tests/c_api_generation2_revision4_symbols.txt`, and checks SONAME/install-name
 major 2. Lifecycle, unload, allocation-failure, named-fault,
 concurrency, and relocated C/C++ consumer tests exercise the same current
 headers. The complete platform matrix runs at a milestone candidate gate;

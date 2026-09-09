@@ -1376,16 +1376,148 @@ public:
     }
 
 private:
-    RuntimeDebugFrameProvider debugFrameProvider(const RuntimeCallFrame& frame) {
+    BuiltinSourceEvaluationResult evaluateSourceInWorkspace(
+        const BytecodeInstruction& instruction, const BuiltinSourceEvaluationRequest& request,
+        RuntimeWorkspace* target, std::vector<RuntimeWorkspace*> ancestors) {
+        if (!target) {
+            BuiltinSourceEvaluationResult result;
+            result.diagnostics.push_back(Diagnostic{
+                request.span,
+                "dynamic source workspace is unavailable",
+                "MParser:MissingBuiltinContext"});
+            return result;
+        }
+        RuntimeSourceEvaluationOptions options;
+        options.builtinRegistry =
+            semantic_ && semantic_->builtinRegistry
+                ? semantic_->builtinRegistry
+                : defaultBuiltinRegistry();
+        options.sessionState = sessionState_;
+        options.executionControl = executionControl_;
+        options.outputSink = runtimeOutputSink_;
+        options.typedRegionBackend = typedRegionBackend_;
+        options.enableTypedRegions = typedRegionsEnabled_;
+        options.inheritedWorkspaceFrames =
+            std::move(ancestors);
+        if (!inheritedSourceCallableInvoker_) {
+            options.inheritedCallableScopes =
+                sourceCallableScopes();
+            for (const auto& scope :
+                 options.inheritedCallableScopes) {
+                if (scope.workspace == target) {
+                    options.inheritedCallables =
+                        scope.callables;
+                    break;
+                }
+            }
+            options.inheritedCallableWorkspace = target;
+            options.inheritedCallableInvoker =
+                [this, &instruction](
+                    const RuntimeValue& callable,
+                    const std::vector<RuntimeValue>& arguments,
+                    size_t requestedOutputCount,
+                    SourceSpan callbackSpan,
+                    RuntimeWorkspace* ownerWorkspace) {
+                    return invokeSourceCallable(
+                        instruction, callable, arguments,
+                        requestedOutputCount, callbackSpan,
+                        ownerWorkspace);
+                };
+        } else {
+            const auto* callableScope =
+                inheritedSourceCallableScope(target);
+            if (target == &currentFrame()) {
+                options.inheritedCallables =
+                    inheritedSourceCallables_;
+                options.inheritedCallableWorkspace =
+                    inheritedSourceCallableWorkspace_;
+            } else if (callableScope) {
+                options.inheritedCallables =
+                    callableScope->callables;
+                options.inheritedCallableWorkspace =
+                    callableScope->workspace;
+            } else {
+                options.inheritedCallables =
+                    inheritedSourceCallables_;
+                options.inheritedCallableWorkspace =
+                    inheritedSourceCallableWorkspace_;
+            }
+            options.inheritedCallableScopes =
+                inheritedSourceCallableScopes_;
+            options.inheritedCallableInvoker =
+                inheritedSourceCallableInvoker_;
+        }
+        if (!inheritedSourceStorageResolver_ ||
+            !inheritedSourceStorageDeclarer_) {
+            options.inheritedStorageResolver =
+                [this](RuntimeWorkspace* ownerWorkspace,
+                       std::string_view name) {
+                    return sourceStorageBinding(
+                        ownerWorkspace, name);
+                };
+            options.inheritedStorageDeclarer =
+                [this](RuntimeWorkspace* ownerWorkspace,
+                       RuntimeSourceStorageKind kind,
+                       std::string_view name,
+                       const RuntimeValue* localValue,
+                       SourceSpan span) {
+                    return declareSourceStorage(
+                        ownerWorkspace, kind, name,
+                        localValue, span);
+                };
+            options.inheritedStorageClearer =
+                [this](RuntimeWorkspace* ownerWorkspace,
+                       std::string_view name) {
+                    clearSourceStorage(ownerWorkspace, name);
+                };
+            options.inheritedStorageWorkspace = target;
+        } else {
+            options.inheritedStorageResolver =
+                inheritedSourceStorageResolver_;
+            options.inheritedStorageDeclarer =
+                inheritedSourceStorageDeclarer_;
+            options.inheritedStorageClearer =
+                inheritedSourceStorageClearer_;
+            options.inheritedStorageWorkspace =
+                target == &currentFrame()
+                    ? inheritedSourceStorageWorkspace_
+                    : target;
+        }
+        return evaluateRuntimeSource(request, *target, options);
+    }
+
+    RuntimeDebugFrameProvider debugFrameProvider(RuntimeCallFrame& frame) {
         if (!executionControl_->debugger()) {
             return {};
         }
         return [this, &frame](std::vector<RuntimeDebugFrame>& destination) {
+            const auto count = destination.size();
             appendRuntimeDebugFrame(destination, frame,
                 [this](size_t id) {
                     return id < semantic_->sources.size()
                         ? semantic_->sources[id].name : std::string{};
                 }, *sessionState_, frames_);
+            if (destination.size() != count) {
+                destination.back().bindEvaluator([this, &frame](
+                    const RuntimeDebugEvaluationRequest& request) {
+                    return evaluateRuntimeDebugFrame(frame, *sessionState_, frames_, [&] {
+                        BytecodeInstruction instruction;
+                        instruction.span = frame.debugLocation.value_or(frame.span);
+                        std::vector<RuntimeWorkspace*> ancestors;
+                        for (auto& ancestor : frames_) {
+                            if (&ancestor == &frame) { break; }
+                            ancestors.push_back(&ancestor.workspace);
+                        }
+                        auto evaluated = evaluateSourceInWorkspace(instruction,
+                            BuiltinSourceEvaluationRequest{request.source,
+                                BuiltinWorkspaceScope::Current, request.requestedOutputCount,
+                                true, instruction.span}, &frame.workspace, std::move(ancestors));
+                        return RuntimeDebugEvaluationResult{evaluated.succeeded,
+                            std::move(evaluated.outputs), std::move(evaluated.capturedOutput),
+                            std::move(evaluated.diagnostics)};
+                    });
+                });
+            }
         };
     }
 
@@ -11531,6 +11663,15 @@ private:
         if (inheritedSourceCallableWorkspace_) {
             *inheritedSourceCallableWorkspace_ = currentFrame();
         }
+        struct DebugWorkspaceAliasScope {
+            RuntimeCallFrame& frame;
+            RuntimeWorkspace* previous;
+            DebugWorkspaceAliasScope(RuntimeCallFrame& target, RuntimeWorkspace* workspace)
+                : frame(target), previous(target.debugWorkspaceAlias) {
+                frame.debugWorkspaceAlias = workspace;
+            }
+            ~DebugWorkspaceAliasScope() { frame.debugWorkspaceAlias = previous; }
+        } debugAlias(frames_.back(), inheritedSourceCallableWorkspace_);
         auto result = inheritedSourceCallableInvoker_(
             callable, arguments, static_cast<size_t>(requestedCount),
             instruction.span, inheritedSourceCallableWorkspace_);
@@ -13671,115 +13812,11 @@ private:
                     descriptor->contextPermissions,
                     BuiltinContextPermission::SourceEvaluation)) {
                 context.sourceEvaluator =
-                    [this, &instruction](
-                        const BuiltinSourceEvaluationRequest& request) {
-                    RuntimeWorkspace* target = workspaceFor(request.workspace);
-                    if (!target) {
-                        BuiltinSourceEvaluationResult result;
-                        result.diagnostics.push_back(Diagnostic{
-                            request.span,
-                            "dynamic source workspace is unavailable",
-                            "MParser:MissingBuiltinContext"});
-                        return result;
-                    }
-                    RuntimeSourceEvaluationOptions options;
-                    options.builtinRegistry =
-                        semantic_ && semantic_->builtinRegistry
-                            ? semantic_->builtinRegistry
-                            : defaultBuiltinRegistry();
-                    options.sessionState = sessionState_;
-                    options.executionControl = executionControl_;
-                    options.outputSink = runtimeOutputSink_;
-                    options.typedRegionBackend = typedRegionBackend_;
-                    options.enableTypedRegions = typedRegionsEnabled_;
-                    options.inheritedWorkspaceFrames =
-                        workspaceAncestorsFor(request.workspace);
-                    if (!inheritedSourceCallableInvoker_) {
-                        options.inheritedCallableScopes =
-                            sourceCallableScopes();
-                        for (const auto& scope :
-                             options.inheritedCallableScopes) {
-                            if (scope.workspace == target) {
-                                options.inheritedCallables =
-                                    scope.callables;
-                                break;
-                            }
-                        }
-                        options.inheritedCallableWorkspace = target;
-                        options.inheritedCallableInvoker =
-                            [this, &instruction](
-                                const RuntimeValue& callable,
-                                const std::vector<RuntimeValue>& arguments,
-                                size_t requestedOutputCount,
-                                SourceSpan callbackSpan,
-                                RuntimeWorkspace* ownerWorkspace) {
-                                return invokeSourceCallable(
-                                    instruction, callable, arguments,
-                                    requestedOutputCount, callbackSpan,
-                                    ownerWorkspace);
-                            };
-                    } else {
-                        const auto* callableScope =
-                            inheritedSourceCallableScope(target);
-                        if (target == &currentFrame()) {
-                            options.inheritedCallables =
-                                inheritedSourceCallables_;
-                            options.inheritedCallableWorkspace =
-                                inheritedSourceCallableWorkspace_;
-                        } else if (callableScope) {
-                            options.inheritedCallables =
-                                callableScope->callables;
-                            options.inheritedCallableWorkspace =
-                                callableScope->workspace;
-                        } else {
-                            options.inheritedCallables =
-                                inheritedSourceCallables_;
-                            options.inheritedCallableWorkspace =
-                                inheritedSourceCallableWorkspace_;
-                        }
-                        options.inheritedCallableScopes =
-                            inheritedSourceCallableScopes_;
-                        options.inheritedCallableInvoker =
-                            inheritedSourceCallableInvoker_;
-                    }
-                    if (!inheritedSourceStorageResolver_ ||
-                        !inheritedSourceStorageDeclarer_) {
-                        options.inheritedStorageResolver =
-                            [this](RuntimeWorkspace* ownerWorkspace,
-                                   std::string_view name) {
-                                return sourceStorageBinding(
-                                    ownerWorkspace, name);
-                            };
-                        options.inheritedStorageDeclarer =
-                            [this](RuntimeWorkspace* ownerWorkspace,
-                                   RuntimeSourceStorageKind kind,
-                                   std::string_view name,
-                                   const RuntimeValue* localValue,
-                                   SourceSpan span) {
-                                return declareSourceStorage(
-                                    ownerWorkspace, kind, name,
-                                    localValue, span);
-                            };
-                        options.inheritedStorageClearer =
-                            [this](RuntimeWorkspace* ownerWorkspace,
-                                   std::string_view name) {
-                                clearSourceStorage(ownerWorkspace, name);
-                            };
-                        options.inheritedStorageWorkspace = target;
-                    } else {
-                        options.inheritedStorageResolver =
-                            inheritedSourceStorageResolver_;
-                        options.inheritedStorageDeclarer =
-                            inheritedSourceStorageDeclarer_;
-                        options.inheritedStorageClearer =
-                            inheritedSourceStorageClearer_;
-                        options.inheritedStorageWorkspace =
-                            target == &currentFrame()
-                                ? inheritedSourceStorageWorkspace_
-                                : target;
-                    }
-                    return evaluateRuntimeSource(request, *target, options);
-                };
+                    [this, &instruction](const BuiltinSourceEvaluationRequest& request) {
+                        return evaluateSourceInWorkspace(instruction, request,
+                            workspaceFor(request.workspace),
+                            workspaceAncestorsFor(request.workspace));
+                    };
             }
             BuiltinResult result = builtinRegistry().invoke(
                 name,

@@ -581,7 +581,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DATADIR}/mparser/performance-suite/samples/performance_array_workload.m")
 set(builtin_contract_archive_versions
     1.0 1.1 1.3 1.4 1.5 1.6 1.7 1.8 1.9 1.10
-    1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18)
+    1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18 1.19)
 set(builtin_contract_archive_sha256
     3f8a0f6b1ce60e68962b8241abe90652c615bb45f88de426b4a9ad80505d640e
     7ef24f45164c0142a1afb48a3cd513dd34b6e8118812a5b22fda9d334a99b543
@@ -600,7 +600,8 @@ set(builtin_contract_archive_sha256
     caaf095852c45c25247c77769eb93a7a8e0e91bfcab6db9461f5d200c9b0ec02
     9e516bc37d3aacc8958e5f7d02d210288ef49ddd277050be5f732e389e5c5448
     33c2f6f07849a9a3efaea12f79e7b443f0c8c845dfe69badbdee1b4a90511e5a
-    e3f658257d7888c8a3954b7cbfbae3969f3200511020866a70945477edb6b757)
+    e3f658257d7888c8a3954b7cbfbae3969f3200511020866a70945477edb6b757
+    cc873e2269643a9eeb5decb13c8f251440da72d26fe5a5b36175abe3fa9d257a)
 foreach(version IN LISTS builtin_contract_archive_versions)
     list(APPEND required_paths
         "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/builtin-contract/${version}/default_catalog.json")
@@ -637,14 +638,14 @@ endif()
 file(SHA256 "${installed_builtin_catalog}"
     installed_builtin_catalog_sha256)
 if(NOT installed_builtin_contract_major EQUAL 1 OR
-   NOT installed_builtin_contract_minor EQUAL 18 OR
-   NOT installed_builtin_descriptor_count EQUAL 331 OR
-   NOT installed_builtin_registered_name_count EQUAL 333 OR
+   NOT installed_builtin_contract_minor EQUAL 19 OR
+   NOT installed_builtin_descriptor_count EQUAL 340 OR
+   NOT installed_builtin_registered_name_count EQUAL 342 OR
    NOT installed_builtin_catalog_sha256 STREQUAL
-       "e3f658257d7888c8a3954b7cbfbae3969f3200511020866a70945477edb6b757")
+       "cc873e2269643a9eeb5decb13c8f251440da72d26fe5a5b36175abe3fa9d257a")
     message(FATAL_ERROR
         "Installed default builtin catalog is not the active "
-        "1.18/331-descriptor/333-name snapshot")
+        "1.19/340-descriptor/342-name snapshot")
 endif()
 list(LENGTH builtin_contract_archive_versions builtin_contract_version_count)
 list(LENGTH builtin_contract_archive_sha256 builtin_contract_hash_count)

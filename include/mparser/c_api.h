@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 3u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 3u
+#define MPARSER_C_ABI_REVISION 4u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -243,6 +243,12 @@ typedef struct mparser_breakpoint {
     int32_t line;
 } mparser_breakpoint;
 
+typedef struct mparser_conditional_breakpoint {
+    mparser_utf8_view source_name;
+    int32_t line;
+    mparser_utf8_view condition;
+} mparser_conditional_breakpoint;
+
 typedef struct mparser_debug_frame_info {
     mparser_debug_frame_kind kind;
     mparser_utf8_view function_name;
@@ -256,7 +262,8 @@ typedef struct mparser_debug_frame_info {
 
 /* The event and its views are borrowed on this thread until the callback returns. The host
  * may block the execution thread here, inspect the event, then return a resume
- * action. Do not execute or mutate the paused module/session/runtime from the
+ * action. Only mparser_debug_event_evaluate may execute in the paused workspace.
+ * Do not otherwise execute or mutate the paused module/session/runtime from the
  * callback, or wait for an operation requiring their execution locks. */
 typedef mparser_debug_action (*mparser_debug_sink_callback)(
     void* user_data, const mparser_debug_event* event);
@@ -397,6 +404,12 @@ MPARSER_C_API void mparser_debugger_retain(mparser_debugger* debugger);
 MPARSER_C_API void mparser_debugger_release(mparser_debugger* debugger);
 MPARSER_C_API mparser_api_status mparser_debugger_set_breakpoints(
     mparser_debugger* debugger, const mparser_breakpoint* points, size_t count);
+/* Replaces the entire breakpoint set. Empty conditions are unconditional.
+ * Conditions run in the current frame with the invocation's capabilities.
+ * False conditions skip the breakpoint; invalid conditions pause with diagnostics.
+ * Matching conditions run in order until one is true, empty, or fails. */
+MPARSER_C_API mparser_api_status mparser_debugger_set_conditional_breakpoints(
+    mparser_debugger* debugger, const mparser_conditional_breakpoint* points, size_t count);
 MPARSER_C_API mparser_api_status mparser_debugger_request_pause(
     mparser_debugger* debugger);
 MPARSER_C_API mparser_debug_reason mparser_debug_event_reason(
@@ -405,6 +418,11 @@ MPARSER_C_API uint64_t mparser_debug_event_sequence(
     const mparser_debug_event* event);
 MPARSER_C_API size_t mparser_debug_event_frame_count(
     const mparser_debug_event* event);
+MPARSER_C_API size_t mparser_debug_event_condition_diagnostic_count(
+    const mparser_debug_event* event);
+/* Borrowed until the callback returns, like other event views. */
+MPARSER_C_API const mparser_diagnostic* mparser_debug_event_condition_diagnostic(
+    const mparser_debug_event* event, size_t index);
 /* Frames are ordered outermost to current. Frame info/views are borrowed. */
 MPARSER_C_API mparser_api_status mparser_debug_event_frame(
     const mparser_debug_event* event, size_t frame_index,
@@ -414,6 +432,19 @@ MPARSER_C_API mparser_api_status mparser_debug_event_frame(
 MPARSER_C_API mparser_api_status mparser_debug_event_variable(
     const mparser_debug_event* event, size_t frame_index, size_t variable_index,
     mparser_utf8_view* out_name, mparser_value** out_value);
+/* Call only on the execution thread while this borrowed event is active.
+ * Evaluates source in the selected live frame, including assignment side effects.
+ * Frame snapshots remain unchanged. Nested evaluation is rejected. The owned
+ * result uses ordinary output/diagnostic accessors and may outlive the callback.
+ * Script commands use requested_output_count=0; expressions may request outputs.
+ * The invocation must grant MPARSER_SYSTEM_CAPABILITY_DYNAMIC_EVALUATION.
+ * Evaluation failures are reported in the result, not as an API status error. */
+/* Select the pause's current navigation frame instead of an explicit index. */
+#define MPARSER_DEBUG_SELECTED_FRAME ((size_t)-1)
+MPARSER_C_API mparser_api_status mparser_debug_event_evaluate(
+    const mparser_debug_event* event, size_t frame_index,
+    const char* source, size_t source_size, size_t requested_output_count,
+    mparser_result** out_result);
 
 MPARSER_C_API mparser_api_status
 mparser_invocation_options_init(mparser_invocation_options* options);

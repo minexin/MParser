@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.18. Contract 1.0 established
+identify active source contract 1.19. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -358,16 +358,23 @@ descriptors and 330 registered names. These rich values remain
 VM/portable fallback values until independently measured Typed lowering can
 preserve their complete semantics.
 
-Contract 1.18 adds `input`, `keyboard`, and `superclasses`, bringing the active
+Contract 1.18 adds `input`, `keyboard`, and `superclasses`, bringing that
 catalog to 331 descriptors and 333 registered names. Input and keyboard use
 execution control, source evaluation, and output context permissions; their
 side effects prevent pure numeric lowering. Superclass reflection uses the
 interpreter/VM class catalog and a shared visible-ancestor traversal.
 
+Contract 1.19 adds `dbstop`, `dbclear`, `dbstatus`, `dbstep`, `dbcont`, and
+`dbquit`, `dbstack`, `dbup`, and `dbdown`, with 340 descriptors and 342 names.
+They share the attached debugger and require
+execution-control context. Configuration mutation and display effects prevent
+pure numeric lowering. See [debugging-sdk.md](debugging-sdk.md) for supported
+exact-source forms and current source-control boundaries.
+
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The frozen v1.3 candidate snapshot is
 `tests/public_contract/builtin/1.17/default_catalog.json`; the current development
-snapshot is `tests/public_contract/builtin/1.18/default_catalog.json`.
+snapshot is `tests/public_contract/builtin/1.19/default_catalog.json`.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output
 constraint, behavioral classification, context permission, error identifier,
