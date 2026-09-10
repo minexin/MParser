@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.19. Contract 1.0 established
+identify active source contract 1.20. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable
@@ -374,7 +374,13 @@ exact-source forms and current source-control boundaries.
 `tests/public_contract/builtin/1.1/default_catalog.json` remains the normalized
 v1.2 candidate snapshot. The frozen v1.3 candidate snapshot is
 `tests/public_contract/builtin/1.17/default_catalog.json`; the current development
-snapshot is `tests/public_contract/builtin/1.19/default_catalog.json`.
+snapshot is `tests/public_contract/builtin/1.20/default_catalog.json`.
+
+Contract 1.20 implements the previously recognized `plot` name for real dense
+vectors, with optional Line output and required graphics context. Creation
+mutates graph object state; no-output calls do not assign an implicit result.
+The descriptor count remains 340 (342 registered names). Contract 1.19 and
+earlier catalog files remain immutable historical evidence.
 `builtin_catalog_snapshot_smoke` regenerates the
 catalog in memory and compares every name, alias, arity, input/output
 constraint, behavioral classification, context permission, error identifier,

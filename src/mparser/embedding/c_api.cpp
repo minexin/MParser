@@ -14,6 +14,7 @@
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/io/runtime_system.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/frontend/source_loader.h"
@@ -691,6 +692,7 @@ bool runtimeValueRequiresModule(
         }
         return false;
     case mparser::RuntimeValueKind::Object:
+        if (mparser::isRuntimeGraphicsValue(value)) { return false; }
         if (mparser::isRuntimeTabularValue(value)) {
             const auto* storage = mparser::runtimeTabularStorage(value);
             if (!storage) {
@@ -2711,6 +2713,13 @@ mparser_result_output_count(const mparser_result* result) {
 }
 
 mparser_utf8_view
+mparser_result_graphics_json(const mparser_result* result) {
+    return result && result->value.graphicsSnapshot
+        ? mparser_c_detail::utf8View(result->value.graphicsSnapshot->json())
+        : mparser_c_detail::emptyUtf8View();
+}
+
+mparser_utf8_view
 mparser_result_output_name(
     const mparser_result* result, size_t index) {
     if (!result ||
@@ -3694,6 +3703,23 @@ mparser_value_function_text(const mparser_value* value) {
     }
     return mparser_c_detail::utf8View(
         value->state->functionText);
+}
+
+mparser_api_status mparser_value_graphics_json(
+    const mparser_value* value, mparser_value** out_json) {
+    if (!out_json) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    *out_json = nullptr;
+    if (!value || !value->state) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    if (!mparser::isRuntimeGraphicsValue(value->state->value)) { return MPARSER_API_STATUS_TYPE_MISMATCH; }
+    try {
+        const auto json = mparser::serializeRuntimeGraphicsValue(value->state->value);
+        return mparser_c_detail::makeValueHandle(
+            mparser::makeRuntimeCharacterVectorUtf8(json), {}, out_json);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
 }
 
 mparser_api_status mparser_debugger_create(

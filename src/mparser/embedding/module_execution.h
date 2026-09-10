@@ -3,6 +3,7 @@
 #include "mparser/runtime/core/session/runtime_execution_control.h"
 #include "mparser/runtime/core/session/runtime_output.h"
 #include "mparser/runtime/core/value/runtime_value.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/execution/runtime_source_evaluation.h"
 
 #include <cstddef>
@@ -176,6 +177,7 @@ struct ModuleInvocationResult {
     std::vector<RuntimeVariable> variables;
     std::vector<ModuleDiagnostic> diagnostics;
     ModuleExecutionSummary execution;
+    std::optional<RuntimeGraphicsSnapshot> graphicsSnapshot;
 
     bool succeeded() const noexcept;
     bool hasWarnings() const noexcept;

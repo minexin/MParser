@@ -34,10 +34,10 @@ mparser --run --result-format=json-v1 script.m
 - [Interactive Script Input](interactive-input.md): host line callbacks for
   `input` and `keyboard` in v1.12 development.
 - [Superclass Reflection](superclasses.md): visible ancestor queries in v1.12.
-- [Graphics Object Model](graphics-object-model.md): planned headless object
+- [Graphics Object Model](graphics-object-model.md): headless object
   semantics, deterministic serialization, and the separate rendering boundary.
 - [C Embedding API](embedding-c-api.md): C source API 1.3 over current ABI
-  generation 2 revision 2, with opaque handles, values, sessions, diagnostics,
+  generation 2 revision 5, with opaque handles, values, sessions, diagnostics,
   cancellation, limits, and shared Runtime ownership.
 - [C ABI Compatibility](c-abi-compatibility.md): structure evolution,
   symbols, layouts, ownership, and candidate-freeze rules.
@@ -106,9 +106,11 @@ These files are release contracts, not generated prose:
 
 The archived v1.3 candidate contract freezes the protocol, headers, ABI 2.1
 symbol set, and builtin 1.17 catalog. The v1.12 boundary added script input
-and superclass reflection with builtin contract 1.18. Current v1.13 development
+and superclass reflection with builtin contract 1.18. V1.13 development
 adds pause-event evaluation and conditional breakpoints at ABI 2.4, plus source
-breakpoint commands at builtin contract 1.19, without mutating those snapshots. See
+breakpoint commands at builtin contract 1.19. Current [V1.14](v1.14.md) adds
+headless graphics snapshots at ABI 2.5, protocol 1.2 and builtin contract 1.20,
+without mutating the historical snapshots. See
 [Interactive Script Input](interactive-input.md), [v1.12](v1.12.md), and
 [Debugging Through The SDK](debugging-sdk.md). The v1.3
 implementation train originally closed with 1.10; 1.11 added the guarded `sum`

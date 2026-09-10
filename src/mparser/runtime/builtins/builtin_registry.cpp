@@ -21,6 +21,7 @@
 #include "mparser/runtime/builtins/text/runtime_text_query_builtins.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_text.h"
@@ -2195,6 +2196,54 @@ BuiltinDescriptor timetableDescriptor(std::string_view name) {
 }
 
 BuiltinDescriptor descriptorFor(std::string_view name) {
+    if (name == "plot") {
+        auto descriptor = baseDescriptor(name);
+        descriptor.inputs = BuiltinArity::range(1, 2);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+        descriptor.implementation = BuiltinImplementationKind::Context;
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::ObjectState;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.requiredContext = BuiltinContextPermission::Graphics;
+        descriptor.errorIdentifier = "MParser:InvalidGraphicsCall";
+        descriptor.summary = "Create a headless Figure/Axes/Line from real numeric vectors.";
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.handler = [](const BuiltinCall& call) {
+            std::vector<std::vector<double>> coordinates;
+            for (const auto& argument : call.arguments) {
+                const auto dimensions = runtimeDimensions(argument);
+                const auto count = runtimeShapeElementCount(argument);
+                if (!isRuntimeNumericValue(argument) || argument.numericComplex ||
+                    argument.sparseStorage || dimensions.size() != 2 ||
+                    (count != 0 && dimensions[0] != 1 && dimensions[1] != 1)) {
+                    return BuiltinResult::failure(call.span,
+                        "plot expects real dense numeric vectors", "MParser:InvalidGraphicsCall");
+                }
+                std::vector<double> values;
+                values.reserve(count);
+                for (size_t index = 0; index < count; ++index) {
+                    const auto number = runtimeNumericElement(argument, index);
+                    if (!number) {
+                        return BuiltinResult::failure(call.span,
+                            "plot coordinate cannot be converted to double", "MParser:InvalidGraphicsCall");
+                    }
+                    values.push_back(*number);
+                }
+                coordinates.push_back(std::move(values));
+            }
+            if (coordinates.size() == 2 && coordinates[0].size() != coordinates[1].size()) {
+                return BuiltinResult::failure(call.span,
+                    "plot coordinates must have equal lengths", "MParser:InvalidGraphicsCall");
+            }
+            auto graph = call.context->graphicsGraph;
+            const auto id = coordinates.size() == 1
+                ? graph->plot(std::move(coordinates[0]))
+                : graph->plot(std::move(coordinates[0]), std::move(coordinates[1]));
+            if (call.requestedOutputCount == 0) { return BuiltinResult::success(); }
+            return BuiltinResult::success({makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, id))});
+        };
+        return descriptor;
+    }
     if (isRuntimeSystemBuiltin(name)) {
         return systemDescriptor(name);
     }
@@ -2303,7 +2352,7 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
 
     BuiltinDescriptor descriptor = baseDescriptor(name);
     descriptor.sideEffects = BuiltinSideEffect::External;
-    if (matches(name, {"empty", "plot", "rand", "randn"})) {
+    if (matches(name, {"empty", "rand", "randn"})) {
         descriptor.implementation =
             BuiltinImplementationKind::Unsupported;
         descriptor.sideEffects = BuiltinSideEffect::None;
@@ -2397,6 +2446,9 @@ std::string missingContextName(
     if (permission == BuiltinContextPermission::SourceEvaluation) {
         return "source evaluator";
     }
+    if (permission == BuiltinContextPermission::Graphics) {
+        return "graphics graph";
+    }
     return "runtime context";
 }
 
@@ -2404,6 +2456,9 @@ bool contextAvailable(const BuiltinCallContext* context,
                       BuiltinContextPermission permission) {
     if (!context) {
         return false;
+    }
+    if (permission == BuiltinContextPermission::Graphics) {
+        return static_cast<bool>(context->graphicsGraph);
     }
     if (permission == BuiltinContextPermission::Workspace) {
         return context->workspace != nullptr &&
@@ -2854,7 +2909,8 @@ BuiltinResult BuiltinRegistry::invoke(
              BuiltinContextPermission::Output,
              BuiltinContextPermission::SystemServices,
              BuiltinContextPermission::DisplayFormat,
-             BuiltinContextPermission::SourceEvaluation}) {
+             BuiltinContextPermission::SourceEvaluation,
+             BuiltinContextPermission::Graphics}) {
         if (hasBuiltinContextPermission(
                 descriptor->requiredContext, permission) &&
             !contextAvailable(call.context, permission)) {

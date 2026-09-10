@@ -599,8 +599,9 @@ commands and their interaction with host control as part of that contract.
 The current implementation provides C/C++ paused evaluation, conditional
 breakpoints, and the documented `dbstop/dbclear/dbstatus/dbstep/dbcont/dbquit/
 dbstack/dbup/dbdown` subset. Local native 340/340, no-JIT 322/322 and external
-inventory 222/223 evidence is recorded in [v1.13.md](v1.13.md). Platform
-acceptance remains open; the sole external failure is the V1.14 graphics case.
+inventory 222/223 evidence is recorded in [v1.13.md](v1.13.md). Commit `19f73bd`
+passed all six required platform jobs and documentation CI, closing this
+kernel/SDK milestone. The sole external failure is the V1.14 graphics case.
 
 ## v1.14: Headless Graphics Objects
 
@@ -611,6 +612,12 @@ validated property access, and deterministic graph serialization. This is the
 closure milestone for `cap_291_out_graphics`; it is no longer an excluded
 inventory item. MExecClient and optional backends own rendering. Full MATLAB
 desktop graphics compatibility remains outside the commitment.
+
+The working-tree implementation now covers scalar/array graphics values and
+immutable no-output session snapshots through C/C++ and protocol 1.2. Native
+343/343 and no-JIT 325/325 full regressions passed, including installed consumers
+and native relocated archive execution. See [v1.14.md](v1.14.md) for evidence;
+cross-platform acceptance remains open.
 
 ## v1.6+: Remaining Semantics And Deeper Optimization
 

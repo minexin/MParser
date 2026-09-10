@@ -4,6 +4,7 @@
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_text.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 
 #include <bit>
 #include <charconv>
@@ -28,7 +29,7 @@ namespace {
 
 constexpr size_t kMaximumProtocolNestingDepth = 128;
 constexpr std::string_view kEmergencyMachineResultJsonV1 =
-    "{\"protocol\":{\"name\":\"mparser.result\",\"major\":1,\"minor\":1},"
+    "{\"protocol\":{\"name\":\"mparser.result\",\"major\":1,\"minor\":2},"
     "\"engine\":{\"name\":\"MParser\",\"version\":\"unknown\"},"
     "\"status\":\"request-rejected\",\"entry_function\":\"\","
     "\"requested_output_count\":0,\"outputs\":[],\"workspace\":[],"
@@ -125,6 +126,19 @@ public:
     void stringValue(std::string_view value) {
         beforeValue();
         appendQuoted(value);
+    }
+
+    void graphicsValue(const RuntimeValue& value) {
+        // Only the graph serializer can produce this nested JSON document.
+        // Finish serialization before mutating writer state on failure.
+        const auto document = serializeRuntimeGraphicsValue(value);
+        beforeValue();
+        output_ += document;
+    }
+
+    void graphicsSnapshot(const RuntimeGraphicsSnapshot& snapshot) {
+        beforeValue();
+        output_ += snapshot.json();
     }
 
     void unsignedValue(std::uint64_t value) {
@@ -640,7 +654,12 @@ void writeObjectValue(JsonWriter& writer,
     } else {
         writer.stringValue(value.enumerationMemberName);
     }
-    writer.field("representation", "opaque");
+    const bool graphics = isRuntimeGraphicsValue(value);
+    writer.field("representation", graphics ? (value.graphicsHandle ? "graphics" : "graphics-array") : "opaque");
+    if (graphics) {
+        writer.key("graphics");
+        writer.graphicsValue(value);
+    }
     writer.endObject();
 }
 
@@ -868,6 +887,10 @@ std::string serializeMachineResultJsonV1(
     writer.field("version", engineVersion);
     writer.endObject();
     writer.field("status", moduleInvocationStatusName(result.status));
+    if (result.graphicsSnapshot) {
+        writer.key("graphics");
+        writer.graphicsSnapshot(*result.graphicsSnapshot);
+    }
     writer.field("entry_function", result.entryFunction);
     writer.field(
         "requested_output_count",

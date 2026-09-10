@@ -2,6 +2,7 @@
 
 #include "mparser/runtime/io/runtime_system.h"
 #include "mparser/runtime/core/session/runtime_warning.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 
 #include <utility>
 
@@ -12,7 +13,13 @@ RuntimeSessionState::RuntimeSessionState(
     : systemContext_(systemContext
                          ? std::move(systemContext)
                          : makeIsolatedRuntimeSystemContext()),
-      warningContext_(std::make_shared<RuntimeWarningContext>()) {}
+      warningContext_(std::make_shared<RuntimeWarningContext>()),
+      graphicsGraph_(std::make_shared<RuntimeGraphicsGraph>()) {}
+
+std::shared_ptr<RuntimeGraphicsGraph> RuntimeSessionState::graphicsGraph() const {
+    std::scoped_lock lock(mutex_);
+    return graphicsGraph_;
+}
 
 std::shared_ptr<RuntimeSystemContext>
 RuntimeSessionState::systemContext() const {
@@ -181,11 +188,13 @@ void RuntimeSessionState::clearGlobals() {
 }
 
 void RuntimeSessionState::reset() {
+    auto replacementGraph = std::make_shared<RuntimeGraphicsGraph>();
     {
         std::scoped_lock lock(mutex_);
         globals_.clear();
         persistentByFunction_.clear();
         displayFormat_ = {};
+        graphicsGraph_ = std::move(replacementGraph);
     }
     warningContext_->reset();
 }

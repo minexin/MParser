@@ -1,4 +1,5 @@
 #include "mparser/execution/bytecode/vm/bytecode_vm.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/runtime/core/session/runtime_debugger.h"
 #include "mparser/semantic/argument_contract.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
@@ -9837,6 +9838,16 @@ private:
             pushRuntime(std::move(member.value));
             return;
         }
+        if (target->value.graphicsHandle) {
+            auto member = runtimeGraphicsMember(target->value, instruction.operand);
+            if (!member.succeeded) { addDiagnostic(instruction, std::move(member.error)); return; }
+            if (instruction.resultCount == 0) { return; }
+            if (instruction.resultCount != 1) {
+                addDiagnostic(instruction, "graphics member access supports at most one output"); return;
+            }
+            pushRuntime(std::move(member.value));
+            return;
+        }
         if (isRuntimeException(target->value)) {
             if (isRuntimeExceptionMethodName(instruction.operand)) {
                 stack_.push_back(builtinStackValue(
@@ -10205,6 +10216,11 @@ private:
                           instruction.receiverBinding,
                           updated, instruction);
             recordAssignment(instruction, "struct-member", updated);
+            return;
+        }
+        if (target->value.graphicsHandle) {
+            auto assigned = runtimeSetGraphicsMember(target->value, instruction.operand, *value);
+            if (!assigned.succeeded) { addDiagnostic(instruction, std::move(assigned.error)); }
             return;
         }
         if (isRuntimeTabularValue(target->value)) {
@@ -13678,6 +13694,17 @@ private:
                              return isRuntimeCharacterVector(argument) ||
                                     isRuntimeStringArray(argument);
                          }));
+        if ((name == "delete" || name == "isvalid") && arguments.size() == 1 &&
+            arguments.front().graphicsHandle) {
+            if (requestedCount > (name == "delete" ? 0 : 1)) {
+                addDiagnostic(instruction, "invalid graphics lifecycle output count");
+                return missingOutputs(requestedCount);
+            }
+            auto& handle = *arguments.front().graphicsHandle;
+            if (name == "delete") { handle.erase(); return {}; }
+            return requestedCount ? std::vector<RuntimeValue>{makeRuntimeLogicalValue(handle.valid())}
+                                  : std::vector<RuntimeValue>{};
+        }
         if (const BuiltinDescriptor* descriptor =
                 builtinRegistry().find(name);
             descriptor && (name != "delete" || fileDeleteDispatch) &&
@@ -13723,6 +13750,10 @@ private:
                 return sessionState_->replaceDisplayFormat(value);
             };
             BuiltinCallContext context;
+            if (hasBuiltinContextPermission(descriptor->contextPermissions,
+                    BuiltinContextPermission::Graphics)) {
+                context.graphicsGraph = sessionState_->graphicsGraph();
+            }
             context.workspace = &workspace;
             context.warningContext =
                 sessionState_->warningContext().get();

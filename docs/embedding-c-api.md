@@ -16,7 +16,8 @@ The frozen v1.2 candidate uses C ABI generation 2 revision 0 and 109 exports.
 The v1.3 candidate added revision 1 and 117 exports for public system-context
 injection. v1.10 added revision 2 and 124 exports for a shared Runtime. The
 v1.11 debugger extension added revision 3 and 134 exports. The v1.13 pause-event
-evaluation/conditional-breakpoint extension adds revision 4, currently with 138 exports. These are
+evaluation/conditional-breakpoint extension added revision 4 with 138 exports.
+The V1.14 graphics snapshot extension adds revision 5 with 140 exports. These are
 binary-contract identifiers, not SDK product versions. MParser and the
 installed SDK report `1.3.0`, while the C source API reports `1.3`.
 Applications can query
@@ -403,6 +404,31 @@ quota. Wall-time accounting starts after module/session lock admission; hosts
 that need queue deadlines or concurrency admission limits must enforce them
 outside MParser.
 
+## Headless Graphics
+
+`mparser_result_graphics_json(result)` returns a borrowed UTF-8 JSON view of
+the owning session graph at execution completion. It includes graphs created
+by `plot(...)` without an output. The result owns these immutable bytes until
+release; later execution, graph mutation, reset or destruction of the original
+runtime does not change them. Runtime failures preserve the graph produced
+before the failure. An empty graph is a JSON record with `objects: []`.
+
+An empty view means no snapshot was captured, including null results,
+compilation/validation failures, and debugger-evaluation results. A graph export
+failure reports `MParser:GraphicsExportFailed` and fails the invocation instead
+of publishing a partial graph. Allocation failure uses the normal C boundary
+failure contract.
+
+`mparser_value_graphics_json(value, &snapshot)` instead captures the current
+graph of a retained graphics handle or array and returns an owned character
+value. Release that value with `mparser_value_release`. Neither JSON form
+contains executable callbacks or native UI resources.
+Array snapshots contain `dimensions`, deduplicated `graphs`, and logical
+column-major `elements` with `graph`, `valid`, and `reference`. Graph numbering
+follows first occurrence; duplicate aliases share both graph and reference.
+Deleted handles retain their graph identity but have a null reference. Empty
+graphics arrays retain their shape with empty graphs/elements arrays.
+
 ## Structure Versioning
 
 `mparser_invocation_options`, `mparser_execution_summary`,
@@ -474,7 +500,7 @@ state, shared cancellation, and per-invocation resource isolation.
 loads, queries, and unloads the shared library 256 times.
 
 `c_api_shared_library_abi` compares the live dynamic export table against
-`tests/c_api_generation2_revision4_symbols.txt` and validates ELF SONAME or
+`tests/c_api_generation2_revision5_symbols.txt` and validates ELF SONAME or
 macOS install-name major 2. The revision-1 117-symbol manifest remains
 immutable archive evidence in `tests/c_api_generation2_revision1_symbols.txt`,
 and the frozen revision-0 manifest remains in
@@ -512,7 +538,7 @@ Simplified BSD terms reproduced in the third-party notices.
 ## Current Candidate Boundary
 
 The current v1.10 development host surface is C source API 1.3, C ABI
-generation 2 revision 4 with 138 exports, header-only C++ source API 1.3, and
+generation 2 revision 5 with 140 exports, header-only C++ source API 1.3, and
 machine protocol 1.1. It includes rooted system-context calls and the shared
 Runtime graph, while reporting product/SDK version 1.3.0 until a later
 candidate stamp. Current in-repository and relocated consumers validate this

@@ -1,15 +1,19 @@
 # MParser
 
-Current product and SDK development identity: v1.3.0. The v1.12 batch adds
+Current product and SDK development identity: v1.3.0. The V1.14 batch adds
+headless Figure/Axes/Line objects and scalar/array/session graph snapshots;
+platform acceptance is tracked in [docs/v1.14.md](docs/v1.14.md). V1.13 added
+paused-frame evaluation, assignment, conditional breakpoints and source debugger
+commands. The v1.12 batch added
 host-driven script `input`/`keyboard` and `superclasses` reflection, following
 v1.11 C/C++ debugging with breakpoints, stepping, call stacks, and locals,
 building on the v1.10 shared Runtime for cross-module closures, objects, globals, and
 persistent state on top of the existing session-owned system boundary,
 standard-library coverage, dynamic workspace semantics, MAT v5 persistence,
 and repository-owned C++20 numerical algorithms without Eigen. The active
-development identities are C/C++ source API 1.3, C ABI generation 2 revision 3
-with 134 exports, CLI 1.0, machine result protocol 1.1, and Builtin source
-contract 1.18. The v1.3 revision-1 contract is archived; the v1.2 and released
+development identities are C/C++ source API 1.3, C ABI generation 2 revision 5
+with 140 exports, CLI 1.0, machine result protocol 1.2, and Builtin source
+contract 1.20. The v1.3 revision-1 contract is archived; the v1.2 and released
 v1.0 contracts remain immutable historical evidence. Unreleased interfaces move
 together with repository consumers. See
 [interactive input](docs/interactive-input.md), [docs/v1.12.md](docs/v1.12.md),
@@ -32,7 +36,8 @@ storage, categorical arrays, completed rectangular table operations, and the
 first timetable runtime slice. The 2026-08-24 MATLAB
 R2024b differential run records 222 matches and one gap across 223 accepted
 cases, with no prior match regressing. Datetime, table, and sparse now pass;
-graphics is the observed remainder.
+graphics was the observed remainder in that historical run. Current graph
+implementation and acceptance evidence are recorded separately in V1.14.
 
 The published release baseline remains v1.0.0. Its reliability and
 release-documentation gates were cross-platform confirmed at revision

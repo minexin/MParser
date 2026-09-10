@@ -2,7 +2,7 @@
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
 facade. The current v1.10 development boundary reports source API 1.3 over C
-ABI generation 2 revision 4 and includes the public debugger, `SystemContext`, and
+ABI generation 2 revision 5 and includes graphics snapshots, the public debugger, `SystemContext`, and
 `Runtime` facades. MParser and the installed SDK report product version
 `1.3.0` until the next candidate stamp; source API, ABI, and protocol
 identifiers remain independently queryable contract metadata.
@@ -245,6 +245,21 @@ same bounded subset described in [C Embedding API](embedding-c-api.md).
 File-targeted formatting and stream I/O require a bound system context with
 filesystem capability; neither surface claims complete MATLAB formatting.
 
+## Headless Graphics
+
+`Result::graphicsJson()` copies the immutable session graph captured at
+execution completion, including `plot(...)` calls with no returned handle.
+The record survives later execution, runtime reset and owner destruction.
+It includes side effects preceding runtime failure; an empty string indicates
+no snapshot (such as compilation/validation failure or debugger evaluation),
+whereas an empty graph contains `objects: []`.
+
+`Value::graphicsJson()` captures the current state of a retained graphics
+handle or array instead. Array records preserve dimensions and logical column-major
+order, with deduplicated graphs and per-element graph/valid/reference fields.
+Both methods return owned JSON strings suitable for a separate
+renderer. Neither method renders a window or exposes an internal pointer.
+
 ## Values
 
 `Value` supports the current external transport model:
@@ -327,7 +342,7 @@ Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared Runtime
 closures/objects/state, reentrant callbacks, shared cancellation, isolated
 limits, and concurrent retain/release. The current development library
-contract is ABI generation 2 revision 4 with an exact 138-symbol manifest;
+contract is ABI generation 2 revision 5 with an exact 139-symbol manifest;
 the v1.3 revision-1 117-symbol boundary and archived v1.2 revision-0 109-symbol
 boundary remain immutable evidence. The C++ facade remains header-only rather
 than a C++ binary ABI.

@@ -815,6 +815,17 @@ public:
             mparser_value_class_name(requireRaw()));
     }
 
+    [[nodiscard]] std::string graphicsJson() const {
+        mparser_value* raw = nullptr;
+        const auto status = mparser_value_graphics_json(requireRaw(), &raw);
+        auto snapshot = takeCreated(status, raw, "serialize graphics snapshot");
+        const auto characters = snapshot.characterData();
+        std::string result;
+        result.reserve(characters.size());
+        for (auto character : characters) { result.push_back(static_cast<char>(character)); }
+        return result;
+    }
+
     [[nodiscard]] std::string functionText() const {
         return detail::copyUtf8(
             mparser_value_function_text(requireRaw()));
@@ -1453,6 +1464,10 @@ public:
 
     [[nodiscard]] std::size_t outputCount() const {
         return mparser_result_output_count(requireRaw());
+    }
+
+    [[nodiscard]] std::string graphicsJson() const {
+        return detail::copyUtf8(mparser_result_graphics_json(requireRaw()));
     }
 
     [[nodiscard]] std::string outputName(

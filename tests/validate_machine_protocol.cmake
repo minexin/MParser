@@ -4,6 +4,7 @@ if(NOT DEFINED MPARSER_CLI OR
    NOT DEFINED SCHEMA_VALIDATION_DIR OR
    NOT DEFINED SUCCESS_SOURCE OR
    NOT DEFINED HOST_OUTPUT_SOURCE OR
+   NOT DEFINED GRAPHICS_SOURCE OR
    NOT DEFINED COMPILE_FAILURE_SOURCE OR
    NOT DEFINED RUNTIME_FAILURE_SOURCE OR
    NOT DEFINED EXPECTED_VERSION)
@@ -319,3 +320,14 @@ run_cli_machine_rejection(
 run_cli_machine_rejection(
     production_typed_selector --run --typed-backend=portable
     --result-format=json-v1 "${SUCCESS_SOURCE}")
+
+run_machine_case(graphics_no_output 0 "${GRAPHICS_SOURCE}")
+require_json_equal(graphics_protocol "${graphics_no_output_JSON}" 2 protocol minor)
+require_json_equal(graphics_schema "${graphics_no_output_JSON}" mparser.graphics graphics schema)
+require_json_equal(graphics_type "${graphics_no_output_JSON}" Line graphics objects 2 type)
+string(JSON graphics_y GET "${graphics_no_output_JSON}" graphics objects 2 properties YData 2)
+string(JSON graphics_count LENGTH "${graphics_no_output_JSON}" graphics objects)
+string(JSON graphics_output_count LENGTH "${graphics_no_output_JSON}" outputs)
+if(NOT graphics_count EQUAL 3 OR NOT graphics_output_count EQUAL 0 OR NOT graphics_y EQUAL 3)
+    message(FATAL_ERROR "No-output plot did not deliver its session graph")
+endif()

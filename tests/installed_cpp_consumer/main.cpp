@@ -306,6 +306,27 @@ end
         catch (const mparser::sdk::ApiError&) { expired = true; }
         require(expired && !retainedPause.frames.empty(), "installed event lifetime guard failed");
 
+        mparser::sdk::Value retainedGraphics;
+        {
+            auto graphicsModule = mparser::sdk::Module::compile("line=plot([1,4,9]);", "graphics.m");
+            auto graphicsRuntime = mparser::sdk::Runtime::create();
+            const auto graphicsResult = graphicsRuntime.execute(graphicsModule);
+            require(graphicsResult.succeeded(), "installed graphics execution failed");
+            for (const auto& variable : graphicsResult.variables()) {
+                if (variable.name == "line") { retainedGraphics = variable.value; }
+            }
+        }
+        const auto graphicsJson = retainedGraphics.graphicsJson();
+        const auto noOutputGraphics = mparser::sdk::Module::compile(
+            "plot(1:3);", "no_output_graphics.m").execute();
+        require(noOutputGraphics.succeeded() && noOutputGraphics.outputCount() == 0 &&
+                    noOutputGraphics.graphicsJson().find("\"type\":\"Line\"") != std::string::npos,
+                "installed no-output graphics snapshot failed");
+        require(graphicsJson.find("\"schema\":\"mparser.graphics\"") != std::string::npos &&
+                    graphicsJson.find("\"valid\":true") != std::string::npos &&
+                    graphicsJson.find("\"type\":\"Line\"") != std::string::npos,
+                "installed graphics snapshot failed after owner release");
+
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','

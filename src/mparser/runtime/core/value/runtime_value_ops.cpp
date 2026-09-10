@@ -5,6 +5,7 @@
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_struct.h"
 #include "mparser/runtime/core/value/runtime_table.h"
@@ -268,6 +269,10 @@ bool runtimeValuesEqualImpl(
         return false;
     }
     if (left.handleObject) {
+        if (left.graphicsHandle || right.graphicsHandle) {
+            return left.graphicsHandle && right.graphicsHandle &&
+                left.graphicsHandle->sameIdentity(*right.graphicsHandle);
+        }
         return left.sharedFields && right.sharedFields &&
                left.sharedFields.get() == right.sharedFields.get();
     }

@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 3u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 4u
+#define MPARSER_C_ABI_REVISION 5u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -601,6 +601,13 @@ MPARSER_C_API size_t
 mparser_result_requested_output_count(const mparser_result* result);
 MPARSER_C_API size_t
 mparser_result_output_count(const mparser_result* result);
+/* Immutable session graph at execution completion, including no-output plots.
+ * Borrowed until result release. An empty view means execution did not produce
+ * a snapshot (for example, compilation/validation failure or export failure).
+ * A successful empty graph is a nonempty JSON record with an empty objects array.
+ */
+MPARSER_C_API mparser_utf8_view
+mparser_result_graphics_json(const mparser_result* result);
 MPARSER_C_API mparser_utf8_view
 mparser_result_output_name(const mparser_result* result, size_t index);
 MPARSER_C_API mparser_api_status mparser_result_output(
@@ -772,6 +779,17 @@ MPARSER_C_API mparser_utf8_view
 mparser_value_class_name(const mparser_value* value);
 MPARSER_C_API mparser_utf8_view
 mparser_value_function_text(const mparser_value* value);
+
+/* Returns an owned character-array JSON snapshot for graphics handles or arrays.
+ * JSON is ASCII with Unicode escapes. The snapshot and handle remain readable
+ * after their originating result/module/runtime is released. Deleted handles
+ * serialize with valid=false and a null reference. Non-graphics values return
+ * TYPE_MISMATCH. On failure *out_json is null. Release with mparser_value_release.
+ * Arrays use dimensions, graphs, and logical-column-major elements carrying
+ * graph/valid/reference. Graphs are deduplicated by identity within the record.
+ * Graph mutation and serialization are ordered by the graphs' own locks. */
+MPARSER_C_API mparser_api_status mparser_value_graphics_json(
+    const mparser_value* value, mparser_value** out_json);
 
 MPARSER_C_API mparser_api_status
 mparser_cancel_token_create(mparser_cancel_token** out_token);

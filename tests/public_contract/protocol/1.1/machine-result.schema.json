@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://mparser.dev/schema/machine-result-v1.json",
   "title": "MParser machine result protocol major-1 consumer profile",
-  "description": "Protocol 1.2 consumer schema, including headless graphics representations. Historical producer shapes and the protocol 1.1 schema remain frozen in public-contract snapshots.",
+  "description": "Tolerant major-1 consumer schema. Historical producer shapes are frozen by protocol snapshots while the current golden fixture covers additive host-integration fields.",
   "type": "object",
   "required": [
     "protocol",
@@ -16,7 +16,6 @@
     "execution"
   ],
   "properties": {
-    "graphics": {"$ref": "#/definitions/graphicsSnapshot/properties/graph"},
     "protocol": {
       "type": "object",
       "required": ["name", "major", "minor"],
@@ -113,73 +112,6 @@
     "logicalNumericData": {
       "type": "array",
       "items": {"type": "boolean"}
-    },
-    "graphicsArraySnapshot": {
-      "type": "object",
-      "required": ["dimensions", "graphs", "elements"],
-      "properties": {
-        "dimensions": {"$ref": "#/definitions/dimensions"},
-        "graphs": {"type": "array", "items": {"$ref": "#/definitions/graphicsSnapshot/properties/graph"}},
-        "elements": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["graph", "valid", "reference"],
-            "properties": {
-              "graph": {"type": "integer", "minimum": 1},
-              "valid": {"type": "boolean"},
-              "reference": {"type": ["integer", "null"], "minimum": 1}
-            },
-            "if": {"properties": {"valid": {"const": false}}},
-            "then": {"properties": {"reference": {"type": "null"}}},
-            "else": {"properties": {"reference": {"type": "integer", "minimum": 1}}},
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "graphicsSnapshot": {
-      "type": "object",
-      "required": ["valid", "reference", "graph"],
-      "properties": {
-        "valid": {"type": "boolean"},
-        "reference": {"type": ["integer", "null"], "minimum": 1},
-        "graph": {
-          "type": "object",
-          "required": ["schema", "version", "objects"],
-          "properties": {
-            "schema": {"const": "mparser.graphics"},
-            "version": {"const": 1},
-            "objects": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": ["id", "type", "parent", "children", "properties"],
-                "properties": {
-                  "id": {"type": "integer", "minimum": 1},
-                  "type": {"enum": ["Figure", "Axes", "Line"]},
-                  "parent": {"type": ["integer", "null"], "minimum": 1},
-                  "children": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 1}},
-                  "properties": {
-                    "type": "object",
-                    "additionalProperties": {"oneOf": [
-                      {"type": "string"},
-                      {"type": "array", "items": {"oneOf": [{"type": "number"}, {"enum": ["NaN", "Inf", "-Inf"]}]}}
-                    ]}
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "if": {"properties": {"valid": {"const": false}}},
-      "then": {"properties": {"reference": {"type": "null"}}},
-      "else": {"properties": {"reference": {"type": "integer", "minimum": 1}}},
-      "additionalProperties": false
     },
     "runtimeValue": {
       "oneOf": [
@@ -332,13 +264,7 @@
             "dimensions": {"$ref": "#/definitions/dimensions"},
             "handle": {"type": "boolean"},
             "enumeration_member": {"type": ["string", "null"]},
-            "representation": {"enum": ["opaque", "graphics", "graphics-array"]}
-          },
-          "if": {"properties": {"representation": {"const": "graphics"}}},
-          "then": {"required": ["graphics"], "properties": {"handle": {"const": true}, "graphics": {"$ref": "#/definitions/graphicsSnapshot"}}},
-          "else": {
-            "if": {"properties": {"representation": {"const": "graphics-array"}}},
-            "then": {"required": ["graphics"], "properties": {"handle": {"const": true}, "graphics": {"$ref": "#/definitions/graphicsArraySnapshot"}}}
+            "representation": {"const": "opaque"}
           },
           "additionalProperties": true
         },

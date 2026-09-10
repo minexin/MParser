@@ -186,7 +186,7 @@ void runDefaultCatalogSmoke() {
     const auto registry = mparser::defaultBuiltinRegistry();
     require(registry->frozen(), "default registry is mutable");
     require(mparser::kBuiltinSourceContractMajor == 1 &&
-                mparser::kBuiltinSourceContractMinor == 19,
+                mparser::kBuiltinSourceContractMinor == 20,
             "builtin source contract version changed");
     require(registry->descriptors().size() == 340,
             "default builtin descriptor catalog changed unexpectedly");

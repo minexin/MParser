@@ -5,6 +5,7 @@
 #include "mparser/runtime/core/session/runtime_execution_control.h"
 #include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/runtime/core/value/runtime_value.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/semantic/semantic.h"
 
 #include <memory>
@@ -18,6 +19,7 @@ struct InterpreterResult {
     std::vector<RuntimeOutputEvent> outputEvents;
     std::vector<RuntimeExpressionResult> expressionResults;
     std::vector<Diagnostic> diagnostics;
+    std::optional<RuntimeGraphicsSnapshot> graphicsSnapshot;
 };
 
 struct InterpreterOptions {

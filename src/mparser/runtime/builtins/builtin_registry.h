@@ -17,12 +17,13 @@
 namespace mparser {
 
 inline constexpr std::uint32_t kBuiltinSourceContractMajor = 1;
-inline constexpr std::uint32_t kBuiltinSourceContractMinor = 19;
+inline constexpr std::uint32_t kBuiltinSourceContractMinor = 20;
 
 struct RuntimeObjectArrayPolicy;
 class RuntimeExecutionControl;
 class RuntimeSystemContext;
 class RuntimeWarningContext;
+class RuntimeGraphicsGraph;
 class BuiltinRegistry;
 
 enum class BuiltinWorkspaceScope {
@@ -127,6 +128,7 @@ enum class BuiltinContextPermission : std::uint32_t {
     SystemServices = 1U << 6U,
     DisplayFormat = 1U << 7U,
     SourceEvaluation = 1U << 8U,
+    Graphics = 1U << 9U,
 };
 
 BuiltinSideEffect operator|(BuiltinSideEffect left,
@@ -202,6 +204,7 @@ using BuiltinSourceEvaluator = std::function<
     BuiltinSourceEvaluationResult(const BuiltinSourceEvaluationRequest&)>;
 
 struct BuiltinCallContext {
+    std::shared_ptr<RuntimeGraphicsGraph> graphicsGraph;
     BuiltinWorkspaceAccess* workspace = nullptr;
     RuntimeWarningContext* warningContext = nullptr;
     const RuntimeObjectArrayPolicy* objectArrayPolicy = nullptr;

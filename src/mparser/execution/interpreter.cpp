@@ -1,4 +1,5 @@
 #include "mparser/execution/interpreter.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/runtime/core/session/runtime_debugger.h"
 #include "mparser/semantic/argument_contract.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
@@ -371,6 +372,14 @@ public:
             result.diagnostics.end(),
             std::make_move_iterator(diagnostics_.begin()),
             std::make_move_iterator(diagnostics_.end()));
+        try {
+            result.graphicsSnapshot.emplace(*sessionState_->graphicsGraph());
+        } catch (const std::bad_alloc&) {
+            throw;
+        } catch (const std::exception& error) {
+            result.diagnostics.push_back(Diagnostic{
+                SourceSpan{}, error.what(), "MParser:GraphicsExportFailed"});
+        }
         return result;
     }
 
@@ -2295,6 +2304,11 @@ private:
         const auto variable = loadStoredVariable(root);
         RuntimeValue updated =
             variable ? *variable : makeRuntimeStructValue();
+        if (updated.graphicsHandle) {
+            auto assigned = runtimeSetGraphicsMember(updated, fieldName, value);
+            if (!assigned.succeeded) { addDiagnostic(target, std::move(assigned.error)); }
+            return;
+        }
         if (isRuntimeTabularValue(updated)) {
             auto assigned = runtimeSetTableMember(
                 updated, std::move(fieldName), value, nullAssignment);
@@ -3001,6 +3015,7 @@ private:
         }
         const RuntimeValue target = evaluate(*node.children.front());
         if (!isStruct(target) && !isRuntimeTabularValue(target) &&
+            !target.graphicsHandle &&
             !isRuntimeException(target) &&
             !isRuntimeTemporalValue(target)) {
             addDiagnostic(node,
@@ -3024,6 +3039,11 @@ private:
                 return missingValue();
             }
             fieldName = dynamicName.name;
+        }
+        if (target.graphicsHandle) {
+            auto member = runtimeGraphicsMember(target, fieldName);
+            if (!member.succeeded) { addDiagnostic(node, std::move(member.error)); return missingValue(); }
+            return std::move(member.value);
         }
         if (isRuntimeTemporalValue(target)) {
             auto property = runtimeTemporalMemberValue(target, fieldName);
@@ -4151,6 +4171,19 @@ private:
             return missingOutputs();
         }
 
+        if ((name == "delete" || name == "isvalid") && arguments.size() == 1 &&
+            arguments.front().graphicsHandle) {
+            if (requestedOutputCount > (name == "delete" ? 0U : 1U)) {
+                addDiagnostic(node, "invalid graphics lifecycle output count");
+                return missingOutputs();
+            }
+            auto& handle = *arguments.front().graphicsHandle;
+            if (name == "delete") { handle.erase(); return FunctionCallResult{}; }
+            return FunctionCallResult{requestedOutputCount
+                ? std::vector<RuntimeValue>{makeRuntimeLogicalValue(handle.valid())}
+                : std::vector<RuntimeValue>{}};
+        }
+
         if (const BuiltinDescriptor* descriptor =
                 builtinRegistry().find(name);
             descriptor &&
@@ -4188,6 +4221,10 @@ private:
                 return sessionState_->replaceDisplayFormat(value);
             };
             BuiltinCallContext context;
+            if (hasBuiltinContextPermission(descriptor->contextPermissions,
+                    BuiltinContextPermission::Graphics)) {
+                context.graphicsGraph = sessionState_->graphicsGraph();
+            }
             context.executionControl = executionControl_.get();
             context.workspace = &workspace;
             context.warningContext =

@@ -17,7 +17,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "unexpected C API version");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "unexpected C ABI generation");
-_Static_assert(MPARSER_C_ABI_REVISION == 4u,
+_Static_assert(MPARSER_C_ABI_REVISION == 5u,
                "unexpected C ABI revision");
 _Static_assert(MPARSER_NUMERIC_SINGLE == 2u &&
                    MPARSER_NUMERIC_INT8 == 3u &&

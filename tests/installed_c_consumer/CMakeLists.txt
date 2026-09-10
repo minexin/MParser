@@ -31,7 +31,7 @@ if(NOT MParser_C_ABI_GENERATION EQUAL 2)
     message(FATAL_ERROR
         "Unexpected installed C ABI generation: ${MParser_C_ABI_GENERATION}")
 endif()
-if(NOT MParser_C_ABI_REVISION EQUAL 4)
+if(NOT MParser_C_ABI_REVISION EQUAL 5)
     message(FATAL_ERROR
         "Unexpected installed C ABI revision: ${MParser_C_ABI_REVISION}")
 endif()
@@ -41,7 +41,7 @@ if(NOT MParser_CLI_CONTRACT_MAJOR EQUAL 1 OR
         "Unexpected CLI contract: ${MParser_CLI_CONTRACT_MAJOR}.${MParser_CLI_CONTRACT_MINOR}")
 endif()
 if(NOT MParser_BUILTIN_SOURCE_CONTRACT_MAJOR EQUAL 1 OR
-   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 17)
+   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 20)
     message(FATAL_ERROR
         "Unexpected builtin source contract: ${MParser_BUILTIN_SOURCE_CONTRACT_MAJOR}.${MParser_BUILTIN_SOURCE_CONTRACT_MINOR}")
 endif()
@@ -77,7 +77,7 @@ add_test(NAME installed_c_api_runtime
     COMMAND mparser_installed_c_consumer)
 set_tests_properties(installed_c_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-consumer = ${MParser_VERSION},42,36,abi-generation-2-revision-4,host-output-2-2,system-context-rooted-retained,shared-runtime-14")
+        "installed-consumer = ${MParser_VERSION},42,36,abi-generation-2-revision-5,host-output-2-2,system-context-rooted-retained,shared-runtime-14")
 
 add_test(NAME installed_cli_version
     COMMAND MParser::cli --version)

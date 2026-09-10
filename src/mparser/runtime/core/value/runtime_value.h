@@ -83,6 +83,7 @@ struct RuntimeCategoricalStorage;
 struct RuntimeSparseStorage;
 struct RuntimeTabularStorage;
 struct RuntimeDynamicPropertyOwner;
+class RuntimeGraphicsHandle;
 
 struct RuntimeValue {
   RuntimeValueKind kind = RuntimeValueKind::Missing;
@@ -106,6 +107,8 @@ struct RuntimeValue {
   std::vector<std::string> fieldOrder;
   std::shared_ptr<std::map<std::string, RuntimeValue>> sharedFields;
   std::shared_ptr<RuntimeDynamicPropertyOwner> dynamicPropertyOwner;
+  // Graphics handles retain only their graph, never an execution session.
+  std::shared_ptr<RuntimeGraphicsHandle> graphicsHandle;
   std::shared_ptr<RuntimeFunctionHandle> functionHandle;
   // Sparse numeric payloads are shared and copied on write, just like other
   // immutable runtime values.  The payload is intentionally opaque to the

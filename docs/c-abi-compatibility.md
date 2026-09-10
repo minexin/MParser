@@ -1,6 +1,6 @@
 # MParser C ABI Development Contract
 
-MParser and its installed SDK use one product version. The current v1.13
+MParser and its installed SDK use one product version. The current V1.14
 development tree still reports product/SDK version `1.3.0`; the v1.3 and v1.2
 candidate contracts are archived snapshots.
 
@@ -8,7 +8,7 @@ The embedding boundary has an independent technical contract level:
 
 - C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/3/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
-- active C ABI revision: `MPARSER_C_ABI_REVISION == 4`;
+- active C ABI revision: `MPARSER_C_ABI_REVISION == 5`;
 - shared-library full version: `1.3.0`, with SOVERSION/install-name generation
   `2`.
 
@@ -30,7 +30,10 @@ Revision 4 adds `mparser_debug_event_evaluate`, an execution-thread-only
 pause-event entry point using the existing owned result interface. It requires
 dynamic-evaluation capability and does not permit ordinary execution reentry.
 It also adds conditional-breakpoint configuration and two event diagnostic
-accessors. The active development manifest currently contains 138 exports.
+accessors, for 138 exports. Revision 5 adds `mparser_value_graphics_json` and
+`mparser_result_graphics_json`, bringing the active manifest to 140 exports.
+The value accessor returns owned JSON for retained graphics handles/arrays;
+the result accessor borrows an immutable execution-completion graph snapshot.
 
 ## Development Policy
 

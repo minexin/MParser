@@ -67,7 +67,7 @@ must treat JSON object member order as insignificant:
 
 ```json
 {
-  "protocol": {"name": "mparser.result", "major": 1, "minor": 1},
+  "protocol": {"name": "mparser.result", "major": 1, "minor": 2},
   "engine": {"name": "MParser", "version": "1.3.0"},
   "status": "succeeded",
   "entry_function": "",
@@ -260,8 +260,8 @@ Function handles expose only a stable callable descriptor:
 Captured workspaces, receivers, source addresses, process-local identities,
 and native pointers are intentionally omitted.
 
-Objects are opaque because protocol v1 has no property-inspection ownership
-contract:
+Ordinary objects remain opaque; the protocol has no general property-inspection
+ownership contract:
 
 ```json
 {
@@ -276,6 +276,42 @@ contract:
 
 Use the C embedding API when a host needs retained object or function-handle
 values that can be passed into later invocations.
+
+Protocol 1.2 (the V1.14 graphics extension) emits `representation: "graphics"`
+for scalar Figure/Axes/Line handles and adds a `graphics` snapshot containing
+`valid`, `reference`, and `graph`. The graph has schema `mparser.graphics`,
+version 1, and ordered `objects` with `id`, `type`, `parent`, `children`, and
+typed `properties`. `reference` identifies the exported handle using the
+graph's consecutive record-local IDs; deleted handles emit `valid: false` and
+a null reference. Graph data includes all surviving objects in that graph.
+Snapshots contain no module/session pointer or process-local identity.
+
+The serializer checks bidirectional relations. The JSON Schema validates the
+record shape, supported node types and data encodings; graph-reference integrity
+is a semantic requirement beyond JSON Schema. Graphics numeric arrays use
+`NaN`, `Inf`, and `-Inf` for nonfinite coordinates.
+
+Graphics object arrays use `representation: "graphics-array"`. Their `graphics`
+record contains `dimensions`, `graphs` and `elements`. Elements follow logical
+column-major order and contain one-based `graph`, `valid` and `reference` fields.
+Graphs are emitted in first-occurrence order and deduplicated by identity;
+references are local to each graph. Repeated aliases share graph/reference,
+while deleted aliases retain their graph but have `valid: false` and a null
+reference. Empty graphics arrays retain their dimensions with empty lists.
+The kernel validates shape and reference consistency; JSON Schema alone does
+not enforce cross-array reference bounds or dimension products. SDK handle-array
+snapshots use the same record. Graphs are locked in a consistent internal order
+during capture, independent of their deterministic output order.
+
+Protocol 1.2 also carries an optional root `graphics` graph record captured at
+execution completion, so `plot(1:3)` without an output still delivers its scene.
+It contains all objects in the owning session graph, including earlier
+invocations, and is immutable even when later invocations mutate the graph.
+An empty graph has `objects: []`; absence means no snapshot was captured.
+Compilation/validation and emergency results do not carry a graph. Runtime
+failure retains prior graph side effects when serialization succeeds. Export
+failure reports `MParser:GraphicsExportFailed` instead of a partial record.
+This is the same snapshot returned by the result-level C/C++ SDK accessor.
 
 ## Diagnostics
 
@@ -301,7 +337,7 @@ The normative machine-readable shape is
 [`machine-result-v1.schema.json`](machine-result-v1.schema.json). This file
 is the tolerant Draft-7 major-1 consumer profile. It permits additive object
 members while preserving all current required members, field types, and
-recursive value/diagnostic shapes. The current protocol-1.1 producer shape is
+recursive value/diagnostic shapes. The current protocol-1.2 producer shape is
 checked by the golden document and semantic/schema validators. The earlier
 protocol-1.1 snapshot remains an accepted minimal document rather than being
 rewritten for additive optional members. A future minor that adds enum values
@@ -317,14 +353,20 @@ only up to the minor they support.
 - `engine.version` identifies runtime behavior; it is not the protocol
   negotiation field.
 
-`tests/golden/machine_result_v1.json` freezes current producer spelling and ordering
+`tests/golden/machine_result_1_2.json` freezes current producer spelling and ordering
 for all RuntimeValue kinds, diagnostic trees, non-finite numbers, UTF
 replacement, exact integer and complex values, ordered output/expression
 records, and execution fields. The earlier protocol 1.1 snapshot under
 `tests/public_contract/protocol/1.1` remains unchanged and schema-valid; the
 1.0 directory is retained only as historical release evidence.
-`tests/golden/machine_result_emergency_v1.json` independently freezes the
+`tests/golden/machine_result_emergency_1_2.json` independently freezes the
 allocation-free exit-4 document used while stdout remains writable.
+The earlier `machine_result_v1.json` and `machine_result_emergency_v1.json`
+goldens remain unchanged. The frozen 1.1 schema is
+`tests/public_contract/protocol/1.1/machine-result.schema.json`; historical
+release gates check it against their original hashes. A dedicated schema test
+validates the old goldens, while graphics tests verify that the new representation
+requires the updated schema.
 `machine_protocol_contract_smoke` validates the schema from an independent
 consumer perspective, including additive-minor member acceptance and negative
 major, required-field, current-minor enum, and type cases. CLI integration

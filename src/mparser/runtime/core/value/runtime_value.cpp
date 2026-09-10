@@ -449,6 +449,16 @@ private:
             return fail(path,
                         "non-tabular value carries tabular storage");
         }
+        if (value.graphicsHandle &&
+            (value.kind != RuntimeValueKind::Object || !value.handleObject ||
+             count != 1 || !value.objectElements.empty() || value.objectContext ||
+             !value.sharedFields || !value.sharedFields->empty() ||
+             !value.fields.empty() || value.dynamicPropertyOwner ||
+             (value.className != "matlab.ui.Figure" &&
+              value.className != "matlab.graphics.axis.Axes" &&
+              value.className != "matlab.graphics.chart.primitive.Line"))) {
+            return fail(path, "graphics handle uses incompatible object storage");
+        }
 
         switch (value.kind) {
         case RuntimeValueKind::Missing:

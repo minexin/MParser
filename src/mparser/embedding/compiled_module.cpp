@@ -1039,6 +1039,21 @@ ModuleInvocationResult CompiledModule::execute(
         state ? state
               : std::make_shared<RuntimeSessionState>(
                     request.systemContext);
+    const auto captureGraphics = [&] {
+        try {
+            result.graphicsSnapshot.emplace(*runtimeOptions.sessionState->graphicsGraph());
+        } catch (const std::bad_alloc&) {
+            throw;
+        } catch (const std::exception& error) {
+            result.status = ModuleInvocationStatus::RuntimeFailed;
+            const std::vector<Diagnostic> diagnostics{
+                Diagnostic{SourceSpan{}, error.what(), "MParser:GraphicsExportFailed"}};
+            auto projected = projectDiagnostics(diagnostics, ModuleDiagnosticPhase::Execution,
+                data_->sources, "MParser:GraphicsExportFailed");
+            result.diagnostics.insert(result.diagnostics.end(),
+                std::make_move_iterator(projected.begin()), std::make_move_iterator(projected.end()));
+        }
+    };
     runtimeOptions.initialWorkspace = request.initialWorkspace;
     runtimeOptions.entryFunction = request.entryFunction;
     runtimeOptions.arguments = request.arguments;
@@ -1091,6 +1106,7 @@ ModuleInvocationResult CompiledModule::execute(
         result.diagnostics = projectDiagnostics(
             diagnostics, ModuleDiagnosticPhase::Execution,
             data_->sources, "MParser:RuntimeFailed");
+        captureGraphics();
         return result;
     } catch (...) {
         result.status = ModuleInvocationStatus::RuntimeFailed;
@@ -1104,6 +1120,7 @@ ModuleInvocationResult CompiledModule::execute(
         result.diagnostics = projectDiagnostics(
             diagnostics, ModuleDiagnosticPhase::Execution,
             data_->sources, "MParser:RuntimeFailed");
+        captureGraphics();
         return result;
     }
 
@@ -1137,6 +1154,7 @@ ModuleInvocationResult CompiledModule::execute(
         data_->sources, "MParser:RuntimeFailed");
     result.execution =
         summarizeExecution(runtime, request.backend);
+    captureGraphics();
     return result;
 }
 
