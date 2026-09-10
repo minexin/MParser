@@ -218,7 +218,7 @@ void RuntimeGraphicsGraph::erase(RuntimeGraphicsId id) {
     std::vector<RuntimeGraphicsId> pending{id};
     for (size_t index = 0; index < pending.size(); ++index) {
         const auto& children = nodes_.at(pending[index]).children;
-        pending.insert(pending.end(), children.begin(), children.end());
+        for (const auto child : children) { pending.push_back(child); }
     }
     if (root->parent) { std::erase(nodes_.at(*root->parent).children, id); }
     for (auto node : pending) { nodes_.erase(node); }
