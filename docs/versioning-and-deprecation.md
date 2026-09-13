@@ -9,9 +9,9 @@ Those numbers are never SDK product versions.
 
 MParser uses semantic versions for release tags and packages. The active
 source tree, product metadata, and installed SDK report candidate version
-`1.3.0`. The complete fifteen-batch v1.3 train has reached its internal
-candidate gate. Subsequent v1.4-v1.9 internal development batches extend that
-candidate without changing the product or public C/C++ API identity.
+`1.14.0`. The v1.4-v1.14 internal batches previously retained the 1.3.0
+stamp. This milestone synchronizes the product and public C/C++ source API
+identity, while retaining ABI 2.5, CLI 1.0, protocol 1.2 and builtin 1.20.
 
 This project is not currently using the v1.3 interfaces in production.
 Implementation, in-repository consumers, tests, samples, and documentation may
@@ -27,11 +27,11 @@ unreleased development interfaces.
 
 | Boundary | Current identifier | Meaning |
 | --- | --- | --- |
-| MParser product and SDK | `1.3.0` candidate snapshot | User-facing release identity |
+| MParser product and SDK | `1.14.0` candidate snapshot | User-facing release identity |
 | Production CLI | 1.0 | Command, option, channel, and exit contract |
-| C source API | 1.3 | Header-level source contract for C hosts |
+| C source API | 1.14 | Header-level source contract for C hosts |
 | C ABI | generation 2, revision 5; archived v1.3 revision 1 and v1.2 revision 0 | Binary layout, symbols, ownership, and calling convention |
-| C++ source API | 1.3 | Header-level source contract over the C ABI |
+| C++ source API | 1.14 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.2 | JSON producer/consumer contract |
 | Builtin source contract | 1.20 | Registry/descriptor/call semantics compiled with the engine |
 
@@ -48,7 +48,7 @@ separate execution products.
 
 ## C ABI Generation 2
 
-`MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.3.0`.
+`MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.14.0`.
 `MPARSER_C_ABI_GENERATION` contains generation `2`, and
 the active header's `MPARSER_C_ABI_REVISION` contains revision `5`.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` expose the same
@@ -75,10 +75,10 @@ binary change advances the generation; an additive change within a frozen
 generation advances the revision. The product/source API level is updated at
 the milestone gate rather than for each internal batch.
 
-## C++ Source API 1.3
+## C++ Source API 1.14
 
 `include/mparser/cpp_api.hpp` is a header-only C++20 facade over C ABI
-generation 2. Its source API follows the v1.3 product line to avoid presenting
+generation 2. Its source API follows the v1.14 product line to avoid presenting
 an unrelated SDK 2.0 identity. It does not promise a C++ binary ABI, and no STL
 object or C++ class layout crosses the shared-library boundary.
 

@@ -17,7 +17,7 @@ _Static_assert(_Generic((mparser_input_mode)0, uint32_t: 1, default: 0),
                "input mode must use the fixed-width C ABI representation");
 
 _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
-                   MPARSER_C_API_VERSION_MINOR == 3u,
+                   MPARSER_C_API_VERSION_MINOR == 14u,
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");

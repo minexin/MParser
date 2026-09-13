@@ -542,6 +542,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.2.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.3.json"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.14.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/cli-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/machine-result-v1.schema.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/performance-baseline-v1.schema.json"

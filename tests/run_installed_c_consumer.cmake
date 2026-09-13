@@ -141,6 +141,7 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.2.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.3.json"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.14.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/cli-contract-v1.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/versioning-and-deprecation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/default_catalog.json"

@@ -50,7 +50,7 @@
 #include <vector>
 
 #ifndef MPARSER_VERSION
-#define MPARSER_VERSION "1.3.0"
+#define MPARSER_VERSION "1.14.0"
 #endif
 
 namespace {

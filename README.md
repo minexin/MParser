@@ -1,6 +1,6 @@
 # MParser
 
-Current product and SDK development identity: v1.3.0. The V1.14 batch adds
+Current product and SDK development identity: v1.14.0. The V1.14 batch adds
 headless Figure/Axes/Line objects and scalar/array/session graph snapshots;
 platform acceptance is tracked in [docs/v1.14.md](docs/v1.14.md). V1.13 added
 paused-frame evaluation, assignment, conditional breakpoints and source debugger
@@ -11,7 +11,7 @@ building on the v1.10 shared Runtime for cross-module closures, objects, globals
 persistent state on top of the existing session-owned system boundary,
 standard-library coverage, dynamic workspace semantics, MAT v5 persistence,
 and repository-owned C++20 numerical algorithms without Eigen. The active
-development identities are C/C++ source API 1.3, C ABI generation 2 revision 5
+development identities are C/C++ source API 1.14, C ABI generation 2 revision 5
 with 140 exports, CLI 1.0, machine result protocol 1.2, and Builtin source
 contract 1.20. The v1.3 revision-1 contract is archived; the v1.2 and released
 v1.0 contracts remain immutable historical evidence. Unreleased interfaces move
@@ -28,7 +28,7 @@ gaps. The 2026-09-13 CLI rerun preserves the fresh MATLAB comparison's inputs.
 The v1.14 headless contract passed native/no-JIT and required platform gates;
 see the [host requirement audit](docs/v1.x-host-requirement-audit.md) for the
 numbered MExecServer evidence. This is not full MATLAB or toolbox compatibility
-and does not change the published release identity.
+and does not claim full MATLAB compatibility. The product/SDK stamp is 1.14.0.
 
 v1.3 advanced C ABI generation 2 additively to revision 1 with a public,
 rooted runtime-system context for C and C++ hosts. v1.10 advanced the same
@@ -1091,7 +1091,7 @@ cmake --install build-sdk --config Release --prefix C:\mparser-sdk
 ```
 
 ```cmake
-find_package(MParser 1.3.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
+find_package(MParser 1.14.0 EXACT CONFIG REQUIRED COMPONENTS CPP CLI)
 target_link_libraries(host PRIVATE MParser::cpp_api)
 ```
 

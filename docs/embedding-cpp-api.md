@@ -1,10 +1,10 @@
 # MParser C++ Embedding SDK
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
-facade. The current v1.10 development boundary reports source API 1.3 over C
+facade. The current v1.14 boundary reports source API 1.14 over C
 ABI generation 2 revision 5 and includes graphics snapshots, the public debugger, `SystemContext`, and
 `Runtime` facades. MParser and the installed SDK report product version
-`1.3.0` until the next candidate stamp; source API, ABI, and protocol
+`1.14.0`; source API, ABI, and protocol
 identifiers remain independently queryable contract metadata.
 
 The facade does not expose Parser, HIR, Bytecode, `RuntimeValue`, VM, SLJIT,
@@ -34,9 +34,9 @@ target_link_libraries(host PRIVATE MParser::cpp_api)
 transitive link to `MParser::c_api`. `MParser::cli` is the matching imported
 executable. The package exports `MParser_CPP_FOUND`,
 `MParser_CPP_INCLUDE_DIR`, engine/C API version components, and C ABI
-generation/revision metadata. It also exports C++ source API `1.3`, machine
-result protocol `1.1`,
-CLI contract `1.0`, builtin source contract `1.17`, and checked paths to the
+generation/revision metadata. It also exports C++ source API `1.14`, machine
+result protocol `1.2`,
+CLI contract `1.0`, builtin source contract `1.20`, and checked paths to the
 public/CLI contracts, protocol schema, builtin catalog/author guide, and
 versioning policy. On Windows, deploy `mparser_c.dll` beside the host
 executable or add the installed `bin` directory to the runtime loader path.
@@ -329,7 +329,7 @@ admission, so queue deadlines remain a host responsibility.
 
 ## Current Boundary
 
-Source-tree and relocated installed consumers exercise source API 1.3 through
+Source-tree and relocated installed consumers exercise source API 1.14 through
 compile-once invocation, exact typed and complex numeric values, multi-output
 results, composite values, retained lifetimes, diagnostics, sessions,
 cancellation, resource limits, UTF-8 source graphs and metadata, synchronous

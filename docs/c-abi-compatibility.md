@@ -1,22 +1,22 @@
 # MParser C ABI Development Contract
 
 MParser and its installed SDK use one product version. The current V1.14
-development tree still reports product/SDK version `1.3.0`; the v1.3 and v1.2
+development tree reports product/SDK version `1.14.0`; the v1.3 and v1.2
 candidate contracts are archived snapshots.
 
 The embedding boundary has an independent technical contract level:
 
-- C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/3/0`;
+- C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/14/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
 - active C ABI revision: `MPARSER_C_ABI_REVISION == 5`;
-- shared-library full version: `1.3.0`, with SOVERSION/install-name generation
+- shared-library full version: `1.14.0`, with SOVERSION/install-name generation
   `2`.
 
 The API version follows the MParser/SDK development line. The ABI generation
 and revision are binary negotiation data rather than another SDK version.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` report them at
 runtime. The three `mparser_version_*()` functions report product version
-`1.3.0`.
+`1.14.0`.
 
 Revision 2 added the explicit shared Runtime handle, cross-module callable and
 object routing, and shared session-state controls. Revision 3 added the

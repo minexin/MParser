@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 1.3.0 LANGUAGES C CXX)
+project(MParser VERSION 1.14.0 LANGUAGES C CXX)
 
 set(MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION "0.90.0")
 set(MPARSER_V1_RELEASE_VERSION "1.0.0")
@@ -726,6 +726,13 @@ set_tests_properties(v1_3_public_contract_smoke PROPERTIES
     LABELS "documentation;release"
     PASS_REGULAR_EXPRESSION
         "MParser v1.3 candidate contract validated: C API 1.3, ABI generation 2 revision 1, 117 symbols, C\\+\\+ API 1.3, mparser.result 1.1, builtin source contract 1.17, 328 descriptors and 330 names")
+
+add_test(NAME v1_14_public_contract_smoke
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_v1_14_public_contract.cmake)
+set_tests_properties(v1_14_public_contract_smoke PROPERTIES LABELS "documentation;release")
 
 add_test(NAME release_documentation_smoke
     COMMAND ${CMAKE_COMMAND}
@@ -2888,7 +2895,7 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-generation-2-revision-5,cpp-api-1.3")
+        "cpp api smoke = 5050,42,21,abi-generation-2-revision-5,cpp-api-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
 
 add_executable(runtime_debugger_smoke_tests tests/runtime_debugger_smoke.cpp)
 add_executable(graphics_api_smoke_tests tests/graphics_api_smoke.cpp)
@@ -3024,7 +3031,7 @@ add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp sdk = 5050,5,abi-generation-2-revision-5,cpp-api-1.3,host-output-2-2")
+        "cpp sdk = 5050,5,abi-generation-2-revision-5,cpp-api-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR},host-output-2-2")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
@@ -3288,6 +3295,7 @@ install(FILES
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
     docs/public-contract-v1.3.json
+    docs/public-contract-v1.14.json
     docs/public-contract-v1.2.json
     docs/public-contract-v1.json
     docs/cli-contract-v1.json

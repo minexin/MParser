@@ -23,7 +23,7 @@ if(NOT TARGET MParser::c_api OR NOT TARGET MParser::cli)
         "The installed package must export MParser::c_api and MParser::cli")
 endif()
 if(NOT MParser_C_API_VERSION_MAJOR EQUAL 1 OR
-   NOT MParser_C_API_VERSION_MINOR EQUAL 3)
+   NOT MParser_C_API_VERSION_MINOR EQUAL 14)
     message(FATAL_ERROR
         "Unexpected installed C API: ${MParser_C_API_VERSION_MAJOR}.${MParser_C_API_VERSION_MINOR}")
 endif()

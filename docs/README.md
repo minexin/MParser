@@ -97,7 +97,8 @@ These files are release contracts, not generated prose:
 | Artifact | Authority |
 | --- | --- |
 | [compatibility-matrix.json](compatibility-matrix.json) | Feature status, tier coverage, limits, executable evidence, and gaps |
-| [public-contract-v1.3.json](public-contract-v1.3.json) | Current v1.3 candidate API, ABI, protocol, catalog, and artifact hashes |
+| [public-contract-v1.14.json](public-contract-v1.14.json) | Current 1.14.0 API, ABI, protocol, catalog, and artifact hashes |
+| [public-contract-v1.3.json](public-contract-v1.3.json) | Archived v1.3 candidate API, ABI, protocol, catalog, and artifact hashes |
 | [public-contract-v1.2.json](public-contract-v1.2.json) | Archived v1.2 candidate API, ABI, protocol, catalog, and artifact hashes |
 | [public-contract-v1.json](public-contract-v1.json) | Archived v1.0 public contract hashes and versions |
 | [cli-contract-v1.json](cli-contract-v1.json) | CLI 1.0 modes, options, channels, and compatibility |
