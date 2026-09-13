@@ -145,6 +145,7 @@ set(mparser_required_paths
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/versioning-and-deprecation.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/default_catalog.json"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/compatibility-matrix.json"
+        "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.x-host-requirement-audit.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/roadmap-v1.0.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v0.90.md"
         "${mparser_artifact_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.0-contract-freeze.md"

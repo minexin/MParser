@@ -743,6 +743,15 @@ set_tests_properties(release_documentation_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
         "MParser release documentation validated: CLI 1.0, manuals, production sample, and mparser.result 1.x")
 
+find_program(MPARSER_PWSH_EXECUTABLE NAMES pwsh)
+if(MPARSER_PWSH_EXECUTABLE)
+    add_test(NAME external_gap_inventory_guard_smoke
+        COMMAND ${MPARSER_PWSH_EXECUTABLE} -NoProfile -File
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_external_gap_inventory_smoke.ps1)
+    set_tests_properties(external_gap_inventory_guard_smoke PROPERTIES
+        LABELS "documentation" TIMEOUT 30)
+endif()
+
 add_test(NAME release_authentication_evidence_smoke
     COMMAND ${CMAKE_COMMAND}
         -DMPARSER_EVIDENCE_ROOT=${MPARSER_V1_AUTHENTICATION_EVIDENCE_ROOT}
@@ -3322,6 +3331,7 @@ install(FILES
     docs/machine-result-protocol.md
     docs/versioning-and-deprecation.md
     docs/v1.x-external-gap-plan.md
+    docs/v1.x-host-requirement-audit.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
     tests/public_contract/builtin/1.20/default_catalog.json

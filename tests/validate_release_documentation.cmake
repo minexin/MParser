@@ -30,6 +30,7 @@ set(required_documents
     docs/release-notes-v1.0.md
     docs/roadmap-v1.x.md
     docs/v1.x-external-gap-plan.md
+    docs/v1.x-host-requirement-audit.md
     docs/v0.90.1.md
     docs/v1.0.md
     docs/v1.1.md

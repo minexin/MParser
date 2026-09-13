@@ -3,7 +3,7 @@
 The V1.x graphics target is a kernel object model. It is independent of any
 window system and does not promise complete MATLAB desktop graphics behavior.
 
-The first slice will support `plot(y)` with implicit x coordinates `1:numel(y)`
+The first slice supports `plot(y)` with implicit x coordinates `1:numel(y)`
 and `plot(x,y)`, returning a handle-identity `Line`.
 The call creates a `Figure` containing an `Axes`, with the line parented by the
 axes. Each object has a stable identity for the life of the owning runtime;
@@ -35,10 +35,12 @@ interpreter and bytecode execution and through the public embedding and
 machine protocol. The imported `plot(1:3)` case alone is insufficient evidence:
 regressions must also inspect the returned Line, traverse Axes/Figure parents,
 modify and read back properties through aliases, delete the graph, and compare
-deterministic serialized records across repeated equivalent runs. Until that
-milestone, the graphics compatibility gap stays open. The working-tree source
-slice is tracked in [v1.14.md](v1.14.md); successful `plot` execution alone does
-not establish the full capability.
+deterministic serialized records across repeated equivalent runs. These
+headless requirements are covered by `runtime_graphics_smoke` and
+`graphics_api_smoke`, with protocol/schema/CLI coverage. On 2026-09-13 the
+eight graphics/protocol tests passed in both existing native and no-JIT builds.
+The broader acceptance record is in [v1.14.md](v1.14.md). Desktop rendering
+is outside this commitment, not an outstanding kernel acceptance gate.
 
 ## Implementation Constraints From The Current Runtime
 
@@ -59,12 +61,11 @@ state so aliases remain identifiable while operations reject deleted objects.
 Creating a fresh node must not reuse the identity of a deleted live alias.
 Cross-runtime operations must validate graph ownership before changing edges.
 
-`machine_protocol.cpp::writeObjectValue` currently emits only opaque object
-metadata. Existing object output therefore cannot serve as the graphics graph
-record: V1.14 must add and test the versioned graph serialization path, including
-ordered nodes, ordered children, canonical properties and validated references.
-The public SDK must expose that same semantic record, not an internal field-map
-pointer or a recursive expansion of Parent/Children.
+Ordinary opaque object metadata cannot serve as the graphics graph record.
+V1.14 adds a versioned graphics serialization path with ordered nodes, ordered
+children, canonical properties and validated references. The public SDK exposes
+the same semantic record, not an internal field-map pointer or a recursive
+expansion of Parent/Children.
 
 These are implementation constraints, not evidence of implemented graphics.
 Acceptance must explicitly cover graph release after owner destruction, handles

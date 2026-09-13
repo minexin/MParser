@@ -87,6 +87,8 @@ adapter is Post-v1.0.
 - [v1.x Roadmap](roadmap-v1.x.md)
 - [v1.x External Gap Plan](v1.x-external-gap-plan.md): post-1.0 differential
   findings and MExecServer kernel requests tracked to 0.1 milestones.
+- [V1.x Host Requirement Audit](v1.x-host-requirement-audit.md): source-linked
+  evidence for the MExecServer host requirements and their current boundaries.
 
 ## Machine-Readable Authorities
 

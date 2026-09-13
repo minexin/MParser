@@ -181,11 +181,10 @@ The runnable evidence is `samples/system_services_demo.m`,
 `samples/mat_file_demo.m`, plus
 `samples/conversion_set_callback_demo.m`. These are bounded candidate
 capabilities, not a claim of complete MATLAB system or file I/O.
-The latest 2026-08-24 MATLAB R2024b differential rerun records 222 matches and
-one gap across its 223 accepted cases, with no prior match regressing. The
-datetime, table, and sparse cases now pass the native production CLI. Graphics
-is the only remaining imported differential gap. The exact generated result
-is `MParserV1.0Test/results/20260824-232112-v1.7-table-final`.
+The latest 2026-09-10 MATLAB R2024b differential rerun records 223 matches and
+no gaps across its 223 accepted cases. The datetime, table, sparse, and headless
+graphics cases pass the native production CLI and current protocol tests.
+Desktop rendering remains outside the kernel contract.
 Scansets, bit/character/complex binary I/O corners, selectable non-UTF-8
 encodings, remote files, MAT v4/v7.3, strict v6/append/ASCII MAT modes,
 filesystem recycle integration and broader platform-specific attributes,

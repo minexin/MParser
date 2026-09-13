@@ -23,6 +23,13 @@ together with repository consumers. See
 [docs/roadmap-v1.x.md](docs/roadmap-v1.x.md), and the
 [external gap plan](docs/v1.x-external-gap-plan.md).
 
+The finite external V1.x inventory now passes 223/223, covering all 89 original
+gaps. The 2026-09-13 CLI rerun preserves the fresh MATLAB comparison's inputs.
+The v1.14 headless contract passed native/no-JIT and required platform gates;
+see the [host requirement audit](docs/v1.x-host-requirement-audit.md) for the
+numbered MExecServer evidence. This is not full MATLAB or toolbox compatibility
+and does not change the published release identity.
+
 v1.3 advanced C ABI generation 2 additively to revision 1 with a public,
 rooted runtime-system context for C and C++ hosts. v1.10 advanced the same
 generation to revision 2 with a shared Runtime graph; v1.11 adds the revision-3
