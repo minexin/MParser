@@ -423,7 +423,10 @@ jobs:
             od -An -t x1 | tr -d ' \n')" = "0a"
           ! LC_ALL=C grep -q $'\r' "$RUNNER_TEMP/mparser-arm64-result.json"
           grep --fixed-strings \
-            '"protocol":{"name":"mparser.result","major":1,"minor":1}' \
+            '"protocol":{"name":"mparser.result","major":1,"minor":2}' \
+            "$RUNNER_TEMP/mparser-arm64-result.json"
+          grep --fixed-strings \
+            '"engine":{"name":"MParser","version":"1.14.0"}' \
             "$RUNNER_TEMP/mparser-arm64-result.json"
       - name: Upload Linux AArch64 release archive
         if: env.MPARSER_CI_RELEASE_ARTIFACTS == 'true'
