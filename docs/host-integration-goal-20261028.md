@@ -20,7 +20,7 @@ success may substitute for missing kernel contracts.
 | --- | --- | --- | --- |
 | H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Focused kernel and Windows host REST compile-only cases verified; shipped host package unchanged |
 | H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK and Windows REST builtin checks passed; host rename adoption not shipped or verified |
-| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | Core/public API tested; extended cases and host acceptance pending |
+| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | SDK and isolated host compile REST checked, including repeated nested names, CRLF/UTF-8 and class methods; deployed navigation and cross-file REST acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping focused tests and opt-in v3 SDK identity checks passed; host selection, renderer adoption and writeback pending |
@@ -511,3 +511,16 @@ records that rename was not shipped; no rename operation or UI is claimed.
   Clean replay evidence: build/client-rendering-probe/0ecc787c41b54960833f6b5f18c947a0.
   This is simulated-canvas evidence only: no deployed-client or real-browser
   rendering acceptance, selection persistence or full Legend layout parity.
+- H03 isolated host compile integration: an opt-in patch calls the SDK
+  definition directory directly from /compile and exposes units, completeness
+  and exact request text alongside the records. REST checks passed for repeated
+  nested names with distinct parents, class methods, CRLF and UTF-8 byte offsets,
+  every begin/end line/column, a script that must not execute and invalid source
+  with an incomplete empty directory. Raw evidence:
+  build/host-compile-probe/56610d516503487ba260eca175f3c484. This does not verify
+  deployed UI navigation, stale-document rejection or cross-file REST indexing.
+- Installed SDK documentation now includes definition metadata, variable-name
+  validation and graphics clipping guides, each exposed through a CMake path
+  variable and pinned in the development artifact manifest. Frozen v1.14,
+  development manifest, installed C++ consumer and relocated archive checks
+  passed 4/4 after this packaging change. No historical snapshot was rewritten.

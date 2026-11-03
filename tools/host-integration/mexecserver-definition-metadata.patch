@@ -1,0 +1,61 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -37,1 +37,7 @@
+-find_package(MParser 1.14.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++find_package(MParser 1.14.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++
++option(MEXEC_DEFINITION_METADATA "Expose compiler definition ranges in /compile" OFF)
++if(MEXEC_DEFINITION_METADATA AND
++   (NOT MParser_C_ABI_GENERATION EQUAL 2 OR MParser_C_ABI_REVISION LESS 6))
++    message(FATAL_ERROR "Definition metadata requires MParser ABI 2.6 or later")
++endif()
+@@ -79,1 +79,2 @@
+-target_compile_definitions(mexec_core PRIVATE
++target_compile_definitions(mexec_core PRIVATE
++    MEXEC_DEFINITION_METADATA=$<BOOL:${MEXEC_DEFINITION_METADATA}>
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -819,1 +819,28 @@
+-    const auto module = mparser::sdk::Module::compile(source, sourceName);
++    const auto module = mparser::sdk::Module::compile(source, sourceName);
++#if MEXEC_DEFINITION_METADATA
++    auto definitions = nlohmann::json::array();
++    if (module.isValid()) {
++        const auto position = [](const mparser::sdk::SourcePosition& value) {
++            return nlohmann::json{{"offset", value.offset}, {"line", value.line}, {"column", value.column}};
++        };
++        for (const auto& definition : module.definitions()) {
++            const auto kind = [&] {
++                switch (definition.kind) {
++                case mparser::sdk::DefinitionKind::PrimaryFunction: return "primary-function";
++                case mparser::sdk::DefinitionKind::LocalFunction: return "local-function";
++                case mparser::sdk::DefinitionKind::NestedFunction: return "nested-function";
++                case mparser::sdk::DefinitionKind::Method: return "method";
++                }
++                throw std::logic_error("unknown kernel definition kind");
++            }();
++            definitions.push_back(nlohmann::json{
++                {"index", definitions.size()}, {"name", definition.name}, {"kind", kind},
++                {"class_name", definition.className}, {"source_index", definition.sourceIndex},
++                {"parent_function", definition.parentFunction
++                    ? nlohmann::json(*definition.parentFunction) : nlohmann::json(nullptr)},
++                {"declaration_only", definition.declarationOnly},
++                {"source", {{"name", definition.source.sourceName},
++                    {"begin", position(definition.source.begin)}, {"end", position(definition.source.end)}}}});
++        }
++    }
++#endif
+@@ -824,2 +824,9 @@
+-            {"functions", module.functionNames()},
+-            {"source_metadata",
++            {"functions", module.functionNames()},
++#if MEXEC_DEFINITION_METADATA
++            {"definition_directory", {
++                {"schema", "mexec.definition-directory"}, {"version", 1}, {"complete", module.isValid()},
++                {"offset_unit", "utf8-byte"}, {"column_unit", "utf8-byte"},
++                {"line_base", 1}, {"column_base", 1}, {"end_exclusive", true},
++                {"source_name", sourceName}, {"source_utf8", source}, {"definitions", std::move(definitions)}}},
++#endif
++            {"source_metadata",

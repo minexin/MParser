@@ -54,6 +54,12 @@ set_and_check(MParser_GRAPHICS_V3_SCHEMA_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-v3.schema.json")
 set_and_check(MParser_HOST_INTEGRATION_DEVELOPMENT_CONTRACT_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/host-integration-contract-development.json")
+set_and_check(MParser_DEFINITION_METADATA_GUIDE_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/definition-metadata.md")
+set_and_check(MParser_VARIABLE_NAME_VALIDATION_GUIDE_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/variable-name-validation.md")
+set_and_check(MParser_GRAPHICS_CLIPPING_GUIDE_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-clipping-contract.md")
 set_and_check(
     MParser_BUILTIN_CATALOG_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/default_catalog.json")

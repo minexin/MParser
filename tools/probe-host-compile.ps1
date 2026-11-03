@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory)][string]$ServerExe,
     [Parameter(Mandatory)][string]$KernelDll,
     [switch]$MetadataOnly,
-    [switch]$GraphicsV3
+    [switch]$GraphicsV3,
+    [switch]$DefinitionMetadata
 )
 $ErrorActionPreference = 'Stop'
 $root = Join-Path $PSScriptRoot ('../build/host-compile-probe/' + [guid]::NewGuid().ToString('N'))
@@ -204,6 +205,58 @@ try {
             if ($result.status -ne 'runtime-failed' -or $result.diagnostics[0].identifier -ne ('MParser:' + $case.id) -or
                 (Get-FileHash -LiteralPath $sentinel).Hash -ne $hash) { throw "Unexpected export result: $($case.name); see $root" }
             Write-Output "graphics/export/$($case.name): $($result.diagnostics[0].identifier)"
+        }
+    }
+    if ($DefinitionMetadata) {
+        $unicode = [char]0xE9
+        $nested = "% UTF-8: $unicode`r`nfunction y=first(x)`r`ny=helper(x);`r`nfunction z=helper(x)`r`nz=x;`r`nend`r`nend`r`nfunction y=second(x)`r`ny=helper(x);`r`nfunction z=helper(x)`r`nz=x+1;`r`nend`r`nend`r`n"
+        foreach ($case in @(
+            @{name='nested'; source=$nested; names=@('first','helper','second','helper'); kinds=@('primary-function','nested-function','local-function','nested-function')},
+            @{name='class'; source="classdef RangeClass`nmethods`nfunction y=first(obj)`ny=1;`nend`nfunction y=second(obj)`ny=2;`nend`nend`nend`n"; names=@('first','second'); kinds=@('method','method')},
+            @{name='no_execution'; source="error('must not execute');`nfunction y=helper(x)`ny=x;`nend`n"; names=@('helper'); kinds=@('local-function')},
+            @{name='invalid'; source='a=;'; names=@(); kinds=@()}
+        )) {
+            $sourceName = 'definition_' + $case.name + '.m'
+            $body = @{source=$case.source; source_name=$sourceName} | ConvertTo-Json
+            $response = Invoke-WebRequest "$base/compile" -UseBasicParsing -Method Post -ContentType 'application/json' -Body $body
+            [IO.File]::WriteAllText((Join-Path $root ('definitions_' + $case.name + '.json')), [string]$response.Content)
+            $result = $response.Content | ConvertFrom-Json
+            $directory = $result.definition_directory
+            $valid = $case.name -ne 'invalid'
+            if ($result.valid -ne $valid -or $directory.complete -ne $valid -or
+                $directory.schema -ne 'mexec.definition-directory' -or $directory.version -ne 1 -or
+                $directory.source_name -cne $sourceName -or $directory.source_utf8 -cne $case.source -or
+                $directory.offset_unit -ne 'utf8-byte' -or $directory.column_unit -ne 'utf8-byte' -or
+                $directory.line_base -ne 1 -or $directory.column_base -ne 1 -or !$directory.end_exclusive -or
+                $directory.definitions.Count -ne $case.names.Count) { throw "Incorrect definition directory: $($case.name); see $root" }
+            $bytes = [Text.Encoding]::UTF8.GetBytes($case.source)
+            for ($i = 0; $i -lt $case.names.Count; ++$i) {
+                $entry = $directory.definitions[$i]
+                if ($entry.index -ne $i -or $entry.name -cne $case.names[$i] -or $entry.kind -ne $case.kinds[$i] -or
+                    $entry.source_index -ne 0 -or $entry.source.name -cne $sourceName -or $entry.declaration_only -ne $false -or
+                    $entry.source.end.offset -le $entry.source.begin.offset -or $entry.source.end.offset -gt $bytes.Length) {
+                    throw "Incorrect definition record $i in $($case.name); see $root"
+                }
+                foreach ($position in @($entry.source.begin, $entry.source.end)) {
+                    $prefix = [Text.Encoding]::UTF8.GetString($bytes, 0, [int]$position.offset)
+                    $lines = $prefix.Split("`n")
+                    if ($position.line -ne $lines.Length -or
+                        $position.column -ne (1 + [Text.Encoding]::UTF8.GetByteCount($lines[-1]))) {
+                        throw "Incorrect byte/line/column units: $($case.name); see $root"
+                    }
+                }
+                $token = [Text.Encoding]::UTF8.GetString($bytes, [int]$entry.source.begin.offset, 8)
+                if ($token -cne 'function') { throw "Definition does not start at function token; see $root" }
+                if ($case.name -eq 'class' -and $entry.class_name -cne 'RangeClass') { throw "Missing owning class; see $root" }
+            }
+            if ($case.name -eq 'nested') {
+                $d = $directory.definitions
+                if ($null -ne $d[0].parent_function -or $d[1].parent_function -ne 0 -or
+                    $null -ne $d[2].parent_function -or $d[3].parent_function -ne 2 -or
+                    $d[1].source.end.offset -gt $d[0].source.end.offset -or
+                    $d[3].source.end.offset -gt $d[2].source.end.offset) { throw "Incorrect nested hierarchy; see $root" }
+            }
+            Write-Output "definitions/$($case.name): valid=$($result.valid), records=$($directory.definitions.Count)"
         }
     }
     Write-Output "Kernel SHA256: $expected"

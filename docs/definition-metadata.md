@@ -1,6 +1,7 @@
 # Definition Metadata
 
-Development API in ABI generation 2 revision 6 (unpublished). Retrieve the
+Development API introduced in ABI generation 2 revision 6 and retained in the
+unpublished revision 7 SDK. Retrieve the
 syntax definition directory with C++ `Module::definitions()` or C
 `mparser_module_definition_count` / `mparser_module_definition_info`.
 Unlike `functionNames()`, this includes nested functions and class methods;
@@ -39,3 +40,14 @@ ownership after module release, C argument failures and DLL exports.
 The installed C++ consumer also calls name validation and reads definition
 metadata from the relocated SDK. Real host navigation remains to be verified
 before release.
+
+An opt-in MExecServer integration candidate is supplied in
+`tools/host-integration/mexecserver-definition-metadata.patch`. With
+MEXEC_DEFINITION_METADATA enabled, /compile exposes a versioned definition
+directory with explicit position units and exact submitted source text. A
+successful compile is marked complete; invalid modules expose an empty,
+incomplete directory rather than a partial navigation index. This is an
+in-memory, single-request compile endpoint, not cross-file browser navigation.
+Before navigating, the host must compare the directory's source name/text with
+the exact current document and reject stale responses. Definition indices are
+not stable across requests. The candidate does not implement that UI policy.

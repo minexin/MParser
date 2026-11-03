@@ -84,3 +84,25 @@ The script copies only the renderer and existing test to a unique build
 directory, applies the four patches in order, and runs the existing suite plus
 Text, clipping/grid and Legend tests. Git's whitespace-only matching handles
 Windows CRLF/LF differences; any substantive source mismatch fails the run.
+
+## Definition Directory Candidate
+
+Apply mexecserver-definition-metadata.patch with --unidiff-zero and
+--ignore-space-change to a separate host checkout. Configure with
+MEXEC_DEFINITION_METADATA=ON and the development SDK (ABI 2.6 or later).
+The default remains OFF. This patch can be combined with the graphics patch;
+they modify separate compile definitions and REST/serialization call sites.
+
+The /compile response adds definition_directory: version, completeness, UTF-8
+byte units, source name, exact submitted source text and compiler definition
+records. Invalid source produces an incomplete empty directory. Source echo
+lets a host bind ranges to the exact request text, but the client still must
+check document identity and request freshness before navigating.
+
+Run probe-host-compile.ps1 with -DefinitionMetadata for nested repeated names,
+CRLF/UTF-8 position checks, class methods, compile-without-execution and invalid
+source. Use -GraphicsV3 as well only if that server also enables graphics v3.
+An isolated binary with both options passed those REST checks; raw evidence is
+build/host-compile-probe/56610d516503487ba260eca175f3c484. It reused previously
+compiled unchanged host objects and third-party libraries, so this is not
+evidence of a clean downstream CMake build or deployed navigation support.

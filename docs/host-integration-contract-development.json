@@ -22,8 +22,20 @@
   },
   "artifacts": [
     {
+      "path": "docs/definition-metadata.md",
+      "sha256_lf": "86e3421e1f28ef9f9cb7dc6ef7b98f6c9b7f58e65da743868667908c694ab536"
+    },
+    {
+      "path": "docs/variable-name-validation.md",
+      "sha256_lf": "45effa53f20b368194ef6707ee856d83dfd5c51482e4ff65ab2588ad6bcf5bab"
+    },
+    {
+      "path": "docs/graphics-clipping-contract.md",
+      "sha256_lf": "4e76a220ffe3949c9bc6bf816bab21d63520b47e2c74e69691b12acf6c6ee0c3"
+    },
+    {
       "path": "cmake/MParserConfig.cmake.in",
-      "sha256_lf": "72392f672bdb8e7ef1904c8b15d27173737f753009b6fdfe5bec9966fea2449f"
+      "sha256_lf": "cf3dca893a5f8f0cfc7022b510f8947ed7b57d0e0d3855017dadd57e7865878d"
     },
     {
       "path": "docs/public-contract-v1.14.json",

@@ -3307,6 +3307,9 @@ install(FILES
     docs/machine-result-v1.schema.json
     docs/graphics-v3.schema.json
     docs/graphics-identity-contract.md
+    docs/definition-metadata.md
+    docs/variable-name-validation.md
+    docs/graphics-clipping-contract.md
     docs/host-integration-contract-development.json
     docs/performance-baseline-v1.schema.json
     docs/performance-suite-v1.schema.json
