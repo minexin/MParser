@@ -1,0 +1,11 @@
+lines = plot([1,10;2,20;3,30]);
+ax = gca();
+first = lines(1);
+first.DisplayName = 'Measured';
+first.Clipping = 'off';
+ax.YLim = [0,5];
+grid(ax, 'on');
+title(ax, 'Gain');
+xlabel(ax, 'Time');
+ylabel(ax, 'Power');
+lg = legend(ax);

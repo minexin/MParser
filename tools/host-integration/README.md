@@ -141,3 +141,20 @@ passing does not establish real-browser rendering or production deployment.
 Verified clean run: build/clean-host-probe/ddb1df19182d40db93f346e910a252c2
 (148 build actions, REST and candidate checks, host CTest 67/67). The installed
 DLL SHA256 was 655A551409F5860B48CBC9C693DE5AF34BA4778825C663C00AFA3A927CF99F76.
+
+## Repository Regression
+
+`node tests/host_graphics_candidate_smoke.cjs` replays the renderer candidates
+against the pinned, test-only host snapshots in tests/host_graphics_fixture.
+It does not require the sibling MExecClient checkout and runs in a separate
+GitHub CI job. The original live-source replay remains available to detect
+changes in the actual integration target.
+
+CTest adds host_graphics_candidate_smoke when Node.js and Git are found.
+Configure MPARSER_REQUIRE_HOST_GRAPHICS_TESTS=ON to reject missing tools
+instead of omitting the test; Node.js 18+ is required. The CTest variant also
+executes tests/host_graphics_scene.m with the built MParser and verifies the
+real v2 snapshot's matrix data, labels, grids, clipping and Legend in the
+candidate renderer. The standalone CI job covers patch replay only, while
+normal platform CTest runs cover the real kernel scene when tools are present.
+This remains simulated-canvas, not real-browser, acceptance.

@@ -25,7 +25,7 @@ success may substitute for missing kernel contracts.
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping focused tests and opt-in v3 SDK identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel 346/346 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 347/347 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -540,3 +540,14 @@ records that rename was not shipped; no rename operation or UI is claimed.
   client and deployed service were not modified. Browser visuals, production
   integration, request negotiation, writeback and new product release are not
   established by this clean-build test.
+- Continuous renderer regression: test-only frozen MExecClient inputs are now
+  pinned by normalized hashes and replayed by host_graphics_candidate_smoke.
+  CTest additionally executes the built kernel on host_graphics_scene.m and
+  passes its actual v2 graph to the candidate renderer, checking matrix YData,
+  Text labels, independent grids, Line clipping and explicit Legend entries.
+  Full local CTest passed 347/347 (45.61 seconds). A standalone Node CI job
+  checks patch replay without the sibling host checkout. This adds continuous
+  simulated-canvas coverage, not browser visual acceptance. Tabbit diagnose
+  returned exit 1 without a usable connection; settings were not changed.
+  Previous main commit d637f75 passed Documentation CI 41585463047 and
+  Cross-platform CI 41585463024.

@@ -53,6 +53,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  host-graphics-candidates:
+    name: Host graphics candidates / Node simulated canvas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Replay renderer candidates against frozen host source
+        run: node tests/host_graphics_candidate_smoke.cjs
+
   windows-x64:
     name: Windows x64 / MSVC / SLJIT
     runs-on: windows-latest

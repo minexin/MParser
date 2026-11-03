@@ -2914,6 +2914,22 @@ add_test(NAME host_integration_development_contract
     COMMAND ${CMAKE_COMMAND} -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_host_integration_development.cmake)
 set_tests_properties(host_integration_development_contract PROPERTIES LABELS "documentation;release")
+option(MPARSER_REQUIRE_HOST_GRAPHICS_TESTS "Require Node.js and Git for host graphics candidate tests" OFF)
+find_program(MPARSER_NODE_EXECUTABLE NAMES node nodejs)
+find_program(MPARSER_GIT_EXECUTABLE NAMES git)
+if(MPARSER_NODE_EXECUTABLE AND MPARSER_GIT_EXECUTABLE)
+    add_test(NAME host_graphics_candidate_smoke
+        COMMAND "${MPARSER_NODE_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/host_graphics_candidate_smoke.cjs"
+            "${CMAKE_CURRENT_BINARY_DIR}/host-graphics-candidate-smoke"
+            "${MPARSER_GIT_EXECUTABLE}" "$<TARGET_FILE:mparser>")
+    set_tests_properties(host_graphics_candidate_smoke PROPERTIES
+        LABELS "host-integration" TIMEOUT 60)
+elseif(MPARSER_REQUIRE_HOST_GRAPHICS_TESTS)
+    message(FATAL_ERROR "Host graphics tests require Node.js 18+ and Git")
+else()
+    message(STATUS "Host graphics candidate tests unavailable (Node.js/Git missing)")
+endif()
 set_tests_properties(runtime_graphics_smoke PROPERTIES TIMEOUT 30)
 target_link_libraries(runtime_debugger_smoke_tests PRIVATE
     mparser_core Threads::Threads)
