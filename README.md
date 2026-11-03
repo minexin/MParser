@@ -4,7 +4,10 @@ Current product and SDK development identity: **v1.15.0 (unreleased)**.
 The [V1.15 development line](docs/v1.15.md) prioritizes host integration:
 identifier validation, compiler definition ranges, graphics lifecycle/Text/Legend,
 and opt-in identity snapshots. Browser, deployment and release acceptance remain
-separate gates. The prior V1.14 batch adds
+separate gates. Internal ordered display recording and reference-backed
+expression/ans semantics are tracked in the
+[display development guide](docs/assignment-display-development.md); a public
+host event stream is still pending. The prior V1.14 batch adds
 headless Figure/Axes/Line objects and scalar/array/session graph snapshots;
 platform acceptance is tracked in [docs/v1.14.md](docs/v1.14.md). V1.13 added
 paused-frame evaluation, assignment, conditional breakpoints and source debugger

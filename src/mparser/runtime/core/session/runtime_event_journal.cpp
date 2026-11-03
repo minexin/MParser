@@ -30,7 +30,7 @@ void RuntimeEventJournal::expression(RuntimeExpressionResult& expression, std::u
     size_t captureDepth, std::string sourceName) {
     RuntimeDisplayFormat format;
     format.spacing = expression.lineSpacing;
-    auto event = runtimeCaptureAssignmentDisplay("ans",expression.value,expression.span,std::move(sourceName),
+    auto event = runtimeCaptureAssignmentDisplay(expression.label,expression.value,expression.span,std::move(sourceName),
         expression.outputSuppressed,0,format);
     if (!event.snapshotFailure) { event.text = expression.displayText; }
     display(event,RuntimeJournalKind::Expression,context,captureDepth);

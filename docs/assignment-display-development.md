@@ -215,6 +215,68 @@ warnings-as-errors enabled. Raw kernel REST evidence is
 build/host-compile-probe/6c622813822042888778e6f95e5765fd. These checks preserve
 the public compatibility boundary; they do not advertise a new H10 host feature.
 
+## Expression Labels And Workspace Answers
+
+tools/host-integration/collect_expression_reference.m records actual console,
+ans presence/class/shape/value and function-scope reports using MATLAB
+24.2.0.2712019 (R2024b). The completed 39-case reference is retained at
+build/expression-matlab-f43aa362148c42ca9d29018ee911625f/reference.json and
+tests/expression_display_reference.json; SHA256:
+22C2C66BE4D47E0CA6A236EAC1E3BCF61D6EBFB8917FF0E434161A9209ABFFD9.
+The reference corroborates the documented
+[workspace-specific ans behavior](https://www.mathworks.com/help/matlab/ref/ans.html).
+Earlier collection attempts failed because of report name resolution and a
+persistent ans declaration rejected by MATLAB before execution; their raw logs
+are retained under build/expression-matlab-*. They are not reference passes.
+
+Bare variables, including nested parentheses and runtime shadows of builtins,
+display their actual variable name without creating or replacing ans. Computed
+expressions use ans; suppression hides their display but still updates the
+current workspace answer. Function bodies have the same rules, separate local
+answers and implicit-call nargout=0. Bare zero-argument functions and function
+handles are distinguished from variables. No output, unassigned implicit
+outputs and empty comma lists leave the previous answer alone. Cell comma
+lists generate separate records in order and leave the last value in ans.
+Global answer writes use the existing storage contract, not a detached local
+copy. eval/evalc reuse the kernel rules without host-side source inference.
+
+Expression records freeze each intermediate value, display label and original
+statement source. Requested optimized modes retain bytecode fallback for
+CaptureExpression regions; recording still explicitly suppresses regions that
+cannot preserve observed commits. This is not native-code event emission or a
+performance-parity claim. Existing public headers and protocol schemas have
+no new label accessor; they do not become the complete ordered display API.
+The public top-level array must remain script-only, independently of the new
+internal function-body records.
+
+tests/expression_display_smoke.cpp compares all 39 reference cases across HIR
+and four requested VM modes with recording both disabled and enabled. It also
+checks actual runtime builtin shadows, intermediate immutable values, source
+ranges, failing-expression history, mid-comma-list console rejection and legacy
+public projection. Console checks compare labels/order and answer state, not
+MATLAB's localized rich text, whitespace typography or overloaded display.
+The initial red test directly reproduced a bare variable incorrectly creating
+ans at build/expression-red-test.log.
+
+After adding a failing legacy-scope projection check, the module projection
+was kept script-only while retaining function-body events internally. Full
+rebuild/regression passed 353/353 in 79.49 seconds at
+build/expression-acceptance-regression.log. Two old fixtures had required Pop
+and had initialized ans with seed; respectively; they now check suppressed
+capture and initialize the answer using a computed expression. Their original
+failures remain in build/expression-full-regression.log. No runtime error was
+hidden and no failed case was removed from acceptance.
+
+A fresh source-only host build at
+build/clean-host-probe/659cc09064504a12bfd2cc31685678fe completed all 148
+build actions, existing path/rename/compiler/definition/graphics REST checks,
+client rendering candidates and host CTest 67/67 (22.32 seconds). Raw REST
+evidence: build/host-compile-probe/1dfdc6c63dcd4c62a11e0a7d8ff5bf5a.
+The selected relocated ABI 2.8 DLL SHA256 is
+8A6970AFCF5F2852397D1AC0DEE3B4D9D5FDA10384B1B3510E0869B0B31ABF3F.
+This checks existing SDK compatibility, not public expression-label delivery.
+Original sibling source trees and deployed services remain unchanged.
+
 ## Remaining H10 Gates
 
 1. Public immutable snapshot projection/lifetime and access rules, including
@@ -223,9 +285,10 @@ the public compatibility boundary; they do not advertise a new H10 host feature.
 2. Public bounded live delivery/backpressure and reentrancy/cancellation policy.
    The internal shared transcript, generation order and caught-error policy now
    exist; legacy grouped callbacks are not a substitute for the new delivery API.
-3. Real expression labels and ans rules, function-scope expressions and
-   overloaded display semantics. Existing top-level-expression fields are not
-   silently redefined by this foundation.
+3. Broader expression/display compatibility, especially overloaded display,
+   user-defined dispatch and syntax/storage combinations outside the fixed
+   R2024b corpus. Core variable/computed labels and function-scope ans rules
+   now have direct reference tests; they are not a claim of full parity.
 4. Additive C/C++ accessors and machine protocol contract with old headers and
    frozen schema compatibility, explicit lifetime/error/version rules and package
    consumer tests. No public ABI revision is allocated prematurely.

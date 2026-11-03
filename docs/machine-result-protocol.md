@@ -116,12 +116,18 @@ to protocol stdout. `source` may be null when no language source range exists.
 ```
 
 Semicolon-suppressed expressions remain present with
-`output_suppressed: true` and still update `ans`; assignments are represented
-through `workspace`. Both arrays use the same zero-based monotonically
+`output_suppressed: true`. Computed expressions update `ans` even when
+suppressed; bare variables (also when parenthesized) do not. Assignments are
+represented through `workspace`. Both arrays use the same zero-based monotonically
 increasing unsigned 64-bit sequence. Sequences are strictly increasing inside
 each array and unique across both arrays, so consumers recover original
 execution order with a two-way merge. Array order alone does not establish
 cross-array order.
+
+This legacy array remains script-only. It has no display-label field and does
+not encode the complete function/assignment/warning transcript. The v1.15
+internal event journal is not a new public protocol feature; see
+[display development boundaries](assignment-display-development.md).
 
 Current ordinary producer documents emit both arrays, including when empty.
 The tolerant major-1 schema makes them optional so the earlier protocol-1.1

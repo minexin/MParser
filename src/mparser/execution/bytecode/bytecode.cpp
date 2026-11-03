@@ -248,11 +248,7 @@ private:
             }
             if (node.children.size() == 1) {
                 const auto& expression = *node.children.front();
-                if (node.capturesExpressionResult && functionDepth_ == 0) {
-                    if (!expressionProducesResult(expression)) {
-                        lowerExpression(expression, 0);
-                        break;
-                    }
+                if (node.capturesExpressionResult) {
                     lowerExpression(expression, 1, true);
                     const size_t capture = emit(
                         BytecodeOp::CaptureExpression, node);
@@ -727,6 +723,11 @@ private:
 
     void lowerExpression(const HirNode& node, int resultCount = 1,
                          bool implicitExpressionOutput = false) {
+        if (node.kind == HirKind::Statement && node.children.size() == 1) {
+            lowerExpression(*node.children.front(), resultCount,
+                            implicitExpressionOutput);
+            return;
+        }
         if (node.kind == HirKind::NameRef) {
             const size_t load = emit(BytecodeOp::LoadName, node);
             program_.instructions[load].resultCount = resultCount;

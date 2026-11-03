@@ -73,6 +73,8 @@ struct RuntimeExpressionResult {
     std::uint64_t sequence = 0;
     std::string displayText = {};
     RuntimeLineSpacing lineSpacing = RuntimeLineSpacing::Loose;
+    std::string label = "ans";
+    bool topLevel = true;
 };
 
 // Internal recording foundation, not yet a public structured-value protocol.

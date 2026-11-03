@@ -1826,40 +1826,41 @@ private:
                 break;
             }
             if (node.capturesExpressionResult &&
-                node.children.size() == 1 && !frames_.empty() &&
-                frames_.back().kind == RuntimeCallFrameKind::Script) {
+                node.children.size() == 1 && !frames_.empty()) {
                 const HirNode& expression = *node.children.front();
-                if (!expressionProducesResult(expression)) {
-                    (void)evaluateValues(expression, 0);
-                    break;
+                const HirNode* name = &expression;
+                while (name->kind == HirKind::Statement && name->children.size() == 1) {
+                    name = name->children.front().get();
                 }
+                const bool variable = name->kind == HirKind::NameRef &&
+                    (storageBinding(*name) || currentFrame().contains(name->label));
                 const size_t diagnosticBase = diagnostics_.size();
                 auto values = evaluateValues(expression, 1, true);
-                if (diagnostics_.size() == diagnosticBase &&
-                    values.size() == 1 &&
-                    values.front().kind != RuntimeValueKind::Missing &&
-                    !frames_.empty()) {
-                    const RuntimeDisplayFormat displayFormat =
-                        sessionState_->displayFormat();
-                    const std::string displayText =
-                        runtimeFormatConsoleValue(values.front(),
-                                                  displayFormat);
-                    currentFrame()["ans"] = values.front();
-                    expressionResults_.push_back(
-                        RuntimeExpressionResult{
-                            std::move(values.front()), node.span,
-                            node.outputSuppressed,
-                            journal_ ? 0 : nextConsoleSequence_++, displayText,
-                            displayFormat.spacing});
-                    if (journal_) {
-                        journal_->expression(expressionResults_.back(),journalSourceContext_,executionControl_->consoleCaptureDepth(),
-                            sourceFileName(node.span));
-                    }
-                    if (executionControl_ && executionControl_->consoleStreaming() &&
-                        !executionControl_->emitConsole(
-                            runtimeRenderConsole({}, {expressionResults_.back()}))) {
-                        addDiagnostic(node, "host console sink rejected expression output",
-                                      "MParser:OutputSinkRejected");
+                if (diagnostics_.size() == diagnosticBase && !frames_.empty()) {
+                    for (auto& value : values) {
+                        if (value.kind == RuntimeValueKind::Missing) { continue; }
+                        const RuntimeDisplayFormat displayFormat = sessionState_->displayFormat();
+                        const std::string displayText = runtimeFormatConsoleValue(value,displayFormat);
+                        if (!variable) {
+                            HirNode answer(HirKind::NameRef);
+                            answer.label = "ans";
+                            answer.span = node.span;
+                            storeVariable(answer,value);
+                        }
+                        expressionResults_.push_back(RuntimeExpressionResult{
+                            std::move(value),node.span,node.outputSuppressed,
+                            journal_ ? 0 : nextConsoleSequence_++,displayText,
+                            displayFormat.spacing,variable ? name->label : "ans",
+                            frames_.back().kind == RuntimeCallFrameKind::Script});
+                        if (journal_) {
+                            journal_->expression(expressionResults_.back(),journalSourceContext_,executionControl_->consoleCaptureDepth(),
+                                sourceFileName(node.span));
+                        }
+                        if (executionControl_ && executionControl_->consoleStreaming() &&
+                            !executionControl_->emitConsole(runtimeRenderConsole({}, {expressionResults_.back()}))) {
+                            addDiagnostic(node,"host console sink rejected expression output","MParser:OutputSinkRejected");
+                            break;
+                        }
                     }
                 }
                 break;
@@ -2055,6 +2056,23 @@ private:
         if (debugStopped_) {
             return std::vector<RuntimeValue>(requestedOutputCount, missingValue());
         }
+        if (node.kind == HirKind::Statement && node.children.size() == 1) {
+            return evaluateValues(*node.children.front(),requestedOutputCount,implicitExpressionOutput);
+        }
+        if (node.kind == HirKind::NameRef &&
+            (storageBinding(node) || currentFrame().contains(node.label))) {
+            const auto value = loadStoredVariable(node);
+            return value ? std::vector<RuntimeValue>{*value} : std::vector<RuntimeValue>{};
+        }
+        if (node.kind == HirKind::NameRef && node.binding.kind == BindingKind::Function) {
+            size_t outputCount = requestedOutputCount;
+            if (implicitExpressionOutput) {
+                const auto function = resolveLocalFunction(node.label);
+                if (function) { outputCount = preferredImplicitOutputCount(parseFunctionSignature(*function->second)); }
+            }
+            return callLocalFunction(node,node.label,{},outputCount,
+                implicitExpressionOutput ? std::optional<size_t>{0} : std::nullopt).outputs;
+        }
         if (node.kind == HirKind::NameRef &&
             node.binding.kind == BindingKind::Builtin) {
             const BuiltinDescriptor* descriptor =
@@ -2090,34 +2108,6 @@ private:
         std::vector<RuntimeValue> result;
         appendRuntimeExpandedValues(result, evaluate(node));
         return result;
-    }
-
-    bool expressionProducesResult(const HirNode& expression) const {
-        if (expression.kind == HirKind::NameRef &&
-            expression.binding.kind == BindingKind::Builtin) {
-            const auto* descriptor =
-                builtinRegistry().find(expression.label);
-            return !descriptor ||
-                   descriptor->implicitOutputCount(0) != 0;
-        }
-        if (expression.kind != HirKind::CallOrIndex ||
-            expression.children.empty()) {
-            return true;
-        }
-        const HirNode& callee = *expression.children.front();
-        if (expression.binding.kind == BindingKind::Builtin) {
-            const auto* descriptor = builtinRegistry().find(callee.label);
-            return !descriptor ||
-                   descriptor->implicitOutputCount(
-                       expression.children.size() - 1) != 0;
-        }
-        if (expression.binding.kind == BindingKind::Function) {
-            const auto function = resolveLocalFunction(callee.label);
-            return !function ||
-                   functionOutputCountIsValid(
-                       parseFunctionSignature(*function->second), 1);
-        }
-        return true;
     }
 
     size_t preferredImplicitOutputCount(

@@ -1009,7 +1009,7 @@ std::string runtimeRenderConsole(
         if (expression.outputSuppressed) {
             continue;
         }
-        output += "ans = ";
+        output += expression.label + " = ";
         output += expression.displayText.empty()
                       ? runtimeValueToString(expression.value)
                       : expression.displayText;

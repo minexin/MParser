@@ -295,14 +295,20 @@ also retained in the result and can be read through the
 `mparser_result_output_event_*` getters.
 
 Script expression statements are retained through
-`mparser_result_top_level_expression_*`. Both unsuppressed and semicolon-
-suppressed expressions update `ans`; the suppression bit controls human
+`mparser_result_top_level_expression_*`. Computed expressions update `ans`
+whether suppressed or not; bare variables, including parentheses, do not.
+The suppression bit controls human
 display but does not remove the value from the result. Assignments remain
 available through result workspace variables rather than this expression
 list. Output events and top-level expressions share a zero-based monotonically
 increasing `uint64_t sequence`, so a host can merge the two arrays in original
 execution order. Source names/ranges remain borrowed from the result; values
 returned by the expression getter are owned handles.
+
+The existing array remains script-only and has no display-label accessor.
+Internal function-body and assignment records do not silently become public
+events. See [display development boundaries](assignment-display-development.md)
+for the separate ordered immutable-event API and transport gates.
 
 Top-level expression values use the same strong ownership as ordinary result
 values. Object and function-handle expressions retain their runtime graphs

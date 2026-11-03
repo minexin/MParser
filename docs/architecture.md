@@ -1872,10 +1872,10 @@ before calling an optional external host sink. Rejection becomes the ordinary
 crosses the engine boundary.
 
 Parser expression statements retain their semicolon-suppression bit. Semantic
-HIR preserves it, bytecode emits `CaptureExpression`, and both baseline engines
-capture only script-level expression statements, never function-body
-expressions. Captured values update `ans` whether suppressed or not and share
-the output-event sequence. `ModuleInvocationResult` therefore owns two stable
+HIR preserves it and bytecode emits `CaptureExpression`. The original v1.2
+implementation captured only script-level expression statements, never
+function-body expressions, and wrote all captured values to `ans`.
+`ModuleInvocationResult` therefore owns two stable
 arrays that the CLI and machine protocol merge/project without rerunning or
 reinterpreting source. Assignments continue through the workspace snapshot.
 
@@ -1889,6 +1889,18 @@ callback exceptions. Machine protocol 1.1 frames optional event/expression
 arrays, while ordinary CLI mode prints the merged human stream. Typed/native
 regions remain guarded: output or capture semantics outside their eligibility
 continue through the bytecode authority.
+
+The v1.15 development correction captures script and function-body expression
+statements internally. Actual variable loads retain their display name and do
+not modify `ans`; computed values use the current workspace answer binding,
+including global storage. Parentheses preserve the underlying expression's
+implicit-call convention. Comma lists emit each value in order, and no-output
+calls do not invent answers. Internal records carry label and scope metadata;
+the existing public top-level array still projects script-only values. The
+opt-in immutable event journal includes function-body displays without adding
+fields to frozen SDK headers or protocol schemas. See
+[assignment display development](assignment-display-development.md) for the
+R2024b corpus and remaining public delivery/overloaded-display gates.
 
 The v1.3 system layer extends that invocation model with a session-owned
 `RuntimeSystemContext`. Capability bits and an abstract `RuntimeHostAdapter`

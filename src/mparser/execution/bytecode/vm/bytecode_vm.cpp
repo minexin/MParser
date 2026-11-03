@@ -679,6 +679,7 @@ struct StackValue {
     std::string methodName;
     std::string methodDeclaringClass;
     std::optional<RuntimeValue> receiver;
+    std::string variableName;
 };
 
 struct ForLoopState {
@@ -7165,30 +7166,32 @@ private:
 
     void captureExpression(
         const BytecodeInstruction& instruction) {
-        auto value = popRuntime(instruction, "top-level expression");
-        if (!value || frames_.empty() ||
-            frames_.back().kind != RuntimeCallFrameKind::Script ||
-            value->kind == RuntimeValueKind::Missing) {
+        const std::string variableName = stack_.empty() ? std::string{} : stack_.back().variableName;
+        auto value = popRuntime(instruction, "expression statement");
+        if (!value || frames_.empty()) {
             return;
         }
-        const RuntimeDisplayFormat displayFormat =
-            sessionState_->displayFormat();
-        const std::string displayText = runtimeFormatConsoleValue(
-            *value, displayFormat);
-        currentFrame()["ans"] = *value;
-        expressionResults_.push_back(RuntimeExpressionResult{
-            std::move(*value), instruction.span,
-            instruction.outputSuppressed,
-            journal_ ? 0 : nextConsoleSequence_++, displayText,
-            displayFormat.spacing});
-        if (journal_) {
-            journal_->expression(expressionResults_.back(),journalSourceContext_,executionControl_->consoleCaptureDepth(),
-                journalSourceName(instruction.span));
-        }
-        if (executionControl_->consoleStreaming() &&
-            !executionControl_->emitConsole(runtimeRenderConsole({}, {expressionResults_.back()}))) {
-            addDiagnostic(instruction, "host console sink rejected expression output",
-                          "MParser:OutputSinkRejected");
+        std::vector<RuntimeValue> values;
+        appendRuntimeExpandedValues(values, *value);
+        for (auto& item : values) {
+            if (item.kind == RuntimeValueKind::Missing) { continue; }
+            const RuntimeDisplayFormat displayFormat = sessionState_->displayFormat();
+            const std::string displayText = runtimeFormatConsoleValue(item,displayFormat);
+            if (variableName.empty()) { storeVariable("ans", {}, item, instruction); }
+            expressionResults_.push_back(RuntimeExpressionResult{
+                std::move(item),instruction.span,instruction.outputSuppressed,
+                journal_ ? 0 : nextConsoleSequence_++,displayText,
+                displayFormat.spacing,variableName.empty() ? "ans" : variableName,
+                frames_.back().kind == RuntimeCallFrameKind::Script});
+            if (journal_) {
+                journal_->expression(expressionResults_.back(),journalSourceContext_,executionControl_->consoleCaptureDepth(),
+                    journalSourceName(instruction.span));
+            }
+            if (executionControl_->consoleStreaming() &&
+                !executionControl_->emitConsole(runtimeRenderConsole({}, {expressionResults_.back()}))) {
+                addDiagnostic(instruction,"host console sink rejected expression output","MParser:OutputSinkRejected");
+                break;
+            }
         }
     }
 
@@ -7251,7 +7254,9 @@ private:
                 loadStoredVariable(instruction, *binding);
             if (variable) {
                 recordLoad(instruction, *variable);
-                stack_.push_back(runtimeStackValue(*variable));
+                auto loaded = runtimeStackValue(*variable);
+                loaded.variableName = instruction.operand;
+                stack_.push_back(std::move(loaded));
             }
             return;
         }
@@ -7259,8 +7264,9 @@ private:
                 currentFrame().find(instruction.operand);
             variable != currentFrame().end()) {
             recordLoad(instruction, variable->second);
-            stack_.push_back(
-                runtimeStackValue(variable->second));
+            auto loaded = runtimeStackValue(variable->second);
+            loaded.variableName = instruction.operand;
+            stack_.push_back(std::move(loaded));
             return;
         }
 
@@ -7339,6 +7345,12 @@ private:
 
         if (instruction.binding.kind == BindingKind::Function) {
             stack_.push_back(functionStackValue(instruction.operand));
+            if (!instruction.calleeReference) {
+                BytecodeInstruction call = instruction;
+                call.operandCount = 0;
+                call.hasIndexContext = false;
+                callOrIndex(call);
+            }
             return;
         }
 

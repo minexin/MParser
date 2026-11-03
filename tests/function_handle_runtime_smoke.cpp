@@ -238,7 +238,7 @@ void runTextDiagnosticParitySmoke() {
 void runAnonymousZeroOutputParitySmoke() {
     auto pipeline = lower(R"(callback = @() touch();
 seed = 13;
-seed;
+seed + 0;
 callback();
 ans_after_zero_output = ans;
 value_callback = @() produce();

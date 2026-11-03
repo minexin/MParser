@@ -1209,6 +1209,7 @@ ModuleInvocationResult CompiledModule::execute(
     result.topLevelExpressions.reserve(
         runtime.expressionResults.size());
     for (auto& expression : runtime.expressionResults) {
+        if (!expression.topLevel) { continue; }
         result.topLevelExpressions.push_back(
             projectExpressionResult(
                 std::move(expression), data_->sources));

@@ -535,6 +535,13 @@ target_link_libraries(event_journal_smoke_tests PRIVATE mparser_core)
 add_test(NAME event_journal_smoke COMMAND event_journal_smoke_tests)
 set_tests_properties(event_journal_smoke PROPERTIES LABELS host-integration)
 
+add_executable(expression_display_smoke_tests tests/expression_display_smoke.cpp)
+target_link_libraries(expression_display_smoke_tests PRIVATE mparser_core)
+target_include_directories(expression_display_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME expression_display_smoke COMMAND expression_display_smoke_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/expression_display_reference.json)
+set_tests_properties(expression_display_smoke PROPERTIES LABELS host-integration)
+
 add_test(NAME v1_1_core_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/v1_1_core_compatibility_demo.m)

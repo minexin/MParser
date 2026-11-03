@@ -217,7 +217,13 @@ end
     mparser::SemanticResult semantic;
     const auto program = lower(source, semantic);
 
-    assert(containsOp(program, mparser::BytecodeOp::Pop));
+    bool capturesSuppressed = false;
+    for (const auto& instruction : program.instructions) {
+        if (instruction.op == mparser::BytecodeOp::CaptureExpression) {
+            capturesSuppressed = instruction.outputSuppressed;
+        }
+    }
+    assert(capturesSuppressed);
     const auto validation =
         mparser::validateBytecodeProgram(program, &semantic);
     assert(validation.succeeded);

@@ -836,3 +836,30 @@ records that rename was not shipped; no rename operation or UI is claimed.
   at build/journal-final-package.log: journal/assignment tests, development
   contract, installed C/C++ consumers and relocated release archive. Product
   remains development 1.15.0; public ABI 2.8/148 and protocol 1.2 are unchanged.
+- H10 expression semantics now use actual runtime variable provenance for
+  display names, retain ans on bare/parenthesized variables and no-output
+  calls, update the correct workspace/global binding for computed values,
+  preserve implicit nargout=0 and record comma lists in actual order. Function
+  bodies use the same rules internally; public top_level_expressions remains
+  script-only. Actual R2024b 24.2.0.2712019 reference: 39 cases at
+  build/expression-matlab-f43aa362148c42ca9d29018ee911625f/reference.json,
+  committed as tests/expression_display_reference.json (SHA256
+  22C2C66BE4D47E0CA6A236EAC1E3BCF61D6EBFB8917FF0E434161A9209ABFFD9).
+  HIR and four requested VM modes pass with recording both off/on; extra tests
+  cover immutable intermediate values, real runtime builtin shadows, source
+  ranges, pre-failure history, sink rejection and public script-scope projection.
+  Complete rebuild/regression passed 353/353 in 79.49 seconds at
+  build/expression-acceptance-regression.log. Relocated ABI 2.8 DLL SHA256:
+  8A6970AFCF5F2852397D1AC0DEE3B4D9D5FDA10384B1B3510E0869B0B31ABF3F.
+  This does not close overloaded-display, public snapshot/API/transport,
+  browser, host-adoption or release/deployment gates. No new public label
+  accessor or protocol field was introduced; the product remains development
+  1.15.0, ABI 2.8/148, protocol 1.2.
+- Expression-stage compatibility acceptance used source-only clean host run
+  build/clean-host-probe/659cc09064504a12bfd2cc31685678fe, all 148 build actions,
+  path/rename/definition/compiler/graphics REST checks and client candidates.
+  Host CTest passed 67/67 in 22.32 seconds; selected DLL SHA256 matches
+  8A6970AFCF5F2852397D1AC0DEE3B4D9D5FDA10384B1B3510E0869B0B31ABF3F.
+  Raw REST evidence: build/host-compile-probe/1dfdc6c63dcd4c62a11e0a7d8ff5bf5a.
+  No sibling source/service was changed. Existing transport compatibility is
+  not proof of new public display-event delivery or browser acceptance.
