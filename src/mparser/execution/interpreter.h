@@ -18,6 +18,7 @@ struct InterpreterResult {
     std::vector<RuntimeVariable> variables;
     std::vector<RuntimeOutputEvent> outputEvents;
     std::vector<RuntimeExpressionResult> expressionResults;
+    std::vector<RuntimeAssignmentDisplay> assignmentDisplays;
     std::vector<Diagnostic> diagnostics;
     std::optional<RuntimeGraphicsSnapshot> graphicsSnapshot;
 };
@@ -27,6 +28,7 @@ struct InterpreterOptions {
     std::shared_ptr<RuntimeCallableContext> callableContext;
     RuntimeOutputSink outputSink;
     std::shared_ptr<RuntimeExecutionControl> executionControl = {};
+    bool captureAssignmentDisplays = false;
 };
 
 class Interpreter {

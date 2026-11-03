@@ -518,6 +518,11 @@ add_executable(bytecode_vm_smoke_tests tests/bytecode_vm_smoke.cpp)
 target_link_libraries(bytecode_vm_smoke_tests PRIVATE mparser_core)
 add_test(NAME bytecode_vm_smoke COMMAND bytecode_vm_smoke_tests)
 
+add_executable(assignment_display_smoke_tests tests/assignment_display_smoke.cpp)
+target_link_libraries(assignment_display_smoke_tests PRIVATE mparser_core)
+add_test(NAME assignment_display_smoke COMMAND assignment_display_smoke_tests)
+set_tests_properties(assignment_display_smoke PROPERTIES LABELS host-integration)
+
 add_test(NAME v1_1_core_interpreter_cli_smoke
     COMMAND mparser --run-hir
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/v1_1_core_compatibility_demo.m)
@@ -3348,6 +3353,7 @@ install(FILES
     docs/graphics-clipping-contract.md
     docs/graphics-color-contract.md
     docs/system-search-paths.md
+    docs/assignment-display-development.md
     docs/host-integration-contract-development.json
     docs/performance-baseline-v1.schema.json
     docs/performance-suite-v1.schema.json

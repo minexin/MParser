@@ -547,6 +547,7 @@ void analyzeInstruction(const BytecodeProgram& program,
     case BytecodeOp::Pop:
         break;
     case BytecodeOp::CaptureExpression:
+    case BytecodeOp::ReverseOutputs:
         contract.hasUnsupportedOperations = true;
         break;
     case BytecodeOp::DeclareGlobal:

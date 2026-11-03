@@ -89,6 +89,8 @@ adapter is Post-v1.0.
   findings and MExecServer kernel requests tracked to 0.1 milestones.
 - [V1.x Host Requirement Audit](v1.x-host-requirement-audit.md): source-linked
   evidence for the MExecServer host requirements and their current boundaries.
+- [Assignment Display Development](assignment-display-development.md): internal
+  commit-time recording foundation and outstanding public H10 acceptance gates.
 
 ## Machine-Readable Authorities
 

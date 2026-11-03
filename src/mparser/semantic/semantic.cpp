@@ -1605,6 +1605,7 @@ private:
         node->nameValueSourceSpan = syntax.nameValueSourceSpan;
         node->property = syntax.property;
         node->capturesExpressionResult = syntax.capturesExpressionResult;
+        node->capturesAssignmentDisplay = syntax.capturesAssignmentDisplay;
         node->outputSuppressed = syntax.outputSuppressed;
         return node;
     }
@@ -2781,6 +2782,33 @@ const char* symbolKindName(SymbolKind kind) {
         return "Builtin";
     }
     return "Variable";
+}
+
+std::vector<std::string> assignmentDisplayRootNames(const HirNode& target) {
+    if (target.kind == HirKind::OutputList) {
+        std::vector<std::string> names;
+        for (const auto& child : target.children) {
+            auto roots = assignmentDisplayRootNames(*child);
+            names.insert(names.end(), roots.begin(), roots.end());
+        }
+        return names;
+    }
+    const HirNode* root = &target;
+    while ((root->kind == HirKind::MemberAccess || root->kind == HirKind::CallOrIndex ||
+            root->kind == HirKind::BraceIndex) && !root->children.empty()) {
+        root = root->children.front().get();
+    }
+    if (root->kind != HirKind::NameRef) { return {}; }
+    switch (root->binding.kind) {
+    case BindingKind::LocalVariable:
+    case BindingKind::FunctionParameter:
+    case BindingKind::FunctionOutput:
+    case BindingKind::GlobalVariable:
+    case BindingKind::PersistentVariable:
+        return {root->label};
+    default:
+        return {};
+    }
 }
 
 const char* scopeKindName(ScopeKind kind) {

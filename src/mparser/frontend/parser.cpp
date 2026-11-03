@@ -2083,6 +2083,9 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
     if (statement && statement->kind == SyntaxKind::ExpressionStatement) {
         statement->capturesExpressionResult = true;
         statement->outputSuppressed = outputSuppressed;
+    } else if (statement && statement->kind == SyntaxKind::AssignmentStatement) {
+        statement->capturesAssignmentDisplay = true;
+        statement->outputSuppressed = outputSuppressed;
     }
     consumeSeparator();
     return statement;

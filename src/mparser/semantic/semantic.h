@@ -112,6 +112,7 @@ struct HirNode {
     std::vector<std::string> superclasses;
     PropertySpec property;
     bool capturesExpressionResult = false;
+    bool capturesAssignmentDisplay = false;
     bool outputSuppressed = false;
     std::vector<std::unique_ptr<HirNode>> children;
 };
@@ -178,5 +179,7 @@ std::vector<std::string> anonymousFunctionCaptureNames(
     const HirNode& functionHandle);
 std::vector<std::string> nestedFunctionCaptureNames(
     const HirNode& function, const SemanticResult& semantic);
+// Resolve committed roots syntactically, without reevaluating indices/getters.
+std::vector<std::string> assignmentDisplayRootNames(const HirNode& target);
 
 } // namespace mparser

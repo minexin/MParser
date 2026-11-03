@@ -26,9 +26,9 @@ success may substitute for missing kernel contracts.
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 349/349 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 350/350 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
-| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | New 2026-11-03 host input recorded; SDK/event-stream design and implementation remain open |
+| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | Internal commit-time text recording implemented; structured snapshots, shared warning/diagnostic journal, public SDK/protocol and host acceptance remain open; see assignment-display-development.md |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -741,3 +741,36 @@ records that rename was not shipped; no rename operation or UI is claimed.
   host-path positive control at build/path-host-off-probe.log. This confirms
   the opt-in boundary rather than masking the original failure. H10 ordered
   display events and the remaining browser/deployment/release gates stay open.
+- H10 selected-development baseline reproduced all six original missing-display
+  cases using ABI 2.8, not only the old released SDK. Raw responses and hashes
+  are under build/clean-host-probe/9c2059d6af5946f2aa1931cb27dcd001/build/display-probe-3a3e55ff445842738cc62b12c258faea.
+  Actual MATLAB R2024b 24.2.0.2712019 produced 17 console references at
+  build/display-matlab-38ebd9e7d194465ea47a48bac6a24d1f/reference.json
+  (SHA256 CF920FBC3A2D38A6A19830B96C1359AA16A46F63B3D26483FF101AEDDA77DE54).
+- H10 internal recording foundation now retains assignment suppression through
+  Syntax/HIR, records frozen commit-time text/root/source/sequence metadata
+  without reevaluating targets, and preserves pre-failure history. Reference
+  repeated-target cases exposed reverse-order VM stores; output-list stores
+  now commit left to right even with recording disabled. Failure tests also
+  exposed HIR continuation after uncaught errors and failed RHS commits; both
+  were fixed, with catch behavior covered. Full rebuilt kernel/package CTest
+  passed 350/350 in 82.27 seconds at build/display-full-regression.log.
+  This stage is opt-in and internal: no new C export or host event feature,
+  ABI remains 2.8. Structured value snapshots, shared nested/dynamic journals,
+  warning/diagnostic ordering, expression labels/ans and public SDK/protocol/
+  host/browser acceptance remain explicitly open. Detailed boundaries:
+  docs/assignment-display-development.md.
+- H10 foundation compatibility recheck: a new source-only clean host build at
+  build/clean-host-probe/62fd9467618742b4acc17826f1031833 passed path/rename/
+  definition/compiler/graphics REST probes, client candidates and host CTest
+  67/67 in 21.16 seconds using relocated DLL SHA256
+  11ECDA1CCD88C4EC00898F36E658A7969458227CA24C2BCD8C3FF0FF00BF2329.
+  Raw kernel REST evidence: build/host-compile-probe/ba5919870b8e40438e659fe1ff4cc4aa.
+  The original six-case display probe still has missing public assignment
+  events at that clean run's build/display-probe-3686f84eff124e51a525a0efeebb5bb1;
+  this explicitly demonstrates the remaining public API/transport gap, not
+  H10 completion. No sibling repository or deployed service was modified.
+- Final foundation package/documentation rerun, after installing the linked
+  development guide and updating the pinned version-note hash, passed 350/350
+  in 39.97 seconds at build/display-final-regression.log. Public ABI remains
+  2.8/148 exports; no historical headers/symbol/schema snapshots were changed.

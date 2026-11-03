@@ -1148,6 +1148,7 @@ bool isTopLevelRuntimeOp(BytecodeOp op) {
     case BytecodeOp::ForBegin:
     case BytecodeOp::ForNext:
     case BytecodeOp::CaptureExpression:
+    case BytecodeOp::ReverseOutputs:
     case BytecodeOp::Pop:
     case BytecodeOp::DeclareGlobal:
     case BytecodeOp::DeclarePersistent:
@@ -1189,6 +1190,8 @@ public:
         executionControlActive_ = executionControl_->active();
         outputEvents_.clear();
         expressionResults_.clear();
+        assignmentDisplays_.clear();
+        captureAssignmentDisplays_ = options.captureAssignmentDisplays;
         nextConsoleSequence_ = 0;
         runtimeOutputSink_ = [this, external = options.outputSink](
                                  const RuntimeOutputEvent& event) {
@@ -1286,8 +1289,8 @@ public:
             validateResolvedClassMembers();
             registerWorkspaceDynamicProperties();
             if (typedIr && !typedIr->regions.empty() &&
-                executionControl_->
-                    requiresInstructionCheckpoints()) {
+                (captureAssignmentDisplays_ || executionControl_->
+                    requiresInstructionCheckpoints())) {
                 executionControl_->
                     markOptimizedExecutionSuppressed();
             } else {
@@ -1362,6 +1365,7 @@ public:
         result.outputs = entryOutputs_;
         result.outputEvents = std::move(outputEvents_);
         result.expressionResults = std::move(expressionResults_);
+        result.assignmentDisplays = std::move(assignmentDisplays_);
         result.requestedOutputCount = executedRequestedOutputCount_;
         result.diagnostics = std::move(warnings_);
         result.diagnostics.insert(
@@ -5235,6 +5239,26 @@ private:
 
     std::optional<size_t>
     executeInstruction(const BytecodeInstruction& instruction) {
+        const auto next = executeInstructionBody(instruction);
+        if (captureAssignmentDisplays_ && instruction.assignmentDisplaySpan && diagnostics_.empty() &&
+            executionControl_->stopReason() == RuntimeExecutionStopReason::None) {
+            const auto format = sessionState_->displayFormat();
+            const auto span = *instruction.assignmentDisplaySpan;
+            const size_t source = span.begin.sourceId;
+            for (const auto& name : instruction.assignmentDisplayNames) {
+                const auto value = currentFrame().find(name);
+                if (value == currentFrame().end()) { continue; }
+                assignmentDisplays_.push_back(RuntimeAssignmentDisplay{
+                    name, runtimeFormatConsoleValue(value->second, format), span,
+                    source < semantic_->sources.size() ? semantic_->sources[source].name : std::string{},
+                    instruction.outputSuppressed, nextConsoleSequence_++, format.spacing});
+            }
+        }
+        return next;
+    }
+
+    std::optional<size_t>
+    executeInstructionBody(const BytecodeInstruction& instruction) {
         if (auto* debugger = executionControl_->debugger();
             debugger && instruction.debugStatement && !frames_.empty()) {
             frames_.back().debugLocation = instruction.debugStatement;
@@ -5364,6 +5388,13 @@ private:
             return nextFor(instruction);
         case BytecodeOp::CaptureExpression:
             captureExpression(instruction);
+            break;
+        case BytecodeOp::ReverseOutputs:
+            if (instruction.operandCount < 0 || static_cast<size_t>(instruction.operandCount) > stack_.size()) {
+                addDiagnostic(instruction, "assignment output stack underflow");
+                break;
+            }
+            std::reverse(stack_.end() - instruction.operandCount, stack_.end());
             break;
         case BytecodeOp::Pop:
             (void)popRuntime(instruction, "discard");
@@ -16255,6 +16286,8 @@ private:
     RuntimeOutputSink runtimeOutputSink_;
     std::vector<RuntimeOutputEvent> outputEvents_;
     std::vector<RuntimeExpressionResult> expressionResults_;
+    std::vector<RuntimeAssignmentDisplay> assignmentDisplays_;
+    bool captureAssignmentDisplays_ = false;
     std::uint64_t nextConsoleSequence_ = 0;
     std::optional<std::chrono::steady_clock::time_point> ticStart_;
     std::vector<size_t> instructionExecutionCounts_;

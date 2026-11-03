@@ -1030,8 +1030,9 @@ std::optional<ScalarKernel> compileKernel(
             stack.pop_back();
             break;
         case BytecodeOp::CaptureExpression:
+        case BytecodeOp::ReverseOutputs:
             failureReason =
-                "typed region cannot publish a top-level expression result";
+                "typed region requires observable output/assignment ordering";
             return std::nullopt;
         case BytecodeOp::Jump:
             if (!stack.empty() || instruction.target < 0) {

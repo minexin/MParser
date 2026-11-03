@@ -326,6 +326,8 @@ public:
         executionControl_ = options.executionControl;
         outputEvents_.clear();
         expressionResults_.clear();
+        assignmentDisplays_.clear();
+        captureAssignmentDisplays_ = options.captureAssignmentDisplays;
         activeIndexContexts_.clear();
         sourceCallerOverrides_.clear();
         nextConsoleSequence_ = 0;
@@ -371,6 +373,7 @@ public:
         }
         result.outputEvents = std::move(outputEvents_);
         result.expressionResults = std::move(expressionResults_);
+        result.assignmentDisplays = std::move(assignmentDisplays_);
         result.diagnostics = std::move(warnings_);
         result.diagnostics.insert(
             result.diagnostics.end(),
@@ -755,8 +758,7 @@ private:
     }
 
     bool diagnosticTrapTriggered() const {
-        return debugStopped_ || (diagnosticTrapBase_ &&
-               diagnostics_.size() > *diagnosticTrapBase_);
+        return debugStopped_ || diagnostics_.size() > diagnosticTrapBase_.value_or(0);
     }
 
     bool debugStatement(const HirNode& node) {
@@ -1359,6 +1361,9 @@ private:
                 continue;
             }
             executeNode(*child);
+            if (diagnosticTrapTriggered()) {
+                return;
+            }
             if (controlSignal_ == ControlSignal::Return) {
                 controlSignal_ = ControlSignal::None;
                 return;
@@ -1841,8 +1846,24 @@ private:
             executeChildren(node);
             break;
         case HirKind::Assignment:
+        {
+            const size_t diagnosticBase = diagnostics_.size();
             executeAssignment(node);
+            if (captureAssignmentDisplays_ && node.capturesAssignmentDisplay &&
+                node.children.size() >= 2 && diagnostics_.size() == diagnosticBase && !debugStopped_) {
+                const auto format = sessionState_->displayFormat();
+                for (const auto& name : assignmentDisplayRootNames(*node.children.front())) {
+                    const auto value = currentFrame().find(name);
+                    if (value == currentFrame().end()) { continue; }
+                    const size_t source = node.span.begin.sourceId;
+                    assignmentDisplays_.push_back(RuntimeAssignmentDisplay{
+                        name, runtimeFormatConsoleValue(value->second, format), node.span,
+                        source < semantic_->sources.size() ? semantic_->sources[source].name : std::string{},
+                        node.outputSuppressed, nextConsoleSequence_++, format.spacing});
+                }
+            }
             break;
+        }
         case HirKind::GlobalDeclaration:
         case HirKind::PersistentDeclaration:
             executeWorkspaceDeclaration(node);
@@ -1936,9 +1957,11 @@ private:
 
         const HirNode& target = *node.children.front();
         const HirNode& value = *node.children[1];
+        const size_t diagnosticBase = diagnostics_.size();
         if (target.kind == HirKind::OutputList) {
-            assignTargetList(target,
-                             evaluateValues(value, target.children.size()));
+            auto values = evaluateValues(value, target.children.size());
+            if (diagnostics_.size() != diagnosticBase) { return; }
+            assignTargetList(target, values);
             return;
         }
 
@@ -1946,6 +1969,7 @@ private:
             value.kind == HirKind::Matrix && value.children.empty();
         const auto single = runtimeRequireSingleValue(
             evaluate(value), "assignment right-hand side");
+        if (diagnostics_.size() != diagnosticBase) { return; }
         if (!single.succeeded) {
             addDiagnostic(value, single.error);
             return;
@@ -2115,6 +2139,7 @@ private:
             const RuntimeValue value =
                 index < values.size() ? values[index] : missingValue();
             assignTarget(*target.children[index], value);
+            if (diagnosticTrapTriggered()) { return; }
         }
     }
 
@@ -4934,6 +4959,8 @@ private:
     RuntimeOutputSink runtimeOutputSink_;
     std::vector<RuntimeOutputEvent> outputEvents_;
     std::vector<RuntimeExpressionResult> expressionResults_;
+    std::vector<RuntimeAssignmentDisplay> assignmentDisplays_;
+    bool captureAssignmentDisplays_ = false;
     std::uint64_t nextConsoleSequence_ = 0;
     std::vector<Diagnostic> diagnostics_;
     std::vector<Diagnostic> warnings_;

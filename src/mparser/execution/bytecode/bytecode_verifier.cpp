@@ -154,6 +154,8 @@ StackEffect stackEffect(const BytecodeInstruction& instruction) {
     const int64_t operands = instruction.operandCount;
     const int64_t results = instruction.resultCount;
     switch (instruction.op) {
+    case BytecodeOp::ReverseOutputs:
+        return {operands, 0};
     case BytecodeOp::LoadName:
         return {0, results};
     case BytecodeOp::LoadLiteral:
@@ -474,6 +476,27 @@ private:
             validateSpan(pc, instruction.span);
             if (instruction.debugStatement) {
                 validateSpan(pc, *instruction.debugStatement);
+            }
+            if (instruction.assignmentDisplaySpan) {
+                validateSpan(pc, *instruction.assignmentDisplaySpan);
+                switch (instruction.op) {
+                case BytecodeOp::StoreName:
+                case BytecodeOp::StoreMember:
+                case BytecodeOp::StoreIndex:
+                case BytecodeOp::StoreBraceIndex:
+                case BytecodeOp::StorePathMember:
+                case BytecodeOp::StorePathIndex:
+                case BytecodeOp::StorePathBrace:
+                case BytecodeOp::Pop:
+                    break;
+                default:
+                    addDiagnostic(pc, "assignment display requires a committing store or ignored output");
+                }
+                for (const auto& name : instruction.assignmentDisplayNames) {
+                    if (name.empty()) { addDiagnostic(pc, "assignment display root is empty"); }
+                }
+            } else if (!instruction.assignmentDisplayNames.empty()) {
+                addDiagnostic(pc, "assignment display roots require a source span");
             }
             validateFunctionHandleMetadata(pc);
 

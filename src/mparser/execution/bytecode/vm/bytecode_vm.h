@@ -142,6 +142,7 @@ struct BytecodeVmOptions {
     RuntimeSourceStorageDeclarer inheritedStorageDeclarer;
     RuntimeSourceStorageClearer inheritedStorageClearer;
     RuntimeWorkspace* inheritedStorageWorkspace = nullptr;
+    bool captureAssignmentDisplays = false;
 };
 
 struct BytecodeTypedRegionExecutionProfile {
@@ -181,6 +182,7 @@ struct BytecodeVmResult {
     std::vector<RuntimeValue> outputs;
     std::vector<RuntimeOutputEvent> outputEvents;
     std::vector<RuntimeExpressionResult> expressionResults;
+    std::vector<RuntimeAssignmentDisplay> assignmentDisplays;
     size_t requestedOutputCount = 0;
     std::vector<Diagnostic> diagnostics;
     size_t executedInstructionCount = 0;

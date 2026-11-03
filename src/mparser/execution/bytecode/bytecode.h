@@ -43,6 +43,7 @@ enum class BytecodeOp {
     ForBegin,
     ForNext,
     CaptureExpression,
+    ReverseOutputs,
     Pop,
     DeclareGlobal,
     DeclarePersistent,
@@ -101,6 +102,8 @@ struct BytecodeInstruction {
     bool calleeReference = false;
     bool hasIndexContext = false;
     std::optional<SourceSpan> debugStatement = {};
+    std::optional<SourceSpan> assignmentDisplaySpan = {};
+    std::vector<std::string> assignmentDisplayNames = {};
 };
 
 struct BytecodeFunctionInfo {

@@ -71,6 +71,18 @@ struct RuntimeExpressionResult {
     RuntimeLineSpacing lineSpacing = RuntimeLineSpacing::Loose;
 };
 
+// Internal recording foundation, not yet a public structured-value protocol.
+// Text is frozen at commit time; no live Value/handle is exposed by this record.
+struct RuntimeAssignmentDisplay {
+    std::string label;
+    std::string text;
+    SourceSpan span;
+    std::string sourceName;
+    bool outputSuppressed = false;
+    std::uint64_t sequence = 0;
+    RuntimeLineSpacing lineSpacing = RuntimeLineSpacing::Loose;
+};
+
 struct RuntimeFormatResult {
     bool succeeded = false;
     std::string text;

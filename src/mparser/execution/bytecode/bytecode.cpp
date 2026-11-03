@@ -161,6 +161,13 @@ private:
             break;
         case HirKind::Assignment:
             lowerAssignment(node);
+            if (node.capturesAssignmentDisplay && node.children.size() >= 2 &&
+                program_.instructions.size() > firstInstruction) {
+                auto& commit = program_.instructions.back();
+                commit.assignmentDisplaySpan = node.span;
+                commit.assignmentDisplayNames = assignmentDisplayRootNames(*node.children.front());
+                commit.outputSuppressed = node.outputSuppressed;
+            }
             break;
         case HirKind::NameRef:
             emit(BytecodeOp::LoadName, node);
@@ -1041,9 +1048,9 @@ private:
             }
             break;
         case HirKind::OutputList:
-            for (auto it = node.children.rbegin();
-                 it != node.children.rend(); ++it) {
-                lowerAssignmentTarget(**it, false,
+            emit(BytecodeOp::ReverseOutputs, node, childCount(node));
+            for (const auto& child : node.children) {
+                lowerAssignmentTarget(*child, false,
                                       nondeterministicAssignment);
             }
             break;
@@ -1277,6 +1284,8 @@ const char* bytecodeOpName(BytecodeOp op) {
         return "ForNext";
     case BytecodeOp::CaptureExpression:
         return "CaptureExpression";
+    case BytecodeOp::ReverseOutputs:
+        return "ReverseOutputs";
     case BytecodeOp::Pop:
         return "Pop";
     case BytecodeOp::DeclareGlobal:

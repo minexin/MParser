@@ -553,6 +553,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/graphics-clipping-contract.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/graphics-color-contract.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/system-search-paths.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/assignment-display-development.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/host-integration-contract-development.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/performance-baseline-v1.schema.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/performance-suite-v1.schema.json"
