@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 15u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 8u
+#define MPARSER_C_ABI_REVISION 9u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -327,6 +327,27 @@ typedef mparser_input_status (*mparser_input_source_callback)(
     void* user_data, mparser_input_mode mode, mparser_utf8_view prompt,
     mparser_utf8_view* text, mparser_utf8_view* error);
 
+/* Optional result collection, not a live callback. Budgets bound the returned
+ * collection's accounted payload, not execution-time journal/legacy/workspace
+ * memory or allocator overhead. Zero is an exact zero budget. Truncation does
+ * not stop execution or alter evalc output; check the returned summary. */
+typedef struct mparser_event_capture_options {
+    uint32_t struct_size;
+    uint32_t abi_generation;
+    uint64_t maximum_events;
+    uint64_t maximum_bytes;
+    uint64_t maximum_value_bytes;
+    uint64_t maximum_value_nodes;
+    uint64_t maximum_value_depth;
+} mparser_event_capture_options;
+
+#define MPARSER_EVENT_CAPTURE_OPTIONS_SIZE ((uint32_t)sizeof(mparser_event_capture_options))
+#define MPARSER_EVENT_CAPTURE_OPTIONS_INIT(options) \
+    mparser_event_capture_options_init_sized((options),sizeof(*(options)),MPARSER_C_ABI_GENERATION)
+MPARSER_C_API mparser_api_status mparser_event_capture_options_init(mparser_event_capture_options* options);
+MPARSER_C_API mparser_api_status mparser_event_capture_options_init_sized(
+    void* storage,size_t storage_size,uint32_t abi_generation);
+
 typedef struct mparser_invocation_options {
     uint32_t struct_size;
     uint32_t abi_generation;
@@ -352,7 +373,74 @@ typedef struct mparser_invocation_options {
     const mparser_debugger* debugger;
     mparser_input_source_callback input_source;
     void* input_user_data;
+    /* Optional ABI revision 9 tail. Null/absent preserves legacy behavior. */
+    const mparser_event_capture_options* event_capture;
 } mparser_invocation_options;
+
+typedef uint32_t mparser_execution_event_kind;
+#define MPARSER_EVENT_ASSIGNMENT 0u
+#define MPARSER_EVENT_EXPRESSION 1u
+#define MPARSER_EVENT_TEXT 2u
+#define MPARSER_EVENT_WARNING 3u
+#define MPARSER_EVENT_ERROR 4u
+typedef uint32_t mparser_execution_event_disposition;
+#define MPARSER_EVENT_VISIBLE 0u
+#define MPARSER_EVENT_RAISED 1u
+#define MPARSER_EVENT_CAUGHT 2u
+#define MPARSER_EVENT_SUPPRESSED 3u
+#define MPARSER_EVENT_UNHANDLED 4u
+typedef uint32_t mparser_event_truncation_reason;
+#define MPARSER_EVENT_TRUNCATION_NONE 0u
+#define MPARSER_EVENT_TRUNCATION_EVENT_COUNT 1u
+#define MPARSER_EVENT_TRUNCATION_BYTE_LIMIT 2u
+
+typedef struct mparser_execution_event_info {
+    uint32_t struct_size;
+    uint32_t abi_generation;
+    mparser_execution_event_kind kind;
+    mparser_execution_event_disposition disposition;
+    uint64_t sequence;
+    uint64_t source_context;
+    uint64_t capture_depth;
+    uint32_t output_suppressed;
+    uint32_t line_spacing; /* 0 loose, 1 compact */
+    uint32_t source_available;
+    mparser_utf8_view source_name;
+    mparser_source_position source_begin;
+    mparser_source_position source_end;
+    mparser_utf8_view label;
+    mparser_utf8_view text;
+    const mparser_diagnostic* diagnostic;
+    /* Empty on non-value events or unavailable snapshots. This is a version-1
+     * mparser.value-snapshot graph, never a writable/invocable SDK Value. */
+    mparser_utf8_view value_snapshot_json;
+    /* 0 none, 1 invalid value, 2 depth, 3 nodes, 4 bytes. */
+    uint32_t value_failure;
+    mparser_utf8_view value_unavailable;
+} mparser_execution_event_info;
+
+typedef struct mparser_event_capture_summary {
+    uint32_t struct_size;
+    uint32_t abi_generation;
+    uint32_t enabled;
+    uint32_t started;
+    uint32_t truncated;
+    mparser_event_truncation_reason truncation_reason;
+    uint64_t generated_count;
+    uint64_t retained_count;
+    uint64_t retained_bytes;
+} mparser_event_capture_summary;
+
+/* All views are borrowed until result release; getters perform no execution,
+ * invoke no getters/user display and never mutate a snapshot. Failed sized
+ * queries preserve caller output. Source positions are UTF-8 byte based,
+ * one-based lines/columns and exclusive ends. Capture depth isolates evalc;
+ * retained audit events at nonzero depth are not ordinary console output. */
+MPARSER_C_API size_t mparser_result_execution_event_count(const mparser_result* result);
+MPARSER_C_API mparser_api_status mparser_result_execution_event_info(
+    const mparser_result* result,size_t index,mparser_execution_event_info* out_info,size_t out_size);
+MPARSER_C_API mparser_api_status mparser_result_event_capture_summary(
+    const mparser_result* result,mparser_event_capture_summary* out_summary,size_t out_size);
 
 typedef struct mparser_execution_summary {
     uint32_t struct_size;

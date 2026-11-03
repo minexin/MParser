@@ -9,13 +9,15 @@
 #include "mparser/runtime/core/value/runtime_text.h"
 
 #include <map>
+#include <algorithm>
 
 namespace mparser {
 namespace {
 
 class SnapshotBuilder {
 public:
-    explicit SnapshotBuilder(RuntimeSnapshotLimits limits) : limits_(limits) {}
+    SnapshotBuilder(RuntimeSnapshotLimits limits, RuntimeSnapshotPropertyResolver properties, bool publicOnly)
+        : limits_(limits), properties_(std::move(properties)), publicOnly_(publicOnly) {}
     std::vector<RuntimeSnapshotNode> capture(const RuntimeValue& value) {
         append(value, 0);
         const auto validation = validateRuntimeValueContract(value);
@@ -170,15 +172,18 @@ private:
                 RuntimeSnapshotCallable callable;
                 callable.kind = handle.kind;
                 callable.backend = handle.backend;
-                callable.display = text(handle.display);
-                callable.targetName = text(handle.targetName);
+                callable.display = text(publicOnly_ && handle.kind == RuntimeFunctionHandleKind::Anonymous
+                    ? std::string("<anonymous function>") : handle.display);
+                callable.targetName = publicOnly_ ? std::string{} : text(handle.targetName);
                 callable.className = text(handle.className);
                 callable.methodName = text(handle.methodName);
                 callable.declaringClass = text(handle.declaringClass);
                 callable.moduleBound = static_cast<bool>(handle.context);
                 callable.parameters = names(handle.parameters);
-                if (handle.receiver) { callable.receiver = append(*handle.receiver, depth + 1); }
-                callable.captures = fields(handle.capturedVariables, depth);
+                if (!publicOnly_) {
+                    if (handle.receiver) { callable.receiver = append(*handle.receiver, depth + 1); }
+                    callable.captures = fields(handle.capturedVariables, depth);
+                }
                 node.callable = std::move(callable);
             }
             break;
@@ -244,6 +249,7 @@ private:
                 if (!payload) { invalid("value snapshot has an invalid temporal element"); }
                 node.temporal.push_back(*payload);
             }
+            captureStoredProperties(value,node,depth);
         } else if (isRuntimeMetadataArray(value)) {
             bytes(count, sizeof(RuntimeSnapshotId));
             node.elements.reserve(count);
@@ -260,11 +266,51 @@ private:
                 if (!element) { invalid("value snapshot has an invalid object element"); }
                 node.elements.push_back(append(*element, depth + 1));
             }
-        } else if (const auto stored = runtimeObjectFields(value)) {
-            node.storedFields = fields(*stored, depth);
+        } else {
+            captureStoredProperties(value,node,depth);
+        }
+    }
+    void captureStoredProperties(const RuntimeValue& value, RuntimeSnapshotNode& node, size_t depth) {
+        const bool native = !value.objectContext && (isRuntimeMetadataScalar(value) || isRuntimeTemporalValue(value) || value.className == "MException");
+        const auto stored = native ? (value.sharedFields ? value.sharedFields.get() : &value.fields) : runtimeObjectFields(value);
+        if (!stored) { return; }
+        auto specs = properties_ ? properties_(value) : std::nullopt;
+        if (!specs && !value.objectContext) {
+            std::vector<std::string> names;
+            if (isRuntimeMetadataScalar(value)) { names = runtimeMetadataPropertyNames(value.className); }
+            else if (isRuntimeTemporalValue(value)) {
+                names = value.className == "datetime" ? std::vector<std::string>{"Format","TimeZone"} : std::vector<std::string>{"Format"};
+            }
+            else if (value.className == "MException") { names = {"identifier","message","cause","stack","Correction"}; }
+            if (!names.empty()) {
+                specs.emplace();
+                for (auto& name : names) { specs->push_back({name,name,{}}); }
+            }
+        }
+        if (!publicOnly_) { node.storedFields = fields(*stored,depth); }
+        if (!specs) { return; }
+        node.publicPropertiesKnown = true;
+        bytes(specs->size(),sizeof(RuntimeSnapshotProperty));
+        for (const auto& spec : *specs) {
+            RuntimeSnapshotProperty property{text(spec.name),std::nullopt,text(spec.unavailable)};
+            const auto field = stored->find(spec.storageName);
+            if (!property.unavailable.empty()) {
+                node.publicProperties.push_back(std::move(property));
+                continue;
+            }
+            if (field == stored->end()) { property.unavailable = text("storage-unavailable"); }
+            else if (publicOnly_) { property.value = append(field->second,depth+1); }
+            else {
+                const auto captured = std::find_if(node.storedFields.begin(),node.storedFields.end(),
+                    [&](const auto& item){return item.first == spec.storageName;});
+                property.value = captured->second;
+            }
+            node.publicProperties.push_back(std::move(property));
         }
     }
     RuntimeSnapshotLimits limits_;
+    RuntimeSnapshotPropertyResolver properties_;
+    bool publicOnly_;
     size_t usedBytes_ = 0;
     std::vector<RuntimeSnapshotNode> nodes_;
     std::map<const RuntimeWorkspace*, RuntimeSnapshotId> handles_;
@@ -273,9 +319,10 @@ private:
 };
 } // namespace
 
-RuntimeValueSnapshot RuntimeValueSnapshot::capture(const RuntimeValue& value, RuntimeSnapshotLimits limits) {
+RuntimeValueSnapshot RuntimeValueSnapshot::capture(const RuntimeValue& value, RuntimeSnapshotLimits limits,
+    RuntimeSnapshotPropertyResolver properties, bool publicOnly) {
     try {
-        return RuntimeValueSnapshot(SnapshotBuilder(limits).capture(value));
+        return RuntimeValueSnapshot(SnapshotBuilder(limits,std::move(properties),publicOnly).capture(value));
     } catch (const std::bad_alloc&) {
         throw;
     } catch (const RuntimeSnapshotError&) {

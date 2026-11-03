@@ -1065,7 +1065,12 @@ void writeRuntimeNumericElement(std::ostringstream& output,
     output << 'i';
 }
 
-std::string runtimeValueToString(const RuntimeValue& value) {
+namespace {
+std::string describeValue(const RuntimeValue& value,bool publicInspection) {
+    if (publicInspection && value.kind == RuntimeValueKind::FunctionHandle) { return "<function_handle>"; }
+    if (publicInspection && isRuntimeMetadataObject(value)) {
+        return "<" + canonicalRuntimeMetadataClassName(value.className) + ">";
+    }
     std::ostringstream output;
     output << std::setprecision(15);
 
@@ -1236,8 +1241,7 @@ std::string runtimeValueToString(const RuntimeValue& value) {
                 }
                 const auto storageOffset =
                     runtimeColumnMajorLinearToStorageOffset(value, index);
-                output << runtimeValueToString(
-                    value.cells[*storageOffset]);
+                output << describeValue(value.cells[*storageOffset],publicInspection);
             }
             output << "}";
             return output.str();
@@ -1247,7 +1251,7 @@ std::string runtimeValueToString(const RuntimeValue& value) {
             if (index > 0) {
                 output << ", ";
             }
-            output << runtimeValueToString(value.cells[index]);
+            output << describeValue(value.cells[index],publicInspection);
         }
         output << "}";
         return output.str();
@@ -1288,7 +1292,7 @@ std::string runtimeValueToString(const RuntimeValue& value) {
             const RuntimeValue* field =
                 runtimeStructField(value, fieldNames[index]);
             output << fieldNames[index] << "="
-                   << (field ? runtimeValueToString(*field)
+                   << (field ? describeValue(*field,publicInspection)
                              : std::string("<missing>"));
         }
         output << ")";
@@ -1298,7 +1302,7 @@ std::string runtimeValueToString(const RuntimeValue& value) {
         return value.text + "=" +
                (value.cells.empty()
                     ? std::string("<missing>")
-                    : runtimeValueToString(value.cells.front()));
+                    : describeValue(value.cells.front(),publicInspection));
     case RuntimeValueKind::Object:
         if (isRuntimeCategoricalValue(value)) {
             output << "<categorical " << value.rows << "x"
@@ -1396,4 +1400,7 @@ std::string runtimeValueToString(const RuntimeValue& value) {
     return "<missing>";
 }
 
+} // namespace
+std::string runtimeValueToString(const RuntimeValue& value) { return describeValue(value,false); }
+std::string runtimePublicValueDescription(const RuntimeValue& value) { return describeValue(value,true); }
 } // namespace mparser

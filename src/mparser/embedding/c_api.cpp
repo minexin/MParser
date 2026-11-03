@@ -234,6 +234,8 @@ struct mparser_result {
     std::shared_ptr<mparser_c_detail::ModuleState> owner;
     std::shared_ptr<mparser_c_detail::RuntimeState> runtimeOwner;
     std::vector<mparser_diagnostic> diagnostics;
+    mparser::RuntimeEventCollection events;
+    std::vector<mparser_diagnostic> eventDiagnostics;
 };
 
 struct mparser_value {
@@ -1372,6 +1374,23 @@ mparser_api_status buildRequest(
     request.entryFunction = *entry;
     request.backend = *selectedBackend;
     request.collectProfile = options->collect_profile != 0;
+    if (options->struct_size >= offsetof(mparser_invocation_options,event_capture) + sizeof(options->event_capture) &&
+        options->event_capture) {
+        const auto& capture = *options->event_capture;
+        if (capture.struct_size < MPARSER_EVENT_CAPTURE_OPTIONS_SIZE || capture.abi_generation != MPARSER_C_ABI_GENERATION) {
+            return MPARSER_API_STATUS_ABI_MISMATCH;
+        }
+        mparser::RuntimeEventCollectionOptions selected;
+        if (!uint64ToSize(capture.maximum_events,selected.maximumEvents) ||
+            !uint64ToSize(capture.maximum_bytes,selected.maximumBytes) ||
+            !uint64ToSize(capture.maximum_value_bytes,selected.valueLimits.maximumBytes) ||
+            !uint64ToSize(capture.maximum_value_nodes,selected.valueLimits.maximumNodes) ||
+            !uint64ToSize(capture.maximum_value_depth,selected.valueLimits.maximumDepth)) {
+            return MPARSER_API_STATUS_INVALID_ARGUMENT;
+        }
+        request.publicEventCapture = selected;
+        request.captureEventJournal = true;
+    }
     if (options->has_requested_output_count != 0) {
         request.requestedOutputCount =
             options->requested_output_count;
@@ -1599,7 +1618,8 @@ mparser_api_status makeResultHandle(
     mparser::ModuleInvocationResult result,
     std::shared_ptr<ModuleState> owner,
     mparser_result** outResult,
-    std::shared_ptr<RuntimeState> runtimeOwner = {}) {
+    std::shared_ptr<RuntimeState> runtimeOwner = {},
+    std::optional<mparser::RuntimeEventCollectionOptions> capture = std::nullopt) {
     if (!outResult) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
@@ -1611,6 +1631,29 @@ mparser_api_status makeResultHandle(
         handle->value = std::move(result);
         handle->owner = std::move(owner);
         handle->runtimeOwner = std::move(runtimeOwner);
+        if (capture) {
+            const bool started = handle->value.status == mparser::ModuleInvocationStatus::Succeeded ||
+                handle->value.status == mparser::ModuleInvocationStatus::RuntimeFailed;
+            handle->events = mparser::runtimeCollectReadonlyEvents(handle->value.journalEvents,*capture,started);
+            handle->eventDiagnostics.resize(handle->events.events.size());
+            for (size_t index = 0; index < handle->events.events.size(); ++index) {
+                const auto& event = handle->events.events[index];
+                if (!event.diagnostic) { continue; }
+                const auto& source = *event.diagnostic;
+                auto& diagnostic = handle->eventDiagnostics[index];
+                diagnostic.phase = MPARSER_DIAGNOSTIC_EXECUTION;
+                diagnostic.severity = source.severity == mparser::DiagnosticSeverity::Warning ? MPARSER_DIAGNOSTIC_WARNING : MPARSER_DIAGNOSTIC_ERROR;
+                diagnostic.identifier = source.identifier; diagnostic.message = source.message;
+                diagnostic.sourceAvailable = event.span.begin.sourceId != mparser::kInvalidSourceId;
+                diagnostic.sourceName = event.sourceName;
+                diagnostic.begin = sourcePosition(event.span.begin); diagnostic.end = sourcePosition(event.span.end);
+                for (const auto& frame : source.stack) { diagnostic.stack.push_back(diagnosticFrame(frame)); }
+                for (const auto& cause : source.causes) { diagnostic.causes.push_back(diagnosticCause(cause,MPARSER_DIAGNOSTIC_EXECUTION)); }
+            }
+            // The public result retains the protected projection, not raw private snapshot nodes.
+            handle->value.journalEvents.clear();
+            handle->value.journalEvents.shrink_to_fit();
+        }
         mparser::c_api_test::inject(
             mparser::c_api_test::FaultPoint::DiagnosticCopy);
         handle->diagnostics.reserve(
@@ -1668,7 +1711,7 @@ mparser_api_status executeModule(
         mparser::c_api_test::inject(
             mparser::c_api_test::FaultPoint::ExecuteAfterCore);
         return makeResultHandle(
-            std::move(result), module->state, outResult);
+            std::move(result), module->state, outResult, {}, request.publicEventCapture);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {
@@ -1731,7 +1774,7 @@ mparser_api_status executeRuntime(
         mparser::c_api_test::inject(
             mparser::c_api_test::FaultPoint::ExecuteAfterCore);
         return makeResultHandle(
-            std::move(result), {}, outResult, runtime->state);
+            std::move(result), {}, outResult, runtime->state, request.publicEventCapture);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {
@@ -2003,6 +2046,59 @@ mparser_api_status_name(mparser_api_status status) {
     default:
         return utf8View("unknown");
     }
+}
+
+mparser_api_status mparser_event_capture_options_init(mparser_event_capture_options* options) {
+    return mparser_event_capture_options_init_sized(options,sizeof(*options),MPARSER_C_ABI_GENERATION);
+}
+mparser_api_status mparser_event_capture_options_init_sized(void* storage,size_t storageSize,uint32_t generation) {
+    const auto status = mparser_c_detail::initializeVersionedStructure<mparser_event_capture_options>(
+        storage,storageSize,MPARSER_EVENT_CAPTURE_OPTIONS_SIZE,generation);
+    if (status == MPARSER_API_STATUS_OK) {
+        auto* options = static_cast<mparser_event_capture_options*>(storage);
+        const mparser::RuntimeEventCollectionOptions defaults;
+        options->maximum_events = defaults.maximumEvents; options->maximum_bytes = defaults.maximumBytes;
+        options->maximum_value_bytes = defaults.valueLimits.maximumBytes;
+        options->maximum_value_nodes = defaults.valueLimits.maximumNodes;
+        options->maximum_value_depth = defaults.valueLimits.maximumDepth;
+    }
+    return status;
+}
+size_t mparser_result_execution_event_count(const mparser_result* result) {
+    return result ? result->events.events.size() : 0;
+}
+mparser_api_status mparser_result_execution_event_info(const mparser_result* result,size_t index,
+    mparser_execution_event_info* outInfo,size_t outSize) {
+    if (!result || !outInfo || outSize < sizeof(*outInfo)) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    if (index >= result->events.events.size()) { return MPARSER_API_STATUS_OUT_OF_RANGE; }
+    const auto& event = result->events.events[index];
+    mparser_execution_event_info info{};
+    info.struct_size = sizeof(info); info.abi_generation = MPARSER_C_ABI_GENERATION;
+    info.kind = static_cast<uint32_t>(event.kind); info.disposition = static_cast<uint32_t>(event.disposition);
+    info.sequence = event.sequence; info.source_context = event.sourceContext; info.capture_depth = event.captureDepth;
+    info.output_suppressed = event.outputSuppressed ? 1u : 0u; info.line_spacing = static_cast<uint32_t>(event.lineSpacing);
+    info.source_available = event.span.begin.sourceId != mparser::kInvalidSourceId ? 1u : 0u;
+    info.source_name = mparser_c_detail::utf8View(event.sourceName);
+    info.source_begin = mparser_c_detail::sourcePosition(event.span.begin); info.source_end = mparser_c_detail::sourcePosition(event.span.end);
+    info.label = mparser_c_detail::utf8View(event.label); info.text = mparser_c_detail::utf8View(event.text);
+    info.value_snapshot_json = mparser_c_detail::utf8View(event.valueJson);
+    info.value_failure = event.valueFailure ? static_cast<uint32_t>(*event.valueFailure) + 1u : 0u;
+    info.value_unavailable = mparser_c_detail::utf8View(event.valueUnavailable);
+    info.diagnostic = event.diagnostic ? &result->eventDiagnostics[index] : nullptr;
+    *outInfo = info;
+    return MPARSER_API_STATUS_OK;
+}
+mparser_api_status mparser_result_event_capture_summary(const mparser_result* result,
+    mparser_event_capture_summary* outSummary,size_t outSize) {
+    if (!result || !outSummary || outSize < sizeof(*outSummary)) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    const auto& events = result->events;
+    mparser_event_capture_summary summary{};
+    summary.struct_size = sizeof(summary); summary.abi_generation = MPARSER_C_ABI_GENERATION;
+    summary.enabled = events.enabled ? 1u : 0u; summary.started = events.started ? 1u : 0u;
+    summary.truncated = events.truncated ? 1u : 0u; summary.truncation_reason = static_cast<uint32_t>(events.truncation);
+    summary.generated_count = events.generatedCount; summary.retained_count = events.events.size(); summary.retained_bytes = events.retainedBytes;
+    *outSummary = summary;
+    return MPARSER_API_STATUS_OK;
 }
 
 mparser_api_status
@@ -2714,7 +2810,7 @@ mparser_api_status mparser_session_execute(
             mparser::c_api_test::FaultPoint::ExecuteAfterCore);
         return makeResultHandle(
             std::move(result),
-            session->state->module, out_result);
+            session->state->module, out_result, {}, request.publicEventCapture);
     } catch (const std::bad_alloc&) {
         return MPARSER_API_STATUS_ALLOCATION_FAILED;
     } catch (...) {

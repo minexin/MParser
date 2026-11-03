@@ -1854,7 +1854,7 @@ private:
                             frames_.back().kind == RuntimeCallFrameKind::Script});
                         if (journal_) {
                             journal_->expression(expressionResults_.back(),journalSourceContext_,executionControl_->consoleCaptureDepth(),
-                                sourceFileName(node.span));
+                                sourceFileName(node.span),{},displayFormat);
                         }
                         if (executionControl_ && executionControl_->consoleStreaming() &&
                             !executionControl_->emitConsole(runtimeRenderConsole({}, {expressionResults_.back()}))) {
@@ -1896,7 +1896,7 @@ private:
                     assignmentDisplays_.push_back(runtimeCaptureAssignmentDisplay(
                         name, value->second, node.span,
                         source < semantic_->sources.size() ? semantic_->sources[source].name : std::string{},
-                        node.outputSuppressed, 0, format));
+                        node.outputSuppressed, 0, format, {}, {},executionControl_->consoleCaptured()));
                     journal_->display(assignmentDisplays_.back(),RuntimeJournalKind::Assignment,
                         journalSourceContext_,executionControl_->consoleCaptureDepth());
                 }
@@ -4196,6 +4196,7 @@ private:
         const std::vector<RuntimeValue>& arguments,
         size_t requestedOutputCount, SourceSpan callbackSpan,
         RuntimeWorkspace* ownerWorkspace) {
+        RuntimeEventJournalBorrow borrowedJournal(executionControl_.get(),journal_,captureAssignmentDisplays_,journalSourceContext_);
         RuntimeSourceCallableInvocationResult result;
         const size_t diagnosticStart = diagnostics_.size();
         const size_t warningStart = warnings_.size();

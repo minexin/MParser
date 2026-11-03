@@ -98,7 +98,17 @@ Windows CRLF/LF differences; any substantive source mismatch fails the run.
 Apply the graphics/SDK-selection patch first, then
 mexecserver-definition-metadata.patch with --unidiff-zero and
 --ignore-space-change to the separate host checkout. Configure with
-MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.8).
+MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.9).
+
+The clean-host probe also applies `mexecserver-ordered-events.patch` and enables
+`MEXEC_ORDERED_EVENTS`. This candidate requires ABI revision 9 and defaults OFF
+when configured independently. Requests opt in with `include_execution_events`;
+`max_execution_events` bounds the returned prefix, not in-flight memory.
+`test-ordered-events.cjs` accepts `on`/`off` and a fresh evidence directory.
+See `docs/ordered-display-events.md` for current proof and open boundaries.
+Use an x64 MSVC environment with PowerShell 7 for the aggregate probe; a run
+under Windows PowerShell stopped at unavailable `Get-FileHash` after the REST
+probes, and its remaining checks were completed separately on the same binary.
 Graphics v3 may remain OFF if only definition metadata is needed.
 The default remains OFF. This patch can be combined with the graphics patch;
 they modify separate compile definitions and REST/serialization call sites.

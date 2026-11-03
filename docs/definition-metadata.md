@@ -1,7 +1,7 @@
 # Definition Metadata
 
 Development API introduced in ABI generation 2 revision 6 and retained in the
-unpublished revision 8 SDK. Retrieve the
+unpublished revision 9 SDK. Retrieve the
 syntax definition directory with C++ `Module::definitions()` or C
 `mparser_module_definition_count` / `mparser_module_definition_info`.
 Unlike `functionNames()`, this includes nested functions and class methods;

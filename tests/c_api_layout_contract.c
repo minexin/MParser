@@ -21,7 +21,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");
-_Static_assert(MPARSER_C_ABI_REVISION == 8u,
+_Static_assert(MPARSER_C_ABI_REVISION == 9u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
                "allocation status changed");
@@ -125,7 +125,7 @@ REQUIRE_OFFSET(mparser_definition_info, declaration_only, 68);
 REQUIRE_OFFSET(mparser_definition_info, source_begin, 72);
 REQUIRE_OFFSET(mparser_definition_info, source_end, 88);
 
-_Static_assert(sizeof(mparser_invocation_options) == 168,
+_Static_assert(sizeof(mparser_invocation_options) == 176,
                "mparser_invocation_options size changed");
 REQUIRE_OFFSET(mparser_invocation_options, struct_size, 0);
 REQUIRE_OFFSET(mparser_invocation_options, abi_generation, 4);
@@ -150,6 +150,16 @@ REQUIRE_OFFSET(mparser_invocation_options, output_user_data, 136);
 REQUIRE_OFFSET(mparser_invocation_options, debugger, 144);
 REQUIRE_OFFSET(mparser_invocation_options, input_source, 152);
 REQUIRE_OFFSET(mparser_invocation_options, input_user_data, 160);
+REQUIRE_OFFSET(mparser_invocation_options, event_capture, 168);
+_Static_assert(sizeof(mparser_event_capture_options) == 48,"capture options layout changed");
+REQUIRE_OFFSET(mparser_event_capture_options, maximum_events, 8);
+REQUIRE_OFFSET(mparser_event_capture_options, maximum_value_depth, 40);
+_Static_assert(sizeof(mparser_execution_event_info) == 184,"event info layout changed");
+REQUIRE_OFFSET(mparser_execution_event_info, sequence, 16);
+REQUIRE_OFFSET(mparser_execution_event_info, source_name, 56);
+REQUIRE_OFFSET(mparser_execution_event_info, value_snapshot_json, 144);
+REQUIRE_OFFSET(mparser_execution_event_info, value_unavailable, 168);
+_Static_assert(sizeof(mparser_event_capture_summary) == 48,"capture summary layout changed");
 
 _Static_assert(sizeof(mparser_breakpoint) == 24,
                "mparser_breakpoint size changed");

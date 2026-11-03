@@ -27,12 +27,12 @@ void RuntimeEventJournal::display(RuntimeAssignmentDisplay& event, RuntimeJourna
 }
 
 void RuntimeEventJournal::expression(RuntimeExpressionResult& expression, std::uint64_t context,
-    size_t captureDepth, std::string sourceName) {
-    RuntimeDisplayFormat format;
+    size_t captureDepth, std::string sourceName, RuntimeSnapshotPropertyResolver properties, RuntimeDisplayFormat format) {
     format.spacing = expression.lineSpacing;
     auto event = runtimeCaptureAssignmentDisplay(expression.label,expression.value,expression.span,std::move(sourceName),
-        expression.outputSuppressed,0,format);
-    if (!event.snapshotFailure) { event.text = expression.displayText; }
+        expression.outputSuppressed,0,format,{},std::move(properties),true);
+    event.text = expression.displayText;
+    event.semanticTextAvailable = true;
     display(event,RuntimeJournalKind::Expression,context,captureDepth);
     expression.sequence = event.sequence;
 }
@@ -86,6 +86,17 @@ RuntimeEventJournalScope::RuntimeEventJournalScope(RuntimeExecutionControl* cont
 RuntimeEventJournalScope::~RuntimeEventJournalScope() {
     if (owner_) { control_->eventJournal_.reset(); }
 }
+RuntimeEventJournalBorrow::RuntimeEventJournalBorrow(RuntimeExecutionControl* control,
+    std::shared_ptr<RuntimeEventJournal>& journal,bool& recording,std::uint64_t& context)
+    : journal_(journal),recording_(recording),context_(context),previous_(journal),
+      previousRecording_(recording),previousContext_(context) {
+    if (control && control->eventJournal() && journal != control->eventJournal()) {
+        journal_ = control->eventJournal(); recording_ = true; context_ = journal_->sourceContext();
+    }
+}
+RuntimeEventJournalBorrow::~RuntimeEventJournalBorrow() {
+    journal_ = std::move(previous_); recording_ = previousRecording_; context_ = previousContext_;
+}
 std::vector<RuntimeJournalEvent> RuntimeEventJournalScope::snapshot() const {
     return journal_ ? journal_->snapshot(begin_) : std::vector<RuntimeJournalEvent>{};
 }
@@ -98,7 +109,7 @@ RuntimeFormatResult runtimeRenderEventJournal(const std::vector<RuntimeJournalEv
             text += output->text;
         } else if (const auto display = std::get_if<RuntimeAssignmentDisplay>(&event.payload)) {
             if (display->outputSuppressed) { continue; }
-            if (display->snapshotFailure) { return {false,{},display->snapshotError}; }
+            if (display->snapshotFailure && !display->semanticTextAvailable) { return {false,{},display->snapshotError}; }
             text += display->label + " = " + display->text + "\n";
             if (display->lineSpacing == RuntimeLineSpacing::Loose) { text += '\n'; }
         } else if (event.kind == RuntimeJournalKind::Warning && event.disposition == RuntimeJournalDisposition::Visible) {

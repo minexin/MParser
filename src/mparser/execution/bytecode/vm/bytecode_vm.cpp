@@ -5298,7 +5298,7 @@ private:
                 assignmentDisplays_.push_back(runtimeCaptureAssignmentDisplay(
                     name, value->second, span,
                     source < semantic_->sources.size() ? semantic_->sources[source].name : std::string{},
-                    instruction.outputSuppressed, 0, format));
+                    instruction.outputSuppressed, 0, format, {}, snapshotPropertyResolver(),executionControl_->consoleCaptured()));
                 journal_->display(assignmentDisplays_.back(),RuntimeJournalKind::Assignment,
                     journalSourceContext_,executionControl_->consoleCaptureDepth());
             }
@@ -7185,7 +7185,7 @@ private:
                 frames_.back().kind == RuntimeCallFrameKind::Script});
             if (journal_) {
                 journal_->expression(expressionResults_.back(),journalSourceContext_,executionControl_->consoleCaptureDepth(),
-                    journalSourceName(instruction.span));
+                    journalSourceName(instruction.span), snapshotPropertyResolver(),displayFormat);
             }
             if (executionControl_->consoleStreaming() &&
                 !executionControl_->emitConsole(runtimeRenderConsole({}, {expressionResults_.back()}))) {
@@ -7193,6 +7193,42 @@ private:
                 break;
             }
         }
+    }
+
+    RuntimeSnapshotPropertyResolver snapshotPropertyResolver() {
+        return [this](const RuntimeValue& value) -> std::optional<std::vector<RuntimeSnapshotPropertySpec>> {
+            if (!value.objectContext || value.objectContext->identity != callableContext_->identity) { return std::nullopt; }
+            const auto klass = classesByName_.find(value.className);
+            if (klass == classesByName_.end()) { return std::nullopt; }
+            std::vector<RuntimeSnapshotPropertySpec> result;
+            std::set<std::string> seen;
+            for (const auto& property : klass->second.propertyOrder) {
+                if (!property || property->hidden || property->getAccess.level != MemberAccessLevel::Public ||
+                    property->getAccess.selectiveClassList || !seen.insert(property->name).second) { continue; }
+                const auto reason = property->dependent ? "dependent-not-evaluated" :
+                    !property->getterName.empty() ? "getter-not-evaluated" : "";
+                result.push_back({property->name,property->storageKey,reason});
+            }
+            if (value.sharedFields) {
+                registerOwnerDynamicProperties(value);
+                for (const auto& [id,record] : dynamicProperties_) {
+                    const auto owner = record.ownerFields.lock();
+                    const auto descriptorFields = record.descriptorFields.lock();
+                    if (!owner || !descriptorFields || owner.get() != value.sharedFields.get()) { continue; }
+                    auto descriptor = makeRuntimeMetadataObject(RuntimeMetadataKind::DynamicProperty,"dynamic-property");
+                    descriptor.opaqueId = id; descriptor.sharedFields = descriptorFields;
+                    const auto access = dynamicPropertyAccessPolicy(descriptor,"GetAccess");
+                    if (!dynamicPropertyIsValid(descriptor) || dynamicPropertyLogicalField(descriptor,"Hidden") ||
+                        access.level != MemberAccessLevel::Public || access.selectiveClassList ||
+                        !seen.insert(record.name).second) { continue; }
+                    const auto getter = descriptorFields->find("GetMethod");
+                    const auto reason = dynamicPropertyLogicalField(descriptor,"Dependent") ? "dependent-not-evaluated" :
+                        getter != descriptorFields->end() && isFunctionHandle(getter->second) ? "getter-not-evaluated" : "";
+                    result.push_back({record.name,dynamicPropertyValueKey(id),reason});
+                }
+            }
+            return result;
+        };
     }
 
     void declareWorkspaceVariable(
@@ -13720,6 +13756,7 @@ private:
         const std::vector<RuntimeValue>& arguments,
         size_t requestedOutputCount, SourceSpan callbackSpan,
         RuntimeWorkspace* ownerWorkspace) {
+        RuntimeEventJournalBorrow borrowedJournal(executionControl_.get(),journal_,captureAssignmentDisplays_,journalSourceContext_);
         RuntimeSourceCallableInvocationResult result;
         if (requestedOutputCount >
             static_cast<size_t>(std::numeric_limits<int>::max())) {

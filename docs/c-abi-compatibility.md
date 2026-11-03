@@ -8,7 +8,7 @@ The embedding boundary has an independent technical contract level:
 
 - C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/15/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
-- active C ABI revision: `MPARSER_C_ABI_REVISION == 7`;
+- active C ABI revision: `MPARSER_C_ABI_REVISION == 9`;
 - shared-library full version: `1.15.0`, with SOVERSION/install-name generation
   `2`.
 
@@ -39,7 +39,11 @@ symbols and ABI layouts remain present; product/source API identity is 1.15.0.
 The value accessor returns owned JSON for retained graphics handles/arrays;
 the result accessor borrows an immutable execution-completion graph snapshot.
 Revision 8 adds ordered SystemContext path visitation and atomic replacement,
-bringing the active manifest to 148 exports without changing record layouts.
+bringing that revision's manifest to 148 exports without changing record layouts.
+Revision 9 adds five ordered-event options/result exports, for 153 exports,
+and an optional invocation tail pointer. Old caller-sized prefixes retain
+their meaning. Event records borrow immutable result storage; C++ accessors
+return owning copies. See [ordered events](ordered-display-events.md).
 
 ## Development Policy
 

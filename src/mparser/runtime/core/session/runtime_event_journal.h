@@ -36,7 +36,8 @@ public:
     std::uint64_t cursor() const noexcept { return nextSequence_; }
     void text(RuntimeOutputEvent& event, std::uint64_t context, size_t captureDepth, std::string sourceName);
     void display(RuntimeAssignmentDisplay& event, RuntimeJournalKind kind, std::uint64_t context, size_t captureDepth);
-    void expression(RuntimeExpressionResult& expression, std::uint64_t context, size_t captureDepth, std::string sourceName);
+    void expression(RuntimeExpressionResult& expression, std::uint64_t context, size_t captureDepth, std::string sourceName,
+        RuntimeSnapshotPropertyResolver properties = {}, RuntimeDisplayFormat format = {});
     void diagnostic(Diagnostic& diagnostic, std::uint64_t context, size_t captureDepth, std::string sourceName);
     void caught(const Diagnostic& diagnostic);
     void unhandled(const Diagnostic& diagnostic);
@@ -65,6 +66,23 @@ private:
     bool owner_ = false;
     size_t begin_ = 0;
     std::uint64_t context_ = 0;
+};
+
+// A suspended producer may be called by an independently capturing evalc VM.
+class RuntimeEventJournalBorrow {
+public:
+    RuntimeEventJournalBorrow(RuntimeExecutionControl* control,std::shared_ptr<RuntimeEventJournal>& journal,
+        bool& recording,std::uint64_t& context);
+    ~RuntimeEventJournalBorrow();
+    RuntimeEventJournalBorrow(const RuntimeEventJournalBorrow&) = delete;
+    RuntimeEventJournalBorrow& operator=(const RuntimeEventJournalBorrow&) = delete;
+private:
+    std::shared_ptr<RuntimeEventJournal>& journal_;
+    bool& recording_;
+    std::uint64_t& context_;
+    std::shared_ptr<RuntimeEventJournal> previous_;
+    bool previousRecording_;
+    std::uint64_t previousContext_;
 };
 
 RuntimeFormatResult runtimeRenderEventJournal(const std::vector<RuntimeJournalEvent>& events, size_t captureDepth);

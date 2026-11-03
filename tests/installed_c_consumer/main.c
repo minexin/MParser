@@ -404,6 +404,32 @@ static int run_input_contract(void) {
     return succeeded;
 }
 
+static int run_ordered_events_contract(void) {
+    static const char source[] = "history=1\nhistory=2;";
+    mparser_module* module = NULL;
+    mparser_result* result = NULL;
+    mparser_invocation_options options;
+    mparser_event_capture_options capture;
+    mparser_execution_event_info info;
+    mparser_event_capture_summary summary;
+    int succeeded = 0;
+    if (mparser_module_compile_utf8(source,strlen(source),"installed_events.m",18,&module) != MPARSER_API_STATUS_OK ||
+        MPARSER_INVOCATION_OPTIONS_INIT(&options) != MPARSER_API_STATUS_OK ||
+        MPARSER_EVENT_CAPTURE_OPTIONS_INIT(&capture) != MPARSER_API_STATUS_OK) goto cleanup;
+    options.event_capture = &capture;
+    if (mparser_module_execute(module,&options,&result) != MPARSER_API_STATUS_OK ||
+        !mparser_result_succeeded(result) || mparser_result_execution_event_count(result) != 2 ||
+        mparser_result_execution_event_info(result,0,&info,sizeof(info)) != MPARSER_API_STATUS_OK ||
+        info.sequence != 0 || !bytes_equal(info.text.data,info.text.size,"1") || info.value_snapshot_json.size == 0 ||
+        mparser_result_execution_event_info(result,1,&info,sizeof(info)) != MPARSER_API_STATUS_OK || !info.output_suppressed ||
+        mparser_result_event_capture_summary(result,&summary,sizeof(summary)) != MPARSER_API_STATUS_OK ||
+        !summary.enabled || !summary.started || summary.truncated || summary.retained_count != 2) goto cleanup;
+    succeeded = 1;
+cleanup:
+    mparser_result_release(result); mparser_module_release(module);
+    return succeeded;
+}
+
 int main(void) {
     mparser_module* module = NULL;
     mparser_value* left = NULL;
@@ -458,7 +484,7 @@ int main(void) {
         !read_scalar(result, 1, 36.0) ||
         !run_host_contract() ||
         !run_system_context_contract() ||
-        !run_shared_runtime_contract() || !run_input_contract()) {
+        !run_shared_runtime_contract() || !run_input_contract() || !run_ordered_events_contract()) {
         goto cleanup;
     }
 

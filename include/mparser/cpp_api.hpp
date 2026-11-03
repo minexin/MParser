@@ -307,6 +307,30 @@ struct SourceLoadOptions {
     std::vector<std::string> searchPaths;
 };
 
+enum class ExecutionEventKind : std::uint32_t { Assignment, Expression, Text, Warning, Error };
+enum class ExecutionEventDisposition : std::uint32_t { Visible, Raised, Caught, Suppressed, Unhandled };
+enum class EventTruncationReason : std::uint32_t { None, EventCount, ByteLimit };
+enum class EventValueFailure : std::uint32_t { None, InvalidValue, DepthLimit, NodeLimit, ByteLimit };
+struct EventCaptureOptions {
+    std::uint64_t maximumEvents = 4096, maximumBytes = 16 * 1024 * 1024;
+    std::uint64_t maximumValueBytes = 1024 * 1024, maximumValueNodes = 10000, maximumValueDepth = 128;
+};
+struct EventCaptureSummary {
+    bool enabled = false, started = false, truncated = false;
+    EventTruncationReason truncationReason = EventTruncationReason::None;
+    std::uint64_t generatedCount = 0, retainedCount = 0, retainedBytes = 0;
+};
+struct ExecutionEvent {
+    ExecutionEventKind kind = ExecutionEventKind::Assignment;
+    ExecutionEventDisposition disposition = ExecutionEventDisposition::Visible;
+    std::uint64_t sequence = 0, sourceContext = 0, captureDepth = 0;
+    bool outputSuppressed = false, compact = false, sourceAvailable = false;
+    SourceRange source;
+    std::string label,text,valueSnapshotJson,valueUnavailable;
+    EventValueFailure valueFailure = EventValueFailure::None;
+    std::optional<Diagnostic> diagnostic;
+};
+
 struct SystemContextOptions {
     SystemCapability capabilities = SystemCapability::None;
     std::string rootDirectory;
@@ -1331,6 +1355,7 @@ struct Invocation {
     OutputSink outputSink;
     std::optional<Debugger> debugger;
     InputSource inputSource;
+    std::optional<EventCaptureOptions> eventCapture;
 };
 
 namespace detail {
@@ -1366,6 +1391,15 @@ struct InvocationBridge {
         options.initial_workspace_count = workspace.size();
         options.backend = static_cast<mparser_backend>(source.backend);
         options.collect_profile = source.collectProfile ? 1u : 0u;
+        if (source.eventCapture) {
+            checkStatus(MPARSER_EVENT_CAPTURE_OPTIONS_INIT(&captureOptions),"initialize event capture options");
+            captureOptions.maximum_events = source.eventCapture->maximumEvents;
+            captureOptions.maximum_bytes = source.eventCapture->maximumBytes;
+            captureOptions.maximum_value_bytes = source.eventCapture->maximumValueBytes;
+            captureOptions.maximum_value_nodes = source.eventCapture->maximumValueNodes;
+            captureOptions.maximum_value_depth = source.eventCapture->maximumValueDepth;
+            options.event_capture = &captureOptions;
+        }
         options.max_instruction_count =
             source.limits.maximumInstructionCount;
         options.max_wall_time_nanoseconds =
@@ -1454,6 +1488,7 @@ private:
 public:
 
     mparser_invocation_options options{};
+    mparser_event_capture_options captureOptions{};
     std::vector<const mparser_value*> arguments;
     std::vector<mparser_named_value> workspace;
     OutputSink outputSink;
@@ -1544,6 +1579,32 @@ public:
         detail::checkStatus(mparser_result_graphics_json_versioned(requireRaw(), version, &view),
             "serialize result graphics snapshot");
         return detail::copyUtf8(view);
+    }
+
+    [[nodiscard]] EventCaptureSummary eventCaptureSummary() const {
+        mparser_event_capture_summary info{};
+        detail::checkStatus(mparser_result_event_capture_summary(requireRaw(),&info,sizeof(info)),"read event capture summary");
+        return {info.enabled != 0,info.started != 0,info.truncated != 0,
+            static_cast<EventTruncationReason>(info.truncation_reason),info.generated_count,info.retained_count,info.retained_bytes};
+    }
+    [[nodiscard]] std::vector<ExecutionEvent> executionEvents() const {
+        std::vector<ExecutionEvent> result;
+        const auto count = mparser_result_execution_event_count(requireRaw()); result.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            mparser_execution_event_info info{};
+            detail::checkStatus(mparser_result_execution_event_info(requireRaw(),index,&info,sizeof(info)),"read execution event");
+            ExecutionEvent event;
+            event.kind = static_cast<ExecutionEventKind>(info.kind); event.disposition = static_cast<ExecutionEventDisposition>(info.disposition);
+            event.sequence = info.sequence; event.sourceContext = info.source_context; event.captureDepth = info.capture_depth;
+            event.outputSuppressed = info.output_suppressed != 0; event.compact = info.line_spacing != 0; event.sourceAvailable = info.source_available != 0;
+            event.source = {detail::copyUtf8(info.source_name),detail::copyPosition(info.source_begin),detail::copyPosition(info.source_end)};
+            event.label = detail::copyUtf8(info.label); event.text = detail::copyUtf8(info.text);
+            event.valueSnapshotJson = detail::copyUtf8(info.value_snapshot_json); event.valueUnavailable = detail::copyUtf8(info.value_unavailable);
+            event.valueFailure = static_cast<EventValueFailure>(info.value_failure);
+            if (info.diagnostic) { event.diagnostic = detail::copyDiagnostic(info.diagnostic); }
+            result.push_back(std::move(event));
+        }
+        return result;
     }
 
     [[nodiscard]] std::string outputName(

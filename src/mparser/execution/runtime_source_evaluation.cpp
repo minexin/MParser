@@ -559,6 +559,8 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     }
 
     BytecodeVmOptions vmOptions;
+    // eval/evalc console semantics must not depend on optional public recording.
+    vmOptions.captureAssignmentDisplays = true;
     vmOptions.profiling = BytecodeVmProfilingMode::Disabled;
     vmOptions.sessionState = options.sessionState;
     vmOptions.initialWorkspace = workspaceVariables(workspace);
@@ -642,8 +644,9 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     }
 
     workspace = std::move(updatedWorkspace);
-    if (options.executionControl && options.executionControl->eventJournal()) {
-        const auto rendered = runtimeRenderEventJournal(runtime.journalEvents,options.executionControl->consoleCaptureDepth());
+    if (vmOptions.captureAssignmentDisplays) {
+        const auto rendered = runtimeRenderEventJournal(runtime.journalEvents,
+            options.executionControl ? options.executionControl->consoleCaptureDepth() : 0);
         if (rendered.succeeded) { result.capturedOutput = rendered.text; }
         else {
             result.capturedOutput.clear();

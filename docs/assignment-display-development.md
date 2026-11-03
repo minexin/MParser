@@ -1,8 +1,10 @@
 # Assignment Display Development
 
-Status: internal shared journal and immutable-value foundation only. H10 is not complete. The public
-1.15.0 development SDK remains ABI 2.8; no assignment-display export, protocol
-field, host feature or deployed UI has been advertised by this change.
+Status: the 1.15.0 development SDK now adds an explicit opt-in read-only
+ordered result collection in ABI 2.9. H10 is not complete: live callbacks,
+bounded in-flight recording and deployed UI acceptance remain open. See
+[the SDK contract](ordered-display-events.md). Evidence below records the
+earlier foundation stages with their original ABI versions and limitations.
 
 ## Evidence
 

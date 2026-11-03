@@ -28,10 +28,10 @@ set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
 set(MPARSER_C_ABI_GENERATION 2)
-set(MPARSER_C_ABI_REVISION 8)
+set(MPARSER_C_ABI_REVISION 9)
 set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision8_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision9_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -304,6 +304,8 @@ add_library(mparser_core STATIC
     src/mparser/runtime/builtins/text/runtime_text_query_builtins.cpp
     src/mparser/runtime/core/value/runtime_value.cpp
     src/mparser/runtime/core/value/runtime_value_snapshot.cpp
+    src/mparser/runtime/core/value/runtime_snapshot_json.cpp
+    src/mparser/runtime/core/session/runtime_event_collection.cpp
     src/mparser/runtime/core/value/runtime_value_ops.cpp
     src/mparser/semantic/semantic.cpp
     src/mparser/semantic/semantic_dump.cpp
@@ -364,9 +366,9 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 148)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 153)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 148 symbols")
+            "C ABI symbol manifest must contain exactly 153 symbols")
     endif()
     file(STRINGS
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision5_symbols.txt"
@@ -377,6 +379,9 @@ if(UNIX)
         _mparser_revision7_c_abi_symbols
         REGEX "^mparser_[A-Za-z0-9_]+$")
     list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision7_c_abi_symbols})
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision8_symbols.txt"
+        _mparser_revision8_c_abi_symbols REGEX "^mparser_[A-Za-z0-9_]+$")
+    list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision8_c_abi_symbols})
     list(REMOVE_DUPLICATES _mparser_previous_c_abi_symbols)
     foreach(_mparser_previous_c_abi_symbol IN LISTS
             _mparser_previous_c_abi_symbols)
@@ -529,6 +534,12 @@ add_executable(value_snapshot_smoke_tests tests/value_snapshot_smoke.cpp)
 target_link_libraries(value_snapshot_smoke_tests PRIVATE mparser_core)
 add_test(NAME value_snapshot_smoke COMMAND value_snapshot_smoke_tests)
 set_tests_properties(value_snapshot_smoke PROPERTIES LABELS host-integration)
+
+add_executable(public_snapshot_smoke_tests tests/public_snapshot_smoke.cpp)
+target_link_libraries(public_snapshot_smoke_tests PRIVATE mparser_core)
+target_include_directories(public_snapshot_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME public_snapshot_smoke COMMAND public_snapshot_smoke_tests)
+set_tests_properties(public_snapshot_smoke PROPERTIES LABELS host-integration)
 
 add_executable(event_journal_smoke_tests tests/event_journal_smoke.cpp)
 target_link_libraries(event_journal_smoke_tests PRIVATE mparser_core)
@@ -2913,7 +2924,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 148 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 153 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -2939,6 +2950,11 @@ target_include_directories(graphics_color_smoke_tests PRIVATE third_party/nlohma
 add_test(NAME graphics_color_smoke COMMAND graphics_color_smoke_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/graphics_color_cases.json)
 set_tests_properties(graphics_color_smoke PROPERTIES TIMEOUT 60 LABELS "host-integration")
+add_executable(ordered_events_api_smoke_tests tests/ordered_events_api_smoke.cpp)
+target_link_libraries(ordered_events_api_smoke_tests PRIVATE mparser_cpp_api)
+target_include_directories(ordered_events_api_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME ordered_events_api_smoke COMMAND ordered_events_api_smoke_tests)
+set_tests_properties(ordered_events_api_smoke PROPERTIES TIMEOUT 60 LABELS host-integration)
 add_executable(runtime_graphics_smoke_tests tests/runtime_graphics_smoke.cpp)
 target_link_libraries(runtime_graphics_smoke_tests PRIVATE mparser_core mparser_json_schema_validator)
 target_include_directories(runtime_graphics_smoke_tests PRIVATE third_party/nlohmann_json/include)
@@ -3373,6 +3389,8 @@ install(FILES
     docs/graphics-color-contract.md
     docs/system-search-paths.md
     docs/assignment-display-development.md
+    docs/ordered-display-events.md
+    docs/ordered-display-api-design.md
     docs/host-integration-contract-development.json
     docs/performance-baseline-v1.schema.json
     docs/performance-suite-v1.schema.json

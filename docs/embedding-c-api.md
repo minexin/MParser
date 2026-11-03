@@ -20,7 +20,9 @@ evaluation/conditional-breakpoint extension added revision 4 with 138 exports.
 The V1.14 graphics snapshot extension adds revision 5 with 140 exports. These are
 followed by development identifier/definition accessors in revision 6 (144
 exports), version-selectable graphics snapshots in revision 7 (146 exports),
-and SystemContext path snapshots/replacement in revision 8 (148 exports).
+SystemContext path snapshots/replacement in revision 8 (148 exports), and
+opt-in ordered execution results in revision 9 (153 exports). See
+[ordered execution events](ordered-display-events.md) for borrowing and limits.
 They are
 binary-contract identifiers, not SDK product versions. MParser and the
 installed SDK report `1.15.0`, while the C source API reports `1.15`.
@@ -548,7 +550,7 @@ Simplified BSD terms reproduced in the third-party notices.
 ## Current Candidate Boundary
 
 The current v1.15 host surface is C source API 1.15, C ABI
-generation 2 revision 8 with 148 exports, header-only C++ source API 1.15, and
+generation 2 revision 9 with 153 exports, header-only C++ source API 1.15, and
 machine protocol 1.2. It includes rooted system-context calls and the shared
 Runtime graph, reporting product/SDK version 1.15.0.
 Current in-repository and relocated consumers validate this

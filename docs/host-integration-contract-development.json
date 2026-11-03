@@ -14,8 +14,8 @@
   },
   "c_abi": {
     "generation": 2,
-    "revision": 8,
-    "symbol_count": 148
+    "revision": 9,
+    "symbol_count": 153
   },
   "builtin_source_contract": {
     "major": 1,
@@ -33,19 +33,19 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "09126cc83368a53e23334ec4342c821fc4d4e8c651ce90bad156b5c9297e1c02"
+      "sha256_lf": "b06fef54a851176ca2e2e9ef7ab208610e320e9c289b9fd5c849b65e7bb2612b"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
-      "sha256_lf": "b929bd7fb075f2112b73325468c531e3187d49de3055a2f53bfe5cb47baa9583"
+      "sha256_lf": "f0eee614aa84bd35827655c9515efa14f11f5ecc72e7b30282cf648ebfc05774"
     },
     {
       "path": "docs/definition-metadata.md",
-      "sha256_lf": "71b69e71fa14eacde551102f8d4043ee07381019b537d4674d7a2e86bccfcf53"
+      "sha256_lf": "c49cb391592216f719c2b2c44989235fc595866f22087918ce1ce934a6bd6833"
     },
     {
       "path": "docs/variable-name-validation.md",
-      "sha256_lf": "61107653eda48f3540d6e47b6c918950fc5c083dfbdceaced29fb2f2e92955ef"
+      "sha256_lf": "00ee536f5f715f055923f92bd7c2fa33017d52545a616760d80112d49f267ca6"
     },
     {
       "path": "docs/graphics-clipping-contract.md",
@@ -65,15 +65,15 @@
     },
     {
       "path": "include/mparser/c_api.h",
-      "sha256_lf": "6393d6c681d9e643b47f9d77e6647d6c0197ef6f8eaeecd96cb687cb4e03a74c"
+      "sha256_lf": "d08d4de560e8890511d71f27482887fc98ebf98b4cfd84b6fd1357a6479f4b76"
     },
     {
       "path": "include/mparser/cpp_api.hpp",
-      "sha256_lf": "f277efbd5afb96183c9b29e531d4744fb11f51d32fcfac03b39b673dbc032b48"
+      "sha256_lf": "222ce3606f2c84a36da2913e0e2f84a1d0a05f0e9c4f46d64a98f7f3cbb44f7c"
     },
     {
-      "path": "tests/c_api_generation2_revision8_symbols.txt",
-      "sha256_lf": "8468320c9a2880f3fd5134657294777bab896f24a683fc02bb3290308d42b8df"
+      "path": "tests/c_api_generation2_revision9_symbols.txt",
+      "sha256_lf": "657410dc73ef78ced4801061022b10c27dc7f6192bbe9023600f7738c75e63d3"
     },
     {
       "path": "docs/machine-result-v1.schema.json",
@@ -94,6 +94,14 @@
     {
       "path": "docs/system-search-paths.md",
       "sha256_lf": "61a014e2f9c89ea921d4d98c0b5289d51eb91a65cd8a0811c532ccc8f8a2326b"
+    },
+    {
+      "path": "docs/ordered-display-events.md",
+      "sha256_lf": "6aac404e18b5ecf3f1ff600706ee04366dad415fa93b956680df19ca240679c6"
+    },
+    {
+      "path": "docs/ordered-display-api-design.md",
+      "sha256_lf": "c72f6f581c788f7baebb588e6573206c0821a08a2c9deb1532eea3f1c23387f7"
     }
   ]
 }

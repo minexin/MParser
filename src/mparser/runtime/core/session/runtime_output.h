@@ -89,12 +89,14 @@ struct RuntimeAssignmentDisplay {
     RuntimeValueSnapshot valueSnapshot;
     std::optional<RuntimeSnapshotFailure> snapshotFailure;
     std::string snapshotError;
+    std::string publicText;
+    bool semanticTextAvailable = false;
 };
 
 RuntimeAssignmentDisplay runtimeCaptureAssignmentDisplay(std::string label,
     const RuntimeValue& value, SourceSpan span, std::string sourceName,
     bool suppressed, std::uint64_t sequence, RuntimeDisplayFormat format,
-    RuntimeSnapshotLimits limits = {});
+    RuntimeSnapshotLimits limits = {}, RuntimeSnapshotPropertyResolver properties = {}, bool preserveConsoleText = false);
 
 struct RuntimeFormatResult {
     bool succeeded = false;

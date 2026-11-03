@@ -55,7 +55,7 @@ async function main() {
     assert.ok(ready);
     const info = await request('/info');
     assert.equal(info.runtime.version,'1.15.0');
-    assert.equal(info.runtime.abi_revision,8);
+    assert.equal(info.runtime.abi_revision,9);
     assert.ok(info.features.includes('kernel-search-path-sync'));
     const {id} = await request('/sessions','POST',{name:'path-sync'},201);
     const base = `/sessions/${id}`;

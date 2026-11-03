@@ -211,5 +211,6 @@ std::optional<size_t> runtimeValueArrayBytes(
 std::string runtimeFunctionHandleText(const RuntimeValue& value);
 RuntimeValue runtimeFunctionHandleMetadata(const RuntimeValue& value);
 std::string runtimeValueToString(const RuntimeValue& value);
+std::string runtimePublicValueDescription(const RuntimeValue& value);
 
 } // namespace mparser

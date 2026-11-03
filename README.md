@@ -18,8 +18,8 @@ building on the v1.10 shared Runtime for cross-module closures, objects, globals
 persistent state on top of the existing session-owned system boundary,
 standard-library coverage, dynamic workspace semantics, MAT v5 persistence,
 and repository-owned C++20 numerical algorithms without Eigen. The active
-development identities are C/C++ source API 1.15, C ABI generation 2 revision 8
-with 148 exports, CLI 1.0, machine result protocol 1.2, and Builtin source
+development identities are C/C++ source API 1.15, C ABI generation 2 revision 9
+with 153 exports, CLI 1.0, machine result protocol 1.2, and Builtin source
 contract 1.21. The v1.14 baseline and v1.3 revision-1 contract are archived; the v1.2 and released
 v1.0 contracts remain immutable historical evidence. Unreleased interfaces move
 together with repository consumers. See

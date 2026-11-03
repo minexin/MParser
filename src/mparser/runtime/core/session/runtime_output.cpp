@@ -968,7 +968,7 @@ RuntimeFormatResult runtimeFormatPrintf(
 RuntimeAssignmentDisplay runtimeCaptureAssignmentDisplay(std::string label,
     const RuntimeValue& value, SourceSpan span, std::string sourceName,
     bool suppressed, std::uint64_t sequence, RuntimeDisplayFormat format,
-    RuntimeSnapshotLimits limits) {
+    RuntimeSnapshotLimits limits, RuntimeSnapshotPropertyResolver properties, bool preserveConsoleText) {
     RuntimeAssignmentDisplay event;
     event.label = std::move(label);
     event.span = span;
@@ -977,13 +977,15 @@ RuntimeAssignmentDisplay runtimeCaptureAssignmentDisplay(std::string label,
     event.sequence = sequence;
     event.lineSpacing = format.spacing;
     try {
-        event.valueSnapshot = RuntimeValueSnapshot::capture(value, limits);
+        event.valueSnapshot = RuntimeValueSnapshot::capture(value, limits, std::move(properties));
     } catch (const RuntimeSnapshotError& error) {
         event.snapshotFailure = error.reason();
         event.snapshotError = error.what();
-        return event;
+        if (!preserveConsoleText) { return event; }
     }
     event.text = runtimeFormatConsoleValue(value, format);
+    event.publicText = isRuntimeNumericValue(value) ? event.text : runtimePublicValueDescription(value);
+    event.semanticTextAvailable = true;
     return event;
 }
 

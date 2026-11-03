@@ -348,6 +348,18 @@ end
                     graphicsJson.find("\"type\":\"Line\"") != std::string::npos,
                 "installed graphics snapshot failed after owner release");
 
+        {
+            mparser::sdk::Invocation capture;
+            capture.eventCapture = mparser::sdk::EventCaptureOptions{};
+            auto recorded = mparser::sdk::Module::compile("history=1\nhistory=2;","installed_events.m").execute(capture);
+            const auto history = recorded.executionEvents();
+            require(recorded.succeeded() && history.size() == 2 && history[0].label == "history" &&
+                history[0].text == "1" && history[1].text == "2" && history[1].outputSuppressed &&
+                !recorded.eventCaptureSummary().truncated,"installed ordered event collection failed");
+            recorded = {};
+            require(history[0].valueSnapshotJson.find("mparser.value-snapshot") != std::string::npos,
+                "installed owning event copy lost its snapshot");
+        }
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','

@@ -5,6 +5,7 @@
 #include "mparser/runtime/core/value/runtime_tabular.h"
 
 #include <memory>
+#include <functional>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -13,6 +14,17 @@ namespace mparser {
 
 using RuntimeSnapshotId = size_t;
 using RuntimeSnapshotField = std::pair<std::string, RuntimeSnapshotId>;
+
+struct RuntimeSnapshotPropertySpec {
+    std::string name, storageName, unavailable;
+};
+struct RuntimeSnapshotProperty {
+    std::string name;
+    std::optional<RuntimeSnapshotId> value;
+    std::string unavailable;
+};
+using RuntimeSnapshotPropertyResolver = std::function<
+    std::optional<std::vector<RuntimeSnapshotPropertySpec>>(const RuntimeValue&)>;
 
 enum class RuntimeSnapshotFailure { InvalidValue, DepthLimit, NodeLimit, ByteLimit };
 
@@ -75,6 +87,8 @@ struct RuntimeSnapshotNode {
     std::vector<std::string> fieldOrder;
     std::vector<std::vector<RuntimeSnapshotField>> structElements;
     std::vector<RuntimeSnapshotField> storedFields;
+    bool publicPropertiesKnown = false;
+    std::vector<RuntimeSnapshotProperty> publicProperties;
     std::optional<RuntimeSparseStorage> sparse;
     std::optional<RuntimeCategoricalStorage> categorical;
     std::optional<RuntimeSnapshotTabular> tabular;
@@ -86,7 +100,8 @@ struct RuntimeSnapshotNode {
 class RuntimeValueSnapshot {
 public:
     RuntimeValueSnapshot() = default;
-    static RuntimeValueSnapshot capture(const RuntimeValue& value, RuntimeSnapshotLimits limits = {});
+    static RuntimeValueSnapshot capture(const RuntimeValue& value, RuntimeSnapshotLimits limits = {},
+        RuntimeSnapshotPropertyResolver properties = {}, bool publicOnly = false);
     bool available() const noexcept { return static_cast<bool>(nodes_); }
     size_t size() const noexcept { return nodes_ ? nodes_->size() : 0; }
     const RuntimeSnapshotNode& node(RuntimeSnapshotId id = 0) const;

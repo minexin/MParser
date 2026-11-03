@@ -1,0 +1,145 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -37,1 +37,7 @@
+ find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++option(MEXEC_ORDERED_EVENTS "Expose opt-in read-only kernel execution events" OFF)
++if(MEXEC_ORDERED_EVENTS AND
++   (NOT MParser_C_ABI_GENERATION EQUAL 2 OR MParser_C_ABI_REVISION LESS 9))
++    message(FATAL_ERROR "Ordered execution events require MParser ABI 2.9 or later")
++endif()
++
+@@ -79,1 +85,2 @@
+ target_compile_definitions(mexec_core PRIVATE
++    MEXEC_ORDERED_EVENTS=$<BOOL:${MEXEC_ORDERED_EVENTS}>
+diff --git a/include/mexec/engine/workspace_session.hpp b/include/mexec/engine/workspace_session.hpp
+--- a/include/mexec/engine/workspace_session.hpp
++++ b/include/mexec/engine/workspace_session.hpp
+@@ -44,1 +44,3 @@
+     bool interactiveInput = false;
++    bool includeExecutionEvents = false;
++    std::size_t maximumExecutionEvents = 4096;
+@@ -83,1 +85,2 @@
+     std::string graphicsJson;
++    nlohmann::json executionEvents = nullptr;
+diff --git a/src/engine/workspace_session.cpp b/src/engine/workspace_session.cpp
+--- a/src/engine/workspace_session.cpp
++++ b/src/engine/workspace_session.cpp
+@@ -3,1 +3,4 @@
+ #include "mexec/engine/value_json.hpp"
++#if MEXEC_ORDERED_EVENTS
++#include "mexec/engine/execution_event_json.hpp"
++#endif
+@@ -320,1 +323,8 @@
+     invocation.limits = request.limits;
++#if MEXEC_ORDERED_EVENTS
++    if (request.includeExecutionEvents) {
++        invocation.eventCapture = mparser::sdk::EventCaptureOptions{};
++        invocation.eventCapture->maximumEvents = request.maximumExecutionEvents;
++        invocation.eventCapture->maximumBytes = 4u * 1024u * 1024u;
++    }
++#endif
+@@ -358,1 +368,4 @@
+     outcome.execution = result.executionSummary();
++#if MEXEC_ORDERED_EVENTS
++    outcome.executionEvents = executionEventsToJson(result);
++#endif
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -281,1 +281,4 @@
+                   "workspace-numeric-slices",
++#if MEXEC_ORDERED_EVENTS
++                  "ordered-display-events",
++#endif
+@@ -1461,1 +1464,25 @@
++    if (body.contains("include_execution_events")) {
++        if (!body["include_execution_events"].is_boolean()) {
++            *error = "include_execution_events must be a boolean"; return std::nullopt;
++        }
++        request.includeExecutionEvents = body["include_execution_events"].get<bool>();
++#if !MEXEC_ORDERED_EVENTS
++        if (request.includeExecutionEvents) {
++            *error = "ordered execution events are not enabled in this host"; return std::nullopt;
++        }
++#endif
++    }
++    if (body.contains("max_execution_events")) {
++        const auto& value = body["max_execution_events"];
++        if (!request.includeExecutionEvents || (!value.is_number_unsigned() && !value.is_number_integer()) ||
++            (!value.is_number_unsigned() && value.is_number_integer() && value.get<std::int64_t>() < 0)) {
++            *error = "max_execution_events requires enabled capture and an integer from 0 to 4096"; return std::nullopt;
++        }
++        const auto maximum = value.get<std::uint64_t>();
++        if (maximum > 4096) { *error = "max_execution_events exceeds 4096"; return std::nullopt; }
++        request.maximumExecutionEvents = static_cast<std::size_t>(maximum);
++    }
++    if (request.includeExecutionEvents && body.contains("compile_only") && body["compile_only"].is_boolean() && body["compile_only"].get<bool>()) {
++        *error = "execution event capture cannot be combined with compile_only"; return std::nullopt;
++    }
+     if (body.contains("compile_only")) {
+@@ -1690,1 +1740,4 @@
+     auto summaries = nlohmann::json::array();
++    if (!outcome.executionEvents.is_null()) {
++        result["execution_events"] = outcome.executionEvents;
++    }
+diff --git a/include/mexec/engine/execution_event_json.hpp b/include/mexec/engine/execution_event_json.hpp
+new file mode 100644
+--- /dev/null
++++ b/include/mexec/engine/execution_event_json.hpp
+@@ -0,0 +1,55 @@
++#pragma once
++#include "mexec/engine/value_json.hpp"
++#include <stdexcept>
++
++namespace mexec::engine {
++inline nlohmann::json executionEventsToJson(const mparser::sdk::Result& result) {
++    using namespace mparser::sdk;
++    const auto summary = result.eventCaptureSummary();
++    if (!summary.enabled) { return nullptr; }
++    const auto kindName = [](ExecutionEventKind kind) -> const char* {
++        switch (kind) {
++        case ExecutionEventKind::Assignment: return "assignment";
++        case ExecutionEventKind::Expression: return "expression";
++        case ExecutionEventKind::Text: return "text";
++        case ExecutionEventKind::Warning: return "warning";
++        case ExecutionEventKind::Error: return "error";
++        }
++        throw std::logic_error("unsupported kernel event kind");
++    };
++    const auto dispositionName = [](ExecutionEventDisposition value) -> const char* {
++        switch (value) {
++        case ExecutionEventDisposition::Visible: return "visible";
++        case ExecutionEventDisposition::Raised: return "raised";
++        case ExecutionEventDisposition::Caught: return "caught";
++        case ExecutionEventDisposition::Suppressed: return "suppressed";
++        case ExecutionEventDisposition::Unhandled: return "unhandled";
++        }
++        throw std::logic_error("unsupported kernel diagnostic disposition");
++    };
++    const auto position = [](const SourcePosition& value) {
++        return nlohmann::json{{"offset",std::to_string(value.offset)},{"line",value.line},{"column",value.column}};
++    };
++    auto events = nlohmann::json::array();
++    for (const auto& event : result.executionEvents()) {
++        events.push_back({{"kind",kindName(event.kind)},{"sequence",std::to_string(event.sequence)},
++            {"source_context",std::to_string(event.sourceContext)},{"capture_depth",event.captureDepth},
++            {"disposition",dispositionName(event.disposition)},{"label",event.label},{"text",event.text},
++            {"output_suppressed",event.outputSuppressed},{"line_spacing",event.compact ? "compact" : "loose"},
++            {"source",event.sourceAvailable ? nlohmann::json{{"name",event.source.sourceName},
++                {"begin",position(event.source.begin)},{"end",position(event.source.end)}} : nlohmann::json(nullptr)},
++            {"snapshot",event.valueSnapshotJson.empty() ? nlohmann::json(nullptr) : nlohmann::json::parse(event.valueSnapshotJson)},
++            {"value_failure",static_cast<std::uint32_t>(event.valueFailure)},
++            {"value_unavailable",event.valueUnavailable.empty() ? nlohmann::json(nullptr) : nlohmann::json(event.valueUnavailable)},
++            {"diagnostic",event.diagnostic ? diagnosticsToJson({*event.diagnostic}).at(0) : nlohmann::json(nullptr)}});
++    }
++    const auto reason = summary.truncationReason == EventTruncationReason::None ? "none" :
++        summary.truncationReason == EventTruncationReason::EventCount ? "event-count" : "byte-limit";
++    return {{"schema","mexec.execution-events"},{"version",1},{"offset_unit","utf8-byte"},
++        {"column_unit","utf8-byte"},{"line_base",1},{"column_base",1},{"end_exclusive",true},
++        {"summary",{{"enabled",summary.enabled},{"started",summary.started},{"truncated",summary.truncated},
++            {"truncation_reason",reason},{"generated_count",std::to_string(summary.generatedCount)},
++            {"retained_count",std::to_string(summary.retainedCount)},{"retained_bytes",std::to_string(summary.retainedBytes)}}},
++        {"events",std::move(events)}};
++}
++}
