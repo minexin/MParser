@@ -26,6 +26,17 @@ struct CompiledFunctionInfo {
     SourceSpan span;
 };
 
+enum class CompiledDefinitionKind { PrimaryFunction, LocalFunction, NestedFunction, Method };
+
+struct CompiledDefinitionInfo {
+    std::string name;
+    std::string className;
+    CompiledDefinitionKind kind = CompiledDefinitionKind::LocalFunction;
+    std::optional<size_t> parentFunction;
+    SourceSpan span;
+    bool declarationOnly = false;
+};
+
 enum class CompiledSourceKind {
     Unknown,
     Script,
@@ -74,6 +85,7 @@ public:
     const SemanticResult& semantic() const;
     const BytecodeProgram& bytecode() const;
     const std::vector<CompiledFunctionInfo>& functions() const;
+    const std::vector<CompiledDefinitionInfo>& definitions() const;
     const CompiledFunctionInfo* findFunction(std::string_view name) const;
 
     std::vector<Diagnostic> validateInvocation(

@@ -28,6 +28,7 @@ private:
     bool at(TokenKind kind) const;
     bool atAny(std::initializer_list<TokenKind> kinds) const;
     bool isAtEnd() const;
+    bool atArgumentsBlockStart() const;
     const Token& advance();
     bool match(TokenKind kind);
 

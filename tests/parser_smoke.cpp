@@ -1,4 +1,5 @@
 #include "mparser/frontend/lexer.h"
+#include "mparser/frontend/identifier.h"
 #include "mparser/frontend/parser.h"
 
 #include <cassert>
@@ -611,6 +612,83 @@ void parseSpaceSeparatedCharacterLiteralSmoke() {
     assert(repeatedNonconjugate.diagnostics.empty());
 }
 
+void variableNameValidationSmoke() {
+    using mparser::VariableNameStatus;
+    using mparser::validateVariableName;
+    for (const auto name : {"a", "Z9_", "valid_name", "arguments", "import",
+                            "properties", "methods", "events", "enumeration",
+                            "End", "isvarname"}) {
+        assert(validateVariableName(name) == VariableNameStatus::Valid);
+    }
+    for (const auto name : mparser::kLanguageKeywords) {
+        assert(mparser::isLanguageKeyword(name));
+        assert(validateVariableName(name) == VariableNameStatus::ReservedKeyword);
+    }
+    assert(validateVariableName("") == VariableNameStatus::Empty);
+    assert(validateVariableName("_a") == VariableNameStatus::InvalidStart);
+    assert(validateVariableName("0a") == VariableNameStatus::InvalidStart);
+    assert(validateVariableName("a.b") == VariableNameStatus::InvalidCharacter);
+    assert(validateVariableName("a b") == VariableNameStatus::InvalidCharacter);
+    assert(validateVariableName(std::string_view("a\0b", 3)) ==
+           VariableNameStatus::InvalidCharacter);
+    assert(validateVariableName("\xc3\xa9") == VariableNameStatus::InvalidStart);
+    assert(validateVariableName("a\xc3\xa9") == VariableNameStatus::InvalidCharacter);
+    assert(validateVariableName(std::string(63, 'a')) == VariableNameStatus::Valid);
+    assert(validateVariableName(std::string(64, 'a')) == VariableNameStatus::TooLong);
+}
+
+void contextualVariableSmoke() {
+    const auto result = parse(R"(
+arguments=[1 2];
+arguments(2)=3;
+arguments;
+import=4;
+global events methods
+properties=5; methods=6; events=7; enumeration=8;
+total=arguments(2)+import+properties+methods+events+enumeration;
+function out=example()
+arguments=10;
+arguments;
+if true
+import=20;
+arguments(1)=11;
+end
+out=arguments+import;
+end
+function out=properties(events)
+out=events;
+end
+)");
+    assert(result.diagnostics.empty());
+    assert(!containsKind(*result.root, mparser::SyntaxKind::ArgumentsBlock));
+    assert(!containsKind(*result.root, mparser::SyntaxKind::ImportStatement));
+    const auto declaration = parse(R"(
+function out=example(x)
+arguments (Input)
+x double
+end
+import pkg.*
+out=x;
+end
+)");
+    assert(declaration.diagnostics.empty());
+    assert(containsKind(*declaration.root, mparser::SyntaxKind::ArgumentsBlock));
+    assert(containsKind(*declaration.root, mparser::SyntaxKind::ImportStatement));
+}
+
+void parseInvalidAssignmentSmoke() {
+    for (const auto source : {"a=1;\nb=;\n", "end = 0;\n",
+                              "= 1;\n", "1 = 2;\n"}) {
+        const auto result = parse(source);
+        assert(!result.diagnostics.empty());
+    }
+    for (const auto source : {"a=[];\n", "a=[1 2]; a(end)=3;\n",
+                              "[a,b]=f();\n", "s.end=1;\n"}) {
+        const auto result = parse(source);
+        assert(result.diagnostics.empty());
+    }
+}
+
 void parseSystemCommandSmoke() {
     constexpr std::string_view source =
         "!echo 'a|b' && echo %PATH%\nvalue = 1;\n";
@@ -657,6 +735,9 @@ int main() {
     parseCommandFormSmoke();
     parseSpaceSeparatedCharacterLiteralSmoke();
     parseSystemCommandSmoke();
+    parseInvalidAssignmentSmoke();
+    variableNameValidationSmoke();
+    contextualVariableSmoke();
     std::cout << "parser smoke tests passed\n";
     return 0;
 }

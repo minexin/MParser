@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 14u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 5u
+#define MPARSER_C_ABI_REVISION 7u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -220,6 +220,36 @@ typedef struct mparser_source_position {
     int32_t column;
 } mparser_source_position;
 
+typedef uint32_t mparser_definition_kind;
+#define MPARSER_DEFINITION_PRIMARY_FUNCTION 0u
+#define MPARSER_DEFINITION_LOCAL_FUNCTION 1u
+#define MPARSER_DEFINITION_NESTED_FUNCTION 2u
+#define MPARSER_DEFINITION_METHOD 3u
+#define MPARSER_DEFINITION_NO_PARENT ((size_t)-1)
+
+typedef struct mparser_definition_info {
+    mparser_utf8_view name;
+    mparser_utf8_view class_name;
+    mparser_utf8_view source_name;
+    size_t source_index;
+    size_t parent_function;
+    mparser_definition_kind kind;
+    uint32_t declaration_only;
+    mparser_source_position source_begin;
+    mparser_source_position source_end;
+} mparser_definition_info;
+
+/* Definition indices are module-local, in syntax traversal order. Parent
+ * indices refer to this directory, not the callable-function list. Strings
+ * are borrowed until module release. Positions use zero-based UTF-8 byte
+ * offsets, one-based lines/byte columns, and exclusive end positions.
+ * No execution occurs. Invalid modules may expose only a partial directory.
+ * Errors leave out_info untouched; out_size must cover the current struct. */
+MPARSER_C_API size_t mparser_module_definition_count(const mparser_module* module);
+MPARSER_C_API mparser_api_status mparser_module_definition_info(
+    const mparser_module* module, size_t index,
+    mparser_definition_info* out_info, size_t out_size);
+
 typedef uint32_t mparser_debug_action;
 #define MPARSER_DEBUG_CONTINUE 0u
 #define MPARSER_DEBUG_STEP_INTO 1u
@@ -388,6 +418,23 @@ MPARSER_C_API uint32_t mparser_c_abi_revision(void);
 MPARSER_C_API uint32_t mparser_version_major(void);
 MPARSER_C_API uint32_t mparser_version_minor(void);
 MPARSER_C_API uint32_t mparser_version_patch(void);
+typedef uint32_t mparser_variable_name_status;
+#define MPARSER_VARIABLE_NAME_VALID 0u
+#define MPARSER_VARIABLE_NAME_EMPTY 1u
+#define MPARSER_VARIABLE_NAME_TOO_LONG 2u
+#define MPARSER_VARIABLE_NAME_INVALID_START 3u
+#define MPARSER_VARIABLE_NAME_INVALID_CHARACTER 4u
+#define MPARSER_VARIABLE_NAME_RESERVED_KEYWORD 5u
+
+/* Stateless R2024b name validation. ASCII letter first, then ASCII letters,
+ * digits or underscore, no reserved keyword. No compilation or execution.
+ * Null data is allowed only for size zero. out_status must be non-null.
+ * Invalid API arguments return INVALID_ARGUMENT without modifying out_status.
+ * Name failures return OK with the reason. Checks are ordered: empty, length,
+ * first character, remaining characters, keyword. Embedded NUL is invalid. */
+MPARSER_C_API size_t mparser_variable_name_max_length(void);
+MPARSER_C_API mparser_api_status mparser_validate_variable_name(
+    mparser_utf8_view name, mparser_variable_name_status* out_status);
 MPARSER_C_API mparser_utf8_view
 mparser_api_status_name(mparser_api_status status);
 
@@ -608,6 +655,12 @@ mparser_result_output_count(const mparser_result* result);
  */
 MPARSER_C_API mparser_utf8_view
 mparser_result_graphics_json(const mparser_result* result);
+/* ABI 2.7: select legacy (0) or identity-bearing (3) immutable snapshot.
+ * Other versions and null arguments return INVALID_ARGUMENT. Output is cleared
+ * on failure. A missing snapshot returns OK with an empty view; ownership and
+ * lifetime are the same as mparser_result_graphics_json. */
+MPARSER_C_API mparser_api_status mparser_result_graphics_json_versioned(
+    const mparser_result* result, uint32_t version, mparser_utf8_view* out_json);
 MPARSER_C_API mparser_utf8_view
 mparser_result_output_name(const mparser_result* result, size_t index);
 MPARSER_C_API mparser_api_status mparser_result_output(
@@ -790,6 +843,14 @@ mparser_value_function_text(const mparser_value* value);
  * Graph mutation and serialization are ordered by the graphs' own locks. */
 MPARSER_C_API mparser_api_status mparser_value_graphics_json(
     const mparser_value* value, mparser_value** out_json);
+
+/* ABI 2.7: version 0 retains legacy automatic v1/v2 selection; version 3
+ * includes graphIdentity/objectIdentity decimal strings, scoped to this loaded
+ * kernel instance. Other versions return INVALID_ARGUMENT with null output.
+ * Ownership, locking, scalar/array and deleted-handle rules match the function
+ * above. Identities are not authorization tokens and expire on kernel reload. */
+MPARSER_C_API mparser_api_status mparser_value_graphics_json_versioned(
+    const mparser_value* value, uint32_t version, mparser_value** out_json);
 
 MPARSER_C_API mparser_api_status
 mparser_cancel_token_create(mparser_cancel_token** out_token);

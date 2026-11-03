@@ -456,7 +456,9 @@ private:
              !value.fields.empty() || value.dynamicPropertyOwner ||
              (value.className != "matlab.ui.Figure" &&
               value.className != "matlab.graphics.axis.Axes" &&
-              value.className != "matlab.graphics.chart.primitive.Line"))) {
+              value.className != "matlab.graphics.chart.primitive.Line" &&
+              value.className != "matlab.graphics.primitive.Text" &&
+              value.className != "matlab.graphics.illustration.Legend"))) {
             return fail(path, "graphics handle uses incompatible object storage");
         }
 

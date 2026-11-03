@@ -28,10 +28,10 @@ set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
 set(MPARSER_C_ABI_GENERATION 2)
-set(MPARSER_C_ABI_REVISION 5)
+set(MPARSER_C_ABI_REVISION 7)
 set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision5_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision7_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -362,12 +362,12 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 140)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 146)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 140 symbols")
+            "C ABI symbol manifest must contain exactly 146 symbols")
     endif()
     file(STRINGS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision4_symbols.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision5_symbols.txt"
         _mparser_previous_c_abi_symbols
         REGEX "^mparser_[A-Za-z0-9_]+$")
     foreach(_mparser_previous_c_abi_symbol IN LISTS
@@ -2492,10 +2492,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.20/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.21/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.20 catalog validated: 340 descriptors")
+        "builtin source contract 1.21 catalog validated: 356 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2871,7 +2871,7 @@ add_test(NAME embedding_unload_stress
         $<TARGET_FILE:mparser_c_api>)
 set_tests_properties(embedding_unload_stress PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "embedding unload stress = 256,abi-generation-2-revision-5"
+        "embedding unload stress = 256,abi-generation-${MPARSER_C_ABI_GENERATION}-revision-${MPARSER_C_ABI_REVISION}"
     TIMEOUT 120)
 
 add_test(NAME c_api_shared_library_abi
@@ -2883,7 +2883,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 140 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 146 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -2895,7 +2895,7 @@ add_test(NAME cpp_api_smoke
         ${CMAKE_CURRENT_SOURCE_DIR}/samples/class_folders/lib)
 set_tests_properties(cpp_api_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp api smoke = 5050,42,21,abi-generation-2-revision-5,cpp-api-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
+        "cpp api smoke = 5050,42,21,abi-generation-${MPARSER_C_ABI_GENERATION}-revision-${MPARSER_C_ABI_REVISION},cpp-api-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
 
 add_executable(runtime_debugger_smoke_tests tests/runtime_debugger_smoke.cpp)
 add_executable(graphics_api_smoke_tests tests/graphics_api_smoke.cpp)
@@ -2908,7 +2908,11 @@ target_link_libraries(runtime_graphics_smoke_tests PRIVATE mparser_core mparser_
 target_include_directories(runtime_graphics_smoke_tests PRIVATE third_party/nlohmann_json/include)
 add_test(NAME runtime_graphics_smoke COMMAND runtime_graphics_smoke_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/docs/machine-result-v1.schema.json
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/protocol/1.1/machine-result.schema.json)
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/protocol/1.1/machine-result.schema.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/docs/graphics-v3.schema.json)
+add_test(NAME host_integration_development_contract
+    COMMAND ${CMAKE_COMMAND} -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_host_integration_development.cmake)
 set_tests_properties(runtime_graphics_smoke PROPERTIES TIMEOUT 30)
 target_link_libraries(runtime_debugger_smoke_tests PRIVATE
     mparser_core Threads::Threads)
@@ -2990,7 +2994,7 @@ add_test(NAME cpp_shared_runtime_demo_smoke
     COMMAND mparser_cpp_shared_runtime_demo)
 set_tests_properties(cpp_shared_runtime_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "shared runtime sdk = closure-14,object-15-17,global-9,abi-generation-2-revision-5")
+        "shared runtime sdk = closure-14,object-15-17,global-9,abi-generation-${MPARSER_C_ABI_GENERATION}-revision-${MPARSER_C_ABI_REVISION}")
 
 add_executable(system_context_api_smoke_tests
     tests/system_context_api_smoke.cpp)
@@ -3031,7 +3035,7 @@ add_test(NAME cpp_embedding_demo_smoke
     COMMAND mparser_cpp_embedding_demo)
 set_tests_properties(cpp_embedding_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "cpp sdk = 5050,5,abi-generation-2-revision-5,cpp-api-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR},host-output-2-2")
+        "cpp sdk = 5050,5,abi-generation-${MPARSER_C_ABI_GENERATION}-revision-${MPARSER_C_ABI_REVISION},cpp-api-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR},host-output-2-2")
 
 add_executable(c_api_layout_contract_tests
     tests/c_api_layout_contract.c)
@@ -3080,7 +3084,7 @@ add_test(NAME c_abi_compat_demo_smoke
     COMMAND mparser_c_abi_compat_demo)
 set_tests_properties(c_abi_compat_demo_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "api = 1.3, abi-generation = 2, revision = 5, result = 42, request-bytes = ")
+        "api = 1.3, abi-generation = ${MPARSER_C_ABI_GENERATION}, revision = ${MPARSER_C_ABI_REVISION}, result = 42, request-bytes = ")
 
 add_executable(mparser_c_source_graph_demo
     samples/c_source_graph_demo.c)
@@ -3300,6 +3304,9 @@ install(FILES
     docs/public-contract-v1.json
     docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
+    docs/graphics-v3.schema.json
+    docs/graphics-identity-contract.md
+    docs/host-integration-contract-development.json
     docs/performance-baseline-v1.schema.json
     docs/performance-suite-v1.schema.json
     docs/compatibility-matrix.json
@@ -3342,11 +3349,11 @@ install(FILES
     docs/v1.x-host-requirement-audit.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
-    tests/public_contract/builtin/1.20/default_catalog.json
+    tests/public_contract/builtin/1.21/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 foreach(mparser_builtin_contract_version IN ITEMS
         1.0 1.1 1.3 1.4 1.5 1.6 1.7 1.8 1.9 1.10
-        1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18 1.19 1.20)
+        1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18 1.19 1.20 1.21)
     install(FILES
         "tests/public_contract/builtin/${mparser_builtin_contract_version}/default_catalog.json"
         DESTINATION

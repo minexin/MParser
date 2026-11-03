@@ -639,6 +639,10 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
                        right.enumerationMemberName;
         }
         if (left.handleObject || right.handleObject) {
+            if (left.graphicsHandle || right.graphicsHandle) {
+                return left.graphicsHandle && right.graphicsHandle &&
+                       left.graphicsHandle->sameIdentity(*right.graphicsHandle);
+            }
             return left.handleObject && right.handleObject &&
                    left.sharedFields && right.sharedFields &&
                    left.sharedFields.get() == right.sharedFields.get();

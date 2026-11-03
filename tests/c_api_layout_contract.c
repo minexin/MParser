@@ -21,7 +21,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");
-_Static_assert(MPARSER_C_ABI_REVISION == 5u,
+_Static_assert(MPARSER_C_ABI_REVISION == 7u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
                "allocation status changed");
@@ -110,6 +110,20 @@ _Static_assert(sizeof(mparser_source_position) == 16,
 REQUIRE_OFFSET(mparser_source_position, offset, 0);
 REQUIRE_OFFSET(mparser_source_position, line, 8);
 REQUIRE_OFFSET(mparser_source_position, column, 12);
+
+_Static_assert(_Generic((mparser_definition_kind)0, uint32_t: 1, default: 0),
+               "definition kind must use the fixed-width C ABI representation");
+_Static_assert(sizeof(mparser_definition_info) == 104,
+               "mparser_definition_info size changed");
+REQUIRE_OFFSET(mparser_definition_info, name, 0);
+REQUIRE_OFFSET(mparser_definition_info, class_name, 16);
+REQUIRE_OFFSET(mparser_definition_info, source_name, 32);
+REQUIRE_OFFSET(mparser_definition_info, source_index, 48);
+REQUIRE_OFFSET(mparser_definition_info, parent_function, 56);
+REQUIRE_OFFSET(mparser_definition_info, kind, 64);
+REQUIRE_OFFSET(mparser_definition_info, declaration_only, 68);
+REQUIRE_OFFSET(mparser_definition_info, source_begin, 72);
+REQUIRE_OFFSET(mparser_definition_info, source_end, 88);
 
 _Static_assert(sizeof(mparser_invocation_options) == 168,
                "mparser_invocation_options size changed");

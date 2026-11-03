@@ -19,7 +19,7 @@ set(MParser_MACHINE_PROTOCOL_NAME "mparser.result")
 set(MParser_MACHINE_PROTOCOL_MAJOR "1")
 set(MParser_MACHINE_PROTOCOL_MINOR "2")
 set(MParser_BUILTIN_SOURCE_CONTRACT_MAJOR "1")
-set(MParser_BUILTIN_SOURCE_CONTRACT_MINOR "20")
+set(MParser_BUILTIN_SOURCE_CONTRACT_MINOR "21")
 set(MParser_LICENSE "@MPARSER_PROJECT_LICENSE@")
 set(MParser_COPYRIGHT "@MPARSER_PROJECT_COPYRIGHT@")
 set(MParser_C_FOUND TRUE)
@@ -50,6 +50,10 @@ set_and_check(
 set_and_check(
     MParser_MACHINE_PROTOCOL_SCHEMA_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/machine-result-v1.schema.json")
+set_and_check(MParser_GRAPHICS_V3_SCHEMA_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-v3.schema.json")
+set_and_check(MParser_HOST_INTEGRATION_DEVELOPMENT_CONTRACT_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/host-integration-contract-development.json")
 set_and_check(
     MParser_BUILTIN_CATALOG_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/default_catalog.json")

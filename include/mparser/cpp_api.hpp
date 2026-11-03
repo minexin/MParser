@@ -209,6 +209,29 @@ private:
     ApiStatus status_;
 };
 
+enum class VariableNameStatus : std::uint32_t {
+    Valid = MPARSER_VARIABLE_NAME_VALID,
+    Empty = MPARSER_VARIABLE_NAME_EMPTY,
+    TooLong = MPARSER_VARIABLE_NAME_TOO_LONG,
+    InvalidStart = MPARSER_VARIABLE_NAME_INVALID_START,
+    InvalidCharacter = MPARSER_VARIABLE_NAME_INVALID_CHARACTER,
+    ReservedKeyword = MPARSER_VARIABLE_NAME_RESERVED_KEYWORD,
+};
+
+[[nodiscard]] inline std::size_t variableNameMaxLength() noexcept {
+    return mparser_variable_name_max_length();
+}
+
+[[nodiscard]] inline VariableNameStatus validateVariableName(std::string_view name) {
+    mparser_variable_name_status result = MPARSER_VARIABLE_NAME_EMPTY;
+    const auto status = mparser_validate_variable_name(
+        {name.data(), name.size()}, &result);
+    if (status != MPARSER_API_STATUS_OK) {
+        throw ApiError(status, "validate variable name");
+    }
+    return static_cast<VariableNameStatus>(result);
+}
+
 struct SourcePosition {
     std::uint64_t offset = 0;
     std::int32_t line = 1;
@@ -304,6 +327,22 @@ struct SourceMetadata {
 };
 
 class Value;
+enum class DefinitionKind : std::uint32_t {
+    PrimaryFunction = MPARSER_DEFINITION_PRIMARY_FUNCTION,
+    LocalFunction = MPARSER_DEFINITION_LOCAL_FUNCTION,
+    NestedFunction = MPARSER_DEFINITION_NESTED_FUNCTION,
+    Method = MPARSER_DEFINITION_METHOD,
+};
+
+struct DefinitionInfo {
+    std::string name;
+    std::string className;
+    std::size_t sourceIndex = 0;
+    std::optional<std::size_t> parentFunction;
+    DefinitionKind kind = DefinitionKind::LocalFunction;
+    bool declarationOnly = false;
+    SourceRange source;
+};
 struct NamedValue;
 struct Invocation;
 class Result;
@@ -815,9 +854,9 @@ public:
             mparser_value_class_name(requireRaw()));
     }
 
-    [[nodiscard]] std::string graphicsJson() const {
+    [[nodiscard]] std::string graphicsJson(uint32_t version = 0) const {
         mparser_value* raw = nullptr;
-        const auto status = mparser_value_graphics_json(requireRaw(), &raw);
+        const auto status = mparser_value_graphics_json_versioned(requireRaw(), version, &raw);
         auto snapshot = takeCreated(status, raw, "serialize graphics snapshot");
         const auto characters = snapshot.characterData();
         std::string result;
@@ -1470,6 +1509,13 @@ public:
         return detail::copyUtf8(mparser_result_graphics_json(requireRaw()));
     }
 
+    [[nodiscard]] std::string graphicsJson(uint32_t version) const {
+        mparser_utf8_view view{};
+        detail::checkStatus(mparser_result_graphics_json_versioned(requireRaw(), version, &view),
+            "serialize result graphics snapshot");
+        return detail::copyUtf8(view);
+    }
+
     [[nodiscard]] std::string outputName(
         std::size_t index) const {
         return detail::copyUtf8(
@@ -1784,6 +1830,26 @@ public:
         for (std::size_t index = 0; index < count; ++index) {
             result.push_back(detail::copyUtf8(
                 mparser_module_function_name(module, index)));
+        }
+        return result;
+    }
+
+    [[nodiscard]] std::vector<DefinitionInfo> definitions() const {
+        const auto* module = requireRaw();
+        std::vector<DefinitionInfo> result;
+        const auto count = mparser_module_definition_count(module);
+        result.reserve(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            mparser_definition_info info{};
+            detail::checkStatus(mparser_module_definition_info(
+                module, index, &info, sizeof(info)), "read definition metadata");
+            result.push_back({detail::copyUtf8(info.name),
+                detail::copyUtf8(info.class_name), info.source_index,
+                info.parent_function == MPARSER_DEFINITION_NO_PARENT
+                    ? std::nullopt : std::optional<std::size_t>(info.parent_function),
+                static_cast<DefinitionKind>(info.kind), info.declaration_only != 0,
+                {detail::copyUtf8(info.source_name),
+                 detail::copyPosition(info.source_begin), detail::copyPosition(info.source_end)}});
         }
         return result;
     }

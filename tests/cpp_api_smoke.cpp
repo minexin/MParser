@@ -517,6 +517,150 @@ Result invoke(
     return module.execute(request);
 }
 
+void runInvalidAssignmentCompileSmoke() {
+    using mparser::sdk::VariableNameStatus;
+    using mparser::sdk::validateVariableName;
+    assert(mparser::sdk::variableNameMaxLength() == 63);
+    assert(validateVariableName("valid_name") == VariableNameStatus::Valid);
+    assert(validateVariableName("arguments") == VariableNameStatus::Valid);
+    assert(validateVariableName("end") == VariableNameStatus::ReservedKeyword);
+    assert(validateVariableName({}) == VariableNameStatus::Empty);
+    assert(validateVariableName("_x") == VariableNameStatus::InvalidStart);
+    assert(validateVariableName(std::string_view("a\0b", 3)) ==
+           VariableNameStatus::InvalidCharacter);
+    assert(validateVariableName(std::string(63, 'a')) == VariableNameStatus::Valid);
+    assert(validateVariableName(std::string(64, 'a')) == VariableNameStatus::TooLong);
+    mparser_variable_name_status reason = 99;
+    assert(mparser_validate_variable_name({nullptr, 1}, &reason) ==
+           MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(reason == 99);
+    assert(mparser_validate_variable_name({"x", 1}, nullptr) ==
+           MPARSER_API_STATUS_INVALID_ARGUMENT);
+    for (const auto source : {"a=1;\nb=;\n", "a=1;\nend=0;\n",
+                              "a=1;\n=1;\n", "a=1;\n1=2;\n"}) {
+        const auto module = Module::compile(source, "invalid_assignment.m");
+        assert(!module.isValid());
+        const auto diagnostics = module.diagnostics();
+        assert(!diagnostics.empty());
+        assert(std::any_of(diagnostics.begin(), diagnostics.end(),
+                          [](const auto& diagnostic) {
+            return diagnostic.phase == DiagnosticPhase::Compilation &&
+                   diagnostic.source &&
+                   diagnostic.source->sourceName == "invalid_assignment.m" &&
+                   diagnostic.source->begin.line == 2;
+        }));
+    }
+    const auto valid = Module::compile(
+        "a=[1 2]; a(end)=3; s.end=1;\n", "valid_assignment.m");
+    assert(valid.isValid());
+}
+
+void runIdentifierBuiltinSmoke() {
+    const auto module = Module::compile(R"(
+ok=isvarname('valid_name');
+reserved=isvarname('end');
+contextual=isvarname('arguments');
+keyword=iskeyword('end');
+notkeyword=iskeyword('properties');
+limit=namelengthmax();
+keywords=iskeyword();
+count=numel(keywords);
+numeric=isvarname(1);
+cellinput=iskeyword({'end'});
+matrix=isvarname(['ab';'cd']);
+stringarray=isvarname(["a","b"]);
+arguments=[1 2]; arguments(2)=3;
+arguments;
+import=4; properties=5; methods=6; events=7; enumeration=8;
+contextsum=arguments(2)+import+properties+methods+events+enumeration;
+functionsum=contextualFunction(4);
+function out=contextualFunction(arguments)
+import=3;
+arguments;
+out=arguments+import;
+end
+)", "identifier_builtins.m");
+    assert(module.isValid());
+    for (const auto backend : {Backend::Bytecode, Backend::Portable,
+                               Backend::Native, Backend::Automatic}) {
+        Invocation request;
+        request.backend = backend;
+        const auto result = module.execute(request);
+        assert(result.succeeded());
+        const auto values = result.variables();
+        for (const auto name : {"ok", "contextual", "keyword"}) {
+            const auto* value = findVariable(values, name);
+            assert(value && value->value.numericClass() == NumericClass::Logical);
+            assert(value->value.numericData<std::uint8_t>().size() == 1);
+            assert(value->value.numericData<std::uint8_t>().front() == 1);
+        }
+        for (const auto name : {"reserved", "notkeyword", "numeric", "cellinput",
+                                "matrix", "stringarray"}) {
+            const auto* value = findVariable(values, name);
+            assert(value && value->value.numericClass() == NumericClass::Logical);
+            assert(value->value.numericData<std::uint8_t>().size() == 1);
+            assert(value->value.numericData<std::uint8_t>().front() == 0);
+        }
+        assert(scalar(findVariable(values, "limit")->value) == 63);
+        assert(scalar(findVariable(values, "count")->value) == 20);
+        assert(scalar(findVariable(values, "contextsum")->value) == 33);
+        assert(scalar(findVariable(values, "functionsum")->value) == 7);
+        const auto* keywords = findVariable(values, "keywords");
+        assert(keywords && keywords->value.dimensions() ==
+               std::vector<std::size_t>({20, 1}));
+    }
+    for (const auto source : {"x=isvarname();", "x=isvarname('a','b');",
+                              "x=iskeyword('a','b');", "x=namelengthmax(1);"}) {
+        const auto invalid = Module::compile(source, "identifier_arity.m");
+        assert(invalid.isValid());
+        assert(!invalid.execute().succeeded());
+    }
+}
+
+void runDefinitionMetadataSmoke() {
+    const std::string source = "% \xc3\xa9\r\nfunction y=outer(x)\r\n"
+        "y=inner(x);\r\nfunction z=inner(x)\r\nz=x;\r\nend\r\nend\r\n";
+    auto module = Module::compile(source, "definitions.m");
+    assert(module.isValid());
+    const auto definitions = module.definitions();
+    assert(definitions.size() == 2);
+    assert(definitions[0].kind == mparser::sdk::DefinitionKind::PrimaryFunction);
+    assert(definitions[0].source.sourceName == "definitions.m");
+    assert(definitions[0].source.begin.line == 2);
+    assert(definitions[0].source.begin.offset == source.find("function y"));
+    assert(!definitions[0].parentFunction);
+    assert(definitions[1].kind == mparser::sdk::DefinitionKind::NestedFunction);
+    assert(definitions[1].parentFunction == 0);
+    assert(definitions[1].source.begin.line == 4);
+    module = Module{};
+    assert(definitions[1].name == "inner");
+    assert(definitions[1].source.sourceName == "definitions.m");
+
+    mparser_module* raw = nullptr;
+    assert(mparser_module_compile_utf8(source.data(), source.size(),
+        "definitions.m", 13, &raw) == MPARSER_API_STATUS_OK);
+    assert(mparser_module_definition_count(raw) == 2);
+    mparser_definition_info info{};
+    info.source_index = 99;
+    assert(mparser_module_definition_info(raw, 2, &info, sizeof(info)) ==
+           MPARSER_API_STATUS_OUT_OF_RANGE);
+    assert(info.source_index == 99);
+    assert(mparser_module_definition_info(raw, 0, &info, sizeof(info)-1) ==
+           MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(info.source_index == 99);
+    assert(mparser_module_definition_info(nullptr, 0, &info, sizeof(info)) ==
+           MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(mparser_module_definition_info(raw, 0, nullptr, sizeof(info)) ==
+           MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(mparser_module_definition_info(raw, 1, &info, sizeof(info)) ==
+           MPARSER_API_STATUS_OK);
+    assert(info.parent_function == 0 && info.source_index == 0);
+    assert(info.kind == MPARSER_DEFINITION_NESTED_FUNCTION);
+    assert(info.source_begin.offset == source.find("function z"));
+    assert(std::string_view(info.name.data, info.name.size) == "inner");
+    mparser_module_release(raw);
+}
+
 void runModuleSmoke(
     const std::string& entryPath,
     const std::string& libraryPath) {
@@ -672,7 +816,7 @@ int main(int argc, char** argv) {
     static_assert(sourceApiVersion.major == 1);
     static_assert(sourceApiVersion.minor == 14);
     assert(mparser::sdk::abiGeneration() == 2);
-    assert(mparser::sdk::abiRevision() == 5);
+    assert(mparser::sdk::abiRevision() == 7);
     runValueSmoke();
     runHostOutputSmoke();
     runMetadataExportSmoke();
@@ -681,6 +825,14 @@ int main(int argc, char** argv) {
         runInputSourceSmoke();
     } catch (const std::exception& error) {
         std::cerr << "dynamic property export: " << error.what() << '\n';
+        return 1;
+    }
+    runInvalidAssignmentCompileSmoke();
+    runDefinitionMetadataSmoke();
+    try {
+        runIdentifierBuiltinSmoke();
+    } catch (const std::exception& error) {
+        std::cerr << "identifier builtin: " << error.what() << '\n';
         return 1;
     }
     runModuleSmoke(argv[1], argv[2]);

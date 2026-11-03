@@ -48,6 +48,13 @@ bool atTopLevel(int parenDepth, int bracketDepth, int braceDepth) {
     return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
 }
 
+bool isIdentifierNameToken(TokenKind kind) {
+    return kind == TokenKind::Identifier || kind == TokenKind::KeywordArguments ||
+           kind == TokenKind::KeywordImport || kind == TokenKind::KeywordProperties ||
+           kind == TokenKind::KeywordMethods || kind == TokenKind::KeywordEvents ||
+           kind == TokenKind::KeywordEnumeration;
+}
+
 bool isMemberNameToken(TokenKind kind) {
     if (kind == TokenKind::Identifier) {
         return true;
@@ -367,6 +374,8 @@ private:
         const Token token = advance();
         switch (token.kind) {
         case TokenKind::Identifier:
+        case TokenKind::KeywordArguments:
+        case TokenKind::KeywordImport:
         case TokenKind::KeywordEnumeration:
         case TokenKind::KeywordEvents:
         case TokenKind::KeywordMethods:
@@ -1403,6 +1412,20 @@ std::unique_ptr<SyntaxNode> buildStatementLikeNode(
             return assignment;
         }
 
+        if (diagnostics) {
+            if (!left || !leftConsumed || !isAssignableSyntax(*left)) {
+                diagnostics->push_back(Diagnostic{
+                    leftTokens.empty() ? tokens[assignmentIndex].span
+                                       : spanFromTokens(leftTokens),
+                    "expected assignable expression before '='"});
+            }
+            if (!parsedRight.root || !parsedRight.consumedAll) {
+                diagnostics->push_back(Diagnostic{
+                    rightTokens.empty() ? tokens[assignmentIndex].span
+                                        : spanFromTokens(rightTokens),
+                    "expected expression after '='"});
+            }
+        }
         return makeRawStatement(tokens);
     }
 
@@ -2019,8 +2042,6 @@ std::unique_ptr<SyntaxNode> Parser::parseControlBlock() {
 
         if (at(TokenKind::KeywordFunction)) {
             node->children.push_back(parseFunction());
-        } else if (at(TokenKind::KeywordArguments)) {
-            node->children.push_back(parseArgumentsBlock());
         } else if (isControlBlockStart(current().kind)) {
             node->children.push_back(parseControlBlock());
         } else {
@@ -2042,16 +2063,12 @@ std::unique_ptr<SyntaxNode> Parser::parseStatement() {
         return statement;
     }
 
-    if (at(TokenKind::KeywordArguments)) {
-        return parseArgumentsBlock();
-    }
-
     if (atAny({TokenKind::KeywordGlobal,
                TokenKind::KeywordPersistent})) {
         return parseWorkspaceDeclaration();
     }
 
-    if (at(TokenKind::KeywordImport)) {
+    if (at(TokenKind::KeywordImport) && peek(1).kind == TokenKind::Identifier) {
         return parseImportStatement();
     }
 
@@ -2095,7 +2112,7 @@ std::unique_ptr<SyntaxNode> Parser::parseWorkspaceDeclaration() {
             previousWasComma = true;
             continue;
         }
-        if (token.kind != TokenKind::Identifier) {
+        if (!isIdentifierNameToken(token.kind)) {
             diagnostics_.push_back(Diagnostic{
                 token.span,
                 "expected variable name in " + node->label +
@@ -2194,22 +2211,57 @@ std::unique_ptr<SyntaxNode> Parser::parseImportStatement() {
 }
 
 void Parser::parseBodyUntilEnd(SyntaxNode& parent) {
+    bool inDeclarationSection = true;
     while (!isAtEnd() && !at(TokenKind::KeywordEnd)) {
         skipSeparators();
         if (at(TokenKind::KeywordEnd) || isAtEnd()) {
             break;
         }
 
+        if (inDeclarationSection && atArgumentsBlockStart()) {
+            parent.children.push_back(parseArgumentsBlock());
+            continue;
+        }
+        inDeclarationSection = false;
         if (at(TokenKind::KeywordFunction)) {
             parent.children.push_back(parseFunction());
-        } else if (at(TokenKind::KeywordArguments)) {
-            parent.children.push_back(parseArgumentsBlock());
         } else if (isControlBlockStart(current().kind)) {
             parent.children.push_back(parseControlBlock());
         } else {
             parent.children.push_back(parseStatement());
         }
     }
+}
+
+bool Parser::atArgumentsBlockStart() const {
+    if (!at(TokenKind::KeywordArguments)) {
+        return false;
+    }
+    const auto isSeparator = [](TokenKind kind) {
+        return kind == TokenKind::Newline || kind == TokenKind::Semicolon ||
+               kind == TokenKind::EndOfFile;
+    };
+    if (isSeparator(peek(1).kind)) {
+        return true;
+    }
+    // Only declaration modifiers introduce a block; arguments(i)=x is indexing.
+    if (peek(1).kind != TokenKind::LParen) {
+        return false;
+    }
+    size_t index = 2;
+    while (peek(index).kind == TokenKind::Identifier &&
+           (peek(index).text == "Input" || peek(index).text == "Output" ||
+            peek(index).text == "Repeating")) {
+        ++index;
+        if (peek(index).kind == TokenKind::RParen) {
+            return isSeparator(peek(index + 1).kind);
+        }
+        if (peek(index).kind != TokenKind::Comma) {
+            return false;
+        }
+        ++index;
+    }
+    return false;
 }
 
 bool Parser::isControlBlockStart(TokenKind kind) const {
@@ -2397,12 +2449,12 @@ std::string Parser::functionNameFromHeader(const std::vector<Token>& tokens) con
     }
 
     for (size_t i = start; i < tokens.size(); ++i) {
-        if (tokens[i].kind == TokenKind::Identifier) {
+        if (isIdentifierNameToken(tokens[i].kind)) {
             std::string name = tokens[i].text;
             size_t cursor = i + 1;
             while (cursor + 1 < tokens.size() &&
                    tokens[cursor].kind == TokenKind::Dot &&
-                   tokens[cursor + 1].kind == TokenKind::Identifier) {
+                   isIdentifierNameToken(tokens[cursor + 1].kind)) {
                 name += "." + tokens[cursor + 1].text;
                 cursor += 2;
             }

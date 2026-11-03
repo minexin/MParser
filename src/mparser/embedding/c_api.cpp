@@ -18,6 +18,7 @@
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/frontend/source_loader.h"
+#include "mparser/frontend/identifier.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1937,6 +1938,34 @@ uint32_t mparser_version_major(void) {
     return static_cast<uint32_t>(MPARSER_VERSION_MAJOR);
 }
 
+size_t mparser_variable_name_max_length(void) {
+    return mparser::kIdentifierMaximumLength;
+}
+
+mparser_api_status mparser_validate_variable_name(
+    mparser_utf8_view name, mparser_variable_name_status* out_status) {
+    if (!out_status || (!name.data && name.size != 0)) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    const auto result = mparser::validateVariableName(
+        name.data ? std::string_view(name.data, name.size) : std::string_view{});
+    switch (result) {
+    case mparser::VariableNameStatus::Valid:
+        *out_status = MPARSER_VARIABLE_NAME_VALID; break;
+    case mparser::VariableNameStatus::Empty:
+        *out_status = MPARSER_VARIABLE_NAME_EMPTY; break;
+    case mparser::VariableNameStatus::TooLong:
+        *out_status = MPARSER_VARIABLE_NAME_TOO_LONG; break;
+    case mparser::VariableNameStatus::InvalidStart:
+        *out_status = MPARSER_VARIABLE_NAME_INVALID_START; break;
+    case mparser::VariableNameStatus::InvalidCharacter:
+        *out_status = MPARSER_VARIABLE_NAME_INVALID_CHARACTER; break;
+    case mparser::VariableNameStatus::ReservedKeyword:
+        *out_status = MPARSER_VARIABLE_NAME_RESERVED_KEYWORD; break;
+    }
+    return MPARSER_API_STATUS_OK;
+}
+
 uint32_t mparser_version_minor(void) {
     return static_cast<uint32_t>(MPARSER_VERSION_MINOR);
 }
@@ -2435,6 +2464,44 @@ mparser_module_function_count(
                : 0;
 }
 
+size_t mparser_module_definition_count(const mparser_module* module) {
+    return module && module->state ? module->state->module.definitions().size() : 0;
+}
+
+mparser_api_status mparser_module_definition_info(
+    const mparser_module* module, size_t index,
+    mparser_definition_info* out_info, size_t out_size) {
+    if (!module || !module->state || !out_info || out_size < sizeof(*out_info)) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    const auto& compiled = module->state->module;
+    if (index >= compiled.definitions().size()) {
+        return MPARSER_API_STATUS_OUT_OF_RANGE;
+    }
+    const auto& definition = compiled.definitions()[index];
+    mparser_definition_info result{};
+    result.name = mparser_c_detail::utf8View(definition.name);
+    result.class_name = mparser_c_detail::utf8View(definition.className);
+    result.source_name = mparser_c_detail::utf8View(compiled.sourceName(definition.span));
+    result.source_index = definition.span.begin.sourceId;
+    result.parent_function = definition.parentFunction.value_or(MPARSER_DEFINITION_NO_PARENT);
+    switch (definition.kind) {
+    case mparser::CompiledDefinitionKind::PrimaryFunction:
+        result.kind = MPARSER_DEFINITION_PRIMARY_FUNCTION; break;
+    case mparser::CompiledDefinitionKind::LocalFunction:
+        result.kind = MPARSER_DEFINITION_LOCAL_FUNCTION; break;
+    case mparser::CompiledDefinitionKind::NestedFunction:
+        result.kind = MPARSER_DEFINITION_NESTED_FUNCTION; break;
+    case mparser::CompiledDefinitionKind::Method:
+        result.kind = MPARSER_DEFINITION_METHOD; break;
+    }
+    result.declaration_only = definition.declarationOnly ? 1u : 0u;
+    result.source_begin = mparser_c_detail::sourcePosition(definition.span.begin);
+    result.source_end = mparser_c_detail::sourcePosition(definition.span.end);
+    *out_info = result;
+    return MPARSER_API_STATUS_OK;
+}
+
 mparser_utf8_view
 mparser_module_function_name(
     const mparser_module* module, size_t index) {
@@ -2717,6 +2784,19 @@ mparser_result_graphics_json(const mparser_result* result) {
     return result && result->value.graphicsSnapshot
         ? mparser_c_detail::utf8View(result->value.graphicsSnapshot->json())
         : mparser_c_detail::emptyUtf8View();
+}
+
+mparser_api_status mparser_result_graphics_json_versioned(
+    const mparser_result* result, uint32_t version, mparser_utf8_view* out_json) {
+    if (!out_json) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    *out_json = mparser_c_detail::emptyUtf8View();
+    if (!result || (version != 0 && version != 3)) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (result->value.graphicsSnapshot) {
+        *out_json = mparser_c_detail::utf8View(result->value.graphicsSnapshot->json(version == 3));
+    }
+    return MPARSER_API_STATUS_OK;
 }
 
 mparser_utf8_view
@@ -3707,12 +3787,18 @@ mparser_value_function_text(const mparser_value* value) {
 
 mparser_api_status mparser_value_graphics_json(
     const mparser_value* value, mparser_value** out_json) {
+    return mparser_value_graphics_json_versioned(value, 0, out_json);
+}
+
+mparser_api_status mparser_value_graphics_json_versioned(
+    const mparser_value* value, uint32_t version, mparser_value** out_json) {
     if (!out_json) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     *out_json = nullptr;
+    if (version != 0 && version != 3) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     if (!value || !value->state) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     if (!mparser::isRuntimeGraphicsValue(value->state->value)) { return MPARSER_API_STATUS_TYPE_MISMATCH; }
     try {
-        const auto json = mparser::serializeRuntimeGraphicsValue(value->state->value);
+        const auto json = mparser::serializeRuntimeGraphicsValue(value->state->value, version == 3);
         return mparser_c_detail::makeValueHandle(
             mparser::makeRuntimeCharacterVectorUtf8(json), {}, out_json);
     } catch (const std::bad_alloc&) {

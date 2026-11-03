@@ -1,6 +1,8 @@
 #include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
+#include "mparser/runtime/core/value/runtime_numeric.h"
+#include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/embedding/compiled_module.h"
 #include "mparser/embedding/machine_protocol.h"
 #include "mparser/execution/interpreter.h"
@@ -18,8 +20,151 @@ using namespace mparser;
 void require(bool value) { if (!value) { throw std::runtime_error("graphics graph invariant failed"); } }
 int main(int argc, char** argv) {
     try {
-        require(argc == 3);
+        require(argc == 4);
+        std::ifstream identitySchemaInput(argv[3]);
+        nlohmann::json identitySchema;
+        identitySchemaInput >> identitySchema;
+        nlohmann::json_schema::json_validator identityValidator;
+        identityValidator.set_root_schema(identitySchema);
+        {
+            RuntimeGraphicsGraph graph;
+            const auto first = graph.currentFigure();
+            const auto firstAxes = graph.currentAxes();
+            require(graph.currentFigure() == first && graph.currentAxes() == firstAxes);
+            const auto second = graph.create(RuntimeGraphicsKind::Figure);
+            const auto secondAxes = graph.currentAxes();
+            require(second != first && secondAxes != firstAxes);
+            graph.selectFigure(first);
+            require(graph.currentAxes() == firstAxes);
+            graph.selectAxes(secondAxes);
+            require(graph.currentFigure() == second);
+            graph.reparent(secondAxes, first);
+            graph.selectFigure(first);
+            require(graph.currentAxes() == secondAxes);
+            graph.erase(secondAxes);
+            require(graph.currentAxes() == firstAxes);
+            graph.erase(first);
+            require(graph.currentFigure() == second);
+            require(graph.find(firstAxes) == nullptr);
+            graph.erase(second);
+            const auto replacement = graph.currentFigure();
+            require(replacement != first && replacement != second);
+            bool rejected = false;
+            try { graph.selectFigure(first); }
+            catch (const std::invalid_argument&) { rejected = true; }
+            require(rejected && graph.currentFigure() == replacement);
+        }
         std::ifstream schemaInput(argv[1]);
+        {
+            auto graph = std::make_shared<RuntimeGraphicsGraph>();
+            const auto first = graph->plot({1, 2});
+            graph->setProperty(graph->currentAxes(), "NextPlot", std::string{"add"});
+            const auto survivor = graph->plot({3, 4});
+            const auto before = nlohmann::json::parse(graph->serialize(true));
+            graph->erase(first);
+            const auto after = nlohmann::json::parse(graph->serialize(true));
+            identityValidator.validate(before);
+            identityValidator.validate(after);
+            require(before.at("graphIdentity") == after.at("graphIdentity"));
+            require(before.at("objects").back().at("id") != after.at("objects").back().at("id"));
+            require(before.at("objects").back().at("objectIdentity") ==
+                after.at("objects").back().at("objectIdentity"));
+            require(after.at("objects").back().at("objectIdentity") == std::to_string(survivor));
+            graph->erase(graph->currentFigure());
+            const auto empty = nlohmann::json::parse(graph->serialize(true));
+            identityValidator.validate(empty);
+            require(empty.at("objects").empty() && empty.at("graphIdentity") == before.at("graphIdentity"));
+        }
+        {
+            auto graph = std::make_shared<RuntimeGraphicsGraph>();
+            RuntimeGraphicsHandle original(graph, graph->plot({1, 2, 3}));
+            RuntimeGraphicsHandle alias = original;
+            const auto initial = nlohmann::json::parse(original.serialize());
+            const auto identityBefore = nlohmann::json::parse(graph->serialize(true));
+            identityValidator.validate(identityBefore);
+            auto expectInvalidIdentity = [&](nlohmann::json invalid) {
+                bool rejected = false;
+                try { identityValidator.validate(invalid); }
+                catch (const std::exception&) { rejected = true; }
+                require(rejected);
+            };
+            auto malformed = identityBefore;
+            malformed.erase("graphIdentity");
+            expectInvalidIdentity(malformed);
+            malformed = identityBefore;
+            malformed["objects"][0].erase("objectIdentity");
+            expectInvalidIdentity(malformed);
+            for (const auto& invalid : {nlohmann::json(3), nlohmann::json("0"),
+                nlohmann::json("01"), nlohmann::json("-1"), nlohmann::json("1.5")}) {
+                malformed = identityBefore;
+                malformed["graphIdentity"] = invalid;
+                expectInvalidIdentity(malformed);
+                malformed = identityBefore;
+                malformed["objects"][0]["objectIdentity"] = invalid;
+                expectInvalidIdentity(malformed);
+            }
+            expectInvalidIdentity(nlohmann::json::parse(graph->serialize()));
+            require(identityBefore.at("version") == 3);
+            const auto originalIdentity = identityBefore.at("objects").back().at("objectIdentity");
+            original.setProperty("DisplayName", std::string{"updated"});
+            require(original.sameIdentity(alias));
+            require(nlohmann::json::parse(graph->serialize(true)).at("objects").back().at("objectIdentity") ==
+                originalIdentity);
+            graph->erase(graph->currentFigure());
+            RuntimeGraphicsHandle replacement(graph, graph->plot({1, 2, 3}));
+            require(!original.valid() && !alias.valid() && replacement.valid());
+            require(!original.sameIdentity(replacement));
+            const auto before = graph->serialize();
+            const auto identityAfter = nlohmann::json::parse(graph->serialize(true));
+            require(identityAfter.at("graphIdentity") == identityBefore.at("graphIdentity"));
+            require(identityAfter.at("objects").back().at("objectIdentity") != originalIdentity);
+            require(!nlohmann::json::parse(before).contains("graphIdentity"));
+            bool rejected = false;
+            try { alias.setProperty("DisplayName", std::string{"stale write"}); }
+            catch (const std::invalid_argument&) { rejected = true; }
+            require(rejected && graph->serialize() == before);
+            const auto stale = nlohmann::json::parse(original.serialize());
+            require(stale.at("valid") == false && stale.at("reference").is_null());
+            // Legacy references are local to a snapshot, not persistent identities.
+            require(initial.at("reference") ==
+                nlohmann::json::parse(replacement.serialize()).at("reference"));
+            auto independent = std::make_shared<RuntimeGraphicsGraph>();
+            RuntimeGraphicsHandle other(independent, independent->plot({1, 2, 3}));
+            require(original.id() == other.id() && !original.sameIdentity(other));
+            require(nlohmann::json::parse(independent->serialize(true)).at("graphIdentity") !=
+                identityBefore.at("graphIdentity"));
+        }
+        {
+            auto graph = std::make_shared<RuntimeGraphicsGraph>();
+            RuntimeGraphicsHandle first(graph, graph->plot({1, 2}));
+            const auto axes = graph->currentAxes();
+            const auto figure = graph->currentFigure();
+            graph->setProperty(axes, "NextPlot", std::string{"add"});
+            RuntimeGraphicsHandle second(graph, graph->plot({10, 20}, {-5, 8}));
+            require(first.valid() && second.valid());
+            require(graph->nodes().size() == 4 && graph->currentFigure() == figure);
+            require(std::get<std::vector<double>>(graph->find(axes)->properties.at("XLim")) ==
+                std::vector<double>{1, 20});
+            require(std::get<std::vector<double>>(graph->find(axes)->properties.at("YLim")) ==
+                std::vector<double>{-5, 8});
+            const auto before = graph->serialize();
+            bool rejected = false;
+            try { graph->plot({1, 2}, {3}); }
+            catch (const std::invalid_argument&) { rejected = true; }
+            require(rejected && graph->serialize() == before && graph->currentAxes() == axes);
+            rejected = false;
+            try { graph->plotLines({{{1, 2}, {3, 4}}, {{1, 2}, {3}}}); }
+            catch (const std::invalid_argument&) { rejected = true; }
+            require(rejected && graph->serialize() == before && first.valid() && second.valid());
+            rejected = false;
+            try { graph->setProperty(axes, "NextPlot", std::string{"invalid"}); }
+            catch (const std::invalid_argument&) { rejected = true; }
+            require(rejected && graph->serialize() == before);
+            graph->setProperty(axes, "NextPlot", std::string{"replace"});
+            RuntimeGraphicsHandle replacement(graph, graph->plot({4, 5}));
+            require(replacement.id() == second.id() + 1 && !first.valid() && !second.valid());
+            require(graph->nodes().size() == 3 && graph->currentAxes() == axes);
+        }
         nlohmann::json schema;
         schemaInput >> schema;
         nlohmann::json_schema::json_validator validator;
@@ -29,9 +174,395 @@ int main(int argc, char** argv) {
         historicalSchemaInput >> historicalSchema;
         nlohmann::json_schema::json_validator historicalValidator;
         historicalValidator.set_root_schema(historicalSchema);
+        {
+            auto graph = std::make_shared<RuntimeGraphicsGraph>();
+            const auto figure = graph->currentFigure();
+            const auto axes = graph->currentAxes();
+            bool invalidParent = false;
+            try { graph->create(RuntimeGraphicsKind::Legend, axes); }
+            catch (const std::invalid_argument&) { invalidParent = true; }
+            require(invalidParent && graph->nodes().size() == 2);
+            const auto named = graph->create(RuntimeGraphicsKind::Line, axes);
+            graph->setProperty(named, "DisplayName", std::string{"measured"});
+            const auto unnamed = graph->create(RuntimeGraphicsKind::Line, axes);
+            const auto id = graph->legend(axes);
+            auto value = makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, id));
+            require(isRuntimeGraphicsValue(value) && validateRuntimeValueContract(value).valid);
+            require(value.className == "matlab.graphics.illustration.Legend");
+            require(std::get<std::string>(value.graphicsHandle->property("Location")) == "northeast");
+            require(runtimeSetGraphicsMember(value, "Visible", makeRuntimeNumberValue(0)).succeeded);
+            require(runtimeSetGraphicsMember(value, "Location", makeRuntimeCharacterVectorUtf8("southoutside")).succeeded);
+            require(runtimeSetGraphicsMember(value, "Orientation", makeRuntimeCharacterVectorUtf8("horizontal")).succeeded);
+            require(graph->legend(axes) == id);
+            require(std::get<std::string>(value.graphicsHandle->property("Location")) == "southoutside");
+            const auto before = graph->serialize();
+            require(!runtimeSetGraphicsMember(value, "Location", makeRuntimeCharacterVectorUtf8("invalid")).succeeded);
+            require(!runtimeSetGraphicsMember(value, "Orientation", makeRuntimeCharacterVectorUtf8("diagonal")).succeeded);
+            require(!runtimeSetGraphicsMember(value, "Visible", makeRuntimeNumberValue(2)).succeeded);
+            require(graph->serialize() == before);
+            ModuleInvocationResult result;
+            result.outputs.push_back(value);
+            auto wire = nlohmann::json::parse(serializeMachineResultJsonV1(result, "legend"));
+            validator.validate(wire);
+            auto& encoded = wire["outputs"][0]["value"]["graphics"]["graph"];
+            require(encoded.at("version") == 2 && encoded.at("objects").back().at("type") == "Legend");
+            require(encoded.at("objects").back().at("axes") == encoded.at("objects")[1].at("id"));
+            const auto& entries = encoded.at("objects").back().at("entries");
+            require(entries.size() == 2 && entries[0].at("label") == "measured" && entries[1].at("label") == "data2");
+            require(entries[0].at("line") == encoded.at("objects")[2].at("id") &&
+                entries[1].at("line") == encoded.at("objects")[3].at("id"));
+            graph->erase(unnamed);
+            graph->setProperty(named, "DisplayName", std::string{"renamed"});
+            const auto refreshed = nlohmann::json::parse(graph->serialize()).at("objects").back().at("entries");
+            require(refreshed.size() == 1 && refreshed[0].at("label") == "renamed");
+            require(encoded.at("objects").back().at("properties").at("Visible") == "off");
+            encoded["version"] = 1;
+            bool rejected = false;
+            try { validator.validate(wire); }
+            catch (const std::exception&) { rejected = true; }
+            require(rejected);
+            const auto destination = graph->create(RuntimeGraphicsKind::Figure);
+            graph->reparent(axes, destination);
+            require(value.graphicsHandle->parent()->id() == destination);
+            require(graph->find(figure)->children.empty());
+            bool wrongParent = false;
+            try { graph->reparent(id, figure); }
+            catch (const std::invalid_argument&) { wrongParent = true; }
+            require(wrongParent && value.graphicsHandle->parent()->id() == destination);
+            const auto secondAxes = graph->create(RuntimeGraphicsKind::Axes, destination);
+            const auto secondLegend = graph->legend(secondAxes);
+            require(secondLegend != id);
+            graph->erase(axes);
+            require(!value.graphicsHandle->valid() && graph->find(secondLegend));
+            require(graph->find(destination)->children.size() == 2);
+            (void)graph->serialize();
+            graph->erase(secondLegend);
+            const auto replacement = graph->legend(secondAxes);
+            require(replacement != secondLegend);
+            graph->erase(destination);
+            require(!graph->find(replacement) && graph->nodes().size() == 1);
+            graph->erase(figure);
+            require(graph->nodes().empty());
+        }
+        {
+            auto textGraph = std::make_shared<RuntimeGraphicsGraph>();
+            const auto axes = textGraph->currentAxes();
+            const auto id = textGraph->create(RuntimeGraphicsKind::Text, axes);
+            auto value = makeRuntimeGraphicsValue(RuntimeGraphicsHandle(textGraph, id));
+            require(value.className == "matlab.graphics.primitive.Text");
+            require(isRuntimeGraphicsValue(value) && validateRuntimeValueContract(value).valid);
+            require(runtimeSetGraphicsMember(value, "String", makeRuntimeCharacterVectorUtf8("Measured gain")).succeeded);
+            require(runtimeSetGraphicsMember(value, "Color", makeRuntimeVectorValue({1, 0, 0})).succeeded);
+            ModuleInvocationResult result;
+            result.outputs.push_back(value);
+            auto wire = nlohmann::json::parse(serializeMachineResultJsonV1(result, "text"));
+            validator.validate(wire);
+            auto& graph = wire["outputs"][0]["value"]["graphics"]["graph"];
+            require(graph.at("version") == 2);
+            require(graph.at("objects").back().at("type") == "Text");
+            require(graph.at("objects").back().at("properties").at("String") == "Measured gain");
+            graph["version"] = 1;
+            bool rejected = false;
+            try { validator.validate(wire); }
+            catch (const std::exception&) { rejected = true; }
+            require(rejected);
+            graph["version"] = 3;
+            rejected = false;
+            try { validator.validate(wire); }
+            catch (const std::exception&) { rejected = true; }
+            require(rejected);
+            const auto otherAxes = textGraph->create(RuntimeGraphicsKind::Axes, textGraph->currentFigure());
+            textGraph->reparent(id, otherAxes);
+            require(value.graphicsHandle->parent()->id() == otherAxes);
+            textGraph->erase(otherAxes);
+            require(!value.graphicsHandle->valid());
+            const auto title = textGraph->setLabel(axes, "Title", "first");
+            require(textGraph->setLabel(axes, "Title", "second") == title);
+            RuntimeGraphicsHandle titleHandle(textGraph, title);
+            require(std::get<std::string>(titleHandle.property("String")) == "second");
+            titleHandle.setProperty("String", std::string{"edited"});
+            auto labelGraph = nlohmann::json::parse(textGraph->serialize());
+            require(labelGraph.at("version") == 2);
+            const auto& axesRecord = labelGraph.at("objects")[1];
+            require(axesRecord.at("labels").contains("Title"));
+            require(!axesRecord.at("properties").contains("Title"));
+            require(labelGraph.at("objects").back().at("properties").at("String") == "edited");
+            ModuleInvocationResult labelResult;
+            labelResult.outputs.push_back(makeRuntimeGraphicsValue(titleHandle));
+            validator.validate(nlohmann::json::parse(serializeMachineResultJsonV1(labelResult, "label")));
+            const auto destination = textGraph->create(RuntimeGraphicsKind::Axes, textGraph->currentFigure());
+            textGraph->reparent(title, destination);
+            require(textGraph->find(axes)->labels.empty());
+            const auto replacement = textGraph->setLabel(axes, "Title", "replacement");
+            require(replacement != title);
+            textGraph->erase(replacement);
+            require(textGraph->find(axes)->labels.empty());
+            const auto before = textGraph->serialize();
+            auto axesValue = makeRuntimeGraphicsValue(RuntimeGraphicsHandle(textGraph, axes));
+            require(RuntimeGraphicsHandle(textGraph, axes).children().empty());
+            require(!runtimeSetGraphicsMember(axesValue, "Title", makeRuntimeGraphicsValue(titleHandle)).succeeded);
+            require(textGraph->serialize() == before && textGraph->find(axes)->labels.empty());
+            bool invalidRole = false;
+            try { textGraph->setLabel(axes, "Unknown", "bad"); }
+            catch (const std::invalid_argument&) { invalidRole = true; }
+            require(invalidRole && textGraph->serialize() == before);
+            const auto bound = textGraph->setLabel(axes, "XLabel", "time");
+            RuntimeGraphicsHandle boundHandle(textGraph, bound);
+            require(RuntimeGraphicsHandle(textGraph, axes).children().empty());
+            require(textGraph->find(axes)->children.size() == 1);
+            textGraph->erase(axes);
+            require(!boundHandle.valid());
+        }
         for (bool hir : {false, true}) {
+            auto labelsModule = CompiledModule::compile(
+                "line=plot([1,2]); ax=gca(); initial=ax.Title; emptyLabel=isempty(initial.String);"
+                "t=title('first'); u=title('second'); same=t==u; lazySame=initial==t;"
+                "updated=strcmp(t.String,'second'); t.String='edited'; edited=strcmp(u.String,'edited');"
+                "x=xlabel('time'); y=ylabel(ax,'gain'); xok=strcmp(x.String,'time'); yok=strcmp(y.String,'gain');"
+                "parentOk=t.Parent==ax; children=ax.Children; childrenOk=isequal(children,line);"
+                "bindingOk=ax.Title==t; alias=ax.Title; alias.String='alias';"
+                "aliasOk=strcmp(t.String,'alias'); ax.Title.String='nested'; nestedOk=strcmp(t.String,'nested');"
+                "ax.Title.Color=[1,0,0]; colorOk=isequal(t.Color,[1,0,0]);"
+                "badNested=false; try; ax.Title.Color=[2,0,0]; catch; badNested=true; end;"
+                "colorKept=isequal(t.Color,[1,0,0]);"
+                "other=axes(); v=title(ax,'target'); targetOk=v==t;"
+                "currentOk=gca()==other; bad=false; try; title(ax,42); catch; bad=true; end;"
+                "badAssignment=false; try; ax.Title='legacy'; catch; badAssignment=true; end;"
+                "preserved=strcmp(t.String,'target'); close all; gone=~isvalid(t);");
+            require(labelsModule.valid());
+            std::vector<RuntimeVariable> labelVariables;
+            if (hir) {
+                auto result = Interpreter{}.run(labelsModule.semantic());
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.diagnostics.empty());
+                labelVariables = std::move(result.variables);
+            } else {
+                auto result = labelsModule.execute();
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.succeeded());
+                labelVariables = std::move(result.variables);
+            }
+            size_t labelChecks = 0;
+            for (const auto& variable : labelVariables) {
+                if (variable.name == "same" || variable.name == "updated" || variable.name == "edited" ||
+                    variable.name == "xok" || variable.name == "yok" || variable.name == "parentOk" ||
+                    variable.name == "targetOk" || variable.name == "currentOk" || variable.name == "bad" ||
+                    variable.name == "preserved" || variable.name == "gone" ||
+                    variable.name == "bindingOk" || variable.name == "aliasOk" || variable.name == "badAssignment" ||
+                    variable.name == "emptyLabel" || variable.name == "lazySame" || variable.name == "nestedOk" ||
+                    variable.name == "colorOk" || variable.name == "badNested" || variable.name == "colorKept" ||
+                    variable.name == "childrenOk") {
+                    require(runtimeNumericTruthValue(variable.value).value_or(false));
+                    ++labelChecks;
+                }
+            }
+            require(labelChecks == 21);
+            auto gridModule = CompiledModule::compile(
+                "ax=gca(); defaultOff=strcmp(ax.XGrid,'off')&&strcmp(ax.YGrid,'off');"
+                "grid on; enabled=strcmp(ax.XGrid,'on')&&strcmp(ax.YGrid,'on');"
+                "grid; toggled=strcmp(ax.XGrid,'off')&&strcmp(ax.YGrid,'off');"
+                "other=axes(); grid(ax,true); explicitOn=strcmp(ax.YGrid,'on');"
+                "otherOff=strcmp(other.YGrid,'off'); grid(ax,0); explicitOff=strcmp(ax.XGrid,'off');"
+                "bad=false; try; grid(ax,2); catch; bad=true; end; unchanged=strcmp(ax.XGrid,'off');"
+                "axes(ax); grid on; hold on; plot([1,2]); heldGrid=strcmp(ax.XGrid,'on');"
+                "hold off; plot([3,4]); resetGrid=strcmp(ax.YGrid,'off');");
+            require(gridModule.valid());
+            std::vector<RuntimeVariable> gridVariables;
+            if (hir) {
+                auto result = Interpreter{}.run(gridModule.semantic());
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.diagnostics.empty());
+                gridVariables = std::move(result.variables);
+            } else {
+                auto result = gridModule.execute();
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.succeeded());
+                gridVariables = std::move(result.variables);
+            }
+            size_t gridChecks = 0;
+            for (const auto& variable : gridVariables) {
+                if (variable.name != "ax" && variable.name != "other") {
+                    require(runtimeNumericTruthValue(variable.value).value_or(false));
+                    ++gridChecks;
+                }
+            }
+            require(gridChecks == 10);
+            auto closing = CompiledModule::compile(
+                "emptyStatus=close(); f1=figure(); h1=plot([1,2]); a1=h1.Parent;"
+                "f2=figure(); h2=plot([3,4]); figure(f1); status=close();"
+                "goneFigure=~isvalid(f1); goneAxes=~isvalid(a1); goneLine=~isvalid(h1);"
+                "otherKept=isvalid(f2); fallback=gcf()==f2;"
+                "rejected=false; try; close(h2); catch; rejected=true; end; kept=isvalid(h2);"
+                "f3=figure(); close([f2,f3]); arrayGone=~isvalid(f2)&&~isvalid(f3);"
+                "fresh=plot([8,9]); recreated=isvalid(fresh); close all; allGone=~isvalid(fresh); close;");
+            require(closing.valid());
+            std::vector<RuntimeVariable> closingVariables;
+            if (hir) {
+                auto result = Interpreter{}.run(closing.semantic());
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.diagnostics.empty());
+                closingVariables = std::move(result.variables);
+            } else {
+                auto result = closing.execute();
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.succeeded());
+                closingVariables = std::move(result.variables);
+            }
+            size_t closingChecks = 0;
+            for (const auto& variable : closingVariables) {
+                if (variable.name == "emptyStatus" || variable.name == "status" ||
+                    variable.name == "goneFigure" || variable.name == "goneAxes" ||
+                    variable.name == "goneLine" || variable.name == "otherKept" ||
+                    variable.name == "fallback" || variable.name == "rejected" ||
+                    variable.name == "kept" || variable.name == "arrayGone" ||
+                    variable.name == "recreated" || variable.name == "allGone") {
+                    require(runtimeNumericTruthValue(variable.value).value_or(false));
+                    ++closingChecks;
+                }
+            }
+            require(closingChecks == 12);
+            auto clipping = CompiledModule::compile(
+                "line=plot([-2,0,2]); ax=line.Parent;"
+                "lineDefault=strcmp(line.Clipping,'on'); axesDefault=strcmp(ax.Clipping,'on');"
+                "ax.XLim=[1,2]; ax.YLim=[-1,1]; line.Clipping='off';"
+                "textOff=strcmp(line.Clipping,'off'); ax.Clipping=0;"
+                "numericOff=strcmp(ax.Clipping,'off'); line.Clipping=true;"
+                "logicalOn=strcmp(line.Clipping,'on');"
+                "badNumber=false; try; line.Clipping=2; catch; badNumber=true; end;"
+                "badText=false; try; ax.Clipping='invalid'; catch; badText=true; end;"
+                "unchangedLine=strcmp(line.Clipping,'on'); unchangedAxes=strcmp(ax.Clipping,'off');"
+                "samples=line.YData; hold on; plot([3,4]); held=strcmp(ax.Clipping,'off');"
+                "hold off; plot([5,6]); reset=strcmp(ax.Clipping,'on');");
+            require(clipping.valid());
+            std::vector<RuntimeVariable> clippingVariables;
+            if (hir) {
+                auto result = Interpreter{}.run(clipping.semantic());
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.diagnostics.empty());
+                clippingVariables = std::move(result.variables);
+            } else {
+                auto result = clipping.execute();
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.succeeded());
+                clippingVariables = std::move(result.variables);
+            }
+            size_t clippingChecks = 0;
+            for (const auto& variable : clippingVariables) {
+                if (variable.name == "lineDefault" || variable.name == "axesDefault" ||
+                    variable.name == "textOff" || variable.name == "numericOff" ||
+                    variable.name == "logicalOn" || variable.name == "badNumber" ||
+                    variable.name == "badText" || variable.name == "unchangedLine" ||
+                    variable.name == "unchangedAxes" || variable.name == "held" || variable.name == "reset") {
+                    require(runtimeNumericTruthValue(variable.value).value_or(false));
+                    ++clippingChecks;
+                }
+                if (variable.name == "samples") {
+                    require(variable.value.elements == std::vector<double>{-2, 0, 2});
+                    ++clippingChecks;
+                }
+            }
+            require(clippingChecks == 12);
+            auto matrixPlot = CompiledModule::compile(
+                "h=plot([1,10;2,20;3,30]); shape=size(h);"
+                "y1=h(1).YData; y2=h(2).YData; x1=h(1).XData;"
+                "ax=gca(); sameAxes=h(2).Parent==ax;"
+                "r=plot([4,5,6],[1,2,3;10,20,30]); rowY=r(2).YData; rowX=r(2).XData;"
+                "s=plot([7,8],[1,2;3,4]); squareY=s(2).YData;"
+                "m=plot([1,2;3,4],[5,6;7,8]); matrixX=m(2).XData; matrixY=m(2).YData;"
+                "v=plot([1,2,3;10,20,30],[4;5;6]); reversedX=v(2).XData; reversedY=v(2).YData;"
+                "rejected=false; try; plot(1:4,[1,2,3;4,5,6]); catch; rejected=true; end;"
+                "retained=isvalid(v(1));");
+            require(matrixPlot.valid());
+            std::vector<RuntimeVariable> matrixVariables;
+            if (hir) {
+                auto result = Interpreter{}.run(matrixPlot.semantic());
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.diagnostics.empty());
+                matrixVariables = std::move(result.variables);
+            } else {
+                auto result = matrixPlot.execute();
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.succeeded());
+                matrixVariables = std::move(result.variables);
+            }
+            const std::map<std::string, std::vector<double>> expectedMatrixValues{
+                {"shape", {2, 1}}, {"y1", {1, 2, 3}}, {"y2", {10, 20, 30}}, {"x1", {1, 2, 3}},
+                {"rowY", {10, 20, 30}}, {"rowX", {4, 5, 6}}, {"squareY", {2, 4}},
+                {"matrixX", {2, 4}}, {"matrixY", {6, 8}},
+                {"reversedX", {10, 20, 30}}, {"reversedY", {4, 5, 6}}};
+            size_t matrixChecks = 0;
+            for (const auto& variable : matrixVariables) {
+                const auto found = expectedMatrixValues.find(variable.name);
+                if (found != expectedMatrixValues.end()) {
+                    require(variable.value.elements == found->second);
+                    ++matrixChecks;
+                }
+                if (variable.name == "sameAxes" || variable.name == "rejected" || variable.name == "retained") {
+                    require(runtimeNumericTruthValue(variable.value).value_or(false));
+                }
+            }
+            require(matrixChecks == expectedMatrixValues.size());
+            auto replacement = CompiledModule::compile(
+                "f=figure(); ax=axes(); first=plot([1,2]);"
+                "second=plot([3,4]); stale=~isvalid(first);"
+                "sameAxes=second.Parent==ax; sameFigure=gcf()==f;"
+                "hold(ax,'on'); third=plot([10,20]); kept=isvalid(second);"
+                "hold(ax); toggled=strcmp(ax.NextPlot,'replace'); hold on;"
+                "label=title(ax,'preserved'); ax.NextPlot='replacechildren'; fourth=plot([5,6]);"
+                "removed=~isvalid(third); titleKept=strcmp(ax.Title.String,'preserved');"
+                "hold off; fifth=plot([7,8]); titleReset=isempty(ax.Title.String); labelIdentity=ax.Title==label;");
+            require(replacement.valid());
+            std::vector<RuntimeVariable> replacementVariables;
+            if (hir) {
+                auto result = Interpreter{}.run(replacement.semantic());
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.diagnostics.empty());
+                replacementVariables = std::move(result.variables);
+            } else {
+                auto result = replacement.execute();
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.succeeded());
+                replacementVariables = std::move(result.variables);
+            }
+            size_t replacementChecks = 0;
+            for (const auto& variable : replacementVariables) {
+                if (variable.name == "stale" || variable.name == "sameAxes" ||
+                    variable.name == "sameFigure" || variable.name == "kept" ||
+                    variable.name == "removed" || variable.name == "titleKept" ||
+                    variable.name == "titleReset" || variable.name == "toggled" || variable.name == "labelIdentity") {
+                    require(runtimeNumericTruthValue(variable.value).value_or(false));
+                    ++replacementChecks;
+                }
+            }
+            require(replacementChecks == 9);
+            auto lifecycle = CompiledModule::compile(
+                "f1=figure(); a1=gca(); f2=figure(); a2=axes();"
+                "figure(f1); selected=gca(); same=selected==a1;"
+                "axes(a2); selectedFigure=gcf(); sameFigure=selectedFigure==f2;"
+                "different=f1~=f2;");
+            require(lifecycle.valid());
+            std::vector<RuntimeVariable> lifecycleVariables;
+            if (hir) {
+                auto result = Interpreter{}.run(lifecycle.semantic());
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.diagnostics.empty());
+                lifecycleVariables = std::move(result.variables);
+            } else {
+                auto result = lifecycle.execute();
+                for (const auto& diagnostic : result.diagnostics) { std::cerr << diagnostic.message << '\n'; }
+                require(result.succeeded());
+                lifecycleVariables = std::move(result.variables);
+            }
+            size_t checked = 0;
+            for (const auto& variable : lifecycleVariables) {
+                if (variable.name == "same" || variable.name == "sameFigure" || variable.name == "different") {
+                    require(runtimeNumericTruthValue(variable.value).value_or(false));
+                    ++checked;
+                }
+            }
+            require(checked == 3);
             auto module = CompiledModule::compile(
-                "a=plot(1:3); b=plot(3:-1:1); items=[a,b;a,b]; ax=a.Parent;"
+                "a=plot(1:3); figure(); b=plot(3:-1:1); items=[a,b;a,b]; ax=a.Parent;"
                 "b.Parent=ax; children=ax.Children; delete(a);");
             require(module.valid());
             std::vector<RuntimeVariable> variables;
@@ -163,11 +694,11 @@ int main(int argc, char** argv) {
         for (bool hir : {false, true}) {
             auto session = std::make_shared<RuntimeSessionState>();
             const auto module = CompiledModule::compile(
-                "h=plot([3,5,8]); alias=h; k=plot([2;4],[7;9]); plot([]); same=isequal(h,alias); different=isequal(h,k);"
+                "h=plot([3,5,8]); alias=h; figure(); k=plot([2;4],[7;9]); figure(); plot([]); same=isequal(h,alias); different=isequal(h,k);"
                 "ax=h.Parent; fig=ax.Parent; children=ax.Children; sameChild=isequal(children,h);"
                 "alias.Color=[1,0,0]; color=h.Color; fig.Name='headless'; name=fig.Name;"
                 "otherAx=k.Parent; h.Parent=otherAx; moved=isequal(h.Parent,otherAx);"
-                "doomed=plot([4,5]); doomedAlias=doomed; doomedAx=doomed.Parent;"
+                "figure(); doomed=plot([4,5]); doomedAlias=doomed; doomedAx=doomed.Parent;"
                 "before=isvalid(doomed); delete(doomedAx); after=isvalid(doomedAlias);");
             require(module.valid());
             std::vector<RuntimeVariable> variables;
@@ -232,6 +763,20 @@ int main(int argc, char** argv) {
             arguments.push_back(makeRuntimeVectorValue({1}));
             require(!registry->invoke("plot", BuiltinCall{arguments, 1, {}, &context}).succeeded);
             require(context.graphicsGraph->nodes().empty());
+            std::vector<RuntimeValue> noArguments;
+            require(registry->invoke("close", BuiltinCall{noArguments, 1, {}, &context}).succeeded);
+            require(context.graphicsGraph->nodes().empty());
+            const auto figure = context.graphicsGraph->create(RuntimeGraphicsKind::Figure);
+            auto foreign = std::make_shared<RuntimeGraphicsGraph>();
+            const auto foreignFigure = foreign->create(RuntimeGraphicsKind::Figure);
+            auto array = runtimeMakeObjectArrayFromLogicalOrder({
+                makeRuntimeGraphicsValue(RuntimeGraphicsHandle(context.graphicsGraph, figure)),
+                makeRuntimeGraphicsValue(RuntimeGraphicsHandle(foreign, foreignFigure))},
+                {2, 1}, "matlab.ui.Figure", true);
+            require(array.succeeded);
+            std::vector<RuntimeValue> closeArguments{array.value};
+            require(!registry->invoke("close", BuiltinCall{closeArguments, 0, {}, &context}).succeeded);
+            require(context.graphicsGraph->find(figure) && foreign->find(foreignFigure));
         }
         auto graph = std::make_shared<RuntimeGraphicsGraph>();
         {
@@ -296,6 +841,7 @@ int main(int argc, char** argv) {
             try { (void)plotGraph->plot({1, 2}, {3}); }
             catch (const std::invalid_argument&) { badPlot = true; }
             require(badPlot && plotGraph->nodes().size() == 3);
+            plotGraph->create(RuntimeGraphicsKind::Figure);
             RuntimeGraphicsHandle explicitPlot(plotGraph, plotGraph->plot({10, 20}, {2, 4}));
             require(explicitPlot.id() == 6 && plotGraph->nodes().size() == 6);
             require(std::get<std::vector<double>>(explicitPlot.property("XData")) == std::vector<double>{10, 20});

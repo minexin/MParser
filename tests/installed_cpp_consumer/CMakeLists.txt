@@ -23,7 +23,7 @@ if(NOT TARGET MParser::cpp_api OR NOT TARGET MParser::cli)
         "The installed package must export MParser::cpp_api and MParser::cli")
 endif()
 if(NOT MParser_C_ABI_GENERATION EQUAL 2 OR
-   NOT MParser_C_ABI_REVISION EQUAL 5)
+   NOT MParser_C_ABI_REVISION EQUAL 7)
     message(FATAL_ERROR
         "Unexpected installed C ABI generation/revision: ${MParser_C_ABI_GENERATION}/${MParser_C_ABI_REVISION}")
 endif()
@@ -44,9 +44,18 @@ if(NOT MParser_CLI_CONTRACT_MAJOR EQUAL 1 OR
         "Unexpected CLI contract: ${MParser_CLI_CONTRACT_MAJOR}.${MParser_CLI_CONTRACT_MINOR}")
 endif()
 if(NOT MParser_BUILTIN_SOURCE_CONTRACT_MAJOR EQUAL 1 OR
-   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 20)
+   NOT MParser_BUILTIN_SOURCE_CONTRACT_MINOR EQUAL 21)
     message(FATAL_ERROR
         "Unexpected builtin source contract: ${MParser_BUILTIN_SOURCE_CONTRACT_MAJOR}.${MParser_BUILTIN_SOURCE_CONTRACT_MINOR}")
+endif()
+file(READ "${MParser_GRAPHICS_V3_SCHEMA_FILE}" graphics_schema)
+file(READ "${MParser_HOST_INTEGRATION_DEVELOPMENT_CONTRACT_FILE}" development_contract)
+string(JSON graphics_version GET "${graphics_schema}" properties version const)
+string(JSON declared_graphics_version GET "${development_contract}" graphics opt_in_version)
+string(JSON declared_revision GET "${development_contract}" c_abi revision)
+if(NOT graphics_version EQUAL 3 OR NOT declared_graphics_version EQUAL graphics_version
+   OR NOT declared_revision EQUAL MParser_C_ABI_REVISION)
+    message(FATAL_ERROR "Installed host integration contract disagrees with the SDK")
 endif()
 if(NOT MParser_LICENSE STREQUAL "Apache-2.0")
     message(FATAL_ERROR
@@ -81,7 +90,7 @@ add_test(NAME installed_cpp_api_runtime
     COMMAND mparser_installed_cpp_consumer)
 set_tests_properties(installed_cpp_api_runtime PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-generation-2-revision-5,cpp-api-${MParser_CPP_API_VERSION_MAJOR}.${MParser_CPP_API_VERSION_MINOR},host-output-2-2,system-context-rooted-retained,shared-runtime-14")
+        "installed-cpp-consumer = ${MParser_VERSION},5050,5,abi-generation-${MParser_C_ABI_GENERATION}-revision-${MParser_C_ABI_REVISION},cpp-api-${MParser_CPP_API_VERSION_MAJOR}.${MParser_CPP_API_VERSION_MINOR},host-output-2-2,system-context-rooted-retained,shared-runtime-14")
 
 add_test(NAME installed_cpp_cli_version
     COMMAND MParser::cli --version)

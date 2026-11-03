@@ -150,7 +150,7 @@
           "required": ["schema", "version", "objects"],
           "properties": {
             "schema": {"const": "mparser.graphics"},
-            "version": {"const": 1},
+            "version": {"enum": [1, 2]},
             "objects": {
               "type": "array",
               "items": {
@@ -158,9 +158,24 @@
                 "required": ["id", "type", "parent", "children", "properties"],
                 "properties": {
                   "id": {"type": "integer", "minimum": 1},
-                  "type": {"enum": ["Figure", "Axes", "Line"]},
+                  "type": {"enum": ["Figure", "Axes", "Line", "Text", "Legend"]},
                   "parent": {"type": ["integer", "null"], "minimum": 1},
                   "children": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 1}},
+                  "labels": {
+                    "type": "object",
+                    "properties": {
+                      "Title": {"type": "integer", "minimum": 1},
+                      "XLabel": {"type": "integer", "minimum": 1},
+                      "YLabel": {"type": "integer", "minimum": 1}
+                    },
+                    "additionalProperties": false
+                  },
+                  "axes": {"type": "integer", "minimum": 1},
+                  "entries": {"type": "array", "items": {
+                    "type": "object", "required": ["line", "label"],
+                    "properties": {"line": {"type": "integer", "minimum": 1}, "label": {"type": "string"}},
+                    "additionalProperties": false
+                  }},
                   "properties": {
                     "type": "object",
                     "additionalProperties": {"oneOf": [
@@ -173,6 +188,13 @@
               }
             }
           },
+          "allOf": [{
+            "if": {"properties": {"version": {"const": 1}}},
+            "then": {"properties": {"objects": {"items": {
+              "properties": {"type": {"enum": ["Figure", "Axes", "Line"]}},
+              "not": {"anyOf": [{"required": ["labels"]}, {"required": ["axes"]}, {"required": ["entries"]}]}
+            }}}}
+          }],
           "additionalProperties": false
         }
       },

@@ -83,6 +83,20 @@ out = value;
 end
 )", "installed_cpp_consumer.m");
         require(module.isValid(), "module compilation failed");
+        require(mparser::sdk::variableNameMaxLength() == 63,
+                "installed variable-name limit mismatch");
+        require(mparser::sdk::validateVariableName("end") ==
+                    mparser::sdk::VariableNameStatus::ReservedKeyword &&
+                mparser::sdk::validateVariableName("valid_name") ==
+                    mparser::sdk::VariableNameStatus::Valid,
+                "installed variable-name validation failed");
+        const auto definitions = module.definitions();
+        require(definitions.size() == 4, "installed definition directory missing entries");
+        require(definitions.front().name == "accumulate" &&
+                    definitions.front().source.sourceName == "installed_cpp_consumer.m" &&
+                    definitions.front().source.begin.line == 2 &&
+                    !definitions.front().parentFunction,
+                "installed definition metadata mismatch");
 
         mparser::sdk::Invocation accumulate;
         accumulate.entryFunction = "accumulate";

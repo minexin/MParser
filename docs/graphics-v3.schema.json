@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MParser opt-in graphics identity snapshot v3",
+  "type": "object",
+  "required": ["schema", "version", "graphIdentity", "objects"],
+  "properties": {
+    "schema": {"const": "mparser.graphics"},
+    "version": {"const": 3},
+    "graphIdentity": {"$ref": "#/definitions/identity"},
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "objectIdentity", "type", "parent", "children", "properties"],
+        "properties": {
+          "id": {"$ref": "#/definitions/reference"},
+          "objectIdentity": {"$ref": "#/definitions/identity"},
+          "type": {"enum": ["Figure", "Axes", "Line", "Text", "Legend"]},
+          "parent": {"type": ["integer", "null"], "minimum": 1},
+          "children": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/reference"}},
+          "labels": {
+            "type": "object",
+            "properties": {
+              "Title": {"$ref": "#/definitions/reference"},
+              "XLabel": {"$ref": "#/definitions/reference"},
+              "YLabel": {"$ref": "#/definitions/reference"}
+            },
+            "additionalProperties": false
+          },
+          "axes": {"$ref": "#/definitions/reference"},
+          "entries": {"type": "array", "items": {
+            "type": "object", "required": ["line", "label"],
+            "properties": {"line": {"$ref": "#/definitions/reference"}, "label": {"type": "string"}},
+            "additionalProperties": false
+          }},
+          "properties": {"type": "object", "additionalProperties": {"oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"oneOf": [{"type": "number"}, {"enum": ["NaN", "Inf", "-Inf"]}]}}
+          ]}}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "identity": {"type": "string", "pattern": "^[1-9][0-9]{0,19}$"},
+    "reference": {"type": "integer", "minimum": 1}
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "schema": "mparser.host-integration-contract-delta",
+  "state": "development",
+  "baseline": "v1.14.0",
+  "c_abi": {
+    "generation": 2,
+    "revision": 7,
+    "symbol_count": 146
+  },
+  "builtin_source_contract": {
+    "major": 1,
+    "minor": 21,
+    "descriptor_count": 356,
+    "registered_name_count": 358
+  },
+  "graphics": {
+    "legacy_versions": [
+      1,
+      2
+    ],
+    "opt_in_version": 3
+  },
+  "artifacts": [
+    {
+      "path": "docs/public-contract-v1.14.json",
+      "sha256_lf": "93fdba44cd7040dc602029909cc4c222fce4d0268304f8c6bb6fe408fdac5201"
+    },
+    {
+      "path": "include/mparser/c_api.h",
+      "sha256_lf": "57b390a84f7776cab9fdeecb28fb84e20aecc9dfb71f0949af0c3d15887ec459"
+    },
+    {
+      "path": "include/mparser/cpp_api.hpp",
+      "sha256_lf": "166d297e04d6db147386e1603b0aaf22d1cfb3fd0af4bc7decb5806db2c4134e"
+    },
+    {
+      "path": "tests/c_api_generation2_revision7_symbols.txt",
+      "sha256_lf": "0cc2b4fcc64d684f70d03a45ea27dc06b98eaa6006db20ebaddbeb95bd687e9f"
+    },
+    {
+      "path": "docs/machine-result-v1.schema.json",
+      "sha256_lf": "6e4054681426d5fb6761f5d52e38f2cd16d797e20e8dbd4a7307d7483785bbfc"
+    },
+    {
+      "path": "docs/graphics-v3.schema.json",
+      "sha256_lf": "ca57dd2f8dd660acab708dc1fc55f6d7ab21af39abeef028f58d407c45d4ef3f"
+    },
+    {
+      "path": "tests/public_contract/builtin/1.21/default_catalog.json",
+      "sha256_lf": "d225c0a791ce9d2ee7fad944a577027115494639ebb87022296d2715be83db42"
+    },
+    {
+      "path": "src/mparser/runtime/builtins/builtin_registry.h",
+      "sha256_lf": "6ab349813a53582ef28974555cf29f83099a7227ce24fb055dd0f0ede506a76c"
+    }
+  ]
+}

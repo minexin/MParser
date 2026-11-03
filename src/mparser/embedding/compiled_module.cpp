@@ -29,11 +29,48 @@ struct CompiledModuleData {
     BytecodeProgram bytecode;
     BytecodeTypedIrModule staticTypedModule;
     std::vector<CompiledFunctionInfo> functions;
+    std::vector<CompiledDefinitionInfo> definitions;
     std::vector<CompiledSourceInfo> sourceInfo;
     std::vector<Diagnostic> diagnostics;
 };
 
 namespace {
+
+void collectDefinitions(const SyntaxNode& node,
+                        const std::vector<CompiledSourceInfo>& sources,
+                        std::vector<CompiledDefinitionInfo>& definitions,
+                        std::string className = {},
+                        std::optional<size_t> parentFunction = std::nullopt) {
+    if (node.kind == SyntaxKind::ClassDef) {
+        className = node.label;
+    }
+    if (node.kind == SyntaxKind::FunctionDef ||
+        node.kind == SyntaxKind::MethodPrototype) {
+        CompiledDefinitionInfo info;
+        info.name = node.label;
+        info.className = className;
+        info.parentFunction = parentFunction;
+        info.span = node.span;
+        info.declarationOnly = node.kind == SyntaxKind::MethodPrototype;
+        const auto sourceId = node.span.begin.sourceId;
+        if (parentFunction) {
+            info.kind = CompiledDefinitionKind::NestedFunction;
+        } else if (!className.empty()) {
+            info.kind = CompiledDefinitionKind::Method;
+        } else if (sourceId < sources.size() &&
+                   sources[sourceId].kind == CompiledSourceKind::Function &&
+                   sources[sourceId].primaryFunction == node.label) {
+            info.kind = CompiledDefinitionKind::PrimaryFunction;
+        }
+        parentFunction = definitions.size();
+        definitions.push_back(std::move(info));
+    }
+    for (const auto& child : node.children) {
+        if (child) {
+            collectDefinitions(*child, sources, definitions, className, parentFunction);
+        }
+    }
+}
 
 void collectInvocableFunctions(
     const HirNode* node, std::vector<CompiledFunctionInfo>& functions,
@@ -737,6 +774,11 @@ CompiledModule CompiledModule::compile(
         if (!source.classMethodOwner.empty()) {
             module.data_->sourceInfo.push_back(
                 inspectCompiledSource(*parse.root, source));
+            for (size_t index = 0; index < parse.root->children.size(); ++index) {
+                collectDefinitions(*parse.root->children[index], module.data_->sourceInfo,
+                    module.data_->definitions,
+                    index == 0 ? source.classMethodOwner : std::string{});
+            }
             if (auto method = extractClassMethod(
                     *parse.root, source, *root,
                     module.data_->diagnostics)) {
@@ -748,6 +790,7 @@ CompiledModule CompiledModule::compile(
         applySourceIdentity(*parse.root, source);
         module.data_->sourceInfo.push_back(
             inspectCompiledSource(*parse.root, source));
+        collectDefinitions(*parse.root, module.data_->sourceInfo, module.data_->definitions);
         collectTopLevelClasses(*parse.root, classDefinitions,
                                module.data_->diagnostics);
         if (!rootSpanInitialized) {
@@ -865,6 +908,10 @@ const SemanticResult& CompiledModule::semantic() const {
 
 const BytecodeProgram& CompiledModule::bytecode() const {
     return data_->bytecode;
+}
+
+const std::vector<CompiledDefinitionInfo>& CompiledModule::definitions() const {
+    return data_->definitions;
 }
 
 const std::vector<CompiledFunctionInfo>& CompiledModule::functions() const {

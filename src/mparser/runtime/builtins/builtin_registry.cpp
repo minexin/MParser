@@ -1,4 +1,5 @@
 #include "mparser/runtime/builtins/builtin_registry.h"
+#include "mparser/frontend/identifier.h"
 
 #include "mparser/runtime/builtins/array/runtime_array_ops.h"
 #include "mparser/runtime/builtins/array/runtime_collection_builtins.h"
@@ -192,6 +193,22 @@ constexpr std::string_view kBuiltinNames[] = {
     "isenum",
     "isempty",
     "ischar",
+    "iskeyword",
+    "isvarname",
+    "namelengthmax",
+    "figure",
+    "axes",
+    "gcf",
+    "hold",
+    "close",
+    "grid",
+    "title",
+    "xlabel",
+    "ylabel",
+    "legend",
+    "print",
+    "saveas",
+    "gca",
     "iscolumn",
     "isdatetime",
     "isduration",
@@ -434,6 +451,43 @@ BuiltinDescriptor baseDescriptor(std::string_view name) {
     descriptor.name = std::string(name);
     descriptor.summary =
         "Engine intrinsic provided by the MParser runtime.";
+    return descriptor;
+}
+
+BuiltinDescriptor identifierDescriptor(std::string_view name) {
+    BuiltinDescriptor descriptor = baseDescriptor(name);
+    descriptor.inputs = name == "namelengthmax" ? BuiltinArity::fixed(0)
+        : name == "iskeyword" ? BuiltinArity::range(0, 1)
+                              : BuiltinArity::fixed(1);
+    descriptor.outputs = BuiltinArity::range(0, 1);
+    descriptor.implementation = BuiltinImplementationKind::Shared;
+    descriptor.purity = BuiltinPurity::Pure;
+    descriptor.determinism = BuiltinDeterminism::Deterministic;
+    descriptor.threadSafety = BuiltinThreadSafety::Reentrant;
+    descriptor.errorIdentifier = "MParser:InvalidIdentifierQueryCall";
+    descriptor.summary = "R2024b variable-name and reserved-keyword query.";
+    descriptor.handler = [builtin = std::string(name)](const BuiltinCall& call) {
+        if (call.requestedOutputCount == 0) {
+            return BuiltinResult::success();
+        }
+        if (builtin == "namelengthmax") {
+            return BuiltinResult::success({makeRuntimeNumberValue(
+                static_cast<double>(kIdentifierMaximumLength))});
+        }
+        if (builtin == "iskeyword" && call.arguments.empty()) {
+            std::vector<RuntimeValue> keywords;
+            for (const auto keyword : kLanguageKeywords) {
+                keywords.push_back(makeRuntimeCharacterVectorUtf8(keyword));
+            }
+            return BuiltinResult::success({makeRuntimeCellValue(
+                {kLanguageKeywords.size(), 1}, std::move(keywords))});
+        }
+        const auto text = runtimeTextScalarUtf8(call.arguments.front());
+        const bool result = text && (builtin == "iskeyword"
+            ? isLanguageKeyword(*text)
+            : validateVariableName(*text) == VariableNameStatus::Valid);
+        return BuiltinResult::success({makeRuntimeLogicalValue(result)});
+    };
     return descriptor;
 }
 
@@ -2196,6 +2250,9 @@ BuiltinDescriptor timetableDescriptor(std::string_view name) {
 }
 
 BuiltinDescriptor descriptorFor(std::string_view name) {
+    if (name == "isvarname" || name == "iskeyword" || name == "namelengthmax") {
+        return identifierDescriptor(name);
+    }
     if (name == "plot") {
         auto descriptor = baseDescriptor(name);
         descriptor.inputs = BuiltinArity::range(1, 2);
@@ -2206,18 +2263,18 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
         descriptor.contextPermissions = BuiltinContextPermission::Graphics;
         descriptor.requiredContext = BuiltinContextPermission::Graphics;
         descriptor.errorIdentifier = "MParser:InvalidGraphicsCall";
-        descriptor.summary = "Create a headless Figure/Axes/Line from real numeric vectors.";
+        descriptor.summary = "Plot real dense vectors or matrices as headless Line objects in current Axes.";
         descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
         descriptor.handler = [](const BuiltinCall& call) {
             std::vector<std::vector<double>> coordinates;
+            std::vector<std::vector<size_t>> shapes;
             for (const auto& argument : call.arguments) {
                 const auto dimensions = runtimeDimensions(argument);
                 const auto count = runtimeShapeElementCount(argument);
                 if (!isRuntimeNumericValue(argument) || argument.numericComplex ||
-                    argument.sparseStorage || dimensions.size() != 2 ||
-                    (count != 0 && dimensions[0] != 1 && dimensions[1] != 1)) {
+                    argument.sparseStorage || dimensions.size() != 2) {
                     return BuiltinResult::failure(call.span,
-                        "plot expects real dense numeric vectors", "MParser:InvalidGraphicsCall");
+                        "plot expects real dense numeric vectors or matrices", "MParser:InvalidGraphicsCall");
                 }
                 std::vector<double> values;
                 values.reserve(count);
@@ -2230,17 +2287,353 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
                     values.push_back(*number);
                 }
                 coordinates.push_back(std::move(values));
+                shapes.push_back(dimensions);
             }
-            if (coordinates.size() == 2 && coordinates[0].size() != coordinates[1].size()) {
-                return BuiltinResult::failure(call.span,
-                    "plot coordinates must have equal lengths", "MParser:InvalidGraphicsCall");
+            const auto isVector = [&](size_t index) {
+                return shapes[index][0] == 1 || shapes[index][1] == 1 ||
+                    (shapes[index][0] == 0 && shapes[index][1] == 0);
+            };
+            const auto slice = [&](size_t index, size_t line, bool rows) {
+                const auto& shape = shapes[index];
+                const auto count = rows ? shape[1] : shape[0];
+                std::vector<double> result;
+                result.reserve(count);
+                for (size_t point = 0; point < count; ++point) {
+                    result.push_back(coordinates[index][rows ? line + point * shape[0]
+                                                              : point + line * shape[0]]);
+                }
+                return result;
+            };
+            const auto mismatch = [&] {
+                return BuiltinResult::failure(call.span, "plot coordinate dimensions do not match",
+                    "MParser:InvalidGraphicsCall");
+            };
+            std::vector<RuntimeGraphicsSeries> series;
+            if (coordinates.size() == 1) {
+                const auto count = isVector(0) ? 1 : shapes[0][1];
+                for (size_t line = 0; line < count; ++line) {
+                    auto y = isVector(0) ? coordinates[0] : slice(0, line, false);
+                    std::vector<double> x(y.size());
+                    for (size_t point = 0; point < x.size(); ++point) { x[point] = static_cast<double>(point + 1); }
+                    series.push_back({std::move(x), std::move(y)});
+                }
+            } else if (isVector(0) && isVector(1)) {
+                if (coordinates[0].size() != coordinates[1].size()) { return mismatch(); }
+                series.push_back({std::move(coordinates[0]), std::move(coordinates[1])});
+            } else if (!isVector(0) && !isVector(1)) {
+                if (shapes[0] != shapes[1]) { return mismatch(); }
+                for (size_t line = 0; line < shapes[0][1]; ++line) {
+                    series.push_back({slice(0, line, false), slice(1, line, false)});
+                }
+            } else {
+                const size_t vectorIndex = isVector(0) ? 0 : 1;
+                const size_t matrixIndex = 1 - vectorIndex;
+                const auto count = coordinates[vectorIndex].size();
+                // A square matrix uses columns, regardless of vector orientation.
+                const bool rows = count != shapes[matrixIndex][0];
+                if (rows && count != shapes[matrixIndex][1]) { return mismatch(); }
+                const auto lineCount = shapes[matrixIndex][rows ? 0 : 1];
+                for (size_t line = 0; line < lineCount; ++line) {
+                    auto matrixValues = slice(matrixIndex, line, rows);
+                    series.push_back(vectorIndex == 0
+                        ? RuntimeGraphicsSeries{coordinates[0], std::move(matrixValues)}
+                        : RuntimeGraphicsSeries{std::move(matrixValues), coordinates[1]});
+                }
             }
             auto graph = call.context->graphicsGraph;
-            const auto id = coordinates.size() == 1
-                ? graph->plot(std::move(coordinates[0]))
-                : graph->plot(std::move(coordinates[0]), std::move(coordinates[1]));
+            const auto ids = graph->plotLines(std::move(series));
             if (call.requestedOutputCount == 0) { return BuiltinResult::success(); }
-            return BuiltinResult::success({makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, id))});
+            if (ids.size() == 1) {
+                return BuiltinResult::success({makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, ids.front()))});
+            }
+            std::vector<RuntimeValue> handles;
+            handles.reserve(ids.size());
+            for (const auto id : ids) { handles.push_back(makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, id))); }
+            auto result = runtimeMakeObjectArrayFromLogicalOrder(std::move(handles), {ids.size(), 1},
+                "matlab.graphics.chart.primitive.Line", true);
+            if (!result.succeeded) {
+                return BuiltinResult::failure(call.span, result.error, "MParser:InvalidGraphicsCall");
+            }
+            return BuiltinResult::success({std::move(result.value)});
+        };
+        return descriptor;
+    }
+    if (name == "print" || name == "saveas") {
+        auto descriptor = baseDescriptor(name);
+        descriptor.inputs = BuiltinArity::range(2, 3);
+        descriptor.outputs = BuiltinArity::range(0, 0);
+        descriptor.implementation = BuiltinImplementationKind::Context;
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.requiredContext = BuiltinContextPermission::Graphics;
+        descriptor.errorIdentifier = "MParser:InvalidGraphicsExport";
+        descriptor.summary = "Validate a Figure file export; headless execution has no export renderer.";
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.handler = [name = std::string(name)](const BuiltinCall& call) {
+            const auto graph = call.context->graphicsGraph;
+            const auto guard = graph->lock();
+            const auto& figure = call.arguments[0].graphicsHandle;
+            if (!figure || !figure->belongsTo(*graph) || !figure->valid() || figure->kind() != RuntimeGraphicsKind::Figure) {
+                return BuiltinResult::failure(call.span, name + ": expected a live scalar Figure", "MParser:InvalidExportFigure");
+            }
+            const auto path = runtimeTextScalarUtf8(call.arguments[1]);
+            if (!path || path->empty() || path->find('\0') != std::string::npos ||
+                path->back() == '/' || path->back() == '\\') {
+                return BuiltinResult::failure(call.span, name + ": expected a nonempty file path", "MParser:InvalidGraphicsExport");
+            }
+            if (call.arguments.size() == 3) {
+                const auto format = runtimeTextScalarUtf8(call.arguments[2]);
+                const bool known = name == "print" ? (format == "-dpdf" || format == "-dpng") :
+                    (format == "pdf" || format == "png");
+                if (!known) {
+                    return BuiltinResult::failure(call.span, name + ": unsupported export format or device", "MParser:UnsupportedExportFormat");
+                }
+            } else if (name == "print" || !(path->ends_with(".png") || path->ends_with(".pdf"))) {
+                return BuiltinResult::failure(call.span, name + ": expected a PNG or PDF format or device", "MParser:UnsupportedExportFormat");
+            }
+            return BuiltinResult::failure(call.span, name + ": no graphics export renderer is available", "MParser:GraphicsRendererUnavailable");
+        };
+        return descriptor;
+    }
+    if (name == "legend") {
+        auto descriptor = baseDescriptor(name);
+        descriptor.inputs = BuiltinArity::range(0, 2);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+        descriptor.implementation = BuiltinImplementationKind::Context;
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::ObjectState;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.requiredContext = BuiltinContextPermission::Graphics;
+        descriptor.errorIdentifier = "MParser:InvalidGraphicsCall";
+        descriptor.summary = "Create, show, hide or remove the automatic Line legend for a 2-D Axes.";
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.handler = [](const BuiltinCall& call) {
+            auto graph = call.context->graphicsGraph;
+            const auto guard = graph->lock();
+            std::optional<RuntimeGraphicsId> axes;
+            size_t index = 0;
+            if (!call.arguments.empty() && isRuntimeGraphicsValue(call.arguments.front())) {
+                const auto& handle = call.arguments.front().graphicsHandle;
+                if (!handle || !handle->belongsTo(*graph) || !handle->valid() || handle->kind() != RuntimeGraphicsKind::Axes) {
+                    return BuiltinResult::failure(call.span, "expected a live scalar Axes", "MParser:InvalidGraphicsCall");
+                }
+                axes = handle->id();
+                ++index;
+            }
+            std::optional<std::string> mode;
+            if (index < call.arguments.size()) {
+                mode = runtimeTextScalarUtf8(call.arguments[index]);
+                if (call.arguments.size() != index + 1 || !mode ||
+                    (*mode != "show" && *mode != "hide" && *mode != "off")) {
+                    return BuiltinResult::failure(call.span, "unsupported legend arguments", "MParser:InvalidGraphicsCall");
+                }
+            }
+            std::optional<RuntimeGraphicsId> id;
+            if (mode == "off" || mode == "hide") {
+                // Do not create a Figure/Axes just to hide or remove its absent legend.
+                if (!axes && !graph->nodes().empty()) {
+                    axes = graph->find(graph->currentFigure())->currentAxes;
+                }
+                if (axes) {
+                    for (const auto& [candidate, node] : graph->nodes()) {
+                        if (node.associatedAxes == axes) { id = candidate; break; }
+                    }
+                }
+                if (id && mode == "off") { graph->erase(*id); id.reset(); }
+                else if (id) { graph->setProperty(*id, "Visible", std::string{"off"}); }
+            } else {
+                id = graph->legend(axes ? *axes : graph->currentAxes());
+                graph->setProperty(*id, "Visible", std::string{"on"});
+            }
+            if (!call.requestedOutputCount) { return BuiltinResult::success(); }
+            return BuiltinResult::success({id ? makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, *id))
+                                              : makeRuntimeMatrixValue(0, 0, {})});
+        };
+        return descriptor;
+    }
+    if (name == "title" || name == "xlabel" || name == "ylabel") {
+        auto descriptor = baseDescriptor(name);
+        descriptor.inputs = BuiltinArity::range(1, 2);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+        descriptor.implementation = BuiltinImplementationKind::Context;
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::ObjectState;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.requiredContext = BuiltinContextPermission::Graphics;
+        descriptor.errorIdentifier = "MParser:InvalidGraphicsCall";
+        descriptor.summary = "Set current or explicit Axes label text and return its Text handle.";
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.handler = [role = std::string(name == "title" ? "Title" : name == "xlabel" ? "XLabel" : "YLabel")](const BuiltinCall& call) {
+            auto graph = call.context->graphicsGraph;
+            const auto guard = graph->lock();
+            std::optional<RuntimeGraphicsId> axes;
+            if (call.arguments.size() == 2) {
+                const auto& handle = call.arguments.front().graphicsHandle;
+                if (!handle || !isRuntimeGraphicsValue(call.arguments.front()) ||
+                    !handle->belongsTo(*graph) || !handle->valid() || handle->kind() != RuntimeGraphicsKind::Axes) {
+                    return BuiltinResult::failure(call.span, "expected a live scalar Axes handle",
+                        "MParser:InvalidGraphicsCall");
+                }
+                axes = handle->id();
+            }
+            const auto text = runtimeTextScalarUtf8(call.arguments.back());
+            if (!text) {
+                return BuiltinResult::failure(call.span, "label requires scalar text",
+                    "MParser:InvalidGraphicsCall");
+            }
+            const auto id = graph->setLabel(axes ? *axes : graph->currentAxes(), role, *text);
+            return call.requestedOutputCount == 0 ? BuiltinResult::success()
+                : BuiltinResult::success({makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, id))});
+        };
+        return descriptor;
+    }
+    if (name == "close") {
+        auto descriptor = baseDescriptor(name);
+        descriptor.inputs = BuiltinArity::range(0, 1);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+        descriptor.implementation = BuiltinImplementationKind::Context;
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::ObjectState;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.requiredContext = BuiltinContextPermission::Graphics;
+        descriptor.errorIdentifier = "MParser:InvalidGraphicsCall";
+        descriptor.summary = "Close current, explicit, or all headless Figures.";
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.handler = [](const BuiltinCall& call) {
+            auto graph = call.context->graphicsGraph;
+            const auto guard = graph->lock();
+            std::vector<RuntimeGraphicsId> figures;
+            const auto invalid = [&] {
+                return BuiltinResult::failure(call.span,
+                    "close expects live Figure handles from this runtime or all",
+                    "MParser:InvalidGraphicsCall");
+            };
+            if (call.arguments.empty() || runtimeTextScalarUtf8(call.arguments.front()) == "all") {
+                for (const auto& [id, node] : graph->nodes()) {
+                    if (node.kind == RuntimeGraphicsKind::Figure) { figures.push_back(id); }
+                }
+                if (call.arguments.empty() && !figures.empty()) { figures = {graph->currentFigure()}; }
+            } else {
+                const auto& value = call.arguments.front();
+                if (!isRuntimeGraphicsValue(value)) { return invalid(); }
+                for (size_t index = 0; index < runtimeObjectElementCount(value); ++index) {
+                    const auto* element = runtimeObjectLogicalElement(value, index);
+                    const auto* handle = element ? element->graphicsHandle.get() : nullptr;
+                    if (!handle || !handle->belongsTo(*graph) || !handle->valid() ||
+                        handle->kind() != RuntimeGraphicsKind::Figure) { return invalid(); }
+                    figures.push_back(handle->id());
+                }
+            }
+            for (const auto id : figures) { graph->erase(id); }
+            return call.requestedOutputCount == 0 ? BuiltinResult::success()
+                : BuiltinResult::success({makeRuntimeNumberValue(1)});
+        };
+        return descriptor;
+    }
+    if (name == "hold" || name == "grid") {
+        auto descriptor = baseDescriptor(name);
+        descriptor.inputs = BuiltinArity::range(0, 2);
+        descriptor.outputs = BuiltinArity::fixed(0);
+        descriptor.implementation = BuiltinImplementationKind::Context;
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::ObjectState;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.requiredContext = BuiltinContextPermission::Graphics;
+        descriptor.errorIdentifier = "MParser:InvalidGraphicsCall";
+        descriptor.summary = name == "hold" ? "Toggle or set current or explicit Axes plot retention."
+            : "Toggle or set current or explicit 2-D Axes major grid lines.";
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.handler = [grid = name == "grid"](const BuiltinCall& call) {
+            auto graph = call.context->graphicsGraph;
+            const auto guard = graph->lock();
+            std::optional<RuntimeGraphicsId> axes;
+            size_t modeIndex = 0;
+            if (!call.arguments.empty() && isRuntimeGraphicsValue(call.arguments.front())) {
+                const auto& handle = call.arguments.front().graphicsHandle;
+                if (!handle || !handle->belongsTo(*graph) || !handle->valid() ||
+                    handle->kind() != RuntimeGraphicsKind::Axes) {
+                    return BuiltinResult::failure(call.span, "expected a live scalar Axes handle",
+                        "MParser:InvalidGraphicsCall");
+                }
+                axes = handle->id();
+                modeIndex = 1;
+            }
+            std::optional<std::string> mode;
+            if (call.arguments.size() > modeIndex) {
+                mode = runtimeTextScalarUtf8(call.arguments[modeIndex]);
+                const auto& value = call.arguments[modeIndex];
+                if (grid && !mode && isRuntimeNumericValue(value) && !value.numericComplex &&
+                    !value.sparseStorage && runtimeShapeElementCount(value) == 1) {
+                    const auto number = runtimeNumericElement(value, 0);
+                    if (number && (*number == 0 || *number == 1)) {
+                        mode = *number == 1 ? "on" : "off";
+                    }
+                }
+                if (call.arguments.size() != modeIndex + 1 || !mode ||
+                    (*mode != "on" && *mode != "off")) {
+                    return BuiltinResult::failure(call.span, "mode must be on or off",
+                        "MParser:InvalidGraphicsCall");
+                }
+            }
+            const auto id = axes ? *axes : graph->currentAxes();
+            const auto& properties = graph->find(id)->properties;
+            if (grid) {
+                const bool enabled = mode ? *mode == "on" :
+                    !(std::get<std::string>(properties.at("XGrid")) == "on" ||
+                      std::get<std::string>(properties.at("YGrid")) == "on");
+                graph->setProperty(id, "XGrid", std::string(enabled ? "on" : "off"));
+                graph->setProperty(id, "YGrid", std::string(enabled ? "on" : "off"));
+            } else {
+                const auto& current = std::get<std::string>(properties.at("NextPlot"));
+                const bool add = mode ? *mode == "on" : current != "add";
+                graph->setProperty(id, "NextPlot", std::string(add ? "add" : "replace"));
+            }
+            return BuiltinResult::success();
+        };
+        return descriptor;
+    }
+    if (name == "figure" || name == "axes" || name == "gcf" || name == "gca") {
+        auto descriptor = baseDescriptor(name);
+        descriptor.inputs = name == "gcf" || name == "gca"
+            ? BuiltinArity::fixed(0) : BuiltinArity::range(0, 1);
+        descriptor.outputs = BuiltinArity::range(0, 1);
+        descriptor.implementation = BuiltinImplementationKind::Context;
+        descriptor.purity = BuiltinPurity::Impure;
+        descriptor.sideEffects = BuiltinSideEffect::ObjectState;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.requiredContext = BuiltinContextPermission::Graphics;
+        descriptor.errorIdentifier = "MParser:InvalidGraphicsCall";
+        descriptor.summary = "Create or select headless current Figure/Axes objects.";
+        descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
+        descriptor.handler = [builtin = std::string(name)](const BuiltinCall& call) {
+            auto graph = call.context->graphicsGraph;
+            const auto guard = graph->lock();
+            const bool figure = builtin == "figure" || builtin == "gcf";
+            RuntimeGraphicsId id;
+            if (!call.arguments.empty()) {
+                const auto& value = call.arguments.front();
+                if (!isRuntimeGraphicsValue(value) || !value.graphicsHandle ||
+                    !value.graphicsHandle->belongsTo(*graph) ||
+                    !value.graphicsHandle->valid() ||
+                    value.graphicsHandle->kind() != (figure ? RuntimeGraphicsKind::Figure
+                                                           : RuntimeGraphicsKind::Axes)) {
+                    return BuiltinResult::failure(call.span,
+                        "expected a live scalar Figure/Axes handle from this runtime",
+                        "MParser:InvalidGraphicsCall");
+                }
+                id = value.graphicsHandle->id();
+                if (figure) { graph->selectFigure(id); }
+                else { graph->selectAxes(id); }
+            } else if (builtin == "gcf") {
+                id = graph->currentFigure();
+            } else if (builtin == "gca") {
+                id = graph->currentAxes();
+            } else {
+                id = figure ? graph->create(RuntimeGraphicsKind::Figure)
+                            : graph->create(RuntimeGraphicsKind::Axes, graph->currentFigure());
+            }
+            return call.requestedOutputCount == 0 ? BuiltinResult::success()
+                : BuiltinResult::success({makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, id))});
         };
         return descriptor;
     }

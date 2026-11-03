@@ -272,6 +272,10 @@ bool runtimeEqual(const RuntimeValue& left, const RuntimeValue& right) {
                    left.enumerationMemberName ==
                        right.enumerationMemberName;
         }
+        if (left.graphicsHandle || right.graphicsHandle) {
+            return left.graphicsHandle && right.graphicsHandle &&
+                   left.graphicsHandle->sameIdentity(*right.graphicsHandle);
+        }
         const auto& leftFields = objectFields(left);
         const auto& rightFields = objectFields(right);
         if (left.className != right.className ||
@@ -2205,6 +2209,21 @@ private:
         const auto variable = loadStoredVariable(*root);
         RuntimeLvalueTransaction transaction(
             variable ? *variable : missingValue());
+        RuntimeLvalueHooks hooks;
+        hooks.readObjectMember = [](const RuntimeValue& target, std::string_view name) {
+            if (!isRuntimeGraphicsValue(target)) {
+                return RuntimeLvalueOperationResult{false, {}, "object member access is not available in this execution tier"};
+            }
+            auto result = runtimeGraphicsMember(target, std::string(name));
+            return RuntimeLvalueOperationResult{result.succeeded, std::move(result.value), std::move(result.error)};
+        };
+        hooks.writeObjectMember = [](const RuntimeValue& target, std::string_view name, const RuntimeValue& assigned) {
+            if (!isRuntimeGraphicsValue(target)) {
+                return RuntimeLvalueOperationResult{false, {}, "object member assignment is not available in this execution tier"};
+            }
+            auto result = runtimeSetGraphicsMember(target, std::string(name), assigned);
+            return RuntimeLvalueOperationResult{result.succeeded, std::move(result.value), std::move(result.error)};
+        };
         for (size_t index = 0; index + 1 < segments.size(); ++index) {
             const auto segment = evaluateLvalueSegment(
                 *segments[index], transaction.current());
@@ -2212,7 +2231,7 @@ private:
                 return true;
             }
             auto descended = transaction.descend(
-                *segment, {}, missingPathSeed(segments, index + 1));
+                *segment, hooks, missingPathSeed(segments, index + 1));
             if (!descended.succeeded) {
                 addDiagnostic(target, std::move(descended.error));
                 return true;
@@ -2225,7 +2244,7 @@ private:
             return true;
         }
         auto assigned = transaction.assign(
-            *finalSegment, value, nullAssignment);
+            *finalSegment, value, nullAssignment, hooks);
         if (!assigned.succeeded) {
             addDiagnostic(target, std::move(assigned.error));
             return true;
@@ -3383,6 +3402,11 @@ private:
                           "text binary operators require compatible text values");
             return missingValue();
         }
+        if ((left.graphicsHandle || right.graphicsHandle) &&
+            (node.label == "==" || node.label == "~=")) {
+            const bool equal = runtimeEqual(left, right);
+            return makeRuntimeLogicalValue(node.label == "==" ? equal : !equal);
+        }
         if (!isNumeric(left) || !isNumeric(right)) {
             addDiagnostic(node, "binary operator requires numeric values");
             return missingValue();
@@ -4086,6 +4110,14 @@ private:
         if (target.kind == RuntimeValueKind::MissingArray) {
             auto result = runtimeIndexMissingArray(
                 target, arguments, linearColon);
+            if (!result.succeeded) {
+                addDiagnostic(node, std::move(result.error));
+                return missingValue();
+            }
+            return std::move(result.value);
+        }
+        if (isRuntimeGraphicsValue(target)) {
+            auto result = runtimeIndexObject(target, arguments, {}, linearColon);
             if (!result.succeeded) {
                 addDiagnostic(node, std::move(result.error));
                 return missingValue();

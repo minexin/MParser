@@ -6,16 +6,17 @@ line.DisplayName = 'squares';
 axesHandle = line.Parent;
 figureHandle = axesHandle.Parent;
 figureHandle.Name = 'Headless squares';
-axesHandle.Title = 'y = x squared';
-axesHandle.XLabel = 'x';
-axesHandle.YLabel = 'y';
+title(axesHandle, 'y = x squared');
+xlabel(axesHandle, 'x');
+ylabel(axesHandle, 'y');
 assert(isequal(line.Color, [1, 0, 0]));
 assert(isequal(axesHandle.Children, line));
 assert(isvalid(alias));
 
-% Each plot creates a separate tree in this documented subset.
+% Use a separate Figure so the example does not replace the original plot.
+temporaryFigure = figure();
 temporary = plot([3, 2, 1]);
-temporaryAxes = temporary.Parent;
-delete(temporaryAxes);
+delete(temporaryFigure);
 assert(~isvalid(temporary));
+assert(isvalid(line));
 % Keep line/axesHandle/figureHandle alive for SDK or machine JSON consumers.
