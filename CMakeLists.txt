@@ -2915,6 +2915,13 @@ add_test(NAME host_integration_development_contract
         -DEXPECTED_VERSION=${PROJECT_VERSION}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_host_integration_development.cmake)
 set_tests_properties(host_integration_development_contract PROPERTIES LABELS "documentation;release")
+add_test(NAME contextual_identifier_smoke
+    COMMAND ${CMAKE_COMMAND}
+        "-DMPARSER_EXECUTABLE=$<TARGET_FILE:mparser>"
+        "-DMPARSER_CORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/contextual_identifiers.json"
+        "-DMPARSER_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/contextual-identifier-smoke"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_contextual_identifiers.cmake")
+set_tests_properties(contextual_identifier_smoke PROPERTIES LABELS "host-integration" TIMEOUT 180)
 option(MPARSER_REQUIRE_HOST_GRAPHICS_TESTS "Require Node.js and Git for host graphics candidate tests" OFF)
 find_program(MPARSER_NODE_EXECUTABLE NAMES node nodejs)
 find_program(MPARSER_GIT_EXECUTABLE NAMES git)

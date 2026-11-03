@@ -647,6 +647,7 @@ global events methods
 properties=5; methods=6; events=7; enumeration=8;
 total=arguments(2)+import+properties+methods+events+enumeration;
 function out=example()
+out=0;
 arguments=10;
 arguments;
 if true
@@ -674,6 +675,23 @@ end
     assert(declaration.diagnostics.empty());
     assert(containsKind(*declaration.root, mparser::SyntaxKind::ArgumentsBlock));
     assert(containsKind(*declaration.root, mparser::SyntaxKind::ImportStatement));
+    for (const auto name : {"arguments", "properties", "methods", "events",
+                            "enumeration", "import"}) {
+        const std::string variable(name);
+        const auto transpose = parse(variable + "=[1,2]; value=" + variable + "';\n");
+        assert(transpose.diagnostics.empty());
+        assert(containsKind(*transpose.root, mparser::SyntaxKind::PostfixExpr));
+        const auto handle = parse("fn=@" + variable + ";\n");
+        assert(handle.diagnostics.empty());
+        assert(containsKind(*handle.root, mparser::SyntaxKind::FunctionHandleExpr));
+        const auto arguments = parse("function out=f(options)\narguments\noptions." +
+            variable + " double = 0\nend\nout=options." + variable + ";\nend\n");
+        assert(arguments.diagnostics.empty());
+        assert(containsKind(*arguments.root, mparser::SyntaxKind::ArgumentsBlock));
+    }
+    const auto invalidHeader = parse(
+        "function out=f(arguments)\narguments=10;\nout=arguments;\nend\n");
+    assert(!invalidHeader.diagnostics.empty());
 }
 
 void parseInvalidAssignmentSmoke() {

@@ -48,13 +48,6 @@ bool atTopLevel(int parenDepth, int bracketDepth, int braceDepth) {
     return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0;
 }
 
-bool isIdentifierNameToken(TokenKind kind) {
-    return kind == TokenKind::Identifier || kind == TokenKind::KeywordArguments ||
-           kind == TokenKind::KeywordImport || kind == TokenKind::KeywordProperties ||
-           kind == TokenKind::KeywordMethods || kind == TokenKind::KeywordEvents ||
-           kind == TokenKind::KeywordEnumeration;
-}
-
 bool isMemberNameToken(TokenKind kind) {
     if (kind == TokenKind::Identifier) {
         return true;
@@ -656,7 +649,7 @@ private:
     }
 
     std::unique_ptr<SyntaxNode> parseCallArgument(bool allowNameValue) {
-        if (!allowNameValue || !at(TokenKind::Identifier) ||
+        if (!allowNameValue || !isIdentifierNameToken(current().kind) ||
             !at(1, TokenKind::Equal)) {
             return parseExpression(0);
         }
@@ -740,7 +733,8 @@ private:
         }
 
         std::vector<Token> nameTokens;
-        while (!isAtEnd() && atAny({TokenKind::Identifier, TokenKind::Dot})) {
+        while (!isAtEnd() &&
+               (isIdentifierNameToken(current().kind) || at(TokenKind::Dot))) {
             nameTokens.push_back(advance());
         }
 
@@ -952,14 +946,14 @@ size_t findMatchingDelimiter(const std::vector<Token>& tokens, size_t begin,
 std::pair<std::string, size_t> parseDottedName(
     const std::vector<Token>& tokens, size_t begin) {
     if (begin >= tokens.size() ||
-        tokens[begin].kind != TokenKind::Identifier) {
+        !isIdentifierNameToken(tokens[begin].kind)) {
         return {{}, begin};
     }
 
     size_t end = begin + 1;
     while (end + 1 < tokens.size() &&
            tokens[end].kind == TokenKind::Dot &&
-           tokens[end + 1].kind == TokenKind::Identifier) {
+           isIdentifierNameToken(tokens[end + 1].kind)) {
         end += 2;
     }
     std::string name;
@@ -1042,7 +1036,13 @@ PropertyDeclarationParseResult parsePropertyDeclarationTokens(
             {spanFromTokens(sourceTokens), "expected property declaration"});
         return result;
     }
-    if (tokens.front().kind != TokenKind::Identifier) {
+    // Class-section names stay reserved for properties, unlike argument names.
+    const TokenKind nameKind = tokens.front().kind;
+    const bool validName = allowDottedName
+        ? isIdentifierNameToken(nameKind)
+        : nameKind == TokenKind::Identifier || nameKind == TokenKind::KeywordArguments ||
+          nameKind == TokenKind::KeywordImport;
+    if (!validName) {
         result.diagnostics.push_back(
             {tokens.front().span, "expected property name"});
         return result;
@@ -2242,6 +2242,10 @@ bool Parser::atArgumentsBlockStart() const {
                kind == TokenKind::EndOfFile;
     };
     if (isSeparator(peek(1).kind)) {
+        return true;
+    }
+    // R2024b treats this as a malformed block header while still in declarations.
+    if (peek(1).kind == TokenKind::Equal) {
         return true;
     }
     // Only declaration modifiers introduce a block; arguments(i)=x is indexing.

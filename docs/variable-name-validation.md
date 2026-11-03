@@ -27,9 +27,9 @@ argument errors (null output, or null input with nonzero size) return
 names themselves return `MPARSER_API_STATUS_OK` with a reason code.
 
 The validator does not check workspace collisions, revision conflicts, value
-ownership or rename atomicity; these remain host workspace concerns. It also
-does not promise that every source grammar position already accepts contextual
-names: parser alignment remains pending in the current goal.
+ownership or rename atomicity; these remain host workspace concerns. Validation
+is not a promise that a name is legal in every source grammar position. R2024b
+itself imposes additional context-sensitive declaration restrictions below.
 
 Source builtins `isvarname`, `iskeyword` and `namelengthmax` use the same
 internal rules (builtin source contract 1.21; catalog snapshot included in the
@@ -47,6 +47,29 @@ counts are rejected by the builtin registry.
 exercises both the public wrapper and C entrypoint argument failures.
 The shared-library ABI test verifies the two added exports alongside the
 previous 140 exports. Historical revision-5 manifests remain unchanged.
+
+## Source Contexts
+
+`tests/contextual_identifiers.json` fixes 90 R2024b positive/negative cases for
+the six contextual names across transpose, parameters/outputs, anonymous and
+named handles, input/output argument declarations, name-value arguments,
+for/global/persistent bindings and class properties. The reference probe
+`tools/probe_contextual_identifiers.m` runs the same corpus in MATLAB, saving
+the actual release/version, corpus and raw outcomes under build. CTest
+`contextual_identifier_smoke` replays all cases in four requested backend modes
+(off/portable/native/auto), saving raw JSON and input hashes. A requested native
+backend may use the kernel's normal fallback; this is not proof that every
+expression was compiled to native machine code.
+
+The corpus includes 83 successful executions and seven required rejections:
+`arguments=...` at the start of a function declaration section is interpreted
+as a malformed arguments-block header, even when arguments is a parameter or
+output. Once an executable statement ends that section, the same variable
+assignment is legal. In class property declarations, arguments/import are
+accepted but properties/methods/events/enumeration remain reserved there.
+Those restrictions must not be removed just because isvarname returns true.
+Other grammar contexts still require separate acceptance; this fixed corpus is
+not a full language-compatibility claim.
 
 ## Host Rename Candidate
 

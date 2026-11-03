@@ -1,0 +1,20 @@
+{
+  "names": ["arguments", "properties", "methods", "events", "enumeration", "import"],
+  "cases": [
+    {"id": "transpose", "expected": 2, "source": "@NAME@=[1,2]; transposed=@NAME@'; result=transposed(2);\n"},
+    {"id": "parameters_outputs", "expected": 5, "expected_rejections": {"arguments": "MATLAB:m_invalid_lhs_of_assignment"}, "source": "result=contextual(4);\nfunction @NAME@=contextual(@NAME@)\n@NAME@=@NAME@+1;\nend\n"},
+    {"id": "anonymous", "expected": 5, "source": "fn=@(@NAME@) @NAME@+1; result=fn(4);\n"},
+    {"id": "named_handle", "expected": 5, "source": "fn=@@NAME@; result=fn(4);\nfunction out=@NAME@(x)\nout=x+1;\nend\n"},
+    {"id": "input_block", "expected": 5, "source": "result=contextual(4);\nfunction out=contextual(@NAME@)\narguments\n@NAME@ (1,1) double\nend\nout=@NAME@+1;\nend\n"},
+    {"id": "output_block", "expected": 5, "expected_rejections": {"arguments": "MATLAB:m_invalid_lhs_of_assignment"}, "source": "result=contextual();\nfunction @NAME@=contextual()\narguments (Output)\n@NAME@ (1,1) double\nend\n@NAME@=5;\nend\n"},
+    {"id": "name_value", "expected": 5, "source": "result=contextual(@NAME@=5);\nfunction out=contextual(options)\narguments\noptions.@NAME@ (1,1) double = 0\nend\nout=options.@NAME@;\nend\n"},
+    {"id": "for_variable", "expected": 6, "source": "result=0;\nfor @NAME@=1:3\nresult=result+@NAME@;\nend\n"},
+    {"id": "global_variable", "expected": 5, "source": "global @NAME@\n@NAME@=5; result=@NAME@;\n"},
+    {"id": "persistent_variable", "expected": 5, "source": "result=contextual()+contextual();\nfunction out=contextual()\npersistent @NAME@\nif isempty(@NAME@)\n@NAME@=1;\nend\n@NAME@=@NAME@+1; out=@NAME@;\nend\n"},
+    {"id": "property", "expected": 5, "expected_rejections": {"properties": "MATLAB:m_illegal_reserved_keyword_usage", "methods": "MATLAB:m_illegal_reserved_keyword_usage", "events": "MATLAB:m_illegal_reserved_keyword_usage", "enumeration": "MATLAB:m_missing_variable_or_function"}, "source": "record=@CLASS@(); result=record.@NAME@;\n", "class_source": "classdef @CLASS@\nproperties\n@NAME@ (1,1) double = 5\nend\nend\n"},
+    {"id": "parameter_assignment_at_entry", "expected": 5, "expected_rejections": {"arguments": "MATLAB:m_invalid_lhs_of_assignment"}, "source": "result=contextual(4);\nfunction out=contextual(@NAME@)\n@NAME@=@NAME@+1; out=@NAME@;\nend\n"},
+    {"id": "parameter_assignment_after_statement", "expected": 5, "source": "result=contextual(4);\nfunction out=contextual(@NAME@)\nmarker=0; @NAME@=@NAME@+1; out=@NAME@;\nend\n"},
+    {"id": "output_after_statement", "expected": 5, "source": "result=contextual(4);\nfunction @NAME@=contextual(@NAME@)\nmarker=0; @NAME@=@NAME@+1;\nend\n"},
+    {"id": "output_block_after_statement", "expected": 5, "source": "result=contextual();\nfunction @NAME@=contextual()\narguments (Output)\n@NAME@ (1,1) double\nend\nmarker=0; @NAME@=5;\nend\n"}
+  ]
+}

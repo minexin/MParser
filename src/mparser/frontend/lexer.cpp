@@ -54,8 +54,10 @@ const std::unordered_map<std::string, TokenKind>& keywordTable() {
 }
 
 bool canEndExpression(TokenKind kind) {
+    if (isIdentifierNameToken(kind)) {
+        return true;
+    }
     switch (kind) {
-    case TokenKind::Identifier:
     case TokenKind::Number:
     case TokenKind::String:
     case TokenKind::RParen:

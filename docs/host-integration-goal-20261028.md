@@ -19,14 +19,14 @@ success may substitute for missing kernel contracts.
 
 | ID | Work | Acceptance | State |
 | --- | --- | --- | --- |
-| H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Focused kernel and Windows host REST compile-only cases verified; shipped host package unchanged |
-| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and isolated revision-checked rename candidate passed, including value identity and races; deployed rename UI/API adoption pending |
+| H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated host compile-only/execute diagnostic propagation verified, including preservation with clear_workspace=true; deployed host unchanged |
+| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins, 90-case R2024b source-context corpus and isolated revision-checked rename passed; deployed rename UI/API adoption pending |
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | SDK and isolated host compile REST checked, including repeated nested names, CRLF/UTF-8 and class methods; deployed navigation and cross-file REST acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping focused tests and opt-in v3 SDK identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 347/347 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 348/348 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -614,3 +614,45 @@ records that rename was not shipped; no rename operation or UI is claimed.
   compiler/linker environment could not find kernel32.lib; no test assertion
   was weakened. Logs: build/rename-kernel-regression-msvc.log (passing) and
   build/rename-kernel-regression.log (environment failure).
+- H02 source-context alignment: shared contextual_identifiers.json fixes 90
+  positive/negative cases for all six contextual names. MATLAB
+  24.2.0.2712019 (R2024b) passed 90/90, including seven required rejections;
+  raw source/outcomes are retained at
+  build/contextual-identifier-matlab/tp54fde69f_f347_4ccf_b108_da698ee6b9ff/reference.json.
+  The lexer now recognizes transpose after contextual identifier tokens;
+  the parser accepts named handles, input/output and name-value declarations
+  and the two allowed contextual class-property names. Class-section names
+  remain rejected as properties, and initial arguments= assignments remain
+  malformed declarations until an executable statement ends the declaration
+  section. An older parser-positive test was corrected to insert an ordinary
+  statement before arguments assignment, with a separate negative case added;
+  it was not evidence that R2024b accepts that initial assignment.
+  CTest contextual_identifier_smoke passed 360/360 in requested
+  off/portable/native/auto modes; normal native fallback remains allowed.
+  This is a fixed corpus, not proof for every grammar position or full MATLAB
+  compatibility. Final-tree kernel/package regression passed 348/348 in
+  46.74 seconds at build/contextual-final-tree-regression.log. A prior run's
+  only failure was the development document hash while those docs were still
+  being edited; the manifest was synchronized before the passing rerun.
+- H01 execute-time host diagnostic propagation: REST replay exposed that
+  invalid modules reached shared Runtime execution and became
+  MExec:ExecutionBridgeError with lost compiler positions. The integration
+  patch now checks module validity before clear_workspace and runtime setup,
+  returning original compiler diagnostics and existing workspace values.
+  Six missing-RHS/reserved-LHS cases through source, command and source_path
+  preserved a seeded numeric value, captured closure and last graphics scene
+  even with clear_workspace=true; follow-up invocation/mutation succeeded.
+  Request revision/run-count bookkeeping is unchanged, not asserted unchanged.
+  Additionally 36 contextual REST cases passed (34 executions, two compiler
+  rejections). This is host contract adoption, not a new kernel compilation
+  defect. Original host sources and running services were not modified.
+- Fresh source-only installed-SDK acceptance with all five host candidates:
+  build/clean-host-probe/104cdbe5a9af4f3b8e320e834cc421db completed 148 build
+  actions, rename identity/races, all new contextual/diagnostic REST probes,
+  graphics/definition probes, simulated client checks and host CTest 67/67
+  (21.50 seconds). Raw REST evidence:
+  build/host-compile-probe/c0c09bb20e1b4b03a916cc380eda5150.
+  Installed DLL SHA256:
+  09C5D9D24E7C24B77F7D107F925664909A14F43A387EA397867B0DFB7E223F5D.
+  Browser visuals, production navigation/writeback and formal v1.15 release
+  remain open; these tests do not establish any of them.

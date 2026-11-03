@@ -35,7 +35,8 @@ foreach ($target in @($hostSource,$clientSource)) {
     if ($LASTEXITCODE) { throw "Cannot initialize patch target: $target" }
 }
 foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-metadata.patch',
-    'mexecserver-development-acceptance.patch','mexecserver-workspace-rename.patch')) {
+    'mexecserver-development-acceptance.patch','mexecserver-workspace-rename.patch',
+    'mexecserver-compile-diagnostics.patch')) {
     git -C $hostSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Host patch failed: $patch; see $stage" }
 }
@@ -58,7 +59,7 @@ node (Join-Path $PSScriptRoot 'test-workspace-rename.cjs') (Join-Path $build 'me
     (Join-Path $stage 'rename-probe') on
 if ($LASTEXITCODE) { throw "Workspace rename probe failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
-    -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ExpectedProductVersion '1.15.0' |
+    -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')
 foreach ($test in @('test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs')) {
     node (Join-Path $PSScriptRoot $test) $clientSource

@@ -1,0 +1,15 @@
+diff --git a/src/engine/workspace_session.cpp b/src/engine/workspace_session.cpp
+--- a/src/engine/workspace_session.cpp
++++ b/src/engine/workspace_session.cpp
+@@ -785,1 +785,11 @@
++    // An invalid module has compiler diagnostics, not an execution bridge error.
++    // Return before clear_workspace or any runtime/debug/input side effects.
++    if (!moduleToUse.isValid()) {
++        outcome.status = mparser::sdk::InvocationStatus::CompilationFailed;
++        outcome.diagnostics = moduleToUse.diagnostics();
++        outcome.functionCount = 0;
++        outcome.workspaceValues = workspace_;
++        outcome.workspaceSummary = summarizeWorkspace(workspace_);
++        return outcome;
++    }
+     auto invocation = makeInvocation(request);

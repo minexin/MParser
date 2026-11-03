@@ -81,6 +81,13 @@ enum class TokenKind {
     Unknown,
 };
 
+constexpr bool isIdentifierNameToken(TokenKind kind) noexcept {
+    return kind == TokenKind::Identifier || kind == TokenKind::KeywordArguments ||
+           kind == TokenKind::KeywordImport || kind == TokenKind::KeywordProperties ||
+           kind == TokenKind::KeywordMethods || kind == TokenKind::KeywordEvents ||
+           kind == TokenKind::KeywordEnumeration;
+}
+
 enum class TriviaKind {
     Whitespace,
     LineComment,

@@ -4,6 +4,8 @@ param(
     [switch]$MetadataOnly,
     [switch]$GraphicsV3,
     [switch]$DefinitionMetadata,
+    [switch]$ContextualIdentifiers,
+    [switch]$CompileDiagnostics,
     [string]$ExpectedProductVersion
 )
 $ErrorActionPreference = 'Stop'
@@ -94,6 +96,87 @@ try {
         }
         Write-Output "identifier/$($case.name): $($result.status)"
     }
+    }
+    if ($ContextualIdentifiers) {
+        $corpus = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../tests/contextual_identifiers.json') -Raw | ConvertFrom-Json
+        foreach ($case in @($corpus.cases | Where-Object id -In @(
+            'transpose','parameters_outputs','named_handle','input_block','output_block','name_value'))) {
+            foreach ($name in $corpus.names) {
+                $context = Invoke-RestMethod "$base/sessions" -Method Post -ContentType 'application/json' -Body '{"name":"contextual-identifier-probe"}'
+                $source = $case.source.Replace('@NAME@', $name)
+                $sourceName = 'contextual_' + $case.id + '_' + $name + '.m'
+                $body = @{source=$source; source_name=$sourceName; include_workspace_values=$true} | ConvertTo-Json
+                $response = Invoke-WebRequest "$base/sessions/$($context.id)/execute" -UseBasicParsing -Method Post -ContentType 'application/json' -Body $body
+                [IO.File]::WriteAllText((Join-Path $root ($sourceName + '.json')), [string]$response.Content)
+                $result = $response.Content | ConvertFrom-Json
+                if ($case.expected_rejections -and $case.expected_rejections.PSObject.Properties[$name]) {
+                    if ($result.status -ne 'compilation-failed' -or $null -ne $result.execution -or
+                        $result.session.variable_count -ne 0 -or !@($result.diagnostics | Where-Object {
+                            $_.identifier -eq 'MParser:CompilationFailed' -and $_.phase -eq 'compilation'
+                        }).Count) { throw "Contextual declaration should fail without execution: $sourceName; see $root" }
+                } else {
+                    $value = @($result.workspace | Where-Object name -CEQ 'result').value
+                    if ($result.status -ne 'succeeded' -or $result.diagnostics.Count -ne 0 -or
+                        $result.workspace_export_failed -ne $false -or $value.kind -ne 'numeric' -or
+                        $value.class -ne 'double' -or $value.data.Count -ne 1 -or $value.data[0] -ne $case.expected) {
+                        throw "Contextual source result failed: $sourceName; see $root"
+                    }
+                }
+                Write-Output "contextual/$($case.id)/$name : $($result.status)"
+                $null = Invoke-RestMethod "$base/sessions/$($context.id)" -Method Delete
+            }
+        }
+    }
+    if ($CompileDiagnostics) {
+        $diagnosticSession = Invoke-RestMethod "$base/sessions" -Method Post -ContentType 'application/json' -Body '{"name":"compile-diagnostic-probe"}'
+        $diagnosticBase = "$base/sessions/$($diagnosticSession.id)"
+        $seed = @{command='original=42; fn=@(x) x+original; ln=plot([1,2]);'} | ConvertTo-Json
+        $seedResult = Invoke-RestMethod "$diagnosticBase/execute" -Method Post -ContentType 'application/json' -Body $seed
+        if ($seedResult.status -ne 'succeeded') { throw "Diagnostic seed failed; see $root" }
+        $before = Invoke-RestMethod "$diagnosticBase/workspace?include_values=true"
+        $beforeVariables = ConvertTo-Json -InputObject @($before.variables) -Depth 100 -Compress
+        $beforeGraphics = (Invoke-RestMethod "$diagnosticBase/graphics").graphics | ConvertTo-Json -Depth 100 -Compress
+        foreach ($mode in @('source','command','source_path')) {
+            foreach ($case in @(
+                @{name='missing_rhs'; source="original=99;`nb=;"; line=2; column=2},
+                @{name='reserved_lhs'; source="original=99;`nend=0;"; line=2; column=1}
+            )) {
+                $sourceName = 'diagnostic_' + $mode + '_' + $case.name + '.m'
+                $request = @{clear_workspace=$true; include_workspace_values=$true}
+                if ($mode -eq 'source_path') {
+                    $fileBody = @{path=$sourceName; content=$case.source} | ConvertTo-Json
+                    $null = Invoke-RestMethod "$diagnosticBase/files" -Method Put -ContentType 'application/json' -Body $fileBody
+                    $request.source_path = $sourceName
+                } else {
+                    $request[$mode] = $case.source
+                    $request.source_name = $sourceName
+                }
+                $response = Invoke-WebRequest "$diagnosticBase/execute" -UseBasicParsing -Method Post -ContentType 'application/json' -Body ($request | ConvertTo-Json)
+                [IO.File]::WriteAllText((Join-Path $root ($sourceName + '.json')), [string]$response.Content)
+                $result = $response.Content | ConvertFrom-Json
+                $diagnostics = @($result.diagnostics | Where-Object {
+                    $_.identifier -eq 'MParser:CompilationFailed' -and $_.phase -eq 'compilation' -and
+                    $_.source.name -ceq $result.execution_source_name -and
+                    $_.source.begin.line -eq $case.line -and $_.source.begin.column -eq $case.column
+                })
+                $after = Invoke-RestMethod "$diagnosticBase/workspace?include_values=true"
+                $afterVariables = ConvertTo-Json -InputObject @($after.variables) -Depth 100 -Compress
+                $afterGraphics = (Invoke-RestMethod "$diagnosticBase/graphics").graphics | ConvertTo-Json -Depth 100 -Compress
+                if ($result.status -ne 'compilation-failed' -or $null -ne $result.execution -or
+                    !$diagnostics.Count -or $result.workspace_export_failed -ne $false -or
+                    $result.session.variable_count -ne $before.variables.Count -or
+                    $afterVariables -cne $beforeVariables -or $afterGraphics -cne $beforeGraphics -or
+                    $result.output_events.Count -ne 0 -or $result.top_level_expressions.Count -ne 0 -or
+                    @($result.diagnostics | Where-Object identifier -EQ 'MExec:ExecutionBridgeError').Count) {
+                    throw "Compiler diagnostics/workspace preservation failed: $sourceName; see $root"
+                }
+                Write-Output "compile-execute/$mode/$($case.name): compiler diagnostic, workspace and graphics preserved"
+            }
+        }
+        $recovery = @{command="if original~=42 || fn(1)~=43 || ~isvalid(ln); error('compile rejection changed values'); end; ln.YData=[3,4];"} | ConvertTo-Json
+        $response = Invoke-WebRequest "$diagnosticBase/execute" -UseBasicParsing -Method Post -ContentType 'application/json' -Body $recovery
+        [IO.File]::WriteAllText((Join-Path $root 'diagnostic_recovery.json'), [string]$response.Content)
+        if (($response.Content | ConvertFrom-Json).status -ne 'succeeded') { throw "Compiler rejection recovery failed; see $root" }
     }
     $metadataSession = Invoke-RestMethod "$base/sessions" -Method Post -ContentType 'application/json' -Body '{"name":"metadata-export-probe"}'
     $source = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../samples/dynamic_properties_demo.m') -Raw

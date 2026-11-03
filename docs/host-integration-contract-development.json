@@ -29,7 +29,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "a42ee8ec0fb2edeb8f8e56c1ff708758ffdd4776bcebe9a340b5190873bee54a"
+      "sha256_lf": "e275fb0de9cff9cc53cde56731a42d9e513e414464ae78cd27927569550fcc86"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -41,7 +41,7 @@
     },
     {
       "path": "docs/variable-name-validation.md",
-      "sha256_lf": "bfb0ba1e8b623bec18882bca9f8578f9b7409c667796b85273972e80c6a9153b"
+      "sha256_lf": "df7445540cd1cc3cb268558b85f4f89b2d037b39a9d6bded7a13f87315ccbb0d"
     },
     {
       "path": "docs/graphics-clipping-contract.md",

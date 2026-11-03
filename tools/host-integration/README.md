@@ -117,6 +117,13 @@ build/host-compile-probe/56610d516503487ba260eca175f3c484. It reused previously
 compiled unchanged host objects and third-party libraries, so this is not
 evidence of a clean downstream CMake build or deployed navigation support.
 
+Add `-ContextualIdentifiers` when using the updated 1.15.0 development kernel.
+It replays 36 non-class source cases from the shared R2024b contextual-name
+corpus through fresh REST sessions: 34 expected executions and two expected
+compile rejections with no execution/workspace effects. This switch is explicit
+so an older selected DLL is not accidentally treated as the updated kernel.
+The clean-host runner enables it alongside the existing feature probes.
+
 ## Clean Installed-SDK Acceptance
 
 Run probe-clean-host.ps1 from an x64 MSVC developer environment with CMake,
@@ -170,7 +177,8 @@ This remains simulated-canvas, not real-browser, acceptance.
 
 ## Conditional Workspace Rename Candidate
 
-Apply `mexecserver-workspace-rename.patch` after the three server patches above,
+Apply `mexecserver-workspace-rename.patch` after the graphics, definition and
+development-acceptance server patches above,
 using `git apply --unidiff-zero --ignore-space-change`. Configure
 `MEXEC_WORKSPACE_RENAME=ON` to advertise `conditional-workspace-rename` in `/info`
 and enable `POST /sessions/{id}/workspace/{name}/rename`. The option defaults to
@@ -208,7 +216,7 @@ empty evidence directory and the final argument `off`; it checks the missing
 capability/route and unchanged workspace. The ON probe uses `on`. The tests
 stop their own isolated server and never update the deployed host or browser.
 
-Latest complete one-command run:
+Earlier complete one-command run:
 `build/clean-host-probe/752a6a87a7984b61b469ccd1c1f6da32` (148 clean build
 actions, rename/REST/client candidates and host CTest 67/67). The selected
 installed 1.15.0 DLL SHA256 was
@@ -216,3 +224,33 @@ installed 1.15.0 DLL SHA256 was
 The separately configured OFF-mode probe and conditional-delete test passed
 at `build/clean-host-probe/070e28f719224c6e8b4ba13704ee3ec0/rename-probe-off`.
 This establishes focused server-side adoption, not a deployed rename UI.
+
+## Compile Diagnostic Propagation
+
+Apply `mexecserver-compile-diagnostics.patch` after the other server candidates.
+The host must check `moduleToUse.isValid()` before calling the shared Runtime:
+the SDK rejects execution of an invalid module with an API status, not a runtime
+Result. Without this check, a normal compile failure was mislabeled as
+`MExec:ExecutionBridgeError` and its source range was lost. With the check, the
+host returns the module's original diagnostics and `compilation-failed` status
+before `clear_workspace`, input/debug setup or execution. The existing conservative
+request revision/run-count accounting is unchanged; no claim of unchanged
+revision is made for failed execute requests.
+
+`probe-host-compile.ps1 -CompileDiagnostics` seeds a numeric value, captured
+closure and graphics handle, then submits missing-RHS and reserved-LHS errors
+through source, command and source_path requests, each with clear_workspace=true.
+All six cases must preserve workspace values and the last graphics snapshot,
+emit the correct compiler identifier/source/line/column with null execution and
+no output events, and permit the existing closure and graphics handle to work
+afterwards. These are separate checks from compile_only; valid-but-runtime-failing
+scripts retain the existing runtime behavior. The clean-host runner enables
+this probe. Original deployed host sources remain unchanged.
+
+Latest complete clean installed-SDK run:
+`build/clean-host-probe/104cdbe5a9af4f3b8e320e834cc421db` (148 build actions,
+all five host candidates, rename, contextual/diagnostic and graphics/definition
+REST probes, client candidate checks and host CTest 67/67 in 21.50 seconds).
+The loaded DLL SHA256 was
+`09C5D9D24E7C24B77F7D107F925664909A14F43A387EA397867B0DFB7E223F5D`;
+raw REST evidence is `build/host-compile-probe/c0c09bb20e1b4b03a916cc380eda5150`.
