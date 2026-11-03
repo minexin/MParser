@@ -15,6 +15,23 @@ void require(bool value, const std::source_location location = std::source_locat
 int main() {
     try {
         Result firstPlot;
+        {
+            const std::pair<const char*, const char*> cases[] = {
+                {"print(gcf(),'unused.pdf','-dpdf');", "MParser:GraphicsRendererUnavailable"},
+                {"saveas(gcf(),'unused.png');", "MParser:GraphicsRendererUnavailable"},
+                {"saveas(gca(),'unused.pdf');", "MParser:InvalidExportFigure"},
+                {"f=figure(); delete(f); saveas(f,'unused.pdf');", "MParser:InvalidExportFigure"},
+                {"saveas(gcf(),'','pdf');", "MParser:InvalidGraphicsExport"},
+                {"print(gcf(),'unused.pdf','-dunknown');", "MParser:UnsupportedExportFormat"},
+                {"saveas(gcf(),'unused.xyz');", "MParser:UnsupportedExportFormat"}
+            };
+            for (const auto& [source, identifier] : cases) {
+                const auto result = Module::compile(source, "export_boundary.m").execute();
+                require(!result.succeeded());
+                const auto diagnostics = result.diagnostics();
+                require(!diagnostics.empty() && diagnostics.front().identifier == identifier);
+            }
+        }
         std::string firstSnapshot;
         std::string firstIdentitySnapshot;
         {
