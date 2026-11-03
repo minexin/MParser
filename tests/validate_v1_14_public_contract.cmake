@@ -36,6 +36,17 @@ function(check_artifacts node)
     string(JSON hash ERROR_VARIABLE no_hash GET "${node}" sha256_lf)
     if(NOT no_hash)
         string(JSON path GET "${node}" path)
+        # Only superseded artifacts resolve to release snapshots. All remain
+        # pinned by the hashes in the original, unchanged v1.14 manifest.
+        if(path STREQUAL "include/mparser/c_api.h")
+            set(path "tests/public_contract/c_abi/2.5/c_api_snapshot.h")
+        elseif(path STREQUAL "include/mparser/cpp_api.hpp")
+            set(path "tests/public_contract/cpp_api/1.14/mparser/cpp_api.hpp")
+        elseif(path STREQUAL "docs/machine-result-v1.schema.json" OR
+               path STREQUAL "src/mparser/runtime/builtins/builtin_registry.h" OR
+               path STREQUAL "cmake/MParserConfig.cmake.in")
+            set(path "tests/public_contract/v1.14-baseline/${path}")
+        endif()
         file(READ "${PROJECT_ROOT}/${path}" contents)
         string(REPLACE "\r\n" "\n" contents "${contents}")
         string(REPLACE "\r" "\n" contents "${contents}")
@@ -71,4 +82,4 @@ foreach(pair IN ITEMS "c_api;header" "cpp_api;header")
         message(FATAL_ERROR "Live and frozen ${api} headers differ")
     endif()
 endforeach()
-message(STATUS "MParser 1.14.0 current public contract validated")
+message(STATUS "MParser 1.14.0 frozen public contract validated")

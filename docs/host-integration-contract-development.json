@@ -22,6 +22,10 @@
   },
   "artifacts": [
     {
+      "path": "cmake/MParserConfig.cmake.in",
+      "sha256_lf": "72392f672bdb8e7ef1904c8b15d27173737f753009b6fdfe5bec9966fea2449f"
+    },
+    {
       "path": "docs/public-contract-v1.14.json",
       "sha256_lf": "93fdba44cd7040dc602029909cc4c222fce4d0268304f8c6bb6fe408fdac5201"
     },

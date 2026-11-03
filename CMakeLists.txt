@@ -2913,6 +2913,7 @@ add_test(NAME runtime_graphics_smoke COMMAND runtime_graphics_smoke_tests
 add_test(NAME host_integration_development_contract
     COMMAND ${CMAKE_COMMAND} -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_host_integration_development.cmake)
+set_tests_properties(host_integration_development_contract PROPERTIES LABELS "documentation;release")
 set_tests_properties(runtime_graphics_smoke PROPERTIES TIMEOUT 30)
 target_link_libraries(runtime_debugger_smoke_tests PRIVATE
     mparser_core Threads::Threads)
