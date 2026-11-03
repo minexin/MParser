@@ -35,6 +35,8 @@ The isolated v3 binary was compiled from current MExecServer sources plus the
 two patched serialization call sites, linked with existing third-party Oat++
 libraries and the development MParser import library. This proves the selected
 binary's REST behavior, not a clean downstream CMake build or deployment.
+The later clean-build procedure below supersedes that limitation when it passes;
+the earlier evidence remains a record of the original isolated test.
 
 Latest paired local evidence:
 - Legacy: build/host-compile-probe/9fbc4681980346279ee78908f117306d
@@ -106,3 +108,36 @@ An isolated binary with both options passed those REST checks; raw evidence is
 build/host-compile-probe/56610d516503487ba260eca175f3c484. It reused previously
 compiled unchanged host objects and third-party libraries, so this is not
 evidence of a clean downstream CMake build or deployed navigation support.
+
+## Clean Installed-SDK Acceptance
+
+Run probe-clean-host.ps1 from an x64 MSVC developer environment with CMake,
+Ninja, PowerShell 7, Node.js, Git and robocopy available:
+
+```powershell
+./tools/host-integration/probe-clean-host.ps1 `
+  -ServerRoot D:/project/MExecServer `
+  -ClientRoot D:/project/MExecClient `
+  -SdkPrefix <installed-development-SDK>
+```
+
+The script copies source directories only into a unique repository build
+directory, excludes compiled artifacts, and builds the host and third-party
+libraries from source. Both new features are enabled with warnings-as-errors.
+The installed SDK supplies headers, import library and DLL; no host objects
+or libraries are reused from an existing server build. The original host,
+client and deployed service remain unchanged.
+
+The third host patch, mexecserver-development-acceptance.patch, supplies the
+configured SDK's exact ABI generation/revision to the REST regression (instead
+of hard-coded 2.5), and declares graphics v3 in /info only when enabled. It does
+not accept arbitrary newer revisions at runtime. The REST probe verifies the
+v3 capability declaration before executing graphics requests.
+
+Configuration/build/CTest output and REST probe results are retained under
+build/clean-host-probe. Any build, probe or regression failure stops the script;
+passing does not establish real-browser rendering or production deployment.
+
+Verified clean run: build/clean-host-probe/ddb1df19182d40db93f346e910a252c2
+(148 build actions, REST and candidate checks, host CTest 67/67). The installed
+DLL SHA256 was 655A551409F5860B48CBC9C693DE5AF34BA4778825C663C00AFA3A927CF99F76.

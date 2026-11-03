@@ -1,0 +1,30 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -160,1 +160,3 @@
+-            -FileRoot "${CMAKE_CURRENT_BINARY_DIR}/test-workspace"
++            -FileRoot "${CMAKE_CURRENT_BINARY_DIR}/test-workspace"
++            -ExpectedAbiGeneration ${MParser_C_ABI_GENERATION}
++            -ExpectedAbiRevision ${MParser_C_ABI_REVISION}
+diff --git a/tests/rest_api_smoke.ps1 b/tests/rest_api_smoke.ps1
+--- a/tests/rest_api_smoke.ps1
++++ b/tests/rest_api_smoke.ps1
+@@ -5,1 +5,3 @@
+-    [Parameter(Mandatory = $true)][string]$FileRoot
++    [Parameter(Mandatory = $true)][string]$FileRoot,
++    [int]$ExpectedAbiGeneration = 2,
++    [int]$ExpectedAbiRevision = 5
+@@ -115,1 +115,2 @@
+-    Assert-True ($health.Json.runtime.abi_major -eq 2 -and $health.Json.runtime.abi_revision -eq 5) "runtime ABI remains 2.5"
++    Assert-True ($health.Json.runtime.abi_major -eq $ExpectedAbiGeneration -and
++        $health.Json.runtime.abi_revision -eq $ExpectedAbiRevision) "runtime ABI matches configured SDK $ExpectedAbiGeneration.$ExpectedAbiRevision"
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -262,1 +262,5 @@
+-                                         {"graphics_schema_version", 1}}},
++#if MEXEC_GRAPHICS_V3
++                                         {"graphics_schema_version", 3}}},
++#else
++                                         {"graphics_schema_version", 1}}},
++#endif

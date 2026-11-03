@@ -29,6 +29,12 @@ try {
         try { $health = Invoke-RestMethod "$base/health" -TimeoutSec 2 } catch { Start-Sleep -Milliseconds 100 }
     }
     if (!$health) { throw "No health response; see $root" }
+    if ($GraphicsV3) {
+        $info = Invoke-RestMethod "$base/info"
+        if ($info.kernel_integration.graphics_schema_version -ne 3) {
+            throw "V3 server capability declaration is incorrect; see $root"
+        }
+    }
     $module = (Get-Process -Id $server.Id).Modules | Where-Object ModuleName -eq 'mparser_c.dll'
     if (!$module -or $module.FileName -ne $dll -or (Get-FileHash -LiteralPath $module.FileName).Hash -ne $expected) {
         throw 'Loaded kernel does not match requested DLL'

@@ -25,7 +25,7 @@ success may substitute for missing kernel contracts.
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping focused tests and opt-in v3 SDK identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Pending |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel 346/346 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -524,3 +524,19 @@ records that rename was not shipped; no rename operation or UI is claimed.
   variable and pinned in the development artifact manifest. Frozen v1.14,
   development manifest, installed C++ consumer and relocated archive checks
   passed 4/4 after this packaging change. No historical snapshot was rewritten.
+- Clean downstream acceptance: probe-clean-host.ps1 completed in the fresh
+  build/clean-host-probe/ddb1df19182d40db93f346e910a252c2 directory. It copied
+  source directories only, applied the three host and four client candidates,
+  enabled graphics v3 and definition metadata, and built all 148 host/dependency
+  actions with MSVC Release and host warnings-as-errors. All SDK inputs came
+  from the relocated installed package, not the kernel source include tree or
+  old host object files. The selected DLL hash was
+  655A551409F5860B48CBC9C693DE5AF34BA4778825C663C00AFA3A927CF99F76.
+  REST checks passed (build/host-compile-probe/5c3e664ced3e49c39285dc785af8c2bd),
+  the simulated client candidate tests passed, and host CTest finished 67/67
+  passed in 19.84 seconds. The initial clean attempt found a hard-coded ABI
+  2.5 regression expectation; the acceptance patch now checks the exact
+  configured SDK ABI and advertises v3 only when enabled. The original host,
+  client and deployed service were not modified. Browser visuals, production
+  integration, request negotiation, writeback and new product release are not
+  established by this clean-build test.
