@@ -7,11 +7,15 @@
     "milestone": "v1.15",
     "state": "development"
   },
-  "source_api": {"major": 1, "minor": 15, "patch": 0},
+  "source_api": {
+    "major": 1,
+    "minor": 15,
+    "patch": 0
+  },
   "c_abi": {
     "generation": 2,
-    "revision": 7,
-    "symbol_count": 146
+    "revision": 8,
+    "symbol_count": 148
   },
   "builtin_source_contract": {
     "major": 1,
@@ -29,19 +33,19 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "8d11afc69017aac9b00e6c3b65f03bec94940fa52934e452b9267b0a173a14cb"
+      "sha256_lf": "415f6a412ea73754eae8c1b59dd11a9dd8edbee6f07ae2b46d207a489913c15c"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
-      "sha256_lf": "0bb4fcb4591307c7e662ef9aaae0f5a753b6cef17a638578d411ea31cf37b852"
+      "sha256_lf": "b929bd7fb075f2112b73325468c531e3187d49de3055a2f53bfe5cb47baa9583"
     },
     {
       "path": "docs/definition-metadata.md",
-      "sha256_lf": "86e3421e1f28ef9f9cb7dc6ef7b98f6c9b7f58e65da743868667908c694ab536"
+      "sha256_lf": "71b69e71fa14eacde551102f8d4043ee07381019b537d4674d7a2e86bccfcf53"
     },
     {
       "path": "docs/variable-name-validation.md",
-      "sha256_lf": "df7445540cd1cc3cb268558b85f4f89b2d037b39a9d6bded7a13f87315ccbb0d"
+      "sha256_lf": "61107653eda48f3540d6e47b6c918950fc5c083dfbdceaced29fb2f2e92955ef"
     },
     {
       "path": "docs/graphics-clipping-contract.md",
@@ -49,11 +53,11 @@
     },
     {
       "path": "cmake/MParserConfig.cmake.in",
-      "sha256_lf": "0d799303b3f454244409e2dde05a2e08eca4f8ad2a3ab7f59a29ee37086c7f63"
+      "sha256_lf": "6cdc695d132bcebdf8ba99e2031ce9f7a3530460a9461a7278f34f432a726386"
     },
     {
       "path": "docs/graphics-color-contract.md",
-      "sha256_lf": "80ed5c12264972f8085191af43e9dd89c2157e4b40cc7ca7d394ade9a6dbe9d2"
+      "sha256_lf": "6d67eef2f1425077343ab417aa3fbcf3736af1da6c3d4196ef1e287a54a66880"
     },
     {
       "path": "docs/public-contract-v1.14.json",
@@ -61,15 +65,15 @@
     },
     {
       "path": "include/mparser/c_api.h",
-      "sha256_lf": "4c778649f93f05410ac8bb2971910a7913b0572215127570ca30bbd102b20995"
+      "sha256_lf": "6393d6c681d9e643b47f9d77e6647d6c0197ef6f8eaeecd96cb687cb4e03a74c"
     },
     {
       "path": "include/mparser/cpp_api.hpp",
-      "sha256_lf": "a97c697e371aef0042b946fa9968ab2bd3a59bd03a157f967a5730ba25d47cc0"
+      "sha256_lf": "f277efbd5afb96183c9b29e531d4744fb11f51d32fcfac03b39b673dbc032b48"
     },
     {
-      "path": "tests/c_api_generation2_revision7_symbols.txt",
-      "sha256_lf": "0cc2b4fcc64d684f70d03a45ea27dc06b98eaa6006db20ebaddbeb95bd687e9f"
+      "path": "tests/c_api_generation2_revision8_symbols.txt",
+      "sha256_lf": "8468320c9a2880f3fd5134657294777bab896f24a683fc02bb3290308d42b8df"
     },
     {
       "path": "docs/machine-result-v1.schema.json",
@@ -86,6 +90,10 @@
     {
       "path": "src/mparser/runtime/builtins/builtin_registry.h",
       "sha256_lf": "6ab349813a53582ef28974555cf29f83099a7227ce24fb055dd0f0ede506a76c"
+    },
+    {
+      "path": "docs/system-search-paths.md",
+      "sha256_lf": "61a014e2f9c89ea921d4d98c0b5289d51eb91a65cd8a0811c532ccc8f8a2326b"
     }
   ]
 }

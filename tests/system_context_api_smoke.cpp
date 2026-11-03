@@ -6,6 +6,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -119,6 +120,150 @@ SystemContextOptions fullOptions(const TemporaryTree& tree) {
     options.maximumOpenFiles = 8;
     options.maximumFileReadBytes = 1024;
     return options;
+}
+
+std::string utf8Path(const std::filesystem::path& path) {
+    const auto bytes = std::filesystem::weakly_canonical(path).generic_u8string();
+    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+void searchPathApiSmoke() {
+    TemporaryTree tree;
+    auto context = SystemContext::rootedNative(fullOptions(tree));
+    const auto lib = utf8Path(tree.root / "lib");
+    const auto sub = utf8Path(tree.root / "sub");
+    const auto original = context.searchPaths();
+    assert(original == std::vector<std::string>{lib});
+    context.setSearchPaths({"sub", "lib", "sub"});
+    const std::vector<std::string> expected{sub,lib};
+    assert(context.searchPaths() == expected && original == std::vector<std::string>{lib});
+    for (const auto& paths : std::vector<std::vector<std::string>>{
+            {"lib", "missing"}, {"lib", "../outside"}, {""},
+            {std::string("lib\0suffix", 10)}, {std::string(1, '\xff')}}) {
+        bool rejected = false;
+        try { context.setSearchPaths(paths); }
+        catch (const ApiError&) { rejected = true; }
+        assert(rejected && context.searchPaths() == expected);
+    }
+    const auto unicode = tree.root / std::filesystem::path(u"paths_\u8def\u5f84");
+    std::filesystem::create_directory(unicode);
+    context.setSearchPaths({utf8Path(unicode), "lib"});
+    assert(context.searchPaths() == std::vector<std::string>({utf8Path(unicode),lib}));
+    std::error_code linkError;
+    std::filesystem::create_directory_symlink(tree.outside, tree.root / "path-escape", linkError);
+    if (!linkError) {
+        const auto before = context.searchPaths();
+        bool rejected = false;
+        try { context.setSearchPaths({"path-escape"}); }
+        catch (const ApiError&) { rejected = true; }
+        assert(rejected && context.searchPaths() == before);
+    }
+    auto shared = mparser::sdk::Runtime::create(context);
+    context.setSearchPaths({"sub"});
+    auto added = shared.execute(Module::compile("addpath('lib');", "path_add.m"));
+    assert(added.succeeded() && context.searchPaths() == std::vector<std::string>({lib,sub}));
+    auto removed = shared.execute(Module::compile("rmpath('sub');", "path_remove.m"));
+    assert(removed.succeeded() && context.searchPaths() == std::vector<std::string>{lib});
+    {
+        std::ofstream helper(tree.root / "lib" / "sdk_path_unique.m");
+        helper << "function y=sdk_path_unique(x)\ny=x+731;\nend\n";
+        std::ofstream other(tree.root / "sub" / "sdk_path_unique.m");
+        other << "function y=sdk_path_unique(x)\ny=x+831;\nend\n";
+    }
+    const auto compileLookup = [&] {
+        mparser::sdk::SourceLoadOptions options;
+        options.searchPaths = context.searchPaths();
+        return Module::compile("y=sdk_path_unique(11);", "sdk_path_lookup.m", options);
+    };
+    const auto runLookup = [&](const Module& module, mparser::sdk::Backend backend) {
+        Invocation invocation;
+        invocation.backend = backend;
+        const auto result = shared.execute(module, invocation);
+        assert(result.succeeded());
+        for (const auto& variable : result.variables()) {
+            if (variable.name == "y") { return scalar(variable.value); }
+        }
+        assert(false);
+        return -1.0;
+    };
+    const auto first = compileLookup();
+    context.setSearchPaths({"sub", "lib"});
+    const auto next = compileLookup();
+    for (const auto backend : {mparser::sdk::Backend::Bytecode, mparser::sdk::Backend::Portable,
+                               mparser::sdk::Backend::Native, mparser::sdk::Backend::Automatic}) {
+        assert(runLookup(first, backend) == 742);
+        assert(runLookup(next, backend) == 842);
+    }
+    context.setSearchPaths({});
+    assert(context.searchPaths().empty());
+    assert(!shared.execute(compileLookup()).succeeded());
+    context.setSearchPaths({"lib"});
+    auto writer = std::async(std::launch::async, [copy=context] () mutable {
+        for (int index = 0; index < 200; ++index) {
+            copy.setSearchPaths(index % 2 ? std::vector<std::string>{"lib"} :
+                std::vector<std::string>{"sub","lib"});
+        }
+    });
+    for (int index = 0; index < 200; ++index) {
+        const auto snapshot = context.searchPaths();
+        assert(snapshot == std::vector<std::string>{lib} || snapshot == expected);
+    }
+    writer.get();
+    auto noPaths = fullOptions(tree);
+    noPaths.capabilities = SystemCapability::Random;
+    auto denied = SystemContext::rootedNative(noPaths);
+    for (bool mutation : {false,true}) {
+        bool rejected = false;
+        try { if (mutation) denied.setSearchPaths({}); else (void)denied.searchPaths(); }
+        catch (const ApiError& error) { rejected = error.status() == MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED; }
+        assert(rejected);
+    }
+
+    mparser_system_context_options options{};
+    assert(MPARSER_SYSTEM_CONTEXT_OPTIONS_INIT(&options) == MPARSER_API_STATUS_OK);
+    const auto root = utf8Path(tree.root);
+    options.root_directory = {root.data(),root.size()};
+    options.capabilities = MPARSER_SYSTEM_CAPABILITY_SEARCH_PATHS;
+    mparser_system_context* raw = nullptr;
+    assert(mparser_system_context_create_rooted_native(&options,&raw) == MPARSER_API_STATUS_OK);
+    const mparser_utf8_view paths[]{{"lib",3},{"sub",3}};
+    assert(mparser_system_context_set_search_paths(raw,paths,2) == MPARSER_API_STATUS_OK);
+    struct Copy { mparser_system_context* context; std::vector<std::string> paths; bool mutate = false; } copy{raw,{}};
+    const auto visitor = [](void* data, size_t index, mparser_utf8_view path) -> uint32_t {
+        auto& result = *static_cast<Copy*>(data);
+        assert(index == result.paths.size());
+        result.paths.emplace_back(path.data,path.size);
+        if (result.mutate && index == 0) {
+            const mparser_utf8_view replacement{"sub",3};
+            assert(mparser_system_context_set_search_paths(result.context,&replacement,1) == MPARSER_API_STATUS_OK);
+        }
+        return 1;
+    };
+    assert(mparser_system_context_visit_search_paths(raw,visitor,&copy) == MPARSER_API_STATUS_OK);
+    assert(copy.paths == std::vector<std::string>({lib,sub}));
+    copy.paths.clear(); copy.mutate = true;
+    assert(mparser_system_context_visit_search_paths(raw,visitor,&copy) == MPARSER_API_STATUS_OK);
+    assert(copy.paths == std::vector<std::string>({lib,sub}));
+    copy.paths.clear(); copy.mutate = false;
+    assert(mparser_system_context_visit_search_paths(raw,visitor,&copy) == MPARSER_API_STATUS_OK);
+    assert(copy.paths == std::vector<std::string>{sub});
+    const auto abort = [](void*,size_t,mparser_utf8_view)->uint32_t { return 0; };
+    assert(mparser_system_context_visit_search_paths(raw,abort,nullptr) == MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED);
+    assert(mparser_system_context_visit_search_paths(nullptr,visitor,&copy) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(mparser_system_context_visit_search_paths(raw,nullptr,nullptr) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(mparser_system_context_set_search_paths(nullptr,nullptr,0) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(mparser_system_context_set_search_paths(raw,nullptr,1) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    const mparser_utf8_view bad[]{ {nullptr,1}, {"",0}, {"a\0b",3}, {"\xff",1} };
+    for (const auto path : bad) {
+        assert(mparser_system_context_set_search_paths(raw,&path,1) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    }
+    copy.paths.clear();
+    assert(mparser_system_context_visit_search_paths(raw,visitor,&copy) == MPARSER_API_STATUS_OK);
+    assert(copy.paths == std::vector<std::string>{sub});
+    assert(mparser_system_context_set_search_paths(raw,nullptr,0) == MPARSER_API_STATUS_OK);
+    copy.paths.clear();
+    assert(mparser_system_context_visit_search_paths(raw,visitor,&copy) == MPARSER_API_STATUS_OK && copy.paths.empty());
+    mparser_system_context_release(raw);
 }
 
 const char* kSource = R"MATLAB(
@@ -315,6 +460,7 @@ end
 } // namespace
 
 int main() {
+    searchPathApiSmoke();
     TemporaryTree tree;
     const Module module = Module::compile(kSource, "system_context_api.m");
     assert(module.isValid());

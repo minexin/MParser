@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 15u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 7u
+#define MPARSER_C_ABI_REVISION 8u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -533,6 +533,27 @@ mparser_system_context_release(mparser_system_context* context);
 MPARSER_C_API mparser_system_capability
 mparser_system_context_capabilities(
     const mparser_system_context* context);
+
+/* Revision 8: visits a detached ordered path snapshot without executing source.
+ * Views are borrowed only for each callback. Callbacks run without context locks
+ * and return nonzero to continue; zero aborts with SYSTEM_CONTEXT_FAILED.
+ * SearchPaths capability is required. No callbacks occur on a snapshot error.
+ */
+typedef uint32_t (*mparser_search_path_visitor)(
+    void* user_data, size_t index, mparser_utf8_view path);
+MPARSER_C_API mparser_api_status mparser_system_context_visit_search_paths(
+    const mparser_system_context* context,
+    mparser_search_path_visitor visitor,
+    void* user_data);
+/* Replaces the entire ordered list after validating every directory. Relative
+ * paths resolve against one captured context cwd; rooted constraints apply.
+ * First occurrence wins for duplicates. Empty list clears paths; empty entries,
+ * NUL and malformed UTF-8 are invalid arguments. Failures preserve the list.
+ */
+MPARSER_C_API mparser_api_status mparser_system_context_set_search_paths(
+    mparser_system_context* context,
+    const mparser_utf8_view* paths,
+    size_t path_count);
 
 MPARSER_C_API mparser_api_status mparser_module_compile_utf8(
     const char* source,

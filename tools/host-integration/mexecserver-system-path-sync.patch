@@ -1,0 +1,152 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -37,1 +37,7 @@
+ find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++
++option(MEXEC_SYSTEM_PATH_SYNC "Compile against authoritative kernel search paths" OFF)
++if(MEXEC_SYSTEM_PATH_SYNC AND
++   (NOT MParser_C_ABI_GENERATION EQUAL 2 OR MParser_C_ABI_REVISION LESS 8))
++    message(FATAL_ERROR "Kernel path synchronization requires MParser ABI 2.8 or later")
++endif()
+@@ -79,1 +79,2 @@
+ target_compile_definitions(mexec_core PRIVATE
++    MEXEC_SYSTEM_PATH_SYNC=$<BOOL:${MEXEC_SYSTEM_PATH_SYNC}>
+diff --git a/include/mexec/engine/workspace_session.hpp b/include/mexec/engine/workspace_session.hpp
+--- a/include/mexec/engine/workspace_session.hpp
++++ b/include/mexec/engine/workspace_session.hpp
+@@ -223,1 +223,4 @@
+     void rebuildSystemContextLocked();
++    std::vector<std::string> compilationSearchPathsLocked(const std::filesystem::path& extra) const;
++    std::vector<std::string> virtualSearchPathsLocked() const;
++
+diff --git a/src/engine/workspace_session.cpp b/src/engine/workspace_session.cpp
+--- a/src/engine/workspace_session.cpp
++++ b/src/engine/workspace_session.cpp
+@@ -419,1 +419,35 @@
++#if MEXEC_SYSTEM_PATH_SYNC
++std::vector<std::string> WorkspaceSession::compilationSearchPathsLocked(const std::filesystem::path& extra) const {
++    const auto encode = [](const std::filesystem::path& path) {
++        const auto bytes = path.generic_u8string();
++        return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
++    };
++    auto result = systemContext_.searchPaths();
++    result.insert(result.begin(), encode(cwd_.empty() ? sessionStore_.root() : sessionStore_.root() / cwd_));
++    if (!extra.empty()) result.insert(result.begin(), encode(extra));
++    std::vector<std::string> unique;
++    for (auto& entry : result) {
++        if (std::find(unique.begin(), unique.end(), entry) == unique.end()) unique.push_back(std::move(entry));
++    }
++    return unique;
++}
++
++std::vector<std::string> WorkspaceSession::virtualSearchPathsLocked() const {
++    const auto root = std::filesystem::weakly_canonical(sessionStore_.root());
++    std::vector<std::string> result;
++    for (const auto& path : systemContext_.searchPaths()) {
++        std::u8string encoded;
++        encoded.reserve(path.size());
++        for (const auto byte : path) encoded.push_back(static_cast<char8_t>(static_cast<unsigned char>(byte)));
++        const auto relative = std::filesystem::path(encoded).lexically_relative(root);
++        if (relative.empty() || relative.is_absolute() || *relative.begin() == "..") {
++            throw std::runtime_error("kernel path is outside the session root");
++        }
++        const auto bytes = relative == "." ? std::u8string{} : relative.generic_u8string();
++        result.emplace_back(reinterpret_cast<const char*>(bytes.data()), bytes.size());
++    }
++    return result;
++}
++#endif
++
+ std::string WorkspaceSession::queryKernelCwdLocked() {
+@@ -633,1 +686,4 @@
+         [&](const std::filesystem::path& extra) {
++#if MEXEC_SYSTEM_PATH_SYNC
++            return compilationSearchPathsLocked(extra);
++#else
+@@ -657,1 +713,2 @@
+             return result;
++#endif
+@@ -1635,1 +1705,5 @@
+-    return path_;
++#if MEXEC_SYSTEM_PATH_SYNC
++    return virtualSearchPathsLocked();
++#else
++    return path_;
++#endif
+@@ -1656,1 +1730,14 @@
++#if MEXEC_SYSTEM_PATH_SYNC
++    try {
++        auto paths = systemContext_.searchPaths();
++        const auto bytes = resolved.generic_u8string();
++        const std::string physical(reinterpret_cast<const char*>(bytes.data()), bytes.size());
++        if (std::find(paths.begin(), paths.end(), physical) == paths.end()) paths.push_back(physical);
++        systemContext_.setSearchPaths(paths);
++        return true;
++    } catch (const std::exception& exception) {
++        if (error) *error = exception.what();
++        return false;
++    }
++#else
+     for (const auto& entry : path_) {
+@@ -1661,2 +1748,3 @@
+     path_.push_back(normalized);
+     return true;
++#endif
+@@ -1672,1 +1758,18 @@
++#if MEXEC_SYSTEM_PATH_SYNC
++    try {
++        auto entries = virtualSearchPathsLocked();
++        const auto found = std::find(entries.begin(), entries.end(), normalized);
++        if (found == entries.end()) {
++            if (error) *error = "path is not on the session path: " + path;
++            return false;
++        }
++        auto paths = systemContext_.searchPaths();
++        paths.erase(paths.begin() + std::distance(entries.begin(), found));
++        systemContext_.setSearchPaths(paths);
++        return true;
++    } catch (const std::exception& exception) {
++        if (error) *error = exception.what();
++        return false;
++    }
++#else
+     const auto iterator = std::find(path_.begin(), path_.end(), normalized);
+@@ -1679,2 +1807,3 @@
+     path_.erase(iterator);
+     return true;
++#endif
+@@ -1706,1 +1813,5 @@
+-    result["path"] = path_;
++#if MEXEC_SYSTEM_PATH_SYNC
++    result["path"] = virtualSearchPathsLocked();
++#else
++    result["path"] = path_;
++#endif
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -281,1 +281,4 @@
+                   "workspace-numeric-slices",
++#if MEXEC_SYSTEM_PATH_SYNC
++                  "kernel-search-path-sync",
++#endif
+@@ -1027,6 +1030,12 @@
+-        entries.push_back("/");
+-        for (const auto& entry : session->path()) {
+-            if (!entry.empty()) {
+-                entries.push_back("/" + entry);
+-            }
+-        }
++#if MEXEC_SYSTEM_PATH_SYNC
++        for (const auto& entry : session->path()) {
++            entries.push_back(entry.empty() ? "/" : "/" + entry);
++        }
++#else
++        entries.push_back("/");
++        for (const auto& entry : session->path()) {
++            if (!entry.empty()) {
++                entries.push_back("/" + entry);
++            }
++        }
++#endif

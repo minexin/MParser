@@ -28,10 +28,10 @@ set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
 set(MPARSER_C_ABI_GENERATION 2)
-set(MPARSER_C_ABI_REVISION 7)
+set(MPARSER_C_ABI_REVISION 8)
 set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision7_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision8_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -362,21 +362,27 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 146)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 148)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 146 symbols")
+            "C ABI symbol manifest must contain exactly 148 symbols")
     endif()
     file(STRINGS
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision5_symbols.txt"
         _mparser_previous_c_abi_symbols
         REGEX "^mparser_[A-Za-z0-9_]+$")
+    file(STRINGS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision7_symbols.txt"
+        _mparser_revision7_c_abi_symbols
+        REGEX "^mparser_[A-Za-z0-9_]+$")
+    list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision7_c_abi_symbols})
+    list(REMOVE_DUPLICATES _mparser_previous_c_abi_symbols)
     foreach(_mparser_previous_c_abi_symbol IN LISTS
             _mparser_previous_c_abi_symbols)
         list(FIND _mparser_c_abi_symbols
             "${_mparser_previous_c_abi_symbol}" _mparser_symbol_index)
         if(_mparser_symbol_index EQUAL -1)
             message(FATAL_ERROR
-                "C ABI revision 4 removed revision-3 symbol: "
+                "C ABI removed an earlier generation-2 symbol: "
                 "${_mparser_previous_c_abi_symbol}")
         endif()
     endforeach()
@@ -2883,7 +2889,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 146 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 148 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -3030,7 +3036,7 @@ set_tests_properties(cpp_shared_runtime_demo_smoke PROPERTIES
 add_executable(system_context_api_smoke_tests
     tests/system_context_api_smoke.cpp)
 target_link_libraries(system_context_api_smoke_tests PRIVATE
-    mparser_cpp_api)
+    mparser_cpp_api Threads::Threads)
 add_test(NAME system_context_api_smoke
     COMMAND system_context_api_smoke_tests)
 set_tests_properties(system_context_api_smoke PROPERTIES
@@ -3341,6 +3347,7 @@ install(FILES
     docs/variable-name-validation.md
     docs/graphics-clipping-contract.md
     docs/graphics-color-contract.md
+    docs/system-search-paths.md
     docs/host-integration-contract-development.json
     docs/performance-baseline-v1.schema.json
     docs/performance-suite-v1.schema.json

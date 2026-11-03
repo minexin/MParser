@@ -27,6 +27,8 @@ success may substitute for missing kernel contracts.
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
 | H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 349/349 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
+| H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
+| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | New 2026-11-03 host input recorded; SDK/event-stream design and implementation remain open |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -691,3 +693,51 @@ records that rename was not shipped; no rename operation or UI is claimed.
   passed 6/6 at build/graphics-color-final-package.log. The original host/client
   and deployed service remain unchanged. Actual browser visuals, source
   navigation/writeback and authenticated publication remain separate gates.
+- New host inputs audited on 2026-11-03: the actual iteration notes add dynamic
+  path/compiler divergence and missing ordered assignment displays. They are
+  tracked as H09/H10, not silently excluded from the goal. H10 is not solved by
+  showing final workspace values or by parsing assignments in the frontend.
+  H03 cross-file navigation remains open while H09 addresses the new blocking
+  kernel/host path boundary first.
+- H09 baseline reproduced with the prior development 1.15.0 ABI 2.7 DLL (not
+  only the old released SDK): addpath('lib') succeeded, the next direct call
+  failed, and REST path still showed ['/']. The host-path positive control
+  returned 742 and removal failed again as expected. Raw original-probe data:
+  build/path-sync-baseline/594f8a7620814ddd82e963a01aa5b2b6/path-sync-probe-7022f6cb441a45ec8083cf91d62cb4c7.
+- H09 SDK contract: two additive exports provide detached ordered UTF-8 path
+  visitation and atomic list replacement. C++ returns owned strings. Tests
+  cover ordering/dedup, Unicode, invalid/NUL input, capability/root constraints,
+  all-or-nothing failures, clear, reentrant callbacks, concurrent snapshots,
+  source addpath/rmpath updates, next-compile resolution and preserved existing
+  compiled bindings across four requested backends. The active development ABI
+  is 2.8/148 symbols; product/source API remains 1.15.0/1.15. Historical symbol
+  lists and v1.14 snapshots are preserved. Full kernel/package regression passed
+  349/349 in 45.33 seconds at build/path-full-regression-final.log. An earlier
+  run exposed an unload-test print still stamped revision-7 despite its runtime
+  assertion already checking 8; the print was synchronized, not weakened.
+- H09 opt-in host probe: compilation uses SDK paths under the session lock,
+  with checked entry-directory/cwd precedence; REST path display/add/remove and
+  session snapshots share the kernel list. No hidden path query is executed.
+  The incremental host probe passed at build/path-host-probe-incremental-v2,
+  covering direct/file lookups, prepend/end ordering, failures, cwd, clear,
+  reset/isolation, unchanged GET run/revision counts, and surviving closures,
+  graphics and RNG state. Its source-only in-memory compile endpoint is unchanged;
+  this does not promise cross-file navigation or retroactive resolution inside
+  an already compiled script. Clean installed-SDK acceptance is recorded separately.
+- H09 clean installed-SDK acceptance passed from source-only copies at
+  build/clean-host-probe/9c2059d6af5946f2aa1931cb27dcd001. The new path REST
+  probe, rename/definition/compiler/Color probes, client candidates and host
+  CTest 67/67 (20.04 seconds) all passed with warnings-as-errors enabled.
+  Path request/response evidence is in that run's path-probe directory; the
+  combined kernel REST evidence is build/host-compile-probe/f85e180cb48840029f0c18b65dde6cab.
+  The selected relocated SDK DLL SHA256 is
+  8FE54E9108F05BFC3B2B38A9AF73C1C3827CD289FF54356EF9608A07A455E269.
+  Original sibling sources and deployed services remain unchanged. This is
+  opt-in candidate acceptance, not actual browser/deployment/release acceptance.
+- Final H09 kernel/package rerun after explicit concurrent-test thread linkage
+  passed 349/349 in 47.29 seconds at build/path-final-regression.log. The host
+  option-OFF rebuild independently passed 67/67 in 20.74 seconds; the original
+  diagnostic probe with ABI 2.8 retained the old next-command failure and
+  host-path positive control at build/path-host-off-probe.log. This confirms
+  the opt-in boundary rather than masking the original failure. H10 ordered
+  display events and the remaining browser/deployment/release gates stay open.

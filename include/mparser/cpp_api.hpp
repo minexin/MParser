@@ -1251,6 +1251,36 @@ public:
             mparser_system_context_capabilities(requireRaw()));
     }
 
+    [[nodiscard]] std::vector<std::string> searchPaths() const {
+        struct Collector {
+            std::vector<std::string> paths;
+            std::exception_ptr failure;
+        } collector;
+        const auto visitor = [](void* data, std::size_t index, mparser_utf8_view path) noexcept -> std::uint32_t {
+            auto& output = *static_cast<Collector*>(data);
+            try {
+                if (index != output.paths.size()) { throw std::logic_error("unordered path snapshot"); }
+                output.paths.push_back(detail::copyUtf8(path));
+                return 1;
+            } catch (...) {
+                output.failure = std::current_exception();
+                return 0;
+            }
+        };
+        const auto status = mparser_system_context_visit_search_paths(requireRaw(), visitor, &collector);
+        if (collector.failure) { std::rethrow_exception(collector.failure); }
+        detail::checkStatus(status, "read system search paths");
+        return std::move(collector.paths);
+    }
+
+    void setSearchPaths(const std::vector<std::string>& paths) {
+        std::vector<mparser_utf8_view> views;
+        views.reserve(paths.size());
+        for (const auto& path : paths) { views.push_back({path.data(), path.size()}); }
+        detail::checkStatus(mparser_system_context_set_search_paths(requireRaw(), views.data(), views.size()),
+            "replace system search paths");
+    }
+
 private:
     using Handle = detail::SharedHandle<
         mparser_system_context, detail::SystemContextPolicy>;

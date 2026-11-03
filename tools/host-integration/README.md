@@ -1,4 +1,4 @@
-# MExecServer Graphics V3 Integration
+# MExec Host Integration Candidates
 
 This patch is an opt-in integration candidate, not a deployed server update.
 Apply it to a separate MExecServer source checkout after checking the diff:
@@ -98,7 +98,7 @@ Windows CRLF/LF differences; any substantive source mismatch fails the run.
 Apply the graphics/SDK-selection patch first, then
 mexecserver-definition-metadata.patch with --unidiff-zero and
 --ignore-space-change to the separate host checkout. Configure with
-MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (ABI 2.7).
+MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.8).
 Graphics v3 may remain OFF if only definition metadata is needed.
 The default remains OFF. This patch can be combined with the graphics patch;
 they modify separate compile definitions and REST/serialization call sites.
@@ -138,7 +138,8 @@ Ninja, PowerShell 7, Node.js, Git and robocopy available:
 
 The script copies source directories only into a unique repository build
 directory, excludes compiled artifacts, and builds the host and third-party
-libraries from source. Graphics v3, definition metadata and conditional rename
+libraries from source. Graphics v3, definition metadata, conditional rename and
+authoritative kernel path synchronization
 are enabled with warnings-as-errors.
 The installed SDK supplies headers, import library and DLL; no host objects
 or libraries are reused from an existing server build. The original host,
@@ -274,10 +275,49 @@ through the selected executable/DLL, checking canonical getters and snapshots,
 integer scaling, RGBA readback and unchanged graphs after invalid inputs. It
 requires the updated development kernel. The clean-host runner enables it.
 
-Latest complete clean installed-SDK run with five client candidates:
+Color baseline clean installed-SDK run with five client candidates:
 `build/clean-host-probe/9d7d0dee19914d4bbdd7ca0e103693cc` (148 build actions,
 all REST/candidate probes and host CTest 67/67). The loaded DLL SHA256 was
 `D8EE7C21B46138B10EBFA0EC3358C63173854D90FF86472019DFB31E9C616DBA`;
 raw REST evidence is `build/host-compile-probe/3249318bbaec4e398dd3418579ebcdb0`.
 These tests leave the deployed client/service unchanged and do not prove
 real-browser compositing or product-release acceptance.
+
+## Authoritative System Paths Candidate
+
+Apply mexecserver-system-path-sync.patch after the other five server patches.
+MEXEC_SYSTEM_PATH_SYNC defaults OFF; ON requires SDK ABI generation 2 revision 8
+and advertises kernel-search-path-sync. Existing command/source_path compilation
+reads SystemContext::searchPaths() for each request under the session lock.
+Checked source-directory/cwd entries precede the actual ordered path list.
+Source addpath/rmpath changes therefore reach later compilation even after a
+script fails. Existing compiled source graphs retain their original bindings.
+
+GET session/path maps the kernel list to virtual paths, including its real
+ordering/emptiness. It does not unconditionally invent a root entry. REST add
+keeps its existing append behavior; source addpath has kernel prepend/end
+behavior. REST updates call setSearchPaths instead of recreating Runtime or
+SystemContext, so handles, globals, file state and random streams are retained.
+Session snapshots use this same list. The old path_ behavior remains only in
+the disabled configuration. No path-query source or source-text parser is used.
+
+test-system-path-sync.cjs runs an isolated selected server, stores raw JSON and
+checks next-command/file resolution, shadow order, remove/end/clear, cwd, root
+and failure rules, GET side-effect checks, reset/isolation, closure/graphics and
+RNG continuity. The clean-host runner builds with the option ON and runs it
+before all other existing REST/candidate/67-host-test checks. The self-contained
+in-memory source endpoint is not widened to untrusted filesystem loading;
+cross-file in-memory navigation and same-compiled-script dynamic resolution
+remain separate work, as documented in system-search-paths.md.
+
+Clean installed-SDK path acceptance passed at
+`build/clean-host-probe/9c2059d6af5946f2aa1931cb27dcd001`: all path/rename/kernel
+REST/client-candidate checks and host CTest 67/67 (20.04 seconds), with host
+warnings-as-errors enabled. Raw path JSON is in that run's `path-probe`;
+other kernel REST evidence is `build/host-compile-probe/f85e180cb48840029f0c18b65dde6cab`.
+The selected ABI 2.8 DLL SHA256 is
+`8FE54E9108F05BFC3B2B38A9AF73C1C3827CD289FF54356EF9608A07A455E269`.
+The disabled option was rebuilt and passed 67/67 (20.74 seconds) separately;
+the original diagnostic probe retained the old next-command failure and host
+path positive control (`build/path-host-off-probe.log`). This is a compatibility
+control, not a claim that the disabled host now synchronizes paths.

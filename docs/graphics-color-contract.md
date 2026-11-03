@@ -1,6 +1,6 @@
 # Graphics Color Contract
 
-Development product 1.15.0, ABI 2.7. These rules apply to the existing Line and
+Development product 1.15.0, retained in ABI 2.8. These rules apply to the existing Line and
 Text Color properties, not to every MATLAB graphics class or to plot LineSpec
 arguments. No new C ABI symbol or builtin is introduced.
 

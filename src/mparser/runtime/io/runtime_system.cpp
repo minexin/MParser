@@ -1894,10 +1894,15 @@ RuntimeSystemStatus RuntimeSystemContext::setSearchPaths(
     if (!permission.succeeded) {
         return permission;
     }
+    std::filesystem::path base;
+    {
+        std::lock_guard lock(mutex_);
+        base = currentDirectory_;
+    }
     std::vector<std::filesystem::path> normalized;
     normalized.reserve(paths.size());
     for (const auto& path : paths) {
-        auto value = normalizeDirectory(path);
+        auto value = hostAdapter_->normalizeDirectory(base, path);
         if (!value.succeeded) {
             return RuntimeSystemStatus::failure(std::move(value.error));
         }

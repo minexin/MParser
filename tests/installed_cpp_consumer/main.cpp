@@ -215,10 +215,17 @@ end
 )", "installed_system_context_cpp.m");
         mparser::sdk::SystemContextOptions systemOptions;
         systemOptions.capabilities =
-            mparser::sdk::SystemCapability::Random;
+            mparser::sdk::SystemCapability::Random |
+            mparser::sdk::SystemCapability::SearchPaths;
         systemOptions.rootDirectory = ".";
         auto systemContext =
             mparser::sdk::SystemContext::rootedNative(systemOptions);
+        require(systemContext.searchPaths().empty(), "unexpected initial installed search paths");
+        systemContext.setSearchPaths({".", "."});
+        const auto installedPaths = systemContext.searchPaths();
+        require(installedPaths.size() == 1 && !installedPaths.front().empty(), "installed path snapshot/dedup failed");
+        systemContext.setSearchPaths({});
+        require(systemContext.searchPaths().empty(), "installed path replacement failed");
         require(mparser::sdk::hasSystemCapability(
                     systemContext.capabilities(),
                     mparser::sdk::SystemCapability::Random),

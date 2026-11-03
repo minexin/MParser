@@ -2146,6 +2146,52 @@ mparser_system_capability mparser_system_context_capabilities(
                : MPARSER_SYSTEM_CAPABILITY_NONE;
 }
 
+mparser_api_status mparser_system_context_visit_search_paths(
+    const mparser_system_context* context, mparser_search_path_visitor visitor, void* user_data) {
+    if (!context || !context->state || !visitor) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    try {
+        const auto snapshot = context->state->searchPaths();
+        if (!snapshot.succeeded) { return MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED; }
+        std::vector<std::string> paths;
+        paths.reserve(snapshot.value.size());
+        for (const auto& path : snapshot.value) {
+            auto text = mparser::pathToUtf8(path);
+            if (!mparser_c_detail::validPathText(text)) { return MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED; }
+            paths.push_back(std::move(text));
+        }
+        for (size_t index = 0; index < paths.size(); ++index) {
+            if (!visitor(user_data, index, mparser_c_detail::utf8View(paths[index]))) {
+                return MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED;
+            }
+        }
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
+mparser_api_status mparser_system_context_set_search_paths(
+    mparser_system_context* context, const mparser_utf8_view* paths, size_t path_count) {
+    if (!context || !context->state || (!paths && path_count)) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    try {
+        std::vector<std::filesystem::path> values;
+        values.reserve(path_count);
+        for (size_t index = 0; index < path_count; ++index) {
+            const auto text = mparser_c_detail::copyBytes(paths[index].data, paths[index].size);
+            if (!text || !mparser_c_detail::validPathText(*text)) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+            values.push_back(mparser::pathFromUtf8(*text));
+        }
+        return context->state->setSearchPaths(std::move(values)).succeeded
+            ? MPARSER_API_STATUS_OK : MPARSER_API_STATUS_SYSTEM_CONTEXT_FAILED;
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
 mparser_api_status mparser_runtime_create(
     const mparser_system_context* context,
     mparser_runtime** out_runtime) {

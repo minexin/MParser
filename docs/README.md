@@ -116,7 +116,7 @@ adds pause-event evaluation and conditional breakpoints at ABI 2.4, plus source
 breakpoint commands at builtin contract 1.19. The [V1.14 baseline](v1.14.md) adds
 headless graphics snapshots at ABI 2.5, protocol 1.2 and builtin contract 1.20,
 without mutating the historical snapshots. Current [V1.15 development](v1.15.md)
-uses ABI 2.7 and builtin 1.21 for host integration. See
+uses ABI 2.8 and builtin 1.21 for host integration. See
 [Interactive Script Input](interactive-input.md), [v1.12](v1.12.md), and
 [Debugging Through The SDK](debugging-sdk.md). The v1.3
 implementation train originally closed with 1.10; 1.11 added the guarded `sum`

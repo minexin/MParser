@@ -420,6 +420,8 @@ int main(void) {
         mparser_version_patch() != MPARSER_EXPECTED_VERSION_PATCH ||
         mparser_c_abi_generation() != MPARSER_C_ABI_GENERATION ||
         mparser_c_abi_revision() != MPARSER_C_ABI_REVISION ||
+        mparser_system_context_visit_search_paths(NULL, NULL, NULL) != MPARSER_API_STATUS_INVALID_ARGUMENT ||
+        mparser_system_context_set_search_paths(NULL, NULL, 0) != MPARSER_API_STATUS_INVALID_ARGUMENT ||
         mparser_module_compile_utf8(
             k_source, strlen(k_source),
             "installed_consumer.m",

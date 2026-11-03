@@ -11,7 +11,7 @@ MParser uses semantic versions for release tags and packages. The active
 source tree, product metadata, and installed SDK report candidate version
 `1.15.0` in development state. The v1.4-v1.14 internal batches previously
 retained the 1.3.0 stamp until the v1.14 milestone synchronized them. The
-v1.15 host-integration line now uses C/C++ source API 1.15, ABI 2.7, CLI 1.0,
+v1.15 host-integration line now uses C/C++ source API 1.15, ABI 2.8, CLI 1.0,
 protocol 1.2 and builtin 1.21. This identity is not a publication claim.
 
 This project is not currently using the v1.3 interfaces in production.
@@ -31,7 +31,7 @@ unreleased development interfaces.
 | MParser product and SDK | `1.15.0` development | Unreleased product identity |
 | Production CLI | 1.0 | Command, option, channel, and exit contract |
 | C source API | 1.15 | Header-level source contract for C hosts |
-| C ABI | generation 2, revision 7; v1.14 revision 5 remains archived | Binary layout, symbols, ownership, and calling convention |
+| C ABI | generation 2, revision 8; v1.14 revision 5 remains archived | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.15 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.2 | JSON producer/consumer contract |
 | Builtin source contract | 1.21 | Registry/descriptor/call semantics compiled with the engine |
@@ -51,7 +51,7 @@ separate execution products.
 
 `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.15.0`.
 `MPARSER_C_ABI_GENERATION` contains generation `2`, and
-the active header's `MPARSER_C_ABI_REVISION` contains revision `7`.
+the active header's `MPARSER_C_ABI_REVISION` contains revision `8`.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` expose the same
 binary compatibility identifiers at runtime. The generation terminology is
 deliberately distinct from the MParser product version and source API.
@@ -73,7 +73,8 @@ snapshots are archive evidence, not live header inputs.
 
 The v1.15 development work adds identifier/definition accessors (revision 6,
 144 exports) and version-selectable value/result graphics snapshots (revision
-7, 146 exports). Current installed contract metadata points to the explicit
+7, 146 exports), then authoritative SystemContext path access/replacement
+(revision 8, 148 exports). Current installed contract metadata points to the explicit
 development manifest; the v1.14 manifest and its hashes remain immutable.
 
 Repository consumers move with unreleased development headers. An incompatible

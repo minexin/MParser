@@ -38,6 +38,8 @@ The v1.15 development SDK adds four identifier/definition exports in revision
 symbols and ABI layouts remain present; product/source API identity is 1.15.0.
 The value accessor returns owned JSON for retained graphics handles/arrays;
 the result accessor borrows an immutable execution-completion graph snapshot.
+Revision 8 adds ordered SystemContext path visitation and atomic replacement,
+bringing the active manifest to 148 exports without changing record layouts.
 
 ## Development Policy
 
