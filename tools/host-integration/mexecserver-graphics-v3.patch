@@ -1,0 +1,40 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -39,3 +39,10 @@
+ find_package(MParser 1.14.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
+ 
++option(MEXEC_GRAPHICS_V3 "Require identity-bearing graphics snapshots (v3 clients only)" OFF)
++if(MEXEC_GRAPHICS_V3 AND
++   (NOT MParser_C_ABI_GENERATION EQUAL 2 OR MParser_C_ABI_REVISION LESS 7 OR
++    NOT EXISTS "${MParser_GRAPHICS_V3_SCHEMA_FILE}"))
++    message(FATAL_ERROR "Graphics v3 requires the MParser ABI 2.7 SDK and graphics v3 schema")
++endif()
++
+ set(MEXEC_KERNEL_MILESTONE "V1.14" CACHE STRING "Integrated kernel milestone")
+@@ -81,2 +88,3 @@
+ target_compile_definitions(mexec_core PRIVATE
++    MEXEC_GRAPHICS_V3=$<BOOL:${MEXEC_GRAPHICS_V3}>
+     MEXEC_KERNEL_MILESTONE="${MEXEC_KERNEL_MILESTONE}"
+diff --git a/src/engine/workspace_session.cpp b/src/engine/workspace_session.cpp
+--- a/src/engine/workspace_session.cpp
++++ b/src/engine/workspace_session.cpp
+@@ -354,3 +354,7 @@
+     try {
++#if MEXEC_GRAPHICS_V3
++        outcome.graphicsJson = result.graphicsJson(3);
++#else
+         outcome.graphicsJson = result.graphicsJson();
++#endif
+     } catch (const std::exception& exception) {
+diff --git a/src/engine/value_json.cpp b/src/engine/value_json.cpp
+--- a/src/engine/value_json.cpp
++++ b/src/engine/value_json.cpp
+@@ -579,3 +579,7 @@
+             try {
++#if MEXEC_GRAPHICS_V3
++                const auto graphics = value.graphicsJson(3);
++#else
+                 const auto graphics = value.graphicsJson();
++#endif
+                 if (!graphics.empty()) {

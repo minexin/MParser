@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory)][string]$ServerExe,
     [Parameter(Mandatory)][string]$KernelDll,
-    [switch]$MetadataOnly
+    [switch]$MetadataOnly,
+    [switch]$GraphicsV3
 )
 $ErrorActionPreference = 'Stop'
 $root = Join-Path $PSScriptRoot ('../build/host-compile-probe/' + [guid]::NewGuid().ToString('N'))
@@ -121,7 +122,7 @@ try {
             @{name='closed'; command="close all; if isvalid(lg) || isvalid(first); error('closed handles still live'); end;"},
             @{name='recreated'; command="fresh=plot([1,10;2,20;3,30]); if isvalid(first) || ~isvalid(fresh(1)); error('incorrect recreated handle lifetime'); end;"}
         )) {
-            $body = @{command=$case.command} | ConvertTo-Json
+            $body = @{command=$case.command; include_workspace_values=[bool]$GraphicsV3} | ConvertTo-Json
             $response = Invoke-WebRequest "$base/sessions/$($gs.id)/execute" -UseBasicParsing -Method Post -ContentType 'application/json' -Body $body
             [IO.File]::WriteAllText((Join-Path $root ("graphics_" + $case.name + '.json')), [string]$response.Content)
             $result = $response.Content | ConvertFrom-Json
@@ -139,16 +140,32 @@ try {
                     ($lines[1].properties.YData -join ',') -ne '10,20,30') { throw "Incorrect matrix plot; see $root" }
                 Write-Output "graphics/$($case.name) first Line snapshot id: $($lines[0].id)"
                 if ($case.name -in @('matrix','recreated')) {
-                    if ($graph.version -ne 1 -or $legends.Count -ne 0) { throw "Unexpected implicit legend/version; see $root" }
+                    if ((!$GraphicsV3 -and $graph.version -ne 1) -or $legends.Count -ne 0) { throw "Unexpected implicit legend/version; see $root" }
                 } else {
                     $title = @($graph.objects | Where-Object id -eq $axes[0].labels.Title)
-                    if ($graph.version -ne 2 -or $title.Count -ne 1 -or $title[0].type -ne 'Text' -or
+                    if ((!$GraphicsV3 -and $graph.version -ne 2) -or $title.Count -ne 1 -or $title[0].type -ne 'Text' -or
                         $title[0].properties.String -ne 'Gain' -or $axes[0].properties.XGrid -ne 'on' -or
                         $lines[0].properties.Clipping -ne 'off' -or $lines[1].properties.Clipping -ne 'on' -or
                         $legends.Count -ne 1 -or $legends[0].axes -ne $axes[0].id -or
                         $legends[0].entries.Count -ne 2 -or $legends[0].entries[0].line -ne $lines[0].id -or
                         $legends[0].entries[0].label -ne 'Measured' -or $legends[0].entries[1].line -ne $lines[1].id) {
                         throw "Incorrect annotated graph; see $root"
+                    }
+                }
+            }
+            if ($GraphicsV3) {
+                if ($graph.version -ne 3 -or !$graph.graphIdentity) { throw "Missing v3 graph: $root" }
+                if ($case.name -eq 'matrix') { $graphId = $graph.graphIdentity; $lineId = $lines[0].objectIdentity }
+                if ($graph.graphIdentity -cne $graphId) { throw "Graph identity changed: $root" }
+                if ($case.name -ne 'closed') {
+                    $name = if ($case.name -eq 'recreated') { 'fresh' } else { 'lines' }
+                    $array = ($result.workspace | Where-Object name -eq $name).value.graphics
+                    $g = $array.graphs[0]
+                    $node = @($g.objects | Where-Object id -eq $array.elements[0].reference)
+                    if ($g.version -ne 3 -or $g.graphIdentity -cne $graphId -or $node.Count -ne 1 -or
+                        !$node[0].objectIdentity -or $node[0].objectIdentity -cne $lines[0].objectIdentity -or
+                        (($case.name -eq 'recreated') -eq ($lines[0].objectIdentity -ceq $lineId))) {
+                        throw "Result/workspace identity mismatch: $root"
                     }
                 }
             }

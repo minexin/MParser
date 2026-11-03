@@ -483,3 +483,12 @@ records that rename was not shipped; no rename operation or UI is claimed.
   handles, empty path and unsupported device. Raw responses:
   build/host-compile-probe/9f673d4457b94205986c65402375992c.
   Registry, catalog snapshot and development contract checks passed 3/3.
+- H06 isolated MExecServer integration: compiled and linked the server sources
+  with the two v3 SDK call sites enabled and ran probe-host-compile.ps1 with
+  -GraphicsV3. REST graph 3 exported Line identity 3 before/after annotation
+  and identity 9 after close/recreate, despite local reference 3 in all three
+  nonempty snapshots. Workspace array references resolved to the same graph
+  and Line identity as the result. Raw responses:
+  build/host-compile-probe/831df21e474247e88b4d37b875c239c6.
+  This verifies the opt-in server binary, not deployment, browser rendering,
+  request negotiation, or property writeback.
