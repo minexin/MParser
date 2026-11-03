@@ -105,7 +105,8 @@ RuntimeGraphicsId RuntimeGraphicsGraph::create(RuntimeGraphicsKind kind,
         auto& children = nodes_.at(*parent).children;
         children.reserve(children.size() + 1);
     }
-    nodes_.emplace(id, RuntimeGraphicsNode{kind, id, parent, {}, defaultProperties(kind)});
+    nodes_.emplace(id, RuntimeGraphicsNode{kind, id, parent, {}, defaultProperties(kind),
+        std::nullopt, {}, std::nullopt});
     if (parent) { nodes_.at(*parent).children.push_back(id); }
     ++nextId_;
     if (kind == RuntimeGraphicsKind::Figure) { currentFigure_ = id; }
