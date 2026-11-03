@@ -618,6 +618,33 @@ end
 }
 
 void runDefinitionMetadataSmoke() {
+    const std::vector<mparser::sdk::SourceUnit> graphSources{
+        {"first.m", "% \xc3\xa9\r\nfunction y=first(x)\r\ny=helper(x);\r\nfunction z=helper(x)\r\nz=x;\r\nend\r\nend\r\n"},
+        {"second.m", "function y=second(x)\ny=helper(x);\nfunction z=helper(x)\nz=x+1;\nend\nend\n"}
+    };
+    auto graph = Module::compile(graphSources);
+    assert(graph.isValid());
+    const auto graphDefinitions = graph.definitions();
+    assert(graphDefinitions.size() == 4);
+    for (std::size_t index = 0; index < graphDefinitions.size(); ++index) {
+        const auto& definition = graphDefinitions[index];
+        const auto sourceIndex = index / 2;
+        assert(definition.sourceIndex == sourceIndex);
+        assert(definition.source.sourceName == graphSources[sourceIndex].name);
+        assert(definition.source.end.offset <= graphSources[sourceIndex].source.size());
+        assert(graphSources[sourceIndex].source.substr(definition.source.begin.offset,8) == "function");
+        if (index % 2) {
+            assert(definition.name == "helper");
+            assert(definition.parentFunction == index - 1);
+            assert(definition.kind == mparser::sdk::DefinitionKind::NestedFunction);
+        } else {
+            assert(!definition.parentFunction);
+        }
+    }
+    graph = Module{};
+    assert(graphDefinitions[3].source.sourceName == "second.m");
+    assert(graphDefinitions[3].name == "helper");
+
     const std::string source = "% \xc3\xa9\r\nfunction y=outer(x)\r\n"
         "y=inner(x);\r\nfunction z=inner(x)\r\nz=x;\r\nend\r\nend\r\n";
     auto module = Module::compile(source, "definitions.m");

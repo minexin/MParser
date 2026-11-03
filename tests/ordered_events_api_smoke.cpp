@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 using namespace mparser::sdk;
@@ -16,7 +17,7 @@ Value variable(const Result& result,const std::string& name) {
     throw std::runtime_error("missing variable "+name);
 }
 double scalar(const Value& value) { return value.numericData().front(); }
-const ExecutionEvent& labelled(const std::vector<ExecutionEvent>& events,const std::string& label) {
+const ExecutionEvent& labelled(const std::vector<ExecutionEvent>& events,std::string_view label) {
     const auto found = std::find_if(events.begin(),events.end(),[&](const auto& event){return event.label == label;});
     require(found != events.end(),"missing labelled event"); return *found;
 }
