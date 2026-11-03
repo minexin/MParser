@@ -1,8 +1,8 @@
 # Variable Name Validation
 
-Development API, introduced in C ABI generation 2 revision 6. Product-version
-and public-contract snapshot synchronization is still pending; this checkout
-is not a published release candidate.
+Development API, introduced in C ABI generation 2 revision 6 and retained in
+the 1.15.0 development SDK (ABI 2.7). Product identity and the active development
+manifest are synchronized; this checkout is not a published release candidate.
 
 `mparser_validate_variable_name(mparser_utf8_view, out_status)` performs a pure,
 allocation-free check without compiling source or creating a runtime. The C++
@@ -32,7 +32,8 @@ does not promise that every source grammar position already accepts contextual
 names: parser alignment remains pending in the current goal.
 
 Source builtins `isvarname`, `iskeyword` and `namelengthmax` use the same
-internal rules (builtin source contract 1.21; catalog snapshot added, release pending).
+internal rules (builtin source contract 1.21; catalog snapshot included in the
+development manifest, formal release pending).
 `isvarname(value)` and `iskeyword(value)` return scalar logical false for
 non-text, non-scalar string, missing string or non-row-character inputs.
 `iskeyword()` returns the 20 reserved keywords as a 20-by-1 cell array of
@@ -46,3 +47,13 @@ counts are rejected by the builtin registry.
 exercises both the public wrapper and C entrypoint argument failures.
 The shared-library ABI test verifies the two added exports alongside the
 previous 140 exports. Historical revision-5 manifests remain unchanged.
+
+## Host Rename Candidate
+
+`tools/host-integration/mexecserver-workspace-rename.patch` uses this validator
+for an opt-in, revision-checked REST operation. The host checks collisions and
+renames only the binding under its existing session lock, leaving the SDK Value
+untouched. It does not compile or execute an assignment and does not reconstruct
+the value from JSON. The default route remains disabled; this is not a deployed
+host or client update. See `tools/host-integration/README.md` for the candidate
+contract, reproduction and acceptance boundaries.

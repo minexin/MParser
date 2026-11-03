@@ -35,7 +35,7 @@ foreach ($target in @($hostSource,$clientSource)) {
     if ($LASTEXITCODE) { throw "Cannot initialize patch target: $target" }
 }
 foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-metadata.patch',
-    'mexecserver-development-acceptance.patch')) {
+    'mexecserver-development-acceptance.patch','mexecserver-workspace-rename.patch')) {
     git -C $hostSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Host patch failed: $patch; see $stage" }
 }
@@ -49,10 +49,14 @@ cmake -S $hostSource -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release `
     "-DMParser_DIR=$sdk/lib/cmake/MParser" "-DMEXEC_CLIENT_WEB_DIR=$clientSource/web" `
     "-DMEXEC_NODE_EXECUTABLE=$node" -DMEXEC_BUILD_TESTS=ON -DMEXEC_WARNINGS_AS_ERRORS=ON `
     -DMEXEC_GRAPHICS_V3=ON -DMEXEC_DEFINITION_METADATA=ON `
+    -DMEXEC_WORKSPACE_RENAME=ON `
     -DMEXEC_KERNEL_MILESTONE=development | Tee-Object -FilePath (Join-Path $stage 'configure.log')
 if ($LASTEXITCODE) { throw "Clean host configure failed; see $stage" }
 cmake --build $build --parallel $Parallel | Tee-Object -FilePath (Join-Path $stage 'build.log')
 if ($LASTEXITCODE) { throw "Clean host build failed; see $stage" }
+node (Join-Path $PSScriptRoot 'test-workspace-rename.cjs') (Join-Path $build 'mexec_server.exe') `
+    (Join-Path $stage 'rename-probe') on
+if ($LASTEXITCODE) { throw "Workspace rename probe failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
     -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')

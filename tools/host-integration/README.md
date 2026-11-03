@@ -44,7 +44,7 @@ binary's REST behavior, not a clean downstream CMake build or deployment.
 The later clean-build procedure below supersedes that limitation when it passes;
 the earlier evidence remains a record of the original isolated test.
 
-Latest paired local evidence:
+Earlier paired local evidence:
 - Legacy: build/host-compile-probe/9fbc4681980346279ee78908f117306d
 - V3: build/host-compile-probe/e289ee0fbfab40c4b63e37af37ae95f9
 
@@ -131,7 +131,8 @@ Ninja, PowerShell 7, Node.js, Git and robocopy available:
 
 The script copies source directories only into a unique repository build
 directory, excludes compiled artifacts, and builds the host and third-party
-libraries from source. Both new features are enabled with warnings-as-errors.
+libraries from source. Graphics v3, definition metadata and conditional rename
+are enabled with warnings-as-errors.
 The installed SDK supplies headers, import library and DLL; no host objects
 or libraries are reused from an existing server build. The original host,
 client and deployed service remain unchanged.
@@ -146,7 +147,7 @@ Configuration/build/CTest output and REST probe results are retained under
 build/clean-host-probe. Any build, probe or regression failure stops the script;
 passing does not establish real-browser rendering or production deployment.
 
-Verified clean run: build/clean-host-probe/ddb1df19182d40db93f346e910a252c2
+Earlier verified clean run: build/clean-host-probe/ddb1df19182d40db93f346e910a252c2
 (148 build actions, REST and candidate checks, host CTest 67/67). The installed
 DLL SHA256 was 655A551409F5860B48CBC9C693DE5AF34BA4778825C663C00AFA3A927CF99F76.
 
@@ -166,3 +167,52 @@ real v2 snapshot's matrix data, labels, grids, clipping and Legend in the
 candidate renderer. The standalone CI job covers patch replay only, while
 normal platform CTest runs cover the real kernel scene when tools are present.
 This remains simulated-canvas, not real-browser, acceptance.
+
+## Conditional Workspace Rename Candidate
+
+Apply `mexecserver-workspace-rename.patch` after the three server patches above,
+using `git apply --unidiff-zero --ignore-space-change`. Configure
+`MEXEC_WORKSPACE_RENAME=ON` to advertise `conditional-workspace-rename` in `/info`
+and enable `POST /sessions/{id}/workspace/{name}/rename`. The option defaults to
+OFF; no unconditional rename API is added. The existing conditional-delete
+regression now checks the configured rename capability in either mode.
+
+The JSON body requires `new_name` (string) and `expected_revision` (unsigned
+decimal string). The session checks the revision, calls SDK
+`validateVariableName`, finds the exact case-sensitive source binding and
+rejects destination collisions under one lock. A successful rename changes
+only `NamedValue.name` and increments the revision exactly once. Renaming an
+existing name to itself is a no-op with an unchanged revision. No SDK Value is
+copied/reconstructed, no source is replaced and no script is executed.
+
+Responses: success includes `renamed` and the revision captured under the lock;
+stale revision is HTTP 409 `workspace_conflict`, an occupied destination is
+409 `variable_name_conflict`, and a missing source is 404 `variable_not_found`.
+Kernel name rejection is 400 `invalid_variable_name`, including the public
+`name_status` enum value and kernel-reported `max_length`. Malformed JSON,
+missing/wrong-type fields and malformed/overflowing revisions return 400
+without mutation. Stale revisions take precedence over name validation and
+binding lookup; clients must refresh instead of guessing the current state.
+
+The clean-host script runs `test-workspace-rename.cjs` with the built server.
+It retains raw request/response JSON and checks kernel validation reasons,
+63/64-byte boundaries, embedded NUL/non-ASCII, contextual and builtin names,
+case sensitivity, collisions, missing source, no-op, no execution/source change,
+numeric values, captured function handles, graphics aliases, dynamic objects
+and descriptors, rename/rename and rename/PUT races, and stale requests after
+reset. Contextual-name acceptance here concerns binding validation, not a
+claim that every parser grammar position accepts those names.
+
+For a host configured with the option OFF, run the same Node test with a new
+empty evidence directory and the final argument `off`; it checks the missing
+capability/route and unchanged workspace. The ON probe uses `on`. The tests
+stop their own isolated server and never update the deployed host or browser.
+
+Latest complete one-command run:
+`build/clean-host-probe/752a6a87a7984b61b469ccd1c1f6da32` (148 clean build
+actions, rename/REST/client candidates and host CTest 67/67). The selected
+installed 1.15.0 DLL SHA256 was
+`503D91D4AADE837C7A5E9CCDF995D8BD4C703E0382A8466AFF21250F6EF29E8B`.
+The separately configured OFF-mode probe and conditional-delete test passed
+at `build/clean-host-probe/070e28f719224c6e8b4ba13704ee3ec0/rename-probe-off`.
+This establishes focused server-side adoption, not a deployed rename UI.

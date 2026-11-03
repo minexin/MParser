@@ -20,7 +20,7 @@ success may substitute for missing kernel contracts.
 | ID | Work | Acceptance | State |
 | --- | --- | --- | --- |
 | H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Focused kernel and Windows host REST compile-only cases verified; shipped host package unchanged |
-| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK and Windows REST builtin checks passed; host rename adoption not shipped or verified |
+| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and isolated revision-checked rename candidate passed, including value identity and races; deployed rename UI/API adoption pending |
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | SDK and isolated host compile REST checked, including repeated nested names, CRLF/UTF-8 and class methods; deployed navigation and cross-file REST acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
@@ -579,3 +579,38 @@ records that rename was not shipped; no rename operation or UI is claimed.
   build/host-compile-probe/06cf4f34e8a848d398f01743b4721e95. These are native
   script-handle operations through REST, not identity-targeted host writeback,
   concurrent reset/mutation safety or client selection-persistence acceptance.
+- H02 conditional rename candidate: an opt-in host patch calls SDK variable-name
+  validation and renames only the existing NamedValue binding under the session
+  revision lock. Focused REST tests passed for invalid-name reason codes,
+  contextual/builtin names, length/UTF-8/NUL boundaries, case sensitivity,
+  collisions, missing names, no-op and stale revisions. Numeric values,
+  captured closures, graphics aliases, dynamic objects and DynamicProperty
+  descriptors remained usable after rename; the rename itself did not execute
+  or replace the source. Rename/rename and rename/conditional-PUT races had one
+  winner and one conflict, with one revision increment. Reset made old requests
+  stale. Evidence: build/clean-host-probe/070e28f719224c6e8b4ba13704ee3ec0/rename-probe-rgb.
+  The clean installed-SDK host build completed 148 actions and host regression
+  passed 67/67 in 19.02 seconds. With MEXEC_WORKSPACE_RENAME=OFF, capability and
+  route absence plus unchanged workspace passed in rename-probe-off in that
+  same directory; conditional-delete regression also passed in both modes.
+  An initial identity-test fixture used Line.Color='r', which the current
+  kernel rejects; the supported numeric RGB form passed. Character color
+  aliases remain a compatibility gap, not a new supported capability.
+  The original MExecServer/MExecClient and running services were not modified;
+  deployed rename and browser interaction remain unverified. The prior main
+  commit dfaecc1 passed Documentation CI 41589149719 and Cross-platform CI
+  41589149807; those runs preceded the rename candidate.
+- H02 one-command clean replay: the final probe-clean-host.ps1 completed at
+  build/clean-host-probe/752a6a87a7984b61b469ccd1c1f6da32, including all 148
+  build actions, expanded case-distinct binding checks, rename identity/races,
+  kernel REST probes, client candidate checks and host CTest 67/67 (32.35
+  seconds while kernel regression was running separately). Raw kernel REST
+  evidence: build/host-compile-probe/ae3e407fec7b459e9abba85f7396f23a.
+  The DLL hash remained 503D91D4AADE837C7A5E9CCDF995D8BD4C703E0382A8466AFF21250F6EF29E8B.
+- Final local kernel/package regression passed 347/347 in 39.70 seconds in the
+  x64 MSVC developer environment, including installed C/C++ consumers, the
+  relocated archive and updated development-document hashes. An earlier run
+  from the plain shell failed only those three package tests because the
+  compiler/linker environment could not find kernel32.lib; no test assertion
+  was weakened. Logs: build/rename-kernel-regression-msvc.log (passing) and
+  build/rename-kernel-regression.log (environment failure).

@@ -1,0 +1,127 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -37,1 +37,7 @@
+ find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++
++option(MEXEC_WORKSPACE_RENAME "Expose revision-checked workspace rename" OFF)
++if(MEXEC_WORKSPACE_RENAME AND
++   (NOT MParser_C_ABI_GENERATION EQUAL 2 OR MParser_C_ABI_REVISION LESS 6))
++    message(FATAL_ERROR "Workspace rename requires MParser variable-name validation ABI 2.6 or later")
++endif()
+@@ -79,1 +79,2 @@
+ target_compile_definitions(mexec_core PRIVATE
++    MEXEC_WORKSPACE_RENAME=$<BOOL:${MEXEC_WORKSPACE_RENAME}>
+@@ -220,1 +220,1 @@
+-            COMMAND "${MEXEC_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/workspace_conditional_delete.test.cjs" "$<TARGET_FILE:mexec_server>")
++            COMMAND "${MEXEC_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/workspace_conditional_delete.test.cjs" "$<TARGET_FILE:mexec_server>" "$<BOOL:${MEXEC_WORKSPACE_RENAME}>")
+diff --git a/include/mexec/engine/workspace_session.hpp b/include/mexec/engine/workspace_session.hpp
+--- a/include/mexec/engine/workspace_session.hpp
++++ b/include/mexec/engine/workspace_session.hpp
+@@ -172,1 +172,12 @@
+     void clearWorkspace();
++    enum class WorkspaceRenameStatus { Renamed, Unchanged, Conflict, NotFound, NameConflict, InvalidName };
++    struct WorkspaceRenameResult {
++        WorkspaceRenameStatus status;
++        std::uint64_t revision;
++        mparser::sdk::VariableNameStatus nameStatus = mparser::sdk::VariableNameStatus::Valid;
++    };
++    // Renames only the binding under the revision lock; the SDK Value is untouched.
++    WorkspaceRenameResult renameWorkspaceValue(
++        const std::string& name, const std::string& newName,
++        std::uint64_t expectedRevision);
++
+diff --git a/src/engine/workspace_session.cpp b/src/engine/workspace_session.cpp
+--- a/src/engine/workspace_session.cpp
++++ b/src/engine/workspace_session.cpp
+@@ -1444,1 +1444,31 @@
++WorkspaceSession::WorkspaceRenameResult WorkspaceSession::renameWorkspaceValue(
++    const std::string& name, const std::string& newName,
++    std::uint64_t expectedRevision) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    using Status = WorkspaceRenameStatus;
++    if (expectedRevision != workspaceRevision_) {
++        return {Status::Conflict, workspaceRevision_};
++    }
++    const auto nameStatus = mparser::sdk::validateVariableName(newName);
++    if (nameStatus != mparser::sdk::VariableNameStatus::Valid) {
++        return {Status::InvalidName, workspaceRevision_, nameStatus};
++    }
++    const auto source = std::find_if(workspace_.begin(), workspace_.end(),
++        [&](const auto& variable) { return variable.name == name; });
++    if (source == workspace_.end()) {
++        return {Status::NotFound, workspaceRevision_};
++    }
++    if (name == newName) {
++        return {Status::Unchanged, workspaceRevision_};
++    }
++    if (std::any_of(workspace_.begin(), workspace_.end(),
++        [&](const auto& variable) { return variable.name == newName; })) {
++        return {Status::NameConflict, workspaceRevision_};
++    }
++    source->name = newName;
++    ++workspaceRevision_;
++    recordActivity();
++    return {Status::Renamed, workspaceRevision_};
++}
++
+ void WorkspaceSession::clearWorkspace() {
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -280,1 +280,4 @@
+                   "conditional-workspace-delete",
++#if MEXEC_WORKSPACE_RENAME
++                  "conditional-workspace-rename",
++#endif
+@@ -862,1 +862,42 @@
++#if MEXEC_WORKSPACE_RENAME
++    if (segments.size() == 2 && segments[1] == "rename") {
++        if (request.method != "POST") return errorResponse(405, "method_not_allowed", "use POST");
++        std::string error;
++        const auto body = parseJsonBody(request, &error);
++        if (!body || !body->is_object())
++            return errorResponse(400, "invalid_json", body ? "rename body must be an object" : error);
++        if (!body->contains("new_name") || !(*body)["new_name"].is_string())
++            return errorResponse(400, "invalid_name", "new_name is a required string");
++        if (!body->contains("expected_revision") || !(*body)["expected_revision"].is_string())
++            return errorResponse(400, "invalid_revision", "expected_revision is a required decimal string");
++        const auto text = (*body)["expected_revision"].get<std::string>();
++        std::uint64_t expected = 0;
++        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), expected);
++        if (text.empty() || parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size())
++            return errorResponse(400, "invalid_revision", "expected_revision must be an unsigned integer");
++        const auto result = session->renameWorkspaceValue(
++            segments[0], (*body)["new_name"].get<std::string>(), expected);
++        using Status = engine::WorkspaceSession::WorkspaceRenameStatus;
++        switch (result.status) {
++        case Status::Conflict:
++            return errorResponse(409, "workspace_conflict", "workspace changed; refresh before renaming");
++        case Status::NotFound:
++            return errorResponse(404, "variable_not_found", "workspace variable not found: " + segments[0]);
++        case Status::NameConflict:
++            return errorResponse(409, "variable_name_conflict", "destination variable already exists");
++        case Status::InvalidName:
++            return jsonResponse(400, {{"error", {
++                {"code", "invalid_variable_name"}, {"message", "kernel rejected destination variable name"},
++                {"name_status", static_cast<std::uint32_t>(result.nameStatus)},
++                {"max_length", mparser::sdk::variableNameMaxLength()}}}});
++        case Status::Renamed:
++        case Status::Unchanged:
++            return jsonResponse(200, {{"ok", true}, {"session_id", sessionId},
++                {"name", segments[0]}, {"new_name", (*body)["new_name"]},
++                {"renamed", result.status == Status::Renamed},
++                {"revision", std::to_string(result.revision)}});
++        }
++        throw std::logic_error("unknown workspace rename result");
++    }
++#endif
+     if (segments.size() == 2 && segments[1] == "conditional-delete") {
+diff --git a/tests/workspace_conditional_delete.test.cjs b/tests/workspace_conditional_delete.test.cjs
+--- a/tests/workspace_conditional_delete.test.cjs
++++ b/tests/workspace_conditional_delete.test.cjs
+@@ -13,1 +13,3 @@
+- const info=await req('/info');assert.ok(info.features.includes('conditional-workspace-delete'));assert.ok(!info.features.includes('workspace-rename'));
++ const info=await req('/info');assert.ok(info.features.includes('conditional-workspace-delete'));
++ assert.equal(info.features.includes('conditional-workspace-rename'),process.argv[3]==='1');
++ assert.ok(!info.features.includes('workspace-rename'),'unconditional rename remains unavailable');
