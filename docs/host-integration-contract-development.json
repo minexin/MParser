@@ -29,7 +29,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "e275fb0de9cff9cc53cde56731a42d9e513e414464ae78cd27927569550fcc86"
+      "sha256_lf": "8d11afc69017aac9b00e6c3b65f03bec94940fa52934e452b9267b0a173a14cb"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -49,7 +49,11 @@
     },
     {
       "path": "cmake/MParserConfig.cmake.in",
-      "sha256_lf": "c66a9c5c21697f279300a68be80f441e249645efa0ebdac7d82e7cf5caf685b1"
+      "sha256_lf": "0d799303b3f454244409e2dde05a2e08eca4f8ad2a3ab7f59a29ee37086c7f63"
+    },
+    {
+      "path": "docs/graphics-color-contract.md",
+      "sha256_lf": "80ed5c12264972f8085191af43e9dd89c2157e4b40cc7ca7d394ade9a6dbe9d2"
     },
     {
       "path": "docs/public-contract-v1.14.json",

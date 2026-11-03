@@ -1,0 +1,47 @@
+diff --git a/web/js/plot.js b/web/js/plot.js
+--- a/web/js/plot.js
++++ b/web/js/plot.js
+@@ -42,1 +42,2 @@
+     state.title = '';
++    state.labelColors = {};
+@@ -281,2 +282,2 @@
+-    if (state.title) {
+-      context.fillStyle = '#202124';
++    if (state.title && state.labelColors?.Title !== 'none') {
++      context.fillStyle = state.labelColors?.Title || '#202124';
+@@ -287,2 +288,2 @@
+-    if (state.xlabel) {
+-      context.fillStyle = '#4c545b';
++    if (state.xlabel && state.labelColors?.XLabel !== 'none') {
++      context.fillStyle = state.labelColors?.XLabel || '#4c545b';
+@@ -293,3 +294,3 @@
+-    if (state.ylabel) {
+-      context.save();
+-      context.fillStyle = '#4c545b';
++    if (state.ylabel && state.labelColors?.YLabel !== 'none') {
++      context.save();
++      context.fillStyle = state.labelColors?.YLabel || '#4c545b';
+@@ -341,1 +342,2 @@
+   function colorFromGraphics(value) {
++    if (value === 'none') return 'none';
+@@ -346,3 +348,4 @@
+-      return `rgb(${channel(value[0])}, ${channel(value[1])}, ${channel(
+-        value[2]
+-      )})`;
++      const channels = value.slice(0,3).map(channel).join(', ');
++      return value.length === 4
++        ? `rgba(${channels}, ${Number(value[3])})`
++        : `rgb(${channels})`;
+@@ -456,1 +459,2 @@
++    state.labelColors = {};
+     const labelText = role => {
+@@ -458,1 +462,2 @@
+       const label = objects.find(item => item.id === axes.labels?.[role]);
++      state.labelColors[role] = colorFromGraphics(label?.properties?.Color);
+@@ -487,1 +492,1 @@
+-          hidden: properties.LineStyle === 'none',
++          hidden: properties.LineStyle === 'none' || properties.Color === 'none',
+@@ -502,1 +507,2 @@
+-          dash:dashFromGraphics(line.properties?.LineStyle), hidden:line.properties?.LineStyle === 'none'}];
++          dash:dashFromGraphics(line.properties?.LineStyle),
++          hidden:line.properties?.LineStyle === 'none' || line.properties?.Color === 'none'}];

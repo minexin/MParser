@@ -30,9 +30,14 @@ assert.deepEqual(Array.from(state.series[0].y),[1,2,3]);
 assert.deepEqual(Array.from(state.series[1].y),[10,20,30]);
 assert.equal(state.series[0].style.clipping,false);
 assert.equal(state.series[1].style.clipping,true);
+assert.equal(state.series[0].style.color,'rgba(255, 0, 0, 0.5)');
+assert.equal(state.series[1].style.hidden,true);
+assert.equal(state.labelColors.Title,'rgb(0, 255, 0)');
+assert.equal(state.legend.entries[0].color,'rgba(255, 0, 0, 0.5)');
+assert.equal(state.legend.entries[1].hidden,true);
 assert.deepEqual(Array.from(state.legend.entries,entry=>entry.label),['Measured','data2']);
 for (const label of ['Gain','Time','Power','Measured','data2']) {
   assert.ok(calls.some(call=>call[0]==='fillText' && call[1]===label),`Missing rendered text: ${label}`);
 }
 assert.equal(JSON.stringify(result.graphics),original);
-console.log('PASS real kernel v2 snapshot: matrix data, Text labels, grids, Line clipping and Legend');
+console.log('PASS real kernel v2 snapshot: matrix data, Text colors/labels, RGBA/none, grids, Line clipping and Legend');

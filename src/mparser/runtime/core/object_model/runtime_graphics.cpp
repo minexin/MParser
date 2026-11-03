@@ -5,11 +5,13 @@
 #include "mparser/runtime/core/value/runtime_text.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <set>
+#include <string_view>
 #include <nlohmann/json.hpp>
 
 namespace mparser {
@@ -41,6 +43,60 @@ std::vector<double> dataLimits(const std::vector<double>& data) {
         if (std::isfinite(paddedUpper)) { upper = paddedUpper; }
     }
     return {lower, upper};
+}
+
+RuntimeGraphicsProperty parseColorText(std::string text) {
+    const auto first = text.find_first_not_of(" \t\r\n\v\f");
+    if (first == std::string::npos) { throw std::invalid_argument("empty Color name"); }
+    const auto last = text.find_last_not_of(" \t\r\n\v\f");
+    text = text.substr(first, last - first + 1);
+    for (auto& character : text) {
+        if (character >= 'A' && character <= 'Z') { character += 'a' - 'A'; }
+    }
+    if (text.front() == '#') {
+        if (text.size() != 4 && text.size() != 7) {
+            throw std::invalid_argument("Color hex codes require three or six digits");
+        }
+        const auto digit = [](char character) {
+            if (character >= '0' && character <= '9') { return character - '0'; }
+            if (character >= 'a' && character <= 'f') { return character - 'a' + 10; }
+            return -1;
+        };
+        std::vector<double> channels(3);
+        for (size_t index = 0; index < channels.size(); ++index) {
+            const auto high = digit(text[1 + index * (text.size() == 4 ? 1 : 2)]);
+            const auto low = text.size() == 4 ? high : digit(text[2 + index * 2]);
+            if (high < 0 || low < 0) { throw std::invalid_argument("invalid Color hex digit"); }
+            channels[index] = static_cast<double>(high * 16 + low) / 255;
+        }
+        return channels;
+    }
+    if (std::string_view("none").starts_with(text)) { return std::string{"none"}; }
+    if (text == "k") { return std::vector<double>{0, 0, 0}; }
+    // R2024b resolves the ambiguous b/bl prefix to blue, not black.
+    static constexpr std::pair<std::string_view, std::array<double, 3>> names[] = {
+        {"red", {1, 0, 0}}, {"green", {0, 1, 0}}, {"blue", {0, 0, 1}},
+        {"cyan", {0, 1, 1}}, {"magenta", {1, 0, 1}}, {"yellow", {1, 1, 0}},
+        {"black", {0, 0, 0}}, {"white", {1, 1, 1}}};
+    for (const auto& [name, channels] : names) {
+        if (name.starts_with(text)) { return std::vector<double>(channels.begin(), channels.end()); }
+    }
+    throw std::invalid_argument("invalid Color name");
+}
+
+double colorChannel(const RuntimeValue& value, size_t index) {
+    const auto element = runtimeNumericElement(value, index);
+    if (!element) { throw std::invalid_argument("invalid numeric Color channel"); }
+    int bits = 0;
+    switch (value.numericClass) {
+    case RuntimeNumericClass::Int8: case RuntimeNumericClass::UInt8: bits = 8; break;
+    case RuntimeNumericClass::Int16: case RuntimeNumericClass::UInt16: bits = 16; break;
+    case RuntimeNumericClass::Int32: case RuntimeNumericClass::UInt32: bits = 32; break;
+    case RuntimeNumericClass::Int64: case RuntimeNumericClass::UInt64: bits = 64; break;
+    default: return *element;
+    }
+    const auto offset = runtimeNumericClassIsSignedInteger(value.numericClass) ? std::ldexp(1.0, bits - 1) : 0;
+    return (*element + offset) / (std::ldexp(1.0, bits) - 1);
 }
 
 std::map<std::string, RuntimeGraphicsProperty> defaultProperties(RuntimeGraphicsKind kind) {
@@ -267,9 +323,12 @@ std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity) const {
             if (node.labels.contains(name)) { continue; }
             if (const auto* text = std::get_if<std::string>(&value)) {
                 properties[name] = *text;
+                requiresVersion2 |= name == "Color";
             } else {
                 Json numbers = Json::array();
-                for (double number : std::get<std::vector<double>>(value)) {
+                const auto& channels = std::get<std::vector<double>>(value);
+                requiresVersion2 |= name == "Color" && channels.size() == 4;
+                for (double number : channels) {
                     if (std::isnan(number)) { numbers.push_back("NaN"); }
                     else if (std::isinf(number)) { numbers.push_back(number < 0 ? "-Inf" : "Inf"); }
                     else { numbers.push_back(number == 0 ? 0.0 : number); }
@@ -409,7 +468,24 @@ void RuntimeGraphicsGraph::setProperty(RuntimeGraphicsId id, const std::string& 
         }
     }
     auto property = found->second.properties.find(name);
-    if (property == found->second.properties.end() || property->second.index() != value.index()) {
+    if (property == found->second.properties.end()) {
+        throw std::invalid_argument("unknown graphics property or incorrect value type");
+    }
+    if (name == "Color") {
+        if (const auto* text = std::get_if<std::string>(&value)) { value = parseColorText(*text); }
+        if (auto* channels = std::get_if<std::vector<double>>(&value)) {
+            if ((channels->size() != 3 && channels->size() != 4) ||
+                std::any_of(channels->begin(), channels->end(), [](double channel) {
+                    return !std::isfinite(channel) || channel < 0 || channel > 1;
+                })) { throw std::invalid_argument("Color requires three or four finite channels in [0,1]"); }
+            if (channels->size() == 4 && (found->second.kind == RuntimeGraphicsKind::Text || channels->back() == 1)) {
+                channels->resize(3);
+            }
+        }
+        property->second = std::move(value);
+        return;
+    }
+    if (property->second.index() != value.index()) {
         throw std::invalid_argument("unknown graphics property or incorrect value type");
     }
     if (const auto* text = std::get_if<std::string>(&value)) {
@@ -436,10 +512,6 @@ void RuntimeGraphicsGraph::setProperty(RuntimeGraphicsId id, const std::string& 
         }
     } else {
         const auto& data = std::get<std::vector<double>>(value);
-        if (name == "Color" && (data.size() != 3 || std::any_of(data.begin(), data.end(),
-                [](double channel) { return !std::isfinite(channel) || channel < 0 || channel > 1; }))) {
-            throw std::invalid_argument("Color requires three finite channels in [0,1]");
-        }
         if ((name == "XLim" || name == "YLim") && (data.size() != 2 ||
             !std::isfinite(data[0]) || !std::isfinite(data[1]) || data[0] >= data[1])) {
             throw std::invalid_argument("axes limits require two increasing finite values");
@@ -626,6 +698,13 @@ RuntimeObjectOperationResult runtimeSetGraphicsMember(const RuntimeValue& target
             throw std::invalid_argument("Children is read-only; assign Parent to reparent an object");
         } else if (const auto text = runtimeTextScalarUtf8(value)) {
             handle.setProperty(name, *text);
+        } else if (name == "Color" && isRuntimeNumericValue(value)) {
+            const auto count = runtimeShapeElementCount(value);
+            if (count != 3 && count != 4) { throw std::invalid_argument("Color requires three or four channels"); }
+            std::vector<double> channels;
+            channels.reserve(count);
+            for (size_t index = 0; index < count; ++index) { channels.push_back(colorChannel(value, index)); }
+            handle.setProperty(name, std::move(channels));
         } else {
             const auto dimensions = runtimeDimensions(value);
             const auto count = runtimeShapeElementCount(value);
@@ -725,6 +804,11 @@ RuntimeGraphicsProperty RuntimeGraphicsHandle::property(const std::string& name)
     const auto& properties = requireNode().properties;
     const auto found = properties.find(name);
     if (found == properties.end()) { throw std::invalid_argument("unknown graphics property"); }
+    if (name == "Color") {
+        if (const auto* channels = std::get_if<std::vector<double>>(&found->second); channels && channels->size() == 4) {
+            return std::vector<double>(channels->begin(), channels->begin() + 3);
+        }
+    }
     return found->second;
 }
 

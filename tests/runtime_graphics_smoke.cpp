@@ -889,6 +889,19 @@ int main(int argc, char** argv) {
                 catch (const std::invalid_argument&) { deniedColor = true; }
                 require(deniedColor && handle.property("Color") == color);
             }
+            alias.setProperty("Color", std::string{"r"});
+            require(std::get<std::vector<double>>(handle.property("Color")) == std::vector<double>{1,0,0});
+            alias.setProperty("Color", std::vector<double>{1,0,0,0.5});
+            require(std::get<std::vector<double>>(handle.property("Color")) == std::vector<double>{1,0,0});
+            const auto rgba = graph->serialize(true);
+            bool invalidAlpha = false;
+            try { alias.setProperty("Color", std::vector<double>{1,0,0,2}); }
+            catch (const std::invalid_argument&) { invalidAlpha = true; }
+            require(invalidAlpha && graph->serialize(true) == rgba);
+            alias.setProperty("Color", std::string{"none"});
+            require(std::get<std::string>(handle.property("Color")) == "none");
+            alias.setProperty("Color", std::string{"#00f"});
+            require(std::get<std::vector<double>>(handle.property("Color")) == std::vector<double>{0,0,1});
             RuntimeGraphicsHandle axesHandle(graph, axes);
             bool badLimits = false;
             try { axesHandle.setProperty("XLim", std::vector<double>{3, 1}); }

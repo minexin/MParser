@@ -2903,6 +2903,12 @@ target_link_libraries(graphics_api_smoke_tests PRIVATE mparser_cpp_api Threads::
 target_include_directories(graphics_api_smoke_tests PRIVATE third_party/nlohmann_json/include)
 add_test(NAME graphics_api_smoke COMMAND graphics_api_smoke_tests)
 set_tests_properties(graphics_api_smoke PROPERTIES TIMEOUT 30)
+add_executable(graphics_color_smoke_tests tests/graphics_color_smoke.cpp)
+target_link_libraries(graphics_color_smoke_tests PRIVATE mparser_cpp_api)
+target_include_directories(graphics_color_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME graphics_color_smoke COMMAND graphics_color_smoke_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/graphics_color_cases.json)
+set_tests_properties(graphics_color_smoke PROPERTIES TIMEOUT 60 LABELS "host-integration")
 add_executable(runtime_graphics_smoke_tests tests/runtime_graphics_smoke.cpp)
 target_link_libraries(runtime_graphics_smoke_tests PRIVATE mparser_core mparser_json_schema_validator)
 target_include_directories(runtime_graphics_smoke_tests PRIVATE third_party/nlohmann_json/include)
@@ -3334,6 +3340,7 @@ install(FILES
     docs/definition-metadata.md
     docs/variable-name-validation.md
     docs/graphics-clipping-contract.md
+    docs/graphics-color-contract.md
     docs/host-integration-contract-development.json
     docs/performance-baseline-v1.schema.json
     docs/performance-suite-v1.schema.json

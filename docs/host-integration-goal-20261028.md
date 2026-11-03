@@ -24,9 +24,9 @@ success may substitute for missing kernel contracts.
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | SDK and isolated host compile REST checked, including repeated nested names, CRLF/UTF-8 and class methods; deployed navigation and cross-file REST acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
-| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping focused tests and opt-in v3 SDK identity checks passed; host selection, renderer adoption and writeback pending |
+| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 348/348 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 349/349 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -656,3 +656,38 @@ records that rename was not shipped; no rename operation or UI is claimed.
   09C5D9D24E7C24B77F7D107F925664909A14F43A387EA397867B0DFB7E223F5D.
   Browser visuals, production navigation/writeback and formal v1.15 release
   remain open; these tests do not establish any of them.
+- H06 Color contract closure for the observed rename-test gap: R2024b
+  24.2.0.2712019 replayed 75 fixed inputs on Line/Text (150 checked outcomes,
+  106 accepted and 44 rejected) at
+  build/graphics-color-matlab/tp5ebfefb4_0f4e_4b00_b9a0_98e33817995c/reference.json.
+  Names/prefixes, hex, none, integer scaling, complex real components,
+  sparse/higher-rank inputs and four-channel validation are now handled by the
+  kernel. The source getter remains RGB; Line alpha is retained in rendering
+  snapshots, while Text discards it in the measured R2024b print path. Reference
+  PNGs showed Line center green channels 255/127/0 for alpha 0/0.5/1, while Text
+  stayed opaque red. Those images were produced by MATLAB, not an MParser encoder.
+  Legacy RGB-only Line output remains v1; none/RGBA selects v2 automatically,
+  and explicit identity output remains v3. The SDK corpus passed 600/600 with
+  stable aliases/identities, immutable old results and atomic invalid writes.
+- Color transport/rendering candidate: 14 REST mutations/readbacks passed with
+  the actual selected DLL at build/host-compile-probe/41c2e2b1307e44e5a41aabda8628bd45.
+  The fifth client patch consumes canonical RGB/RGBA/none, applies Text colors
+  and suppresses none strokes/Legend samples without deleting their text.
+  Mock-canvas checks and a real kernel v2 scene passed; the rename probe now
+  uses its originally failing Color='r' form again. The installed Color guide
+  is exposed as MParser_GRAPHICS_COLOR_GUIDE_FILE and pinned in the development
+  manifest. Full rebuilt kernel/package regression passed 349/349 in 88.30
+  seconds at build/graphics-color-full-regression.log. This does not establish
+  real-browser alpha/label rendering, deployment or a formal release.
+- Final installed-SDK Color acceptance: the source-only clean run at
+  build/clean-host-probe/9d7d0dee19914d4bbdd7ca0e103693cc passed all 148 build
+  actions, the original Color='r' rename form, contextual/compiler/Color REST
+  probes, five client candidates and host CTest 67/67 (28.90 seconds).
+  Raw REST evidence: build/host-compile-probe/3249318bbaec4e398dd3418579ebcdb0;
+  selected DLL SHA256:
+  D8EE7C21B46138B10EBFA0EC3358C63173854D90FF86472019DFB31E9C616DBA.
+  After the final documentation/hash update, the installed C/C++ consumers,
+  relocated archive, development contract and Color/real-kernel renderer tests
+  passed 6/6 at build/graphics-color-final-package.log. The original host/client
+  and deployed service remain unchanged. Actual browser visuals, source
+  navigation/writeback and authenticated publication remain separate gates.

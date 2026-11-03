@@ -64,6 +64,8 @@ set_and_check(MParser_VARIABLE_NAME_VALIDATION_GUIDE_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/variable-name-validation.md")
 set_and_check(MParser_GRAPHICS_CLIPPING_GUIDE_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-clipping-contract.md")
+set_and_check(MParser_GRAPHICS_COLOR_GUIDE_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-color-contract.md")
 set_and_check(
     MParser_BUILTIN_CATALOG_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/default_catalog.json")

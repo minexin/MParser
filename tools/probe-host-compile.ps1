@@ -6,6 +6,7 @@ param(
     [switch]$DefinitionMetadata,
     [switch]$ContextualIdentifiers,
     [switch]$CompileDiagnostics,
+    [switch]$GraphicsColors,
     [string]$ExpectedProductVersion
 )
 $ErrorActionPreference = 'Stop'
@@ -362,6 +363,53 @@ try {
                 throw "Reset changed another session's graph; see $root"
             }
             Write-Output 'graphics/identity: partial deletion, mutation, stale-write rejection, session isolation and reset passed'
+        }
+    }
+    if ($GraphicsColors) {
+        $colorSession = Invoke-RestMethod "$base/sessions" -Method Post -ContentType 'application/json' -Body '{"name":"graphics-color-probe"}'
+        $colorBase = "$base/sessions/$($colorSession.id)"
+        $seed = @{command="colorLine=plot([1,2]); colorText=title('Color');"} | ConvertTo-Json
+        if ((Invoke-RestMethod "$colorBase/execute" -Method Post -ContentType 'application/json' -Body $seed).status -ne 'succeeded') {
+            throw "Color seed failed; see $root"
+        }
+        $corpus = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../tests/graphics_color_cases.json') -Raw | ConvertFrom-Json
+        foreach ($target in @('Line','Text')) {
+            foreach ($case in @($corpus.cases | Where-Object id -In @(
+                'short_red','hex_long','none','rgb_integer_255','rgba_half','unknown_name','rgb_large'))) {
+                $before = (Invoke-RestMethod "$colorBase/graphics").graphics | ConvertTo-Json -Depth 100 -Compress
+                $command = 'color' + $target + '.Color=' + $case.expression + '; colorResult=color' + $target + '.Color;'
+                $body = @{command=$command; include_workspace_values=$true} | ConvertTo-Json
+                $response = Invoke-WebRequest "$colorBase/execute" -UseBasicParsing -Method Post -ContentType 'application/json' -Body $body
+                [IO.File]::WriteAllText((Join-Path $root ("color_" + $target + '_' + $case.id + '.json')), [string]$response.Content)
+                $result = $response.Content | ConvertFrom-Json
+                $node = @($result.graphics.objects | Where-Object type -EQ $target)
+                if ($result.workspace_export_failed -ne $false -or $node.Count -ne 1) { throw "Color export failed; see $root" }
+                if (!$case.accepted) {
+                    $after = (Invoke-RestMethod "$colorBase/graphics").graphics | ConvertTo-Json -Depth 100 -Compress
+                    if ($result.status -ne 'runtime-failed' -or !$result.diagnostics.Count -or $before -cne $after) {
+                        throw "Invalid Color changed graph: $target/$($case.id); see $root"
+                    }
+                } else {
+                    if ($result.status -ne 'succeeded' -or $result.diagnostics.Count -ne 0) { throw "Color mutation failed; see $root" }
+                    $value = @($result.workspace | Where-Object name -CEQ 'colorResult').value
+                    if ($case.value -is [string]) {
+                        if ($value.kind -ne 'character' -or $value.text -cne 'none' -or $node[0].properties.Color -cne 'none') {
+                            throw "Incorrect canonical Color none; see $root"
+                        }
+                    } else {
+                        $snapshot = if ($target -eq 'Line' -and $case.line_snapshot) { $case.line_snapshot } else { $case.value }
+                        if ($value.kind -ne 'numeric' -or $value.class -ne 'double' -or $value.data.Count -ne 3 -or
+                            $node[0].properties.Color.Count -ne $snapshot.Count) { throw "Incorrect Color shape/type; see $root" }
+                        for ($index = 0; $index -lt $snapshot.Count; ++$index) {
+                            if ([Math]::Abs($node[0].properties.Color[$index] - $snapshot[$index]) -gt 2e-15) { throw "Incorrect rendered Color; see $root" }
+                        }
+                        for ($index = 0; $index -lt 3; ++$index) {
+                            if ([Math]::Abs($value.data[$index] - $case.value[$index]) -gt 2e-15) { throw "Incorrect Color readback; see $root" }
+                        }
+                    }
+                }
+                Write-Output "color/$target/$($case.id): $($result.status)"
+            }
         }
     }
     if ($DefinitionMetadata) {

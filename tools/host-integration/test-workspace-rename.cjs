@@ -130,7 +130,7 @@ async function main() {
     const graphicsValue = await value('line');
     await rename('line', 'renamedLine', (await snapshot()).revision);
     assert.deepEqual(await value('renamedLine'), graphicsValue);
-    await execute({command: "renamedLine.Color=[1,0,0]; if ~isequal(lineAlias.Color,[1,0,0]); error('graphics alias lost'); end;"});
+    await execute({command: "renamedLine.Color='r'; if ~isequal(lineAlias.Color,[1,0,0]); error('graphics alias lost'); end;"});
     const graphics = (await value('renamedLine')).graphics;
     assert.deepEqual(graphics, (await value('lineAlias')).graphics, 'graphics alias identity retained');
     await execute({source: [

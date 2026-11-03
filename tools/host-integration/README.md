@@ -89,7 +89,7 @@ To reproduce all candidate checks without changing the original client:
 ```
 
 The script copies only the renderer and existing test to a unique build
-directory, applies the four patches in order, and runs the existing suite plus
+directory, applies the five patches in order, and runs the existing suite plus
 Text, clipping/grid and Legend tests. Git's whitespace-only matching handles
 Windows CRLF/LF differences; any substantive source mismatch fails the run.
 
@@ -247,10 +247,37 @@ afterwards. These are separate checks from compile_only; valid-but-runtime-faili
 scripts retain the existing runtime behavior. The clean-host runner enables
 this probe. Original deployed host sources remain unchanged.
 
-Latest complete clean installed-SDK run:
+Earlier complete clean installed-SDK run:
 `build/clean-host-probe/104cdbe5a9af4f3b8e320e834cc421db` (148 build actions,
 all five host candidates, rename, contextual/diagnostic and graphics/definition
 REST probes, client candidate checks and host CTest 67/67 in 21.50 seconds).
 The loaded DLL SHA256 was
 `09C5D9D24E7C24B77F7D107F925664909A14F43A387EA397867B0DFB7E223F5D`;
 raw REST evidence is `build/host-compile-probe/c0c09bb20e1b4b03a916cc380eda5150`.
+
+## Color Candidate
+
+Apply mexecclient-color-candidate.patch after the Legend candidate. It consumes
+kernel-normalized RGB/RGBA/none: transparent Line colors are used by both the
+Line and Legend sample; none suppresses strokes but preserves Legend labels.
+Bound Text labels render their Color and skip drawing for none without losing
+their String. The client does not parse names/hex or scale numeric types.
+
+test-client-colors.cjs checks both v2/v3 snapshots, mutation/restoration and
+unchanged inputs with a simulated canvas. The CTest real-kernel scene now also
+contains an RGBA Line, a none Line and a green Text title. These tests are not
+pixel-level browser acceptance. All replay runners apply this fifth candidate;
+the deployed renderer remains unchanged.
+
+probe-host-compile.ps1 -GraphicsColors replays 14 focused Line/Text mutations
+through the selected executable/DLL, checking canonical getters and snapshots,
+integer scaling, RGBA readback and unchanged graphs after invalid inputs. It
+requires the updated development kernel. The clean-host runner enables it.
+
+Latest complete clean installed-SDK run with five client candidates:
+`build/clean-host-probe/9d7d0dee19914d4bbdd7ca0e103693cc` (148 build actions,
+all REST/candidate probes and host CTest 67/67). The loaded DLL SHA256 was
+`D8EE7C21B46138B10EBFA0EC3358C63173854D90FF86472019DFB31E9C616DBA`;
+raw REST evidence is `build/host-compile-probe/3249318bbaec4e398dd3418579ebcdb0`.
+These tests leave the deployed client/service unchanged and do not prove
+real-browser compositing or product-release acceptance.
