@@ -281,6 +281,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/core/object_model/runtime_object.cpp
     src/mparser/runtime/core/object_model/runtime_graphics.cpp
     src/mparser/runtime/core/session/runtime_output.cpp
+    src/mparser/runtime/core/session/runtime_event_journal.cpp
     src/mparser/runtime/core/session/runtime_input.cpp
     src/mparser/runtime/core/value/runtime_range.cpp
     src/mparser/runtime/builtins/numeric/runtime_reduction.cpp
@@ -528,6 +529,11 @@ add_executable(value_snapshot_smoke_tests tests/value_snapshot_smoke.cpp)
 target_link_libraries(value_snapshot_smoke_tests PRIVATE mparser_core)
 add_test(NAME value_snapshot_smoke COMMAND value_snapshot_smoke_tests)
 set_tests_properties(value_snapshot_smoke PROPERTIES LABELS host-integration)
+
+add_executable(event_journal_smoke_tests tests/event_journal_smoke.cpp)
+target_link_libraries(event_journal_smoke_tests PRIVATE mparser_core)
+add_test(NAME event_journal_smoke COMMAND event_journal_smoke_tests)
+set_tests_properties(event_journal_smoke PROPERTIES LABELS host-integration)
 
 add_test(NAME v1_1_core_interpreter_cli_smoke
     COMMAND mparser --run-hir

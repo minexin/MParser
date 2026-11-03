@@ -1,6 +1,6 @@
 # Assignment Display Development
 
-Status: internal recording and immutable-value foundation only. H10 is not complete. The public
+Status: internal shared journal and immutable-value foundation only. H10 is not complete. The public
 1.15.0 development SDK remains ABI 2.8; no assignment-display export, protocol
 field, host feature or deployed UI has been advertised by this change.
 
@@ -44,9 +44,9 @@ that [a,a]=pair() displays its final a twice, not two RHS values.
 - The recorder reads the committed root directly. It does not evaluate an
   index, dynamic field name or property getter again, parse source text, run a
   query script, or reconstruct earlier values from the final workspace.
-- Within one executor, assignment, existing expression and text records share
-  the execution sequence. Suppressed records are retained and flagged; they
-  are not rendered or sent to a public output sink by this foundation.
+- Assignment, existing expression, text, warning and execution-diagnostic records
+  now share an invocation journal across executor/module boundaries. Suppressed
+  records are retained and flagged; no new public output sink is exposed.
 - Recording suppresses optimized regions that cannot report each commit, and
   explicitly reports optimizedExecutionSuppressed. Requested Native/Portable/
   Automatic coverage must not be described as native-code display execution.
@@ -108,6 +108,79 @@ requested VM modes. The HIR user-constructor fixture is currently unsupported;
 its explicit failure/no-invented-commit behavior is checked, not counted as HIR
 object execution parity. These are internal tests, not SDK or browser acceptance.
 
+## Shared Execution Journal
+
+RuntimeEventJournalScope attaches an internal recorder to the existing
+RuntimeExecutionControl for the invocation. Nested VMs, dynamic evaluation and
+escaped-module calls reuse it even when the callee's local recording option
+is false. The outer scope detaches on normal return and exception unwinding;
+reusing the same control for a later invocation starts a separate transcript.
+An internal ModuleInvocationRequest.captureEventJournal flag opts in. It is
+not a public C/C++ SDK invocation option or advertised REST capability.
+
+Sequence numbers are assigned where events are generated, not by reading the
+final workspace or concatenating completed modules. Forwarded text/diagnostics
+carry a capability-free identity stamp so the original event is recorded once.
+The stamp retains neither recorder nor execution context. Dynamic aggregate
+transcript replays are explicitly marked and not recorded again. Authoritative
+kernel-generated eval output bindings are excluded; no source regex is used.
+
+Each producer has a transcript-local source context plus its actual source
+name and span. A temporary module's source ID is never rebound to a caller's
+table. Dynamic compilation diagnostics retain their original submitted-source
+range, correcting the known generated output-prefix offset. These IDs are not
+cross-invocation identities or permission to navigate a stale editor document.
+
+Capture depth distinguishes nested evalc scopes. Captured events stay in the
+audit transcript but do not leak into the caller's ordinary output. Rendering a
+dynamic capture selects its own depth; a nested capture's text stays in its
+returned string. The opt-in renderer uses existing kernel value/text formatting
+and a simple warning prefix; it does not establish byte-identical MATLAB
+typography, warning stacks, overloaded display or all expression-label semantics.
+
+Diagnostic disposition is explicit: Raised while pending, Caught for try/catch
+or eval catch-expression recovery, Suppressed for discarded internal validation
+or diagnostic-budget records, and Unhandled for a final escaping failure.
+A captured-origin error can still be Unhandled and escape evalc; capture depth
+does not by itself authorize hiding that final error. Disabled warnings produce
+no invented warning event. Pre-failure history survives ordinary runtime
+failures and host sink exceptions handled by the compiled-module entry boundary.
+Generated text in the journal is not a claim that a console/host accepted it.
+
+tests/event_journal_smoke.cpp covers mixed families, actual generation order,
+caught/escaping errors, dynamic compilation recovery, nested capture, temporary
+output bindings, inherited callbacks, four requested escaped-module backends,
+source provenance, repeated control use, rejection, pre-cancellation and host
+exceptions. Journal snapshots are owned copies; later disposition changes or
+invocations do not mutate a previously retained copy. Recording still suppresses
+optimized regions that cannot publish each commit.
+
+This is a serial internal transcript, not a thread-safe/reentrant live callback
+API. Aggregate transcript memory/backpressure policy, public projection/access
+rules, delivery negotiation and browser acceptance remain gates before release.
+Per-value snapshot limits do not bound total journal memory. Allocation failure
+continues to propagate rather than guaranteeing a complete final transcript.
+Compilation/validation rejection before execution retains the existing separate
+diagnostic result; it does not create an execution journal for a run that did
+not start. No public ABI or machine-protocol field is added in this stage.
+
+The completed shared-journal rebuild/regression passed 352/352 in 44.98 seconds
+at build/journal-acceptance-regression.log. The relocated ABI 2.8 DLL SHA256 is
+2D118070D2DC87941083062E7BA8FC20EC103910AAC04E68719D186E9F30E523.
+Extended negative checks verify the existing MParser:BuiltinHostException
+mapping separately from a direct MParser:HostExecutionException; parameter
+rejection is checked before source execution, not by expecting an unexecuted
+error event. This is internal code evidence, not public H10 transport acceptance.
+
+Source-only clean installed-SDK host acceptance passed 67/67 in 20.40 seconds,
+plus all existing REST/client-candidate checks, at
+build/clean-host-probe/f7a166c47ae4435fbe741792ed12ece7. Raw kernel REST data:
+build/host-compile-probe/91bef523c2a2445aa230aa14d3a5eb56. The selected DLL hash
+matches the shared-journal value above. The unchanged public display probe still
+finds no ordinary assignment events at that clean run's
+build/display-probe-8c866e7c8dd345ddb45c1c4c5eceee7e. That is direct evidence
+that SDK/REST delivery has not been enabled, not an H10 feature pass.
+
 tests/assignment_display_smoke.cpp exercises these paths using the HIR
 interpreter and four requested VM backends, with frozen text/history, root
 mutation, mixed output sequence, repeated/ignored outputs, side-effecting
@@ -147,9 +220,9 @@ the public compatibility boundary; they do not advertise a new H10 host feature.
 1. Public immutable snapshot projection/lifetime and access rules, including
    private/dependent-property policy and explicit unavailable-value handling.
    The internal structure exists; its public SDK/protocol delivery is not done.
-2. A single shared execution journal across nested/dynamic/escaped-module calls;
-   warning/error/diagnostic ordering and caught-error policy; live delivery and
-   rejection/cancellation behavior. Executor-local counters are not that proof.
+2. Public bounded live delivery/backpressure and reentrancy/cancellation policy.
+   The internal shared transcript, generation order and caught-error policy now
+   exist; legacy grouped callbacks are not a substitute for the new delivery API.
 3. Real expression labels and ans rules, function-scope expressions and
    overloaded display semantics. Existing top-level-expression fields are not
    silently redefined by this foundation.

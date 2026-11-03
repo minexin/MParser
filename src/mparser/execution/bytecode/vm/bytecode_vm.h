@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mparser/runtime/core/session/runtime_event_journal.h"
+
 #include "mparser/execution/bytecode/bytecode.h"
 #include "mparser/execution/runtime_source_evaluation.h"
 #include "mparser/runtime/core/session/runtime_execution_control.h"
@@ -143,6 +145,7 @@ struct BytecodeVmOptions {
     RuntimeSourceStorageClearer inheritedStorageClearer;
     RuntimeWorkspace* inheritedStorageWorkspace = nullptr;
     bool captureAssignmentDisplays = false;
+    std::vector<std::string> internalOutputBindings;
 };
 
 struct BytecodeTypedRegionExecutionProfile {
@@ -183,6 +186,7 @@ struct BytecodeVmResult {
     std::vector<RuntimeOutputEvent> outputEvents;
     std::vector<RuntimeExpressionResult> expressionResults;
     std::vector<RuntimeAssignmentDisplay> assignmentDisplays;
+    std::vector<RuntimeJournalEvent> journalEvents;
     size_t requestedOutputCount = 0;
     std::vector<Diagnostic> diagnostics;
     size_t executedInstructionCount = 0;

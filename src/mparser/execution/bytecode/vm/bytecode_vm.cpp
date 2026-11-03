@@ -1188,15 +1188,19 @@ public:
                                 : std::make_shared<
                                       RuntimeExecutionControl>();
         executionControlActive_ = executionControl_->active();
+        RuntimeEventJournalScope journalScope(executionControl_.get(), options.captureAssignmentDisplays);
+        journal_ = journalScope.journal();
+        journalSourceContext_ = journalScope.sourceContext();
+        internalOutputBindings_ = options.internalOutputBindings;
         outputEvents_.clear();
         expressionResults_.clear();
         assignmentDisplays_.clear();
-        captureAssignmentDisplays_ = options.captureAssignmentDisplays;
+        captureAssignmentDisplays_ = static_cast<bool>(journal_);
         nextConsoleSequence_ = 0;
         runtimeOutputSink_ = [this, external = options.outputSink](
                                  const RuntimeOutputEvent& event) {
             auto recorded = event;
-            recorded.sequence = nextConsoleSequence_++;
+            recordJournalText(recorded);
             if (!recorded.consoleEmitted && executionControl_->consoleStreaming()) {
                 if (!executionControl_->emitConsole(recorded.text)) {
                     return false;
@@ -1304,20 +1308,20 @@ public:
                                  requestedEntryFunction_.empty() &&
                                  hasTopLevelExecutable(program);
         if (callableMode && !requestedEntryFunction_.empty()) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 SourceSpan{},
                 "callable entry cannot be combined with a named entry"});
         } else if (callableMode &&
                    requestedEntryOutputCount_.value_or(1) >
                        static_cast<size_t>(
                            std::numeric_limits<int>::max())) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 SourceSpan{}, "callable entry requested too many outputs"});
         } else if (scriptMode && !entryArguments_.empty()) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 SourceSpan{}, "script entry does not accept arguments"});
         } else if (scriptMode && requestedEntryOutputCount_.value_or(0) > 0) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 SourceSpan{}, "script entry does not declare outputs"});
         } else if (diagnostics_.empty()) {
             const SourceSpan entrySpan =
@@ -1374,6 +1378,13 @@ public:
             std::make_move_iterator(diagnostics_.end()));
         result.executedInstructionCount = executedInstructionCount_;
         result.execution = executionControl_->snapshot();
+        if (journal_) {
+            for (auto& diagnostic : result.diagnostics) {
+                observeJournalDiagnostic(diagnostic);
+                journal_->unhandled(diagnostic);
+            }
+            result.journalEvents = journalScope.snapshot();
+        }
         if (profilingEnabled_) {
             result.profile = buildProfile();
         }
@@ -1385,6 +1396,30 @@ public:
     }
 
 private:
+    std::string journalSourceName(SourceSpan span) const {
+        const auto id = span.begin.sourceId;
+        return semantic_ && id < semantic_->sources.size() ? semantic_->sources[id].name : std::string{};
+    }
+    void recordJournalText(RuntimeOutputEvent& event) {
+        if (journal_) {
+            journal_->text(event,journalSourceContext_,executionControl_->consoleCaptureDepth(),journalSourceName(event.span));
+        } else { event.sequence = nextConsoleSequence_++; }
+    }
+    void observeJournalDiagnostic(Diagnostic& diagnostic) {
+        if (journal_) {
+            journal_->diagnostic(diagnostic,journalSourceContext_,executionControl_->consoleCaptureDepth(),
+                journalSourceName(diagnostic.span));
+        }
+    }
+    void appendDiagnostic(Diagnostic diagnostic) {
+        observeJournalDiagnostic(diagnostic);
+        diagnostics_.push_back(std::move(diagnostic));
+    }
+    void appendWarning(Diagnostic diagnostic) {
+        observeJournalDiagnostic(diagnostic);
+        warnings_.push_back(std::move(diagnostic));
+    }
+
     BuiltinSourceEvaluationResult evaluateSourceInWorkspace(
         const BytecodeInstruction& instruction, const BuiltinSourceEvaluationRequest& request,
         RuntimeWorkspace* target, std::vector<RuntimeWorkspace*> ancestors) {
@@ -1404,6 +1439,8 @@ private:
         options.sessionState = sessionState_;
         options.executionControl = executionControl_;
         options.outputSink = runtimeOutputSink_;
+        options.eventSourceContext = journalSourceContext_;
+        options.eventSourceName = journalSourceName(request.span);
         options.typedRegionBackend = typedRegionBackend_;
         options.enableTypedRegions = typedRegionsEnabled_;
         options.inheritedWorkspaceFrames =
@@ -1617,11 +1654,17 @@ private:
             return;
         }
         if (warnings_.size() > limit) {
+            if (journal_) {
+                for (size_t index=limit; index<warnings_.size(); ++index) { journal_->suppressed(warnings_[index]); }
+            }
             warnings_.resize(limit);
         }
         const size_t remaining =
             limit - std::min(limit, warnings_.size());
         if (diagnostics_.size() > remaining) {
+            if (journal_) {
+                for (size_t index=remaining; index<diagnostics_.size(); ++index) { journal_->suppressed(diagnostics_[index]); }
+            }
             diagnostics_.resize(remaining);
         }
     }
@@ -1646,7 +1689,7 @@ private:
             std::string(executionStopIdentifier(
                 executionControl_->stopReason()))};
         diagnostic.stack = exceptionFrames(span);
-        diagnostics_.push_back(std::move(diagnostic));
+        appendDiagnostic(std::move(diagnostic));
         executionStopDiagnosticAdded_ = true;
     }
 
@@ -2206,7 +2249,7 @@ private:
         if (node->kind == HirKind::Property && !className.empty()) {
             auto& klass = classesByName_[className];
             if (klass.declaredProperties.contains(node->label)) {
-                diagnostics_.push_back(Diagnostic{
+                appendDiagnostic(Diagnostic{
                     node->span,
                     "duplicate property declaration: " + className + "." +
                         node->label});
@@ -2232,7 +2275,7 @@ private:
             if (!klass.declaredEvents
                      .try_emplace(node->label, std::move(event))
                      .second) {
-                diagnostics_.push_back(Diagnostic{
+                appendDiagnostic(Diagnostic{
                     node->span,
                     "duplicate event declaration: " + className + "." +
                         node->label});
@@ -2253,7 +2296,7 @@ private:
             if (!klass.declaredEnumerationMembers
                      .try_emplace(node->label, std::move(member))
                      .second) {
-                diagnostics_.push_back(Diagnostic{
+                appendDiagnostic(Diagnostic{
                     node->span,
                     "duplicate enumeration member declaration: " +
                         className + "." + node->label});
@@ -2280,7 +2323,7 @@ private:
                 const std::string methodKey =
                     className + "." + node->label;
                 if (!classFunctionNodes_.try_emplace(methodKey, node).second) {
-                    diagnostics_.push_back(Diagnostic{
+                    appendDiagnostic(Diagnostic{
                         node->span,
                         "duplicate method declaration: " + methodKey});
                 }
@@ -2301,14 +2344,14 @@ private:
 
             auto& klass = classesByName_[className];
             if (info.name.empty()) {
-                diagnostics_.push_back(Diagnostic{
+                appendDiagnostic(Diagnostic{
                     node->span,
                     "method prototype requires a method name in class: " +
                         className});
             } else if (!klass.declaredMethods
                             .try_emplace(info.name, std::move(info))
                             .second) {
-                diagnostics_.push_back(Diagnostic{
+                appendDiagnostic(Diagnostic{
                     node->span,
                     "duplicate method declaration: " + className + "." +
                         node->label});
@@ -2580,7 +2623,7 @@ private:
                     classesByName_[classStack.back()].declaredMethods;
                 if (!declaredMethods.try_emplace(info.name, std::move(info))
                          .second) {
-                    diagnostics_.push_back(Diagnostic{
+                    appendDiagnostic(Diagnostic{
                         instruction.span,
                         "duplicate method declaration: " +
                             classStack.back() + "." + instruction.operand});
@@ -2628,7 +2671,7 @@ private:
             return !attribute.negated;
         }
         if (attribute.negated) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 attribute.span,
                 "negated logical attribute cannot also have a value: " +
                     owner + "." + attribute.name});
@@ -2641,7 +2684,7 @@ private:
         if (value == "false") {
             return false;
         }
-        diagnostics_.push_back(Diagnostic{
+        appendDiagnostic(Diagnostic{
             attribute.span,
             "logical attribute requires true or false: " + owner + "." +
                 attribute.name});
@@ -2680,7 +2723,7 @@ private:
                 if (attribute.negated || attribute.value.empty() ||
                     !attribute.hasMetaClassList) {
                     klass.hierarchyValid = false;
-                    diagnostics_.push_back(Diagnostic{
+                    appendDiagnostic(Diagnostic{
                         attribute.span,
                         "AllowedSubclasses requires ?Class or a cell array "
                         "of meta-class references: " +
@@ -2708,7 +2751,7 @@ private:
         const AttributeSyntax& attribute, const std::string& owner,
         bool allowImmutable) {
         if (attribute.negated || attribute.value.empty()) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 attribute.span,
                 "access attribute requires an explicit value: " + owner +
                     "." + attribute.name});
@@ -2747,7 +2790,7 @@ private:
         if (allowImmutable && value == "immutable") {
             return MemberAccessPolicy{MemberAccessLevel::Immutable, {}};
         }
-        diagnostics_.push_back(Diagnostic{
+        appendDiagnostic(Diagnostic{
             attribute.span,
             "unsupported access attribute value for " + owner + "." +
                 attribute.name + ": " + attribute.value});
@@ -2820,7 +2863,7 @@ private:
                     trimAscii(attribute.value));
                 if (attribute.negated || !value || !std::isfinite(*value) ||
                     *value < 1.0 || std::floor(*value) != *value) {
-                    diagnostics_.push_back(Diagnostic{
+                    appendDiagnostic(Diagnostic{
                         attribute.span,
                         "PartialMatchPriority requires a positive integer: " +
                             owner});
@@ -2831,26 +2874,26 @@ private:
         }
 
         if (property.abstractProperty && property.constant) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 property.span,
                 "property cannot be both Abstract and Constant: " + owner});
         } else if (property.constant && !property.spec.hasExplicitDefault) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 property.span,
                 "constant property requires a default value: " + owner});
         }
         if (property.constant && property.dependent) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 property.span,
                 "property cannot be both Constant and Dependent: " + owner});
         }
         if (property.dependent && property.spec.hasExplicitDefault) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 property.span,
                 "dependent property cannot define a default value: " + owner});
         }
         if (property.abstractProperty && property.spec.hasExplicitDefault) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 property.span,
                 "abstract property cannot define a default value: " + owner});
         }
@@ -2885,22 +2928,22 @@ private:
         }
 
         if (method.abstractMethod && method.sealedMethod) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 method.span,
                 "method cannot be both Abstract and Sealed: " + owner});
         }
         if (method.abstractMethod && method.hasBody) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 method.span,
                 "abstract method must be declared as a prototype: " + owner});
         }
         if (!method.abstractMethod && !method.hasBody) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 method.span,
                 "method prototype must be declared Abstract: " + owner});
         }
         if (method.abstractMethod && method.name == klass.name) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 method.span,
                 "class constructor cannot be Abstract: " + owner});
         }
@@ -2925,12 +2968,12 @@ private:
         method.accessorProperty = method.name.substr(4);
         if (method.accessorProperty.empty() ||
             method.accessorProperty.find('.') != std::string::npos) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 method.span, "invalid property access method name: " + owner});
             return;
         }
         if (!method.attributes.empty()) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 method.span,
                 "property access methods must be declared in a methods block "
                 "without attributes: " + owner});
@@ -2938,7 +2981,7 @@ private:
         const auto property =
             klass.declaredProperties.find(method.accessorProperty);
         if (property == klass.declaredProperties.end()) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 method.span,
                 "property access method has no property declaration: " +
                     owner});
@@ -3031,7 +3074,7 @@ private:
                     }
                     if (lowerAscii(trimAscii(attribute.value)) !=
                         "immutable") {
-                        diagnostics_.push_back(Diagnostic{
+                        appendDiagnostic(Diagnostic{
                             attribute.span,
                             "value enumeration property SetAccess must be "
                             "immutable: " +
@@ -3047,7 +3090,7 @@ private:
     void validateResolvedClassMembers() {
         for (const auto& [className, klass] : classesByName_) {
             if (!klass.declaredEvents.empty() && !klass.handleClass) {
-                diagnostics_.push_back(Diagnostic{
+                appendDiagnostic(Diagnostic{
                     klass.span,
                     "events can be declared only by handle classes: " +
                         className});
@@ -3055,7 +3098,7 @@ private:
             for (const auto& property : klass.declaredPropertyOrder) {
                 const std::string owner = propertyDisplayName(*property);
                 if (property->abortSet && !klass.handleClass) {
-                    diagnostics_.push_back(Diagnostic{
+                    appendDiagnostic(Diagnostic{
                         property->span,
                         "AbortSet is supported only for handle-class "
                         "properties: " + owner});
@@ -3063,21 +3106,21 @@ private:
                 if (property->abstractProperty &&
                     (!property->getterName.empty() ||
                      !property->setterName.empty())) {
-                    diagnostics_.push_back(Diagnostic{
+                    appendDiagnostic(Diagnostic{
                         property->span,
                         "abstract property cannot define access methods: " +
                             owner});
                 }
                 if (!property->abstractProperty && property->dependent &&
                     property->getterName.empty()) {
-                    diagnostics_.push_back(Diagnostic{
+                    appendDiagnostic(Diagnostic{
                         property->span,
                         "dependent property requires a get method: " + owner});
                 }
                 if (property->constant &&
                     (!property->getterName.empty() ||
                      !property->setterName.empty())) {
-                    diagnostics_.push_back(Diagnostic{
+                    appendDiagnostic(Diagnostic{
                         property->span,
                         "constant property cannot define access methods: " +
                             owner});
@@ -3090,7 +3133,7 @@ private:
                         functionHasRepeatingOutput(getter.signature) ||
                         getter.signature.parameters.size() != 1 ||
                         getter.signature.outputs.size() != 1) {
-                        diagnostics_.push_back(Diagnostic{
+                        appendDiagnostic(Diagnostic{
                             getter.span,
                             "property get method must accept one object and "
                             "return one value: " + className + "." +
@@ -3109,7 +3152,7 @@ private:
                         functionHasRepeatingOutput(setter.signature) ||
                         setter.signature.parameters.size() != 2 ||
                         !outputCountValid) {
-                        diagnostics_.push_back(Diagnostic{
+                        appendDiagnostic(Diagnostic{
                             setter.span,
                             klass.handleClass
                                 ? "handle-class property set method must "
@@ -4469,7 +4512,7 @@ private:
         if (!classHierarchyDiagnosticKeys_.insert(std::move(key)).second) {
             return;
         }
-        diagnostics_.push_back(Diagnostic{info.span, std::move(message)});
+        appendDiagnostic(Diagnostic{info.span, std::move(message)});
     }
 
     void collectTypedRegions(const BytecodeTypedIrModule* typedIr) {
@@ -4774,7 +4817,7 @@ private:
         scriptModeActive_ = false;
         if (!scriptMode && !requestedEntryFunction_.empty() &&
             !ranFirstFunction && diagnostics_.empty()) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 SourceSpan{}, "entry function is not available: " +
                                   requestedEntryFunction_});
         }
@@ -4819,7 +4862,7 @@ private:
         if (validation.succeeded) {
             return true;
         }
-        diagnostics_.push_back(Diagnostic{
+        appendDiagnostic(Diagnostic{
             validation.span,
             "output argument validation failed for " + name + "." +
                 validation.argumentName + ": " + validation.error});
@@ -5246,12 +5289,17 @@ private:
             const auto span = *instruction.assignmentDisplaySpan;
             const size_t source = span.begin.sourceId;
             for (const auto& name : instruction.assignmentDisplayNames) {
+                if (std::find(internalOutputBindings_.begin(),internalOutputBindings_.end(),name) != internalOutputBindings_.end()) {
+                    continue;
+                }
                 const auto value = currentFrame().find(name);
                 if (value == currentFrame().end()) { continue; }
                 assignmentDisplays_.push_back(runtimeCaptureAssignmentDisplay(
                     name, value->second, span,
                     source < semantic_->sources.size() ? semantic_->sources[source].name : std::string{},
-                    instruction.outputSuppressed, nextConsoleSequence_++, format));
+                    instruction.outputSuppressed, 0, format));
+                journal_->display(assignmentDisplays_.back(),RuntimeJournalKind::Assignment,
+                    journalSourceContext_,executionControl_->consoleCaptureDepth());
             }
         }
         return next;
@@ -6276,6 +6324,12 @@ private:
             runtimeExceptionFromDiagnostic(
                 diagnostic, exceptionFrames(diagnostic.span)));
         pendingException_.reset();
+        if (journal_) {
+            for (size_t index=context.diagnosticBase; index<diagnostics_.size(); ++index) {
+                observeJournalDiagnostic(diagnostics_[index]);
+                journal_->caught(diagnostics_[index]);
+            }
+        }
         diagnostics_.resize(context.diagnosticBase);
         stack_.resize(context.stackDepth);
         forLoopStack_.resize(context.forLoopDepth);
@@ -7125,8 +7179,12 @@ private:
         expressionResults_.push_back(RuntimeExpressionResult{
             std::move(*value), instruction.span,
             instruction.outputSuppressed,
-            nextConsoleSequence_++, displayText,
+            journal_ ? 0 : nextConsoleSequence_++, displayText,
             displayFormat.spacing});
+        if (journal_) {
+            journal_->expression(expressionResults_.back(),journalSourceContext_,executionControl_->consoleCaptureDepth(),
+                journalSourceName(instruction.span));
+        }
         if (executionControl_->consoleStreaming() &&
             !executionControl_->emitConsole(runtimeRenderConsole({}, {expressionResults_.back()}))) {
             addDiagnostic(instruction, "host console sink rejected expression output",
@@ -13665,8 +13723,10 @@ private:
         auto savedPendingException = std::move(pendingException_);
         auto savedOutputSink = std::move(runtimeOutputSink_);
         pendingException_.reset();
-        runtimeOutputSink_ = [&result](const RuntimeOutputEvent& event) {
-            result.outputEvents.push_back(event);
+        runtimeOutputSink_ = [this,&result](const RuntimeOutputEvent& event) {
+            auto recorded = event;
+            if (journal_) { recordJournalText(recorded); }
+            result.outputEvents.push_back(std::move(recorded));
             return true;
         };
 
@@ -14465,6 +14525,9 @@ private:
                 validatePropertyValue(
                     instruction, *property, arguments[1])
                     .has_value();
+            if (journal_) {
+                for (size_t index=diagnosticCount; index<diagnostics_.size(); ++index) { journal_->suppressed(diagnostics_[index]); }
+            }
             diagnostics_.resize(diagnosticCount);
             pendingException_ = pendingException;
             return requestedCount == 0
@@ -16095,7 +16158,7 @@ private:
         diagnostic.stack = exceptionFrames(instruction.span);
         pendingException_ = runtimeExceptionFromDiagnostic(
             diagnostic, diagnostic.stack);
-        diagnostics_.push_back(std::move(diagnostic));
+        appendDiagnostic(std::move(diagnostic));
     }
 
     const BuiltinRegistry& builtinRegistry() const {
@@ -16119,12 +16182,12 @@ private:
             }
             if (diagnostic.severity ==
                 DiagnosticSeverity::Warning) {
-                warnings_.push_back(std::move(diagnostic));
+                appendWarning(std::move(diagnostic));
                 continue;
             }
             pendingException_ = runtimeExceptionFromDiagnostic(
                 diagnostic, diagnostic.stack);
-            diagnostics_.push_back(std::move(diagnostic));
+            appendDiagnostic(std::move(diagnostic));
         }
     }
 
@@ -16143,7 +16206,7 @@ private:
             *pendingException_, instruction.span);
         diagnostic.span =
             exceptionDiagnosticSpan(*pendingException_, diagnostic.span);
-        diagnostics_.push_back(std::move(diagnostic));
+        appendDiagnostic(std::move(diagnostic));
     }
 
     RuntimeWorkspace& currentFrame() {
@@ -16288,6 +16351,9 @@ private:
     std::vector<RuntimeExpressionResult> expressionResults_;
     std::vector<RuntimeAssignmentDisplay> assignmentDisplays_;
     bool captureAssignmentDisplays_ = false;
+    std::shared_ptr<RuntimeEventJournal> journal_;
+    std::uint64_t journalSourceContext_ = 0;
+    std::vector<std::string> internalOutputBindings_;
     std::uint64_t nextConsoleSequence_ = 0;
     std::optional<std::chrono::steady_clock::time_point> ticStart_;
     std::vector<size_t> instructionExecutionCounts_;

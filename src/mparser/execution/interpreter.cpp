@@ -324,17 +324,21 @@ public:
                             ? options.sessionState
                             : std::make_shared<RuntimeSessionState>();
         executionControl_ = options.executionControl;
+        if (!executionControl_ && options.captureAssignmentDisplays) { executionControl_ = std::make_shared<RuntimeExecutionControl>(); }
+        RuntimeEventJournalScope journalScope(executionControl_.get(), options.captureAssignmentDisplays);
+        journal_ = journalScope.journal();
+        journalSourceContext_ = journalScope.sourceContext();
         outputEvents_.clear();
         expressionResults_.clear();
         assignmentDisplays_.clear();
-        captureAssignmentDisplays_ = options.captureAssignmentDisplays;
+        captureAssignmentDisplays_ = static_cast<bool>(journal_);
         activeIndexContexts_.clear();
         sourceCallerOverrides_.clear();
         nextConsoleSequence_ = 0;
         runtimeOutputSink_ = [this, external = options.outputSink](
                                  const RuntimeOutputEvent& event) {
             auto recorded = event;
-            recorded.sequence = nextConsoleSequence_++;
+            recordJournalText(recorded);
             if (!recorded.consoleEmitted && executionControl_ &&
                 executionControl_->consoleStreaming()) {
                 if (!executionControl_->emitConsole(recorded.text)) {
@@ -387,10 +391,36 @@ public:
             result.diagnostics.push_back(Diagnostic{
                 SourceSpan{}, error.what(), "MParser:GraphicsExportFailed"});
         }
+        if (journal_) {
+            for (auto& diagnostic : result.diagnostics) {
+                observeJournalDiagnostic(diagnostic);
+                journal_->unhandled(diagnostic);
+            }
+            result.journalEvents = journalScope.snapshot();
+        }
         return result;
     }
 
 private:
+    void recordJournalText(RuntimeOutputEvent& event) {
+        if (journal_) {
+            journal_->text(event,journalSourceContext_,executionControl_->consoleCaptureDepth(),sourceFileName(event.span));
+        } else { event.sequence = nextConsoleSequence_++; }
+    }
+    void observeJournalDiagnostic(Diagnostic& diagnostic) {
+        if (journal_) {
+            journal_->diagnostic(diagnostic,journalSourceContext_,executionControl_->consoleCaptureDepth(),sourceFileName(diagnostic.span));
+        }
+    }
+    void appendDiagnostic(Diagnostic diagnostic) {
+        observeJournalDiagnostic(diagnostic);
+        diagnostics_.push_back(std::move(diagnostic));
+    }
+    void appendWarning(Diagnostic diagnostic) {
+        observeJournalDiagnostic(diagnostic);
+        warnings_.push_back(std::move(diagnostic));
+    }
+
     BuiltinSourceEvaluationResult evaluateSourceInWorkspace(
         const HirNode& node, const BuiltinSourceEvaluationRequest& request,
         RuntimeWorkspace* target, std::vector<RuntimeWorkspace*> ancestors) {
@@ -410,6 +440,8 @@ private:
         options.sessionState = sessionState_;
         options.executionControl = executionControl_;
         options.outputSink = runtimeOutputSink_;
+        options.eventSourceContext = journalSourceContext_;
+        options.eventSourceName = sourceFileName(request.span);
         options.inheritedWorkspaceFrames =
             std::move(ancestors);
         options.inheritedCallableScopes =
@@ -736,7 +768,7 @@ private:
         diagnostic.stack = exceptionFrames(node.span);
         pendingException_ = runtimeExceptionFromDiagnostic(
             diagnostic, diagnostic.stack);
-        diagnostics_.push_back(std::move(diagnostic));
+        appendDiagnostic(std::move(diagnostic));
     }
 
     void raiseException(const HirNode& node,
@@ -754,7 +786,7 @@ private:
             runtimeDiagnosticFromException(*pendingException_, node.span);
         diagnostic.span =
             exceptionDiagnosticSpan(*pendingException_, diagnostic.span);
-        diagnostics_.push_back(std::move(diagnostic));
+        appendDiagnostic(std::move(diagnostic));
     }
 
     bool diagnosticTrapTriggered() const {
@@ -878,12 +910,12 @@ private:
             }
             if (diagnostic.severity ==
                 DiagnosticSeverity::Warning) {
-                warnings_.push_back(std::move(diagnostic));
+                appendWarning(std::move(diagnostic));
                 continue;
             }
             pendingException_ = runtimeExceptionFromDiagnostic(
                 diagnostic, diagnostic.stack);
-            diagnostics_.push_back(std::move(diagnostic));
+            appendDiagnostic(std::move(diagnostic));
         }
     }
 
@@ -1560,7 +1592,7 @@ private:
                     argumentName += "{" + std::to_string(*occurrence + 1) +
                                     "}";
                 }
-                diagnostics_.push_back(Diagnostic{
+                appendDiagnostic(Diagnostic{
                     contract->span,
                     "argument validation failed for " + node.label + "." +
                         argumentName + ": " +
@@ -1748,7 +1780,7 @@ private:
         const auto outputValidation =
             validateRuntimeFunctionOutputs(completedFrame, outputContracts);
         if (!outputValidation.succeeded) {
-            diagnostics_.push_back(Diagnostic{
+            appendDiagnostic(Diagnostic{
                 outputValidation.span,
                 "output argument validation failed for " + node.label + "." +
                     outputValidation.argumentName + ": " +
@@ -1817,8 +1849,12 @@ private:
                         RuntimeExpressionResult{
                             std::move(values.front()), node.span,
                             node.outputSuppressed,
-                            nextConsoleSequence_++, displayText,
+                            journal_ ? 0 : nextConsoleSequence_++, displayText,
                             displayFormat.spacing});
+                    if (journal_) {
+                        journal_->expression(expressionResults_.back(),journalSourceContext_,executionControl_->consoleCaptureDepth(),
+                            sourceFileName(node.span));
+                    }
                     if (executionControl_ && executionControl_->consoleStreaming() &&
                         !executionControl_->emitConsole(
                             runtimeRenderConsole({}, {expressionResults_.back()}))) {
@@ -1859,7 +1895,9 @@ private:
                     assignmentDisplays_.push_back(runtimeCaptureAssignmentDisplay(
                         name, value->second, node.span,
                         source < semantic_->sources.size() ? semantic_->sources[source].name : std::string{},
-                        node.outputSuppressed, nextConsoleSequence_++, format));
+                        node.outputSuppressed, 0, format));
+                    journal_->display(assignmentDisplays_.back(),RuntimeJournalKind::Assignment,
+                        journalSourceContext_,executionControl_->consoleCaptureDepth());
                 }
             }
             break;
@@ -2864,6 +2902,12 @@ private:
             runtimeExceptionFromDiagnostic(
                 diagnostic, exceptionFrames(diagnostic.span)));
         pendingException_.reset();
+        if (journal_) {
+            for (size_t index=diagnosticBase; index<diagnostics_.size(); ++index) {
+                observeJournalDiagnostic(diagnostics_[index]);
+                journal_->caught(diagnostics_[index]);
+            }
+        }
         diagnostics_.resize(diagnosticBase);
 
         const HirNode& arm = *node.children[*catchArm];
@@ -4168,8 +4212,10 @@ private:
         auto savedPendingException = std::move(pendingException_);
         auto savedOutputSink = std::move(runtimeOutputSink_);
         pendingException_.reset();
-        runtimeOutputSink_ = [&result](const RuntimeOutputEvent& event) {
-            result.outputEvents.push_back(event);
+        runtimeOutputSink_ = [this,&result](const RuntimeOutputEvent& event) {
+            auto recorded = event;
+            if (journal_) { recordJournalText(recorded); }
+            result.outputEvents.push_back(std::move(recorded));
             return true;
         };
 
@@ -4961,6 +5007,8 @@ private:
     std::vector<RuntimeExpressionResult> expressionResults_;
     std::vector<RuntimeAssignmentDisplay> assignmentDisplays_;
     bool captureAssignmentDisplays_ = false;
+    std::shared_ptr<RuntimeEventJournal> journal_;
+    std::uint64_t journalSourceContext_ = 0;
     std::uint64_t nextConsoleSequence_ = 0;
     std::vector<Diagnostic> diagnostics_;
     std::vector<Diagnostic> warnings_;

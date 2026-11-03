@@ -409,14 +409,23 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     RuntimeWorkspace& workspace,
     const RuntimeSourceEvaluationOptions& options) {
     BuiltinSourceEvaluationResult result;
+    const auto journal = options.executionControl ? options.executionControl->eventJournal() : nullptr;
+    const auto diagnosticContext = journal ?
+        (options.eventSourceContext ? options.eventSourceContext : journal->sourceContext()) : 0;
+    const auto appendDiagnostic = [&](Diagnostic diagnostic) {
+        if (journal) {
+            journal->diagnostic(diagnostic,diagnosticContext,options.executionControl->consoleCaptureDepth(),options.eventSourceName);
+        }
+        result.diagnostics.push_back(std::move(diagnostic));
+    };
     if (request.source.size() > kMaximumDynamicSourceBytes) {
-        result.diagnostics.push_back(dynamicDiagnostic(
+        appendDiagnostic(dynamicDiagnostic(
             request.span, "dynamic source exceeds the 16 MiB limit",
             "MParser:DynamicSourceLimitExceeded"));
         return result;
     }
     if (request.requestedOutputCount > kMaximumDynamicOutputCount) {
-        result.diagnostics.push_back(dynamicDiagnostic(
+        appendDiagnostic(dynamicDiagnostic(
             request.span,
             "dynamic source requested more than 1024 outputs",
             "MParser:DynamicOutputLimitExceeded"));
@@ -428,7 +437,7 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     if (!systemContext ||
         !systemContext->hasCapability(
             RuntimeSystemCapability::DynamicEvaluation)) {
-        result.diagnostics.push_back(dynamicDiagnostic(
+        appendDiagnostic(dynamicDiagnostic(
             request.span,
             "dynamic source evaluation capability is disabled",
             "MParser:SystemCapabilityDenied"));
@@ -517,15 +526,32 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
             SourceUnit{"<eval>", prepared.source}},
         compileOptions);
     if (!module.valid()) {
-        for (const auto& diagnostic : module.diagnostics()) {
-            result.diagnostics.push_back(
+        const auto context = journal ? journal->sourceContext() : 0;
+        for (auto diagnostic : module.diagnostics()) {
+            if (journal) {
+                auto original = diagnostic;
+                const auto mapPosition = [&](SourcePosition& position) {
+                    position.offset = position.offset >= prepared.firstLineColumnOffset ?
+                        position.offset - prepared.firstLineColumnOffset : 0;
+                    if (position.line == 1) {
+                        position.column = static_cast<int>(std::max<size_t>(1,
+                            static_cast<size_t>(std::max(position.column,1)) > prepared.firstLineColumnOffset ?
+                            static_cast<size_t>(position.column) - prepared.firstLineColumnOffset : 1));
+                    }
+                };
+                mapPosition(original.span.begin); mapPosition(original.span.end);
+                if (original.identifier.empty()) { original.identifier = "MParser:DynamicEvaluationFailed"; }
+                journal->diagnostic(original,context,options.executionControl->consoleCaptureDepth() + (request.captureOutput ? 1u : 0u),"<eval>");
+                diagnostic.eventStamp = original.eventStamp;
+            }
+            appendDiagnostic(
                 projectDiagnostic(diagnostic, request.span,
                                   prepared.firstLineColumnOffset));
         }
         return result;
     }
     if (hasIllegalDynamicDefinition(module)) {
-        result.diagnostics.push_back(dynamicDiagnostic(
+        appendDiagnostic(dynamicDiagnostic(
             request.span,
             "dynamic source cannot define functions or classes",
             "MParser:UnsupportedDynamicDeclaration"));
@@ -561,6 +587,7 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
             : &workspace;
     const RuntimeConsoleCaptureScope consoleCapture(
         options.executionControl.get(), request.captureOutput);
+    vmOptions.internalOutputBindings = prepared.outputNames;
     const bool consoleEmitted = options.executionControl &&
         options.executionControl->consoleStreaming();
     BytecodeVmResult runtime =
@@ -607,7 +634,7 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
             *snapshot.fields = snapshot.values;
         }
         result.outputs.clear();
-        result.diagnostics.push_back(dynamicDiagnostic(
+        appendDiagnostic(dynamicDiagnostic(
             request.span,
             "a function handle created by dynamic source cannot escape its "
             "temporary compiled module",
@@ -615,27 +642,38 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     }
 
     workspace = std::move(updatedWorkspace);
-    result.capturedOutput = runtimeRenderConsole(
-        runtime.outputEvents, runtime.expressionResults);
+    if (options.executionControl && options.executionControl->eventJournal()) {
+        const auto rendered = runtimeRenderEventJournal(runtime.journalEvents,options.executionControl->consoleCaptureDepth());
+        if (rendered.succeeded) { result.capturedOutput = rendered.text; }
+        else {
+            result.capturedOutput.clear();
+            appendDiagnostic(dynamicDiagnostic(request.span,rendered.error,"MParser:DisplaySnapshotUnavailable"));
+        }
+    } else {
+        result.capturedOutput = runtimeRenderConsole(runtime.outputEvents,runtime.expressionResults);
+    }
     for (auto& diagnostic : runtime.diagnostics) {
-        result.diagnostics.push_back(
+        appendDiagnostic(
             projectDiagnostic(std::move(diagnostic), request.span,
                               prepared.firstLineColumnOffset));
     }
 
     if (!request.captureOutput && !result.capturedOutput.empty()) {
         if (!options.outputSink) {
-            result.diagnostics.push_back(dynamicDiagnostic(
+            appendDiagnostic(dynamicDiagnostic(
                 request.span,
                 "dynamic source produced output without an output sink",
                 "MParser:MissingBuiltinContext"));
-        } else if (!options.outputSink(RuntimeOutputEvent{
-                       RuntimeOutputKind::StandardOutput,
-                       result.capturedOutput, request.span, 0, {}, consoleEmitted})) {
-            result.diagnostics.push_back(dynamicDiagnostic(
-                request.span,
-                "host output sink rejected dynamic source output",
-                "MParser:OutputSinkRejected"));
+        } else {
+            RuntimeOutputEvent replay{RuntimeOutputKind::StandardOutput,
+                result.capturedOutput,request.span,0,{},consoleEmitted};
+            replay.transcriptReplay = options.executionControl && options.executionControl->eventJournal();
+            if (!options.outputSink(replay)) {
+                appendDiagnostic(dynamicDiagnostic(
+                    request.span,
+                    "host output sink rejected dynamic source output",
+                    "MParser:OutputSinkRejected"));
+            }
         }
     }
 
@@ -643,7 +681,7 @@ BuiltinSourceEvaluationResult evaluateRuntimeSource(
     if (!result.succeeded) {
         result.outputs.clear();
     } else if (result.outputs.size() != request.requestedOutputCount) {
-        result.diagnostics.push_back(dynamicDiagnostic(
+        appendDiagnostic(dynamicDiagnostic(
             request.span,
             "dynamic expression did not produce the requested outputs",
             "MParser:DynamicOutputCountMismatch"));

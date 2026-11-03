@@ -3,6 +3,7 @@
 #include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/runtime/core/value/runtime_value_snapshot.h"
 #include "mparser/frontend/source.h"
+#include "mparser/frontend/execution_event_stamp.h"
 
 #include <cstdint>
 #include <functional>
@@ -58,6 +59,8 @@ struct RuntimeOutputEvent {
     std::string sourceName;
     // Dynamic source forwards a recorded transcript after its live emission.
     bool consoleEmitted = false;
+    ExecutionEventStamp eventStamp = {};
+    bool transcriptReplay = false;
 };
 
 using RuntimeOutputSink =

@@ -88,6 +88,8 @@ struct RuntimeSourceEvaluationOptions {
     RuntimeSourceStorageDeclarer inheritedStorageDeclarer;
     RuntimeSourceStorageClearer inheritedStorageClearer;
     RuntimeWorkspace* inheritedStorageWorkspace = nullptr;
+    std::uint64_t eventSourceContext = 0;
+    std::string eventSourceName;
 };
 
 BuiltinSourceEvaluationResult evaluateRuntimeSource(

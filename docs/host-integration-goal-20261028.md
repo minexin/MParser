@@ -26,9 +26,9 @@ success may substitute for missing kernel contracts.
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 351/351 and latest clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 352/352 and latest clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
-| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | Internal commit-time text and immutable value recording implemented; public snapshot projection, shared warning/diagnostic journal, SDK/protocol and host acceptance remain open; see assignment-display-development.md |
+| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | Internal immutable values and shared module/dynamic execution journal implemented; expression parity, bounded live delivery, public snapshot/SDK/protocol and host acceptance remain open; see assignment-display-development.md |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -802,3 +802,37 @@ records that rename was not shipped; no rename operation or UI is claimed.
   at build/snapshot-final-regression.log after synchronizing the version note,
   development-manifest hash and installed guide. No public header, ABI revision,
   historical symbol list or frozen protocol schema was changed by this stage.
+- H10 shared-journal implementation now attaches to an invocation's existing
+  execution control. Assignments, expressions, generated text, warnings and
+  runtime/dynamic-compile diagnostics are stamped at production and retain
+  source-context/name/span provenance across nested, dynamic and escaped-module
+  calls. Forwarded events and aggregate transcript replays are not duplicated.
+  Generated eval output bindings are not exposed as user assignments. Capture
+  depth isolates nested evalc transcripts. Caught/suppressed/unhandled policy
+  is explicit, including eval catch expressions and diagnostic-budget records.
+  The compiled-module boundary keeps history across both builtin-mapped host
+  sink exceptions and direct external-invoker exceptions. First extended runs
+  exposed incorrect fixture assumptions about the builtin exception mapping
+  and validation-before-execution order; assertions now check those actual
+  contracts without inventing primary-source events or changing error semantics.
+  Final complete rebuild/regression passed 352/352 in 44.98 seconds at
+  build/journal-acceptance-regression.log, including the new event_journal_smoke.
+  Relocated ABI 2.8 DLL SHA256:
+  2D118070D2DC87941083062E7BA8FC20EC103910AAC04E68719D186E9F30E523.
+  This remains an internal serial transcript, not a public live stream. Aggregate
+  memory/backpressure/reentrancy, full expression/ans/display parity, read-only
+  public projection, SDK/protocol/REST/browser/deployment acceptance stay open.
+- Shared-journal compatibility acceptance used a fresh source-only installed-SDK
+  host build at build/clean-host-probe/f7a166c47ae4435fbe741792ed12ece7. All
+  path/rename/definition/compiler/graphics REST checks, client candidates and
+  CTest 67/67 passed (20.40 seconds); selected DLL SHA256 matches the preceding
+  2D118070D2DC87941083062E7BA8FC20EC103910AAC04E68719D186E9F30E523.
+  Raw kernel REST evidence: build/host-compile-probe/91bef523c2a2445aa230aa14d3a5eb56.
+  The original six-case display probe still reports no public assignment events
+  at the clean run's build/display-probe-8c866e7c8dd345ddb45c1c4c5eceee7e.
+  This confirms the remaining public flag/API/REST delivery gap instead of
+  claiming H10 complete. Original sibling sources and services remain unchanged.
+- Final shared-journal documentation/package check passed 6/6 in 24.92 seconds
+  at build/journal-final-package.log: journal/assignment tests, development
+  contract, installed C/C++ consumers and relocated release archive. Product
+  remains development 1.15.0; public ABI 2.8/148 and protocol 1.2 are unchanged.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mparser/frontend/source.h"
+#include "mparser/frontend/execution_event_stamp.h"
 
 #include <string>
 #include <utility>
@@ -36,6 +37,7 @@ struct Diagnostic {
     // Set when a diagnostic crosses a compiled-module boundary and its
     // source-id can no longer be interpreted against the caller's table.
     std::string sourceName;
+    ExecutionEventStamp eventStamp = {};
 
     Diagnostic() = default;
 

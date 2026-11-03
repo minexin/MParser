@@ -2,6 +2,7 @@
 
 #include "mparser/runtime/core/session/runtime_execution_control.h"
 #include "mparser/runtime/core/session/runtime_output.h"
+#include "mparser/runtime/core/session/runtime_event_journal.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/execution/runtime_source_evaluation.h"
@@ -139,6 +140,7 @@ struct ModuleInvocationRequest {
     std::shared_ptr<RuntimeSystemContext> systemContext = {};
     std::shared_ptr<RuntimeExecutionControl> executionControl = {};
     RuntimeSourceCallableInvoker externalCallableInvoker;
+    bool captureEventJournal = false;
 };
 
 struct ModuleExecutionSummary {
@@ -174,6 +176,7 @@ struct ModuleInvocationResult {
     std::vector<RuntimeValue> outputs;
     std::vector<ModuleOutputEvent> outputEvents;
     std::vector<ModuleTopLevelExpression> topLevelExpressions;
+    std::vector<RuntimeJournalEvent> journalEvents;
     std::vector<RuntimeVariable> variables;
     std::vector<ModuleDiagnostic> diagnostics;
     ModuleExecutionSummary execution;

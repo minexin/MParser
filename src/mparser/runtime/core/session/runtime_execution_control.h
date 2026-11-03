@@ -15,6 +15,8 @@ namespace mparser {
 struct RuntimeValue;
 class RuntimeDebugger;
 class RuntimeConsoleCaptureScope;
+class RuntimeEventJournal;
+class RuntimeEventJournalScope;
 
 using RuntimeConsoleSink = std::function<bool(std::string_view)>;
 
@@ -78,6 +80,9 @@ public:
 
     RuntimeInputResult readInput(const RuntimeInputRequest& request);
     bool consoleStreaming() const noexcept;
+    bool consoleCaptured() const noexcept { return consoleCaptureDepth_ != 0; }
+    size_t consoleCaptureDepth() const noexcept { return consoleCaptureDepth_; }
+    const std::shared_ptr<RuntimeEventJournal>& eventJournal() const noexcept { return eventJournal_; }
     bool emitConsole(std::string_view text) const;
 
     RuntimeDebugger* debugger() const noexcept;
@@ -122,6 +127,8 @@ private:
     size_t maximumDiagnosticCount_ = 0;
     bool optimizedExecutionSuppressed_ = false;
     friend class RuntimeConsoleCaptureScope;
+    friend class RuntimeEventJournalScope;
+    std::shared_ptr<RuntimeEventJournal> eventJournal_;
 };
 
 class RuntimeConsoleCaptureScope {

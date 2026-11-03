@@ -1086,6 +1086,24 @@ ModuleInvocationResult CompiledModule::execute(
         state ? state
               : std::make_shared<RuntimeSessionState>(
                     request.systemContext);
+    const auto executionControl = request.executionControl ? request.executionControl :
+        std::make_shared<RuntimeExecutionControl>(request.limits,request.cancellationToken,nullptr,request.inputSource);
+    RuntimeEventJournalScope journalScope(executionControl.get(),request.captureEventJournal);
+    const auto journalDiagnostics = [&](const std::vector<Diagnostic>& diagnostics) {
+        if (!journalScope.journal()) { return; }
+        for (auto diagnostic : diagnostics) {
+            const auto source = diagnostic.span.begin.sourceId;
+            journalScope.journal()->diagnostic(diagnostic,journalScope.sourceContext(),executionControl->consoleCaptureDepth(),
+                source < data_->sources.size() ? data_->sources[source].name : std::string{});
+            journalScope.journal()->unhandled(diagnostic);
+        }
+    };
+    const auto finishJournal = [&] {
+        if (journalScope.journal()) {
+            journalScope.journal()->complete();
+            result.journalEvents = journalScope.snapshot();
+        }
+    };
     const auto captureGraphics = [&] {
         try {
             result.graphicsSnapshot.emplace(*runtimeOptions.sessionState->graphicsGraph());
@@ -1095,6 +1113,7 @@ ModuleInvocationResult CompiledModule::execute(
             result.status = ModuleInvocationStatus::RuntimeFailed;
             const std::vector<Diagnostic> diagnostics{
                 Diagnostic{SourceSpan{}, error.what(), "MParser:GraphicsExportFailed"}};
+            journalDiagnostics(diagnostics);
             auto projected = projectDiagnostics(diagnostics, ModuleDiagnosticPhase::Execution,
                 data_->sources, "MParser:GraphicsExportFailed");
             result.diagnostics.insert(result.diagnostics.end(),
@@ -1102,18 +1121,13 @@ ModuleInvocationResult CompiledModule::execute(
         }
     };
     runtimeOptions.initialWorkspace = request.initialWorkspace;
+    runtimeOptions.captureAssignmentDisplays = request.captureEventJournal;
     runtimeOptions.entryFunction = request.entryFunction;
     runtimeOptions.arguments = request.arguments;
     runtimeOptions.requestedOutputCount =
         request.requestedOutputCount;
     runtimeOptions.typedRegionBackend =
         typedBackendFor(request.backend);
-    const auto executionControl =
-        request.executionControl
-            ? request.executionControl
-            : std::make_shared<RuntimeExecutionControl>(
-                  request.limits, request.cancellationToken, nullptr,
-                  request.inputSource);
     runtimeOptions.executionControl = executionControl;
     runtimeOptions.inheritedCallableInvoker =
         request.externalCallableInvoker;
@@ -1150,10 +1164,12 @@ ModuleInvocationResult CompiledModule::execute(
                 "host exception escaped module execution: " +
                     std::string(exception.what()),
                 "MParser:HostExecutionException"}};
+        journalDiagnostics(diagnostics);
         result.diagnostics = projectDiagnostics(
             diagnostics, ModuleDiagnosticPhase::Execution,
             data_->sources, "MParser:RuntimeFailed");
         captureGraphics();
+        finishJournal();
         return result;
     } catch (...) {
         result.status = ModuleInvocationStatus::RuntimeFailed;
@@ -1164,10 +1180,12 @@ ModuleInvocationResult CompiledModule::execute(
                 SourceSpan{},
                 "unknown host exception escaped module execution",
                 "MParser:HostExecutionException"}};
+        journalDiagnostics(diagnostics);
         result.diagnostics = projectDiagnostics(
             diagnostics, ModuleDiagnosticPhase::Execution,
             data_->sources, "MParser:RuntimeFailed");
         captureGraphics();
+        finishJournal();
         return result;
     }
 
@@ -1202,6 +1220,7 @@ ModuleInvocationResult CompiledModule::execute(
     result.execution =
         summarizeExecution(runtime, request.backend);
     captureGraphics();
+    finishJournal();
     return result;
 }
 

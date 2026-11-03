@@ -2,6 +2,7 @@
 
 #include "mparser/runtime/io/filesystem_utf8.h"
 #include "mparser/runtime/core/session/runtime_execution_control.h"
+#include "mparser/runtime/core/session/runtime_event_journal.h"
 #include "mparser/runtime/core/session/runtime_debugger.h"
 #include "mparser/runtime/io/runtime_file_io.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
@@ -733,6 +734,11 @@ BuiltinResult dynamicEvaluationBuiltin(
         const auto catchSource =
             textArgument(call.arguments[sourceIndex + 1]);
         if (!catchSource) {
+            if (call.context && call.context->executionControl && call.context->executionControl->eventJournal()) {
+                for (const auto& diagnostic : evaluated.diagnostics) {
+                    if (isErrorDiagnostic(diagnostic)) { call.context->executionControl->eventJournal()->suppressed(diagnostic); }
+                }
+            }
             return failure(call,
                            std::string(name) +
                                " catch source must be a character vector or "
@@ -743,6 +749,8 @@ BuiltinResult dynamicEvaluationBuiltin(
         for (auto& diagnostic : evaluated.diagnostics) {
             if (!isErrorDiagnostic(diagnostic)) {
                 warnings.push_back(std::move(diagnostic));
+            } else if (call.context && call.context->executionControl && call.context->executionControl->eventJournal()) {
+                call.context->executionControl->eventJournal()->caught(diagnostic);
             }
         }
         std::string captured = std::move(evaluated.capturedOutput);

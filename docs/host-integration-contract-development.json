@@ -33,7 +33,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "a9a55a66b390ee80e68bada4e01ce1aa22668b6ffa1fb0d8e2085e953afc1ee2"
+      "sha256_lf": "e49b0fe1a68ec22922b3afbe3adcf6fcd07bc85fa8b1666656ee7c78f9bbb78e"
     },
     {
       "path": "docs/versioning-and-deprecation.md",

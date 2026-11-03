@@ -2,6 +2,7 @@
 
 #include "mparser/frontend/diagnostic.h"
 #include "mparser/runtime/core/session/runtime_output.h"
+#include "mparser/runtime/core/session/runtime_event_journal.h"
 #include "mparser/runtime/core/session/runtime_execution_control.h"
 #include "mparser/runtime/core/session/runtime_session_state.h"
 #include "mparser/runtime/core/value/runtime_value.h"
@@ -19,6 +20,7 @@ struct InterpreterResult {
     std::vector<RuntimeOutputEvent> outputEvents;
     std::vector<RuntimeExpressionResult> expressionResults;
     std::vector<RuntimeAssignmentDisplay> assignmentDisplays;
+    std::vector<RuntimeJournalEvent> journalEvents;
     std::vector<Diagnostic> diagnostics;
     std::optional<RuntimeGraphicsSnapshot> graphicsSnapshot;
 };
