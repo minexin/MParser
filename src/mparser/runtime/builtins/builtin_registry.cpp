@@ -2508,11 +2508,12 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
                     "close expects live Figure handles from this runtime or all",
                     "MParser:InvalidGraphicsCall");
             };
-            if (call.arguments.empty() || runtimeTextScalarUtf8(call.arguments.front()) == "all") {
+            if (call.arguments.empty()) {
+                if (!graph->nodes().empty()) { figures.push_back(graph->currentFigure()); }
+            } else if (runtimeTextScalarUtf8(call.arguments.front()) == "all") {
                 for (const auto& [id, node] : graph->nodes()) {
                     if (node.kind == RuntimeGraphicsKind::Figure) { figures.push_back(id); }
                 }
-                if (call.arguments.empty() && !figures.empty()) { figures = {graph->currentFigure()}; }
             } else {
                 const auto& value = call.arguments.front();
                 if (!isRuntimeGraphicsValue(value)) { return invalid(); }
