@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mparser/runtime/core/value/runtime_value.h"
+#include "mparser/runtime/core/value/runtime_value_snapshot.h"
 #include "mparser/frontend/source.h"
 
 #include <cstdint>
@@ -72,7 +73,6 @@ struct RuntimeExpressionResult {
 };
 
 // Internal recording foundation, not yet a public structured-value protocol.
-// Text is frozen at commit time; no live Value/handle is exposed by this record.
 struct RuntimeAssignmentDisplay {
     std::string label;
     std::string text;
@@ -81,7 +81,15 @@ struct RuntimeAssignmentDisplay {
     bool outputSuppressed = false;
     std::uint64_t sequence = 0;
     RuntimeLineSpacing lineSpacing = RuntimeLineSpacing::Loose;
+    RuntimeValueSnapshot valueSnapshot;
+    std::optional<RuntimeSnapshotFailure> snapshotFailure;
+    std::string snapshotError;
 };
+
+RuntimeAssignmentDisplay runtimeCaptureAssignmentDisplay(std::string label,
+    const RuntimeValue& value, SourceSpan span, std::string sourceName,
+    bool suppressed, std::uint64_t sequence, RuntimeDisplayFormat format,
+    RuntimeSnapshotLimits limits = {});
 
 struct RuntimeFormatResult {
     bool succeeded = false;

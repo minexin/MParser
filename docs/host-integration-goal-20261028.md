@@ -26,9 +26,9 @@ success may substitute for missing kernel contracts.
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 350/350 and clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/candidate 351/351 and latest clean installed-SDK host build/REST/67 regressions passed; browser, deployment and successor-version release acceptance pending |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
-| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | Internal commit-time text recording implemented; structured snapshots, shared warning/diagnostic journal, public SDK/protocol and host acceptance remain open; see assignment-display-development.md |
+| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | Internal commit-time text and immutable value recording implemented; public snapshot projection, shared warning/diagnostic journal, SDK/protocol and host acceptance remain open; see assignment-display-development.md |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -774,3 +774,31 @@ records that rename was not shipped; no rename operation or UI is claimed.
   development guide and updating the pinned version-note hash, passed 350/350
   in 39.97 seconds at build/display-final-regression.log. Public ABI remains
   2.8/148 exports; no historical headers/symbol/schema snapshots were changed.
+- H10 immutable structured-value foundation: RuntimeValueSnapshot now owns
+  copied data/local graph edges, not writable RuntimeValues or live handles.
+  It covers dense exact numeric/complex payloads, UTF-16/string missingness,
+  cells/structs, sparse CSC, categoricals, temporals, metadata, table/timetable
+  variables/properties, callable captures, handle aliases/cycles and frozen
+  graphics v3 JSON. Stored object field names remain internal; getters/user
+  display are not called, and private-field public projection is not approved.
+  Weak owner liveness is frozen without retaining its owner. Tests prove that
+  object writes, graphics mutation/close and owner/module/graph destruction do
+  not change old snapshots. Typed depth/node/byte/invalid-value failures return
+  no partial value and no fake formatting fallback. Full rebuilt kernel/package
+  CTest passed 351/351 in 82.33 seconds at build/snapshot-full-regression.log.
+  Real user-object/graphics mutation is covered in four requested VM modes;
+  unsupported HIR user construction is checked for explicit failure, not counted
+  as HIR object parity. Public ABI remains 2.8/148; shared warning/diagnostic
+  ordering, public projection/API/protocol and host display delivery remain open.
+- Immutable-snapshot compatibility acceptance: the relocated SDK DLL SHA256 is
+  524AA94C7F8390448BEF9C660B09906AF8EE2D23931E58BFD623C421696E9AE5.
+  Source-only clean host run build/clean-host-probe/4a21a67db7b94722a0a7d8281536221b
+  passed all 148 build actions, path/rename/kernel REST checks, client candidates
+  and host CTest 67/67 in 20.74 seconds with warnings-as-errors enabled. Raw
+  kernel REST evidence: build/host-compile-probe/6c622813822042888778e6f95e5765fd.
+  This proves existing public SDK compatibility, not new assignment-event
+  delivery. Original host/client sources and deployed services remain unchanged.
+- Final snapshot documentation/package rerun passed 351/351 in 48.47 seconds
+  at build/snapshot-final-regression.log after synchronizing the version note,
+  development-manifest hash and installed guide. No public header, ABI revision,
+  historical symbol list or frozen protocol schema was changed by this stage.

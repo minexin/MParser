@@ -1,6 +1,6 @@
 # Assignment Display Development
 
-Status: internal recording foundation only. H10 is not complete. The public
+Status: internal recording and immutable-value foundation only. H10 is not complete. The public
 1.15.0 development SDK remains ABI 2.8; no assignment-display export, protocol
 field, host feature or deployed UI has been advertised by this change.
 
@@ -39,7 +39,8 @@ that [a,a]=pair() displays its final a twice, not two RHS values.
   records only after successful assignment commit.
 - Each record owns frozen formatted text, the actual root label, source name,
   byte-based source span, suppression, sequence and line-spacing state. It
-  deliberately does not expose a live mutable Value/handle as a value snapshot.
+  also owns an immutable structured value snapshot or an explicit snapshot
+  failure. It never exposes a live mutable Value/handle as historical data.
 - The recorder reads the committed root directly. It does not evaluate an
   index, dynamic field name or property getter again, parse source text, run a
   query script, or reconstruct earlier values from the final workspace.
@@ -56,6 +57,57 @@ that [a,a]=pair() displays its final a twice, not two RHS values.
   values and does not continue later targets after a failed output-list write.
   Caught failures retain earlier records and resume in the catch arm.
 
+## Immutable Structured Values
+
+Internal RuntimeValueSnapshot owns a const node graph containing only copied
+payloads and snapshot-local ID edges. No RuntimeValue, executable callable,
+module context, live shared property storage or graphics handle is retained.
+Reading a node cannot write back into history or the execution runtime.
+Copies retain the immutable data independently of its originating event.
+
+Dense numeric snapshots use logical column-major order and preserve numeric
+class, shape, complex components and exact integer bits; binary64 signed zero,
+infinity and NaN payloads are not converted to strings or rounded. Character
+code units, string missingness, nested cells/structs and field order are copied.
+Sparse CSC payloads stay sparse, without expanding their logical zero elements.
+Categorical dictionaries/codes/flags, temporal payloads and table/timetable
+variables, row axes and stored properties are copied as structured data.
+
+User objects capture stored fields under their internal storage names, not
+computed/dependent properties. No getter, listener or user display method is
+invoked. Aliases and cycles in shared object fields, callable captures and
+tabular UserData become local edges rather than recursive live handles.
+Callable snapshots are descriptive and non-invocable; they retain neither HIR
+body pointers nor module lifetime anchors. Dynamic-property weak owners record
+their class and liveness at capture without strengthening owner lifetime.
+Graphics nodes contain a serializer-produced immutable v3 graph/reference at
+capture, which remains readable after later mutation, close or destruction.
+These IDs are historical references, not authorized write targets.
+
+Capture requires a stable source value, as held by the executor/session action;
+it is not an unsynchronized snapshot of concurrently modified raw RuntimeValue
+storage or a transaction spanning unrelated graphics graphs. Graph serialization
+uses the existing serializer lock. Public projection of private storage names,
+captured closure variables or class internals requires its own access/redaction
+contract; this internal representation is not exposed directly to a host.
+
+Default limits are depth 128, 100000 nodes and a 64 MiB retained payload budget
+(node records, strings, IDs and owned arrays). The byte budget is accounting,
+not a claim to cap allocator overhead or temporary serializer allocations.
+Invalid data and exceeded limits have distinct typed failures. No partial node
+graph is returned. The assignment event retains label/source/suppression/order
+and the explicit failure, with unavailable value/text; it does not format an
+unbounded rejected value or substitute an empty/final workspace value. Allocation
+failure still propagates through the existing execution/API failure boundary.
+
+tests/value_snapshot_smoke.cpp checks the value families, exact bits, large
+sparse inputs, alias/cycle edges, owner/code/graphics lifetimes, mutation after
+capture, deleted graphics and bounded failures. Assignment tests additionally
+exercise actual user-object mutation and plot/mutate/close through four
+requested VM modes. The HIR user-constructor fixture is currently unsupported;
+its explicit failure/no-invented-commit behavior is checked, not counted as HIR
+object execution parity. These are internal tests, not SDK or browser acceptance.
+
 tests/assignment_display_smoke.cpp exercises these paths using the HIR
 interpreter and four requested VM backends, with frozen text/history, root
 mutation, mixed output sequence, repeated/ignored outputs, side-effecting
@@ -70,16 +122,31 @@ relocated ABI 2.8 SDK passed all existing REST/candidate probes and host CTest
 build/clean-host-probe/62fd9467618742b4acc17826f1031833. Kernel REST evidence:
 build/host-compile-probe/ba5919870b8e40438e659fe1ff4cc4aa. Selected DLL SHA256:
 11ECDA1CCD88C4EC00898F36E658A7969458227CA24C2BCD8C3FF0FF00BF2329.
-This checks compatibility, not public assignment-display delivery. The six-case
+That foundation run checks compatibility, not public assignment-display delivery. The six-case
 host display probe still reports the original missing assignment events at
 build/clean-host-probe/62fd9467618742b4acc17826f1031833/build/display-probe-3686f84eff124e51a525a0efeebb5bb1,
 as expected before a public SDK/event transport exists. That is an open gate,
 not a passing feature test. Original sibling sources/services remain unchanged.
 
+The subsequent structured-value implementation was rebuilt and passed 351/351
+kernel/package tests in 82.33 seconds at build/snapshot-full-regression.log,
+including the extended assignment tests and new value_snapshot_smoke. The
+selected relocated DLL SHA256 is
+524AA94C7F8390448BEF9C660B09906AF8EE2D23931E58BFD623C421696E9AE5.
+This does not prove any new public event transport or actual native-code display
+execution; the recording mode explicitly suppresses unobservable optimized regions.
+An additional source-only clean installed-SDK host run at
+build/clean-host-probe/4a21a67db7b94722a0a7d8281536221b passed all existing
+REST/candidate checks and 67/67 host tests in 20.74 seconds with
+warnings-as-errors enabled. Raw kernel REST evidence is
+build/host-compile-probe/6c622813822042888778e6f95e5765fd. These checks preserve
+the public compatibility boundary; they do not advertise a new H10 host feature.
+
 ## Remaining H10 Gates
 
-1. Immutable structured execution-time value snapshots, including mutable
-   object/graphics/cyclic-reference families, without exporting writable history.
+1. Public immutable snapshot projection/lifetime and access rules, including
+   private/dependent-property policy and explicit unavailable-value handling.
+   The internal structure exists; its public SDK/protocol delivery is not done.
 2. A single shared execution journal across nested/dynamic/escaped-module calls;
    warning/error/diagnostic ordering and caught-error policy; live delivery and
    rejection/cancellation behavior. Executor-local counters are not that proof.

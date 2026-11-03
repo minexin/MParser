@@ -302,6 +302,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/builtins/text/runtime_text_builtins.cpp
     src/mparser/runtime/builtins/text/runtime_text_query_builtins.cpp
     src/mparser/runtime/core/value/runtime_value.cpp
+    src/mparser/runtime/core/value/runtime_value_snapshot.cpp
     src/mparser/runtime/core/value/runtime_value_ops.cpp
     src/mparser/semantic/semantic.cpp
     src/mparser/semantic/semantic_dump.cpp
@@ -522,6 +523,11 @@ add_executable(assignment_display_smoke_tests tests/assignment_display_smoke.cpp
 target_link_libraries(assignment_display_smoke_tests PRIVATE mparser_core)
 add_test(NAME assignment_display_smoke COMMAND assignment_display_smoke_tests)
 set_tests_properties(assignment_display_smoke PROPERTIES LABELS host-integration)
+
+add_executable(value_snapshot_smoke_tests tests/value_snapshot_smoke.cpp)
+target_link_libraries(value_snapshot_smoke_tests PRIVATE mparser_core)
+add_test(NAME value_snapshot_smoke COMMAND value_snapshot_smoke_tests)
+set_tests_properties(value_snapshot_smoke PROPERTIES LABELS host-integration)
 
 add_test(NAME v1_1_core_interpreter_cli_smoke
     COMMAND mparser --run-hir

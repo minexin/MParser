@@ -1856,10 +1856,10 @@ private:
                     const auto value = currentFrame().find(name);
                     if (value == currentFrame().end()) { continue; }
                     const size_t source = node.span.begin.sourceId;
-                    assignmentDisplays_.push_back(RuntimeAssignmentDisplay{
-                        name, runtimeFormatConsoleValue(value->second, format), node.span,
+                    assignmentDisplays_.push_back(runtimeCaptureAssignmentDisplay(
+                        name, value->second, node.span,
                         source < semantic_->sources.size() ? semantic_->sources[source].name : std::string{},
-                        node.outputSuppressed, nextConsoleSequence_++, format.spacing});
+                        node.outputSuppressed, nextConsoleSequence_++, format));
                 }
             }
             break;

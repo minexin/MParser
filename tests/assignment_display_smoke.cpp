@@ -5,6 +5,7 @@
 #include "mparser/execution/jit/typed_ir.h"
 #include "mparser/frontend/lexer.h"
 #include "mparser/frontend/parser.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/semantic/semantic.h"
 
 #include <algorithm>
@@ -79,6 +80,12 @@ void display(const RuntimeAssignmentDisplay& event, std::string_view label,
     require(event.span.begin.sourceId == 0 && event.span.end.offset > event.span.begin.offset,
         "display retains a real nonempty source span");
     require(event.lineSpacing == format.spacing, "display freezes spacing");
+    require(event.valueSnapshot.available() && !event.snapshotFailure && event.snapshotError.empty(),
+        "successful display owns a structured snapshot, not a live RuntimeValue");
+    if (!event.valueSnapshot.node().numeric.empty()) {
+        require(event.valueSnapshot.node().numeric[0].real == runtimeNumericElementValue(value,0)->real,
+            "structured numeric display retains the historical value");
+    }
 }
 
 void checkEngine(Engine engine) {
@@ -239,6 +246,42 @@ void checkEngine(Engine engine) {
             require(recorded.executedInstructionCount == ordinary.executedInstructionCount,
                 "recording adds no hidden source or VM instructions");
         }
+    }
+    {
+        auto result = run("h=SnapshotHandle(1)\nalias=h;\nh.value=2\n"
+            "classdef SnapshotHandle < handle\nproperties\nvalue=0\nend\nmethods\n"
+            "function obj=SnapshotHandle(input)\nobj.value=input;\nend\nend\nend", engine);
+        if (engine == Engine::Interpreter) {
+            require(hasErrorDiagnostics(result.diagnostics) && result.assignmentDisplays.empty(),
+                "unsupported HIR user constructor must fail without invented display commits");
+        } else {
+            require(result.diagnostics.empty(), "mutable handle display fixture executes");
+            const RuntimeAssignmentDisplay* first = nullptr;
+            const RuntimeAssignmentDisplay* changed = nullptr;
+            for (const auto& event : result.assignmentDisplays) {
+                if (event.label == "h") {
+                    if (!first) { first = &event; } else { changed = &event; }
+                }
+            }
+            require(first && changed && first->valueSnapshot.available() && changed->valueSnapshot.available(),
+                "handle assignments capture structured snapshots");
+            const auto property = [](const RuntimeValueSnapshot& snapshot) {
+                for (const auto& [name,id] : snapshot.node().storedFields) {
+                    if (name == "SnapshotHandle::value") { return snapshot.node(id).numeric[0].real; }
+                }
+                throw std::runtime_error("snapshot handle property missing");
+            };
+            require(property(first->valueSnapshot) == 1 && property(changed->valueSnapshot) == 2,
+                "later handle mutation does not rewrite the first event");
+        }
+    }
+    if (engine != Engine::Interpreter) {
+        auto result = run("h=plot([1,2])\nh.Color='r';\nclose all;", engine);
+        require(result.diagnostics.empty() && !result.assignmentDisplays.empty(), "graphics display fixture executes");
+        const auto& first = result.assignmentDisplays.front().valueSnapshot;
+        require(first.available() && first.node().graphicsJson.find("\"valid\":true") != std::string::npos &&
+                serializeRuntimeGraphicsValue(variable(result,"h"),true).find("\"valid\":false") != std::string::npos,
+            "graphics display snapshot survives subsequent mutation and close");
     }
     require(run("a=1", engine, false).assignmentDisplays.empty(), "legacy default collection stays off");
 }

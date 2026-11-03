@@ -5248,10 +5248,10 @@ private:
             for (const auto& name : instruction.assignmentDisplayNames) {
                 const auto value = currentFrame().find(name);
                 if (value == currentFrame().end()) { continue; }
-                assignmentDisplays_.push_back(RuntimeAssignmentDisplay{
-                    name, runtimeFormatConsoleValue(value->second, format), span,
+                assignmentDisplays_.push_back(runtimeCaptureAssignmentDisplay(
+                    name, value->second, span,
                     source < semantic_->sources.size() ? semantic_->sources[source].name : std::string{},
-                    instruction.outputSuppressed, nextConsoleSequence_++, format.spacing});
+                    instruction.outputSuppressed, nextConsoleSequence_++, format));
             }
         }
         return next;

@@ -965,6 +965,28 @@ RuntimeFormatResult runtimeFormatPrintf(
     return RuntimeFormatResult{true, std::move(output), {}};
 }
 
+RuntimeAssignmentDisplay runtimeCaptureAssignmentDisplay(std::string label,
+    const RuntimeValue& value, SourceSpan span, std::string sourceName,
+    bool suppressed, std::uint64_t sequence, RuntimeDisplayFormat format,
+    RuntimeSnapshotLimits limits) {
+    RuntimeAssignmentDisplay event;
+    event.label = std::move(label);
+    event.span = span;
+    event.sourceName = std::move(sourceName);
+    event.outputSuppressed = suppressed;
+    event.sequence = sequence;
+    event.lineSpacing = format.spacing;
+    try {
+        event.valueSnapshot = RuntimeValueSnapshot::capture(value, limits);
+    } catch (const RuntimeSnapshotError& error) {
+        event.snapshotFailure = error.reason();
+        event.snapshotError = error.what();
+        return event;
+    }
+    event.text = runtimeFormatConsoleValue(value, format);
+    return event;
+}
+
 std::string runtimeRenderConsole(
     const std::vector<RuntimeOutputEvent>& outputEvents,
     const std::vector<RuntimeExpressionResult>& expressionResults) {
