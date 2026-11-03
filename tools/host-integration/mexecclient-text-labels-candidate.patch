@@ -1,0 +1,25 @@
+diff --git a/web/js/plot.js b/web/js/plot.js
+--- a/web/js/plot.js
++++ b/web/js/plot.js
+@@ -311,1 +311,1 @@
+-    if (!snapshot || snapshot.schema !== 'mparser.graphics' || snapshot.version !== 1 || !Array.isArray(snapshot.objects)) return false;
++    if (!snapshot || snapshot.schema !== 'mparser.graphics' || ![1,2,3].includes(snapshot.version) || !Array.isArray(snapshot.objects)) return false;
+@@ -383,3 +383,9 @@
+-    state.title = axesProperties.Title || '';
+-    state.xlabel = axesProperties.XLabel || '';
+-    state.ylabel = axesProperties.YLabel || '';
++    const labelText = role => {
++      if (snapshot.version === 1) return axesProperties[role] || '';
++      const label = objects.find(item => item.id === axes.labels?.[role]);
++      return label?.type === 'Text' && label.parent === axes.id &&
++        label.properties?.Visible !== 'off' ? (label.properties?.String || '') : '';
++    };
++    state.title = labelText('Title');
++    state.xlabel = labelText('XLabel');
++    state.ylabel = labelText('YLabel');
+diff --git a/tests/graphics_snapshot.test.js b/tests/graphics_snapshot.test.js
+--- a/tests/graphics_snapshot.test.js
++++ b/tests/graphics_snapshot.test.js
+@@ -37,1 +37,1 @@
+-assert.equal(MExec.plot.renderGraphicsSnapshot({schema:'mparser.graphics',version:2,objects:[]}),false);
++assert.equal(MExec.plot.renderGraphicsSnapshot({schema:'mparser.graphics',version:99,objects:[]}),false);

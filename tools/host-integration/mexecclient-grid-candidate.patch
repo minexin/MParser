@@ -1,0 +1,22 @@
+diff --git a/web/js/plot.js b/web/js/plot.js
+--- a/web/js/plot.js
++++ b/web/js/plot.js
+@@ -11,1 +11,3 @@
+     grid: true,
++    xgrid: false,
++    ygrid: false,
+@@ -42,1 +44,3 @@
+     state.grid = true;
++    state.xgrid = false;
++    state.ygrid = false;
+@@ -165,1 +165,1 @@
+-      context.strokeStyle = state.grid ? '#33373d' : 'transparent';
++      context.strokeStyle = state.xgrid ? '#33373d' : 'transparent';
+@@ -174,1 +174,2 @@
++      context.strokeStyle = state.ygrid ? '#33373d' : 'transparent';
+       for (const tick of yTicks) {
+@@ -383,1 +384,4 @@
+     const axesProperties = axes.properties || {};
++    state.xgrid = axesProperties.XGrid === 'on';
++    state.ygrid = axesProperties.YGrid === 'on';
++    state.grid = state.xgrid || state.ygrid;

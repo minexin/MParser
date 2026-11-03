@@ -1,0 +1,31 @@
+diff --git a/web/js/plot.js b/web/js/plot.js
+--- a/web/js/plot.js
++++ b/web/js/plot.js
+@@ -213,9 +213,11 @@
+-    // Clip strokes to the axes viewport without changing the kernel's data.
+-    context.save();
+-    context.beginPath();
+-    context.rect(margin.left, margin.top, plotWidth, plotHeight);
+-    context.clip();
++    // Each Line owns its clipping mode; keep the original kernel data.
+     state.series.forEach((series, index) => {
+       if (series.style.hidden) return;
++      context.save();
++      if (series.style.clipping !== false) {
++        context.beginPath();
++        context.rect(margin.left, margin.top, plotWidth, plotHeight);
++        context.clip();
++      }
+       context.strokeStyle = series.style.color || colors[index % colors.length];
+       context.lineWidth = 2;
+@@ -238,4 +241,4 @@
+       context.stroke();
+       context.setLineDash([]);
++      context.restore();
+     });
+-    context.restore();
+@@ -408,3 +411,4 @@
+           dash: dashFromGraphics(properties.LineStyle),
+           hidden: properties.LineStyle === 'none',
++          clipping: properties.Clipping !== 'off',
+         },

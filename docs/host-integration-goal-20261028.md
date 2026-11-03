@@ -492,3 +492,22 @@ records that rename was not shipped; no rename operation or UI is claimed.
   build/host-compile-probe/831df21e474247e88b4d37b875c239c6.
   This verifies the opt-in server binary, not deployment, browser rendering,
   request negotiation, or property writeback.
+- CI/main integration: commit 4016567 passed Documentation CI (41573050568)
+  and Cross-platform CI (41573039268) on the milestone branch. Six executed
+  platform jobs, including ASan/UBSan, succeeded; QEMU and authentication-candidate
+  jobs were skipped by workflow conditions, not verified by these runs. The
+  commit was fast-forwarded and pushed to main without including unfinished
+  client candidates. Subsequent work continues on main as requested.
+  The main runs also succeeded: Documentation CI 41574081644 and
+  Cross-platform CI 41574081515, both for 4016567. A subsequent complete local
+  rebuild and CTest run finished 346/346 passed (100.59 seconds), including
+  frozen/development contracts, installed consumers and release archive checks.
+  Test evidence does not constitute a new product release or browser acceptance.
+- Client candidate replay: probe-client-rendering.ps1 applies four explicit
+  patches to an isolated copy of the existing MExecClient renderer/test. The
+  legacy suite and v2/v3 Text, per-Line clipping, independent grids and explicit
+  Legend tests passed. Legend checks cover order, styles, rename, visibility,
+  deletion, graph references, orientation and long outside labels at 320x240.
+  Clean replay evidence: build/client-rendering-probe/0ecc787c41b54960833f6b5f18c947a0.
+  This is simulated-canvas evidence only: no deployed-client or real-browser
+  rendering acceptance, selection persistence or full Legend layout parity.

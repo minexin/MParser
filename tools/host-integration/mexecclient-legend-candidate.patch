@@ -1,0 +1,95 @@
+diff --git a/web/js/plot.js b/web/js/plot.js
+--- a/web/js/plot.js
++++ b/web/js/plot.js
+@@ -40,2 +40,3 @@
+-    state.series = [];
+-    state.title = '';
++    state.series = [];
++    state.legend = null;
++    state.title = '';
+@@ -92,1 +92,31 @@
+-    const plotWidth = width - margin.left - margin.right;
++    const legend = state.legend;
++    let legendBox = null;
++    if (legend && legend.entries.length) {
++      context.font = '12px Segoe UI, Microsoft YaHei';
++      const sideOutside = legend.location.includes('outside') &&
++        !legend.location.startsWith('north') && !legend.location.startsWith('south');
++      const maxWidth = Math.max(48, sideOutside ?
++        (width - margin.left - margin.right) * 0.45 : width - 16);
++      const entries = legend.entries.map(entry => {
++        const measured = context.measureText(entry.label)?.width;
++        return {...entry, width: Math.min(maxWidth - 16, 36 +
++          (Number.isFinite(measured) ? measured : entry.label.length * 8))};
++      });
++      let rowWidth = 0, row = 0, boxWidth = 0;
++      for (const entry of entries) {
++        if (rowWidth && (legend.orientation !== 'horizontal' || rowWidth + entry.width > maxWidth - 16)) {
++          row++; rowWidth = 0;
++        }
++        entry.x = rowWidth + 8; entry.y = row * 20 + 16;
++        rowWidth += entry.width; boxWidth = Math.max(boxWidth, rowWidth);
++      }
++      const boxHeight = Math.min(height - 16, (row + 1) * 20 + 8);
++      legendBox = {entries, width:boxWidth + 16, height:boxHeight};
++      if (legend.location.includes('outside')) {
++        if (legend.location.startsWith('north')) margin.top += boxHeight + 8;
++        else if (legend.location.startsWith('south')) margin.bottom += boxHeight + 8;
++        else if (legend.location.startsWith('west')) margin.left += legendBox.width + 8;
++        else margin.right += legendBox.width + 8;
++      }
++    }
++    const plotWidth = width - margin.left - margin.right;
+@@ -273,2 +273,33 @@
+-    // DisplayName alone does not create a legend. Render one only when the
+-    // kernel graphics schema can represent a legend and its visibility.
++    if (legendBox) {
++      const location = legend.location;
++      const outside = location.includes('outside');
++      let x = margin.left + (plotWidth - legendBox.width) / 2;
++      let y = margin.top + (plotHeight - legendBox.height) / 2;
++      if (location.includes('east') || location.startsWith('best')) x = margin.left + plotWidth - legendBox.width - 8;
++      if (location.includes('west')) x = margin.left + 8;
++      if (location.includes('north') || location === 'best') y = margin.top + 8;
++      if (location.includes('south')) y = margin.top + plotHeight - legendBox.height - 8;
++      if (outside) {
++        if (location.startsWith('north')) y = margin.top - legendBox.height - 8;
++        else if (location.startsWith('south')) y = margin.top + plotHeight + 8;
++        else if (location.startsWith('west')) x = margin.left - legendBox.width - 8;
++        else x = margin.left + plotWidth + 8;
++      }
++      x = Math.max(4, Math.min(x, width - legendBox.width - 4));
++      y = Math.max(4, Math.min(y, height - legendBox.height - 4));
++      context.save();
++      context.fillStyle = '#ffffff'; context.strokeStyle = '#626970';
++      context.fillRect(x, y, legendBox.width, legendBox.height);
++      context.strokeRect(x, y, legendBox.width, legendBox.height);
++      context.beginPath(); context.rect(x,y,legendBox.width,legendBox.height); context.clip();
++      context.font = '12px Segoe UI, Microsoft YaHei'; context.textAlign = 'left';
++      for (const entry of legendBox.entries) {
++        const px = x + entry.x, py = y + entry.y;
++        context.strokeStyle = entry.color; context.setLineDash(entry.dash);
++        context.beginPath(); context.moveTo(px,py-4); context.lineTo(px+22,py-4);
++        if (!entry.hidden) context.stroke();
++        context.setLineDash([]); context.fillStyle = '#202124';
++        context.fillText(entry.label,px+28,py,Math.max(1,entry.width-32));
++      }
++      context.restore();
++    }
+@@ -431,2 +431,14 @@
+-    draw();
+-    if (activate && (changed || selectionOnly) && figures.length && MExec.app && MExec.app.showTab) MExec.app.showTab('plot');
++    const legendObject = objects.find(item => item.type === 'Legend' &&
++      item.parent === figure.id && item.axes === axes.id && item.properties?.Visible !== 'off');
++    state.legend = legendObject ? {
++      location: legendObject.properties?.Location || 'northeast',
++      orientation: legendObject.properties?.Orientation || 'vertical',
++      entries: (legendObject.entries || []).flatMap(entry => {
++        const line = lines.find(item => item.id === entry.line);
++        if (!line || typeof entry.label !== 'string') return [];
++        return [{label:entry.label, color:colorFromGraphics(line.properties?.Color),
++          dash:dashFromGraphics(line.properties?.LineStyle), hidden:line.properties?.LineStyle === 'none'}];
++      })
++    } : null;
++    draw();
++    if (activate && (changed || selectionOnly) && figures.length && MExec.app && MExec.app.showTab) MExec.app.showTab('plot');

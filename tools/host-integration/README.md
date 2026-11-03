@@ -41,3 +41,46 @@ Latest paired local evidence:
 - V3: build/host-compile-probe/e289ee0fbfab40c4b63e37af37ae95f9
 
 Those build directories are local evidence, not committed release artifacts.
+
+## Client Rendering Candidates
+
+mexecclient-text-labels-candidate.patch is an isolated, incomplete renderer
+candidate. Apply with git apply --unidiff-zero in a separate client checkout.
+Run node tools/host-integration/test-client-text-labels.cjs with that checkout
+path from the MParser root. The existing simulated-DOM suite and additional
+v2/v3 Text mutation, visibility and parent-binding assertions passed locally.
+
+Do not deploy these candidates yet: accepting v2/v3 is not full support.
+Persistent UI selection, protocol negotiation and real browser visual acceptance
+still need implementation/verification.
+The patch leaves conservative full UI reset on changed snapshots in place.
+
+Apply mexecclient-grid-candidate.patch with --unidiff-zero after the clipping
+patch. The clipping test also checks independent XGrid/YGrid, both-on stroke
+counts, and toggling off. Only major grids are represented; no minor-grid
+support is implied.
+
+Apply mexecclient-line-clipping-candidate.patch after the Text candidate.
+Run test-client-clipping.cjs with the isolated client path. This verifies mixed
+Line clipping, default clipping, hidden strokes, balanced canvas save/restore
+and unchanged input data using a simulated canvas. It is not pixel-level or
+browser acceptance. Both candidate patches leave the deployed client untouched.
+
+Apply mexecclient-legend-candidate.patch last, with --unidiff-zero. It renders
+only explicit Legend entries, preserves their order and Line styles, and omits
+hidden or foreign-Axes legends and dangling references. Horizontal wrapping and
+bounded outside-label width are covered by simulated-canvas assertions. The
+best/bestoutside locations use a fixed placement heuristic, not MATLAB's
+overlap-minimizing algorithm. Dense legends may be clipped vertically; this is
+not complete MATLAB layout parity.
+
+To reproduce all candidate checks without changing the original client:
+
+```powershell
+./tools/host-integration/probe-client-rendering.ps1 -ClientRoot D:/project/MExecClient
+```
+
+The script copies only the renderer and existing test to a unique build
+directory, applies the four patches in order, and runs the existing suite plus
+Text, clipping/grid and Legend tests. Git's whitespace-only matching handles
+Windows CRLF/LF differences; any substantive source mismatch fails the run.
