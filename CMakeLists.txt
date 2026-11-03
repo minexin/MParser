@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MParser VERSION 1.14.0 LANGUAGES C CXX)
+project(MParser VERSION 1.15.0 LANGUAGES C CXX)
 
 set(MPARSER_V1_PERFORMANCE_EVIDENCE_VERSION "0.90.0")
 set(MPARSER_V1_RELEASE_VERSION "1.0.0")
@@ -730,7 +730,7 @@ set_tests_properties(v1_3_public_contract_smoke PROPERTIES
 add_test(NAME v1_14_public_contract_smoke
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
-        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_VERSION=1.14.0
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_v1_14_public_contract.cmake)
 set_tests_properties(v1_14_public_contract_smoke PROPERTIES LABELS "documentation;release")
 
@@ -2912,6 +2912,7 @@ add_test(NAME runtime_graphics_smoke COMMAND runtime_graphics_smoke_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/docs/graphics-v3.schema.json)
 add_test(NAME host_integration_development_contract
     COMMAND ${CMAKE_COMMAND} -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_host_integration_development.cmake)
 set_tests_properties(host_integration_development_contract PROPERTIES LABELS "documentation;release")
 option(MPARSER_REQUIRE_HOST_GRAPHICS_TESTS "Require Node.js and Git for host graphics candidate tests" OFF)
@@ -3348,6 +3349,7 @@ install(FILES
     docs/v1.12.md
     docs/v1.13.md
     docs/v1.14.md
+    docs/v1.15.md
     docs/graphics-object-model.md
     docs/debugging-sdk.md
     docs/interactive-input.md

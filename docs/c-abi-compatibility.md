@@ -1,22 +1,22 @@
 # MParser C ABI Development Contract
 
-MParser and its installed SDK use one product version. The current V1.14
-development tree reports product/SDK version `1.14.0`; the v1.3 and v1.2
+MParser and its installed SDK use one product version. The current V1.15
+development tree reports product/SDK version `1.15.0`; the v1.14, v1.3 and v1.2
 candidate contracts are archived snapshots.
 
 The embedding boundary has an independent technical contract level:
 
-- C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/14/0`;
+- C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/15/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
-- active C ABI revision: `MPARSER_C_ABI_REVISION == 5`;
-- shared-library full version: `1.14.0`, with SOVERSION/install-name generation
+- active C ABI revision: `MPARSER_C_ABI_REVISION == 7`;
+- shared-library full version: `1.15.0`, with SOVERSION/install-name generation
   `2`.
 
 The API version follows the MParser/SDK development line. The ABI generation
 and revision are binary negotiation data rather than another SDK version.
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` report them at
 runtime. The three `mparser_version_*()` functions report product version
-`1.14.0`.
+`1.15.0` (development, not a published release).
 
 Revision 2 added the explicit shared Runtime handle, cross-module callable and
 object routing, and shared session-state controls. Revision 3 added the
@@ -31,7 +31,11 @@ pause-event entry point using the existing owned result interface. It requires
 dynamic-evaluation capability and does not permit ordinary execution reentry.
 It also adds conditional-breakpoint configuration and two event diagnostic
 accessors, for 138 exports. Revision 5 adds `mparser_value_graphics_json` and
-`mparser_result_graphics_json`, bringing the active manifest to 140 exports.
+`mparser_result_graphics_json`, bringing the v1.14 manifest to 140 exports.
+
+The v1.15 development SDK adds four identifier/definition exports in revision
+6 and two versioned graphics accessors in revision 7, for 146 exports. All old
+symbols and ABI layouts remain present; product/source API identity is 1.15.0.
 The value accessor returns owned JSON for retained graphics handles/arrays;
 the result accessor borrows an immutable execution-completion graph snapshot.
 

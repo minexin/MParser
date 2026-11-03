@@ -97,7 +97,9 @@ These files are release contracts, not generated prose:
 | Artifact | Authority |
 | --- | --- |
 | [compatibility-matrix.json](compatibility-matrix.json) | Feature status, tier coverage, limits, executable evidence, and gaps |
-| [public-contract-v1.14.json](public-contract-v1.14.json) | Current 1.14.0 API, ABI, protocol, catalog, and artifact hashes |
+| [host-integration-contract-development.json](host-integration-contract-development.json) | Current 1.15.0 development API, ABI, catalog and artifact hashes |
+| [public-contract-v1.14.json](public-contract-v1.14.json) | Immutable 1.14.0 baseline contract |
+| [v1.15.md](v1.15.md) | Host integration development scope and remaining acceptance |
 | [public-contract-v1.3.json](public-contract-v1.3.json) | Archived v1.3 candidate API, ABI, protocol, catalog, and artifact hashes |
 | [public-contract-v1.2.json](public-contract-v1.2.json) | Archived v1.2 candidate API, ABI, protocol, catalog, and artifact hashes |
 | [public-contract-v1.json](public-contract-v1.json) | Archived v1.0 public contract hashes and versions |
@@ -111,9 +113,10 @@ The archived v1.3 candidate contract freezes the protocol, headers, ABI 2.1
 symbol set, and builtin 1.17 catalog. The v1.12 boundary added script input
 and superclass reflection with builtin contract 1.18. V1.13 development
 adds pause-event evaluation and conditional breakpoints at ABI 2.4, plus source
-breakpoint commands at builtin contract 1.19. Current [V1.14](v1.14.md) adds
+breakpoint commands at builtin contract 1.19. The [V1.14 baseline](v1.14.md) adds
 headless graphics snapshots at ABI 2.5, protocol 1.2 and builtin contract 1.20,
-without mutating the historical snapshots. See
+without mutating the historical snapshots. Current [V1.15 development](v1.15.md)
+uses ABI 2.7 and builtin 1.21 for host integration. See
 [Interactive Script Input](interactive-input.md), [v1.12](v1.12.md), and
 [Debugging Through The SDK](debugging-sdk.md). The v1.3
 implementation train originally closed with 1.10; 1.11 added the guarded `sum`

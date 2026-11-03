@@ -193,7 +193,7 @@ write paths reject links rather than selecting preserve/resolve), extended
 GCD coefficients, arbitrary-rank
 mesh generation, many broad standard-library families, and full MATLAB
 regexp/Unicode behavior remain open. The product and public SDK report
-`1.14.0`; source API and ABI identifiers remain independently versioned.
+`1.15.0` in development state; source API and ABI identifiers remain independently versioned.
 
 ## Language And Runtime
 
@@ -243,8 +243,8 @@ script fail; it returns to a less specialized tier.
 | --- | --- |
 | CLI | Production `--run`, strict options, stable exit classes, JSON protocol selector |
 | Machine protocol | `mparser.result` 1.2, exact typed/complex JSON values, ordered output/expression records, one document plus LF |
-| C API/ABI | Current development C source API 1.14 over ABI generation 2 revision 5 with 140 exports; typed real/imaginary buffers, source metadata, output sink/results, rooted system contexts, shared Runtime ownership, debugger events/frame locals/evaluation/conditions, opaque retained handles, and caller-sized roots; v1.3 revision 1 and v1.2 revision 0 remain archived |
-| C++ API | Header-only C++20 source API 1.14 over current C ABI generation 2 revision 5, including RAII source metadata, host output projection, rooted `SystemContext`, shared `Runtime`, and `Debugger` binding |
+| C API/ABI | Current development C source API 1.15 over ABI generation 2 revision 7 with 146 exports; identifier validation, definition metadata, typed buffers, output callbacks, rooted system contexts, shared Runtime, debugger and graphics snapshots; v1.14 and earlier snapshots remain archived |
+| C++ API | Header-only C++20 source API 1.15 over C ABI generation 2 revision 7, including owned definition metadata, versioned graphics accessors, `SystemContext`, `Runtime`, and `Debugger` |
 | Builtin extension | active source contract 1.20 with 340 descriptors and 342 names, using registry/descriptors/call/results/source-evaluation, dynamic callbacks, execution-controlled conversion/set/text/tabular families, stream-I/O, filesystem metadata/MAT persistence, advanced-numeric context, guarded `sum`/`prod`/`mean` Typed lowering, and VM/portable datetime/duration, CSC sparse, categorical, table, timetable, join, and grouping families; v1.2 contract 1.1 remains archived |
 | Packaging | Relocatable C/C++/CLI SDK with CMake targets, schemas, docs, examples, notices, checksums, and unsigned SLSA provenance metadata |
 
@@ -320,7 +320,8 @@ sources, missing test registrations, duplicate IDs, invalid states, and
 version drift.
 
 The v1.0, v1.2, and v1.3 snapshots remain immutable historical evidence. The
-current v1.14 header uses C source API 1.14, ABI generation 2
-revision 5, C++ source API 1.14, protocol 1.2, and builtin source contract 1.20;
+current v1.15 header uses C source API 1.15, ABI generation 2
+revision 7, C++ source API 1.15, protocol 1.2, and builtin source contract 1.21;
 it is validated by the shared-runtime and relocated-consumer tests and recorded
-in the frozen 1.14.0 candidate contract. See [v1.x Roadmap](roadmap-v1.x.md).
+in the 1.15.0 development contract. The frozen v1.14 contract is unchanged.
+See [v1.x Roadmap](roadmap-v1.x.md).

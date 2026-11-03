@@ -2,6 +2,12 @@
   "schema": "mparser.host-integration-contract-delta",
   "state": "development",
   "baseline": "v1.14.0",
+  "release": {
+    "engine_version": "1.15.0",
+    "milestone": "v1.15",
+    "state": "development"
+  },
+  "source_api": {"major": 1, "minor": 15, "patch": 0},
   "c_abi": {
     "generation": 2,
     "revision": 7,
@@ -22,6 +28,14 @@
   },
   "artifacts": [
     {
+      "path": "docs/v1.15.md",
+      "sha256_lf": "a42ee8ec0fb2edeb8f8e56c1ff708758ffdd4776bcebe9a340b5190873bee54a"
+    },
+    {
+      "path": "docs/versioning-and-deprecation.md",
+      "sha256_lf": "0bb4fcb4591307c7e662ef9aaae0f5a753b6cef17a638578d411ea31cf37b852"
+    },
+    {
       "path": "docs/definition-metadata.md",
       "sha256_lf": "86e3421e1f28ef9f9cb7dc6ef7b98f6c9b7f58e65da743868667908c694ab536"
     },
@@ -35,7 +49,7 @@
     },
     {
       "path": "cmake/MParserConfig.cmake.in",
-      "sha256_lf": "cf3dca893a5f8f0cfc7022b510f8947ed7b57d0e0d3855017dadd57e7865878d"
+      "sha256_lf": "c66a9c5c21697f279300a68be80f441e249645efa0ebdac7d82e7cf5caf685b1"
     },
     {
       "path": "docs/public-contract-v1.14.json",
@@ -43,11 +57,11 @@
     },
     {
       "path": "include/mparser/c_api.h",
-      "sha256_lf": "57b390a84f7776cab9fdeecb28fb84e20aecc9dfb71f0949af0c3d15887ec459"
+      "sha256_lf": "4c778649f93f05410ac8bb2971910a7913b0572215127570ca30bbd102b20995"
     },
     {
       "path": "include/mparser/cpp_api.hpp",
-      "sha256_lf": "166d297e04d6db147386e1603b0aaf22d1cfb3fd0af4bc7decb5806db2c4134e"
+      "sha256_lf": "a97c697e371aef0042b946fa9968ab2bd3a59bd03a157f967a5730ba25d47cc0"
     },
     {
       "path": "tests/c_api_generation2_revision7_symbols.txt",

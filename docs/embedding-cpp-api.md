@@ -1,10 +1,11 @@
 # MParser C++ Embedding SDK
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
-facade. The current v1.14 boundary reports source API 1.14 over C
-ABI generation 2 revision 5 and includes graphics snapshots, the public debugger, `SystemContext`, and
+facade. The current v1.15 boundary reports source API 1.15 over C
+ABI generation 2 revision 7 and includes identifier/definition metadata,
+version-selectable graphics snapshots, the public debugger, `SystemContext`, and
 `Runtime` facades. MParser and the installed SDK report product version
-`1.14.0`; source API, ABI, and protocol
+`1.15.0`; source API, ABI, and protocol
 identifiers remain independently queryable contract metadata.
 
 The facade does not expose Parser, HIR, Bytecode, `RuntimeValue`, VM, SLJIT,
@@ -34,7 +35,7 @@ target_link_libraries(host PRIVATE MParser::cpp_api)
 transitive link to `MParser::c_api`. `MParser::cli` is the matching imported
 executable. The package exports `MParser_CPP_FOUND`,
 `MParser_CPP_INCLUDE_DIR`, engine/C API version components, and C ABI
-generation/revision metadata. It also exports C++ source API `1.14`, machine
+generation/revision metadata. It also exports C++ source API `1.15`, machine
 result protocol `1.2`,
 CLI contract `1.0`, builtin source contract `1.20`, and checked paths to the
 public/CLI contracts, protocol schema, builtin catalog/author guide, and
@@ -329,7 +330,7 @@ admission, so queue deadlines remain a host responsibility.
 
 ## Current Boundary
 
-Source-tree and relocated installed consumers exercise source API 1.14 through
+Source-tree and relocated installed consumers exercise source API 1.15 through
 compile-once invocation, exact typed and complex numeric values, multi-output
 results, composite values, retained lifetimes, diagnostics, sessions,
 cancellation, resource limits, UTF-8 source graphs and metadata, synchronous
@@ -342,7 +343,7 @@ Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared Runtime
 closures/objects/state, reentrant callbacks, shared cancellation, isolated
 limits, and concurrent retain/release. The current development library
-contract is ABI generation 2 revision 5 with an exact 139-symbol manifest;
+contract is ABI generation 2 revision 7 with an exact 146-symbol manifest;
 the v1.3 revision-1 117-symbol boundary and archived v1.2 revision-0 109-symbol
 boundary remain immutable evidence. The C++ facade remains header-only rather
 than a C++ binary ABI.

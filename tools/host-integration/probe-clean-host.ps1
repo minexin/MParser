@@ -54,7 +54,7 @@ if ($LASTEXITCODE) { throw "Clean host configure failed; see $stage" }
 cmake --build $build --parallel $Parallel | Tee-Object -FilePath (Join-Path $stage 'build.log')
 if ($LASTEXITCODE) { throw "Clean host build failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
-    -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata |
+    -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')
 foreach ($test in @('test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs')) {
     node (Join-Path $PSScriptRoot $test) $clientSource

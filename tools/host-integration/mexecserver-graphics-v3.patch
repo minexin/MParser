@@ -2,7 +2,8 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -39,3 +39,10 @@
- find_package(MParser 1.14.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
+-find_package(MParser 1.14.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
  
 +option(MEXEC_GRAPHICS_V3 "Require identity-bearing graphics snapshots (v3 clients only)" OFF)
 +if(MEXEC_GRAPHICS_V3 AND

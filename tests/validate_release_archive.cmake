@@ -538,6 +538,7 @@ set(required_paths
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.8.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.9.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.14.md"
+    "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/v1.15.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/graphics-object-model.md"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.json"
     "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}/public-contract-v1.2.json"

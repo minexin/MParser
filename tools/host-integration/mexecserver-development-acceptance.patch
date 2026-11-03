@@ -1,19 +1,24 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -160,1 +160,3 @@
+@@ -160,1 +160,4 @@
 -            -FileRoot "${CMAKE_CURRENT_BINARY_DIR}/test-workspace"
 +            -FileRoot "${CMAKE_CURRENT_BINARY_DIR}/test-workspace"
 +            -ExpectedAbiGeneration ${MParser_C_ABI_GENERATION}
 +            -ExpectedAbiRevision ${MParser_C_ABI_REVISION}
++            -ExpectedProductVersion ${MParser_VERSION}
 diff --git a/tests/rest_api_smoke.ps1 b/tests/rest_api_smoke.ps1
 --- a/tests/rest_api_smoke.ps1
 +++ b/tests/rest_api_smoke.ps1
-@@ -5,1 +5,3 @@
+@@ -5,1 +5,4 @@
 -    [Parameter(Mandatory = $true)][string]$FileRoot
 +    [Parameter(Mandatory = $true)][string]$FileRoot,
 +    [int]$ExpectedAbiGeneration = 2,
-+    [int]$ExpectedAbiRevision = 5
++    [int]$ExpectedAbiRevision = 5,
++    [string]$ExpectedProductVersion = '1.14.0'
+@@ -114,1 +114,1 @@
+-    Assert-True ($health.Json.runtime.version -eq '1.14.0') "runtime DLL reports MParser 1.14.0"
++    Assert-True ($health.Json.runtime.version -eq $ExpectedProductVersion) "runtime DLL reports configured MParser $ExpectedProductVersion"
 @@ -115,1 +115,2 @@
 -    Assert-True ($health.Json.runtime.abi_major -eq 2 -and $health.Json.runtime.abi_revision -eq 5) "runtime ABI remains 2.5"
 +    Assert-True ($health.Json.runtime.abi_major -eq $ExpectedAbiGeneration -and

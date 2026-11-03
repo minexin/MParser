@@ -12,6 +12,8 @@ Configure against the development MParser SDK using MParser_DIR and set
 MEXEC_GRAPHICS_V3=ON. The default remains OFF. ON requires ABI generation 2,
 revision 7 or later and the installed v3 schema. Both execution-result and
 workspace-value serialization select v3 together.
+The patch also selects product/SDK 1.15.0 explicitly, so it cannot silently
+link the v1.14 baseline package.
 
 Do not enable this server for the current v1-only browser client. This build
 switch is not per-request protocol negotiation and does not implement
@@ -89,9 +91,11 @@ Windows CRLF/LF differences; any substantive source mismatch fails the run.
 
 ## Definition Directory Candidate
 
-Apply mexecserver-definition-metadata.patch with --unidiff-zero and
---ignore-space-change to a separate host checkout. Configure with
-MEXEC_DEFINITION_METADATA=ON and the development SDK (ABI 2.6 or later).
+Apply the graphics/SDK-selection patch first, then
+mexecserver-definition-metadata.patch with --unidiff-zero and
+--ignore-space-change to the separate host checkout. Configure with
+MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (ABI 2.7).
+Graphics v3 may remain OFF if only definition metadata is needed.
 The default remains OFF. This patch can be combined with the graphics patch;
 they modify separate compile definitions and REST/serialization call sites.
 

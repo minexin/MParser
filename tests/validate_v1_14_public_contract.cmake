@@ -46,6 +46,8 @@ function(check_artifacts node)
                path STREQUAL "src/mparser/runtime/builtins/builtin_registry.h" OR
                path STREQUAL "cmake/MParserConfig.cmake.in")
             set(path "tests/public_contract/v1.14-baseline/${path}")
+        elseif(path STREQUAL "docs/versioning-and-deprecation.md")
+            set(path "tests/public_contract/v1.14-baseline/${path}")
         endif()
         file(READ "${PROJECT_ROOT}/${path}" contents)
         string(REPLACE "\r\n" "\n" contents "${contents}")

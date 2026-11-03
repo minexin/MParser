@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory)][string]$KernelDll,
     [switch]$MetadataOnly,
     [switch]$GraphicsV3,
-    [switch]$DefinitionMetadata
+    [switch]$DefinitionMetadata,
+    [string]$ExpectedProductVersion
 )
 $ErrorActionPreference = 'Stop'
 $root = Join-Path $PSScriptRoot ('../build/host-compile-probe/' + [guid]::NewGuid().ToString('N'))
@@ -29,6 +30,9 @@ try {
         try { $health = Invoke-RestMethod "$base/health" -TimeoutSec 2 } catch { Start-Sleep -Milliseconds 100 }
     }
     if (!$health) { throw "No health response; see $root" }
+    if ($ExpectedProductVersion -and $health.runtime.version -cne $ExpectedProductVersion) {
+        throw "Loaded runtime product version is not $ExpectedProductVersion; see $root"
+    }
     if ($GraphicsV3) {
         $info = Invoke-RestMethod "$base/info"
         if ($info.kernel_integration.graphics_schema_version -ne 3) {

@@ -2,8 +2,8 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -37,1 +37,7 @@
--find_package(MParser 1.14.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
-+find_package(MParser 1.14.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
+-find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
 +
 +option(MEXEC_DEFINITION_METADATA "Expose compiler definition ranges in /compile" OFF)
 +if(MEXEC_DEFINITION_METADATA AND

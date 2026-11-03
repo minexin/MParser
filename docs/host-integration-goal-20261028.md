@@ -1,6 +1,7 @@
 # Host Integration Kernel Goal
 
-Status: active. Baseline: MParser 1.14.0, commit `9be51f9`.
+Status: active. Development product/SDK: 1.15.0 (unreleased).
+Baseline: MParser 1.14.0, commit `9be51f9`.
 Scope agreed on 2026-10-28: prioritize kernel requirements raised by
 MExecServer/MExecClient, not unrelated MATLAB compatibility expansion.
 
@@ -551,3 +552,19 @@ records that rename was not shipped; no rename operation or UI is claimed.
   returned exit 1 without a usable connection; settings were not changed.
   Previous main commit d637f75 passed Documentation CI 41585463047 and
   Cross-platform CI 41585463024.
+- Product identity synchronization: the active engine, CLI, library, C/C++
+  source API, CMake package and installed SDK now report 1.15.0 development.
+  ABI 2.7, protocol 1.2 and builtin 1.21 remain independent contract numbers.
+  The active installed contract is the explicit development manifest; the
+  v1.14 manifest and newly preserved original policy remain historical inputs.
+  Complete build and CTest passed 347/347 in 43.96 seconds after updating the
+  product stamp, sample assertions, compatibility matrix and package metadata.
+  Build-tree and relocated CLI --version both returned MParser 1.15.0.
+- Fresh installed-1.15 host acceptance: the full clean-host script completed
+  at build/clean-host-probe/473461db3d91419eb6961d4f60adffc4 with 67/67 host
+  tests passed (20.44 seconds), explicit product-version/ABI checks, all REST
+  probes and simulated client checks. Raw REST evidence is in
+  build/host-compile-probe/53a743f50e934830815cd6d33d14295f. Installed DLL SHA256:
+  503D91D4AADE837C7A5E9CCDF995D8BD4C703E0382A8466AFF21250F6EF29E8B.
+  No existing host service, release tag or GitHub release was changed. Browser
+  visuals, deployed source navigation/writeback and formal release remain open.

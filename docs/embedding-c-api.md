@@ -18,8 +18,11 @@ injection. v1.10 added revision 2 and 124 exports for a shared Runtime. The
 v1.11 debugger extension added revision 3 and 134 exports. The v1.13 pause-event
 evaluation/conditional-breakpoint extension added revision 4 with 138 exports.
 The V1.14 graphics snapshot extension adds revision 5 with 140 exports. These are
+followed by development identifier/definition accessors in revision 6 (144
+exports) and version-selectable graphics snapshots in revision 7 (146 exports).
+They are
 binary-contract identifiers, not SDK product versions. MParser and the
-installed SDK report `1.14.0`, while the C source API reports `1.14`.
+installed SDK report `1.15.0`, while the C source API reports `1.15`.
 Applications can query
 `mparser_c_abi_generation()`, `mparser_c_abi_revision()`, and the three
 MParser component-version functions rather than assuming that product, ABI,
@@ -50,7 +53,7 @@ On Linux the link name is `libmparser_c.so` and its current ABI-generation SONAM
 `libmparser_c.so.2`. On macOS the corresponding install name is
 `libmparser_c.2.dylib`. On Windows it is `mparser_c.dll` plus the toolchain
 import library. The current shared-library ABI implementation version is
-`1.14.0`; its loader compatibility identity remains generation 2.
+`1.15.0`; its loader compatibility identity remains generation 2.
 
 For a production-only installed SDK:
 
@@ -70,7 +73,7 @@ target_link_libraries(host PRIVATE MParser::c_api)
 `MParser::cli` is the imported matching CLI executable. The package also
 exports project-version and C API version components,
 `MParser_C_ABI_GENERATION`, `MParser_C_ABI_REVISION`,
-`MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.14`, machine
+`MParser_C_INCLUDE_DIR`, `MParser_CLI_DIR`, C++ source API `1.15`, machine
 protocol `1.2`, CLI contract `1.0`, builtin source contract `1.20`, and checked
 paths to the license, notices, public/CLI contracts, protocol schema, builtin
 catalog/author guide, and versioning policy. Its paths are relative to the
@@ -537,10 +540,10 @@ Simplified BSD terms reproduced in the third-party notices.
 
 ## Current Candidate Boundary
 
-The current v1.14 host surface is C source API 1.14, C ABI
-generation 2 revision 5 with 140 exports, header-only C++ source API 1.14, and
+The current v1.15 host surface is C source API 1.15, C ABI
+generation 2 revision 7 with 146 exports, header-only C++ source API 1.15, and
 machine protocol 1.2. It includes rooted system-context calls and the shared
-Runtime graph, reporting product/SDK version 1.14.0.
+Runtime graph, reporting product/SDK version 1.15.0.
 Current in-repository and relocated consumers validate this
 development boundary. The v1.3 revision-1 snapshot is
 `docs/public-contract-v1.3.json`; the frozen v1.2 revision-0 snapshot remains

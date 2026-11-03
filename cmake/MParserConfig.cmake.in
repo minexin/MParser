@@ -43,7 +43,11 @@ set_and_check(
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/THIRD_PARTY_NOTICES.md")
 set_and_check(
     MParser_PUBLIC_CONTRACT_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/host-integration-contract-development.json")
+set_and_check(
+    MParser_BASELINE_PUBLIC_CONTRACT_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/public-contract-v1.14.json")
+set(MParser_DEVELOPMENT_STATE "development")
 set_and_check(
     MParser_CLI_CONTRACT_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/cli-contract-v1.json")

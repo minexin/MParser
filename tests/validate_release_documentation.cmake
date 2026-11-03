@@ -94,7 +94,7 @@ file(READ "${PROJECT_ROOT}/docs/release-notes-v1.0.md" release_notes)
 file(READ "${PROJECT_ROOT}/docs/roadmap-v1.0.md" release_roadmap)
 file(READ "${PROJECT_ROOT}/docs/v1.0.md" release_milestone)
 file(READ "${PROJECT_ROOT}/docs/public-contract-v1.json" public_contract)
-file(READ "${PROJECT_ROOT}/docs/public-contract-v1.14.json"
+file(READ "${PROJECT_ROOT}/docs/host-integration-contract-development.json"
     current_public_contract)
 file(READ "${PROJECT_ROOT}/README.md" project_readme)
 file(READ "${CLI_CONTRACT}" cli_contract)
@@ -133,9 +133,9 @@ string(JSON current_contract_version GET
 string(JSON current_contract_state GET
     "${current_public_contract}" release state)
 if(NOT current_contract_version STREQUAL EXPECTED_VERSION OR
-   NOT current_contract_state STREQUAL "frozen-candidate")
+   NOT current_contract_state STREQUAL "development")
     message(FATAL_ERROR
-        "release documentation requires the current candidate contract for ${EXPECTED_VERSION}")
+        "release documentation requires the current development contract for ${EXPECTED_VERSION}")
 endif()
 require_text(release_notes "Publication contract: **frozen v1**."
     "v1.0 release notes")

@@ -28,7 +28,7 @@ if(NOT MParser_C_ABI_GENERATION EQUAL 2 OR
         "Unexpected installed C ABI generation/revision: ${MParser_C_ABI_GENERATION}/${MParser_C_ABI_REVISION}")
 endif()
 if(NOT MParser_CPP_API_VERSION_MAJOR EQUAL 1 OR
-   NOT MParser_CPP_API_VERSION_MINOR EQUAL 14)
+   NOT MParser_CPP_API_VERSION_MINOR EQUAL 15)
     message(FATAL_ERROR
         "Unexpected C++ source API: ${MParser_CPP_API_VERSION_MAJOR}.${MParser_CPP_API_VERSION_MINOR}")
 endif()
@@ -50,6 +50,15 @@ if(NOT MParser_BUILTIN_SOURCE_CONTRACT_MAJOR EQUAL 1 OR
 endif()
 file(READ "${MParser_GRAPHICS_V3_SCHEMA_FILE}" graphics_schema)
 file(READ "${MParser_HOST_INTEGRATION_DEVELOPMENT_CONTRACT_FILE}" development_contract)
+file(READ "${MParser_PUBLIC_CONTRACT_FILE}" active_contract)
+file(READ "${MParser_BASELINE_PUBLIC_CONTRACT_FILE}" baseline_contract)
+string(JSON active_version GET "${active_contract}" release engine_version)
+string(JSON active_state GET "${active_contract}" release state)
+string(JSON baseline_version GET "${baseline_contract}" release engine_version)
+if(NOT active_version STREQUAL MParser_VERSION OR NOT active_state STREQUAL "development"
+   OR NOT MParser_DEVELOPMENT_STATE STREQUAL active_state OR NOT baseline_version STREQUAL "1.14.0")
+    message(FATAL_ERROR "Installed active development and historical contract identities disagree")
+endif()
 string(JSON graphics_version GET "${graphics_schema}" properties version const)
 string(JSON declared_graphics_version GET "${development_contract}" graphics opt_in_version)
 string(JSON declared_revision GET "${development_contract}" c_abi revision)
