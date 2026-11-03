@@ -216,6 +216,70 @@ try {
                 (Get-FileHash -LiteralPath $sentinel).Hash -ne $hash) { throw "Unexpected export result: $($case.name); see $root" }
             Write-Output "graphics/export/$($case.name): $($result.diagnostics[0].identifier)"
         }
+        if ($GraphicsV3) {
+            function Invoke-IdentityProbe([string]$sessionId, [string]$name, [string]$command) {
+                $body = @{command=$command; include_workspace_values=$true} | ConvertTo-Json
+                $response = Invoke-WebRequest "$base/sessions/$sessionId/execute" -UseBasicParsing -Method Post -ContentType 'application/json' -Body $body
+                [IO.File]::WriteAllText((Join-Path $root ('graphics_identity_' + $name + '.json')), [string]$response.Content)
+                return ($response.Content | ConvertFrom-Json)
+            }
+            function Get-IdentityNode($result, [string]$variable) {
+                $payload = ($result.workspace | Where-Object name -eq $variable).value.graphics
+                if (!$payload.valid -or $payload.graph.graphIdentity -cne $result.graphics.graphIdentity) {
+                    throw "Missing or inconsistent scalar handle $variable; see $root"
+                }
+                $node = @($payload.graph.objects | Where-Object id -eq $payload.reference)
+                if ($node.Count -ne 1) { throw "Unresolved scalar reference $variable; see $root" }
+                return $node[0]
+            }
+            $seed = Invoke-IdentityProbe $gs.id 'seed' 'gone=fresh(1); kept=fresh(2);'
+            if ($seed.status -ne 'succeeded') { throw "Identity seed failed; see $root" }
+            $originalNode = Get-IdentityNode $seed 'kept'
+            $partial = Invoke-IdentityProbe $gs.id 'partial' 'delete(gone);'
+            $survivor = Get-IdentityNode $partial 'kept'
+            $deleted = ($partial.workspace | Where-Object name -eq 'gone').value.graphics
+            if ($partial.status -ne 'succeeded' -or $partial.workspace_export_failed -ne $false -or
+                $partial.graphics.graphIdentity -cne $seed.graphics.graphIdentity -or
+                $survivor.objectIdentity -cne $originalNode.objectIdentity -or $survivor.id -eq $originalNode.id -or
+                $deleted.valid -ne $false -or $null -ne $deleted.reference) {
+                throw "Partial deletion confused local references and identities; see $root"
+            }
+            $mutation = Invoke-IdentityProbe $gs.id 'mutation' 'kept.Color=[0,0.5,0]; kept.YData=[4,5,6];'
+            $changedNode = Get-IdentityNode $mutation 'kept'
+            if ($mutation.status -ne 'succeeded' -or $changedNode.objectIdentity -cne $originalNode.objectIdentity -or
+                ($changedNode.properties.YData -join ',') -ne '4,5,6' -or
+                ($changedNode.properties.Color -join ',') -ne '0,0.5,0') { throw "Mutation changed identity or data incorrectly; see $root" }
+            $stale = Invoke-IdentityProbe $gs.id 'stale_write' 'gone.Color=[1,0,0];'
+            if ($stale.status -ne 'runtime-failed' -or $stale.workspace_export_failed -ne $false -or
+                ($stale.graphics | ConvertTo-Json -Depth 40 -Compress) -cne
+                ($mutation.graphics | ConvertTo-Json -Depth 40 -Compress)) {
+                throw "Deleted-handle write did not fail without graph mutation; see $root"
+            }
+            $peerSession = Invoke-RestMethod "$base/sessions" -Method Post -ContentType 'application/json' -Body '{"name":"graphics-identity-peer"}'
+            $peer = Invoke-IdentityProbe $peerSession.id 'peer' 'peer=plot([3,2,1]);'
+            if ($peer.status -ne 'succeeded' -or $peer.graphics.graphIdentity -ceq $seed.graphics.graphIdentity) {
+                throw "Different sessions reused graph identity; see $root"
+            }
+            $peerNode = Get-IdentityNode $peer 'peer'
+            $reset = Invoke-RestMethod "$base/sessions/$($gs.id)/reset" -Method Post
+            [IO.File]::WriteAllText((Join-Path $root 'graphics_identity_reset_ack.json'), ($reset | ConvertTo-Json -Compress))
+            if (!$reset.ok) { throw "Session reset failed; see $root" }
+            $afterReset = Invoke-IdentityProbe $gs.id 'after_reset' 'replacement=plot([4,5,6]);'
+            $replacementNode = Get-IdentityNode $afterReset 'replacement'
+            if ($afterReset.status -ne 'succeeded' -or $afterReset.graphics.graphIdentity -ceq $seed.graphics.graphIdentity -or
+                $afterReset.graphics.graphIdentity -ceq $peer.graphics.graphIdentity -or
+                $afterReset.workspace.name -contains 'kept' -or $replacementNode.type -ne 'Line') {
+                throw "Reset did not replace the graph namespace; see $root"
+            }
+            $peerAgain = Invoke-IdentityProbe $peerSession.id 'peer_after_reset' 'peer_data=peer.YData;'
+            $unchangedPeer = Get-IdentityNode $peerAgain 'peer'
+            if ($peerAgain.status -ne 'succeeded' -or $peerAgain.graphics.graphIdentity -cne $peer.graphics.graphIdentity -or
+                $unchangedPeer.objectIdentity -cne $peerNode.objectIdentity -or
+                ($unchangedPeer.properties.YData -join ',') -ne '3,2,1') {
+                throw "Reset changed another session's graph; see $root"
+            }
+            Write-Output 'graphics/identity: partial deletion, mutation, stale-write rejection, session isolation and reset passed'
+        }
     }
     if ($DefinitionMetadata) {
         $unicode = [char]0xE9

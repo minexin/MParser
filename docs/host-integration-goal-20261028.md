@@ -568,3 +568,14 @@ records that rename was not shipped; no rename operation or UI is claimed.
   503D91D4AADE837C7A5E9CCDF995D8BD4C703E0382A8466AFF21250F6EF29E8B.
   No existing host service, release tag or GitHub release was changed. Browser
   visuals, deployed source navigation/writeback and formal release remain open.
+- H06 REST identity lifecycle extension: the installed 1.15.0 SDK and clean
+  opt-in host passed partial-deletion/reference-renumbering, property mutation,
+  rejected deleted-handle writes without graph/workspace export changes,
+  interleaved session isolation and reset namespace checks. A surviving Line
+  moved from local id 4 to 3 while retaining object identity 10 in graph 3;
+  reset created graph 9/object 3, and peer graph 7/object 3 was unchanged.
+  Raw evidence: build/host-compile-probe/17f72d05e2c84255b792bd296e222753.
+  Legacy v1/v2 replay with the same installed DLL also passed, at
+  build/host-compile-probe/06cf4f34e8a848d398f01743b4721e95. These are native
+  script-handle operations through REST, not identity-targeted host writeback,
+  concurrent reset/mutation safety or client selection-persistence acceptance.

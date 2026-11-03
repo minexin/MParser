@@ -53,5 +53,9 @@ validation. The kernel serializer validates graph topology separately.
 Before property writeback is exposed, resolve identity only against the owning
 live session and graph under the graph lock. Reject foreign, expired, malformed
 or deleted targets before mutation; never resolve a legacy snapshot id as an
-object identity. Session reset, parallel sessions, deletion/recreation, partial
-graph deletion, renderer refresh and DLL reload require downstream tests.
+object identity. The isolated REST probe now verifies partial deletion and
+reference renumbering, rejected writes through a deleted script handle,
+interleaved session isolation and namespace replacement on session reset.
+These checks do not expose an identity-targeted writeback endpoint. Concurrent
+sessions under contention, renderer selection refresh and DLL reload remain
+separate downstream acceptance requirements.

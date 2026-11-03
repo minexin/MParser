@@ -32,6 +32,10 @@ session, verifies the loaded DLL path/hash, retains raw REST JSON under build,
 and stops its own server. It checks matrix plotting, Text/Legend transport,
 close/recreation, result/workspace identity agreement and export failures
 without file creation or overwriting an existing file.
+With GraphicsV3 enabled it also checks partial Line deletion/reference
+renumbering, mutation stability, rejected deleted-handle writes, interleaved
+session isolation and fresh graph identity on session reset. It does not claim
+to verify an identity-targeted REST mutation API or concurrent request races.
 
 The isolated v3 binary was compiled from current MExecServer sources plus the
 two patched serialization call sites, linked with existing third-party Oat++
