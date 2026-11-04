@@ -40,6 +40,7 @@ struct RuntimeGraphicsNode {
 class RuntimeGraphicsGraph {
 public:
     RuntimeGraphicsGraph();
+    std::uint64_t identity() const noexcept { return identity_; }
     // Raw node views require this guard throughout their use.
     std::unique_lock<std::recursive_mutex> lock() const { return std::unique_lock(mutex_); }
     RuntimeGraphicsId create(RuntimeGraphicsKind kind,
@@ -58,7 +59,7 @@ public:
     RuntimeGraphicsId plot(std::vector<double> x, std::vector<double> y);
     std::vector<RuntimeGraphicsId> plotLines(std::vector<RuntimeGraphicsSeries> series);
     // Opt-in v3 identities are scoped to this loaded kernel instance.
-    std::string serialize(bool persistentIdentity = false) const;
+    std::string serialize(bool persistentIdentity = false, bool ascii = false) const;
     const std::map<RuntimeGraphicsId, RuntimeGraphicsNode>& nodes() const noexcept { return nodes_; }
 private:
     mutable std::recursive_mutex mutex_;

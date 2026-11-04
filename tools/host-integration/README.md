@@ -111,7 +111,7 @@ Production sibling sources remain unchanged.
 Apply the graphics/SDK-selection patch first, then
 mexecserver-definition-metadata.patch with --unidiff-zero and
 --ignore-space-change to the separate host checkout. Configure with
-MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.10).
+MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.11).
 
 The clean-host probe also applies `mexecserver-ordered-events.patch` and enables
 `MEXEC_ORDERED_EVENTS`. This candidate requires ABI revision 9 and defaults OFF
@@ -159,6 +159,16 @@ so an older selected DLL is not accidentally treated as the updated kernel.
 The clean-host runner enables it alongside the existing feature probes.
 
 ## Clean Installed-SDK Acceptance
+
+The source-copy runner enables `MEXEC_GRAPHICS_WRITEBACK` with the ABI 2.11 SDK
+and explicit graphics v3. `test-graphics-writeback.cjs` checks real property
+writes/readback, lossless revision strings, stale/deleted/reset/foreign targets,
+invalid-write preservation and exactly one winner for concurrent requests at
+one revision, without incrementing run_count. This does not implement UI editing.
+The compatibility probe verifies the OFF route/capability boundary with the
+older SDK, a bounded old-header/new-DLL replay and the required old-SDK ON
+configuration failure, then restores ON and runs host regression. See
+`docs/graphics-writeback-contract.md` for exact evidence and limits.
 
 The runner also includes `test-legend-state.cjs`: 14 R2024b-backed membership
 and label phases plus independent later-command String reads and invalid-write

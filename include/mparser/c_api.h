@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 15u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 10u
+#define MPARSER_C_ABI_REVISION 11u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -747,6 +747,30 @@ MPARSER_C_API mparser_api_status
 mparser_runtime_clear_globals(mparser_runtime* runtime);
 MPARSER_C_API mparser_api_status
 mparser_runtime_reset(mparser_runtime* runtime);
+
+/* ABI 2.11. Read the current session graph without executing source. Versions
+ * 0 (legacy) and 3 are supported. Returns an owned character JSON value using
+ * ASCII escapes for non-ASCII text. All failures null out_json. */
+MPARSER_C_API mparser_api_status mparser_runtime_graphics_json_versioned(
+    mparser_runtime* runtime, uint32_t version, mparser_value** out_json);
+/* Resolve canonical positive uint64 decimal v3 identity strings only against
+ * this runtime's current graph. Foreign/reset graphs return OWNER_MISMATCH;
+ * deleted/unknown object identities return OUT_OF_RANGE; malformed identities
+ * return INVALID_ARGUMENT. Failures null out_value. Returned values retain the
+ * graph, not the runtime, and are not cross-request write authorization. */
+MPARSER_C_API mparser_api_status mparser_runtime_graphics_value(
+    mparser_runtime* runtime, mparser_utf8_view graph_identity,
+    mparser_utf8_view object_identity, mparser_value** out_value);
+/* Validate identity and assign under the same runtime/graph locks. No source
+ * execution, callback, workspace write or snapshot-local ID resolution occurs.
+ * Invalid property/value returns TYPE_MISMATCH without semantic mutation.
+ * The host must authenticate and bind requests to its session/generation.
+ * Call this afresh for each write, rather than mutating a previously resolved
+ * value after a reset. No optimistic property revision check is implied. */
+MPARSER_C_API mparser_api_status mparser_runtime_graphics_set_property(
+    mparser_runtime* runtime, mparser_utf8_view graph_identity,
+    mparser_utf8_view object_identity, mparser_utf8_view property,
+    const mparser_value* value);
 
 MPARSER_C_API void mparser_session_retain(mparser_session* session);
 MPARSER_C_API void mparser_session_release(mparser_session* session);

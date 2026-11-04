@@ -1,7 +1,9 @@
 # Graphics Identity Development Contract
 
-Status: opt-in serializer, standalone schema and C/C++ value SDK implemented;
-result-level snapshots are available; host negotiation and writeback remain open.
+Status: opt-in serializer, standalone schema and C/C++ value SDK implemented.
+ABI 2.11 adds current-runtime lookup and atomic property writes; see
+[writeback contract](graphics-writeback-contract.md). Host negotiation,
+UI selection/writeback and deployment require separate acceptance.
 
 C ABI 2.7 adds `mparser_value_graphics_json_versioned(value, version, out_json)`.
 C++ values expose `graphicsJson(version)`. Version 0 retains legacy behavior;
@@ -56,6 +58,7 @@ or deleted targets before mutation; never resolve a legacy snapshot id as an
 object identity. The isolated REST probe now verifies partial deletion and
 reference renumbering, rejected writes through a deleted script handle,
 interleaved session isolation and namespace replacement on session reset.
-These checks do not expose an identity-targeted writeback endpoint. Concurrent
+The subsequent ABI 2.11 SDK adds a current-runtime identity-targeted write path;
+the earlier probe alone did not expose it. Concurrent
 sessions under contention, renderer selection refresh and DLL reload remain
 separate downstream acceptance requirements.

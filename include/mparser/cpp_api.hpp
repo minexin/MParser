@@ -978,6 +978,7 @@ private:
     friend struct detail::InvocationBridge;
     friend class Result;
     friend class Debugger;
+    friend class Runtime;
 };
 
 struct NamedValue {
@@ -2139,6 +2140,29 @@ public:
             mparser_runtime_clear_global(
                 requireRaw(), name.data(), name.size()),
             "clear shared-runtime global");
+    }
+
+    [[nodiscard]] std::string graphicsJson(uint32_t version = 0) const {
+        mparser_value* raw = nullptr;
+        const auto status = mparser_runtime_graphics_json_versioned(requireRaw(),version,&raw);
+        const auto value = Value::takeCreated(status,raw,"read current runtime graphics");
+        std::string json;
+        for (const auto unit : value.characterData()) { json.push_back(static_cast<char>(unit)); }
+        return json;
+    }
+
+    [[nodiscard]] Value graphicsObject(std::string_view graph, std::string_view object) const {
+        mparser_value* raw = nullptr;
+        const auto status = mparser_runtime_graphics_value(requireRaw(),
+            {graph.data(),graph.size()},{object.data(),object.size()},&raw);
+        return Value::takeCreated(status,raw,"resolve current runtime graphics object");
+    }
+
+    void setGraphicsProperty(std::string_view graph, std::string_view object,
+        std::string_view property, const Value& value) {
+        detail::checkStatus(mparser_runtime_graphics_set_property(requireRaw(),
+            {graph.data(),graph.size()},{object.data(),object.size()},
+            {property.data(),property.size()},value.requireRaw()),"write current runtime graphics property");
     }
 
     void clearGlobals() {

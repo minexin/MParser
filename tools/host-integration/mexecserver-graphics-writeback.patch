@@ -1,0 +1,96 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -39,1 +39,7 @@
+ find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++option(MEXEC_GRAPHICS_WRITEBACK "Enable identity-targeted kernel graphics writes" OFF)
++if(MEXEC_GRAPHICS_WRITEBACK AND (NOT MParser_C_ABI_GENERATION EQUAL 2 OR
++   MParser_C_ABI_REVISION LESS 11 OR NOT MEXEC_GRAPHICS_V3))
++    message(FATAL_ERROR "Graphics writeback requires ABI 2.11 and explicit graphics v3")
++endif()
++
+@@ -81,1 +87,2 @@
+ target_compile_definitions(mexec_core PRIVATE
++    MEXEC_GRAPHICS_WRITEBACK=$<BOOL:${MEXEC_GRAPHICS_WRITEBACK}>
+diff --git a/include/mexec/engine/workspace_session.hpp b/include/mexec/engine/workspace_session.hpp
+--- a/include/mexec/engine/workspace_session.hpp
++++ b/include/mexec/engine/workspace_session.hpp
+@@ -212,1 +212,6 @@
+     std::optional<nlohmann::json> graphicsSnapshot() const;
++#if MEXEC_GRAPHICS_WRITEBACK
++    std::optional<nlohmann::json> setGraphicsProperty(const std::string& graph,
++        const std::string& object, const std::string& property,
++        const mparser::sdk::Value& value, std::uint64_t expectedRevision);
++#endif
+diff --git a/src/engine/workspace_session.cpp b/src/engine/workspace_session.cpp
+--- a/src/engine/workspace_session.cpp
++++ b/src/engine/workspace_session.cpp
+@@ -1699,1 +1699,19 @@
++#if MEXEC_GRAPHICS_WRITEBACK
++std::optional<nlohmann::json> WorkspaceSession::setGraphicsProperty(
++    const std::string& graph, const std::string& object, const std::string& property,
++    const mparser::sdk::Value& value, std::uint64_t expectedRevision) {
++    std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
++    if (!lock.owns_lock()) return std::nullopt;
++    if (executionRunning()) return std::nullopt;
++    if (expectedRevision != workspaceRevision_)
++        return nlohmann::json{{"conflict",true},{"revision",std::to_string(workspaceRevision_)}};
++    runtime_.setGraphicsProperty(graph,object,property,value);
++    ++workspaceRevision_;
++    lastGraphicsJson_ = runtime_.graphicsJson(3);
++    recordActivity();
++    return nlohmann::json{{"graphics",nlohmann::json::parse(lastGraphicsJson_)},
++        {"revision",std::to_string(workspaceRevision_)}};
++}
++#endif
++
+ nlohmann::json WorkspaceSession::snapshot() const {
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -296,1 +296,4 @@
+                   "headless-graphics",
++#if MEXEC_GRAPHICS_WRITEBACK
++                  "identity-graphics-writeback",
++#endif
+@@ -497,1 +500,40 @@
++#if MEXEC_GRAPHICS_WRITEBACK
++    if (segments.size() == 3 && segments[2] == "graphics-property") {
++        if (request.method != "POST") return errorResponse(405,"method_not_allowed","use POST");
++        const auto session = engine_.findSession(segments[1]);
++        if (!session) return errorResponse(404,"session_not_found","session not found");
++        std::string error;
++        const auto body = parseJsonBody(request,&error);
++        if (!body || !body->is_object()) return errorResponse(400,"invalid_json","expected object");
++        for (const auto* field : {"graph_identity","object_identity","property"}) {
++            if (!body->contains(field) || !body->at(field).is_string())
++                return errorResponse(400,"invalid_graphics_request","identity and property must be strings");
++        }
++        if (!body->contains("expected_revision") || !body->at("expected_revision").is_string() ||
++            !body->contains("value")) return errorResponse(400,"invalid_graphics_request","revision and value required");
++        const auto revisionText = body->at("expected_revision").get<std::string>();
++        std::uint64_t expectedRevision = 0;
++        const auto parsed = std::from_chars(revisionText.data(),revisionText.data()+revisionText.size(),expectedRevision);
++        if (revisionText.empty() || parsed.ec != std::errc{} || parsed.ptr != revisionText.data()+revisionText.size())
++            return errorResponse(400,"invalid_revision","expected_revision must be an unsigned decimal string");
++
++        const auto value = engine::valueFromJson(body->at("value"),&error);
++        if (!value) return errorResponse(400,"invalid_value",error);
++        try {
++            const auto result = session->setGraphicsProperty(body->at("graph_identity").get<std::string>(),
++                body->at("object_identity").get<std::string>(),body->at("property").get<std::string>(),
++                *value,expectedRevision);
++            if (!result) return errorResponse(409,"session_busy","session is busy");
++            if (result->contains("conflict")) return errorResponse(409,"workspace_conflict","revision changed");
++            return jsonResponse(200,*result);
++        } catch (const mparser::sdk::ApiError& exception) {
++            const auto status = exception.status();
++            if (status == MPARSER_API_STATUS_OWNER_MISMATCH || status == MPARSER_API_STATUS_OUT_OF_RANGE)
++                return errorResponse(409,"graphics_target_unavailable",exception.what());
++            if (status == MPARSER_API_STATUS_INVALID_ARGUMENT || status == MPARSER_API_STATUS_TYPE_MISMATCH)
++                return errorResponse(400,"graphics_property_rejected",exception.what());
++            return errorResponse(500,"graphics_write_failed",exception.what());
++        }
++    }
++#endif
+     if (segments.size() == 3 && segments[2] == "graphics") {

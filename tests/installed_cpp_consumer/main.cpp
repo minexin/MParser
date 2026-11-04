@@ -372,6 +372,17 @@ end
                 definitions[1].className == "InstalledOwner" && definitions[1].sourceIndex == 1 &&
                 definitions[1].kind == mparser::sdk::DefinitionKind::Method,
                 "installed external method definition metadata failed");
+            auto graphicsRuntime = mparser::sdk::Runtime::create();
+            const auto graphics = graphicsRuntime.execute(mparser::sdk::Module::compile("h=plot(1:3);","installed_graphics.m"));
+            require(graphics.succeeded(),"installed graphics seed failed");
+            const auto wire = graphicsRuntime.graphicsJson(3);
+            require(wire.find("\"graphIdentity\":\"")!=std::string::npos,"installed runtime graph identity missing");
+            bool lookupRejected=false,writeRejected=false;
+            try { (void)graphicsRuntime.graphicsObject("01","3"); }
+            catch(const mparser::sdk::ApiError& error) { lookupRejected=error.status()==MPARSER_API_STATUS_INVALID_ARGUMENT; }
+            try { graphicsRuntime.setGraphicsProperty("01","3","Clipping",mparser::sdk::Value::scalar(0)); }
+            catch(const mparser::sdk::ApiError& error) { writeRejected=error.status()==MPARSER_API_STATUS_INVALID_ARGUMENT; }
+            require(lookupRejected&&writeRejected,"installed graphics API rejection contract");
             auto methodRuntime = mparser::sdk::Runtime::create();
             const auto invocation = methodRuntime.execute(module);
             require(invocation.succeeded(),"installed function-form method invocation failed");

@@ -51,7 +51,7 @@ async function main() {
     }
     assert.ok(ready);
     const info=await request('/info');
-    assert.equal(info.runtime.version,'1.15.0'); assert.equal(info.runtime.abi_revision,10);
+    assert.equal(info.runtime.version,'1.15.0'); assert.ok(info.runtime.abi_revision>=10);
     assert.equal(info.features.includes('ordered-display-events'),mode==='on');
     const {id}=await request('/sessions','POST',{name:'ordered-events'},201);
     const base=`/sessions/${id}`;

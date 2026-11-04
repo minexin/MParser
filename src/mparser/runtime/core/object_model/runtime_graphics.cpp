@@ -351,7 +351,7 @@ RuntimeGraphicsId RuntimeGraphicsGraph::plot(std::vector<double> y) {
     return plot(std::move(x), std::move(y));
 }
 
-std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity) const {
+std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity, bool ascii) const {
     const auto guard = lock();
     using Json = nlohmann::ordered_json;
     std::map<RuntimeGraphicsId, size_t> ids;
@@ -442,7 +442,7 @@ std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity) const {
         {"version", persistentIdentity ? 3 : requiresVersion2 ? 2 : 1},
         {"objects", std::move(objects)}};
     if (persistentIdentity) { snapshot["graphIdentity"] = std::to_string(identity_); }
-    return snapshot.dump();
+    return snapshot.dump(-1, ' ', ascii);
 }
 
 RuntimeGraphicsSnapshot::RuntimeGraphicsSnapshot(const RuntimeGraphicsGraph& graph)
@@ -770,6 +770,7 @@ RuntimeObjectOperationResult runtimeSetGraphicsMember(const RuntimeValue& target
     const std::string& name, const RuntimeValue& value) {
     try {
         if (!target.graphicsHandle) { throw std::invalid_argument("expected a graphics handle"); }
+        auto returnedTarget = target;
         auto& handle = *target.graphicsHandle;
         if (handle.kind() == RuntimeGraphicsKind::Axes &&
             (name == "Title" || name == "XLabel" || name == "YLabel") && value.graphicsHandle) {
@@ -823,7 +824,7 @@ RuntimeObjectOperationResult runtimeSetGraphicsMember(const RuntimeValue& target
             }
             handle.setProperty(name, std::move(numbers));
         }
-        return {true, target, {}};
+        return {true, std::move(returnedTarget), {}};
     } catch (const std::invalid_argument& error) {
         return {false, {}, error.what()};
     }

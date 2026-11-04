@@ -15,6 +15,7 @@
 #include "mparser/runtime/io/runtime_system.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/object_model/runtime_graphics.h"
+#include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value.h"
 #include "mparser/frontend/source_loader.h"
@@ -24,6 +25,7 @@
 #include <atomic>
 #include <bit>
 #include <chrono>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -194,6 +196,16 @@ struct RuntimeState final
     std::map<size_t, std::shared_ptr<ModuleState>> modules;
     std::recursive_mutex mutex;
 };
+
+std::optional<std::uint64_t> graphicsIdentity(mparser_utf8_view text) {
+    if (!text.data || text.size == 0 || text.size > 20 || text.data[0] < '1' || text.data[0] > '9') {
+        return std::nullopt;
+    }
+    std::uint64_t value = 0;
+    const auto parsed = std::from_chars(text.data,text.data+text.size,value);
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data+text.size) { return std::nullopt; }
+    return value;
+}
 
 struct SessionState {
     SessionState(std::shared_ptr<ModuleState> owner,
@@ -2774,6 +2786,66 @@ mparser_api_status mparser_runtime_reset(mparser_runtime* runtime) {
     } catch (...) {
         return MPARSER_API_STATUS_INTERNAL_ERROR;
     }
+}
+
+mparser_api_status mparser_runtime_graphics_json_versioned(
+    mparser_runtime* runtime, uint32_t version, mparser_value** out_json) {
+    if (!out_json) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    *out_json = nullptr;
+    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive ||
+        (version != 0 && version != 3)) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    try {
+        std::lock_guard lock(runtime->state->mutex);
+        const auto graph = runtime->state->session->graphicsGraph();
+        const auto guard = graph->lock();
+        return mparser_c_detail::makeValueHandle(mparser::makeRuntimeCharacterVectorUtf8(
+            graph->serialize(version == 3,true)),{},out_json);
+    } catch (const std::bad_alloc&) { return MPARSER_API_STATUS_ALLOCATION_FAILED; }
+    catch (...) { return MPARSER_API_STATUS_INTERNAL_ERROR; }
+}
+
+mparser_api_status mparser_runtime_graphics_value(mparser_runtime* runtime,
+    mparser_utf8_view graph_identity, mparser_utf8_view object_identity, mparser_value** out_value) {
+    if (!out_value) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    *out_value = nullptr;
+    const auto graphId = mparser_c_detail::graphicsIdentity(graph_identity);
+    const auto objectId = mparser_c_detail::graphicsIdentity(object_identity);
+    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive || !graphId || !objectId) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::lock_guard lock(runtime->state->mutex);
+        const auto graph = runtime->state->session->graphicsGraph();
+        const auto guard = graph->lock();
+        if (graph->identity() != *graphId) { return MPARSER_API_STATUS_OWNER_MISMATCH; }
+        if (!graph->find(*objectId)) { return MPARSER_API_STATUS_OUT_OF_RANGE; }
+        return mparser_c_detail::makeValueHandle(mparser::makeRuntimeGraphicsValue(
+            mparser::RuntimeGraphicsHandle(graph,*objectId)),{},out_value);
+    } catch (const std::bad_alloc&) { return MPARSER_API_STATUS_ALLOCATION_FAILED; }
+    catch (...) { return MPARSER_API_STATUS_INTERNAL_ERROR; }
+}
+
+mparser_api_status mparser_runtime_graphics_set_property(mparser_runtime* runtime,
+    mparser_utf8_view graph_identity, mparser_utf8_view object_identity,
+    mparser_utf8_view property, const mparser_value* value) {
+    const auto graphId = mparser_c_detail::graphicsIdentity(graph_identity);
+    const auto objectId = mparser_c_detail::graphicsIdentity(object_identity);
+    if (!runtime || !runtime->state || !value || !value->state ||
+        !property.data || !property.size || mparser_c_detail::debugCallbackActive || !graphId || !objectId) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        const std::string name(property.data,property.size);
+        std::lock_guard lock(runtime->state->mutex);
+        const auto graph = runtime->state->session->graphicsGraph();
+        const auto guard = graph->lock();
+        if (graph->identity() != *graphId) { return MPARSER_API_STATUS_OWNER_MISMATCH; }
+        if (!graph->find(*objectId)) { return MPARSER_API_STATUS_OUT_OF_RANGE; }
+        const auto result = mparser::runtimeSetGraphicsMember(mparser::makeRuntimeGraphicsValue(
+            mparser::RuntimeGraphicsHandle(graph,*objectId)),name,value->state->value);
+        return result.succeeded ? MPARSER_API_STATUS_OK : MPARSER_API_STATUS_TYPE_MISMATCH;
+    } catch (const std::bad_alloc&) { return MPARSER_API_STATUS_ALLOCATION_FAILED; }
+    catch (...) { return MPARSER_API_STATUS_INTERNAL_ERROR; }
 }
 
 mparser_api_status mparser_module_create_session(
