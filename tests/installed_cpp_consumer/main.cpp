@@ -372,7 +372,8 @@ end
                 definitions[1].className == "InstalledOwner" && definitions[1].sourceIndex == 1 &&
                 definitions[1].kind == mparser::sdk::DefinitionKind::Method,
                 "installed external method definition metadata failed");
-            const auto invocation = module.execute();
+            auto methodRuntime = mparser::sdk::Runtime::create();
+            const auto invocation = methodRuntime.execute(module);
             require(invocation.succeeded(),"installed function-form method invocation failed");
             const auto variables = invocation.variables();
             for (const auto name : {"direct","dotted"}) {
@@ -383,6 +384,21 @@ end
             }
             module = {};
             require(definitions[1].source.sourceName == "read.m","installed source graph ownership lifetime failed");
+            const auto object = std::find_if(variables.begin(),variables.end(),
+                [](const auto& item) { return item.name == "obj"; });
+            require(object != variables.end(),"installed object export missing");
+            mparser::sdk::Invocation next;
+            next.initialWorkspace = {{"obj",object->value}};
+            const auto followup = methodRuntime.execute(mparser::sdk::Module::compile(
+                "later=read(obj); later_dot=obj.read();","followup.m"),next);
+            require(followup.succeeded(),"installed cross-request method dispatch failed");
+            const auto followupValues = followup.variables();
+            for (const auto name : {"later","later_dot"}) {
+                const auto found = std::find_if(followupValues.begin(),followupValues.end(),
+                    [name](const auto& item) { return item.name == name; });
+                require(found != followupValues.end() && scalar(found->value) == 7,
+                    "installed cross-request method result mismatch");
+            }
         }
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'

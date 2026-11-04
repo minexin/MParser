@@ -54,6 +54,13 @@ private:
         return result;
     }
     RuntimeSnapshotId append(const RuntimeValue& value, size_t depth) {
+        if (value.weakObjectFields) {
+            auto resolved = value;
+            resolved.sharedFields = value.weakObjectFields->lock();
+            resolved.weakObjectFields.reset();
+            if (!resolved.sharedFields) { invalid("listener source expired before snapshot capture"); }
+            return append(resolved,depth);
+        }
         // Resolve aliases before applying depth/node limits; a self reference
         // is one edge, not another recursively retained object.
         if (value.kind == RuntimeValueKind::Object && value.sharedFields) {

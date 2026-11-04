@@ -282,6 +282,7 @@ add_library(mparser_core STATIC
     src/mparser/runtime/core/object_model/runtime_graphics.cpp
     src/mparser/runtime/core/session/runtime_output.cpp
     src/mparser/runtime/core/session/runtime_event_journal.cpp
+    src/mparser/runtime/core/session/runtime_event_listener_state.cpp
     src/mparser/runtime/core/session/runtime_input.cpp
     src/mparser/runtime/core/value/runtime_range.cpp
     src/mparser/runtime/builtins/numeric/runtime_reduction.cpp

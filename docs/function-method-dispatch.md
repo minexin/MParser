@@ -75,15 +75,174 @@ validity. The existing dot-call lifetime policy is unchanged by this work.
 
 ## Remaining Boundaries
 
-This is not complete MATLAB class dispatch. `InferiorClasses` precedence,
-operator syntax, and argument-directed dispatch to foreign-module object
-owners remain separate work. A foreign object cannot be authorized using a
-same-named local class: the new selector fails closed at that boundary.
-Existing explicit member/callable routing remains unchanged.
+### Cross-Request Follow-Up In Development
 
-Neither kernel SDK checks nor the R2024b corpus prove a deployed host, browser
-navigation, graphics rendering or export. Current installed-SDK REST and full
-regression runs must be checked independently before marking acceptance.
+An added session replay reproduced `read(obj)` failing in the next command,
+despite the first source-file invocation succeeding. See
+`build/function-method-followup-red.log` and the public shared-Runtime negative
+at `build/cross-invocation-method-red-test.log`. This is a real REPL integration
+gap, not evidence against the earlier same-module checks.
+
+The follow-up asks the object's registered owner module to
+resolve only a method, not a general member. It does not run property getters
+or method bodies during lookup. A successful lookup returns an unbound callable
+with owner-supplied implicit-output metadata. Actual invocation retains the
+original argument order and output request, and checks public access again.
+Implicit-expression status is forwarded per invocation without mutating the
+stored callable. No public C ABI or source-graph descriptor changes are needed.
+Expanded SDK checks exercise four requested backends, private-method rejection,
+same-named consumer classes, empty-object ownership, multiple/zero outputs,
+implicit nargout, evalc and ordinary-function fallback. A dependent getter that
+would mutate the object is not executed by lookup. Existing dot-member method
+handles now also retain owner-supplied implicit-output metadata; the output
+count mismatch was first reproduced in
+`build/cross-invocation-method-dot-red-test.log` and corrected in
+`build/cross-invocation-method-expanded-test.log`.
+Current full regression, installed consumers and session REST evidence is
+recorded below, separately from the earlier same-module acceptance.
+
+Commit review identified two additional cross-request issues. Destructors
+resolved as method handles must use the existing deletion lifecycle, not call
+only the destructor body. The negative at
+`build/cross-invocation-review-red-test.log` reproduced a still-valid object.
+Routing through deletion then exposed a per-invocation listener registry:
+destructors ran, but the destruction event was lost. Listener records now belong
+to RuntimeSessionState, use a recursive execution lock, and survive owner VM
+recreation. Reset replaces the registry and invalidates old listeners; listener
+deletion checks field identity as well as the numeric ID. SDK tests cover
+function/dot deletion, inherited destructors, a single destruction event,
+listener invalidation, repeated deletion and reset ID reuse.
+
+Method-lookup rejection previously attached a consumer-local source ID to the
+owner source table. The negative at `build/cross-invocation-listener-test.log`
+proved incorrect file attribution. Lookup refusals now return structured status
+data; the consumer records the diagnostic and event at the original call span.
+Tests assert `denied.m`, byte offset 4 and exactly one error event.
+Targeted session/lifecycle tests passed at
+`build/cross-invocation-review-green-test.log`; reset and event/property listener
+tests passed at `build/cross-invocation-state-test.log`. These focused runs do
+not replace the final complete regression and installed-host follow-up replay.
+
+The shared registry also needs exception-safe callback activation. A test
+invoker throws std::runtime_error on its first callback, retains the session,
+then notifies again. It first failed with `callbackActive remained set` in
+`build/listener-exception-red-test.log`. A noexcept RAII scope now restores the
+previous value by record ID and listener-fields identity, without retaining a
+map iterator across callbacks. Targeted event/SDK checks pass in
+`build/listener-exception-green-test.log`.
+
+#### Follow-Up Review Regressions
+
+The follow-up includes these reviewed regressions and changes:
+
+- `build/private-delete-capability-red-test.log` reproduces rejection of a
+  private destructor handle created legally inside its class. The validated
+  capability now reaches the complete lifecycle route, including object arrays
+  (array red: `build/private-delete-array-red-test.log`). Direct external name,
+  dot and forged-handle requests still reject; an exported authorised handle
+  invalidates the object exactly once even with repeated elements/calls.
+- `build/foreign-destruction-scope-red-test.log` reproduces an invalid-object
+  error while a foreign callback reads the source during destruction. A shared
+  per-session destruction scope now spans nested owner routing and uses RAII
+  cleanup. Tests also reject the same source's property access after destruction.
+  The positive replay passed in `build/foreign-destruction-scope-green-test.log`.
+- `build/listener-weak-source-red-test.log` proves that persistent session
+  records kept source objects alive via Source/Object. Those listener fields
+  now carry weak internal object storage, materialized by public member getters.
+  Event and property listener identity/release cases pass. The SDK validator
+  initially rejected the new representation with INTERNAL_ERROR; weak storage
+  is now admitted only in the two listener source fields and rejected elsewhere.
+  Runtime contract, event/property listener and SDK checks pass together in
+  `build/lifecycle-review-expanded-green-test.log` (4/4).
+- `build/foreign-event-permission-red-test.log` confirms a same-named consumer
+  class could authorise an owner's private event after registry sharing. Event
+  operations now query permissions and execute through the source owner, while
+  the consumer records a refusal. Public notification and legitimate owner-class
+  notification remain positive controls.
+
+- `build/listener-captured-source-red-test.log` reproduced callback closure
+  retention through Session -> listener -> callback -> source. At invocation
+  entry, the session now compares strong owners against the listener-retained
+  graph without weakening closure capture or coupled callback retention. The
+  graph traverses object fields, function receivers/captures, cell/struct/object
+  containers and tabular values. External source, callback, listener and cell
+  roots remain live; internal shared callback aliases do not become false roots.
+  Expanded ownership tests pass in
+  `build/listener-reachability-expanded-test.log`.
+- A subsequent review found that a live source must also keep its coupled
+  listener reachable. `build/listener-transitive-root-red-test.log` reproduces
+  lost listening through an A -> B -> C callback chain with only A held outside
+  the registry. Conditional source-to-listener liveness edges now propagate to
+  a fixed point without increasing internal strong-owner counts. The chain
+  still notifies C while A is live and releases after A is dropped. Five focused
+  SDK, contract, snapshot and event/property listener tests pass in
+  `build/listener-transitive-root-green-test.log`; read-only re-review found no
+  further confirmed collector issue.
+- `build/foreign-event-data-red-test.log` reproduced acceptance of an unrelated
+  foreign handle whose class name matched EventData in the source owner's
+  table. Validation now asks the data object's own registered owner whether its
+  actual class derives from event.EventData. The negative and a positive
+  third-module payload callback pass in `build/foreign-event-data-green-test.log`.
+- `build/weak-source-snapshot-red-test.log` reproduced lost weak Source/Object
+  alias identity. Internal immutable snapshot capture now materializes those
+  edges before alias lookup. The frozen source retains its original fields and
+  alias identity without keeping live runtime storage; expired source capture
+  fails explicitly. Both snapshot/contract tests pass in
+  `build/weak-source-snapshot-green-test.log`.
+- `build/event-review-origin-graphics-red-test.log` reproduced two further
+  errors: owned event-operation diagnostics used the wrong source table, and
+  listener weak-source validation rejected a legitimate graphics handle. Direct
+  operation diagnostics now carry the caller's explicit file and journal
+  context before exception/journal creation. Callback-owned diagnostics keep
+  their original source, including a third-module callback with capture off/on
+  and catch-stack checks. Weak-source validation preserves the original handle
+  type, validating live storage or an empty expired-reference prototype.
+  SDK graphics listener export and immutable graphics source capture are covered.
+- `build/destruction-native-exception-red-test.log` reproduced a coupled
+  listener remaining valid after a native destruction callback exception.
+  Lifecycle-stage exception handling now cleans destroyed-handle state before
+  propagating the original exception. Tests also create a replacement registry
+  inside a callback's session reset, then verify the old callback scope cannot
+  alter the new listener and that the new callback still fires. All five focused
+  SDK, contract, snapshot and listener tests pass in
+  `build/event-review-final-green-test.log`.
+
+#### Current Local Acceptance
+
+- Complete rebuild and kernel/package regression passed 355/355 in 112.64
+  seconds at `build/cross-invocation-complete-test.log`. Strengthened callback
+  error uniqueness/disposition, destroying-scope cleanup and same-ID reset
+  assertions passed in the subsequent five-test run at
+  `build/event-review-strengthened-test.log`.
+- Fresh source-only installed-SDK host acceptance completed all 148 build
+  actions, REST probes, renderer candidate checks and 67/67 host regressions
+  (22.58 seconds): `build/clean-host-probe/5881f098e00348d49173395e8711a484`.
+  The expanded definition-source probe executes methods in the next session
+  command, notifies a retained listener, then deletes its source and checks both
+  object and listener invalidation. Source host/client directories and deployed
+  services were not modified.
+- Selected installed DLL SHA256:
+  `89004D8A8A702854A2770AF2C838754BFFD9370F4F64590DC1E2D5745C753DBB`.
+  Aggregate evidence: `build/cross-invocation-complete-clean-host.log`.
+
+Remaining acceptance gates are not hidden by those green tests:
+
+- The private-destructor R2024b fixture under
+  `tools/reference/private-delete` was not executed: automatic approval review
+  failed due its usage limit before MATLAB started. Native positive/negative
+  results are not an R2024b compatibility claim for that fixture.
+
+- GitHub CI for this follow-up must be checked against its actual commit;
+  passing local tests does not establish remote CI or a published release.
+
+This is not complete MATLAB class dispatch. `InferiorClasses` precedence,
+operator syntax and arbitrary unregistered-module dispatch remain separate work.
+Registered objects are routed through their original owner module. Missing
+ownership or an owner not registered in the active Runtime is not authorization
+to use a same-named local class. Browser and deployment gates remain open.
+
+Neither kernel SDK checks, isolated host acceptance nor the R2024b corpus prove
+a deployed host, browser navigation, graphics rendering or export.
 
 Reference rules: MathWorks [method invocation](https://www.mathworks.com/help/matlab/matlab_oop/method-invocation.html)
 and [class precedence](https://www.mathworks.com/help/matlab/matlab_oop/class-precedence.html).

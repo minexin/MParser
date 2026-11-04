@@ -97,6 +97,39 @@ async function main() {
         const value=invoked.workspace.find(item=>item.name===name)?.value;
         assert.equal(value.data[0],1);
     }
+    const followup=await request(`${base}/execute`,{
+        command:'later=read(obj); later_dot=obj.read();',include_workspace_values:true});
+    assert.equal(followup.status,'succeeded',JSON.stringify(followup.diagnostics));
+    for(const name of ['later','later_dot'])
+        assert.equal(followup.workspace.find(item=>item.name===name)?.value.data[0],1);
+    await request(`${base}/files`,{path:'LifecycleSource.m',content:[
+        'classdef LifecycleSource < handle',
+        'properties', 'Recorded=0', 'end',
+        'events', 'Changed', 'end',
+        'methods',
+        'function fire(obj)', "notify(obj,'Changed');", 'end',
+        'function value=record(obj)', 'obj.Recorded=obj.Recorded+1;',
+        'value=obj.Recorded;', 'end',
+        'function delete(obj)', 'end', 'end', 'end',
+    ].join('\n')},200,'PUT');
+    await request(`${base}/files`,{path:'invoke_lifecycle.m',content:
+        "live=LifecycleSource(); watcher=addlistener(live,'Changed',@(src,data)src.record());"},200,'PUT');
+    const created=await request(`${base}/execute`,{
+        source_path:'invoke_lifecycle.m',include_workspace_values:true});
+    assert.equal(created.status,'succeeded',JSON.stringify(created.diagnostics));
+    const notified=await request(`${base}/execute`,{
+        command:'fire(live); recorded=live.Recorded;',include_workspace_values:true});
+    assert.equal(notified.status,'succeeded',JSON.stringify(notified.diagnostics));
+    assert.equal(notified.workspace.find(item=>item.name==='recorded')?.value.data[0],1);
+    const destroyed=await request(`${base}/execute`,{
+        command:'delete(live); live_valid=isvalid(live); watcher_valid=isvalid(watcher);',
+        include_workspace_values:true});
+    assert.equal(destroyed.status,'succeeded',JSON.stringify(destroyed.diagnostics));
+    for(const name of ['live_valid','watcher_valid']) {
+        const value=destroyed.workspace.find(item=>item.name===name)?.value;
+        assert.equal(value?.class,'logical');
+        assert.equal(value.data[0],false);
+    }
     const invalid=await request('/compile',{sources:[sources[0],{name:'bad.m',source:'x=;'}]});
     assert.equal(invalid.valid,false); assert.equal(invalid.definition_directory.complete,false);
     assert.deepEqual(invalid.definition_directory.definitions,[]);
@@ -109,7 +142,7 @@ async function main() {
         {sources,source_name:'ambiguous.m'},null]) await request('/compile',body,400);
     const legacy=await request('/compile',{source:sources[0].source,source_name:'first.m'});
     assert.equal(legacy.valid,true); assert.equal(legacy.definition_directory.definitions.length,2);
-    console.log('PASS multi-source definitions, external method invocation, nested parents, invalid graphs and legacy compile');
+    console.log('PASS multi-source definitions, cross-request methods/events/deletion, nested parents, invalid graphs and legacy compile');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
     if(server?.pid&&server.exitCode===null){const stopped=new Promise(resolve=>server.once('close',resolve));server.kill();await stopped;}

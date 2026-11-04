@@ -33,7 +33,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "161c6559e99fd19930e7838aa17e04bc8272f3e7db215eea2e05e19c35876de0"
+      "sha256_lf": "51e64cb7f91b7577e93a2c2db6bd6b96c4e3fc8979ff4cc75640b0c1a2f87455"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -105,7 +105,7 @@
     },
     {
       "path": "docs/function-method-dispatch.md",
-      "sha256_lf": "30aca4ce60076bceb6f8560d078271369ef4b161f48f88633a9160815ad8c2b8"
+      "sha256_lf": "3f8b903578d8baa7a73086281e2a9ac79f06b013e59bcae9987e895a59da37a2"
     }
   ]
 }

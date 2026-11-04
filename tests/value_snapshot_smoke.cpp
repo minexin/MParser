@@ -35,6 +35,43 @@ void fails(const RuntimeValue& value, RuntimeSnapshotLimits limits, RuntimeSnaps
     require(rejected,"snapshot must report its explicit failure reason");
 }
 
+void listenerWeakSourceAliases() {
+    auto source = makeRuntimeObjectScalar("SnapshotSource",{{"Value",makeRuntimeNumberValue(7)}},true);
+    std::weak_ptr<RuntimeWorkspace> owner = source.sharedFields;
+    auto weak = source;
+    weak.weakObjectFields = source.sharedFields;
+    weak.sharedFields.reset();
+    auto listener = makeRuntimeObjectScalar("event.listener",{{"Source",weak}},true);
+    auto propertyListener = makeRuntimeObjectScalar("event.proplistener",
+        {{"Object",makeRuntimeCellValue({weak})}},true);
+    auto values = makeRuntimeCellValue({source,listener,propertyListener});
+    const auto snapshot = RuntimeValueSnapshot::capture(values);
+    const auto sourceId = snapshot.node().elements[0];
+    const auto listenerId = snapshot.node().elements[1];
+    const auto propertyId = snapshot.node().elements[2];
+    require(field(snapshot.node(listenerId).storedFields,"Source") == sourceId,
+        "weak listener Source must preserve frozen alias identity");
+    const auto objectCell = field(snapshot.node(propertyId).storedFields,"Object");
+    require(snapshot.node(objectCell).elements[0] == sourceId,
+        "weak property listener Object must preserve frozen alias identity");
+    const auto valueId = field(snapshot.node(sourceId).storedFields,"Value");
+    (*source.sharedFields)["Value"] = makeRuntimeNumberValue(99);
+    values = {}; source = {}; weak = {}; propertyListener = {};
+    require(owner.expired(),"snapshot must not retain a live weak source owner");
+    require(snapshot.node(valueId).numeric[0].real == 7,"weak source fields are frozen at capture time");
+    fails(listener,{},RuntimeSnapshotFailure::InvalidValue);
+    auto graph = std::make_shared<RuntimeGraphicsGraph>();
+    auto figure = makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph,graph->create(RuntimeGraphicsKind::Figure)));
+    auto weakFigure = figure;
+    weakFigure.weakObjectFields = figure.sharedFields;
+    weakFigure.sharedFields.reset();
+    const auto graphicsListener = makeRuntimeObjectScalar("event.listener",{{"Source",weakFigure}},true);
+    const auto graphicsSnapshot = RuntimeValueSnapshot::capture(graphicsListener);
+    const auto figureId = field(graphicsSnapshot.node().storedFields,"Source");
+    require(graphicsSnapshot.node(figureId).graphicsJson == serializeRuntimeGraphicsValue(figure,true),
+        "weak graphics listener source must retain a frozen graphics snapshot");
+}
+
 void numericAndText() {
     auto matrix = makeRuntimeMatrixValue(2,2,{1,2,3,4});
     auto snapshot = RuntimeValueSnapshot::capture(matrix);
@@ -227,6 +264,7 @@ void limitsAndFailures() {
 
 int main() {
     try {
+        listenerWeakSourceAliases();
         numericAndText(); containersAndCycles(); richValues(); callablesAndGraphics(); limitsAndFailures();
         std::cout << "immutable value snapshots: precise payloads, alias/cycle graphs, rich values, detached lifetimes and limits passed\n";
         return 0;

@@ -149,6 +149,30 @@ private:
         return true;
     }
 
+    bool validateListenerReference(const RuntimeValue& value, const std::string& path) {
+        auto resolved = value;
+        if (resolved.weakObjectFields) {
+            if (!isRuntimeScalarObject(resolved) || !resolved.handleObject || resolved.sharedFields ||
+                !resolved.fields.empty()) {
+                return fail(path,"listener weak source has invalid object storage");
+            }
+            resolved.sharedFields = resolved.weakObjectFields->lock();
+            resolved.weakObjectFields.reset();
+            if (!resolved.sharedFields) {
+                resolved.sharedFields = std::make_shared<RuntimeWorkspace>();
+            }
+        }
+        if (resolved.kind == RuntimeValueKind::Cell) {
+            for (size_t index = 0; index < resolved.cells.size(); ++index) {
+                if (!validateListenerReference(resolved.cells[index],path + "{" + std::to_string(index) + "}")) {
+                    return false;
+                }
+                resolved.cells[index] = RuntimeValue{};
+            }
+        }
+        return validateValue(resolved,path);
+    }
+
     bool validateObjectFields(const RuntimeValue& value,
                               const std::string& path) {
         // Dynamic properties are mutable metadata handles; other metadata
@@ -186,6 +210,16 @@ private:
                             "value object cannot use shared field storage");
             }
             fields = &value.fields;
+        }
+        if (value.className == "event.listener" || value.className == "event.proplistener") {
+            for (const auto& [name,field] : *fields) {
+                const auto fieldPath = path + ".properties." + name;
+                if ((value.className == "event.listener" && name == "Source") ||
+                    (value.className == "event.proplistener" && name == "Object")) {
+                    if (!validateListenerReference(field,fieldPath)) { return false; }
+                } else if (!validateValue(field,fieldPath)) { return false; }
+            }
+            return true;
         }
         return validateWorkspace(*fields, path + ".properties");
     }
@@ -432,6 +466,9 @@ private:
 
     bool validateValue(const RuntimeValue& value,
                        const std::string& path) {
+        if (value.weakObjectFields) {
+            return fail(path,"weak object storage is only valid inside listener source fields");
+        }
         size_t count = 0;
         if (!validateShape(value, path, count)) {
             return false;

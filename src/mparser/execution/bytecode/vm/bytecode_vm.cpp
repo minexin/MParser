@@ -1,6 +1,7 @@
 #include "mparser/execution/bytecode/vm/bytecode_vm.h"
 #include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/runtime/core/session/runtime_debugger.h"
+#include "mparser/runtime/core/session/runtime_event_listener_state.h"
 #include "mparser/semantic/argument_contract.h"
 #include "mparser/runtime/builtins/builtin_registry.h"
 #include "mparser/semantic/function_signature.h"
@@ -1012,19 +1013,12 @@ struct SourceCallerOverride {
     RuntimeWorkspace* workspace = nullptr;
 };
 
-struct EventListenerRecord {
-    size_t id = 0;
-    std::weak_ptr<std::map<std::string, RuntimeValue>> sourceFields;
-    std::weak_ptr<std::map<std::string, RuntimeValue>> listenerFields;
-    std::shared_ptr<std::map<std::string, RuntimeValue>>
-        retainedListenerFields;
-    std::string sourceClass;
-    std::string eventName;
-    std::string propertyStorageKey;
-    size_t dynamicPropertyId = 0;
-    bool propertyListener = false;
-    bool coupled = false;
-    bool callbackActive = false;
+using EventListenerRecord = RuntimeEventListenerRecord;
+
+struct EventOperationCallSite {
+    const BytecodeInstruction* instruction;
+    std::string sourceName;
+    std::uint64_t sourceContext;
 };
 
 struct PropertyListenerTarget {
@@ -1186,6 +1180,8 @@ public:
         sessionState_ = options.sessionState
                             ? options.sessionState
                             : std::make_shared<RuntimeSessionState>();
+        eventListenerState_ = sessionState_->eventListeners();
+        std::unique_lock eventListenerLock(eventListenerState_->mutex);
         executionControl_ = options.executionControl
                                 ? options.executionControl
                                 : std::make_shared<
@@ -1273,12 +1269,10 @@ public:
         sourceCallerOverrides_.clear();
         activeClassFunctions_.clear();
         activeAnonymousBodyOutputCounts_.clear();
-        eventListeners_.clear();
+        eventListenerState_->collectUnreachable();
         dynamicProperties_.clear();
         activeDynamicPropertyGetters_.clear();
         activeDynamicPropertySetters_.clear();
-        destroyingHandleFields_.clear();
-        nextEventListenerId_ = 1;
         nextDynamicPropertyId_ = 1;
         resetProfiling(program.instructions.size());
         initializeWorkspace(options.initialWorkspace);
@@ -1338,6 +1332,8 @@ public:
                 if (callableMode) {
                     BytecodeInstruction instruction;
                     instruction.span = entrySpan;
+                    instruction.implicitExpressionOutput = entryCallable_->functionHandle &&
+                        entryCallable_->functionHandle->sourceImplicitExpressionOutput;
                     instruction.resultCount = static_cast<int>(
                         requestedEntryOutputCount_.value_or(1));
                     executedEntryFunction_ =
@@ -5578,6 +5574,8 @@ private:
                 info.className = receiver->second.className;
                 info.methodName = methodName;
                 info.declaringClass = method->declaringClass;
+                info.resolvedImplicitOutputCount = method->classDestructor ? 0 :
+                    preferredImplicitOutputCount(method->signature);
                 info.receiver = receiver->second;
                 info.span = method->span;
                 info.sourceFile = method->fullPath;
@@ -7680,7 +7678,7 @@ private:
 
     bool handleObjectIsDestroying(const RuntimeValue& value) const {
         return value.sharedFields &&
-               destroyingHandleFields_.contains(
+               eventListenerState_->destroyingSources.contains(
                    value.sharedFields.get());
     }
 
@@ -8448,7 +8446,7 @@ private:
                 record->second.name));
             owner->erase(dynamicPropertyValueKey(descriptor.opaqueId));
         }
-        for (auto& [id, listener] : eventListeners_) {
+        for (auto& [id, listener] : eventListenerState_->records) {
             (void)id;
             const auto listenerSource = listener.sourceFields.lock();
             if (!listener.propertyListener ||
@@ -9709,6 +9707,31 @@ private:
         return makeRuntimeCommaSeparatedList(std::move(values));
     }
 
+    RuntimeValue weakListenerSource(const RuntimeValue& source) const {
+        auto reference = source;
+        reference.weakObjectFields = source.sharedFields;
+        reference.sharedFields.reset();
+        reference.fields.clear();
+        return reference;
+    }
+
+    std::optional<RuntimeValue> listenerMemberValue(const RuntimeValue& stored) const {
+        auto value = stored;
+        if (value.weakObjectFields) {
+            value.sharedFields = value.weakObjectFields->lock();
+            if (!value.sharedFields) { return std::nullopt; }
+            value.weakObjectFields.reset();
+        }
+        if (value.kind == RuntimeValueKind::Cell) {
+            for (auto& item : value.cells) {
+                auto resolved = listenerMemberValue(item);
+                if (!resolved) { return std::nullopt; }
+                item = std::move(*resolved);
+            }
+        }
+        return value;
+    }
+
     void memberAccess(const BytecodeInstruction& instruction) {
         if (instruction.operand != ".()") {
             memberAccessResolved(instruction);
@@ -10142,7 +10165,16 @@ private:
                                   instruction.operand);
                 return;
             }
-            stack_.push_back(runtimeStackValue(field->second));
+            if (builtInListener) {
+                auto value = listenerMemberValue(field->second);
+                if (!value) {
+                    addDiagnostic(instruction,"listener source is no longer available");
+                    return;
+                }
+                stack_.push_back(runtimeStackValue(std::move(*value)));
+            } else {
+                stack_.push_back(runtimeStackValue(field->second));
+            }
             return;
         }
         if (target->value.objectContext &&
@@ -11436,6 +11468,9 @@ private:
             return 1;
         }
         const RuntimeFunctionHandle& info = *handle.functionHandle;
+        if (info.resolvedImplicitOutputCount) {
+            return static_cast<int>(*info.resolvedImplicitOutputCount);
+        }
         if (info.targetName.rfind(
                 "__mparser_property_validator/", 0) == 0) {
             return 0;
@@ -11492,13 +11527,49 @@ private:
     }
 
     std::optional<StackValue> argumentMethod(
-        const std::string& name, const std::vector<RuntimeValue>& arguments) const {
+        const BytecodeInstruction& instruction, const std::string& name,
+        const std::vector<RuntimeValue>& arguments) {
         if (name.find('.') != std::string::npos) { return std::nullopt; }
         for (const auto& argument : arguments) {
             if (!isRuntimeClassObject(argument)) { continue; }
             // Do not authorize a foreign object using a same-named local class.
             if (argument.objectContext != callableContext_) {
-                return std::nullopt;
+                if (!argument.objectContext || !inheritedSourceCallableInvoker_) { return std::nullopt; }
+                RuntimeFunctionHandle lookup;
+                lookup.kind = RuntimeFunctionHandleKind::Method;
+                lookup.backend = RuntimeFunctionHandleBackend::Bytecode;
+                lookup.context = argument.objectContext;
+                lookup.className = argument.className;
+                lookup.methodName = name;
+                lookup.externalMethodResolution = true;
+                lookup.receiver = argument;
+                lookup.span = instruction.span;
+                auto outputs = callInheritedSourceCallable(instruction,
+                    makeRuntimeFunctionHandleValue(std::move(lookup)),{},1);
+                if (outputs.empty() || outputs.front().kind == RuntimeValueKind::Missing) { return std::nullopt; }
+                if (isRuntimeScalarStruct(outputs.front())) {
+                    const auto* status = runtimeStructField(outputs.front(),"status");
+                    const auto* message = runtimeStructField(outputs.front(),"message");
+                    const auto statusText = status ? runtimeTextScalarUtf8(*status) : std::nullopt;
+                    const auto messageText = message ? runtimeTextScalarUtf8(*message) : std::nullopt;
+                    if (statusText == "rejected" && messageText) {
+                        addDiagnostic(instruction,*messageText);
+                    } else {
+                        addDiagnostic(instruction,"method lookup returned an invalid rejection",
+                            "MParser:InvalidInheritedCallableResult");
+                    }
+                    return std::nullopt;
+                }
+                const auto& resolved = outputs.front().functionHandle;
+                if (!isFunctionHandle(outputs.front()) || !resolved ||
+                    resolved->context != argument.objectContext ||
+                    resolved->kind != RuntimeFunctionHandleKind::Method || resolved->receiver ||
+                    !resolved->resolvedImplicitOutputCount || *resolved->resolvedImplicitOutputCount > 1) {
+                    addDiagnostic(instruction,"method lookup returned an invalid owned callable",
+                        "MParser:InvalidInheritedCallableResult");
+                    return std::nullopt;
+                }
+                return runtimeStackValue(std::move(outputs.front()));
             }
             const auto klass = classesByName_.find(argument.className);
             if (klass == classesByName_.end()) { return std::nullopt; }
@@ -11539,7 +11610,12 @@ private:
                 (!function->info->lexicalParent.empty() ||
                  function->info->span.begin.sourceId == instruction.span.begin.sourceId);
             if (!lexicalFunction && !inheritedSourceCallable(name)) {
-                if (auto method = argumentMethod(name,arguments)) { callee = std::move(*method); }
+                const auto diagnosticCount = diagnostics_.size();
+                if (auto method = argumentMethod(instruction,name,arguments)) { callee = std::move(*method); }
+                if (diagnostics_.size() != diagnosticCount) {
+                    finishCallOrIndexContext(instruction);
+                    return;
+                }
             }
         }
         if (callee->unresolvedNameSpan && !resolveLocalFunction(callee->functionName) &&
@@ -11879,8 +11955,14 @@ private:
             }
             ~DebugWorkspaceAliasScope() { frame.debugWorkspaceAlias = previous; }
         } debugAlias(frames_.back(), inheritedSourceCallableWorkspace_);
+        auto forwarded = callable;
+        if (forwarded.functionHandle && forwarded.functionHandle->sourceImplicitExpressionOutput !=
+                instruction.implicitExpressionOutput) {
+            forwarded.functionHandle = std::make_shared<RuntimeFunctionHandle>(*forwarded.functionHandle);
+            forwarded.functionHandle->sourceImplicitExpressionOutput = instruction.implicitExpressionOutput;
+        }
         auto result = inheritedSourceCallableInvoker_(
-            callable, arguments, static_cast<size_t>(requestedCount),
+            forwarded, arguments, static_cast<size_t>(requestedCount),
             instruction.span, inheritedSourceCallableWorkspace_);
         if (inheritedSourceCallableWorkspace_) {
             currentFrame() = *inheritedSourceCallableWorkspace_;
@@ -11910,6 +11992,39 @@ private:
             return missingOutputs(requestedCount);
         }
         return std::move(result.outputs);
+    }
+
+    std::vector<RuntimeValue> resolveExternalObjectMethod(
+        const BytecodeInstruction& instruction, const RuntimeFunctionHandle& info, int requestedCount) {
+        const auto rejected = [](std::string message) {
+            return std::vector<RuntimeValue>{makeRuntimeStructValue({
+                {"status",characterValue("rejected")},{"message",characterValue(std::move(message))}})};
+        };
+        if (requestedCount != 1 || !info.receiver || !isRuntimeClassObject(*info.receiver) ||
+            info.receiver->objectContext != callableContext_ || info.className != info.receiver->className) {
+            return rejected("method lookup requires an object owned by this module");
+        }
+        const auto klass = classesByName_.find(info.className);
+        if (klass == classesByName_.end()) {
+            return rejected("class method owner is unavailable: " + info.className);
+        }
+        const auto* method = selectMethod(klass->second,info.methodName,false);
+        if (!method) { return {missingValue()}; }
+        if (method->access.level != MemberAccessLevel::Public) {
+            return rejected("method access is denied: " + method->declaringClass + "." + info.methodName);
+        }
+        RuntimeFunctionHandle resolved;
+        resolved.kind = RuntimeFunctionHandleKind::Method;
+        resolved.backend = RuntimeFunctionHandleBackend::Bytecode;
+        resolved.context = callableContext_;
+        resolved.className = info.className;
+        resolved.methodName = info.methodName;
+        resolved.declaringClass = method->declaringClass;
+        resolved.display = "@" + info.className + "." + info.methodName;
+        resolved.externalMethodDispatch = true;
+        resolved.resolvedImplicitOutputCount = method->classDestructor ? 0 : preferredImplicitOutputCount(method->signature);
+        resolved.span = instruction.span;
+        return {makeRuntimeFunctionHandleValue(std::move(resolved))};
     }
 
     std::vector<RuntimeValue> resolveExternalObjectMember(
@@ -11949,6 +12064,8 @@ private:
                 handle.methodName = std::move(resolved.methodName);
                 handle.declaringClass =
                     std::move(resolved.methodDeclaringClass);
+                handle.resolvedImplicitOutputCount = preferredImplicitMethodOutputCount(
+                    handle.className,handle.methodName,handle.declaringClass);
                 handle.receiver = std::move(resolved.receiver);
                 handle.span = instruction.span;
                 outputs.push_back(
@@ -12074,7 +12191,47 @@ private:
         auto savedActiveClassFunctions = std::move(activeClassFunctions_);
         activeClassFunctions_.clear();
         std::vector<RuntimeValue> outputs;
-        if (info.externalMemberAssignment) {
+        if (info.externalEventPermission) {
+            if (info.targetName == "$event-data") {
+                const bool owned = arguments.size() == 1 && isObject(arguments[0]) &&
+                    arguments[0].objectContext == callableContext_;
+                const bool derived = owned && (arguments[0].className == kEventDataClassName ||
+                    classDerivesFrom(arguments[0].className,std::string(kEventDataClassName)));
+                outputs = {logicalValue(derived)};
+            } else {
+            const bool notifying = info.targetName == "notify";
+            if (arguments.size() >= 2 && isString(arguments[1]) &&
+                (notifying || arguments.size() == 3)) {
+                const auto eventName = runtimeTextScalarUtf8(arguments[1]);
+                const auto* event = eventName ? selectEvent(arguments[0],*eventName) : nullptr;
+                if (event) {
+                    const auto& policy = notifying ? event->notifyAccess : event->listenAccess;
+                    if (!hasMemberAccess(policy,event->declaringClass)) {
+                        outputs = {makeRuntimeStructValue({{"message",characterValue(
+                            std::string(notifying ? "event notify access is denied: " : "event listen access is denied: ") +
+                            event->declaringClass + "." + *eventName)}})};
+                    }
+                }
+            }
+            if (outputs.empty()) { outputs = {missingValue()}; }
+            }
+        } else if (info.externalEventOperation) {
+            const EventOperationCallSite callSite{&instruction,info.sourceFile,info.sourceEventContext};
+            struct CallSiteScope {
+                const EventOperationCallSite*& current;
+                const EventOperationCallSite* previous;
+                ~CallSiteScope() { current = previous; }
+            } callSiteScope{eventOperationCallSite_,std::exchange(eventOperationCallSite_,&callSite)};
+            if (arguments.empty() || arguments[0].objectContext != callableContext_ ||
+                (info.targetName != "notify" && info.targetName != "addlistener" && info.targetName != "listener")) {
+                addDiagnostic(instruction,"invalid owned event operation");
+                outputs = missingOutputs(requestedCount);
+            } else {
+                outputs = callBuiltinOutputs(instruction,info.targetName,arguments,requestedCount);
+            }
+        } else if (info.externalMethodResolution) {
+            outputs = resolveExternalObjectMethod(instruction,info,requestedCount);
+        } else if (info.externalMemberAssignment) {
             outputs = assignExternalObjectMember(
                 instruction, info, arguments, requestedCount);
         } else if (info.externalMemberResolution) {
@@ -12156,9 +12313,14 @@ private:
                            : callable->declaringClass) +
                           "." + info.methodName
                     : info.targetName;
-            outputs = callFunctionInfo(
-                instruction, name, *callable, callArguments,
-                requestedCount, std::nullopt, nullptr, false);
+            if (info.kind == RuntimeFunctionHandleKind::Method && callable->classDestructor) {
+                outputs = callClassMethod(instruction,info.className,info.methodName,info.declaringClass,
+                    info.receiver,arguments,requestedCount,false,!info.externalMethodDispatch);
+            } else {
+                outputs = callFunctionInfo(
+                    instruction, name, *callable, callArguments,
+                    requestedCount, std::nullopt, nullptr, false);
+            }
         }
         activeClassFunctions_ = std::move(savedActiveClassFunctions);
         return outputs;
@@ -12336,6 +12498,7 @@ private:
         if (!isObject(source)) {
             return nullptr;
         }
+        if (source.objectContext && source.objectContext != callableContext_) { return nullptr; }
         if (source.handleObject &&
             eventName == kObjectBeingDestroyedEventName) {
             return &handleDestructionEvent();
@@ -12518,9 +12681,9 @@ private:
             return missingValue();
         }
 
-        const size_t id = nextEventListenerId_++;
+        const size_t id = eventListenerState_->nextId++;
         std::map<std::string, RuntimeValue> fields;
-        fields["Source"] = source;
+        fields["Source"] = weakListenerSource(source);
         fields["EventName"] = characterValue(eventName);
         fields["Callback"] = arguments[2];
         fields["Enabled"] = numberValue(1.0);
@@ -12540,7 +12703,7 @@ private:
         record.sourceClass = source.className;
         record.eventName = eventName;
         record.coupled = coupled;
-        eventListeners_[id] = std::move(record);
+        eventListenerState_->records[id] = std::move(record);
         return listener;
     }
 
@@ -12592,10 +12755,10 @@ private:
             return missingValue();
         }
 
-        const size_t id = nextEventListenerId_++;
+        const size_t id = eventListenerState_->nextId++;
         std::map<std::string, RuntimeValue> fields;
         fields["Source"] = target->descriptor;
-        fields["Object"] = cellValue({source});
+        fields["Object"] = cellValue({weakListenerSource(source)});
         fields["EventName"] = characterValue(eventName);
         fields["Callback"] = arguments[3];
         fields["Enabled"] = logicalValue(true);
@@ -12618,15 +12781,15 @@ private:
         record.dynamicPropertyId = target->dynamicPropertyId;
         record.propertyListener = true;
         record.coupled = coupled;
-        eventListeners_[id] = std::move(record);
+        eventListenerState_->records[id] = std::move(record);
         return listener;
     }
 
     bool invokeEventListenerCallback(
         const BytecodeInstruction& instruction, size_t id,
         const std::vector<RuntimeValue>& callbackArguments) {
-        auto record = eventListeners_.find(id);
-        if (record == eventListeners_.end()) {
+        auto record = eventListenerState_->records.find(id);
+        if (record == eventListenerState_->records.end()) {
             return true;
         }
         const auto listenerFields =
@@ -12652,11 +12815,22 @@ private:
             return true;
         }
 
+        struct CallbackActiveScope {
+            std::shared_ptr<RuntimeEventListenerState> state;
+            size_t id;
+            const RuntimeWorkspace* fields;
+            bool previous;
+            ~CallbackActiveScope() noexcept {
+                const auto current = state->records.find(id);
+                if (current != state->records.end() && current->second.listenerFields.lock().get() == fields) {
+                    current->second.callbackActive = previous;
+                }
+            }
+        } active{eventListenerState_,id,listenerFields.get(),record->second.callbackActive};
         record->second.callbackActive = true;
         const size_t diagnosticCount = diagnostics_.size();
         (void)callFunctionHandle(instruction, callback->second,
                                  callbackArguments, 0);
-        record->second.callbackActive = false;
         return diagnostics_.size() == diagnosticCount;
     }
 
@@ -12670,7 +12844,7 @@ private:
         }
 
         std::vector<size_t> listeners;
-        for (const auto& [id, record] : eventListeners_) {
+        for (const auto& [id, record] : eventListenerState_->records) {
             const auto listenerSource = record.sourceFields.lock();
             if (!record.propertyListener || !listenerSource ||
                 listenerSource.get() != source.sharedFields.get() ||
@@ -13499,7 +13673,7 @@ private:
         if (!source.sharedFields) {
             return listeners;
         }
-        for (const auto& [id, record] : eventListeners_) {
+        for (const auto& [id, record] : eventListenerState_->records) {
             const auto listenerSource = record.sourceFields.lock();
             if (!record.propertyListener && listenerSource &&
                 listenerSource.get() == source.sharedFields.get() &&
@@ -13536,7 +13710,7 @@ private:
             property = dynamicProperties_.erase(property);
         }
 
-        for (auto& [id, listener] : eventListeners_) {
+        for (auto& [id, listener] : eventListenerState_->records) {
             (void)id;
             const auto listenerSource = listener.sourceFields.lock();
             if (!listenerSource ||
@@ -13572,12 +13746,24 @@ private:
 
         (*source.sharedFields)[std::string(kHandleValidityField)] =
             logicalValue(false);
-        destroyingHandleFields_.insert(source.sharedFields.get());
+        struct DestructionScope {
+            std::shared_ptr<RuntimeEventListenerState> state;
+            const void* fields;
+            bool inserted;
+            ~DestructionScope() noexcept {
+                if (inserted) { state->destroyingSources.erase(fields); }
+            }
+        } destruction{eventListenerState_,source.sharedFields.get(),
+            eventListenerState_->destroyingSources.insert(source.sharedFields.get()).second};
 
         std::vector<Diagnostic> lifecycleDiagnostics;
         const auto runLifecycleStage = [&](const auto& action) {
             const size_t diagnosticBase = diagnostics_.size();
-            action();
+            try { action(); }
+            catch (...) {
+                cleanupDestroyedHandleState(source);
+                throw;
+            }
             lifecycleDiagnostics.insert(
                 lifecycleDiagnostics.end(),
                 diagnostics_.begin() +
@@ -13614,7 +13800,6 @@ private:
         }
 
         cleanupDestroyedHandleState(source);
-        destroyingHandleFields_.erase(source.sharedFields.get());
         diagnostics_.insert(diagnostics_.end(),
                             lifecycleDiagnostics.begin(),
                             lifecycleDiagnostics.end());
@@ -13622,7 +13807,7 @@ private:
 
     void deleteRuntimeObject(
         const BytecodeInstruction& instruction,
-        const std::vector<RuntimeValue>& arguments) {
+        const std::vector<RuntimeValue>& arguments, bool accessAlreadyValidated = false) {
         if (arguments.size() != 1 || !isObject(arguments[0])) {
             addDiagnostic(instruction,
                           "delete expects one handle object");
@@ -13639,7 +13824,7 @@ private:
             klass != classesByName_.end() &&
             klass->second.handleClass;
         if (method && !classDestructor) {
-            if (!hasMemberAccess(method->access,
+            if (!accessAlreadyValidated && !hasMemberAccess(method->access,
                                  method->declaringClass)) {
                 addDiagnostic(instruction,
                               "method access is denied: " +
@@ -13658,7 +13843,7 @@ private:
                               "delete expects handle objects");
                 return;
             }
-            if (classDestructor &&
+            if (classDestructor && !accessAlreadyValidated &&
                 !hasMemberAccess(method->access,
                                  method->declaringClass)) {
                 addDiagnostic(instruction,
@@ -13691,7 +13876,7 @@ private:
                           "delete expects a scalar handle object");
             return;
         }
-        if (classDestructor &&
+        if (classDestructor && !accessAlreadyValidated &&
             !hasMemberAccess(method->access,
                              method->declaringClass)) {
             addDiagnostic(instruction,
@@ -13715,8 +13900,9 @@ private:
         (*arguments[0].sharedFields)[std::string(kListenerValidityField)] =
             numberValue(0.0);
         if (const auto listener =
-                eventListeners_.find(arguments[0].opaqueId);
-            listener != eventListeners_.end()) {
+                eventListenerState_->records.find(arguments[0].opaqueId);
+            listener != eventListenerState_->records.end() &&
+            listener->second.listenerFields.lock() == arguments[0].sharedFields) {
             listener->second.retainedListenerFields.reset();
         }
     }
@@ -13756,10 +13942,33 @@ private:
 
         RuntimeValue eventData;
         if (arguments.size() == 3) {
-            if (!isObject(arguments[2]) ||
-                (arguments[2].className != kEventDataClassName &&
-                 !classDerivesFrom(arguments[2].className,
-                                   std::string(kEventDataClassName)))) {
+            const auto& data = arguments[2];
+            bool derives = isObject(data) && (data.className == kEventDataClassName ||
+                classDerivesFrom(data.className,std::string(kEventDataClassName)));
+            if (data.objectContext && data.objectContext != callableContext_) {
+                derives = false;
+                if (inheritedSourceCallableInvoker_) {
+                    RuntimeFunctionHandle query;
+                    query.kind = RuntimeFunctionHandleKind::Method;
+                    query.backend = RuntimeFunctionHandleBackend::Bytecode;
+                    query.context = data.objectContext;
+                    query.externalEventPermission = true;
+                    query.targetName = "$event-data";
+                    query.span = instruction.span;
+                    const auto diagnosticCount = diagnostics_.size();
+                    const auto result = callInheritedSourceCallable(instruction,
+                        makeRuntimeFunctionHandleValue(std::move(query)),{data},1);
+                    if (diagnostics_.size() != diagnosticCount) { return; }
+                    if (result.size() != 1 || result[0].kind != RuntimeValueKind::Number ||
+                        result[0].numericClass != RuntimeNumericClass::Logical) {
+                        addDiagnostic(instruction,"event data owner returned an invalid type query result",
+                            "MParser:InvalidInheritedCallableResult");
+                        return;
+                    }
+                    derives = truthy(result[0]);
+                }
+            }
+            if (!derives) {
                 addDiagnostic(instruction,
                               "notify event data must derive from "
                               "event.EventData");
@@ -13783,7 +13992,7 @@ private:
         }
 
         std::vector<size_t> listeners;
-        for (const auto& [id, record] : eventListeners_) {
+        for (const auto& [id, record] : eventListenerState_->records) {
             const auto listenerSource = record.sourceFields.lock();
             if (!record.propertyListener && listenerSource &&
                 listenerSource.get() == source.sharedFields.get() &&
@@ -13878,6 +14087,34 @@ private:
             addDiagnostic(instruction,
                           "bytecode call result count cannot be negative");
             return {};
+        }
+
+        if ((name == "notify" || name == "addlistener" || name == "listener") && !arguments.empty() &&
+            arguments[0].objectContext && arguments[0].objectContext != callableContext_ &&
+            inheritedSourceCallableInvoker_) {
+            RuntimeFunctionHandle operation;
+            operation.kind = RuntimeFunctionHandleKind::Method;
+            operation.backend = RuntimeFunctionHandleBackend::Bytecode;
+            operation.context = arguments[0].objectContext;
+            operation.targetName = name;
+            operation.externalEventPermission = true;
+            operation.span = instruction.span;
+            const auto diagnosticCount = diagnostics_.size();
+            const auto permission = callInheritedSourceCallable(instruction,
+                makeRuntimeFunctionHandleValue(operation),arguments,1);
+            if (diagnostics_.size() != diagnosticCount || permission.empty()) { return missingOutputs(requestedCount); }
+            if (permission.front().kind != RuntimeValueKind::Missing) {
+                const auto* message = runtimeStructField(permission.front(),"message");
+                const auto text = message ? runtimeTextScalarUtf8(*message) : std::nullopt;
+                addDiagnostic(instruction,text.value_or("invalid owned event permission result"));
+                return missingOutputs(requestedCount);
+            }
+            operation.externalEventPermission = false;
+            operation.externalEventOperation = true;
+            operation.sourceFile = journalSourceName(instruction.span);
+            operation.sourceEventContext = journalSourceContext_;
+            return callInheritedSourceCallable(instruction,makeRuntimeFunctionHandleValue(std::move(operation)),
+                arguments,requestedCount);
         }
 
         const bool fileDeleteDispatch =
@@ -15147,7 +15384,7 @@ private:
         const std::string& methodDeclaringClass,
         const std::optional<RuntimeValue>& receiver,
         const std::vector<RuntimeValue>& arguments, int requestedCount,
-        bool validateReceiver) {
+        bool validateReceiver, bool accessAlreadyValidated = false) {
         const RuntimeValue* invocationReceiver =
             receiver ? &*receiver
                      : arguments.empty() ? nullptr : &arguments.front();
@@ -15220,7 +15457,7 @@ private:
         const std::string declaringClass = method->declaringClass.empty()
                                                ? className
                                                : method->declaringClass;
-        if (!hasMemberAccess(method->access, declaringClass)) {
+        if (!accessAlreadyValidated && !hasMemberAccess(method->access, declaringClass)) {
             addDiagnostic(instruction, "method access is denied: " +
                                           declaringClass + "." + methodName);
             return missingOutputs(requestedCount);
@@ -15246,7 +15483,7 @@ private:
             }
             if (isRuntimeClassObject(*destructionTarget) &&
                 !isRuntimeScalarObject(*destructionTarget)) {
-                deleteRuntimeObject(instruction, {*destructionTarget});
+                deleteRuntimeObject(instruction, {*destructionTarget},accessAlreadyValidated);
             } else {
                 destroyHandleObject(instruction, *destructionTarget);
             }
@@ -16249,6 +16486,18 @@ private:
         stack_.push_back(runtimeStackValue(std::move(value)));
     }
 
+    void applyEventOperationOrigin(const BytecodeInstruction& instruction,Diagnostic& diagnostic) {
+        // Callback body instructions and already-owned diagnostics keep their origin.
+        if (!eventOperationCallSite_ || eventOperationCallSite_->instruction != &instruction ||
+            !diagnostic.sourceName.empty()) { return; }
+        diagnostic.sourceName = eventOperationCallSite_->sourceName;
+        if (!diagnostic.stack.empty()) { diagnostic.stack.front().file = diagnostic.sourceName; }
+        if (journal_) {
+            journal_->diagnostic(diagnostic,eventOperationCallSite_->sourceContext,
+                executionControl_->consoleCaptureDepth(),diagnostic.sourceName);
+        }
+    }
+
     void addDiagnostic(const BytecodeInstruction& instruction,
                        std::string message,
                        std::string identifier =
@@ -16256,6 +16505,7 @@ private:
         Diagnostic diagnostic{instruction.span, std::move(message),
                               std::move(identifier)};
         diagnostic.stack = exceptionFrames(instruction.span);
+        applyEventOperationOrigin(instruction,diagnostic);
         pendingException_ = runtimeExceptionFromDiagnostic(
             diagnostic, diagnostic.stack);
         appendDiagnostic(std::move(diagnostic));
@@ -16272,6 +16522,7 @@ private:
         const BytecodeInstruction& instruction,
         std::vector<Diagnostic> diagnostics) {
         for (auto& diagnostic : diagnostics) {
+            const bool callSiteDiagnostic = diagnostic.span.begin.sourceId == kInvalidSourceId;
             if (diagnostic.span.begin.sourceId ==
                 kInvalidSourceId) {
                 diagnostic.span = instruction.span;
@@ -16280,6 +16531,7 @@ private:
                 diagnostic.stack =
                     exceptionFrames(instruction.span);
             }
+            if (callSiteDiagnostic) { applyEventOperationOrigin(instruction,diagnostic); }
             if (diagnostic.severity ==
                 DiagnosticSeverity::Warning) {
                 appendWarning(std::move(diagnostic));
@@ -16429,12 +16681,11 @@ private:
     std::vector<SourceCallerOverride> sourceCallerOverrides_;
     std::vector<ActiveClassFunction> activeClassFunctions_;
     std::shared_ptr<RuntimeCallableContext> callableContext_;
-    std::map<size_t, EventListenerRecord> eventListeners_;
+    std::shared_ptr<RuntimeEventListenerState> eventListenerState_;
+    const EventOperationCallSite* eventOperationCallSite_ = nullptr;
     std::map<size_t, DynamicPropertyRecord> dynamicProperties_;
     std::set<size_t> activeDynamicPropertyGetters_;
     std::set<size_t> activeDynamicPropertySetters_;
-    std::set<const void*> destroyingHandleFields_;
-    size_t nextEventListenerId_ = 1;
     size_t nextDynamicPropertyId_ = 1;
     std::map<std::string, const HirNode*> functionNodes_;
     std::map<std::string, const HirNode*> classFunctionNodes_;

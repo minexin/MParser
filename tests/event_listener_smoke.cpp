@@ -582,6 +582,300 @@ end
           "class-name event conflict was not diagnosed");
 }
 
+void runSessionListenerSourceReleaseSmoke() {
+    const auto pipeline = lower("classdef WeakSource < handle\nevents\nTick\nend\nend\n"
+        "source=WeakSource(); listener=addlistener(source,'Tick',@(src,data)1); "
+        "same=(listener.Source==source);");
+    auto session = std::make_shared<mparser::RuntimeSessionState>();
+    std::weak_ptr<mparser::RuntimeWorkspace> sourceFields;
+    std::weak_ptr<mparser::RuntimeWorkspace> listenerFields;
+    {
+        mparser::BytecodeVmOptions options;
+        options.sessionState = session;
+        mparser::BytecodeVm vm;
+        const auto result = vm.run(pipeline.bytecode,pipeline.semantic,options);
+        check(result.diagnostics.empty(),"weak listener fixture failed");
+        const auto* source = findVariable(result,"source");
+        const auto* listener = findVariable(result,"listener");
+        check(source && listener,"weak listener fixture missing values");
+        sourceFields = source->sharedFields;
+        listenerFields = listener->sharedFields;
+        check(findVariable(result,"same")->number == 1,"weak Source getter lost identity");
+    }
+    check(sourceFields.expired(),"session coupled listener strongly retained its source");
+    session->reset();
+    check(listenerFields.expired(),"session reset did not release coupled listener fields");
+    const auto propertyPipeline = lower(
+        "classdef WeakPropertySource < handle\nproperties (SetObservable)\nValue=1\nend\nend\n"
+        "source=WeakPropertySource(); listener=addlistener(source,'Value','PostSet',@(src,data)1); "
+        "same=(listener.Object{1}==source);");
+    {
+        mparser::BytecodeVmOptions options;
+        options.sessionState = session;
+        mparser::BytecodeVm vm;
+        const auto result = vm.run(propertyPipeline.bytecode,propertyPipeline.semantic,options);
+        check(result.diagnostics.empty(),"weak property listener fixture failed");
+        const auto* source = findVariable(result,"source");
+        const auto* listener = findVariable(result,"listener");
+        check(source && listener,"weak property listener fixture missing values");
+        sourceFields = source->sharedFields;
+        listenerFields = listener->sharedFields;
+        check(findVariable(result,"same")->number == 1,"weak Object getter lost identity");
+    }
+    check(sourceFields.expired(),"session property listener strongly retained its source");
+    session->reset();
+    check(listenerFields.expired(),"session reset did not release property listener fields");
+}
+
+void runCapturedSourceSessionReleaseSmoke() {
+    auto pipeline = lower(std::string(kPulseClass) + R"(
+pulse=Pulse();
+watcher=addlistener(pulse,'Tick',@(source,data)pulse.record(data.EventName));
+pulse.fire(0);
+count=pulse.CallbackCount;
+)");
+    auto session = std::make_shared<mparser::RuntimeSessionState>();
+    std::weak_ptr<mparser::RuntimeWorkspace> sourceFields;
+    {
+        mparser::BytecodeVmOptions options;
+        options.sessionState = session;
+        mparser::BytecodeVm vm;
+        const auto result = vm.run(pipeline.bytecode,pipeline.semantic,options);
+        check(result.diagnostics.empty(),"capturing listener fixture failed");
+        checkNumber(result,"count",1);
+        const auto* source = findVariable(result,"pulse");
+        const auto* watcher = findVariable(result,"watcher");
+        check(source && watcher,"capturing listener exports missing");
+        sourceFields = source->sharedFields;
+        const auto& callback = watcher->sharedFields->at("Callback");
+        check(callback.functionHandle && callback.functionHandle->capturedVariables.contains("pulse"),
+            "capturing listener lost its exact source free variable");
+    }
+    auto followup = lower("unrelated=1;");
+    mparser::BytecodeVmOptions options;
+    options.sessionState = session;
+    mparser::BytecodeVm vm;
+    const auto result = vm.run(followup.bytecode,followup.semantic,options);
+    check(result.diagnostics.empty(),"capturing listener cleanup invocation failed");
+    check(sourceFields.expired(),"session listener callback still strongly retains an otherwise unreachable source");
+    for (int rootKind = 0; rootKind < 4; ++rootKind) {
+        auto rootedSession = std::make_shared<mparser::RuntimeSessionState>();
+        mparser::RuntimeValue externalRoot;
+        {
+            mparser::BytecodeVmOptions create;
+            create.sessionState = rootedSession;
+            mparser::BytecodeVm creator;
+            const auto created = creator.run(pipeline.bytecode,pipeline.semantic,create);
+            check(created.diagnostics.empty(),"listener external-root fixture failed");
+            const auto* source = findVariable(created,"pulse");
+            const auto* watcher = findVariable(created,"watcher");
+            check(source && watcher,"listener external-root exports missing");
+            sourceFields = source->sharedFields;
+            if (rootKind == 0) { externalRoot = *source; }
+            else if (rootKind == 1) { externalRoot = watcher->sharedFields->at("Callback"); }
+            else if (rootKind == 2) { externalRoot = *watcher; }
+            else { externalRoot = mparser::makeRuntimeCellValue({watcher->sharedFields->at("Callback")}); }
+        }
+        mparser::BytecodeVmOptions next;
+        next.sessionState = rootedSession;
+        mparser::BytecodeVm executor;
+        const auto kept = executor.run(followup.bytecode,followup.semantic,next);
+        check(kept.diagnostics.empty() && !sourceFields.expired(),
+            "listener collection discarded an externally rooted source/callback/listener");
+        externalRoot = {};
+        const auto released = executor.run(followup.bytecode,followup.semantic,next);
+        check(released.diagnostics.empty() && sourceFields.expired(),
+            "listener collection did not observe external-root release");
+    }
+    auto sharedCallback = lower(std::string(kPulseClass) + R"(
+pulse=Pulse();
+callback=@(source,data)pulse.record(data.EventName);
+first=addlistener(pulse,'Tick',callback);
+second=addlistener(pulse,'Tick',callback);
+pulse.fire(0);
+count=pulse.CallbackCount;
+)");
+    {
+        mparser::BytecodeVmOptions create;
+        create.sessionState = session;
+        mparser::BytecodeVm creator;
+        const auto created = creator.run(sharedCallback.bytecode,sharedCallback.semantic,create);
+        check(created.diagnostics.empty(),"shared callback fixture failed");
+        checkNumber(created,"count",2);
+        sourceFields = findVariable(created,"pulse")->sharedFields;
+    }
+    (void)vm.run(followup.bytecode,followup.semantic,options);
+    check(sourceFields.expired(),"shared listener callback was mistaken for an external root");
+}
+
+void runCallbackExceptionRecoverySmoke() {
+    const std::string declaration = "classdef RecoverySource < handle\nevents\nTick\nend\nend\n";
+    auto setup = lower(declaration + "obj=RecoverySource(); watcher=addlistener(obj,'Tick',callback);");
+    auto notification = lower(declaration + "notify(obj,'Tick');");
+    mparser::BytecodeVmOptions options;
+    options.sessionState = std::make_shared<mparser::RuntimeSessionState>();
+    options.callableContext = mparser::makeRuntimeCallableContext();
+    mparser::RuntimeFunctionHandle callback;
+    callback.kind = mparser::RuntimeFunctionHandleKind::Function;
+    callback.backend = mparser::RuntimeFunctionHandleBackend::Bytecode;
+    callback.context = mparser::makeRuntimeCallableContext();
+    callback.display = "@external_callback";
+    callback.targetName = "external_callback";
+    options.initialWorkspace = {{"callback",mparser::makeRuntimeFunctionHandleValue(std::move(callback))}};
+    mparser::BytecodeVm vm;
+    const auto created = vm.run(setup.bytecode,setup.semantic,options);
+    check(created.diagnostics.empty(),"listener recovery fixture failed");
+    const auto* object = findVariable(created,"obj");
+    const auto* watcher = findVariable(created,"watcher");
+    check(object && watcher,"listener recovery fixture exports missing");
+    options.initialWorkspace = {{"obj",*object},{"watcher",*watcher}};
+    size_t calls = 0;
+    options.inheritedCallableInvoker = [&](const mparser::RuntimeValue&,
+        const std::vector<mparser::RuntimeValue>&,size_t,mparser::SourceSpan,mparser::RuntimeWorkspace*)
+        -> mparser::RuntimeSourceCallableInvocationResult {
+        if (++calls == 1) { throw std::runtime_error("injected listener callback failure"); }
+        mparser::RuntimeSourceCallableInvocationResult result;
+        result.succeeded = true;
+        return result;
+    };
+    bool threw = false;
+    try { (void)vm.run(notification.bytecode,notification.semantic,options); }
+    catch (const std::runtime_error& error) {
+        threw = std::string_view(error.what()) == "injected listener callback failure";
+    }
+    check(threw,"listener callback injection did not throw");
+    const auto recovered = vm.run(notification.bytecode,notification.semantic,options);
+    check(recovered.diagnostics.empty(),"listener callback did not recover after C++ exception");
+    check(calls == 2,"callbackActive remained set after C++ exception");
+    auto attachDestruction = lower(declaration +
+        "destructionWatcher=addlistener(obj,'ObjectBeingDestroyed',callback);");
+    options.initialWorkspace.push_back({"callback",watcher->sharedFields->at("Callback")});
+    const auto attached = vm.run(attachDestruction.bytecode,attachDestruction.semantic,options);
+    check(attached.diagnostics.empty(),"destruction exception fixture failed");
+    const auto* destructionWatcher = findVariable(attached,"destructionWatcher");
+    check(destructionWatcher,"destruction exception listener missing");
+    auto destruction = lower(declaration + "delete(obj);");
+    options.inheritedCallableInvoker = [](const mparser::RuntimeValue&,
+        const std::vector<mparser::RuntimeValue>&,size_t,mparser::SourceSpan,mparser::RuntimeWorkspace*)
+        -> mparser::RuntimeSourceCallableInvocationResult {
+        throw std::runtime_error("injected destruction failure");
+    };
+    threw = false;
+    try { (void)vm.run(destruction.bytecode,destruction.semantic,options); }
+    catch (const std::runtime_error& error) { threw = std::string_view(error.what()) == "injected destruction failure"; }
+    check(threw,"destruction callback injection did not throw");
+    check(object->sharedFields->at("__mparser_handle_valid").number == 0,
+        "destruction exception restored source validity");
+    check(destructionWatcher->sharedFields->at("__mparser_valid").number == 0,
+        "destruction exception left a coupled listener valid");
+    const auto invalidNotification = vm.run(notification.bytecode,notification.semantic,options);
+    check(hasDiagnostic(invalidNotification.diagnostics,"invalid or deleted object"),
+        "native destruction exception left the source in the destroying scope");
+    const auto repeated = vm.run(destruction.bytecode,destruction.semantic,options);
+    check(repeated.diagnostics.empty(),"repeated deletion after native exception was not idempotent");
+    options.sessionState->reset();
+    const auto beforeReset = vm.run(setup.bytecode,setup.semantic,options);
+    check(beforeReset.diagnostics.empty(),"reentrant reset fixture failed");
+    const auto* oldObject = findVariable(beforeReset,"obj");
+    const auto* oldWatcher = findVariable(beforeReset,"watcher");
+    options.initialWorkspace = {{"obj",*oldObject},{"callback",oldWatcher->sharedFields->at("Callback")}};
+    mparser::RuntimeValue newObject,newWatcher;
+    options.inheritedCallableInvoker = [&](const mparser::RuntimeValue&,
+        const std::vector<mparser::RuntimeValue>&,size_t,mparser::SourceSpan,mparser::RuntimeWorkspace*) {
+        options.sessionState->reset();
+        mparser::BytecodeVmOptions nested;
+        nested.sessionState = options.sessionState;
+        nested.callableContext = options.callableContext;
+        nested.initialWorkspace = {{"callback",oldWatcher->sharedFields->at("Callback")}};
+        mparser::BytecodeVm nestedVm;
+        const auto created = nestedVm.run(setup.bytecode,setup.semantic,nested);
+        check(created.diagnostics.empty(),"new registry creation during reset failed");
+        newObject = *findVariable(created,"obj");
+        newWatcher = *findVariable(created,"watcher");
+        mparser::RuntimeSourceCallableInvocationResult result;
+        result.succeeded = true;
+        return result;
+    };
+    const auto reset = vm.run(notification.bytecode,notification.semantic,options);
+    check(reset.diagnostics.empty(),"callback reentrant reset failed");
+    check(oldWatcher->opaqueId == newWatcher.opaqueId,
+        "reentrant reset did not exercise listener ID reuse");
+    check(oldWatcher->sharedFields->at("__mparser_valid").number == 0 &&
+        newWatcher.sharedFields->at("__mparser_valid").number == 1,
+        "old callback scope changed the replacement listener registry");
+    options.initialWorkspace = {{"obj",newObject},{"watcher",newWatcher}};
+    calls = 0;
+    options.inheritedCallableInvoker = [&](const mparser::RuntimeValue&,
+        const std::vector<mparser::RuntimeValue>&,size_t,mparser::SourceSpan,mparser::RuntimeWorkspace*) {
+        ++calls;
+        mparser::RuntimeSourceCallableInvocationResult result;
+        result.succeeded = true;
+        return result;
+    };
+    const auto afterReset = vm.run(notification.bytecode,notification.semantic,options);
+    check(afterReset.diagnostics.empty() && calls == 1,
+        "replacement listener failed after old callback scope returned");
+}
+
+void runCoupledListenerReachabilitySmoke() {
+    const auto setup = lower(std::string(kPulseClass) + R"(
+if phase==0
+root=Pulse();
+middle=Pulse();
+leaf=Pulse();
+rootWatcher=addlistener(root,'Tick',@(source,data)middle.fire(0));
+middleWatcher=addlistener(middle,'Tick',@(source,data)leaf.fire(0));
+leafWatcher=addlistener(leaf,'Tick',@(source,data)source.record(data.EventName));
+else
+root.fire(0);
+end
+)");
+    const auto cleanup = lower("unrelated=1;");
+    auto session = std::make_shared<mparser::RuntimeSessionState>();
+    auto context = mparser::makeRuntimeCallableContext();
+    mparser::RuntimeValue root;
+    std::weak_ptr<mparser::RuntimeWorkspace> middleFields,leafFields,leafListener;
+    {
+        mparser::BytecodeVmOptions options;
+        options.sessionState = session;
+        options.callableContext = context;
+        options.initialWorkspace = {{"phase",mparser::makeRuntimeNumberValue(0)}};
+        mparser::BytecodeVm vm;
+        const auto created = vm.run(setup.bytecode,setup.semantic,options);
+        check(created.diagnostics.empty(),"coupled listener chain fixture failed");
+        root = *findVariable(created,"root");
+        middleFields = findVariable(created,"middle")->sharedFields;
+        leafFields = findVariable(created,"leaf")->sharedFields;
+        leafListener = findVariable(created,"leafWatcher")->sharedFields;
+    }
+    {
+        mparser::BytecodeVmOptions options;
+        options.sessionState = session;
+        options.callableContext = context;
+        options.initialWorkspace = {{"root",root},{"phase",mparser::makeRuntimeNumberValue(1)}};
+        mparser::BytecodeVm vm;
+        const auto fired = vm.run(setup.bytecode,setup.semantic,options);
+        check(fired.diagnostics.empty(),"coupled listener chain notification failed:\n" +
+            diagnosticsText(fired.diagnostics));
+        const auto listener = leafListener.lock();
+        check(listener && listener->at("__mparser_valid").number == 1,
+            "live source did not retain a transitively captured source's listener");
+        const auto leaf = leafFields.lock();
+        check(leaf && leaf->at("Pulse::CallbackCount").number == 1,
+            "transitive coupled listener callback was silently lost");
+    }
+    root = {};
+    {
+        mparser::BytecodeVmOptions options;
+        options.sessionState = session;
+        mparser::BytecodeVm vm;
+        const auto released = vm.run(cleanup.bytecode,cleanup.semantic,options);
+        check(released.diagnostics.empty(),"coupled listener chain cleanup failed");
+    }
+    check(middleFields.expired() && leafFields.expired() && leafListener.expired(),
+        "unrooted coupled listener chain was retained after its root was released");
+}
+
 } // namespace
 
 int main() {
@@ -591,6 +885,10 @@ int main() {
         runEventLifecycleSmoke();
         runListenerOwnershipReleaseSmoke();
         runInheritanceAndDiagnosticsSmoke();
+        runCallbackExceptionRecoverySmoke();
+        runSessionListenerSourceReleaseSmoke();
+        runCapturedSourceSessionReleaseSmoke();
+        runCoupledListenerReachabilitySmoke();
         std::cout << "event listener smoke tests passed\n";
         return 0;
     } catch (const std::exception& error) {

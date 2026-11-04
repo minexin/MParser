@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -106,6 +107,8 @@ struct RuntimeValue {
   std::vector<RuntimeValue> objectElements;
   std::vector<std::string> fieldOrder;
   std::shared_ptr<std::map<std::string, RuntimeValue>> sharedFields;
+  // Listener source edges are materialized only by the public member getter.
+  std::optional<std::weak_ptr<std::map<std::string, RuntimeValue>>> weakObjectFields;
   std::shared_ptr<RuntimeDynamicPropertyOwner> dynamicPropertyOwner;
   // Graphics handles retain only their graph, never an execution session.
   std::shared_ptr<RuntimeGraphicsHandle> graphicsHandle;
@@ -150,6 +153,12 @@ struct RuntimeFunctionHandle {
   std::string declaringClass;
   std::string lexicalClassName;
   bool externalMethodDispatch = false;
+  bool externalMethodResolution = false;
+  bool externalEventOperation = false;
+  bool externalEventPermission = false;
+  std::optional<size_t> resolvedImplicitOutputCount;
+  bool sourceImplicitExpressionOutput = false;
+  std::uint64_t sourceEventContext = 0;
   bool externalMemberResolution = false;
   bool externalMemberAssignment = false;
   std::string sourceFile;

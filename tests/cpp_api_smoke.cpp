@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -749,6 +750,512 @@ void runFunctionSyntaxMethodSmoke() {
     assert(scalar(findVariable(localEmptyValues,"correct")->value) == 99);
 }
 
+void runCrossInvocationMethodSmoke() {
+    const auto producer = Module::compile(R"(
+function obj=make_object()
+obj=SharedOwner();
+end
+classdef SharedOwner < handle
+properties
+Value=7
+end
+properties (Dependent)
+Trap
+end
+methods
+function y=get.Trap(obj)
+obj.Value=999;
+error('getter must not execute during method lookup');
+y=0;
+end
+function y=read(obj)
+y=obj.Value;
+end
+function y=combine(x,obj)
+y=x+obj.Value;
+end
+function [a,b]=parts(obj)
+a=obj.Value; b=a+1;
+end
+function touch(obj)
+obj.Value=obj.Value+1;
+end
+function y=report(obj)
+y=nargout;
+end
+function y=marker(obj)
+y=23;
+end
+function y=length(obj)
+y=17;
+end
+end
+methods (Access=private)
+function y=secret(obj)
+y=91;
+end
+end
+end
+)","shared_producer.m");
+    assert(producer.isValid());
+    const auto consumer = Module::compile(
+        "direct=read(foreign); second=combine(4,foreign); [a,b]=parts(foreign); "
+        "touch(foreign); foreign.touch(); changed=read(foreign); overridden=length(foreign); "
+        "try, bad=Trap(foreign); catch, end; lookup_after=read(foreign); empty_value=marker(foreign([])); "
+        "assigned=report(foreign); dot_assigned=foreign.report(); foreign.report(); dot_implicit=ans; report(foreign)\n"
+        "classdef SharedOwner\nmethods\nfunction y=read(obj)\ny=99;\nend\nend\nend",
+        "shared_consumer.m");
+    assert(consumer.isValid());
+    mparser::sdk::SystemContextOptions contextOptions;
+    contextOptions.rootDirectory = std::filesystem::current_path().generic_string();
+    contextOptions.capabilities = mparser::sdk::SystemCapability::DynamicEvaluation;
+    const auto context = mparser::sdk::SystemContext::rootedNative(contextOptions);
+    for (const auto backend : {mparser::sdk::Backend::Automatic,mparser::sdk::Backend::Bytecode,
+                               mparser::sdk::Backend::Portable,mparser::sdk::Backend::Native}) {
+        auto runtime = mparser::sdk::Runtime::create(context);
+        mparser::sdk::Invocation request;
+        request.backend = backend;
+        request.entryFunction = "make_object";
+        request.requestedOutputCount = 1;
+        const auto exported = runtime.execute(producer,request);
+        assert(exported.succeeded());
+        request = {};
+        request.backend = backend;
+        request.initialWorkspace = {{"foreign",exported.output(0)}};
+        const auto result = runtime.execute(consumer,request);
+        if (!result.succeeded()) {
+            for (const auto& diagnostic : result.diagnostics()) { std::cerr << diagnostic.message << '\n'; }
+        }
+        assert(result.succeeded());
+        const auto values = result.variables();
+        for (const auto& [name,expected] : std::vector<std::pair<std::string,double>>{
+                 {"direct",7},{"second",11},{"a",7},{"b",8},{"changed",9},{"lookup_after",9},
+                 {"overridden",17},{"empty_value",23},{"assigned",1},{"dot_assigned",1},{"dot_implicit",0},{"ans",0}}) {
+            assert(scalar(findVariable(values,name)->value) == expected);
+        }
+        auto deniedRequest = request;
+        deniedRequest.eventCapture = mparser::sdk::EventCaptureOptions{};
+        const auto denied = runtime.execute(Module::compile("bad=secret(foreign);","denied.m"),deniedRequest);
+        assert(!denied.succeeded());
+        assert(denied.diagnostics().front().message.find("access is denied") != std::string::npos);
+        assert(denied.diagnostics().front().source);
+        assert(denied.diagnostics().front().source->sourceName == "denied.m");
+        assert(denied.diagnostics().front().source->begin.offset == 4);
+        const auto deniedEvents = denied.executionEvents();
+        assert(deniedEvents.size() == 1 && deniedEvents.front().kind == mparser::sdk::ExecutionEventKind::Error);
+        assert(deniedEvents.front().source.sourceName == "denied.m");
+        const auto captured = runtime.execute(Module::compile(
+            "text=evalc('captured=read(foreign);'); later=read(foreign);","capture_owner.m"),request);
+        assert(captured.succeeded());
+        const auto capturedValues = captured.variables();
+        assert(scalar(findVariable(capturedValues,"captured")->value) == 9);
+        assert(scalar(findVariable(capturedValues,"later")->value) == 9);
+        const std::vector<mparser::sdk::SourceUnit> fallbackSources{
+            {"main.m","ordinary=ordinary_function(foreign);"},
+            {"ordinary_function.m","function y=ordinary_function(obj)\ny=42;\nend"}};
+        const auto fallback = runtime.execute(Module::compile(fallbackSources),request);
+        assert(fallback.succeeded());
+        const auto fallbackValues = fallback.variables();
+        assert(scalar(findVariable(fallbackValues,"ordinary")->value) == 42);
+    }
+}
+
+void runPrivateDestructorHandleSmoke() {
+    const std::string definitions = R"(
+classdef PrivateDeleteRecorder < handle
+properties
+Count=0
+end
+end
+classdef PrivateDeleteOwner < handle
+properties
+Recorder
+end
+methods
+function obj=PrivateDeleteOwner(recorder)
+obj.Recorder=recorder;
+end
+function value=makeDeleter(obj)
+value=@obj.delete;
+end
+function value=makeArrayDeleter(obj)
+array=[obj,obj]; value=@array.delete;
+end
+end
+methods (Access=private)
+function delete(obj)
+obj.Recorder.Count=obj.Recorder.Count+1;
+end
+end
+end
+)";
+    const auto module = Module::compile(
+        "recorder=PrivateDeleteRecorder(); obj=PrivateDeleteOwner(recorder); "
+        "deleter=obj.makeDeleter(); deleter(); alive=isvalid(obj); count=recorder.Count;" + definitions,
+        "private_delete_handle.m");
+    assert(module.isValid());
+    const auto result = module.execute();
+    if (!result.succeeded()) {
+        for (const auto& diagnostic : result.diagnostics()) { std::cerr << diagnostic.message << '\n'; }
+    }
+    assert(result.succeeded());
+    const auto values = result.variables();
+    assert(findVariable(values,"alive")->value.numericData<std::uint8_t>().front() == 0);
+    assert(scalar(findVariable(values,"count")->value) == 1);
+    const auto factory = Module::compile(
+        "function [obj,deleter,recorder]=make_private()\n"
+        "recorder=PrivateDeleteRecorder(); obj=PrivateDeleteOwner(recorder); deleter=obj.makeDeleter();\nend\n" +
+        definitions,"private_delete_factory.m");
+    assert(factory.isValid());
+    auto runtime = mparser::sdk::Runtime::create();
+    mparser::sdk::Invocation create;
+    create.entryFunction = "make_private";
+    create.requestedOutputCount = 3;
+    const auto exported = runtime.execute(factory,create);
+    assert(exported.succeeded());
+    mparser::sdk::Invocation invoke;
+    invoke.initialWorkspace = {{"obj",exported.output(0)},
+        {"deleter",exported.output(1)},{"recorder",exported.output(2)}};
+    for (const auto source : {"delete(obj);","obj.delete();","forged=@obj.delete;"}) {
+        const auto denied = runtime.execute(Module::compile(source,"private_delete_denied.m"),invoke);
+        assert(!denied.succeeded());
+        const auto message = denied.diagnostics().front().message;
+        assert(message.find("access is denied") != std::string::npos ||
+            (std::string_view(source) == "forged=@obj.delete;" &&
+             message == "bound method is not available: obj.delete"));
+    }
+    const auto authorised = runtime.execute(Module::compile(
+        "deleter(); deleter(); alive=isvalid(obj); count=recorder.Count;","private_delete_authorised.m"),invoke);
+    assert(authorised.succeeded());
+    const auto authorisedValues = authorised.variables();
+    assert(findVariable(authorisedValues,"alive")->value.numericData<std::uint8_t>().front() == 0);
+    assert(scalar(findVariable(authorisedValues,"count")->value) == 1);
+    const auto arrayModule = Module::compile(
+        "recorder=PrivateDeleteRecorder(); obj=PrivateDeleteOwner(recorder); "
+        "deleter=obj.makeArrayDeleter(); deleter(); alive=isvalid(obj); count=recorder.Count;" + definitions,
+        "private_delete_array.m");
+    assert(arrayModule.isValid());
+    const auto arrayResult = arrayModule.execute();
+    if (!arrayResult.succeeded()) {
+        for (const auto& diagnostic : arrayResult.diagnostics()) { std::cerr << diagnostic.message << '\n'; }
+    }
+    assert(arrayResult.succeeded());
+    const auto arrayValues = arrayResult.variables();
+    assert(findVariable(arrayValues,"alive")->value.numericData<std::uint8_t>().front() == 0);
+    assert(scalar(findVariable(arrayValues,"count")->value) == 1);
+}
+
+void runCrossInvocationDeletionSmoke() {
+    const auto producer = Module::compile(R"(
+function [obj,recorder,watcher]=make_object()
+recorder=DeleteRecorder();
+obj=DeleteChild(recorder);
+watcher=addlistener(obj,'ObjectBeingDestroyed',@(source,data)recorder.note(source,data));
+end
+function [obj,recorder,watcher]=make_with_callback(callback)
+recorder=DeleteRecorder();
+obj=DeleteChild(recorder);
+watcher=addlistener(obj,'ObjectBeingDestroyed',callback);
+end
+classdef DeleteRecorder < handle
+properties
+Deletes=0
+Events=0
+end
+methods
+function note(obj,source,data)
+obj.Events=obj.Events+1;
+end
+end
+end
+classdef DeleteBase < handle
+properties
+Recorder
+end
+methods
+function obj=DeleteBase(recorder)
+obj.Recorder=recorder;
+end
+function delete(obj)
+obj.Recorder.Deletes=obj.Recorder.Deletes+10;
+end
+end
+end
+classdef DeleteChild < DeleteBase
+methods
+function obj=DeleteChild(recorder)
+obj@DeleteBase(recorder);
+end
+function delete(obj)
+obj.Recorder.Deletes=obj.Recorder.Deletes+1;
+end
+end
+end
+)","delete_owner.m");
+    assert(producer.isValid());
+    for (const auto backend : {mparser::sdk::Backend::Automatic,mparser::sdk::Backend::Bytecode,
+                               mparser::sdk::Backend::Portable,mparser::sdk::Backend::Native}) {
+        auto runtime = mparser::sdk::Runtime::create();
+        for (const auto& call : {"delete(foreign);","foreign.delete();"}) {
+            mparser::sdk::Invocation create;
+            create.backend = backend;
+            create.entryFunction = "make_object";
+            create.requestedOutputCount = 3;
+            const auto exported = runtime.execute(producer,create);
+            assert(exported.succeeded());
+            mparser::sdk::Invocation request;
+            request.backend = backend;
+            request.initialWorkspace = {{"foreign",exported.output(0)},
+                {"recorder",exported.output(1)},{"watcher",exported.output(2)}};
+            const auto source = std::string(call) + " alive=isvalid(foreign); " + call +
+                " deletes=recorder.Deletes; events=recorder.Events; listener_alive=isvalid(watcher);";
+            const auto result = runtime.execute(Module::compile(source,"delete_consumer.m"),request);
+            assert(result.succeeded());
+            const auto values = result.variables();
+            assert(findVariable(values,"alive")->value.numericData<std::uint8_t>().front() == 0);
+            assert(scalar(findVariable(values,"deletes")->value) == 11);
+            assert(scalar(findVariable(values,"events")->value) == 1);
+            assert(findVariable(values,"listener_alive")->value.numericData<std::uint8_t>().front() == 0);
+        }
+    }
+    auto runtime = mparser::sdk::Runtime::create();
+    mparser::sdk::Invocation create;
+    create.entryFunction = "make_object";
+    create.requestedOutputCount = 3;
+    auto beforeReset = runtime.execute(producer,create);
+    assert(beforeReset.succeeded());
+    const auto stale = beforeReset.output(2);
+    runtime.reset();
+    beforeReset = {};
+    auto afterReset = runtime.execute(producer,create);
+    assert(afterReset.succeeded());
+    mparser::sdk::Invocation request;
+    request.initialWorkspace = {{"foreign",afterReset.output(0)},
+        {"recorder",afterReset.output(1)},{"stale",stale}};
+    afterReset = {};
+    const auto resetResult = runtime.execute(Module::compile(
+        "old_alive=isvalid(stale); delete(stale); delete(foreign); events=recorder.Events;",
+        "delete_after_reset.m"),request);
+    assert(resetResult.succeeded());
+    const auto resetValues = resetResult.variables();
+    assert(findVariable(resetValues,"old_alive")->value.numericData<std::uint8_t>().front() == 0);
+    assert(scalar(findVariable(resetValues,"events")->value) == 1);
+    const auto callbackModule = Module::compile(R"(
+function callback=make_callback()
+callback=@observe;
+end
+function observe(source,data)
+recorder=source.Recorder;
+recorder.Events=recorder.Events+1;
+end
+)","foreign_destroy_callback.m");
+    assert(callbackModule.isValid());
+    mparser::sdk::Invocation callbackRequest;
+    callbackRequest.entryFunction = "make_callback";
+    callbackRequest.requestedOutputCount = 1;
+    const auto callback = runtime.execute(callbackModule,callbackRequest);
+    assert(callback.succeeded());
+    create.entryFunction = "make_with_callback";
+    create.arguments = {callback.output(0)};
+    const auto observedObject = runtime.execute(producer,create);
+    assert(observedObject.succeeded());
+    request.initialWorkspace = {{"foreign",observedObject.output(0)},
+        {"recorder",observedObject.output(1)}};
+    const auto observedDelete = runtime.execute(Module::compile(
+        "delete(foreign); observed=recorder.Events;", "foreign_destroy_entry.m"),request);
+    if (!observedDelete.succeeded()) {
+        for (const auto& diagnostic : observedDelete.diagnostics()) { std::cerr << diagnostic.message << '\n'; }
+    }
+    assert(observedDelete.succeeded());
+    const auto observedValues = observedDelete.variables();
+    assert(scalar(findVariable(observedValues,"observed")->value) == 1);
+    const auto afterDestruction = runtime.execute(Module::compile(
+        "bad=foreign.Recorder;","after_destruction.m"),request);
+    assert(!afterDestruction.succeeded());
+    assert(afterDestruction.diagnostics().front().message.find("invalid or deleted object") != std::string::npos);
+}
+
+void runForeignEventPermissionSmoke() {
+    const auto producer = Module::compile(R"(
+function [obj,recorder]=make_source()
+recorder=EventCount();
+obj=OwnedEvents();
+addlistener(obj,'Secret',@(source,data)recorder.increment());
+addlistener(obj,'Public',@(source,data)recorder.increment());
+addlistener(obj,'Data',@(source,data)recorder.capture(data));
+addlistener(obj,'CallbackFailure',@(source,data)error('owner callback failure'));
+end
+classdef EventCount < handle
+properties
+Count=0
+Last=0
+end
+methods
+function increment(obj)
+obj.Count=obj.Count+1;
+end
+function capture(obj,data)
+obj.Count=obj.Count+1; obj.Last=data.Payload;
+end
+end
+end
+classdef OwnedEvents < handle
+events (NotifyAccess=private)
+Secret
+end
+events
+Public
+Data
+CallbackFailure
+end
+methods
+function fire(obj)
+notify(obj,'Secret');
+end
+end
+end
+classdef SpoofData < event.EventData
+end
+)","event_permission_owner.m");
+    assert(producer.isValid());
+    auto runtime = mparser::sdk::Runtime::create();
+    mparser::sdk::Invocation create;
+    create.entryFunction = "make_source";
+    create.requestedOutputCount = 2;
+    const auto exported = runtime.execute(producer,create);
+    assert(exported.succeeded());
+    mparser::sdk::Invocation invoke;
+    invoke.eventCapture = mparser::sdk::EventCaptureOptions{};
+    invoke.initialWorkspace = {{"foreign",exported.output(0)},{"recorder",exported.output(1)}};
+    for (const auto& command : {
+        "marker=1; notify(foreign,'Missing');",
+        "marker=1; notify(foreign,'Public',1);",
+        "marker=1; addlistener(foreign,'Missing',@(src,data)1);"}) {
+        const auto rejected = runtime.execute(Module::compile(command,"event_callsite.m"),invoke);
+        assert(!rejected.succeeded());
+        assert(rejected.diagnostics().size() == 1);
+        assert(rejected.diagnostics().front().source);
+        assert(rejected.diagnostics().front().source->sourceName == "event_callsite.m");
+        assert(rejected.diagnostics().front().source->begin.offset == 10);
+        const auto events = rejected.executionEvents();
+        assert(events.size() == 2 && events.back().kind == mparser::sdk::ExecutionEventKind::Error);
+        assert(events.back().source.sourceName == "event_callsite.m");
+        assert(events.back().source.begin.offset == 10);
+        assert(events.back().sourceContext == events.front().sourceContext);
+    }
+    const auto forged = Module::compile(
+        "notify(foreign,'Secret');\nclassdef OwnedEvents < handle\nevents\nSecret\nend\nend",
+        "event_permission_consumer.m");
+    assert(forged.isValid());
+    const auto denied = runtime.execute(forged,invoke);
+    assert(!denied.succeeded());
+    assert(denied.diagnostics().front().message.find("notify access is denied") != std::string::npos);
+    const auto permitted = runtime.execute(Module::compile(
+        "notify(foreign,'Public'); foreign.fire(); count=recorder.Count;", "event_permission_public.m"),invoke);
+    assert(permitted.succeeded());
+    const auto values = permitted.variables();
+    assert(scalar(findVariable(values,"count")->value) == 2);
+    const auto impostor = Module::compile(
+        "function data=make_data()\ndata=SpoofData();\nend\n"
+        "classdef SpoofData < handle\nproperties\nPayload=99\nend\nend", "impostor_data_owner.m");
+    assert(impostor.isValid());
+    mparser::sdk::Invocation makeData;
+    makeData.entryFunction = "make_data";
+    makeData.requestedOutputCount = 1;
+    const auto wrongData = runtime.execute(impostor,makeData);
+    assert(wrongData.succeeded());
+    invoke.initialWorkspace.push_back({"data",wrongData.output(0)});
+    const auto rejectedData = runtime.execute(Module::compile(
+        "notify(foreign,'Data',data);", "impostor_data_consumer.m"),invoke);
+    assert(!rejectedData.succeeded());
+    assert(rejectedData.diagnostics().front().message.find("must derive from event.EventData") != std::string::npos);
+    assert(rejectedData.diagnostics().front().source->sourceName == "impostor_data_consumer.m");
+    const auto dataOwner = Module::compile(
+        "function data=make_data()\ndata=GoodData();\nend\n"
+        "classdef GoodData < event.EventData\nproperties\nPayload=17\nend\nend", "good_data_owner.m");
+    assert(dataOwner.isValid());
+    const auto goodData = runtime.execute(dataOwner,makeData);
+    assert(goodData.succeeded());
+    invoke.initialWorkspace.back().value = goodData.output(0);
+    const auto acceptedData = runtime.execute(Module::compile(
+        "notify(foreign,'Data',data); count=recorder.Count; payload=recorder.Last;", "good_data_consumer.m"),invoke);
+    if (!acceptedData.succeeded()) {
+        for (const auto& diagnostic : acceptedData.diagnostics()) { std::cerr << diagnostic.message << '\n'; }
+    }
+    assert(acceptedData.succeeded());
+    const auto acceptedValues = acceptedData.variables();
+    assert(scalar(findVariable(acceptedValues,"count")->value) == 3);
+    assert(scalar(findVariable(acceptedValues,"payload")->value) == 17);
+    const auto callbackFailure = runtime.execute(Module::compile(
+        "notify(foreign,'CallbackFailure');","callback_consumer.m"),invoke);
+    assert(!callbackFailure.succeeded());
+    assert(callbackFailure.diagnostics().front().source->sourceName == "event_permission_owner.m");
+    const auto callbackEvents = callbackFailure.executionEvents();
+    assert(callbackEvents.size() == 1 && callbackEvents.front().kind == mparser::sdk::ExecutionEventKind::Error);
+    assert(callbackEvents.front().source.sourceName == "event_permission_owner.m");
+    const auto thirdOwner = Module::compile(
+        "function callback=make_callback()\ncallback=@fail_callback;\nend\n"
+        "function fail_callback(source,data)\nerror('third owner callback failure');\nend",
+        "third_callback_owner.m");
+    mparser::sdk::Invocation makeCallback;
+    makeCallback.entryFunction = "make_callback";
+    makeCallback.requestedOutputCount = 1;
+    const auto thirdCallback = runtime.execute(thirdOwner,makeCallback);
+    assert(thirdCallback.succeeded());
+    invoke.initialWorkspace.push_back({"callback",thirdCallback.output(0)});
+    const auto attached = runtime.execute(Module::compile(
+        "watcher=addlistener(foreign,'Public',callback);","third_callback_attach.m"),invoke);
+    assert(attached.succeeded());
+    for (const bool capture : {false,true}) {
+        auto request = invoke;
+        if (!capture) { request.eventCapture.reset(); }
+        const auto failed = runtime.execute(Module::compile(
+            "notify(foreign,'Public');","third_callback_consumer.m"),request);
+        assert(!failed.succeeded());
+        assert(failed.diagnostics().front().source->sourceName == "third_callback_owner.m");
+        const auto failedEvents = failed.executionEvents();
+        if (capture) {
+            assert(std::count_if(failedEvents.begin(),failedEvents.end(),[](const auto& event) {
+                return event.kind == mparser::sdk::ExecutionEventKind::Error;
+            }) == 1);
+            const auto error = std::find_if(failedEvents.begin(),failedEvents.end(),[](const auto& event) {
+                return event.kind == mparser::sdk::ExecutionEventKind::Error;
+            });
+            assert(error->source.sourceName == "third_callback_owner.m");
+            assert(error->disposition == mparser::sdk::ExecutionEventDisposition::Unhandled);
+        } else { assert(failedEvents.empty()); }
+        const auto caught = runtime.execute(Module::compile(
+            "try, notify(foreign,'Public'); catch err, "
+            "correct=strcmp(err.stack(1).file,'third_callback_owner.m'); end",
+            "third_callback_catch.m"),request);
+        assert(caught.succeeded());
+        const auto caughtValues = caught.variables();
+        assert(findVariable(caughtValues,"correct")->value.numericData<std::uint8_t>().front() == 1);
+        const auto events = caught.executionEvents();
+        if (capture) {
+            assert(std::count_if(events.begin(),events.end(),[](const auto& event) {
+                return event.kind == mparser::sdk::ExecutionEventKind::Error;
+            }) == 1);
+            const auto error = std::find_if(events.begin(),events.end(),[](const auto& event) {
+                return event.kind == mparser::sdk::ExecutionEventKind::Error;
+            });
+            assert(error != events.end() && error->source.sourceName == "third_callback_owner.m");
+            assert(error->disposition == mparser::sdk::ExecutionEventDisposition::Caught);
+        } else { assert(events.empty()); }
+    }
+}
+
+void runGraphicsListenerExportSmoke() {
+    const auto result = Module::compile(
+        "f=figure(); watcher=addlistener(f,'ObjectBeingDestroyed',@(src,data)1); same=(watcher.Source==f);",
+        "graphics_listener.m").execute();
+    assert(result.succeeded());
+    const auto values = result.variables();
+    assert(findVariable(values,"watcher"));
+    assert(findVariable(values,"same")->value.numericClass() == NumericClass::Logical);
+    assert(findVariable(values,"same")->value.numericData<std::uint8_t>().front() == 1);
+}
+
 void runDefinitionMetadataSmoke() {
     const std::vector<mparser::sdk::SourceGraphUnit> ownedSources{
         {"ExternalRange.m","classdef ExternalRange\nmethods\ny=read(obj)\nend\nend\n",{}},
@@ -1052,6 +1559,12 @@ int main(int argc, char** argv) {
     runInvalidAssignmentCompileSmoke();
     runDefinitionMetadataSmoke();
     runFunctionSyntaxMethodSmoke();
+    runPrivateDestructorHandleSmoke();
+    try { runForeignEventPermissionSmoke(); runGraphicsListenerExportSmoke(); }
+    catch (const std::exception& error) { std::cerr << "event export: " << error.what() << '\n'; return 1; }
+    try { runCrossInvocationDeletionSmoke(); }
+    catch (const std::exception& error) { std::cerr << "cross deletion: " << error.what() << '\n'; return 1; }
+    runCrossInvocationMethodSmoke();
     try {
         runIdentifierBuiltinSmoke();
     } catch (const std::exception& error) {

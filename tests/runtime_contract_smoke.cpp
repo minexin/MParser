@@ -2,6 +2,7 @@
 #include "mparser/runtime/core/session/runtime_call_frame.h"
 #include "mparser/execution/runtime_fallback.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
+#include "mparser/runtime/core/object_model/runtime_graphics.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_text.h"
@@ -345,10 +346,38 @@ end
                  static_cast<double>(invocationCount));
 }
 
+void runListenerWeakStorageContractSmoke() {
+    auto source = mparser::makeRuntimeObjectScalar("WeakContractSource",{},true);
+    auto reference = source;
+    reference.weakObjectFields = source.sharedFields;
+    reference.sharedFields.reset();
+    assert(!mparser::validateRuntimeValueContract(reference).valid);
+    auto listener = mparser::makeRuntimeObjectScalar("event.listener",{{"Source",reference}},true);
+    assertValid(listener);
+    (*listener.sharedFields)["Other"] = reference;
+    assert(!mparser::validateRuntimeValueContract(listener).valid);
+    listener.sharedFields->erase("Other");
+    source = {};
+    assertValid(listener);
+    (*listener.sharedFields)["Source"].handleObject = false;
+    assert(!mparser::validateRuntimeValueContract(listener).valid);
+    auto graph = std::make_shared<mparser::RuntimeGraphicsGraph>();
+    auto figure = mparser::makeRuntimeGraphicsValue(mparser::RuntimeGraphicsHandle(
+        graph,graph->create(mparser::RuntimeGraphicsKind::Figure)));
+    auto weakFigure = figure;
+    weakFigure.weakObjectFields = figure.sharedFields;
+    weakFigure.sharedFields.reset();
+    auto graphicsListener = mparser::makeRuntimeObjectScalar("event.listener",{{"Source",weakFigure}},true);
+    assertValid(graphicsListener);
+    figure = {};
+    assertValid(graphicsListener);
+}
+
 } // namespace
 
 int main() {
     runDynamicMetadataContractSmoke();
+    runListenerWeakStorageContractSmoke();
     runValueFactoryContractSmoke();
     runCopyAndIdentityContractSmoke();
     runInvalidValueContractSmoke();
