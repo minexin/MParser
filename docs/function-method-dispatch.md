@@ -139,7 +139,7 @@ The follow-up includes these reviewed regressions and changes:
   private destructor handle created legally inside its class. The validated
   capability now reaches the complete lifecycle route, including object arrays
   (array red: `build/private-delete-array-red-test.log`). Direct external name,
-  dot and forged-handle requests still reject; an exported authorised handle
+  dot and externally created-handle requests still reject; an exported authorised handle
   invalidates the object exactly once even with repeated elements/calls.
 - `build/foreign-destruction-scope-red-test.log` reproduces an invalid-object
   error while a foreign callback reads the source during destruction. A shared
@@ -227,10 +227,19 @@ The follow-up includes these reviewed regressions and changes:
 
 Remaining acceptance gates are not hidden by those green tests:
 
-- The private-destructor R2024b fixture under
-  `tools/reference/private-delete` was not executed: automatic approval review
-  failed due its usage limit before MATLAB started. Native positive/negative
-  results are not an R2024b compatibility claim for that fixture.
+- The private-destructor fixture was subsequently executed with MATLAB
+  `24.2.0.2712019 (R2024b)`. Its initial assertion was wrong: direct function/dot
+  calls were rejected, but creating `@obj.delete` outside the class succeeded.
+  The class-created handle deleted the object once. Raw result:
+  `build/private-delete-matlab-r2024b-diagnostic.log`; the run exited nonzero at
+  the incorrect handle-creation assertion. MParser still rejects that external
+  handle creation, a confirmed compatibility difference, not a security proof.
+  The independent-object invocation probe subsequently ran successfully after
+  authorization/approval access was restored. In
+  `build/private-delete-matlab-r2024b-observed.log`, external invocation rejects,
+  leaves the object valid and records zero destructor calls. The class-created
+  cleanup handle deletes it once. Invocation refusal therefore agrees with the
+  measured R2024b behavior, but MParser still rejects handle creation too early.
 
 - GitHub CI for this follow-up must be checked against its actual commit;
   passing local tests does not establish remote CI or a published release.

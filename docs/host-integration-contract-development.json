@@ -33,7 +33,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "51e64cb7f91b7577e93a2c2db6bd6b96c4e3fc8979ff4cc75640b0c1a2f87455"
+      "sha256_lf": "992b59b1629e19a293cc508470587ac68967d601a2bbecdf34a021e16125e377"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -97,7 +97,7 @@
     },
     {
       "path": "docs/ordered-display-events.md",
-      "sha256_lf": "72451e2d39268822727194e0360e335adba1ac0fe738dd73be00c06a2cb69eb2"
+      "sha256_lf": "96b2c92cff3691a1343bfd31c6823c108e5e5227f1b905f8e608fa548b11846a"
     },
     {
       "path": "docs/ordered-display-api-design.md",
@@ -105,7 +105,11 @@
     },
     {
       "path": "docs/function-method-dispatch.md",
-      "sha256_lf": "3f8b903578d8baa7a73086281e2a9ac79f06b013e59bcae9987e895a59da37a2"
+      "sha256_lf": "2d4556ccac1831b74f2eef6a63aabe0d44391ec562699bda9524046e666d196e"
+    },
+    {
+      "path": "docs/host-browser-acceptance.md",
+      "sha256_lf": "518400c36a6d276c494738307f12c30308ea6e7bf5f9a1e1ce2dbd69e4f2a051"
     }
   ]
 }

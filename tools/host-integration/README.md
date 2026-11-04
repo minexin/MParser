@@ -93,6 +93,19 @@ directory, applies the five patches in order, and runs the existing suite plus
 Text, clipping/grid and Legend tests. Git's whitespace-only matching handles
 Windows CRLF/LF differences; any substantive source mismatch fails the run.
 
+## Runtime Version Display
+
+The source-copy runners also apply `mexecclient-runtime-identity-candidate.patch`.
+It removes the initial hard-coded V1.14 banner and displays the runtime product
+version returned by `/info`; the milestone is shown separately. It does not
+change the kernel version or infer it from SDK/graphics schema versions.
+`test-client-runtime-identity.cjs <client-source-copy>` runs the actual app
+bootstrap with development, legacy, missing-version and literal-text controls.
+The corrected banner/status also passed a later real Chrome check. See
+`docs/host-browser-acceptance.md` for the bounded desktop lifecycle/Clipping
+evidence, the confirmed narrow-screen cropping and remaining browser gates.
+Production sibling sources remain unchanged.
+
 ## Definition Directory Candidate
 
 Apply the graphics/SDK-selection patch first, then

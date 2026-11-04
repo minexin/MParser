@@ -238,10 +238,114 @@ void cApi() {
         "undersized capture configuration is rejected before execution");
     mparser_module_release(module);
 }
+
+void retainedListenerPrivacy() {
+    const auto producer = Module::compile(R"(function [source,watcher,propertyWatcher]=make_signal()
+source=SecureSignal();
+watcher=source.watch();
+propertyWatcher=source.watchProperty();
+end
+classdef SecureSignal < handle
+properties (SetObservable)
+Count=0
+end
+properties
+PropertyEvents=0
+end
+properties (Access=private)
+InternalSecret=91234567
+end
+events
+Changed
+end
+methods
+function watcher=watch(obj)
+capturedSecret=obj.InternalSecret;
+watcher=addlistener(obj,'Changed',@(src,data)src.record(capturedSecret));
+end
+function watcher=watchProperty(obj)
+capturedSecret=obj.InternalSecret;
+watcher=addlistener(obj,'Count','PostSet',@(meta,data)data.AffectedObject.recordProperty(capturedSecret));
+end
+function recordProperty(obj,token)
+if token==obj.InternalSecret
+obj.PropertyEvents=obj.PropertyEvents+1;
+end
+end
+function record(obj,token)
+if token==obj.InternalSecret
+obj.Count=obj.Count+1;
+end
+end
+function fire(obj)
+notify(obj,'Changed');
+end
+end
+end
+)","listener_owner.m");
+    require(producer.isValid(),"listener privacy factory compiles");
+    for (const auto backend : {Backend::Bytecode,Backend::Portable,Backend::Native,Backend::Automatic}) {
+        std::vector<ExecutionEvent> events;
+        std::string frozen;
+        // Release exported live values before checking the owning event copies.
+        {
+            auto runtime = Runtime::create();
+            Invocation create; create.backend = backend;
+            create.entryFunction = "make_signal"; create.requestedOutputCount = 3;
+            const auto exported = runtime.execute(producer,create);
+            require(exported.succeeded(),"listener privacy factory executes");
+            Invocation request; request.backend = backend; request.eventCapture = EventCaptureOptions{};
+            request.initialWorkspace = {{"source",exported.output(0)},{"watcher",exported.output(1)},
+                {"propertyWatcher",exported.output(2)}};
+            const auto consumer = Module::compile(
+                "mirror=watcher; origin=watcher.Source; callback=watcher.Callback; "
+                "propertyMirror=propertyWatcher; propertyOrigin=propertyWatcher.Object{1}; "
+                "wrapped={mirror,callback,origin,propertyMirror,propertyOrigin}; fire(source); "
+                "total=source.Count; propertyTotal=source.PropertyEvents;","listener_consumer.m");
+            const auto result = runtime.execute(consumer,request);
+            require(result.succeeded() && scalar(variable(result,"total")) == 1,
+                "retained listener fires through original owner with capture enabled");
+            require(scalar(variable(result,"propertyTotal")) == 1,
+                "retained property listener observes original owner mutation");
+            events = result.executionEvents();
+            require(!labelled(events,"mirror").valueSnapshotJson.empty() &&
+                !labelled(events,"propertyMirror").valueSnapshotJson.empty() &&
+                !labelled(events,"wrapped").valueSnapshotJson.empty(),"listener snapshots are available");
+            for (const auto& event : events) {
+                for (const auto* data : {&event.valueSnapshotJson,&event.text}) {
+                    require(data->find("InternalSecret") == std::string::npos &&
+                        data->find("capturedSecret") == std::string::npos &&
+                        data->find("91234567") == std::string::npos &&
+                        data->find("4195c0841c000000") == std::string::npos,
+                        "listener automatic inspection protects private fields and callback captures");
+                }
+            }
+            const auto callbackWrite = std::find_if(events.begin(),events.end(),[](const auto& event) {
+                return event.label == "obj";
+            });
+            const auto totalWrite = std::find_if(events.begin(),events.end(),[](const auto& event) {
+                return event.label == "total";
+            });
+            require(callbackWrite != events.end() && callbackWrite < totalWrite &&
+                callbackWrite->source.sourceName == "listener_owner.m" &&
+                callbackWrite->sourceContext != totalWrite->sourceContext,
+                "callback write retains original owner provenance and execution order");
+            frozen = labelled(events,"mirror").valueSnapshotJson;
+            const auto again = runtime.execute(Module::compile(
+                "fire(source); total=source.Count; propertyTotal=source.PropertyEvents;","listener_again.m"),request);
+            require(again.succeeded() && scalar(variable(again,"total")) == 2 &&
+                scalar(variable(again,"propertyTotal")) == 2,
+                "reading listener history does not mutate callback state");
+        }
+        require(labelled(events,"mirror").valueSnapshotJson == frozen &&
+            Json::parse(frozen).at("schema") == "mparser.value-snapshot",
+            "listener history owns frozen data independently of live runtime");
+    }
+}
 }
 int main() {
     try {
         for (const auto backend : {Backend::Bytecode,Backend::Portable,Backend::Native,Backend::Automatic}) { check(backend); }
-        semanticCapture(); privacy(); ownership(); cApi(); std::cout << "ordered read-only C/C++ event collection passed\n"; return 0;
+        semanticCapture(); privacy(); ownership(); retainedListenerPrivacy(); cApi(); std::cout << "ordered read-only C/C++ event collection passed\n"; return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

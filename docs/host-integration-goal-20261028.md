@@ -21,12 +21,12 @@ success may substitute for missing kernel contracts.
 | --- | --- | --- | --- |
 | H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated host compile-only/execute diagnostic propagation verified, including preservation with clear_workspace=true; deployed host unchanged |
 | H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins, 90-case R2024b source-context corpus and isolated revision-checked rename passed; deployed rename UI/API adoption pending |
-| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership and isolated single/multi-source REST checked; same-module function-form method follow-up has R2024b and SDK evidence in function-method-dispatch.md; deployed navigation and stale-document UI acceptance pending |
+| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership and isolated single/multi-source REST checked; cross-command method/listener ownership passed SDK and clean host replay; private bound-handle creation has a confirmed R2024b difference; deployed navigation and stale-document UI acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
-| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Focused kernel and REST matrix/annotation/close probes passed; client v2 rendering and full downstream acceptance pending |
+| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Kernel/REST and real desktop matrix/annotation/close/recreate/switch/zoom cases passed; narrow-screen cropping is confirmed and full downstream acceptance remains open; see host-browser-acceptance.md |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 355/355 and clean installed-SDK host build/REST/67 regressions passed; final documentation/package rerun, GitHub CI, browser, deployment and release acceptance pending |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 355/355, final package 6/6 and clean installed-SDK host build/REST/67 regressions passed; desktop visual/PNG smoke is bounded, not full browser acceptance; GitHub state and CI require actual-commit remote evidence; deployment and release acceptance remain open |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only result collection and ON-mode source-only host replay passed; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see ordered-display-events.md |
 
@@ -78,6 +78,50 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-04 authorization resumed: GitHub main was read successfully at
+  `1e55e7b`, with its Cross-platform and Documentation CI both successful.
+  The expanded R2024b private-destructor reference also ran: external bound-handle
+  creation is accepted, invocation is rejected, the object remains valid and
+  its destructor count remains zero until the class-created cleanup is called.
+  This resolves the missing reference evidence, not MParser's known earlier
+  handle-creation rejection. The final main synchronization and CI must still
+  be checked against their actual pushed commit, not that older green baseline.
+- 2026-11-04 corrected browser follow-up: the six-candidate source-only host
+  displayed product 1.15.0 and development milestone separately. Real Chrome
+  checks passed close/empty canvas, disabled controls, old-handle invalidation,
+  recreation, second-Figure selection/switch and zoom/reset. A 1280 x 800 plot
+  remained visible; 390 x 844 exposed horizontal cropping, not mobile acceptance.
+  Per-Line Clipping was verified visually and through exported PNG pixels (420
+  red off-clipping pixels outside the axes, zero blue on-clipping pixels there).
+  Malformed command compilation displayed a real error while preserving an
+  existing workspace value and Figure. Evidence:
+  `build/browser-acceptance/ea1e3027-3435-4b3d-b7a1-158b0c864f19`. The host was
+  stopped; no deployment, source-navigation or property-writeback claim follows.
+- 2026-11-04 bounded browser follow-up: real Chrome rendered matrix columns,
+  title/axis labels, grids and ordered legend entries, and produced a verified
+  1080 x 377 current-view PNG. Browser control then failed; close/recreation,
+  responsive checks and full browser acceptance remain open. The page also
+  exposed a stale V1.14 banner and milestone-as-version status label. A sixth
+  client candidate now consumes the existing runtime.version field and keeps
+  the milestone separate. Its source-copy tests passed, followed by clean
+  source-only host build/REST/client probes and 67/67 regressions at
+  `build/clean-host-probe/dce947552b47427ab10b1da1c78f0256`. Kernel/package
+  tests passed 355/355 at `build/host-browser-final-test.log`. Original sibling
+  sources and deployment are unchanged; see host-browser-acceptance.md.
+- 2026-11-04 current follow-up: main commit `b377267` contains cross-command
+  method/event ownership, listener lifecycle and reviewed privacy/lifetime
+  corrections. Kernel/package regression passed 355/355, final package checks
+  6/6, and fresh source-only host stage
+  `build/clean-host-probe/5881f098e00348d49173395e8711a484` passed 148 build
+  actions, REST probes and 67 host tests. The subsequent retained event/property
+  listener public-event tests pass SDK four-backend and real REST checks without
+  exposing private storage/captures. A later R2024b run disproved the fixture's
+  assumption that external private bound-handle creation must reject; MParser's
+  stricter behavior is recorded as a compatibility difference. Its invocation
+  probe remains unexecuted after approval-review quota failure. GitHub push
+  failed with TLS/EOF and current remote CI is unverified. These later evidence,
+  test and documentation changes are not yet committed; do not treat local
+  acceptance as synchronized GitHub or release acceptance.
 - 2026-10-28: Read current host records and public SDK. Confirmed definition
   ranges are absent from SourceMetadata. Found existing DynamicProperty export
   coverage in `tests/cpp_api_smoke.cpp::runDynamicPropertyExportSmoke`; host

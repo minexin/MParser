@@ -92,3 +92,25 @@ ON executables and DLLs were retained in `on-binaries` before rebuilding;
 the stage's main build directory now contains the OFF binary. The ON host
 regression passed 67/67 in `build/ordered-events-host-ctest.log`.
 Final GitHub CI and deployment remain to be checked.
+
+### Retained Listener Follow-Up
+
+The cross-command listener integration has a dedicated public-event regression:
+`tests/ordered_events_api_smoke.cpp` covers four requested backends, and
+`tools/host-integration/test-ordered-events.cjs` replays the installed SDK through
+the isolated host. The source is created with recording disabled. A later
+command inspects the listener, source, callback and nested container, then fires
+the callback. Both event-listener `Source` and property-listener `Object{1}`
+paths are covered; the retained PostSet callback also runs on each mutation.
+Automatic text and snapshot JSON exclude private storage and
+captured variable names/values, including the secret's encoded numeric bits.
+The actual callback write precedes the consuming command's result and retains
+its owner's source file/context. Reading history leaves the next callback
+functional; earlier snapshots remain frozen after later mutation and exported
+live-value release.
+
+The expanded SDK test passed in `build/listener-property-public-events-test.log`;
+installed-SDK REST evidence is `build/listener-property-public-events-rest` against
+the source-only host stage `build/clean-host-probe/5881f098e00348d49173395e8711a484`.
+This extends local result-collection acceptance, not live streaming, browser
+rendering or production deployment. Explicit user output is still not redacted.

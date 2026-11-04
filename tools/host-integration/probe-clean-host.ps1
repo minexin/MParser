@@ -42,7 +42,8 @@ foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-met
     if ($LASTEXITCODE) { throw "Host patch failed: $patch; see $stage" }
 }
 foreach ($patch in @('mexecclient-text-labels-candidate.patch','mexecclient-line-clipping-candidate.patch',
-    'mexecclient-grid-candidate.patch','mexecclient-legend-candidate.patch','mexecclient-color-candidate.patch')) {
+    'mexecclient-grid-candidate.patch','mexecclient-legend-candidate.patch','mexecclient-color-candidate.patch',
+    'mexecclient-runtime-identity-candidate.patch')) {
     git -C $clientSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Client patch failed: $patch; see $stage" }
 }
@@ -71,7 +72,8 @@ if ($LASTEXITCODE) { throw "Multi-source definition probe failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
     -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -GraphicsColors -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')
-foreach ($test in @('test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs','test-client-colors.cjs')) {
+foreach ($test in @('test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs','test-client-colors.cjs',
+    'test-client-runtime-identity.cjs')) {
     node (Join-Path $PSScriptRoot $test) $clientSource
     if ($LASTEXITCODE) { throw "Client candidate failed: $test; see $stage" }
 }

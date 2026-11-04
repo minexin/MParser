@@ -100,6 +100,62 @@ async function main() {
         const event=collection(range).events[0];
         assert.equal(event.source.begin.offset,String(Buffer.byteLength(source.slice(0,source.indexOf('x=1')))));
         assert.equal(event.source.begin.line,2); assert.equal(event.source.begin.column,1);
+        await request(`${base}/files`,'PUT',{path:'SecureSignal.m',content:[
+            'classdef SecureSignal < handle',
+            'properties (SetObservable)', 'Count=0', 'end',
+            'properties', 'PropertyEvents=0', 'end',
+            'properties (Access=private)', 'InternalSecret=91234567', 'end',
+            'events', 'Changed', 'end', 'methods',
+            'function watcher=watch(obj)', 'capturedSecret=obj.InternalSecret;',
+            "watcher=addlistener(obj,'Changed',@(src,data)src.record(capturedSecret));", 'end',
+            'function watcher=watchProperty(obj)', 'capturedSecret=obj.InternalSecret;',
+            "watcher=addlistener(obj,'Count','PostSet',@(meta,data)data.AffectedObject.recordProperty(capturedSecret));", 'end',
+            'function recordProperty(obj,token)', 'if token==obj.InternalSecret',
+            'obj.PropertyEvents=obj.PropertyEvents+1;', 'end', 'end',
+            'function record(obj,token)', 'if token==obj.InternalSecret',
+            'obj.Count=obj.Count+1;', 'end', 'end',
+            'function fire(obj)', "notify(obj,'Changed');", 'end', 'end', 'end',
+        ].join('\n')});
+        await request(`${base}/files`,'PUT',{path:'create_signal.m',
+            content:'signal=SecureSignal(); watcher=signal.watch(); propertyWatcher=signal.watchProperty();'});
+        const created=await request(`${base}/execute`,'POST',{
+            source_path:'create_signal.m',include_workspace_values:true});
+        assert.equal(created.status,'succeeded',JSON.stringify(created.diagnostics));
+        assert.equal(created.execution_events,undefined,'default capture remains disabled for listener creation');
+        const inspected=await execute(
+            'mirror=watcher; origin=watcher.Source; callback=watcher.Callback; '+
+            'propertyMirror=propertyWatcher; propertyOrigin=propertyWatcher.Object{1}; '+
+            'wrapped={mirror,callback,origin,propertyMirror,propertyOrigin}; '+
+            'fire(signal); total=signal.Count; propertyTotal=signal.PropertyEvents;',
+            {include_execution_events:true});
+        assert.equal(inspected.status,'succeeded',JSON.stringify(inspected.diagnostics));
+        assert.equal(value(inspected,'total').data[0],1);
+        assert.equal(value(inspected,'propertyTotal').data[0],1);
+        const history=collection(inspected);
+        for(const label of ['mirror','origin','callback','wrapped','propertyMirror','propertyOrigin']) {
+            const displayed=history.events.find(item=>item.label===label);
+            assert.ok(displayed?.snapshot,label);
+            assert.equal(displayed.value_unavailable,null,label);
+        }
+        for(const displayed of history.events) {
+            const automatic=JSON.stringify({snapshot:displayed.snapshot,text:displayed.text});
+            const secretBits=Buffer.alloc(8); secretBits.writeDoubleBE(91234567);
+            for(const forbidden of ['InternalSecret','capturedSecret','91234567',secretBits.toString('hex')])
+                assert.equal(automatic.includes(forbidden),false,`${displayed.label}: ${forbidden}`);
+        }
+        const callbackWrite=history.events.findIndex(item=>item.kind==='assignment'&&item.label==='obj');
+        const totalWrite=history.events.findIndex(item=>item.label==='total');
+        assert.ok(callbackWrite>=0&&callbackWrite<totalWrite,'callback assignment precedes consuming command result');
+        assert.equal(path.basename(history.events[callbackWrite].source.name),'SecureSignal.m');
+        assert.notEqual(history.events[callbackWrite].source_context,history.events[totalWrite].source_context);
+        const again=await execute('fire(signal); total=signal.Count; propertyTotal=signal.PropertyEvents;',
+            {include_execution_events:true});
+        assert.equal(again.status,'succeeded',JSON.stringify(again.diagnostics));
+        assert.equal(value(again,'total').data[0],2);
+        assert.equal(value(again,'propertyTotal').data[0],2);
+        const frozenTotal=history.events.find(item=>item.label==='total').snapshot.nodes[0].numeric.real_bits[0];
+        const bits=Buffer.from(frozenTotal,'hex');
+        assert.equal(bits.readDoubleBE(),1,'history preserves the original callback result');
         const current=(await request(`${base}/workspace`)).revision;
         for(const extra of [{include_execution_events:1},{include_execution_events:true,max_execution_events:-1},
             {include_execution_events:true,max_execution_events:1.5},{include_execution_events:true,max_execution_events:4097},
@@ -110,7 +166,7 @@ async function main() {
         assert.equal((await request(`${base}/workspace`)).revision,current,'invalid options execute no source');
         const stateless=await request('/execute','POST',{source:'stateless=7',include_execution_events:true});
         assert.equal(collection(stateless).events[0].label,'stateless');
-        console.log('PASS original six display cases, actual order/value history, suppression, errors, evalc, UTF-8 and bounded opt-in REST');
+        console.log('PASS display history, retained-listener privacy/order, suppression, errors, evalc, UTF-8 and bounded opt-in REST');
     }
     const dll=path.join(path.dirname(path.resolve(executable)),'mparser_c.dll');
     fs.writeFileSync(path.join(root,'summary.json'),JSON.stringify({mode,executable:path.resolve(executable),

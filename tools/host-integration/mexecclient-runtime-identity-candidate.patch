@@ -1,0 +1,28 @@
+diff --git a/web/index.html b/web/index.html
+--- a/web/index.html
++++ b/web/index.html
+@@ -10,7 +10,7 @@
+ <body>
+   <header id="topbar">
+     <div class="brand">MExec Studio</div>
+-    <span class="edition">MParser V1.14 · 科学计算工作台</span>
++    <span class="edition">MParser · 科学计算工作台</span>
+     <span id="server-status" class="status-badge">连接中…</span>
+   </header>
+ 
+diff --git a/web/js/app.js b/web/js/app.js
+--- a/web/js/app.js
++++ b/web/js/app.js
+@@ -1013,8 +1013,11 @@
+       setStatus(`已连接 ${health.version || ''}`, 'ok');
+       const runtime = health.runtime || {};
+       const runtimeText = document.querySelector('#status-runtime');
++      const edition = document.querySelector('.edition');
++      if (edition) edition.textContent = `MParser ${runtime.version || '?'} · 科学计算工作台`;
++      const milestone = (health.kernel_integration || {}).milestone;
+       if (runtimeText) {
+-        runtimeText.textContent = `MExecServer ${health.version || '?'} · MParser ${(health.kernel_integration || {}).milestone || runtime.version || '?'}`;
++        runtimeText.textContent = `MExecServer ${health.version || '?'} · MParser ${runtime.version || '?'}${milestone ? ' · ' + milestone : ''}`;
+       }
+       try {
+         await restoreSession();

@@ -3396,6 +3396,7 @@ install(FILES
     docs/ordered-display-events.md
     docs/source-graph-ownership-design.md
     docs/function-method-dispatch.md
+    docs/host-browser-acceptance.md
     docs/ordered-display-api-design.md
     docs/host-integration-contract-development.json
     docs/performance-baseline-v1.schema.json
