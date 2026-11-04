@@ -618,6 +618,69 @@ end
 }
 
 void runDefinitionMetadataSmoke() {
+    const std::vector<mparser::sdk::SourceGraphUnit> ownedSources{
+        {"ExternalRange.m","classdef ExternalRange\nmethods\ny=read(obj)\nend\nend\n",{}},
+        {"read.m","function y=read(obj)\ny=helper();\nfunction z=helper()\nz=7;\nend\nend\n","ExternalRange"},
+        {"main.m","obj=ExternalRange(); answer=obj.read();",{}}
+    };
+    auto owned = Module::compile(ownedSources);
+    assert(owned.isValid());
+    const auto ownedDefinitions = owned.definitions();
+    assert(ownedDefinitions.size() == 3);
+    assert(ownedDefinitions[0].declarationOnly);
+    assert(!ownedDefinitions[1].declarationOnly);
+    assert(ownedDefinitions[1].kind == mparser::sdk::DefinitionKind::Method);
+    assert(ownedDefinitions[1].className == "ExternalRange");
+    assert(ownedDefinitions[1].sourceIndex == 1);
+    assert(ownedDefinitions[2].parentFunction == 1);
+    const auto execution = owned.execute();
+    if (!execution.succeeded()) {
+        for (const auto& diagnostic : execution.diagnostics()) { std::cerr << diagnostic.message << '\n'; }
+    }
+    assert(execution.succeeded());
+    assert(scalar(findVariable(execution.variables(),"answer")->value) == 7);
+    owned = Module{};
+    assert(ownedDefinitions[1].source.sourceName == "read.m");
+
+    mparser_source_graph_unit descriptor = MPARSER_SOURCE_GRAPH_UNIT_INIT;
+    const mparser_source_graph_unit* descriptors[] = {&descriptor};
+    mparser_module* rejected = nullptr;
+    assert(mparser_module_compile_source_graph(nullptr,1,&rejected) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(!rejected);
+    descriptor.struct_size = MPARSER_SOURCE_GRAPH_UNIT_SIZE - 1;
+    assert(mparser_module_compile_source_graph(descriptors,1,&rejected) == MPARSER_API_STATUS_ABI_MISMATCH);
+    descriptor.struct_size = MPARSER_SOURCE_GRAPH_UNIT_SIZE;
+    descriptor.class_method_owner = {nullptr,1};
+    assert(mparser_module_compile_source_graph(descriptors,1,&rejected) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(!rejected);
+
+    descriptor = mparser_source_graph_unit MPARSER_SOURCE_GRAPH_UNIT_INIT;
+    const std::string plain = "answer=3;";
+    descriptor.source_name = {"plain.m",7};
+    descriptor.source = {plain.data(),plain.size()};
+    assert(mparser_module_compile_source_graph(descriptors,0,&rejected) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    assert(mparser_module_compile_source_graph(descriptors,1,nullptr) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    const mparser_source_graph_unit* nullUnit[] = {nullptr};
+    assert(mparser_module_compile_source_graph(nullUnit,1,&rejected) == MPARSER_API_STATUS_INVALID_ARGUMENT);
+    descriptor.abi_generation = MPARSER_C_ABI_GENERATION + 1;
+    assert(mparser_module_compile_source_graph(descriptors,1,&rejected) == MPARSER_API_STATUS_ABI_MISMATCH);
+    descriptor.abi_generation = MPARSER_C_ABI_GENERATION;
+    struct ExtendedGraphUnit { mparser_source_graph_unit base; std::uint64_t future; } extended{descriptor,0};
+    extended.base.struct_size = sizeof(extended);
+    const mparser_source_graph_unit* futureUnits[] = {&extended.base};
+    assert(mparser_module_compile_source_graph(futureUnits,1,&rejected) == MPARSER_API_STATUS_OK);
+    assert(rejected);
+    mparser_module_release(rejected);
+    rejected = nullptr;
+    for (const auto& owner : {std::string("MissingOwner"),std::string("ExternalRange")}) {
+        auto invalid = ownedSources;
+        invalid[1].classMethodOwner = owner;
+        if (owner == "ExternalRange") invalid[1].name = "mismatch.m";
+        const auto rejectedGraph = Module::compile(invalid);
+        assert(!rejectedGraph.isValid());
+        assert(!rejectedGraph.diagnostics().empty());
+    }
+
     const std::vector<mparser::sdk::SourceUnit> graphSources{
         {"first.m", "% \xc3\xa9\r\nfunction y=first(x)\r\ny=helper(x);\r\nfunction z=helper(x)\r\nz=x;\r\nend\r\nend\r\n"},
         {"second.m", "function y=second(x)\ny=helper(x);\nfunction z=helper(x)\nz=x+1;\nend\nend\n"}
@@ -843,7 +906,7 @@ int main(int argc, char** argv) {
     static_assert(sourceApiVersion.major == 1);
     static_assert(sourceApiVersion.minor == 15);
     assert(mparser::sdk::abiGeneration() == 2);
-    assert(mparser::sdk::abiRevision() == 9);
+    assert(mparser::sdk::abiRevision() == 10);
     runValueSmoke();
     runHostOutputSmoke();
     runMetadataExportSmoke();

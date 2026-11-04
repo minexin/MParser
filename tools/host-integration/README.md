@@ -98,7 +98,7 @@ Windows CRLF/LF differences; any substantive source mismatch fails the run.
 Apply the graphics/SDK-selection patch first, then
 mexecserver-definition-metadata.patch with --unidiff-zero and
 --ignore-space-change to the separate host checkout. Configure with
-MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.9).
+MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.10).
 
 The clean-host probe also applies `mexecserver-ordered-events.patch` and enables
 `MEXEC_ORDERED_EVENTS`. This candidate requires ABI revision 9 and defaults OFF
@@ -112,6 +112,10 @@ probes, and its remaining checks were completed separately on the same binary.
 
 The eighth server candidate, `mexecserver-definition-sources.patch`, adds the
 explicit `sources` request form to `/compile` under MEXEC_DEFINITION_METADATA.
+It now requires ABI 2.10 and accepts optional explicit `class_method_owner`
+per unit; names alone do not confer ownership. The expanded external-method
+case and 67 host regressions passed in the clean ABI 2.10 build at
+`build/clean-host-probe/3e274527adcc4cb29f4a6d0ac7bb8218`.
 The clean-host probe runs `test-definition-sources.cjs` after the ordered-events
 probe. Eight-patch build/REST/67-test acceptance passed at
 `build/clean-host-probe/bc0e56b4c35e484d851b69ef48e1056a` using PowerShell 7.

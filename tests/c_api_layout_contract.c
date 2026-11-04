@@ -21,7 +21,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");
-_Static_assert(MPARSER_C_ABI_REVISION == 9u,
+_Static_assert(MPARSER_C_ABI_REVISION == 10u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
                "allocation status changed");
@@ -98,6 +98,14 @@ REQUIRE_OFFSET(mparser_system_context_options, random_seed, 80);
 REQUIRE_OFFSET(mparser_system_context_options, maximum_open_files, 88);
 REQUIRE_OFFSET(
     mparser_system_context_options, maximum_file_read_bytes, 96);
+
+_Static_assert(sizeof(mparser_source_graph_unit) == 56,
+               "source graph unit size changed");
+REQUIRE_OFFSET(mparser_source_graph_unit, struct_size, 0);
+REQUIRE_OFFSET(mparser_source_graph_unit, abi_generation, 4);
+REQUIRE_OFFSET(mparser_source_graph_unit, source_name, 8);
+REQUIRE_OFFSET(mparser_source_graph_unit, source, 24);
+REQUIRE_OFFSET(mparser_source_graph_unit, class_method_owner, 40);
 
 _Static_assert(sizeof(mparser_named_value) == 24,
                "mparser_named_value size changed");

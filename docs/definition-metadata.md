@@ -1,7 +1,7 @@
 # Definition Metadata
 
 Development API introduced in ABI generation 2 revision 6 and retained in the
-unpublished revision 9 SDK. Retrieve the
+unpublished revision 10 SDK. Retrieve the
 syntax definition directory with C++ `Module::definitions()` or C
 `mparser_module_definition_count` / `mparser_module_definition_info`.
 Unlike `functionNames()`, this includes nested functions and class methods;
@@ -86,3 +86,35 @@ instead of silently validating only `source`. A negative replay initially
 returned HTTP 200 for that mixed request (`build/definition-off-red.log`).
 The candidate now rejects it with HTTP 400 while retaining legacy single-source
 compile; the corrected OFF replay passed at `build/definition-off-green`.
+
+### Explicit Source-Graph Ownership
+
+Extended REST replay at `build/definition-external-method-probe` compiles
+`@ExternalRange/ExternalRange.m` plus `@ExternalRange/read.m`. The declaration
+and implementation both retain their source indices, but the implementation
+is reported as `primary-function` rather than `method`, without class ownership.
+The failing assertion is retained in `build/definition-external-method-test.log`.
+This case is not covered by the earlier passing plain-function source graphs.
+
+ABI 2.10 introduces `mparser_module_compile_source_graph` and the C++
+`Module::compile(span<const SourceGraphUnit>)` overload. The old source-unit
+interface still carries only name and source and remains unchanged. Initialize
+each new C descriptor with `MPARSER_SOURCE_GRAPH_UNIT_INIT`, fill its UTF-8 views
+and optional `class_method_owner`, then pass an array of descriptor pointers.
+Keep descriptors and strings alive through compilation. Input is copied; source
+views and definitions follow the existing Module lifetime rules. C++ definition
+copies remain valid after module release. Future descriptor tails are ignored;
+undersized descriptors or incompatible generations are rejected.
+
+Source names are identities, not permission to infer filesystem layout or read
+files. An explicit owner connects a primary method implementation to a class
+declared in the graph; the compiler validates filename, signature and ownership.
+The host candidate now accepts a string `class_method_owner` on each unit and
+requires ABI 2.10. It must not relabel functions or guess ownership from text.
+Public SDK metadata and object-form method invocation tests pass. The ABI 2.10
+clean installed-SDK host build and expanded external-method REST replay passed
+at `build/clean-host-probe/3e274527adcc4cb29f4a6d0ac7bb8218`, followed by 67/67
+host regressions (`build/source-owner-clean-host.log`). The loaded DLL SHA256 is
+`8DAFC92670588B8BC85B9F0E0EF4C8CE932CAA6A8A3955465968306BBA7BDAEC`.
+Browser method navigation remains unverified. Function-form `read(obj)` still
+has a demonstrated dispatch gap; object-form invocation does not prove it.

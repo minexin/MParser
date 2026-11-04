@@ -28,10 +28,10 @@ set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
 set(MPARSER_C_ABI_GENERATION 2)
-set(MPARSER_C_ABI_REVISION 9)
+set(MPARSER_C_ABI_REVISION 10)
 set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision9_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision10_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -366,9 +366,9 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 153)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 154)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 153 symbols")
+            "C ABI symbol manifest must contain exactly 154 symbols")
     endif()
     file(STRINGS
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision5_symbols.txt"
@@ -382,6 +382,9 @@ if(UNIX)
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision8_symbols.txt"
         _mparser_revision8_c_abi_symbols REGEX "^mparser_[A-Za-z0-9_]+$")
     list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision8_c_abi_symbols})
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision9_symbols.txt"
+        _mparser_revision9_c_abi_symbols REGEX "^mparser_[A-Za-z0-9_]+$")
+    list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision9_c_abi_symbols})
     list(REMOVE_DUPLICATES _mparser_previous_c_abi_symbols)
     foreach(_mparser_previous_c_abi_symbol IN LISTS
             _mparser_previous_c_abi_symbols)
@@ -2924,7 +2927,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 153 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 154 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -3390,6 +3393,7 @@ install(FILES
     docs/system-search-paths.md
     docs/assignment-display-development.md
     docs/ordered-display-events.md
+    docs/source-graph-ownership-design.md
     docs/ordered-display-api-design.md
     docs/host-integration-contract-development.json
     docs/performance-baseline-v1.schema.json

@@ -71,12 +71,27 @@ async function main() {
     }
     const noExecution=await request('/compile',{sources:[{name:'main.m',source:"error('must not run');\nfunction y=helper(x)\ny=x;\nend"}]});
     assert.equal(noExecution.valid,true);
+    const external=await request('/compile',{sources:[
+        {name:'@ExternalRange/ExternalRange.m',source:'classdef ExternalRange\nmethods\ny=read(obj)\nend\nend\n'},
+        {name:'@ExternalRange/read.m',source:'function y=read(obj)\ny=helper();\nfunction z=helper()\nz=1;\nend\nend\n',class_method_owner:'ExternalRange'}]});
+    assert.equal(external.valid,true,JSON.stringify(external.diagnostics));
+    const methods=external.definition_directory.definitions;
+    assert.equal(methods.length,3);
+    assert.equal(methods[0].declaration_only,true);
+    assert.equal(methods[0].source_index,0);
+    assert.equal(methods[1].declaration_only,false);
+    assert.equal(methods[1].source_index,1);
+    assert.equal(methods[1].kind,'method');
+    assert.equal(methods[1].class_name,'ExternalRange');
+    assert.equal(methods[2].parent_function,1);
     const invalid=await request('/compile',{sources:[sources[0],{name:'bad.m',source:'x=;'}]});
     assert.equal(invalid.valid,false); assert.equal(invalid.definition_directory.complete,false);
     assert.deepEqual(invalid.definition_directory.definitions,[]);
     for(const body of [{sources:[]},{sources:'bad'},{sources,source:'x=1'},
         {sources:[sources[0],sources[0]]},{sources:[{name:'',source:''}]},
         {sources:[{name:'bad.m',source:3}]},{sources:[{name:'bad\0.m',source:''}]},
+        {sources:[{name:'bad.m',source:'',class_method_owner:4}]},
+        {sources:[{name:'bad.m',source:'',class_method_owner:'Bad\0Owner'}]},
         {sources:Array.from({length:65},(_,i)=>({name:`f${i}.m`,source:''}))},
         {sources,source_name:'ambiguous.m'},null]) await request('/compile',body,400);
     const legacy=await request('/compile',{source:sources[0].source,source_name:'first.m'});

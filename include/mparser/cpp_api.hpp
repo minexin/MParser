@@ -303,6 +303,12 @@ struct SourceUnit {
     std::string source;
 };
 
+struct SourceGraphUnit {
+    std::string name;
+    std::string source;
+    std::string classMethodOwner;
+};
+
 struct SourceLoadOptions {
     std::vector<std::string> searchPaths;
 };
@@ -1844,6 +1850,24 @@ public:
         const auto status = mparser_module_compile_sources(
             descriptors.data(), descriptors.size(), &module);
         return takeCompiled(status, module, "compile source graph");
+    }
+
+    [[nodiscard]] static Module compile(std::span<const SourceGraphUnit> sources) {
+        std::vector<mparser_source_graph_unit> descriptors;
+        descriptors.reserve(sources.size());
+        for (const auto& source : sources) {
+            mparser_source_graph_unit descriptor = MPARSER_SOURCE_GRAPH_UNIT_INIT;
+            descriptor.source_name = {source.name.data(),source.name.size()};
+            descriptor.source = {source.source.data(),source.source.size()};
+            descriptor.class_method_owner = {source.classMethodOwner.data(),source.classMethodOwner.size()};
+            descriptors.push_back(descriptor);
+        }
+        std::vector<const mparser_source_graph_unit*> pointers;
+        pointers.reserve(descriptors.size());
+        for (const auto& descriptor : descriptors) { pointers.push_back(&descriptor); }
+        mparser_module* module = nullptr;
+        const auto status = mparser_module_compile_source_graph(pointers.data(),pointers.size(),&module);
+        return takeCompiled(status,module,"compile explicit source graph");
     }
 
     [[nodiscard]] static Module loadFile(

@@ -2400,6 +2400,41 @@ mparser_api_status mparser_module_compile_sources(
     }
 }
 
+mparser_api_status mparser_module_compile_source_graph(
+    const mparser_source_graph_unit* const* sources,
+    size_t source_count, mparser_module** out_module) {
+    using namespace mparser_c_detail;
+    if (!out_module) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    *out_module = nullptr;
+    if (!sources || !source_count) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    try {
+        mparser::c_api_test::inject(mparser::c_api_test::FaultPoint::SourceCopy);
+        std::vector<mparser::SourceUnit> copied;
+        copied.reserve(source_count);
+        for (size_t index = 0; index < source_count; ++index) {
+            const auto* unit = sources[index];
+            if (!unit) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+            if (unit->struct_size < MPARSER_SOURCE_GRAPH_UNIT_SIZE ||
+                unit->abi_generation != MPARSER_C_ABI_GENERATION) {
+                return MPARSER_API_STATUS_ABI_MISMATCH;
+            }
+            const auto name = copyBytes(unit->source_name.data,unit->source_name.size);
+            const auto source = copyBytes(unit->source.data,unit->source.size);
+            const auto owner = copyBytes(unit->class_method_owner.data,unit->class_method_owner.size);
+            if (!name || !source || !owner || name->empty() ||
+                name->find('\0') != std::string::npos || owner->find('\0') != std::string::npos) {
+                return MPARSER_API_STATUS_INVALID_ARGUMENT;
+            }
+            copied.emplace_back(*name,*source,std::string{},std::string{},*owner);
+        }
+        return publishCompiledModule(mparser::CompiledModule::compile(std::move(copied)),out_module);
+    } catch (const std::bad_alloc&) {
+        return MPARSER_API_STATUS_ALLOCATION_FAILED;
+    } catch (...) {
+        return MPARSER_API_STATUS_INTERNAL_ERROR;
+    }
+}
+
 mparser_api_status mparser_module_compile_utf8_with_options(
     const char* source,
     size_t source_size,

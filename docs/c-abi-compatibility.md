@@ -8,7 +8,7 @@ The embedding boundary has an independent technical contract level:
 
 - C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/15/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
-- active C ABI revision: `MPARSER_C_ABI_REVISION == 9`;
+- active C ABI revision: `MPARSER_C_ABI_REVISION == 10`;
 - shared-library full version: `1.15.0`, with SOVERSION/install-name generation
   `2`.
 
@@ -46,6 +46,10 @@ their meaning. Event records borrow immutable result storage; C++ accessors
 return owning copies. See [ordered events](ordered-display-events.md).
 
 ## Development Policy
+
+Revision 10 adds `mparser_module_compile_source_graph`, for 154 exports. Its
+pointer array contains caller-sized graph units with explicit class-method
+ownership. Existing source-unit arrays and compile entry points are unchanged.
 
 The project is not yet using the v1.3 SDK in production. Current headers,
 implementation, in-repository callers, tests, examples, and documentation move

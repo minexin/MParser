@@ -14,8 +14,8 @@
   },
   "c_abi": {
     "generation": 2,
-    "revision": 9,
-    "symbol_count": 153
+    "revision": 10,
+    "symbol_count": 154
   },
   "builtin_source_contract": {
     "major": 1,
@@ -33,19 +33,19 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "b06fef54a851176ca2e2e9ef7ab208610e320e9c289b9fd5c849b65e7bb2612b"
+      "sha256_lf": "be4956e28035abccf3efded924ef86b9ee2d448bbc0ebec9982d9da34ebcfb9a"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
-      "sha256_lf": "f0eee614aa84bd35827655c9515efa14f11f5ecc72e7b30282cf648ebfc05774"
+      "sha256_lf": "87c5fe6bd42e6751bfe13860d72d12cc56a810b021429b50e41e6b9d596cf992"
     },
     {
       "path": "docs/definition-metadata.md",
-      "sha256_lf": "3fe81ecf1029c673fb11786be552d1bb059dcd7ce01f146584e00d9d79232c10"
+      "sha256_lf": "7b8c6db6d855922d3efbbdc8ce53fcc443fa66a20f9539f06e432b4f9f8b3492"
     },
     {
       "path": "docs/variable-name-validation.md",
-      "sha256_lf": "00ee536f5f715f055923f92bd7c2fa33017d52545a616760d80112d49f267ca6"
+      "sha256_lf": "53fc8adfebe202a86a322cfa169277fb3a85832a01128407190e7a561c3da5f1"
     },
     {
       "path": "docs/graphics-clipping-contract.md",
@@ -65,15 +65,15 @@
     },
     {
       "path": "include/mparser/c_api.h",
-      "sha256_lf": "d08d4de560e8890511d71f27482887fc98ebf98b4cfd84b6fd1357a6479f4b76"
+      "sha256_lf": "9f1e3dfc67afc29106b52fc6f2555f8fc952b6e49d1ca504dbad54daab8923a8"
     },
     {
       "path": "include/mparser/cpp_api.hpp",
-      "sha256_lf": "222ce3606f2c84a36da2913e0e2f84a1d0a05f0e9c4f46d64a98f7f3cbb44f7c"
+      "sha256_lf": "37c84bd93c414f9730f52f9f97d690f5ef8b6741bb9a65e54218ca99c04515db"
     },
     {
-      "path": "tests/c_api_generation2_revision9_symbols.txt",
-      "sha256_lf": "657410dc73ef78ced4801061022b10c27dc7f6192bbe9023600f7738c75e63d3"
+      "path": "tests/c_api_generation2_revision10_symbols.txt",
+      "sha256_lf": "fe20623a4035278f21329250975ba992080bffb19301552051281285a4270805"
     },
     {
       "path": "docs/machine-result-v1.schema.json",
@@ -97,7 +97,7 @@
     },
     {
       "path": "docs/ordered-display-events.md",
-      "sha256_lf": "6aac404e18b5ecf3f1ff600706ee04366dad415fa93b956680df19ca240679c6"
+      "sha256_lf": "72451e2d39268822727194e0360e335adba1ac0fe738dd73be00c06a2cb69eb2"
     },
     {
       "path": "docs/ordered-display-api-design.md",

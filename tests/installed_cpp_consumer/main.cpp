@@ -360,6 +360,20 @@ end
             require(history[0].valueSnapshotJson.find("mparser.value-snapshot") != std::string::npos,
                 "installed owning event copy lost its snapshot");
         }
+        {
+            const std::vector<mparser::sdk::SourceGraphUnit> sources{
+                {"InstalledOwner.m","classdef InstalledOwner\nmethods\ny=read(obj)\nend\nend",{}},
+                {"read.m","function y=read(obj)\ny=7;\nend","InstalledOwner"}};
+            auto module = mparser::sdk::Module::compile(sources);
+            require(module.isValid(),"installed explicit source ownership compile failed");
+            const auto definitions = module.definitions();
+            require(definitions.size() == 2 && definitions[0].declarationOnly &&
+                definitions[1].className == "InstalledOwner" && definitions[1].sourceIndex == 1 &&
+                definitions[1].kind == mparser::sdk::DefinitionKind::Method,
+                "installed external method definition metadata failed");
+            module = {};
+            require(definitions[1].source.sourceName == "read.m","installed source graph ownership lifetime failed");
+        }
         std::cout << "installed-cpp-consumer = "
                   << version.major << '.' << version.minor << '.'
                   << version.patch << ',' << scalar(retainedTotal) << ','

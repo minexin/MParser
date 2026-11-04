@@ -1,14 +1,22 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -37,1 +37,4 @@
+ find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++if(NOT MParser_C_ABI_GENERATION EQUAL 2 OR MParser_C_ABI_REVISION LESS 10)
++    message(FATAL_ERROR "Explicit source ownership requires MParser ABI 2.10 or later")
++endif()
 diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
-index d285f29..a95e0ed 100644
+index d285f29..882ad88 100644
 --- a/src/rest/api_server.cpp
 +++ b/src/rest/api_server.cpp
-@@ -820,17 +820,46 @@ http::Response ApiServer::handleCompile(const http::Request& request) {
+@@ -820,17 +820,53 @@ http::Response ApiServer::handleCompile(const http::Request& request) {
      if (!body) {
          return errorResponse(400, "invalid_json", parseError);
      }
 -    if (!body->contains("source") || !(*body)["source"].is_string()) {
 +    if (!body->is_object()) return errorResponse(400, "invalid_body", "compile body must be an object");
-+    std::vector<mparser::sdk::SourceUnit> sourceUnits;
++    std::vector<mparser::sdk::SourceGraphUnit> sourceUnits;
 +#if MEXEC_DEFINITION_METADATA
 +    if (body->contains("sources")) {
 +        const auto& sources = (*body)["sources"];
@@ -24,7 +32,12 @@ index d285f29..a95e0ed 100644
 +                return errorResponse(400, "invalid_body", "source names must be nonempty and contain no NUL");
 +            for (const auto& previous : sourceUnits)
 +                if (previous.name == name) return errorResponse(400, "invalid_body", "duplicate source name");
-+            sourceUnits.push_back({name,item["source"].get<std::string>()});
++            if (item.contains("class_method_owner") && !item["class_method_owner"].is_string())
++                return errorResponse(400, "invalid_body", "class_method_owner must be a string");
++            const auto owner = item.value("class_method_owner",std::string{});
++            if (owner.find('\0') != std::string::npos)
++                return errorResponse(400, "invalid_body", "class_method_owner must contain no NUL");
++            sourceUnits.push_back({name,item["source"].get<std::string>(),owner});
 +        }
 +    }
 +#else
@@ -46,13 +59,15 @@ index d285f29..a95e0ed 100644
 +                                          : mparser::sdk::Module::compile(sourceUnits);
  #if MEXEC_DEFINITION_METADATA
 +    auto submittedSources = nlohmann::json::array();
-+    if (sourceUnits.empty()) sourceUnits.push_back({sourceName,source});
-+    for (const auto& unit : sourceUnits)
++    if (sourceUnits.empty()) sourceUnits.push_back({sourceName,source,{}});
++    for (const auto& unit : sourceUnits) {
 +        submittedSources.push_back({{"name",unit.name},{"source_utf8",unit.source}});
++        if (!unit.classMethodOwner.empty()) submittedSources.back()["class_method_owner"] = unit.classMethodOwner;
++    }
      auto definitions = nlohmann::json::array();
      if (module.isValid()) {
          const auto position = [](const mparser::sdk::SourcePosition& value) {
-@@ -867,7 +896,8 @@ http::Response ApiServer::handleCompile(const http::Request& request) {
+@@ -867,7 +903,8 @@ http::Response ApiServer::handleCompile(const http::Request& request) {
                  {"schema", "mexec.definition-directory"}, {"version", 1}, {"complete", module.isValid()},
                  {"offset_unit", "utf8-byte"}, {"column_unit", "utf8-byte"},
                  {"line_base", 1}, {"column_base", 1}, {"end_exclusive", true},

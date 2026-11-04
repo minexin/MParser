@@ -112,6 +112,17 @@ void runDefinitionDirectorySmoke() {
     assert(externalDefinitions[2].parentFunction == 1);
     assert(externalDefinitions[2].name == "helper");
 
+    for (const auto& method : std::vector<mparser::SourceUnit>{
+             {"read.m", "x=1;", "", "", "ExternalRange"},
+             {"wrong.m", "function y=read(obj)\ny=1;\nend", "", "", "ExternalRange"},
+             {"ExternalRange.m", "function obj=ExternalRange()\nobj=1;\nend", "", "", "ExternalRange"},
+             {"read.m", "function y=read(obj)\ny=1;\nend", "", "", "MissingOwner"}}) {
+        const auto invalidOwner = mparser::CompiledModule::compile(
+            std::vector<mparser::SourceUnit>{{"ExternalRange.m", declarationSource},method});
+        assert(!invalidOwner.valid());
+        assert(!invalidOwner.diagnostics().empty());
+    }
+
     const auto repeated = mparser::CompiledModule::compile(
         "function y=first()\ny=helper();\n"
         "function y=helper()\ny=1;\nend\nend\n"

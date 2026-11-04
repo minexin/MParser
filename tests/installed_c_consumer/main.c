@@ -430,6 +430,35 @@ cleanup:
     return succeeded;
 }
 
+static int run_source_owner_contract(void) {
+    mparser_source_graph_unit declaration = MPARSER_SOURCE_GRAPH_UNIT_INIT;
+    mparser_source_graph_unit implementation = MPARSER_SOURCE_GRAPH_UNIT_INIT;
+    const mparser_source_graph_unit* units[] = {&declaration, &implementation};
+    const char* class_source = "classdef InstalledOwner\nmethods\ny=read(obj)\nend\nend";
+    const char* method_source = "function y=read(obj)\ny=7;\nend";
+    mparser_module* module = NULL;
+    mparser_definition_info info = {0};
+    int valid = 0;
+    declaration.source_name.data = "InstalledOwner.m";
+    declaration.source_name.size = strlen(declaration.source_name.data);
+    declaration.source.data = class_source;
+    declaration.source.size = strlen(class_source);
+    implementation.source_name.data = "read.m";
+    implementation.source_name.size = 6;
+    implementation.source.data = method_source;
+    implementation.source.size = strlen(method_source);
+    implementation.class_method_owner.data = "InstalledOwner";
+    implementation.class_method_owner.size = strlen("InstalledOwner");
+    if (mparser_module_compile_source_graph(units, 2, &module) == MPARSER_API_STATUS_OK &&
+        module && mparser_module_is_valid(module) && mparser_module_definition_count(module) == 2 &&
+        mparser_module_definition_info(module, 1, &info, sizeof(info)) == MPARSER_API_STATUS_OK) {
+        valid = info.kind == MPARSER_DEFINITION_METHOD && !info.declaration_only &&
+            info.source_index == 1 && bytes_equal(info.class_name.data, info.class_name.size, "InstalledOwner");
+    }
+    mparser_module_release(module);
+    return valid;
+}
+
 int main(void) {
     mparser_module* module = NULL;
     mparser_value* left = NULL;
@@ -484,7 +513,8 @@ int main(void) {
         !read_scalar(result, 1, 36.0) ||
         !run_host_contract() ||
         !run_system_context_contract() ||
-        !run_shared_runtime_contract() || !run_input_contract() || !run_ordered_events_contract()) {
+        !run_shared_runtime_contract() || !run_input_contract() || !run_ordered_events_contract() ||
+        !run_source_owner_contract()) {
         goto cleanup;
     }
 

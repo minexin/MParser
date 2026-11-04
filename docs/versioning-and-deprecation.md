@@ -11,7 +11,7 @@ MParser uses semantic versions for release tags and packages. The active
 source tree, product metadata, and installed SDK report candidate version
 `1.15.0` in development state. The v1.4-v1.14 internal batches previously
 retained the 1.3.0 stamp until the v1.14 milestone synchronized them. The
-v1.15 host-integration line now uses C/C++ source API 1.15, ABI 2.9, CLI 1.0,
+v1.15 host-integration line now uses C/C++ source API 1.15, ABI 2.10, CLI 1.0,
 protocol 1.2 and builtin 1.21. This identity is not a publication claim.
 
 This project is not currently using the v1.3 interfaces in production.
@@ -31,7 +31,7 @@ unreleased development interfaces.
 | MParser product and SDK | `1.15.0` development | Unreleased product identity |
 | Production CLI | 1.0 | Command, option, channel, and exit contract |
 | C source API | 1.15 | Header-level source contract for C hosts |
-| C ABI | generation 2, revision 9; v1.14 revision 5 remains archived | Binary layout, symbols, ownership, and calling convention |
+| C ABI | generation 2, revision 10; v1.14 revision 5 remains archived | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.15 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.2 | JSON producer/consumer contract |
 | Builtin source contract | 1.21 | Registry/descriptor/call semantics compiled with the engine |

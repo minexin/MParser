@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 15u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 9u
+#define MPARSER_C_ABI_REVISION 10u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -180,6 +180,20 @@ typedef struct mparser_source_unit {
     const char* source;
     size_t source_size;
 } mparser_source_unit;
+
+/* Pointer-array elements preserve stride compatibility for future tails. */
+typedef struct mparser_source_graph_unit {
+    uint32_t struct_size;
+    uint32_t abi_generation;
+    mparser_utf8_view source_name;
+    mparser_utf8_view source;
+    mparser_utf8_view class_method_owner;
+} mparser_source_graph_unit;
+
+#define MPARSER_SOURCE_GRAPH_UNIT_SIZE \
+    (offsetof(mparser_source_graph_unit, class_method_owner) + sizeof(mparser_utf8_view))
+#define MPARSER_SOURCE_GRAPH_UNIT_INIT \
+    { MPARSER_SOURCE_GRAPH_UNIT_SIZE, MPARSER_C_ABI_GENERATION, {NULL, 0}, {NULL, 0}, {NULL, 0} }
 
 typedef struct mparser_source_load_options {
     uint32_t struct_size;
@@ -651,6 +665,10 @@ MPARSER_C_API mparser_api_status mparser_module_compile_utf8(
     mparser_module** out_module);
 MPARSER_C_API mparser_api_status mparser_module_compile_sources(
     const mparser_source_unit* sources,
+    size_t source_count,
+    mparser_module** out_module);
+MPARSER_C_API mparser_api_status mparser_module_compile_source_graph(
+    const mparser_source_graph_unit* const* sources,
     size_t source_count,
     mparser_module** out_module);
 MPARSER_C_API mparser_api_status mparser_module_compile_utf8_with_options(
