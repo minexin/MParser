@@ -79,3 +79,10 @@ installed DLL SHA256 is
 `5E202651C50AFBF11BFFD2DBB333E7EA88D6F0E567E0CA8CBFDFA00756D2CBC2`.
 Browser cross-file navigation,
 stale-document rejection and deployment are not implemented by this candidate.
+
+The probe accepts a third `on`/`off` argument (default `on`). Disabled builds
+must reject every request containing `sources`, including mixed legacy input,
+instead of silently validating only `source`. A negative replay initially
+returned HTTP 200 for that mixed request (`build/definition-off-red.log`).
+The candidate now rejects it with HTTP 400 while retaining legacy single-source
+compile; the corrected OFF replay passed at `build/definition-off-green`.

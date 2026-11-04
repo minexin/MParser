@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
 const {spawn} = require('node:child_process');
-const [exe,output] = process.argv.slice(2);
+const [exe,output,mode='on'] = process.argv.slice(2);
 assert.ok(exe && output);
+assert.ok(['on','off'].includes(mode));
 const root = path.resolve(output);
 fs.mkdirSync(root,{recursive:true});
 assert.equal(fs.readdirSync(root).length,0);
@@ -34,6 +35,16 @@ async function main() {
         await new Promise(resolve=>setTimeout(resolve,50));
     }
     assert.ok(ready);
+    if(mode==='off') {
+        for(const body of [{sources:[{name:'a.m',source:'x=1'}]},
+            {source:'x=2',sources:[{name:'a.m',source:'x=1'}]}])
+            await request('/compile',body,400);
+        const legacy=await request('/compile',{source:'x=1'});
+        assert.equal(legacy.valid,true);
+        assert.equal(legacy.definition_directory,undefined);
+        console.log('PASS disabled definition graph rejects sources including mixed legacy input');
+        return;
+    }
     const sources=[
         {name:'first.m',source:'% \u00e9\r\nfunction y=first(x)\r\ny=helper(x);\r\nfunction z=helper(x)\r\nz=x;\r\nend\r\nend\r\n'},
         {name:'second.m',source:'function y=second(x)\ny=helper(x);\nfunction z=helper(x)\nz=x+1;\nend\nend\n'}];
