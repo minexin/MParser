@@ -2956,6 +2956,12 @@ target_include_directories(graphics_api_smoke_tests PRIVATE third_party/nlohmann
 add_test(NAME graphics_api_smoke COMMAND graphics_api_smoke_tests)
 set_tests_properties(graphics_api_smoke PROPERTIES TIMEOUT 30)
 add_executable(graphics_color_smoke_tests tests/graphics_color_smoke.cpp)
+add_executable(legend_state_smoke_tests tests/legend_state_smoke.cpp)
+target_link_libraries(legend_state_smoke_tests PRIVATE mparser_cpp_api)
+target_include_directories(legend_state_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME legend_state_smoke COMMAND legend_state_smoke_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/legend_reference.json)
+set_tests_properties(legend_state_smoke PROPERTIES TIMEOUT 60 LABELS host-integration)
 target_link_libraries(graphics_color_smoke_tests PRIVATE mparser_cpp_api)
 target_include_directories(graphics_color_smoke_tests PRIVATE third_party/nlohmann_json/include)
 add_test(NAME graphics_color_smoke COMMAND graphics_color_smoke_tests
@@ -3405,6 +3411,7 @@ install(FILES
     docs/graphics-clipping-contract.md
     docs/graphics-color-contract.md
     docs/graphics-colon-contract.md
+    docs/graphics-legend-contract.md
     docs/system-search-paths.md
     docs/assignment-display-development.md
     docs/ordered-display-events.md

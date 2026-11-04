@@ -160,6 +160,15 @@ The clean-host runner enables it alongside the existing feature probes.
 
 ## Clean Installed-SDK Acceptance
 
+The runner also includes `test-legend-state.cjs`: 14 R2024b-backed membership
+and label phases plus independent later-command String reads and invalid-write
+preservation. It compares real kernel entries and Line DisplayName values,
+without host-side membership/label reconstruction. Full layout and production
+adoption remain separate.
+This follow-up passed clean source-only build/REST/client checks and 67 host
+regressions at `build/clean-host-probe/3c666eb6ad85436895207643b88a4f13`, with
+the selected DLL recorded in `docs/graphics-legend-contract.md`.
+
 The clean runner includes `test-graphics-colon.cjs`: full ascending/descending,
 single and nondividing XData arrays are compared to R2024b, then retained handles
 are read in later commands. It also checks source-file execution, 2412 nested

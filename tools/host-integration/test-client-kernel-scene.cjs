@@ -35,8 +35,8 @@ assert.equal(state.series[1].style.hidden,true);
 assert.equal(state.labelColors.Title,'rgb(0, 255, 0)');
 assert.equal(state.legend.entries[0].color,'rgba(255, 0, 0, 0.5)');
 assert.equal(state.legend.entries[1].hidden,true);
-assert.deepEqual(Array.from(state.legend.entries,entry=>entry.label),['Measured','data2']);
-for (const label of ['Gain','Time','Power','Measured','data2']) {
+assert.deepEqual(Array.from(state.legend.entries,entry=>entry.label),['Measured','data1']);
+for (const label of ['Gain','Time','Power','Measured','data1']) {
   assert.ok(calls.some(call=>call[0]==='fillText' && call[1]===label),`Missing rendered text: ${label}`);
 }
 assert.equal(JSON.stringify(result.graphics),original);

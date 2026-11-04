@@ -72,6 +72,9 @@ if ($LASTEXITCODE) { throw "Multi-source definition probe failed; see $stage" }
 node (Join-Path $PSScriptRoot 'test-graphics-colon.cjs') (Join-Path $build 'mexec_server.exe') `
     (Join-Path $stage 'colon-graphics-probe')
 if ($LASTEXITCODE) { throw "Colon graphics probe failed; see $stage" }
+node (Join-Path $PSScriptRoot 'test-legend-state.cjs') (Join-Path $build 'mexec_server.exe') `
+    (Join-Path $stage 'legend-state-probe')
+if ($LASTEXITCODE) { throw "Legend state probe failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
     -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -GraphicsColors -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')

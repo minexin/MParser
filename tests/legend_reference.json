@@ -1,0 +1,182 @@
+{
+  "version": "24.2.0.2712019 (R2024b)",
+  "initial": {
+    "valid": true,
+    "labels": [
+      "data1",
+      "data2"
+    ],
+    "auto": "on",
+    "names": [
+      "data1",
+      "data2"
+    ]
+  },
+  "off_added": {
+    "valid": true,
+    "labels": [
+      "data1",
+      "data2"
+    ],
+    "auto": "off",
+    "names": [
+      "data1",
+      "data2",
+      "third"
+    ]
+  },
+  "off_rename": {
+    "valid": true,
+    "labels": [
+      "renamed",
+      "data2"
+    ],
+    "auto": "off",
+    "names": [
+      "renamed",
+      "data2",
+      "third"
+    ]
+  },
+  "off_deleted": {
+    "valid": true,
+    "labels": [
+      "data2"
+    ],
+    "auto": "off",
+    "names": [
+      "data2",
+      "third"
+    ]
+  },
+  "on_again": {
+    "valid": true,
+    "labels": [
+      "data2"
+    ],
+    "auto": "on",
+    "names": [
+      "data2",
+      "third"
+    ]
+  },
+  "on_added": {
+    "valid": true,
+    "labels": [
+      "data2",
+      "data1"
+    ],
+    "auto": "on",
+    "names": [
+      "data2",
+      "third",
+      "data1"
+    ]
+  },
+  "labels": {
+    "valid": true,
+    "labels": [
+      "custom B",
+      "custom C"
+    ],
+    "auto": "on",
+    "names": [
+      "custom B",
+      "third",
+      "custom C"
+    ]
+  },
+  "after_labels": {
+    "valid": true,
+    "labels": [
+      "custom B",
+      "custom C",
+      "data1"
+    ],
+    "auto": "on",
+    "names": [
+      "custom B",
+      "third",
+      "custom C",
+      "data1"
+    ]
+  },
+  "short_labels": {
+    "valid": true,
+    "labels": [
+      "only B"
+    ],
+    "auto": "on",
+    "names": [
+      "only B",
+      "third",
+      "custom C",
+      "data1"
+    ]
+  },
+  "extra_labels": {
+    "valid": true,
+    "labels": [
+      "B"
+    ],
+    "auto": "on",
+    "names": [
+      "B",
+      "third",
+      "custom C",
+      "data1"
+    ]
+  },
+  "empty_name": {
+    "valid": true,
+    "labels": [
+      ""
+    ],
+    "auto": "on",
+    "names": [
+      "",
+      "third",
+      "custom C",
+      "data1"
+    ]
+  },
+  "empty_labels": {
+    "valid": true,
+    "labels": [
+      ""
+    ],
+    "auto": "on",
+    "names": [
+      "",
+      "third",
+      "custom C",
+      "data1"
+    ]
+  },
+  "mixed_names": {
+    "valid": true,
+    "labels": [
+      "measured",
+      "data1"
+    ],
+    "auto": "on",
+    "names": [
+      "measured",
+      "data1"
+    ]
+  },
+  "mixed_added": {
+    "valid": true,
+    "labels": [
+      "measured",
+      "data1",
+      "data2"
+    ],
+    "auto": "on",
+    "names": [
+      "measured",
+      "data1",
+      "data2"
+    ]
+  }
+}

@@ -16,7 +16,7 @@ struct RuntimeObjectOperationResult;
 
 using RuntimeGraphicsId = std::uint64_t;
 enum class RuntimeGraphicsKind { Figure, Axes, Line, Text, Legend };
-using RuntimeGraphicsProperty = std::variant<std::string, std::vector<double>>;
+using RuntimeGraphicsProperty = std::variant<std::string, std::vector<double>, std::vector<std::string>>;
 
 struct RuntimeGraphicsSeries {
     std::vector<double> x;
@@ -32,6 +32,7 @@ struct RuntimeGraphicsNode {
     std::optional<RuntimeGraphicsId> currentAxes;
     std::map<std::string, RuntimeGraphicsId> labels;
     std::optional<RuntimeGraphicsId> associatedAxes;
+    std::vector<RuntimeGraphicsId> legendLines;
 };
 
 // Nodes contain IDs only. Exported handles may retain the graph, but the graph

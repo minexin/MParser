@@ -15,9 +15,12 @@
 #include <nlohmann/json-schema.hpp>
 #include <fstream>
 #include <future>
+#include <source_location>
 
 using namespace mparser;
-void require(bool value) { if (!value) { throw std::runtime_error("graphics graph invariant failed"); } }
+void require(bool value, const std::source_location location = std::source_location::current()) {
+    if (!value) { throw std::runtime_error("graphics graph invariant failed at line " + std::to_string(location.line())); }
+}
 int main(int argc, char** argv) {
     try {
         require(argc == 4);
@@ -208,7 +211,7 @@ int main(int argc, char** argv) {
             require(encoded.at("version") == 2 && encoded.at("objects").back().at("type") == "Legend");
             require(encoded.at("objects").back().at("axes") == encoded.at("objects")[1].at("id"));
             const auto& entries = encoded.at("objects").back().at("entries");
-            require(entries.size() == 2 && entries[0].at("label") == "measured" && entries[1].at("label") == "data2");
+            require(entries.size() == 2 && entries[0].at("label") == "measured" && entries[1].at("label") == "data1");
             require(entries[0].at("line") == encoded.at("objects")[2].at("id") &&
                 entries[1].at("line") == encoded.at("objects")[3].at("id"));
             graph->erase(unnamed);
@@ -232,6 +235,20 @@ int main(int argc, char** argv) {
             const auto secondAxes = graph->create(RuntimeGraphicsKind::Axes, destination);
             const auto secondLegend = graph->legend(secondAxes);
             require(secondLegend != id);
+            graph->reparent(named, secondAxes);
+            require(graph->find(id)->legendLines.empty());
+            require(graph->find(secondLegend)->legendLines == std::vector<RuntimeGraphicsId>{named});
+            graph->setProperty(secondLegend,"AutoUpdate",std::string{"off"});
+            const auto excluded = graph->create(RuntimeGraphicsKind::Line,secondAxes);
+            require(graph->find(secondLegend)->legendLines.size() == 1);
+            graph->reparent(excluded, axes);
+            require(graph->find(id)->legendLines == std::vector<RuntimeGraphicsId>{excluded});
+            graph->erase(excluded);
+            require(graph->find(id)->legendLines.empty());
+            graph->reparent(named, axes);
+            require(graph->find(secondLegend)->legendLines.empty());
+            require(graph->find(id)->legendLines == std::vector<RuntimeGraphicsId>{named});
+            (void)graph->serialize();
             graph->erase(axes);
             require(!value.graphicsHandle->valid() && graph->find(secondLegend));
             require(graph->find(destination)->children.size() == 2);

@@ -33,7 +33,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "e62cfa2dfaf62f4568b789b44172beb645182cd81880625fc73a41cb0e544c50"
+      "sha256_lf": "903a746fbc6ed9bf35357b55a7d921d8484b2bbde09636edf96424f460ec3611"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -49,7 +49,7 @@
     },
     {
       "path": "docs/graphics-clipping-contract.md",
-      "sha256_lf": "e2560842edf9680ab693c0aff138a783b6a26468873213b9d88946ec94f36103"
+      "sha256_lf": "d7a6260f3481598f6f5fa612becbb1423d3dd7083ad1faea0296abedd795f12f"
     },
     {
       "path": "cmake/MParserConfig.cmake.in",
@@ -62,6 +62,10 @@
     {
       "path": "docs/graphics-colon-contract.md",
       "sha256_lf": "d8d9e504744c7753d35e5abb519ddbd1a295d348145e464e82e1cc7f4f39da1d"
+    },
+    {
+      "path": "docs/graphics-legend-contract.md",
+      "sha256_lf": "9a0ddd98dd6f38fb421a40dc886758dbfc540994e86e6ac98c6ce6fb808a7d0b"
     },
     {
       "path": "docs/public-contract-v1.14.json",

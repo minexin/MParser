@@ -24,9 +24,9 @@ success may substitute for missing kernel contracts.
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership, cross-command method/listener and non-static bound-handle access passed SDK and clean host replay; measured creator-context rules match the R2024b cases; deployed navigation and stale-document UI acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; host-reported floating colon endpoint loss fixed with 38 R2024b cases, 356 kernel/package checks, actual optimized-loop checks and fresh installed-SDK REST replay; narrow-screen cropping and broader downstream acceptance remain open |
-| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
+| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Clipping/Color and v3 identities passed; stateful Legend AutoUpdate/String matches 14 R2024b states in four SDK modes, 357 kernel/package checks and fresh installed-SDK REST/67 host regressions; selection/writeback, full layout and deployment remain open |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 356/356 and clean installed-SDK host build/REST/67 regressions passed; desktop visual/PNG smoke is bounded, not full browser acceptance; GitHub state and CI require actual-commit remote evidence; deployment and release acceptance remain open |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 357/357 and clean installed-SDK host build/REST/67 regressions passed; desktop visual/PNG smoke is bounded, not full browser acceptance; GitHub state and CI require actual-commit remote evidence; deployment and release acceptance remain open |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only result collection and ON-mode source-only host replay passed; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see ordered-display-events.md |
 
@@ -78,6 +78,17 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-04 Legend membership follow-up: 14 measured R2024b states establish
+  AutoUpdate, renaming/deletion while off, non-retroactive re-enable, actual
+  Line DisplayName defaults and String prefix/excess/empty behavior. The
+  kernel now owns ordered membership instead of reconstructing it during
+  serialization. SDK checks in four requested modes, frozen history,
+  invalid-write atomicity and graph reparent/removal checks passed. Full
+  rebuilt kernel/package regression passed 357/357 in 46.55 seconds at
+  `build/legend-final-test.log`. Source-only installed-SDK host build/REST and
+  67 regressions passed at `build/clean-host-probe/3c666eb6ad85436895207643b88a4f13`;
+  see graphics-legend-contract.md. No public ABI or protocol revision
+  changed; property labels do not imply full legend creation/layout syntax.
 - 2026-11-04 floating-colon graphics follow-up: confirmed the host's unresolved
   `0:0.05:10` observation against the current CLI: 200 samples ending near 9.95,
   versus R2024b's 201 ending exactly at 10. Length planning and symmetric

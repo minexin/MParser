@@ -50,5 +50,6 @@ candidate checks and bounded real-browser Clipping pixels; see
 [browser acceptance](host-browser-acceptance.md) for the exact scene, DLL and
 remaining boundaries. This does not establish full pixel parity, deployed
 client adoption or a release. Basic Legend creation/visibility/location/deletion
-is also implemented and covered by kernel/candidate tests; explicit labels,
-AutoUpdate controls and full layout remain outside that validated subset.
+is also implemented and covered by kernel/candidate tests. The subsequent
+[Legend membership contract](graphics-legend-contract.md) adds AutoUpdate and
+String property labels; creation arguments and full layout remain separate.
