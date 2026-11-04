@@ -160,6 +160,17 @@ The clean-host runner enables it alongside the existing feature probes.
 
 ## Clean Installed-SDK Acceptance
 
+The clean runner includes `test-graphics-colon.cjs`: full ascending/descending,
+single and nondividing XData arrays are compared to R2024b, then retained handles
+are read in later commands. It also checks source-file execution, 2412 nested
+iterations with the final value 10, and a floating zero-step empty row. This is
+numeric/REST evidence, not a host-added endpoint or pixel/rendering acceptance.
+Final acceptance passed 148 clean build actions, all dedicated probes and
+67/67 regressions at
+`build/clean-host-probe/d8deab22f170429482bc2a2218a77f3c` (19.88 seconds).
+The selected installed DLL hash and exact numeric scope are in
+`docs/graphics-colon-contract.md`; no original host/client sources were changed.
+
 Run probe-clean-host.ps1 from an x64 MSVC developer environment with CMake,
 Ninja, PowerShell 7, Node.js, Git and robocopy available:
 

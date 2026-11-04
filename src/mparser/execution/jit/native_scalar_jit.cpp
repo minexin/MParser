@@ -1,4 +1,5 @@
 #include "mparser/execution/jit/native_scalar_jit.h"
+#include "mparser/runtime/core/value/runtime_range.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 
 #include <algorithm>
@@ -58,6 +59,28 @@ static_assert(std::is_standard_layout_v<NativeContext>);
 static_assert(sizeof(size_t) == sizeof(sljit_sw));
 
 using NativeEntry = void(SLJIT_FUNC*)(NativeContext*);
+
+struct NativeColonLoopState {
+    RuntimeColonSequence sequence;
+    size_t index;
+};
+static_assert(std::is_standard_layout_v<RuntimeColonSequence>);
+static_assert(std::is_standard_layout_v<NativeColonLoopState>);
+static_assert(std::is_trivially_destructible_v<RuntimeColonSequence>);
+
+sljit_sw SLJIT_FUNC nativePlanColon(RuntimeColonSequence* sequence,
+    double start, double step, double stop) {
+    try {
+        const auto range = runtimePlanColonRange(start, step, stop);
+        if (!range.succeeded) { return 0; }
+        std::construct_at(sequence, static_cast<const RuntimeColonSequence&>(range));
+        return 1;
+    } catch (...) { return 0; }
+}
+
+double SLJIT_FUNC nativeColonElement(const RuntimeColonSequence* sequence, sljit_sw index) {
+    return runtimeColonRangeElement(*sequence, static_cast<size_t>(index));
+}
 
 double SLJIT_FUNC nativePower(double left, double right) {
     return std::pow(left, right);
@@ -299,11 +322,11 @@ public:
 
 private:
     static constexpr sljit_sw kLoopLocalSize =
-        static_cast<sljit_sw>(sizeof(double) * 3);
+        static_cast<sljit_sw>(sizeof(NativeColonLoopState));
 
-    sljit_sw loopLocalOffset(size_t loopId, size_t field) const {
+    sljit_sw loopLocalOffset(size_t loopId, size_t offset) const {
         return static_cast<sljit_sw>(loopId * kLoopLocalSize +
-                                     field * sizeof(double));
+                                     offset);
     }
 
     bool bindKernelLabel(size_t pc, std::string& failureReason) {
@@ -833,14 +856,11 @@ private:
 
         const size_t bodyBegin = pc + 1;
         const size_t bodyEnd = loop.jumpTarget - 1;
-        const auto currentOffset = loopLocalOffset(loop.loopId, 0);
-        const auto stepOffset = loopLocalOffset(loop.loopId, 1);
-        const auto stopOffset = loopLocalOffset(loop.loopId, 2);
+        const auto sequenceOffset = loopLocalOffset(loop.loopId, offsetof(NativeColonLoopState, sequence));
+        const auto indexOffset = loopLocalOffset(loop.loopId, offsetof(NativeColonLoopState, index));
+        const auto countOffset = sequenceOffset + offsetof(RuntimeColonSequence, count);
 
         loadOperand(loop.left, SLJIT_FR0);
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64,
-                        SLJIT_MEM1(SLJIT_SP), currentOffset,
-                        SLJIT_FR0, 0);
 
         if (loop.singleValueRange) {
             incrementLoopCount(loop.loopId);
@@ -859,44 +879,20 @@ private:
         }
         loadOperand(loop.step, SLJIT_FR1);
         loadOperand(loop.right, SLJIT_FR2);
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64,
-                        SLJIT_MEM1(SLJIT_SP), stepOffset,
-                        SLJIT_FR1, 0);
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64,
-                        SLJIT_MEM1(SLJIT_SP), stopOffset,
-                        SLJIT_FR2, 0);
-        sljit_emit_fset64(compiler_, SLJIT_FR3, 0.0);
-        rangeFailureJumps_.push_back(sljit_emit_fcmp(
-            compiler_, SLJIT_ORDERED_EQUAL, SLJIT_FR1, 0,
-            SLJIT_FR3, 0));
+        sljit_get_local_base(compiler_, SLJIT_R0, 0, sequenceOffset);
+        sljit_emit_icall(compiler_, SLJIT_CALL, SLJIT_ARGS4(W, P, F64, F64, F64),
+            SLJIT_IMM, SLJIT_FUNC_ADDR(nativePlanColon));
+        rangeFailureJumps_.push_back(sljit_emit_cmp(
+            compiler_, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(compiler_, SLJIT_MOV, SLJIT_MEM1(SLJIT_SP), indexOffset, SLJIT_IMM, 0);
 
         auto* conditionLabel = sljit_emit_label(compiler_);
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64, SLJIT_FR0, 0,
-                        SLJIT_MEM1(SLJIT_SP), currentOffset);
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64, SLJIT_FR1, 0,
-                        SLJIT_MEM1(SLJIT_SP), stepOffset);
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64, SLJIT_FR2, 0,
-                        SLJIT_MEM1(SLJIT_SP), stopOffset);
-        sljit_emit_fset64(compiler_, SLJIT_FR3, 0.0);
-
-        std::vector<sljit_jump*> endJumps;
-        endJumps.push_back(sljit_emit_fcmp(
-            compiler_, SLJIT_UNORDERED, SLJIT_FR0, 0,
-            SLJIT_FR2, 0));
-        auto* positiveStep = sljit_emit_fcmp(
-            compiler_, SLJIT_ORDERED_GREATER, SLJIT_FR1, 0,
-            SLJIT_FR3, 0);
-        endJumps.push_back(sljit_emit_fcmp(
-            compiler_, SLJIT_ORDERED_LESS, SLJIT_FR0, 0,
-            SLJIT_FR2, 0));
-        auto* negativeBody = sljit_emit_jump(compiler_, SLJIT_JUMP);
-
-        bindJump(positiveStep, sljit_emit_label(compiler_));
-        endJumps.push_back(sljit_emit_fcmp(
-            compiler_, SLJIT_ORDERED_GREATER, SLJIT_FR0, 0,
-            SLJIT_FR2, 0));
-        auto* bodyLabel = sljit_emit_label(compiler_);
-        bindJump(negativeBody, bodyLabel);
+        sljit_emit_op1(compiler_, SLJIT_MOV, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), indexOffset);
+        sljit_emit_op1(compiler_, SLJIT_MOV, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), countOffset);
+        auto* endJump = sljit_emit_cmp(compiler_, SLJIT_GREATER_EQUAL, SLJIT_R1, 0, SLJIT_R2, 0);
+        sljit_get_local_base(compiler_, SLJIT_R0, 0, sequenceOffset);
+        sljit_emit_icall(compiler_, SLJIT_CALL, SLJIT_ARGS2(F64, P, W),
+            SLJIT_IMM, SLJIT_FUNC_ADDR(nativeColonElement));
 
         incrementLoopCount(loop.loopId);
         writeDestination(
@@ -909,21 +905,12 @@ private:
             return false;
         }
 
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64, SLJIT_FR0, 0,
-                        SLJIT_MEM1(SLJIT_SP), currentOffset);
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64, SLJIT_FR1, 0,
-                        SLJIT_MEM1(SLJIT_SP), stepOffset);
-        sljit_emit_fop2(compiler_, SLJIT_ADD_F64, SLJIT_FR2, 0,
-                        SLJIT_FR0, 0, SLJIT_FR1, 0);
-        endJumps.push_back(sljit_emit_fcmp(
-            compiler_, SLJIT_ORDERED_EQUAL, SLJIT_FR2, 0,
-            SLJIT_FR0, 0));
-        sljit_emit_fop1(compiler_, SLJIT_MOV_F64,
-                        SLJIT_MEM1(SLJIT_SP), currentOffset,
-                        SLJIT_FR2, 0);
+        sljit_emit_op1(compiler_, SLJIT_MOV, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), indexOffset);
+        sljit_emit_op2(compiler_, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+        sljit_emit_op1(compiler_, SLJIT_MOV, SLJIT_MEM1(SLJIT_SP), indexOffset, SLJIT_R0, 0);
         bindJump(sljit_emit_jump(compiler_, SLJIT_JUMP),
                  conditionLabel);
-        bindJumps(endJumps, sljit_emit_label(compiler_));
+        bindJump(endJump, sljit_emit_label(compiler_));
         return true;
     }
 
@@ -1419,7 +1406,7 @@ NativeScalarJitResult executeNativeScalarKernel(
         switch (static_cast<NativeRuntimeStatus>(context.status)) {
         case NativeRuntimeStatus::InvalidColonRange:
             result.reason =
-                "native typed nested colon range step cannot be zero";
+                "native typed nested colon range is invalid or exceeds maximum array size";
             break;
         case NativeRuntimeStatus::InvalidLinearIndex:
             result.reason =

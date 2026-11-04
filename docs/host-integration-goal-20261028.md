@@ -23,10 +23,10 @@ success may substitute for missing kernel contracts.
 | H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins, 90-case R2024b source-context corpus and isolated revision-checked rename passed; deployed rename UI/API adoption pending |
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership, cross-command method/listener and non-static bound-handle access passed SDK and clean host replay; measured creator-context rules match the R2024b cases; deployed navigation and stale-document UI acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
-| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Kernel/REST and real desktop matrix/annotation/close/recreate/switch/zoom cases passed; narrow-screen cropping is confirmed and full downstream acceptance remains open; see host-browser-acceptance.md |
+| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; host-reported floating colon endpoint loss fixed with 38 R2024b cases, 356 kernel/package checks, actual optimized-loop checks and fresh installed-SDK REST replay; narrow-screen cropping and broader downstream acceptance remain open |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 355/355, final package 6/6 and clean installed-SDK host build/REST/67 regressions passed; desktop visual/PNG smoke is bounded, not full browser acceptance; GitHub state and CI require actual-commit remote evidence; deployment and release acceptance remain open |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 356/356 and clean installed-SDK host build/REST/67 regressions passed; desktop visual/PNG smoke is bounded, not full browser acceptance; GitHub state and CI require actual-commit remote evidence; deployment and release acceptance remain open |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only result collection and ON-mode source-only host replay passed; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see ordered-display-events.md |
 
@@ -78,6 +78,22 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-04 floating-colon graphics follow-up: confirmed the host's unresolved
+  `0:0.05:10` observation against the current CLI: 200 samples ending near 9.95,
+  versus R2024b's 201 ending exactly at 10. Length planning and symmetric
+  construction now share real numeric semantics across materialization and
+  Portable/Native nested loops, without host sample substitution. The frozen
+  38-input R2024b corpus passed an assertion replay; 190 HIR/requested-SDK
+  checks and four graph snapshots passed, alongside actual Portable/Native
+  nested-loop execution without fallback. Full rebuilt regression passed
+  356/356 in 92.32 seconds at `build/colon-final-full-test.log`. Final source-only
+  installed-SDK host build, REST/client probes and 67 regressions passed at
+  `build/clean-host-probe/d8deab22f170429482bc2a2218a77f3c`. Actual-commit CI,
+  deployment and browser pixels remain separate; see graphics-colon-contract.md.
+- 2026-11-04 prior follow-up synchronization: main `07ce4e6` and its exact-head
+  Cross-platform CI `41826060622` / Documentation CI `41826060757` succeeded;
+  both local HEAD and live remote main matched before the colon follow-up.
+  This verifies that committed slice, not later edits or a published release.
 - 2026-11-04 bound-handle access follow-up: R2024b verified that ordinary
   private/protected bound handles can be created externally but remain denied
   on invocation, even through a public owner method. Class-created private and

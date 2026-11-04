@@ -13,18 +13,86 @@
 
 namespace mparser {
 
-RuntimeColonRange runtimePlanColonRange(double start, double step,
-                                        double stop) {
+namespace {
+template<class Number>
+RuntimeColonRange planFloatingRange(Number start, Number step, Number stop) {
     RuntimeColonRange range;
     range.start = start;
     range.step = step;
     range.stop = stop;
-    if (step == 0.0) {
-        range.error = "colon range step cannot be zero";
+    range.single = sizeof(Number) == sizeof(float);
+    range.succeeded = true;
+    if (step == 0 || (step > 0 && start > stop) || (step < 0 && start < stop)) {
         return range;
     }
-    range.succeeded = true;
+    if (std::isnan(start) || std::isnan(step) || std::isnan(stop)) {
+        range.start = range.stop = std::numeric_limits<Number>::quiet_NaN();
+        range.count = 1;
+        return range;
+    }
+    Number span = stop - start;
+    Number quotient = span / step;
+    if (std::isinf(span) && std::isfinite(start) && std::isfinite(stop)) {
+        quotient = stop / step - start / step;
+    }
+    if (std::isnan(quotient)) {
+        range.start = range.stop = std::numeric_limits<Number>::quiet_NaN();
+        range.count = 1;
+        return range;
+    }
+    const auto maximumCount = std::vector<double>{}.max_size();
+    if (!std::isfinite(quotient) || quotient >= static_cast<double>(maximumCount)) {
+        range.succeeded = false;
+        range.error = "colon range exceeds maximum array size";
+        return range;
+    }
+    if (quotient == 0) {
+        range.stop = start;
+        range.count = 1;
+        return range;
+    }
+
+    Number intervals = std::floor(Number(quotient + Number(0.5)));
+    const auto endpoint = [start, step](Number distance) {
+        const Number offset = distance * step;
+        const Number result = start + offset;
+        return !std::isfinite(offset) || !std::isfinite(result)
+            ? std::fma(distance, step, start) : result;
+    };
+    Number last = endpoint(intervals);
+    const Number tolerance = Number(2) * std::numeric_limits<Number>::epsilon() *
+        std::max(std::abs(start), std::abs(stop));
+    const Number difference = step > 0 ? Number(last - stop) : Number(stop - last);
+    if (std::abs(difference) <= tolerance) {
+        last = stop;
+    } else if (difference > 0) {
+        intervals -= Number(1);
+        last = endpoint(intervals);
+    }
+    range.count = static_cast<size_t>(intervals) + 1;
+    range.stop = last;
     return range;
+}
+
+template<class Number>
+double floatingRangeElement(const RuntimeColonSequence& range, size_t index) {
+    const double start = range.start;
+    const double stop = range.stop;
+    const double step = range.step;
+    if (index == 0) { return start; }
+    const size_t remaining = range.count - 1 - index;
+    if (remaining == 0) { return stop; }
+    if (index < remaining) { return Number(start + static_cast<double>(index) * step); }
+    if (index > remaining) { return Number(stop - static_cast<double>(remaining) * step); }
+    // Fill from both ends, with a symmetric midpoint, rather than accumulating error.
+    const double sum = start + stop;
+    return std::isfinite(sum) ? Number(sum / 2)
+        : Number(start / 2 + stop / 2);
+}
+} // namespace
+
+RuntimeColonRange runtimePlanColonRange(double start, double step, double stop) {
+    return planFloatingRange(start, step, stop);
 }
 
 RuntimeColonRange runtimePlanColonRange(
@@ -40,27 +108,16 @@ RuntimeColonRange runtimePlanColonRange(
     return runtimePlanColonRange(terms[0], step, stop);
 }
 
-bool runtimeColonRangeContains(const RuntimeColonRange& range,
-                               double value) {
-    if (!range.succeeded || std::isnan(value) ||
-        std::isnan(range.stop)) {
-        return false;
-    }
-    return range.step > 0.0 ? value <= range.stop
-                            : value >= range.stop;
+double runtimeColonRangeElement(const RuntimeColonSequence& range, size_t index) {
+    return range.single ? floatingRangeElement<float>(range, index)
+                        : floatingRangeElement<double>(range, index);
 }
 
 std::vector<double> runtimeMaterializeColonRange(
     const RuntimeColonRange& range) {
-    std::vector<double> values;
-    for (double value = range.start;
-         runtimeColonRangeContains(range, value);) {
-        values.push_back(value);
-        const double next = value + range.step;
-        if (next == value) {
-            break;
-        }
-        value = next;
+    std::vector<double> values(range.count);
+    for (size_t index = 0; index < range.count; ++index) {
+        values[index] = runtimeColonRangeElement(range, index);
     }
     return values;
 }
@@ -206,7 +263,11 @@ RuntimeColonValueResult runtimeMaterializeColonValue(
         realTerms.push_back(term.real);
         single = single || term.numericClass == RuntimeNumericClass::Single;
     }
-    const auto range = runtimePlanColonRange(realTerms);
+    const double step = realTerms.size() == 3 ? realTerms[1] : 1.0;
+    const double stop = realTerms.back();
+    const auto range = single
+        ? planFloatingRange(static_cast<float>(realTerms.front()), static_cast<float>(step), static_cast<float>(stop))
+        : runtimePlanColonRange(realTerms.front(), step, stop);
     if (!range.succeeded) {
         return valueFailure(range.error);
     }

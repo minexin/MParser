@@ -7,11 +7,16 @@
 
 namespace mparser {
 
-struct RuntimeColonRange {
-    bool succeeded = false;
+struct RuntimeColonSequence {
     double start = 0.0;
     double step = 1.0;
     double stop = 0.0;
+    size_t count = 0;
+    bool single = false;
+};
+
+struct RuntimeColonRange : RuntimeColonSequence {
+    bool succeeded = false;
     std::string error;
 };
 
@@ -25,8 +30,7 @@ RuntimeColonRange runtimePlanColonRange(
     const std::vector<double>& terms);
 RuntimeColonRange runtimePlanColonRange(double start, double step,
                                         double stop);
-bool runtimeColonRangeContains(const RuntimeColonRange& range,
-                               double value);
+double runtimeColonRangeElement(const RuntimeColonSequence& range, size_t index);
 std::vector<double> runtimeMaterializeColonRange(
     const RuntimeColonRange& range);
 

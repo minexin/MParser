@@ -265,18 +265,16 @@ end
     assertNumber(result, "y", 18.0);
 }
 
-void runColonZeroStepDiagnosticSmoke() {
+void runColonZeroStepEmptySmoke() {
     const auto result = run(R"(function y = f()
 y = 1:0:5;
 end
 )");
 
-    assert(result.diagnostics.size() == 1);
-    assert(result.diagnostics.front().message ==
-           "bytecode colon range step cannot be zero");
+    assert(result.diagnostics.empty());
     const auto* value = findVariable(result, "y");
     assert(value != nullptr);
-    assert(value->kind == mparser::RuntimeValueKind::Missing);
+    assert(value->rows == 1 && value->columns == 0);
 }
 
 void runWhileSmoke() {
@@ -1119,7 +1117,7 @@ int main() {
     runScriptSkipsLocalFunctionSmoke();
     runForIfSmoke();
     runColonStepRangeSmoke();
-    runColonZeroStepDiagnosticSmoke();
+    runColonZeroStepEmptySmoke();
     runWhileSmoke();
     runBreakContinueSmoke();
     runReturnSmoke();

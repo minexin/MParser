@@ -12,11 +12,13 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #ifdef assert
@@ -986,6 +988,24 @@ end
     assert(innerExecution->attemptCount == 0);
 }
 
+void runFloatingNestedColonSmoke(mparser::TypedRegionBackend backend) {
+    for (const auto& [range, count, last] : std::vector<std::tuple<std::string, double, double>>{
+        {"0:0.05:10", 201, 10}, {"10:-0.05:0", 201, 0},
+        {"1e16:1:(1e16+4)", 5, 1e16+4}, {"1:0:3", 0, -1}}) {
+        const auto pipeline = prepare("function y=main()\ny=0; last=-1;\nfor outer=1:12\n"
+            "for value=" + range + "\ny=y+1; last=value;\nend\nend\nend\n");
+        assert(findVariable(pipeline.baseline.variables, "y")->number == 12 * count);
+        assert(findVariable(pipeline.baseline.variables, "last")->number == last);
+        const auto optimized = runTyped(pipeline, backend);
+        assert(optimized.diagnostics.empty());
+        assertVariablesEqual(pipeline.baseline.variables, optimized.variables);
+        const auto* execution = findExecution(optimized, "scalar-loop", "outer");
+        assert(execution != nullptr && execution->executionCount == 1 && execution->fallbackCount == 0);
+        assert(execution->nestedIterationCount == static_cast<size_t>(12 * count));
+        assert(execution->backend == (backend == mparser::TypedRegionBackend::Native ? "native" : "portable"));
+    }
+}
+
 void runThreeLevelTypedLoopSmoke() {
     auto pipeline = prepare(R"(function y = main()
 y = 0;
@@ -1290,7 +1310,7 @@ end
         {"y", mparser::RuntimeValue(scalar)}};
     auto workingVariables = variables;
     workingVariables.at("j").number = 77.0;
-    workingVariables.at("step").number = 0.0;
+    workingVariables.at("step").number = std::numeric_limits<double>::denorm_min();
     workingVariables.at("y").number = 5.0;
 
     mparser::ScalarTypedRegionExecutor executor;
@@ -1300,10 +1320,10 @@ end
     assert(result.status ==
            mparser::TypedRegionExecutionStatus::Fallback);
     assert(result.variables.empty());
-    assert(result.reason.find("step cannot be zero") !=
+    assert(result.reason.find("colon range") !=
            std::string::npos);
     assert(workingVariables.at("j").number == 77.0);
-    assert(workingVariables.at("step").number == 0.0);
+    assert(workingVariables.at("step").number == std::numeric_limits<double>::denorm_min());
     assert(workingVariables.at("y").number == 5.0);
 }
 
@@ -1393,6 +1413,10 @@ int main() {
         }
         runEmptyLoopPreservesWorkspaceSmoke();
         runNestedTypedLoopExecutionSmoke();
+        runFloatingNestedColonSmoke(mparser::TypedRegionBackend::Portable);
+        if (mparser::nativeScalarJitAvailable()) {
+            runFloatingNestedColonSmoke(mparser::TypedRegionBackend::Native);
+        }
         runThreeLevelTypedLoopSmoke();
         runEmptyNestedLoopPreservesValuesSmoke();
         runStructuredBranchTypedLoopSmoke();

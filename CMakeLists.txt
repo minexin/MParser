@@ -325,6 +325,13 @@ set_target_properties(mparser_core PROPERTIES
     VISIBILITY_INLINES_HIDDEN YES)
 target_include_directories(mparser_core PUBLIC src)
 target_include_directories(mparser_core PRIVATE third_party/nlohmann_json/include)
+
+# Colon reference values require distinct multiply/add rounding, except the
+# explicit overflow-recovery fma in the planner.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/mparser/runtime/core/value/runtime_range.cpp
+        PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+endif()
 target_link_libraries(mparser_core PRIVATE Threads::Threads mparser_miniz)
 target_compile_definitions(mparser_core PRIVATE
     MPARSER_VERSION="${PROJECT_VERSION}")
@@ -2954,6 +2961,12 @@ target_include_directories(graphics_color_smoke_tests PRIVATE third_party/nlohma
 add_test(NAME graphics_color_smoke COMMAND graphics_color_smoke_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/graphics_color_cases.json)
 set_tests_properties(graphics_color_smoke PROPERTIES TIMEOUT 60 LABELS "host-integration")
+add_executable(colon_range_smoke_tests tests/colon_range_smoke.cpp)
+target_link_libraries(colon_range_smoke_tests PRIVATE mparser_cpp_api mparser_core)
+target_include_directories(colon_range_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME colon_range_smoke COMMAND colon_range_smoke_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/colon_reference_cases.json)
+set_tests_properties(colon_range_smoke PROPERTIES TIMEOUT 60 LABELS "host-integration")
 add_executable(ordered_events_api_smoke_tests tests/ordered_events_api_smoke.cpp)
 target_link_libraries(ordered_events_api_smoke_tests PRIVATE mparser_cpp_api)
 target_include_directories(ordered_events_api_smoke_tests PRIVATE third_party/nlohmann_json/include)
@@ -3391,6 +3404,7 @@ install(FILES
     docs/variable-name-validation.md
     docs/graphics-clipping-contract.md
     docs/graphics-color-contract.md
+    docs/graphics-colon-contract.md
     docs/system-search-paths.md
     docs/assignment-display-development.md
     docs/ordered-display-events.md

@@ -1576,16 +1576,10 @@ bool executeKernelSpan(ScalarKernel& kernel, size_t begin, size_t end,
             failureReason = "typed nested " + range.error;
             return false;
         }
-        for (double value = range.start;
-             runtimeColonRangeContains(range, value);) {
-            if (!executeIteration(value)) {
+        for (size_t index = 0; index < range.count; ++index) {
+            if (!executeIteration(runtimeColonRangeElement(range, index))) {
                 return false;
             }
-            const double next = value + range.step;
-            if (next == value) {
-                break;
-            }
-            value = next;
         }
         pc = instruction.jumpTarget;
     }

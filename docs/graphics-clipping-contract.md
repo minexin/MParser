@@ -45,6 +45,10 @@ writes, invalid-value preservation, unchanged samples, and hold/replacement.
 `graphics_api_smoke` checks exported Axes and Line values and retains samples
 outside explicit limits. Both tests passed in the native Windows build.
 
-Still required: MExecServer transport and MExecClient per-line rendering tests,
-real browser pixel checks, MATLAB R2024b comparison, and release contract gates.
-Legend creation/visibility/location/deletion remains a separate unfinished task.
+Subsequent development added isolated MExecServer transport, per-line client
+candidate checks and bounded real-browser Clipping pixels; see
+[browser acceptance](host-browser-acceptance.md) for the exact scene, DLL and
+remaining boundaries. This does not establish full pixel parity, deployed
+client adoption or a release. Basic Legend creation/visibility/location/deletion
+is also implemented and covered by kernel/candidate tests; explicit labels,
+AutoUpdate controls and full layout remain outside that validated subset.
