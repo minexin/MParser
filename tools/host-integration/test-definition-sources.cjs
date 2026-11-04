@@ -98,9 +98,9 @@ async function main() {
         assert.equal(value.data[0],1);
     }
     const followup=await request(`${base}/execute`,{
-        command:'later=read(obj); later_dot=obj.read();',include_workspace_values:true});
+        command:'later=read(obj); later_dot=obj.read(); bound=@obj.read; later_bound=bound();',include_workspace_values:true});
     assert.equal(followup.status,'succeeded',JSON.stringify(followup.diagnostics));
-    for(const name of ['later','later_dot'])
+    for(const name of ['later','later_dot','later_bound'])
         assert.equal(followup.workspace.find(item=>item.name===name)?.value.data[0],1);
     await request(`${base}/files`,{path:'LifecycleSource.m',content:[
         'classdef LifecycleSource < handle',
@@ -130,6 +130,36 @@ async function main() {
         assert.equal(value?.class,'logical');
         assert.equal(value.data[0],false);
     }
+    await request(`${base}/files`,{path:'PrivateBoundSource.m',content:[
+        'classdef PrivateBoundSource < handle',
+        'properties', 'DeletedCalls=0', 'end', 'methods',
+        'function callback=cleanup(obj)', 'callback=@obj.delete;', 'end', 'end',
+        'methods (Access=private)', 'function delete(obj)',
+        'obj.DeletedCalls=obj.DeletedCalls+1;', 'end', 'end', 'end',
+    ].join('\n')},200,'PUT');
+    await request(`${base}/files`,{path:'create_private_bound.m',content:
+        'privateSource=PrivateBoundSource(); allowedCleanup=privateSource.cleanup();'},200,'PUT');
+    const privateCreated=await request(`${base}/execute`,{
+        source_path:'create_private_bound.m',include_workspace_values:true});
+    assert.equal(privateCreated.status,'succeeded',JSON.stringify(privateCreated.diagnostics));
+    const privateBound=await request(`${base}/execute`,{
+        command:'deniedCleanup=@privateSource.delete;',include_workspace_values:true});
+    assert.equal(privateBound.status,'succeeded',JSON.stringify(privateBound.diagnostics));
+    const privateDenied=await request(`${base}/execute`,{
+        command:'deniedCleanup();',include_workspace_values:true});
+    assert.equal(privateDenied.status,'runtime-failed');
+    assert.match(privateDenied.diagnostics[0].message,/method access is denied/);
+    assert.ok(privateDenied.diagnostics[0].source.name.replaceAll('\\','/').includes('/commands/'));
+    const privateUnchanged=await request(`${base}/execute`,{
+        command:'private_alive=isvalid(privateSource); private_calls=privateSource.DeletedCalls;',
+        include_workspace_values:true});
+    assert.equal(privateUnchanged.status,'succeeded',JSON.stringify(privateUnchanged.diagnostics));
+    assert.equal(privateUnchanged.workspace.find(item=>item.name==='private_alive')?.value.data[0],true);
+    assert.equal(privateUnchanged.workspace.find(item=>item.name==='private_calls')?.value.data[0],0);
+    const privateCleaned=await request(`${base}/execute`,{
+        command:'allowedCleanup(); private_alive=isvalid(privateSource);',include_workspace_values:true});
+    assert.equal(privateCleaned.status,'succeeded',JSON.stringify(privateCleaned.diagnostics));
+    assert.equal(privateCleaned.workspace.find(item=>item.name==='private_alive')?.value.data[0],false);
     const invalid=await request('/compile',{sources:[sources[0],{name:'bad.m',source:'x=;'}]});
     assert.equal(invalid.valid,false); assert.equal(invalid.definition_directory.complete,false);
     assert.deepEqual(invalid.definition_directory.definitions,[]);
@@ -142,7 +172,7 @@ async function main() {
         {sources,source_name:'ambiguous.m'},null]) await request('/compile',body,400);
     const legacy=await request('/compile',{source:sources[0].source,source_name:'first.m'});
     assert.equal(legacy.valid,true); assert.equal(legacy.definition_directory.definitions.length,2);
-    console.log('PASS multi-source definitions, cross-request methods/events/deletion, nested parents, invalid graphs and legacy compile');
+    console.log('PASS multi-source definitions, cross-request methods/events/deletion, bound-handle access, nested parents and legacy compile');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
     if(server?.pid&&server.exitCode===null){const stopped=new Promise(resolve=>server.once('close',resolve));server.kill();await stopped;}

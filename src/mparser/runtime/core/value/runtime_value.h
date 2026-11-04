@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -154,6 +153,8 @@ struct RuntimeFunctionHandle {
   std::string lexicalClassName;
   bool externalMethodDispatch = false;
   bool externalMethodResolution = false;
+  bool bindResolvedMethod = false;
+  bool methodAccessDenied = false;
   bool externalEventOperation = false;
   bool externalEventPermission = false;
   std::optional<size_t> resolvedImplicitOutputCount;

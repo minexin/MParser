@@ -390,10 +390,10 @@ end
             mparser::sdk::Invocation next;
             next.initialWorkspace = {{"obj",object->value}};
             const auto followup = methodRuntime.execute(mparser::sdk::Module::compile(
-                "later=read(obj); later_dot=obj.read();","followup.m"),next);
+                "later=read(obj); later_dot=obj.read(); bound=@obj.read; later_bound=bound();","followup.m"),next);
             require(followup.succeeded(),"installed cross-request method dispatch failed");
             const auto followupValues = followup.variables();
-            for (const auto name : {"later","later_dot"}) {
+            for (const auto name : {"later","later_dot","later_bound"}) {
                 const auto found = std::find_if(followupValues.begin(),followupValues.end(),
                     [name](const auto& item) { return item.name == name; });
                 require(found != followupValues.end() && scalar(found->value) == 7,

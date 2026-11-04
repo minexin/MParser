@@ -31,8 +31,11 @@ Calling the class-created cleanup handle afterwards deletes that object once.
 The source asserts these measured results; earlier approval failures were not
 successful MATLAB runs.
 
-MParser currently rejects external private bound-handle creation. This is a
-known compatibility difference. Do not describe that rejection as an R2024b
-requirement or infer permission to invoke the private method from creation alone.
-The invocation rejection matches the measured reference; the remaining difference
-is its earlier rejection at handle creation.
+The earlier MParser implementation rejected external private bound-handle
+creation. The current follow-up allows binding and retains the creator's denial
+for invocation; the focused SDK test also proves the object remains valid with
+zero destructor calls after rejection. Full kernel/package 355-test regression
+and fresh installed-host 67-test/REST acceptance pass; see
+`docs/function-method-dispatch.md` for the selected DLL and evidence. These
+results do not establish every method-handle form or a release. Do not infer
+invocation permission from creation alone.

@@ -21,7 +21,7 @@ success may substitute for missing kernel contracts.
 | --- | --- | --- | --- |
 | H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated host compile-only/execute diagnostic propagation verified, including preservation with clear_workspace=true; deployed host unchanged |
 | H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins, 90-case R2024b source-context corpus and isolated revision-checked rename passed; deployed rename UI/API adoption pending |
-| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership and isolated single/multi-source REST checked; cross-command method/listener ownership passed SDK and clean host replay; private bound-handle creation has a confirmed R2024b difference; deployed navigation and stale-document UI acceptance pending |
+| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership, cross-command method/listener and non-static bound-handle access passed SDK and clean host replay; measured creator-context rules match the R2024b cases; deployed navigation and stale-document UI acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Kernel/REST and real desktop matrix/annotation/close/recreate/switch/zoom cases passed; narrow-screen cropping is confirmed and full downstream acceptance remains open; see host-browser-acceptance.md |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Legend/Clipping, R2024b Color corpus and opt-in v3 identity checks passed; host selection, renderer adoption and writeback pending |
@@ -78,6 +78,19 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-04 bound-handle access follow-up: R2024b verified that ordinary
+  private/protected bound handles can be created externally but remain denied
+  on invocation, even through a public owner method. Class-created private and
+  derived-class-created protected handles still work; rejected calls leave body
+  counters unchanged. The kernel now freezes that access result in its internal
+  descriptor and uses a method-only original-owner binding query across commands.
+  A same-named consumer class cannot authorise it, and binding runs no getter.
+  Full rebuilt kernel/package tests pass 355/355 at
+  `build/method-handle-access-full-test.log`; source-only installed-SDK host
+  build/REST/client probes and 67 tests pass at
+  `build/clean-host-probe/eb24c14ff9d84b7c8d6e702cdf6e924b`. No public header,
+  ABI revision or protocol field changed. Current-commit GitHub CI remains a
+  separate gate; see function-method-dispatch.md for exact scope/hash/evidence.
 - 2026-11-04 authorization resumed: GitHub main was read successfully at
   `1e55e7b`, with its Cross-platform and Documentation CI both successful.
   The expanded R2024b private-destructor reference also ran: external bound-handle

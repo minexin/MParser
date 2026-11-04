@@ -916,14 +916,30 @@ end
     mparser::sdk::Invocation invoke;
     invoke.initialWorkspace = {{"obj",exported.output(0)},
         {"deleter",exported.output(1)},{"recorder",exported.output(2)}};
-    for (const auto source : {"delete(obj);","obj.delete();","forged=@obj.delete;"}) {
+    for (const auto source : {"delete(obj);","obj.delete();"}) {
         const auto denied = runtime.execute(Module::compile(source,"private_delete_denied.m"),invoke);
         assert(!denied.succeeded());
         const auto message = denied.diagnostics().front().message;
-        assert(message.find("access is denied") != std::string::npos ||
-            (std::string_view(source) == "forged=@obj.delete;" &&
-             message == "bound method is not available: obj.delete"));
+        assert(message.find("access is denied") != std::string::npos);
     }
+    const auto boundOutside = runtime.execute(Module::compile(
+        "external=@obj.delete; array=[obj,obj]; externalArray=@array.delete;","private_delete_external_binding.m"),invoke);
+    assert(boundOutside.succeeded());
+    auto deniedInvoke = invoke;
+    const auto boundValues = boundOutside.variables();
+    deniedInvoke.initialWorkspace.push_back({"external",findVariable(boundValues,"external")->value});
+    deniedInvoke.initialWorkspace.push_back({"externalArray",findVariable(boundValues,"externalArray")->value});
+    const auto deniedCall = runtime.execute(Module::compile("external();","private_delete_external_call.m"),deniedInvoke);
+    assert(!deniedCall.succeeded());
+    assert(deniedCall.diagnostics().front().message.find("access is denied") != std::string::npos);
+    const auto deniedArrayCall = runtime.execute(Module::compile("externalArray();","private_delete_external_array_call.m"),deniedInvoke);
+    assert(!deniedArrayCall.succeeded());
+    const auto unchanged = runtime.execute(Module::compile(
+        "alive=isvalid(obj); count=recorder.Count;","private_delete_unchanged.m"),invoke);
+    assert(unchanged.succeeded());
+    const auto unchangedValues = unchanged.variables();
+    assert(findVariable(unchangedValues,"alive")->value.numericData<std::uint8_t>().front() == 1);
+    assert(scalar(findVariable(unchangedValues,"count")->value) == 0);
     const auto authorised = runtime.execute(Module::compile(
         "deleter(); deleter(); alive=isvalid(obj); count=recorder.Count;","private_delete_authorised.m"),invoke);
     assert(authorised.succeeded());
@@ -943,6 +959,116 @@ end
     const auto arrayValues = arrayResult.variables();
     assert(findVariable(arrayValues,"alive")->value.numericData<std::uint8_t>().front() == 0);
     assert(scalar(findVariable(arrayValues,"count")->value) == 1);
+}
+
+void runMethodHandleAccessSmoke() {
+    const std::string definitions = R"(
+classdef AccessOwner < handle
+properties
+GetterCalls=0
+PrivateCalls=0
+ProtectedCalls=0
+end
+properties (Dependent)
+Trap
+end
+methods
+function value=publicRead(obj)
+value=7;
+end
+function callback=privateFactory(obj)
+callback=@obj.privateRead;
+end
+function value=invoke(obj,callback)
+value=callback();
+end
+function value=get.Trap(obj)
+obj.GetterCalls=obj.GetterCalls+1; value=99;
+end
+end
+methods (Access=private)
+function value=privateRead(obj)
+obj.PrivateCalls=obj.PrivateCalls+1;
+value=31;
+end
+end
+methods (Access=protected)
+function value=protectedRead(obj)
+obj.ProtectedCalls=obj.ProtectedCalls+1;
+value=41;
+end
+end
+end
+classdef AccessChild < AccessOwner
+methods
+function callback=protectedFactory(obj)
+callback=@obj.protectedRead;
+end
+end
+end
+)";
+    const auto factory = Module::compile(
+        "function [obj,child,privateHandle,protectedHandle]=make_values()\n"
+        "obj=AccessOwner(); child=AccessChild(); privateHandle=obj.privateFactory(); "
+        "protectedHandle=child.protectedFactory();\nend\n" + definitions,"handle_access_owner.m");
+    assert(factory.isValid());
+    for (const auto backend : {Backend::Automatic,Backend::Bytecode,Backend::Portable,Backend::Native}) {
+        auto runtime = mparser::sdk::Runtime::create();
+        Invocation create; create.backend=backend; create.entryFunction="make_values"; create.requestedOutputCount=4;
+        const auto exported=runtime.execute(factory,create);
+        assert(exported.succeeded());
+        Invocation request; request.backend=backend;
+        request.initialWorkspace={{"obj",exported.output(0)},{"child",exported.output(1)},
+            {"authorisedPrivate",exported.output(2)},{"authorisedProtected",exported.output(3)}};
+        const auto binding=runtime.execute(Module::compile(
+            "publicHandle=@obj.publicRead; deniedPrivate=@obj.privateRead; deniedProtected=@child.protectedRead; "
+            "publicValue=publicHandle(); privateValue=authorisedPrivate(); protectedValue=authorisedProtected();\n"
+            "classdef AccessOwner < handle\nmethods\nfunction value=privateRead(obj)\nvalue=99;\nend\nend\nend",
+            "handle_access_consumer.m"),request);
+        assert(binding.succeeded());
+        const auto values=binding.variables();
+        assert(scalar(findVariable(values,"publicValue")->value)==7);
+        assert(scalar(findVariable(values,"privateValue")->value)==31);
+        assert(scalar(findVariable(values,"protectedValue")->value)==41);
+        request.initialWorkspace.push_back({"deniedPrivate",findVariable(values,"deniedPrivate")->value});
+        request.initialWorkspace.push_back({"deniedProtected",findVariable(values,"deniedProtected")->value});
+        request.eventCapture=mparser::sdk::EventCaptureOptions{};
+        for (const auto source : {"deniedPrivate();","deniedProtected();",
+            "obj.invoke(deniedPrivate);","obj.invoke(deniedProtected);"}) {
+            const auto denied=runtime.execute(Module::compile(source,"denied_handle_call.m"),request);
+            assert(!denied.succeeded());
+            assert(denied.diagnostics().front().message.find("access is denied")!=std::string::npos);
+            const auto events=denied.executionEvents();
+            assert(events.size()==1 && events.front().kind==mparser::sdk::ExecutionEventKind::Error);
+            const auto expected=std::string_view(source).starts_with("obj.invoke")
+                ? "handle_access_owner.m" : "denied_handle_call.m";
+            assert(denied.diagnostics().front().source->sourceName==expected);
+            assert(events.front().source.sourceName==expected);
+        }
+        const auto trap=runtime.execute(Module::compile("bad=@obj.Trap;","handle_getter_trap.m"),request);
+        assert(!trap.succeeded());
+        const auto observed=runtime.execute(Module::compile(
+            "calls=obj.GetterCalls; privateCalls=obj.PrivateCalls; protectedCalls=child.ProtectedCalls;",
+            "handle_getter_check.m"),request);
+        assert(observed.succeeded());
+        const auto observedValues=observed.variables();
+        assert(scalar(findVariable(observedValues,"calls")->value)==0);
+        assert(scalar(findVariable(observedValues,"privateCalls")->value)==1);
+        assert(scalar(findVariable(observedValues,"protectedCalls")->value)==1);
+        Invocation localRequest; localRequest.backend=backend;
+        const auto local=Module::compile(
+            "obj=AccessOwner(); child=AccessChild(); deniedPrivate=@obj.privateRead; deniedProtected=@child.protectedRead; "
+            "try, deniedPrivate(); catch, end; try, deniedProtected(); catch, end; "
+            "try, obj.invoke(deniedPrivate); catch, end; "
+            "legal=obj.privateFactory(); value=legal(); "
+            "privateCalls=obj.PrivateCalls; protectedCalls=child.ProtectedCalls;"+definitions,
+            "local_handle_access.m").execute(localRequest);
+        assert(local.succeeded());
+        const auto localValues=local.variables();
+        assert(scalar(findVariable(localValues,"value")->value)==31);
+        assert(scalar(findVariable(localValues,"privateCalls")->value)==1);
+        assert(scalar(findVariable(localValues,"protectedCalls")->value)==0);
+    }
 }
 
 void runCrossInvocationDeletionSmoke() {
@@ -1560,6 +1686,7 @@ int main(int argc, char** argv) {
     runDefinitionMetadataSmoke();
     runFunctionSyntaxMethodSmoke();
     runPrivateDestructorHandleSmoke();
+    runMethodHandleAccessSmoke();
     try { runForeignEventPermissionSmoke(); runGraphicsListenerExportSmoke(); }
     catch (const std::exception& error) { std::cerr << "event export: " << error.what() << '\n'; return 1; }
     try { runCrossInvocationDeletionSmoke(); }

@@ -5549,6 +5549,20 @@ private:
             if (receiver != currentFrame().end() &&
                 isObject(receiver->second) &&
                 methodName.find('.') == std::string::npos) {
+                if (receiver->second.objectContext != callableContext_) {
+                    const auto diagnosticCount = diagnostics_.size();
+                    auto resolved = resolveOwnedMethodHandle(instruction,methodName,receiver->second,true);
+                    if (resolved) {
+                        const auto display = info.display;
+                        info = *resolved->functionHandle;
+                        info.display = display;
+                        return true;
+                    }
+                    if (diagnostics_.size() == diagnosticCount) {
+                        addDiagnostic(instruction,"bound method is not available: " + target);
+                    }
+                    return false;
+                }
                 const auto klass =
                     classesByName_.find(receiver->second.className);
                 const FunctionInfo* method =
@@ -5560,14 +5574,7 @@ private:
                                   "bound method is not available: " + target);
                     return false;
                 }
-                if (!hasMemberAccess(method->access,
-                                     method->declaringClass)) {
-                    addDiagnostic(instruction,
-                                  "method access is denied: " +
-                                      method->declaringClass + "." +
-                                      method->name);
-                    return false;
-                }
+                info.methodAccessDenied = !hasMemberAccess(method->access,method->declaringClass);
                 info.kind = RuntimeFunctionHandleKind::Method;
                 info.backend = RuntimeFunctionHandleBackend::Bytecode;
                 info.context = callableContext_;
@@ -11526,6 +11533,49 @@ private:
                activeAnonymousBodyOutputCounts_.back() < 0;
     }
 
+    std::optional<RuntimeValue> resolveOwnedMethodHandle(
+        const BytecodeInstruction& instruction,const std::string& name,const RuntimeValue& object,bool bind) {
+        if (!object.objectContext || !inheritedSourceCallableInvoker_) { return std::nullopt; }
+        RuntimeFunctionHandle lookup;
+        lookup.kind = RuntimeFunctionHandleKind::Method;
+        lookup.backend = RuntimeFunctionHandleBackend::Bytecode;
+        lookup.context = object.objectContext;
+        lookup.className = object.className;
+        lookup.methodName = name;
+        lookup.externalMethodResolution = true;
+        lookup.bindResolvedMethod = bind;
+        lookup.receiver = object;
+        lookup.span = instruction.span;
+        auto outputs = callInheritedSourceCallable(instruction,
+            makeRuntimeFunctionHandleValue(std::move(lookup)),{},1);
+        if (outputs.empty() || outputs.front().kind == RuntimeValueKind::Missing) { return std::nullopt; }
+        if (isRuntimeScalarStruct(outputs.front())) {
+            const auto* status = runtimeStructField(outputs.front(),"status");
+            const auto* message = runtimeStructField(outputs.front(),"message");
+            const auto statusText = status ? runtimeTextScalarUtf8(*status) : std::nullopt;
+            const auto messageText = message ? runtimeTextScalarUtf8(*message) : std::nullopt;
+            if (statusText == "rejected" && messageText) { addDiagnostic(instruction,*messageText); }
+            else {
+                addDiagnostic(instruction,"method lookup returned an invalid rejection",
+                    "MParser:InvalidInheritedCallableResult");
+            }
+            return std::nullopt;
+        }
+        const auto& resolved = outputs.front().functionHandle;
+        if (!isFunctionHandle(outputs.front()) || !resolved ||
+            resolved->context != object.objectContext || resolved->className != object.className ||
+            resolved->methodName != name || resolved->kind != RuntimeFunctionHandleKind::Method ||
+            resolved->receiver.has_value() != bind ||
+            (bind && (resolved->receiver->objectContext != object.objectContext ||
+                resolved->receiver->sharedFields != object.sharedFields)) ||
+            !resolved->resolvedImplicitOutputCount || *resolved->resolvedImplicitOutputCount > 1) {
+            addDiagnostic(instruction,"method lookup returned an invalid owned callable",
+                "MParser:InvalidInheritedCallableResult");
+            return std::nullopt;
+        }
+        return std::move(outputs.front());
+    }
+
     std::optional<StackValue> argumentMethod(
         const BytecodeInstruction& instruction, const std::string& name,
         const std::vector<RuntimeValue>& arguments) {
@@ -11534,42 +11584,8 @@ private:
             if (!isRuntimeClassObject(argument)) { continue; }
             // Do not authorize a foreign object using a same-named local class.
             if (argument.objectContext != callableContext_) {
-                if (!argument.objectContext || !inheritedSourceCallableInvoker_) { return std::nullopt; }
-                RuntimeFunctionHandle lookup;
-                lookup.kind = RuntimeFunctionHandleKind::Method;
-                lookup.backend = RuntimeFunctionHandleBackend::Bytecode;
-                lookup.context = argument.objectContext;
-                lookup.className = argument.className;
-                lookup.methodName = name;
-                lookup.externalMethodResolution = true;
-                lookup.receiver = argument;
-                lookup.span = instruction.span;
-                auto outputs = callInheritedSourceCallable(instruction,
-                    makeRuntimeFunctionHandleValue(std::move(lookup)),{},1);
-                if (outputs.empty() || outputs.front().kind == RuntimeValueKind::Missing) { return std::nullopt; }
-                if (isRuntimeScalarStruct(outputs.front())) {
-                    const auto* status = runtimeStructField(outputs.front(),"status");
-                    const auto* message = runtimeStructField(outputs.front(),"message");
-                    const auto statusText = status ? runtimeTextScalarUtf8(*status) : std::nullopt;
-                    const auto messageText = message ? runtimeTextScalarUtf8(*message) : std::nullopt;
-                    if (statusText == "rejected" && messageText) {
-                        addDiagnostic(instruction,*messageText);
-                    } else {
-                        addDiagnostic(instruction,"method lookup returned an invalid rejection",
-                            "MParser:InvalidInheritedCallableResult");
-                    }
-                    return std::nullopt;
-                }
-                const auto& resolved = outputs.front().functionHandle;
-                if (!isFunctionHandle(outputs.front()) || !resolved ||
-                    resolved->context != argument.objectContext ||
-                    resolved->kind != RuntimeFunctionHandleKind::Method || resolved->receiver ||
-                    !resolved->resolvedImplicitOutputCount || *resolved->resolvedImplicitOutputCount > 1) {
-                    addDiagnostic(instruction,"method lookup returned an invalid owned callable",
-                        "MParser:InvalidInheritedCallableResult");
-                    return std::nullopt;
-                }
-                return runtimeStackValue(std::move(outputs.front()));
+                auto resolved = resolveOwnedMethodHandle(instruction,name,argument,false);
+                return resolved ? std::optional<StackValue>(runtimeStackValue(std::move(*resolved))) : std::nullopt;
             }
             const auto klass = classesByName_.find(argument.className);
             if (klass == classesByName_.end()) { return std::nullopt; }
@@ -12008,9 +12024,9 @@ private:
         if (klass == classesByName_.end()) {
             return rejected("class method owner is unavailable: " + info.className);
         }
-        const auto* method = selectMethod(klass->second,info.methodName,false);
-        if (!method) { return {missingValue()}; }
-        if (method->access.level != MemberAccessLevel::Public) {
+        const auto* method = selectMethod(klass->second,info.methodName,info.bindResolvedMethod);
+        if (!method || (info.bindResolvedMethod && method->staticMethod)) { return {missingValue()}; }
+        if (!info.bindResolvedMethod && method->access.level != MemberAccessLevel::Public) {
             return rejected("method access is denied: " + method->declaringClass + "." + info.methodName);
         }
         RuntimeFunctionHandle resolved;
@@ -12021,9 +12037,14 @@ private:
         resolved.methodName = info.methodName;
         resolved.declaringClass = method->declaringClass;
         resolved.display = "@" + info.className + "." + info.methodName;
-        resolved.externalMethodDispatch = true;
+        resolved.externalMethodDispatch = !info.bindResolvedMethod;
+        if (info.bindResolvedMethod) {
+            resolved.receiver = info.receiver;
+            resolved.methodAccessDenied = method->access.level != MemberAccessLevel::Public;
+            resolved.sourceFile = method->fullPath;
+        }
         resolved.resolvedImplicitOutputCount = method->classDestructor ? 0 : preferredImplicitOutputCount(method->signature);
-        resolved.span = instruction.span;
+        resolved.span = info.bindResolvedMethod ? method->span : instruction.span;
         return {makeRuntimeFunctionHandleValue(std::move(resolved))};
     }
 
@@ -12175,6 +12196,11 @@ private:
         }
 
         const RuntimeFunctionHandle& info = *handle.functionHandle;
+        // The creation context is frozen; passing a denied handle into its class cannot authorize it.
+        if (info.methodAccessDenied) {
+            addDiagnostic(instruction,"method access is denied: " + info.declaringClass + "." + info.methodName);
+            return missingOutputs(requestedCount);
+        }
         if (info.kind != RuntimeFunctionHandleKind::Builtin &&
             (info.backend != RuntimeFunctionHandleBackend::Bytecode ||
              !info.context || info.context != callableContext_)) {

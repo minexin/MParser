@@ -232,14 +232,14 @@ Remaining acceptance gates are not hidden by those green tests:
   calls were rejected, but creating `@obj.delete` outside the class succeeded.
   The class-created handle deleted the object once. Raw result:
   `build/private-delete-matlab-r2024b-diagnostic.log`; the run exited nonzero at
-  the incorrect handle-creation assertion. MParser still rejects that external
-  handle creation, a confirmed compatibility difference, not a security proof.
+  the incorrect handle-creation assertion. The earlier MParser implementation
+  rejected that external handle creation, a compatibility difference, not a security proof.
   The independent-object invocation probe subsequently ran successfully after
   authorization/approval access was restored. In
   `build/private-delete-matlab-r2024b-observed.log`, external invocation rejects,
   leaves the object valid and records zero destructor calls. The class-created
   cleanup handle deletes it once. Invocation refusal therefore agrees with the
-  measured R2024b behavior, but MParser still rejects handle creation too early.
+  measured R2024b behavior; the current follow-up addresses the earlier creation rejection.
 
 - GitHub CI for this follow-up must be checked against its actual commit;
   passing local tests does not establish remote CI or a published release.
@@ -257,3 +257,44 @@ Reference rules: MathWorks [method invocation](https://www.mathworks.com/help/ma
 and [class precedence](https://www.mathworks.com/help/matlab/matlab_oop/class-precedence.html).
 The installed R2024b replay, not the current online release label, anchors the
 tested examples above.
+
+## Bound Handle Access Follow-Up
+
+The current follow-up fixes the creation-timing gap for non-static bound method
+handles. The creator's access result is retained in an internal descriptor;
+creation is allowed, but a denied descriptor rejects invocation before routing
+into another module. Passing it into its class cannot authorise it. A legal
+class/derived-class-created handle retains its capability outside that class.
+No public header, ABI revision or protocol field changes.
+
+Foreign binding uses the same method-only owner query as function-form dispatch,
+with an explicit bound-result mode. It retains the real receiver and resolves
+only against its registered original owner; a same-named consumer class cannot
+authorise it. Dependent getters and method bodies are not evaluated by binding.
+The shared lookup helper also validates the returned owner, class, method,
+receiver and implicit-output metadata.
+
+`tools/reference/method-handle-access` extends the R2024b evidence to ordinary
+private/protected methods, including class-created/derived-class-created positive
+controls and attempts to call an externally created handle through its owner.
+`build/method-handle-access-matlab-r2024b-final.log` passes those assertions and
+records zero additional private/protected calls after rejection.
+The SDK red reproduction is `build/method-handle-access-red-test.log`.
+Focused expanded SDK/listener checks pass in
+`build/method-handle-access-expanded-test.log`.
+
+Complete rebuilt kernel/package regression passes 355/355 in 94.39 seconds at
+`build/method-handle-access-full-test.log`, including the relocated C++ consumer's
+next-command bound-handle invocation. Fresh source-only installed-SDK host run
+`build/clean-host-probe/eb24c14ff9d84b7c8d6e702cdf6e924b` passes all 148 build
+actions, REST/client probes and 67/67 host regressions (19.87 seconds).
+The REST probe checks successful external private binding, invocation refusal at
+the command source, unchanged object validity/destructor count and subsequent
+legal class-created cleanup. Selected DLL SHA256:
+`E32E6CE8B80413B82DFBDFFE7847AEFC17A18BF0F336A5EE864255516CF2D264`.
+Aggregate host log: `build/method-handle-access-clean-host.log`; raw kernel REST:
+`build/host-compile-probe/e94885d00e884c1a8bf7f3c835e717cf`.
+
+These are current local and isolated-host results, not a published release.
+GitHub CI must be checked against the actual follow-up commit. Static or
+class-qualified handles and unregistered owners are not expanded by this work.
