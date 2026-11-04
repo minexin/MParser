@@ -33,7 +33,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "77dbed4f617b1e2b02d8176f81cb763a95632d8a06fdcc3cf324c35bd07a6f67"
+      "sha256_lf": "2aa59e6cd95e1b67fe793e66d61adc590bd4d0d3219270318d072df530804286"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -121,7 +121,7 @@
     },
     {
       "path": "docs/graphics-writeback-contract.md",
-      "sha256_lf": "e3e52169347595b173a3c2cbc3bd8bb317be3562a2dc4e970d4d90df185c5e5c"
+      "sha256_lf": "8b8e9d2187c8558ea007d5ac2c66adc567022b74c18b8050381c0844e84843a7"
     }
   ]
 }

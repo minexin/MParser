@@ -51,8 +51,11 @@ int main() {
             require(renumbered.at("objects").back().at("objectIdentity")==secondId,"stable identity");
             rejects([&]{runtime.setGraphicsProperty(graphId,firstId,"Color",red);},MPARSER_API_STATUS_OUT_OF_RANGE);
             runtime.setGraphicsProperty(graphId,secondId,"Clipping",Value::numericScalar<std::uint8_t>(NumericClass::Logical,0));
-            auto reader=std::async(std::launch::async,[runtime]() {
-                for(int index=0;index<100;++index) { (void)Json::parse(runtime.graphicsJson(3)); }
+            auto reader=std::async(std::launch::async,[runtime,graphId]() {
+                for(int index=0;index<100;++index) {
+                    const auto snapshot=Json::parse(runtime.graphicsJson(3));
+                    require(snapshot.at("graphIdentity")==graphId,"concurrent read identity");
+                }
             });
             for(int index=0;index<100;++index) { runtime.setGraphicsProperty(graphId,secondId,"Color",red); }
             reader.get();

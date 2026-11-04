@@ -62,8 +62,10 @@ foreign session, reset and no-source-execution checks. Two concurrent requests
 with the same expected revision must produce exactly one successful commit.
 
 Final rebuilt kernel/package regression, including the strengthened reset-race
-checks, passed 358/358 in 47.76 seconds at
-`build/graphics-writeback-release-final-test.log`. Fresh source-only installed
+checks and a concurrent-read identity assertion, passed 358/358 in 94.06 seconds
+at `build/graphics-writeback-ci-fix-full-test.log`. The identity assertion also
+consumes the JSON parser result as required by GCC's warnings-as-errors build.
+Fresh source-only installed
 SDK host acceptance passed 148 build actions, all dedicated probes and 67/67
 host regressions (19.48 seconds). Stage:
 `build/clean-host-probe/4ac83d4ddaf646ceac291e9b935ffac9`; aggregate log:
