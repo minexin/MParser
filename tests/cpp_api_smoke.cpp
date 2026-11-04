@@ -617,6 +617,138 @@ end
     }
 }
 
+void runFunctionSyntaxMethodSmoke() {
+    const std::vector<mparser::sdk::SourceGraphUnit> sources{
+        {"DispatchOwner.m",
+         "classdef DispatchOwner < handle\nproperties\nValue=7\nend\nmethods\n"
+         "y=read(obj)\ny=combine(x,obj)\n[a,b]=parts(obj)\n"
+         "function touch(obj)\nobj.Value=obj.Value+1;\nend\n"
+         "function y=length(obj)\ny=17;\nend\n"
+         "function y=pick(varargin)\ny=1;\nend\n"
+         "function y=marker(x,obj)\ny=x+23;\nend\n"
+         "function y=inside(obj)\ny=secret(obj);\nend\nend\n"
+         "methods (Access=private)\nfunction y=secret(obj)\ny=31;\nend\nend\nend",{}},
+        {"read.m","function y=read(obj)\ny=obj.Value;\nend","DispatchOwner"},
+        {"combine.m","function y=combine(x,obj)\ny=x+obj.Value;\nend","DispatchOwner"},
+        {"parts.m","function [a,b]=parts(obj)\na=obj.Value; b=a+1;\nend","DispatchOwner"},
+        {"DispatchChild.m","classdef DispatchChild < DispatchOwner\nend",{}},
+        {"DispatchPeer.m","classdef DispatchPeer\nmethods\n"
+         "function y=pick(varargin)\ny=2;\nend\nend\nend",{}},
+        {"main.m","obj=DispatchOwner(); direct=read(obj); second=combine(4,obj); "
+         "[a,b]=parts(obj); touch(obj); changed=read(obj); overridden=length(obj);",{}}
+    };
+    const auto module = Module::compile(sources);
+    assert(module.isValid());
+    for (const auto backend : {mparser::sdk::Backend::Automatic,mparser::sdk::Backend::Bytecode,
+                               mparser::sdk::Backend::Portable,mparser::sdk::Backend::Native}) {
+        mparser::sdk::Invocation request;
+        request.backend = backend;
+        const auto result = module.execute(request);
+        if (!result.succeeded()) {
+            for (const auto& diagnostic : result.diagnostics()) { std::cerr << diagnostic.message << '\n'; }
+        }
+        assert(result.succeeded());
+        const auto values = result.variables();
+        assert(scalar(findVariable(values,"direct")->value) == 7);
+        assert(scalar(findVariable(values,"second")->value) == 11);
+        assert(scalar(findVariable(values,"a")->value) == 7);
+        assert(scalar(findVariable(values,"b")->value) == 8);
+        assert(scalar(findVariable(values,"changed")->value) == 8);
+        assert(scalar(findVariable(values,"overridden")->value) == 17);
+        auto inherited = sources;
+        inherited.back().source = "obj=DispatchChild(); inherited=read(obj); allowed=inside(obj); "
+            "peer=DispatchPeer(); left=pick(obj,peer); right=pick(peer,obj); mixed=pick(4,obj,peer);";
+        const auto inheritedModule = Module::compile(inherited);
+        assert(inheritedModule.isValid());
+        const auto inheritedResult = inheritedModule.execute(request);
+        assert(inheritedResult.succeeded());
+        const auto inheritedValues = inheritedResult.variables();
+        assert(scalar(findVariable(inheritedValues,"inherited")->value) == 7);
+        assert(scalar(findVariable(inheritedValues,"allowed")->value) == 31);
+        assert(scalar(findVariable(inheritedValues,"left")->value) == 1);
+        assert(scalar(findVariable(inheritedValues,"right")->value) == 2);
+        assert(scalar(findVariable(inheritedValues,"mixed")->value) == 1);
+        auto deleted = sources;
+        deleted.back().source = "obj=DispatchOwner(); delete(obj); value=marker(4,obj); first=pick(obj);";
+        const auto deletedModule = Module::compile(deleted);
+        assert(deletedModule.isValid());
+        const auto deletedResult = deletedModule.execute(request);
+        assert(deletedResult.succeeded());
+        const auto deletedValues = deletedResult.variables();
+        assert(scalar(findVariable(deletedValues,"value")->value) == 27);
+        assert(scalar(findVariable(deletedValues,"first")->value) == 1);
+        for (const auto& source : {"obj=DispatchOwner(); denied=secret(obj);",
+                                   "obj=DispatchOwner(); delete(obj); invalid=read(obj);",
+                                   "obj=DispatchOwner(); missing=read(4);",
+                                   "obj=DispatchOwner(); missing=read;",
+                                   "obj=DispatchOwner(); peer=DispatchPeer(); missing=read(peer,obj);"}) {
+            auto invalid = sources;
+            invalid.back().source = source;
+            const auto invalidModule = Module::compile(invalid);
+            assert(invalidModule.isValid());
+            const auto rejected = invalidModule.execute(request);
+            assert(!rejected.succeeded());
+            assert(!rejected.diagnostics().empty());
+            if (invalid.back().source.find("secret") != std::string::npos) {
+                assert(rejected.diagnostics().front().message.find("access is denied") != std::string::npos);
+            }
+        }
+    }
+    auto local = sources;
+    local.back().source = "obj=DispatchOwner(); local=read(obj); "
+        "read=@(x)55; shadowed=read(obj);\nfunction y=read(obj)\ny=91;\nend";
+    const auto localModule = Module::compile(local);
+    assert(localModule.isValid());
+    const auto localResult = localModule.execute();
+    assert(localResult.succeeded());
+    const auto localValues = localResult.variables();
+    assert(scalar(findVariable(localValues,"local")->value) == 91);
+    assert(scalar(findVariable(localValues,"shadowed")->value) == 55);
+    auto fallback = sources;
+    fallback.insert(fallback.end()-1,{"fallback/read.m","function y=read(obj)\ny=99;\nend",{}});
+    fallback.back().source = "obj=DispatchOwner(); method=read(obj); ordinary=read(4);";
+    const auto fallbackModule = Module::compile(fallback);
+    assert(fallbackModule.isValid());
+    const auto fallbackResult = fallbackModule.execute();
+    assert(fallbackResult.succeeded());
+    const auto fallbackValues = fallbackResult.variables();
+    assert(scalar(findVariable(fallbackValues,"method")->value) == 7);
+    assert(scalar(findVariable(fallbackValues,"ordinary")->value) == 99);
+    auto sideEffects = sources;
+    sideEffects.back().source = "obj=DispatchOwner(); once=read(tick(obj)); count=obj.Value;\n"
+        "function value=tick(obj)\nobj.Value=obj.Value+1; value=obj;\nend";
+    const auto sideEffectModule = Module::compile(sideEffects);
+    assert(sideEffectModule.isValid());
+    const auto sideEffectResult = sideEffectModule.execute();
+    assert(sideEffectResult.succeeded());
+    const auto sideEffectValues = sideEffectResult.variables();
+    assert(scalar(findVariable(sideEffectValues,"once")->value) == 8);
+    assert(scalar(findVariable(sideEffectValues,"count")->value) == 8);
+    auto runtime = mparser::sdk::Runtime::create();
+    const auto producer = Module::compile("function obj=make_foreign()\nobj=SameName();\nend\n"
+        "classdef SameName < handle\nend","dispatch_producer.m");
+    mparser::sdk::Invocation exportedRequest;
+    exportedRequest.entryFunction = "make_foreign";
+    exportedRequest.requestedOutputCount = 1;
+    const auto exported = runtime.execute(producer,exportedRequest);
+    assert(exported.succeeded());
+    const std::string localClass = "\nclassdef SameName < handle\nmethods\n"
+        "function y=read(obj)\ny=99;\nend\nend\nend";
+    const auto foreignConsumer = Module::compile("wrong=read(foreign([]));" + localClass,"dispatch_consumer.m");
+    assert(foreignConsumer.isValid());
+    mparser::sdk::Invocation importedRequest;
+    importedRequest.initialWorkspace = {{"foreign",exported.output(0)}};
+    const auto foreignResult = runtime.execute(foreignConsumer,importedRequest);
+    assert(!foreignResult.succeeded());
+    const auto localEmpty = Module::compile("obj=SameName(); empty=obj([]); correct=read(empty);" + localClass,
+        "dispatch_empty_local.m");
+    assert(localEmpty.isValid());
+    const auto localEmptyResult = localEmpty.execute();
+    assert(localEmptyResult.succeeded());
+    const auto localEmptyValues = localEmptyResult.variables();
+    assert(scalar(findVariable(localEmptyValues,"correct")->value) == 99);
+}
+
 void runDefinitionMetadataSmoke() {
     const std::vector<mparser::sdk::SourceGraphUnit> ownedSources{
         {"ExternalRange.m","classdef ExternalRange\nmethods\ny=read(obj)\nend\nend\n",{}},
@@ -919,6 +1051,7 @@ int main(int argc, char** argv) {
     }
     runInvalidAssignmentCompileSmoke();
     runDefinitionMetadataSmoke();
+    runFunctionSyntaxMethodSmoke();
     try {
         runIdentifierBuiltinSmoke();
     } catch (const std::exception& error) {

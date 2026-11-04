@@ -116,5 +116,7 @@ clean installed-SDK host build and expanded external-method REST replay passed
 at `build/clean-host-probe/3e274527adcc4cb29f4a6d0ac7bb8218`, followed by 67/67
 host regressions (`build/source-owner-clean-host.log`). The loaded DLL SHA256 is
 `8DAFC92670588B8BC85B9F0E0EF4C8CE932CAA6A8A3955465968306BBA7BDAEC`.
-Browser method navigation remains unverified. Function-form `read(obj)` still
-has a demonstrated dispatch gap; object-form invocation does not prove it.
+Browser method navigation remains unverified. The subsequent same-module
+function-form dispatch fix has separate R2024b, SDK and host execution checks;
+see [function-form dispatch](function-method-dispatch.md). Cross-module automatic
+dispatch and explicit class-precedence attributes remain outside that proof.

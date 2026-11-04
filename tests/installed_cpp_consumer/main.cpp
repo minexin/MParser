@@ -363,7 +363,8 @@ end
         {
             const std::vector<mparser::sdk::SourceGraphUnit> sources{
                 {"InstalledOwner.m","classdef InstalledOwner\nmethods\ny=read(obj)\nend\nend",{}},
-                {"read.m","function y=read(obj)\ny=7;\nend","InstalledOwner"}};
+                {"read.m","function y=read(obj)\ny=7;\nend","InstalledOwner"},
+                {"main.m","obj=InstalledOwner(); direct=read(obj); dotted=obj.read();",{}}};
             auto module = mparser::sdk::Module::compile(sources);
             require(module.isValid(),"installed explicit source ownership compile failed");
             const auto definitions = module.definitions();
@@ -371,6 +372,15 @@ end
                 definitions[1].className == "InstalledOwner" && definitions[1].sourceIndex == 1 &&
                 definitions[1].kind == mparser::sdk::DefinitionKind::Method,
                 "installed external method definition metadata failed");
+            const auto invocation = module.execute();
+            require(invocation.succeeded(),"installed function-form method invocation failed");
+            const auto variables = invocation.variables();
+            for (const auto name : {"direct","dotted"}) {
+                const auto found = std::find_if(variables.begin(),variables.end(),
+                    [name](const auto& item) { return item.name == name; });
+                require(found != variables.end() && scalar(found->value) == 7,
+                    "installed function/dot method results differ");
+            }
             module = {};
             require(definitions[1].source.sourceName == "read.m","installed source graph ownership lifetime failed");
         }

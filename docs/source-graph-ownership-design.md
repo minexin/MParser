@@ -67,5 +67,9 @@ acceptance; final full regression and CI must be checked before publication.
 
 The first execution check using `read(obj)` failed with
 `unknown bytecode runtime variable: read`. Object-form `obj.read()` passed.
-Function-form external-method dispatch remains a separate demonstrated gap;
-the object-form result does not prove parity for that calling syntax.
+That result alone did not prove parity for function syntax. Subsequent
+same-module argument-directed dispatch tests and an R2024b reference replay
+are documented in [function-form dispatch](function-method-dispatch.md).
+The follow-up passes 355 kernel/package and 67 host tests with the selected
+runtime DLL documented there. Cross-module automatic dispatch and InferiorClasses
+remain separate open work.

@@ -33,7 +33,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "be4956e28035abccf3efded924ef86b9ee2d448bbc0ebec9982d9da34ebcfb9a"
+      "sha256_lf": "161c6559e99fd19930e7838aa17e04bc8272f3e7db215eea2e05e19c35876de0"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -41,7 +41,7 @@
     },
     {
       "path": "docs/definition-metadata.md",
-      "sha256_lf": "7b8c6db6d855922d3efbbdc8ce53fcc443fa66a20f9539f06e432b4f9f8b3492"
+      "sha256_lf": "6e781df166947a8af19f0a5ff2004932825b054b661b30acf2a2e3271b469e33"
     },
     {
       "path": "docs/variable-name-validation.md",
@@ -102,6 +102,10 @@
     {
       "path": "docs/ordered-display-api-design.md",
       "sha256_lf": "c72f6f581c788f7baebb588e6573206c0821a08a2c9deb1532eea3f1c23387f7"
+    },
+    {
+      "path": "docs/function-method-dispatch.md",
+      "sha256_lf": "30aca4ce60076bceb6f8560d078271369ef4b161f48f88633a9160815ad8c2b8"
     }
   ]
 }

@@ -552,9 +552,13 @@ RuntimeObjectOperationResult runtimeIndexObject(
         }
         elements.push_back(*element);
     }
-    return runtimeMakeObjectArrayFromLogicalOrder(
+    auto result = runtimeMakeObjectArrayFromLogicalOrder(
         std::move(elements), selections.resultDimensions, target.className,
         target.handleObject, policy, target.className);
+    if (result.succeeded && *count == 0) {
+        result.value.objectContext = target.objectContext;
+    }
+    return result;
 }
 
 RuntimeObjectOperationResult runtimeAssignObjectIndexed(

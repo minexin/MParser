@@ -672,9 +672,11 @@ struct StackValue {
     std::string builtinName;
     bool isFunctionReference = false;
     std::string functionName;
+    std::optional<SourceSpan> unresolvedNameSpan;
     bool isClassReference = false;
     std::string className;
     bool isMethodReference = false;
+    bool argumentMethodReference = false;
     std::string methodClassName;
     std::string methodName;
     std::string methodDeclaringClass;
@@ -7465,6 +7467,14 @@ private:
             return;
         }
 
+        if (instruction.calleeReference &&
+            instruction.binding.kind == BindingKind::Unresolved) {
+            // Object arguments can resolve an otherwise unbound method name.
+            auto deferred = functionStackValue(instruction.operand);
+            deferred.unresolvedNameSpan = instruction.span;
+            stack_.push_back(std::move(deferred));
+            return;
+        }
         addDiagnostic(instruction,
                       "unknown bytecode runtime variable: " +
                           instruction.operand);
@@ -11481,11 +11491,31 @@ private:
                activeAnonymousBodyOutputCounts_.back() < 0;
     }
 
+    std::optional<StackValue> argumentMethod(
+        const std::string& name, const std::vector<RuntimeValue>& arguments) const {
+        if (name.find('.') != std::string::npos) { return std::nullopt; }
+        for (const auto& argument : arguments) {
+            if (!isRuntimeClassObject(argument)) { continue; }
+            // Do not authorize a foreign object using a same-named local class.
+            if (argument.objectContext != callableContext_) {
+                return std::nullopt;
+            }
+            const auto klass = classesByName_.find(argument.className);
+            if (klass == classesByName_.end()) { return std::nullopt; }
+            const auto* method = selectMethod(klass->second,name);
+            if (!method) { return std::nullopt; }
+            auto reference = methodStackValue(argument.className,name,method->declaringClass);
+            reference.argumentMethodReference = true;
+            return reference;
+        }
+        return std::nullopt;
+    }
+
     void callOrIndex(const BytecodeInstruction& instruction) {
         const auto rawArguments = popRuntimeValues(
             instruction, instruction.operandCount,
             "call/index arguments");
-        const auto callee = popStackValue(instruction, "call/index callee");
+        auto callee = popStackValue(instruction, "call/index callee");
         if (!rawArguments || !callee) {
             return;
         }
@@ -11498,6 +11528,26 @@ private:
                 callInstruction, "system", arguments, 0);
             finishCallOrIndexContext(instruction);
             pushOutputValues(callInstruction, outputs);
+            return;
+        }
+
+        if (callee->isFunctionReference ||
+            (callee->isBuiltinReference && !callee->receiver)) {
+            const auto& name = callee->isFunctionReference ? callee->functionName : callee->builtinName;
+            const auto function = callee->isFunctionReference ? resolveLocalFunction(name) : std::nullopt;
+            const bool lexicalFunction = function &&
+                (!function->info->lexicalParent.empty() ||
+                 function->info->span.begin.sourceId == instruction.span.begin.sourceId);
+            if (!lexicalFunction && !inheritedSourceCallable(name)) {
+                if (auto method = argumentMethod(name,arguments)) { callee = std::move(*method); }
+            }
+        }
+        if (callee->unresolvedNameSpan && !resolveLocalFunction(callee->functionName) &&
+            !inheritedSourceCallable(callee->functionName)) {
+            auto unresolved = instruction;
+            unresolved.span = *callee->unresolvedNameSpan;
+            finishCallOrIndexContext(instruction);
+            addDiagnostic(unresolved,"unknown bytecode runtime variable: " + callee->functionName);
             return;
         }
 
@@ -11538,7 +11588,7 @@ private:
                 callInstruction, callee->methodClassName,
                 callee->methodName, callee->methodDeclaringClass,
                 callee->receiver, arguments,
-                callInstruction.resultCount);
+                callInstruction.resultCount,!callee->argumentMethodReference);
             finishCallOrIndexContext(instruction);
             pushOutputValues(callInstruction, outputs);
             return;
@@ -15096,7 +15146,8 @@ private:
         const std::string& methodName,
         const std::string& methodDeclaringClass,
         const std::optional<RuntimeValue>& receiver,
-        const std::vector<RuntimeValue>& arguments, int requestedCount) {
+        const std::vector<RuntimeValue>& arguments, int requestedCount,
+        bool validateReceiver) {
         const RuntimeValue* invocationReceiver =
             receiver ? &*receiver
                      : arguments.empty() ? nullptr : &arguments.front();
@@ -15156,7 +15207,7 @@ private:
                 invocationReceiver = &arguments.front();
             }
         }
-        if (invocationReceiver && invocationReceiver->handleObject &&
+        if (validateReceiver && invocationReceiver && invocationReceiver->handleObject &&
             methodName != "delete" &&
             !requireUsableHandleValue(instruction,
                                       *invocationReceiver)) {

@@ -11,9 +11,9 @@ const root = path.resolve(output);
 fs.mkdirSync(root,{recursive:true});
 assert.equal(fs.readdirSync(root).length,0);
 let server,port,count=0;
-async function request(route,body,status=200) {
+async function request(route,body,status=200,method=body===undefined?'GET':'POST') {
     const response = await fetch(`http://127.0.0.1:${port}/api/v1${route}`,{
-        method:body===undefined?'GET':'POST',headers:{'content-type':'application/json'},
+        method,headers:{'content-type':'application/json'},
         body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
     const result = await response.json();
     fs.writeFileSync(path.join(root,`${++count}.json`),JSON.stringify({route,body,status:response.status,result},null,2));
@@ -71,9 +71,10 @@ async function main() {
     }
     const noExecution=await request('/compile',{sources:[{name:'main.m',source:"error('must not run');\nfunction y=helper(x)\ny=x;\nend"}]});
     assert.equal(noExecution.valid,true);
-    const external=await request('/compile',{sources:[
+    const externalSources=[
         {name:'@ExternalRange/ExternalRange.m',source:'classdef ExternalRange\nmethods\ny=read(obj)\nend\nend\n'},
-        {name:'@ExternalRange/read.m',source:'function y=read(obj)\ny=helper();\nfunction z=helper()\nz=1;\nend\nend\n',class_method_owner:'ExternalRange'}]});
+        {name:'@ExternalRange/read.m',source:'function y=read(obj)\ny=helper();\nfunction z=helper()\nz=1;\nend\nend\n',class_method_owner:'ExternalRange'}];
+    const external=await request('/compile',{sources:externalSources});
     assert.equal(external.valid,true,JSON.stringify(external.diagnostics));
     const methods=external.definition_directory.definitions;
     assert.equal(methods.length,3);
@@ -84,6 +85,18 @@ async function main() {
     assert.equal(methods[1].kind,'method');
     assert.equal(methods[1].class_name,'ExternalRange');
     assert.equal(methods[2].parent_function,1);
+    const session=await request('/sessions',{name:'external-method-invocation'},201);
+    const base=`/sessions/${session.id}`;
+    for(const unit of externalSources)
+        await request(`${base}/files`,{path:unit.name,content:unit.source},200,'PUT');
+    await request(`${base}/files`,{path:'invoke_methods.m',
+        content:'obj=ExternalRange(); direct=read(obj); dotted=obj.read();'},200,'PUT');
+    const invoked=await request(`${base}/execute`,{source_path:'invoke_methods.m',include_workspace_values:true});
+    assert.equal(invoked.status,'succeeded',JSON.stringify(invoked.diagnostics));
+    for(const name of ['direct','dotted']) {
+        const value=invoked.workspace.find(item=>item.name===name)?.value;
+        assert.equal(value.data[0],1);
+    }
     const invalid=await request('/compile',{sources:[sources[0],{name:'bad.m',source:'x=;'}]});
     assert.equal(invalid.valid,false); assert.equal(invalid.definition_directory.complete,false);
     assert.deepEqual(invalid.definition_directory.definitions,[]);
@@ -96,7 +109,7 @@ async function main() {
         {sources,source_name:'ambiguous.m'},null]) await request('/compile',body,400);
     const legacy=await request('/compile',{source:sources[0].source,source_name:'first.m'});
     assert.equal(legacy.valid,true); assert.equal(legacy.definition_directory.definitions.length,2);
-    console.log('PASS multi-source definition binding, nested parents, invalid graph, request validation and legacy compile');
+    console.log('PASS multi-source definitions, external method invocation, nested parents, invalid graphs and legacy compile');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{
     if(server?.pid&&server.exitCode===null){const stopped=new Promise(resolve=>server.once('close',resolve));server.kill();await stopped;}
