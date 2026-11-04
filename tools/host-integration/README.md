@@ -109,6 +109,13 @@ See `docs/ordered-display-events.md` for current proof and open boundaries.
 Use an x64 MSVC environment with PowerShell 7 for the aggregate probe; a run
 under Windows PowerShell stopped at unavailable `Get-FileHash` after the REST
 probes, and its remaining checks were completed separately on the same binary.
+
+The eighth server candidate, `mexecserver-definition-sources.patch`, adds the
+explicit `sources` request form to `/compile` under MEXEC_DEFINITION_METADATA.
+The clean-host probe runs `test-definition-sources.cjs` after the ordered-events
+probe. Eight-patch build/REST/67-test acceptance passed at
+`build/clean-host-probe/bc0e56b4c35e484d851b69ef48e1056a` using PowerShell 7.
+See `docs/definition-metadata.md` for source binding and navigation boundaries.
 Graphics v3 may remain OFF if only definition metadata is needed.
 The default remains OFF. This patch can be combined with the graphics patch;
 they modify separate compile definitions and REST/serialization call sites.

@@ -51,3 +51,31 @@ in-memory, single-request compile endpoint, not cross-file browser navigation.
 Before navigating, the host must compare the directory's source name/text with
 the exact current document and reject stale responses. Definition indices are
 not stable across requests. The candidate does not implement that UI policy.
+
+## Multi-Source Host Candidate
+
+Apply `mexecserver-definition-sources.patch` after the other clean-host patches.
+With `MEXEC_DEFINITION_METADATA` enabled, `/compile` additionally accepts
+`{"sources":[{"name":"first.m","source":"..."},{"name":"second.m","source":"..."}]}`.
+This form excludes `source` and `source_name`, accepts 1 to 64 units and requires
+unique nonempty names without NUL. Names are source identities, not paths to
+read from disk. All units are submitted to the SDK source-graph compiler in
+request order; compilation does not execute them.
+
+The directory's additive `sources` array binds every `source_index` to the
+exact submitted name and UTF-8 text. Parent indices refer to the combined
+definition directory, not a per-file index. The original top-level source fields
+describe the first submitted unit for compatibility; consumers of a graph must
+use the array and per-definition source index. Invalid graphs expose an empty,
+incomplete directory. Legacy single-source requests remain supported.
+
+`test-definition-sources.cjs` checks repeated nested names, parent indices,
+UTF-8/CRLF ranges, invalid graphs, malformed requests and legacy controls.
+Initial isolated replay passed at `build/definition-sources-probe`. The complete
+eight-patch clean-host rebuild, all REST probes and 67/67 host regressions then
+passed at `build/clean-host-probe/bc0e56b4c35e484d851b69ef48e1056a`;
+the aggregate log is `build/definition-sources-clean-host.log`. The selected
+installed DLL SHA256 is
+`5E202651C50AFBF11BFFD2DBB333E7EA88D6F0E567E0CA8CBFDFA00756D2CBC2`.
+Browser cross-file navigation,
+stale-document rejection and deployment are not implemented by this candidate.

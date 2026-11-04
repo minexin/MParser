@@ -36,7 +36,8 @@ foreach ($target in @($hostSource,$clientSource)) {
 }
 foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-metadata.patch',
     'mexecserver-development-acceptance.patch','mexecserver-workspace-rename.patch',
-    'mexecserver-compile-diagnostics.patch','mexecserver-system-path-sync.patch','mexecserver-ordered-events.patch')) {
+    'mexecserver-compile-diagnostics.patch','mexecserver-system-path-sync.patch','mexecserver-ordered-events.patch',
+    'mexecserver-definition-sources.patch')) {
     git -C $hostSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Host patch failed: $patch; see $stage" }
 }
@@ -64,6 +65,9 @@ if ($LASTEXITCODE) { throw "Kernel path synchronization probe failed; see $stage
 node (Join-Path $PSScriptRoot 'test-ordered-events.cjs') (Join-Path $build 'mexec_server.exe') `
     (Join-Path $stage 'ordered-events-probe') on
 if ($LASTEXITCODE) { throw "Ordered event probe failed; see $stage" }
+node (Join-Path $PSScriptRoot 'test-definition-sources.cjs') (Join-Path $build 'mexec_server.exe') `
+    (Join-Path $stage 'definition-sources-probe')
+if ($LASTEXITCODE) { throw "Multi-source definition probe failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
     -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -GraphicsColors -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')

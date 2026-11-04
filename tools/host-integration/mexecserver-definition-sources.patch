@@ -1,0 +1,61 @@
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+index d285f29..009f26c 100644
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -820,17 +820,43 @@ http::Response ApiServer::handleCompile(const http::Request& request) {
+     if (!body) {
+         return errorResponse(400, "invalid_json", parseError);
+     }
+-    if (!body->contains("source") || !(*body)["source"].is_string()) {
++    if (!body->is_object()) return errorResponse(400, "invalid_body", "compile body must be an object");
++    std::vector<mparser::sdk::SourceUnit> sourceUnits;
++#if MEXEC_DEFINITION_METADATA
++    if (body->contains("sources")) {
++        const auto& sources = (*body)["sources"];
++        if (body->contains("source") || body->contains("source_name") ||
++            !sources.is_array() || sources.empty() || sources.size() > 64)
++            return errorResponse(400, "invalid_body", "sources requires 1 to 64 named source units and excludes source/source_name");
++        for (const auto& item : sources) {
++            if (!item.is_object() || !item.contains("name") || !item["name"].is_string() ||
++                !item.contains("source") || !item["source"].is_string())
++                return errorResponse(400, "invalid_body", "each source unit requires string name and source");
++            const auto name = item["name"].get<std::string>();
++            if (name.empty() || name.find('\0') != std::string::npos)
++                return errorResponse(400, "invalid_body", "source names must be nonempty and contain no NUL");
++            for (const auto& previous : sourceUnits)
++                if (previous.name == name) return errorResponse(400, "invalid_body", "duplicate source name");
++            sourceUnits.push_back({name,item["source"].get<std::string>()});
++        }
++    }
++#endif
++    if (sourceUnits.empty() && (!body->contains("source") || !(*body)["source"].is_string())) {
+         return errorResponse(
+             400, "invalid_body", "source is required and must be a string");
+     }
+-    const auto source = (*body)["source"].get<std::string>();
++    const auto source = sourceUnits.empty() ? (*body)["source"].get<std::string>() : sourceUnits.front().source;
+     const auto sourceName = body->contains("source_name") &&
+                                     (*body)["source_name"].is_string()
+                                 ? (*body)["source_name"].get<std::string>()
+                                 : std::string("main.m");
+-    const auto module = mparser::sdk::Module::compile(source, sourceName);
++    const auto module = sourceUnits.empty() ? mparser::sdk::Module::compile(source, sourceName)
++                                          : mparser::sdk::Module::compile(sourceUnits);
+ #if MEXEC_DEFINITION_METADATA
++    auto submittedSources = nlohmann::json::array();
++    if (sourceUnits.empty()) sourceUnits.push_back({sourceName,source});
++    for (const auto& unit : sourceUnits)
++        submittedSources.push_back({{"name",unit.name},{"source_utf8",unit.source}});
+     auto definitions = nlohmann::json::array();
+     if (module.isValid()) {
+         const auto position = [](const mparser::sdk::SourcePosition& value) {
+@@ -867,7 +893,8 @@ http::Response ApiServer::handleCompile(const http::Request& request) {
+                 {"schema", "mexec.definition-directory"}, {"version", 1}, {"complete", module.isValid()},
+                 {"offset_unit", "utf8-byte"}, {"column_unit", "utf8-byte"},
+                 {"line_base", 1}, {"column_base", 1}, {"end_exclusive", true},
+-                {"source_name", sourceName}, {"source_utf8", source}, {"definitions", std::move(definitions)}}},
++                {"source_name", sourceUnits.front().name}, {"source_utf8", source},
++                {"sources",std::move(submittedSources)}, {"definitions", std::move(definitions)}}},
+ #endif
+             {"source_metadata",
+              module.isValid()
