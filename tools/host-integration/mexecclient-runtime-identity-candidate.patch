@@ -1,7 +1,7 @@
 diff --git a/web/index.html b/web/index.html
 --- a/web/index.html
 +++ b/web/index.html
-@@ -10,7 +10,7 @@
+@@ -10,6 +10,6 @@
  <body>
    <header id="topbar">
      <div class="brand">MExec Studio</div>
@@ -9,7 +9,6 @@ diff --git a/web/index.html b/web/index.html
 +    <span class="edition">MParser · 科学计算工作台</span>
      <span id="server-status" class="status-badge">连接中…</span>
    </header>
- 
 diff --git a/web/js/app.js b/web/js/app.js
 --- a/web/js/app.js
 +++ b/web/js/app.js
