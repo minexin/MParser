@@ -89,7 +89,8 @@ the deployed revisions and DLL. The running service was not replaced.
   active. The result's v3 graph was identical to the REST readback before
   the failure. This is a selection-continuity problem, not a deleted or
   overwritten kernel Figure. Evidence: `build/tabbit-deployed-lifecycle.json`,
-  `selectionRegression`. The source fix and its isolated acceptance are below.
+  `selectionRegression`. The source fix was verified in isolation and on the
+  updated live assets below.
 
 Only the audit tab and its temporary API session were removed; the service
 was not restarted. This run did not perform a new native PNG download.
@@ -114,8 +115,27 @@ fallback, close/recreate and old/new handle validity also passed. The
 1280 x 800 screenshot was inspected. Evidence:
 `build/browser-selection-fix-10d7d4cbbe804485a2b18ff950083c26/replay.json`
 and `verified-selection.png` in the same directory. The isolated session,
-tab and server were cleaned up. This verifies the current source fix, not
-installation of that fix into the still-running port 8080 snapshot.
+tab and server were cleaned up. This run verifies the source fix independently
+of deployment.
+
+## Live Asset Replay
+
+The [single-asset update](host-source-adoption.md#local-service-deployment)
+served the verified `plot.js` on port 8080 without restarting the backend.
+On 2026-11-06 a fresh Tabbit tab and API session replayed the same two-Figure,
+two-Axes case at 1280 x 800. The rejected export preserved the selected Figure,
+Axes 2 and zoom. A color mutation preceding a second rejected export drew
+539 magenta pixels without changing that view or producing a PDF. Changed
+limits, hiding, close/recreate, disabled export with no Figure and old/new
+handle validity passed. One layout read returned the recoverable HTTP 409
+session-busy response; the selection and layout assertions still passed.
+
+The inspected `verified-selection.png`, response `replay.json` and HTTP
+asset `verified.json` are in
+`build/deployed-client-6995bca-c84efb97b2444c41ba11effbfc920a9a`.
+The audit tab and its session were removed; backend PID and uptime remained
+continuous. This was not another native PNG download or a production renderer
+test.
 
 ## Selected Pair
 
@@ -225,7 +245,7 @@ every lifecycle/selection race or a deployed client.
 The later [ordered display candidate](host-ordered-display-candidate.md) has
 actual default-OFF/ON/OFF command/checkbox and event-order DOM evidence with
 the current SDK. Screenshot capture timed out; it is not a visual acceptance
-claim. Original host/client deployments remain unchanged.
+claim. That replay did not modify the deployment.
 
 The v4 environment/multi-Axes source-copy candidate now has a separate bounded
 actual Tabbit measurement/pixel/resize/selection/zoom/reload run in

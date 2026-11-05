@@ -56,6 +56,13 @@ loopback child processes and unique evidence roots, not a deployed service.
 - All 27 copied frontend assets match the original client byte-for-byte.
   The development build's DLL matches the installed SDK SHA256:
   `C749ACFC0D0FD5128F2554D211A88E587FF2CDA72EA000877287ED98AE11D0F0`.
+- A later isolated source-only replay used the downloaded Windows x64 SDK
+  from [unsigned run 42082588791](https://github.com/minexin/MParser/actions/runs/42082588791),
+  source `7fb29e7`, and the exact host/client revisions above. All 85 CTests
+  and dedicated REST/SDK probes passed. The host DLL matched that archive's
+  SHA256 `CF0EEFD4AE481ECD76C47F33291F7A05BEF11A2E54BB6EA428B6741006041C60`.
+  See `build/unsigned-v115-host-replay-42082588791.log`. This archive was not
+  installed into the running service.
 
 The first original-source configure correctly rejected a remaining 1.14.0
 requirement. Inspection found that Git had skipped candidate paths inside a
@@ -102,13 +109,17 @@ an installed Windows SCM or automatic-boot service. Older deployment/build
 directories are retained. Host tools provide explicit start/stop operations
 with executable/start-time ownership checks.
 
-The deployed server/client sources are the initial private imports
-`00682e1350eb4caa02d756a85bfb3d7254610707` and
-`6dda80db39ff94f26a0608d5c08dae95b79c6ab0`. The CI/CLI follow-up does not
-change the served HTTP implementation. The newer frontend continuity fix
-was verified on an isolated host only. Neither follow-up restarted this
-process or replaced the deployed assets. The development SDK documentation
-was reinstalled without changing the development DLL hash.
+The running backend remains the initial private import
+`00682e1350eb4caa02d756a85bfb3d7254610707`. The CI/CLI follow-up does not
+change the served HTTP implementation. The initial frontend import was
+`6dda80db39ff94f26a0608d5c08dae95b79c6ab0`; on 2026-11-06 its only changed
+managed asset, `js/plot.js`, was atomically replaced with the tested client
+`6995bcae92cfd6fa06b77d22bf9123745de6390f`. All 27 managed assets matched
+that checkout by HTTP SHA256; 16 additional files were not modified or
+included in the match. The old asset and verified replacement receipt are
+retained in `build/deployed-client-6995bca-c84efb97b2444c41ba11effbfc920a9a`.
+Process identity, uptime, loaded DLL and a temporary session's workspace and
+graph survived the update. No backend restart or renderer install occurred.
 
 `build/host-adoption-20261105/deployed-service-evidence/verified.json` records
 actual HTTP readback hashes for all 27 frontend resources and REST acceptance
@@ -122,7 +133,8 @@ The later deployed REST checks verified failed compile/execute preservation,
 kernel reason codes on rename, and compile-only function ranges. Actual
 Tabbit replay on this same service verified definition navigation and
 bounded graphics cases, and found the v4/v3 selection issue fixed in the
-[isolated follow-up](host-browser-acceptance.md#identity-continuity-follow-up).
+[isolated follow-up](host-browser-acceptance.md#identity-continuity-follow-up)
+and then verified on the [updated live assets](host-browser-acceptance.md#live-asset-replay).
 
 ## Repository And Patch Policy
 
@@ -136,7 +148,8 @@ MParser retains its SDK contracts, integration tests and verified repository
 revision references. This respects the later private-repository decision.
 
 For regression of the already-adopted originals, use
-`probe-clean-host.ps1 -IntegratedSources` with the original roots and installed
-SDK prefix. This copies current code without reapplying historical patches.
+`tools/host-integration/probe-clean-host.ps1 -IntegratedSources` with the
+original roots and installed SDK prefix. This copies current code without
+reapplying historical patches.
 Later changes are made directly in the two host Git working directories,
 tested, committed and pushed to their respective private `origin/main`.

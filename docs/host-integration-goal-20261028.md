@@ -34,9 +34,9 @@ success may substitute for missing kernel contracts.
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | Deployed REST confirms UTF-8/CRLF, repeated nested names and explicit external-method ownership. Deployed Tabbit verifies single-document navigation and edit/undo freshness; selected-open-document browser coverage remains the isolated run. |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs and the current deployed ABI 2.13 pair; not a newly fixed kernel defect. |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay. Deployed Tabbit verifies two matrix columns, no overflow at 390px, and close/recreate with stale-handle rejection. Broader downstream acceptance remains open. |
-| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed. Deployed Tabbit confirms Legend rename, retained Line identities and per-Line clipping pixels. Current frontend fixes the deployed v4/v3 selection regression; isolated Tabbit confirms selection/zoom and partial effects. Deployment of this fix, full native text/layout and UI property editing remain open. |
+| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed. Deployed Tabbit confirms Legend rename, retained Line identities and per-Line clipping pixels. The v4/v3 selection fix passed both isolated and live Tabbit replays for selection/zoom and partial effects. Full native text/layout and UI property editing remain open. |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Real isolated REST export writes bounded PNG/vector PDF through a renderer and session FileStore; failure/root/session controls pass. Separate actual ABI 2.13 Tabbit PNG downloads pass selected-Figure/pixel/lifecycle checks. Default CLI/REST still refuse; production renderer and broader scene/file/download policy remain open. |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 364/364 and host 85/85 locally; latest locked private GitHub host run 85/85 and frontend four lanes passed. Five unsigned cross-platform archives verified at exact source; downloaded Windows/Linux x64 consumers passed. Deployment of the frontend fix, broader browser acceptance and exact-tag authentication/publication remain open. |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 364/364 and host 85/85 locally; latest locked private GitHub host run 85/85 and frontend four lanes passed. The frontend fix is deployed locally. Five unsigned cross-platform archives bind the exact active SDK manifest; downloaded Windows/Linux x64 consumers passed. Broader browser acceptance and exact-tag authentication/publication remain open. |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK/installed-host and deployed REST verify side-effect-free path readback, lookup precedence, command/file compilation, removal and root rejection. In-script dynamic rebinding is outside this proof. |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering, default-OFF Tabbit interaction and deployed REST ordering/suppression/failure replay passed. Live delivery, bounded in-flight recording and overloaded display remain separate; see host-ordered-display-candidate.md. |
 
@@ -104,6 +104,24 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-06 H06 live follow-up: the tested client asset was updated on the
+  existing 8080 process. All 27 managed HTTP assets matched the client and
+  the seeded workspace/graph survived without restarting the backend. The
+  [live Tabbit replay](host-browser-acceptance.md#live-asset-replay) confirmed
+  identity and viewport continuity, real partial effects and lifecycle.
+- 2026-11-06 canonical unsigned preflight: [run 42082588791](https://github.com/minexin/MParser/actions/runs/42082588791)
+  passed eight jobs at `7fb29e7`. The five downloaded artifact sets passed
+  the signing-input validator at that exact Git revision, each with 32
+  installed contract checks and exact active SDK manifest digest binding.
+  Receipt: `build/unsigned-v115-ci-42082588791-verified.json`. Downloaded
+  Windows/Linux x64 packages passed the standalone C/C++ consumers, exact
+  export-set comparison and CLI protocol checks. Logs:
+  `build/unsigned-v115-windows-replay-42082588791.log` and
+  `build/unsigned-v115-linux-replay-42082588791.log`.
+  An isolated source-only host rebuild against that Windows archive also
+  passed the dedicated probes and 85/85 CTests with the archive's exact DLL;
+  see `build/unsigned-v115-host-replay-42082588791.log`.
+  Authentication was disabled; no tag or release was created.
 - 2026-11-06 unsigned release preflight: [run 42078322130](https://github.com/minexin/MParser/actions/runs/42078322130)
   passed eight jobs on `474e3f7` with authentication disabled. All five
   exact four-file artifact sets passed the then-current signing-input
