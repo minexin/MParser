@@ -1,0 +1,347 @@
+diff --git a/web/index.html b/web/index.html
+index 54a381c..d97b2d0 100644
+--- a/web/index.html
++++ b/web/index.html
+@@ -176 +176,2 @@
+-          <div class="analysis-head"><span>编译检查</span><button id="analysis-close" type="button" aria-label="关闭编译检查">×</button></div>
++          <div class="analysis-head"><span>编译检查</span><select id="analysis-scope" aria-label="编译范围" hidden><option value="current">当前文档</option><option value="open">打开的文档</option></select><button id="analysis-refresh" type="button" aria-label="重新编译检查" title="重新编译检查">&#8635;</button><button id="analysis-close" type="button" aria-label="关闭编译检查">×</button></div>
++          <table id="analysis-sources" hidden><thead><tr><th>包含</th><th>源码</th><th>类方法所有者</th></tr></thead><tbody id="analysis-source-list"></tbody></table>
+@@ -264,0 +266 @@
++  <script src="/js/definition-directory.js" defer></script>
+diff --git a/web/js/app.js b/web/js/app.js
+index 46dde21..0292955 100644
+--- a/web/js/app.js
++++ b/web/js/app.js
+@@ -1033,0 +1034 @@ GET/PUT /files                脚本文件存储</div>`,
++      MExec.analysis?.configure?.(health);
+diff --git a/web/js/editor.js b/web/js/editor.js
+index 5c30019..6e8a874 100644
+--- a/web/js/editor.js
++++ b/web/js/editor.js
+@@ -178,0 +179,29 @@ MExec.editor = (() => {
++  function compilationDocuments() {
++    if(supportsDocuments)storeActive();
++    const records=supportsDocuments ? [...documents.values()] :
++      [{id:documentId,state,baselineSession,savedContent,savedFileContent,fileLineEnding,editRevision}];
++    return records.map(record=>({
++      ownerSession:currentSession(),documentOwner:record.baselineSession,documentId:record.id,
++      path:record.state.path,content:record.state.content,revision:record.editRevision,
++      sourceName:record.state.path || 'untitled-'+record.id+'.m',
++      source:record.state.content===record.savedContent ? record.savedFileContent :
++        record.state.content.replace(/\n/g,record.fileLineEnding),
++    }));
++  }
++  function isCompilationDocumentCurrent(plan) {
++    if(!plan || plan.ownerSession!==currentSession())return false;
++    const current=compilationDocuments().find(item=>item.documentId===plan.documentId);
++    return !!current && ['documentOwner','path','content','source','revision'].every(key=>current[key]===plan[key]);
++  }
++  function revealDefinition(plan,range) {
++    if(!isCompilationDocumentCurrent(plan) || !range ||
++      !Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) ||
++      range.start<0 || range.end<range.start || range.end>plan.content.length ||
++      !Number.isInteger(range.line) || range.line<1 || range.line>plan.content.split('\n').length)return false;
++    if(plan.documentId!==documentId && !activateDocument(plan.documentId,false))return false;
++    if(!revealLine(range.line))return false;
++    textarea().setSelectionRange(range.start,range.end);
++    MExec.desktop?.syncCaret?.();
++    return true;
++  }
++
+@@ -191,0 +221 @@ MExec.editor = (() => {
++    MExec.analysis?.documentChanged();
+@@ -862,0 +893,3 @@ MExec.editor = (() => {
++    compilationDocuments,
++    isCompilationDocumentCurrent,
++    revealDefinition,
+diff --git a/web/js/analysis.js b/web/js/analysis.js
+index 956effe..ea386c5 100644
+--- a/web/js/analysis.js
++++ b/web/js/analysis.js
+@@ -4 +4,3 @@ MExec.analysis = (() => {
+-  let jumpButtons = [];
++  let jumpButtons = [], directoryButtons = [];
++  let graphSupported = false, directorySupported = false, sourceSignature = '';
++  const choices = new Map();
+@@ -6,4 +8,25 @@ MExec.analysis = (() => {
+-  const sameDocument = item => item &&
+-    MExec.app.state.sessionId === item.sessionId &&
+-    MExec.editor.documentId() === item.documentId &&
+-    MExec.editor.state.path === item.path && MExec.editor.state.content === item.content;
++  const scope = () => el('scope')?.value === 'open' ? 'open' : 'current';
++  function documents() {
++    return MExec.editor.compilationDocuments?.() || [{
++      ownerSession:MExec.app.state.sessionId,documentId:MExec.editor.documentId(),
++      path:MExec.editor.state.path,content:MExec.editor.state.content,source:MExec.editor.state.content,
++      sourceName:MExec.editor.fileName(),
++    }];
++  }
++  const eligible = item => item.documentOwner == null || item.documentOwner === MExec.app.state.sessionId;
++  function choice(item) {
++    if(!choices.has(item.documentId))choices.set(item.documentId,{selected:true,owner:''});
++    return choices.get(item.documentId);
++  }
++  function sameDocument(item) {
++    if(!item || item.sessionId !== MExec.app.state.sessionId || item.scope !== scope())return false;
++    if(item.scope==='current' && MExec.editor.documentId()!==item.documents[0].documentId)return false;
++    if(item.scope==='open'){
++      const selected=documents().filter(doc=>eligible(doc)&&choice(doc).selected);
++      if(selected.length!==item.documents.length || selected.some((doc,index)=>doc.documentId!==item.documents[index].documentId ||
++        choice(doc).owner!==item.documents[index].classMethodOwner))return false;
++    }
++    return item.documents.every(doc=>MExec.editor.isCompilationDocumentCurrent ?
++      MExec.editor.isCompilationDocumentCurrent(doc) :
++      MExec.editor.documentId()===doc.documentId && MExec.editor.state.path===doc.path && MExec.editor.state.content===doc.content);
++  }
+@@ -12,0 +36 @@ MExec.analysis = (() => {
++    if(el('refresh'))el('refresh').disabled=value;
+@@ -17 +41 @@ MExec.analysis = (() => {
+-    for (const button of jumpButtons) button.disabled = true;
++    for (const button of [...jumpButtons,...directoryButtons]) button.disabled = true;
+@@ -24,0 +49,82 @@ MExec.analysis = (() => {
++    refreshSources();
++  }
++  function invalidate() {
++    generation++;setBusy(false);
++    if(snapshot)markStale();
++  }
++  function configure(info) {
++    const features=Array.isArray(info?.features)?info.features:[];
++    const graph=features.includes('compile-source-graph'),directory=features.includes('compile-definition-directory');
++    if(snapshot && (graph!==graphSupported || directory!==directorySupported))invalidate();
++    graphSupported=graph;directorySupported=directory;
++    if(el('scope')){el('scope').hidden=!graph;if(!graph)el('scope').value='current';}
++    refreshSources(true);
++  }
++  function refreshSources(force=false) {
++    if(!el('sources') || !el('source-list'))return;
++    el('sources').hidden=scope()!=='open';
++    if(scope()!=='open')return;
++    const docs=documents(),signature=JSON.stringify(docs.map(doc=>[doc.documentId,doc.path,doc.documentOwner,MExec.app.state.sessionId]));
++    if(!force && signature===sourceSignature)return;
++    sourceSignature=signature;el('source-list').innerHTML='';
++    for(const doc of docs){
++      const settings=choice(doc),row=document.createElement('tr');
++      const included=document.createElement('input');included.type='checkbox';included.checked=eligible(doc)&&settings.selected;
++      included.disabled=!eligible(doc);included.setAttribute('aria-label','包含 '+doc.sourceName);
++      included.addEventListener('change',()=>{settings.selected=included.checked;invalidate();});
++      const owner=document.createElement('input');owner.type='text';owner.value=settings.owner;owner.disabled=!eligible(doc);
++      owner.setAttribute('aria-label','类方法所有者 '+doc.sourceName);
++      owner.addEventListener('input',()=>{settings.owner=owner.value;invalidate();});
++      for(const element of [included,doc.sourceName+(eligible(doc)?'':' · 其他会话'),owner]){
++        const cell=document.createElement('td');
++        if(typeof element==='string')cell.textContent=element;else cell.appendChild(element);
++        row.appendChild(cell);
++      }
++      el('source-list').appendChild(row);
++    }
++  }
++  function guard(item) {
++    if(snapshot!==item || stale)return false;
++    if(!sameDocument(item)){documentChanged();return false;}
++    return true;
++  }
++  function renderDefinitions(result,item) {
++    if(!result.valid || result.definition_directory===undefined)return;
++    let rows;
++    try{rows=MExec.definitionDirectory.read(result.definition_directory,item.documents);}
++    catch(error){
++      const warning=document.createElement('div');warning.textContent='定义目录不可导航：'+error.message;
++      el('functions').appendChild(warning);return;
++    }
++    const container=document.createElement('div');el('functions').appendChild(container);
++    const labels={'primary-function':'主函数','local-function':'局部函数','nested-function':'嵌套函数',method:'方法'};
++    let page=0;
++    const paint=()=>{
++      container.innerHTML='';directoryButtons=[];
++      const list=document.createElement('ul');container.appendChild(list);
++      for(const entry of rows.slice(page*100,(page+1)*100)){
++        const row=document.createElement('li'),button=document.createElement('button');
++        button.type='button';button.className='analysis-definition';button.dataset.definitionIndex=String(entry.index);
++        button.style.paddingLeft=(4+Math.min(entry.depth,8)*12)+'px';
++        button.textContent=entry.name+' · '+labels[entry.kind]+(entry.className?' · '+entry.className:'')+
++          (entry.declarationOnly?' · 声明':'')+' · '+entry.sourceName+':'+entry.range.line+
++          (entry.parent===null?'':' · 上级 '+rows[entry.parent].name);
++        button.addEventListener('click',()=>{
++          if(!guard(item))return;
++          MExec.app.showTab('editor');
++          if(!MExec.editor.revealDefinition?.(entry.document,entry.range))markStale();
++        });
++        row.appendChild(button);list.appendChild(row);directoryButtons.push(button);
++      }
++      if(rows.length>100){
++        const controls=document.createElement('div');
++        for(const [label,delta,disabled] of [['上一页',-1,page===0],['下一页',1,(page+1)*100>=rows.length]]){
++          const button=document.createElement('button');button.type='button';button.textContent=label;button.disabled=disabled;
++          button.addEventListener('click',()=>{if(guard(item)){page+=delta;paint();}});
++          controls.appendChild(button);directoryButtons.push(button);
++        }
++        const count=document.createElement('span');count.textContent=' '+(page+1)+'/'+Math.ceil(rows.length/100)+' · '+rows.length;
++        controls.appendChild(count);container.appendChild(controls);
++      }
++    };
++    paint();
+@@ -29 +135 @@ MExec.analysis = (() => {
+-    jumpButtons = [];
++    jumpButtons = [];directoryButtons=[];
+@@ -35,6 +141,2 @@ MExec.analysis = (() => {
+-    const item = {
+-      sessionId:MExec.app.state.sessionId, documentId:MExec.editor.documentId(),
+-      path:MExec.editor.state.path, content:MExec.editor.state.content,
+-      sourceName:MExec.editor.fileName(),
+-    };
+-    snapshot = item;
++    let item;
++    snapshot = null;
+@@ -42 +144 @@ MExec.analysis = (() => {
+-    jumpButtons = [];
++    jumpButtons = [];directoryButtons=[];
+@@ -49 +151,15 @@ MExec.analysis = (() => {
+-      const result = await MExec.api.compile({source:item.content, source_name:item.sourceName});
++      const mode=scope();
++      if(mode==='open' && !graphSupported)throw Error('宿主未提供多源码编译能力');
++      refreshSources();
++      let docs=documents();
++      docs=mode==='open' ? docs.filter(doc=>eligible(doc)&&choice(doc).selected).map(doc=>({...doc,classMethodOwner:choice(doc).owner})) :
++        docs.filter(doc=>doc.documentId===MExec.editor.documentId());
++      if(!docs.length || docs.length>64)throw Error('编译源码数量必须为 1 至 64');
++      if(docs.some(doc=>!eligible(doc)))throw Error('当前文档属于其他会话');
++      if(mode==='current' && !directorySupported)docs=docs.map(doc=>({...doc,sourceName:MExec.editor.fileName()}));
++      if(new Set(docs.map(doc=>doc.sourceName)).size!==docs.length)throw Error('编译源码身份重复');
++      item={sessionId:MExec.app.state.sessionId,scope:mode,documents:docs};snapshot=item;
++      const body=mode==='open' ? {sources:docs.map(doc=>({name:doc.sourceName,source:doc.source,
++        ...(doc.classMethodOwner?{class_method_owner:doc.classMethodOwner}:{})}))} :
++        {source:docs[0].source,source_name:docs[0].sourceName};
++      const result = await MExec.api.compile(body);
+@@ -57,0 +174 @@ MExec.analysis = (() => {
++      renderDefinitions(result,item);
+@@ -63,0 +181,2 @@ MExec.analysis = (() => {
++        const target=item.documents.find(doc=>location?.name===doc.sourceName ||
++          (mode==='current' && (!location?.name || location.name===doc.path)));
+@@ -65,2 +184 @@ MExec.analysis = (() => {
+-          (!location.name || location.name === item.sourceName || location.name === item.path) &&
+-          Number.isInteger(line) && line > 0 && line <= item.content.split('\n').length;
++          target && Number.isInteger(line) && line > 0 && line <= target.content.split('\n').length;
+@@ -77,2 +195 @@ MExec.analysis = (() => {
+-            if (snapshot !== item || stale) return;
+-            if (!sameDocument(item)) { documentChanged(); return; }
++            if (!guard(item)) return;
+@@ -80 +197,2 @@ MExec.analysis = (() => {
+-            MExec.editor.revealLine(line);
++            if(MExec.editor.revealDocument)MExec.editor.revealDocument(target,line);
++            else MExec.editor.revealLine(line);
+@@ -94 +212 @@ MExec.analysis = (() => {
+-      if (!sameDocument(item)) markStale();
++      if (item && !sameDocument(item)) markStale();
+@@ -100,2 +218,6 @@ MExec.analysis = (() => {
+-  function init() { el('close').addEventListener('click', close); }
+-  return {init, check, close, documentChanged};
++  function init() {
++    el('close').addEventListener('click', close);
++    el('refresh')?.addEventListener('click',check);
++    el('scope')?.addEventListener('change',()=>{invalidate();refreshSources(true);check();});
++  }
++  return {init, check, close, documentChanged, configure};
+diff --git a/web/css/mexec.css b/web/css/mexec.css
+index d9917a3..bd2271c 100644
+--- a/web/css/mexec.css
++++ b/web/css/mexec.css
+@@ -758,0 +759,10 @@ button:focus-visible {outline:2px solid var(--accent);outline-offset:-2px;}
++#analysis-sources {width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}
++#analysis-sources[hidden] {display:none;}
++#analysis-sources th:first-child {width:30px;}
++#analysis-sources th:last-child {width:105px;}
++#analysis-sources td,#analysis-sources th {padding:3px;text-align:left;overflow-wrap:anywhere;}
++#analysis-sources input[type=text] {box-sizing:border-box;width:100%;min-width:0;font-size:11px;}
++#analysis-functions ul {list-style:none;padding:0;margin:3px 0;}
++#analysis-functions .analysis-definition {width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere;font-size:11px;}
++.analysis-head {gap:4px;flex-wrap:wrap;}
++.analysis-head > span {margin-right:auto;}
+diff --git a/web/js/definition-directory.js b/web/js/definition-directory.js
+new file mode 100644
+index 0000000..4b88456
+--- /dev/null
++++ b/web/js/definition-directory.js
+@@ -0,0 +1,82 @@
++window.MExec = window.MExec || {};
++MExec.definitionDirectory = (() => {
++  const kinds = new Set(['primary-function','local-function','nested-function','method']);
++  const integer = value => Number.isSafeInteger(value) && value >= 0;
++  function positions(source,content,offsets) {
++    if(typeof source!=='string' || source.replace(/\r\n?/g,'\n')!==content)throw Error('source text mismatch');
++    const encoder=new TextEncoder(),result=new Map();
++    let index=0,offset=0,editor=0,line=1,column=1;
++    while(true){
++      if(offsets.has(offset))result.set(offset,{editor,line,column});
++      if(index===source.length)break;
++      const point=source.codePointAt(index);
++      if(point>=0xd800 && point<=0xdfff)throw Error('unpaired UTF-16 surrogate');
++      const token=source[index]==='\r' && source[index+1]==='\n' ? '\r\n' : String.fromCodePoint(point);
++      const bytes=encoder.encode(token).length;
++      index+=token.length;offset+=bytes;
++      if(token==='\n' || token[0]==='\r'){editor++;line++;column=1;}
++      else {editor+=token.length;column+=bytes;}
++    }
++    if(result.size!==offsets.size)throw Error('offset is not a UTF-8/line-ending boundary');
++    return result;
++  }
++  function read(directory,documents) {
++    if(!directory || directory.schema!=='mexec.definition-directory' || directory.version!==1 ||
++      directory.complete!==true || directory.offset_unit!=='utf8-byte' || directory.column_unit!=='utf8-byte' ||
++      directory.line_base!==1 || directory.column_base!==1 || directory.end_exclusive!==true ||
++      !Array.isArray(directory.definitions) || !Array.isArray(documents) || !documents.length)
++      throw Error('unsupported or incomplete definition directory');
++    const sources=directory.sources || [{name:directory.source_name,source_utf8:directory.source_utf8}];
++    if(!Array.isArray(sources) || sources.length!==documents.length ||
++      directory.source_name!==documents[0].sourceName || directory.source_utf8!==documents[0].source)
++      throw Error('submitted source identity mismatch');
++    const names=new Set(),targets=documents.map(()=>new Set());
++    sources.forEach((source,index)=>{
++      const document=documents[index];
++      if(!source || source.name!==document.sourceName || source.source_utf8!==document.source ||
++        (source.class_method_owner || '')!==(document.classMethodOwner || '') || names.has(source.name))
++        throw Error('submitted source graph mismatch');
++      names.add(source.name);
++    });
++    const definitions=directory.definitions;
++    definitions.forEach((entry,index)=>{
++      if(!entry || entry.index!==index || typeof entry.name!=='string' || !entry.name ||
++        !kinds.has(entry.kind) || typeof entry.class_name!=='string' || typeof entry.declaration_only!=='boolean' ||
++        !integer(entry.source_index) || entry.source_index>=documents.length ||
++        !(entry.parent_function===null || (integer(entry.parent_function) && entry.parent_function<definitions.length && entry.parent_function!==index)) ||
++        entry.source?.name!==documents[entry.source_index].sourceName)
++        throw Error('invalid definition record');
++      for(const point of [entry.source.begin,entry.source.end]){
++        if(!point || !integer(point.offset) || !Number.isSafeInteger(point.line) || point.line<1 ||
++          !Number.isSafeInteger(point.column) || point.column<1)throw Error('invalid source position');
++        targets[entry.source_index].add(point.offset);
++      }
++      if(entry.source.end.offset<entry.source.begin.offset)throw Error('reversed definition range');
++    });
++    const maps=documents.map((item,index)=>positions(item.source,item.content,targets[index]));
++    const depths=new Map();
++    for(let index=0;index<definitions.length;index++){
++      const trail=[],seen=new Set();let next=index;
++      while(next!==null && !depths.has(next)){
++        if(seen.has(next))throw Error('cyclic definition parents');
++        seen.add(next);trail.push(next);next=definitions[next].parent_function;
++      }
++      let depth=next===null ? -1 : depths.get(next);
++      while(trail.length)depths.set(trail.pop(),++depth);
++    }
++    return definitions.map(entry=>{
++      const begin=maps[entry.source_index].get(entry.source.begin.offset),end=maps[entry.source_index].get(entry.source.end.offset);
++      for(const [actual,expected] of [[begin,entry.source.begin],[end,entry.source.end]])
++        if(actual.line!==expected.line || actual.column!==expected.column)throw Error('source position units disagree');
++      const parent=entry.parent_function===null ? null : definitions[entry.parent_function];
++      if(parent && parent.source_index===entry.source_index &&
++        (parent.source.begin.offset>entry.source.begin.offset || parent.source.end.offset<entry.source.end.offset))
++        throw Error('parent does not contain definition');
++      return {index:entry.index,name:entry.name,kind:entry.kind,className:entry.class_name,
++        declarationOnly:entry.declaration_only,parent:entry.parent_function,depth:depths.get(entry.index),
++        document:documents[entry.source_index],range:{start:begin.editor,end:end.editor,line:begin.line},
++        sourceName:entry.source.name};
++    });
++  }
++  return {read};
++})();

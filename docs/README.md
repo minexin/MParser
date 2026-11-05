@@ -47,6 +47,8 @@ mparser --run --result-format=json-v1 script.m
   protocol 1.2.
 - [Compact Host Candidate](host-compact-layout-candidate.md): current-SDK
   Legend browser checks and bounded responsive acceptance on isolated copies.
+- [Host Definition Navigation](host-definition-navigation-candidate.md):
+  exact compiler ranges and revision-checked navigation across open documents.
 - [Ordered Display Candidate](host-ordered-display-candidate.md): explicit
   read-only event consumption, exact history and bounded browser interaction.
 

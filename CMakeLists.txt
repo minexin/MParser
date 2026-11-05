@@ -3456,6 +3456,7 @@ install(FILES
     docs/host-canvas-layout-candidate.md
     docs/host-compact-layout-candidate.md
     docs/host-ordered-display-candidate.md
+    docs/host-definition-navigation-candidate.md
     docs/system-search-paths.md
     docs/assignment-display-development.md
     docs/ordered-display-events.md

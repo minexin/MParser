@@ -33,6 +33,10 @@
   },
   "artifacts": [
     {
+      "path": "docs/host-definition-navigation-candidate.md",
+      "sha256_lf": "e0135eeed05010b7713d9d27e2f16a9d9c5a6987695768c9a0ef33e037804cb1"
+    },
+    {
       "path": "docs/host-ordered-display-candidate.md",
       "sha256_lf": "6c33c98d0f0f95724af33811aea5b9568a6b334de999e2aea5de09370883101a"
     },
@@ -42,7 +46,7 @@
     },
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "36d2b6d4ea1f57b4bd4c1def1f234059e9fc4473617f985f4e799cad5fa21c98"
+      "sha256_lf": "b9ca7f9980b5861bb975c95e34e4f3cf59ceaa5367ff8ad6a93b79c0353f4dc6"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -50,7 +54,7 @@
     },
     {
       "path": "docs/definition-metadata.md",
-      "sha256_lf": "6e781df166947a8af19f0a5ff2004932825b054b661b30acf2a2e3271b469e33"
+      "sha256_lf": "c13024d4b03a0b3e5f6926ec733de62f94ff4ec735a0b5a6813cc0adbb0e3301"
     },
     {
       "path": "docs/variable-name-validation.md",

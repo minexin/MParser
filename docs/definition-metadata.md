@@ -1,7 +1,7 @@
 # Definition Metadata
 
 Development API introduced in ABI generation 2 revision 6 and retained in the
-unpublished revision 10 SDK. Retrieve the
+unpublished revision 12 SDK. Retrieve the
 syntax definition directory with C++ `Module::definitions()` or C
 `mparser_module_definition_count` / `mparser_module_definition_info`.
 Unlike `functionNames()`, this includes nested functions and class methods;
@@ -50,7 +50,9 @@ incomplete directory rather than a partial navigation index. This is an
 in-memory, single-request compile endpoint, not cross-file browser navigation.
 Before navigating, the host must compare the directory's source name/text with
 the exact current document and reject stale responses. Definition indices are
-not stable across requests. The candidate does not implement that UI policy.
+not stable across requests. The original server-only candidate does not
+implement that UI policy. The later [navigation candidate](host-definition-navigation-candidate.md)
+consumes both directory forms and has bounded actual Tabbit interaction evidence.
 
 ## Multi-Source Host Candidate
 

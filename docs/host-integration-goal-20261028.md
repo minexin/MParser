@@ -21,7 +21,7 @@ success may substitute for missing kernel contracts.
 | --- | --- | --- | --- |
 | H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated host compile-only/execute diagnostic propagation verified, including preservation with clear_workspace=true; deployed host unchanged |
 | H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins, 90-case R2024b source-context corpus and isolated revision-checked rename passed; deployed rename UI/API adoption pending |
-| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership, cross-command method/listener and non-static bound-handle access passed SDK and clean host replay; measured creator-context rules match the R2024b cases; deployed navigation and stale-document UI acceptance pending |
+| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | SDK/REST explicit method ownership and current isolated browser navigation passed for selected open documents, including repeated nested names, external declaration/implementation and edit/undo freshness. Screenshot and production adoption remain open. |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay; latest compact source-copy candidate closes the measured 390px cropping failure with five viewport checks; broader downstream acceptance remains open |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed; actual current-SDK repeated/cross-Axes Legend rename/delete/invalid preservation and compact layout passed bounded browser checks; UI editing, full native text/layout and deployment remain open |
@@ -78,6 +78,12 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 H03 navigation candidate: current-document and selected-open-graph
+  checks consume exact kernel ranges and explicit class ownership. Actual Tabbit
+  verifies cross-document selection, CRLF/UTF-8, stale edit/undo rejection and
+  preserved drafts without any source execution or workspace revision change.
+  Fresh installed-SDK host passed 67/67. See host-definition-navigation-candidate.md
+  for source-copy patches, raw evidence and screenshot/deployment boundaries.
 - 2026-11-05 H10 client delivery: the eleventh candidate explicitly opts in
   through a default-OFF capability-gated checkbox, preserves legacy requests
   and renders original kernel event order without workspace reconstruction.

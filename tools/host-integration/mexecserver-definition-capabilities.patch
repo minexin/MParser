@@ -1,0 +1,9 @@
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -302,1 +302,5 @@
+                   "source-metadata",
++#if MEXEC_DEFINITION_METADATA
++                  "compile-definition-directory",
++                  "compile-source-graph",
++#endif

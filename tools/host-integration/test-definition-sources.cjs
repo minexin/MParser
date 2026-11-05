@@ -3,8 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
-const {spawn} = require('node:child_process');
-const [exe,output,mode='on'] = process.argv.slice(2);
+const vm = require('node:vm');
+const {spawn,spawnSync} = require('node:child_process');
+const [exe,output,mode='on',clientRoot] = process.argv.slice(2);
 assert.ok(exe && output);
 assert.ok(['on','off'].includes(mode));
 const root = path.resolve(output);
@@ -35,6 +36,11 @@ async function main() {
         await new Promise(resolve=>setTimeout(resolve,50));
     }
     assert.ok(ready);
+    if(clientRoot){
+        const info=await request('/info');
+        assert.equal(info.features.includes('compile-definition-directory'),mode==='on');
+        assert.equal(info.features.includes('compile-source-graph'),mode==='on');
+    }
     if(mode==='off') {
         for(const body of [{sources:[{name:'a.m',source:'x=1'}]},
             {source:'x=2',sources:[{name:'a.m',source:'x=1'}]}])
@@ -85,6 +91,34 @@ async function main() {
     assert.equal(methods[1].kind,'method');
     assert.equal(methods[1].class_name,'ExternalRange');
     assert.equal(methods[2].parent_function,1);
+    if(clientRoot){
+        const session=await request('/sessions',{name:'definition-client-no-execution'},201),base=`/sessions/${session.id}`;
+        await request(`${base}/execute`,{command:'compile_anchor=41;',include_workspace_values:true});
+        const beforeSession=await request(base),beforeWorkspace=await request(`${base}/workspace`);
+        const context={window:{},MExec:{},TextEncoder};
+        vm.runInNewContext(fs.readFileSync(path.resolve(clientRoot,'web/js/definition-directory.js'),'utf8'),context);
+        const corpus=[];
+        for(const units of [sources,externalSources,[{name:'no_execution.m',source:"error('must not run');\nfunction y=helper()\ny=1;\nend\n"}]]){
+            const submitted=units.map(unit=>({...unit,name:'/'+unit.name}));
+            const result=await request('/compile',{sources:submitted});assert.equal(result.valid,true,JSON.stringify(result.diagnostics));
+            const documents=submitted.map(unit=>({sourceName:unit.name,source:unit.source,
+                content:unit.source.replace(/\r\n?/g,'\n'),classMethodOwner:unit.class_method_owner||''}));
+            const rows=context.MExec.definitionDirectory.read(result.definition_directory,documents);
+            assert.equal(rows.length,result.definition_directory.definitions.length);
+            rows.forEach((row,index)=>{
+                const entry=result.definition_directory.definitions[index],source=submitted[entry.source_index].source,bytes=Buffer.from(source);
+                assert.equal(row.range.start,bytes.subarray(0,entry.source.begin.offset).toString('utf8').replace(/\r\n?/g,'\n').length);
+                assert.equal(row.range.end,bytes.subarray(0,entry.source.end.offset).toString('utf8').replace(/\r\n?/g,'\n').length);
+            });
+            corpus.push({sources:submitted,result});
+        }
+        assert.equal((await request(base)).run_count,beforeSession.run_count);
+        assert.equal((await request(`${base}/workspace`)).revision,beforeWorkspace.revision,'compile navigation never executes source');
+        const file=path.join(root,'client-directory-corpus.json');fs.writeFileSync(file,JSON.stringify(corpus,null,2));
+        const replay=spawnSync(process.execPath,[path.join(__dirname,'test-client-definitions.cjs'),clientRoot,file],{encoding:'utf8',timeout:30000});
+        if(replay.stdout)process.stdout.write(replay.stdout);if(replay.stderr)process.stderr.write(replay.stderr);
+        assert.equal(replay.status,0,'real compiler directory to client navigation replay');
+    }
     const session=await request('/sessions',{name:'external-method-invocation'},201);
     const base=`/sessions/${session.id}`;
     for(const unit of externalSources)
