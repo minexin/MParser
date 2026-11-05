@@ -18,10 +18,10 @@ template<class Action> void rejects(Action action, ApiStatus status) {
     try { action(); } catch (const ApiError& error) { require(error.status() == status, "unexpected layout API status"); return; }
     throw std::runtime_error("expected layout API rejection");
 }
-const Json& node(const Json& graph, const std::string& type) {
+const Json& node(const Json& graph, const char* type) {
     const auto& objects = graph.at("objects");
     const auto found = std::find_if(objects.begin(), objects.end(), [&](const auto& candidate) { return candidate.at("type") == type; });
-    require(found != objects.end(), "missing " + type); return *found;
+    require(found != objects.end(), std::string("missing ") + type); return *found;
 }
 void positionEquals(const Json& actual, const Json& expected, const std::string& name) {
     require(actual.size() == expected.size(), name + " position size");
@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
         require(argc == 2, "expected R2024b layout reference");
         std::ifstream input(argv[1]); const auto reference = Json::parse(input);
         const auto& cases = reference.at("cases");
-        const auto findCase = [&](const std::string& name) -> const Json& {
+        const auto findCase = [&](const char* name) -> const Json& {
             const auto found = std::find_if(cases.begin(), cases.end(), [&](const auto& entry) { return entry.at("name") == name; });
             require(found != cases.end(), "missing reference"); return *found;
         };

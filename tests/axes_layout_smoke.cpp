@@ -40,11 +40,11 @@ int main(int argc, char** argv) {
         std::ifstream schemaInput(argv[2]); nlohmann::json_schema::json_validator validator;
         validator.set_root_schema(Json::parse(schemaInput));
         const auto& cases = reference.at("cases");
-        const auto findCase = [&](const std::string& name) -> const Json& {
+        const auto findCase = [&](const char* name) -> const Json& {
             const auto found = std::find_if(cases.begin(), cases.end(), [&](const auto& entry) {
                 return entry.at("name") == name;
             });
-            require(found != cases.end(), "missing reference " + name);
+            require(found != cases.end(), std::string("missing reference ") + name);
             return *found;
         };
         const auto& pixels = findCase("to_pixels").at("position");
