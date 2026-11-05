@@ -36,23 +36,25 @@ mparser --run --result-format=json-v1 script.m
 - [Superclass Reflection](superclasses.md): visible ancestor queries in v1.12.
 - [Graphics Object Model](graphics-object-model.md): headless object
   semantics, deterministic serialization, and the separate rendering boundary.
-- [C Embedding API](embedding-c-api.md): C source API 1.3 over current ABI
-  generation 2 revision 5, with opaque handles, values, sessions, diagnostics,
+- [C Embedding API](embedding-c-api.md): current development C source API
+  1.15.0 over ABI generation 2 revision 12, with opaque handles, values, sessions, diagnostics,
   cancellation, limits, and shared Runtime ownership.
 - [C ABI Compatibility](c-abi-compatibility.md): structure evolution,
   symbols, layouts, ownership, and candidate-freeze rules.
-- [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.3
-  over current ABI revision 2, including `Runtime`.
+- [C++ Embedding SDK](embedding-cpp-api.md): header-only C++20 source API 1.15
+  over current ABI 2.12, including `Runtime`.
 - [Machine Result Protocol](machine-result-protocol.md): one-shot JSON
-  protocol 1.1.
+  protocol 1.2.
+- [Compact Host Candidate](host-compact-layout-candidate.md): current-SDK
+  Legend browser checks and bounded responsive acceptance on isolated copies.
 
 Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 `MParser::cli`.
 
 ## Extend The Runtime
 
-- [Extending Builtins](extending-builtins.md): current v1.3 builtin source
-  contract 1.17 plus archived v1.2 contract 1.1, descriptor rules, registry
+- [Extending Builtins](extending-builtins.md): current builtin source
+  contract 1.22 plus archived contracts, descriptor rules, registry
   behavior, ownership, threading, resources, and conformance tests.
 - [Architecture](architecture.md): Lexer to Parser to semantic HIR to
   verified bytecode to VM/typed/native execution.

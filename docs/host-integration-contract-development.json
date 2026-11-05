@@ -33,8 +33,12 @@
   },
   "artifacts": [
     {
+      "path": "docs/host-compact-layout-candidate.md",
+      "sha256_lf": "d5643b92504a71e220ef195b7acfa3f972922a04c1d4f987a016114e5fecbb01"
+    },
+    {
       "path": "docs/v1.15.md",
-      "sha256_lf": "8f2174c497b2b2d755ca14db1cd1e658469004711278a38fd6b3c86892406256"
+      "sha256_lf": "b9838f0afdb687e0590bf985cd2619b77c78720539ab0a9d17c10a0b56320002"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -66,7 +70,7 @@
     },
     {
       "path": "docs/graphics-legend-contract.md",
-      "sha256_lf": "54938a13ff36c71acd41f51255374f9c461e8afca9d07b3d55caa0b5db4cc589"
+      "sha256_lf": "050c8476e2ed24320bdf996fb819000094f6d3e8d32cd6759e6420caea0f8e71"
     },
     {
       "path": "docs/public-contract-v1.14.json",
@@ -118,7 +122,7 @@
     },
     {
       "path": "docs/host-browser-acceptance.md",
-      "sha256_lf": "8ac8191a9e67dfbe0bc2ff0129161face321bfc002ac6c560b9208300172db6e"
+      "sha256_lf": "771a5a511b5856876b1ad7c9b73114631dcad81ba61341a76b5947614c75054d"
     },
     {
       "path": "docs/graphics-writeback-contract.md",
@@ -134,7 +138,7 @@
     },
     {
       "path": "docs/host-canvas-layout-candidate.md",
-      "sha256_lf": "c9488742db547010e5468de39697ed7a15f684c857f8937d08282674d4821661"
+      "sha256_lf": "6cb5754ba5b8ca12e477862ce6fd4e5c5056ebe7c7039c5edb5498113a58ff3d"
     },
     {
       "path": "docs/extending-builtins.md",

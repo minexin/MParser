@@ -7,10 +7,12 @@ pins their LF-normalized contents. They are not a deployed client or a claim
 that the current host still has these exact sources.
 
 The replay verifies the hashes, copies the inputs to a new build directory,
-applies nine renderer/bootstrap candidates and runs their tests. On 2026-11-05
+applies ten renderer/bootstrap candidates and runs their tests. On 2026-11-05
 the unchanged sibling plot-view.js, api.js, app.js and index.html were
 additionally captured for per-Axes view and capability/bootstrap tests; the
 original plot.js/test snapshots were not replaced.
+The original layout.js and mexec.css were subsequently captured unchanged for
+compact-layout replay; their added LF hashes do not replace earlier inputs.
 Do not edit this baseline just to make a candidate patch apply. If the target
 host changes, recapture its inputs intentionally, update the provenance
 and hashes, and verify both the live-source probe and frozen replay.

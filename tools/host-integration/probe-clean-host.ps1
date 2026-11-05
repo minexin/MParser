@@ -44,7 +44,7 @@ foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-met
 foreach ($patch in @('mexecclient-text-labels-candidate.patch','mexecclient-line-clipping-candidate.patch',
     'mexecclient-grid-candidate.patch','mexecclient-legend-candidate.patch','mexecclient-color-candidate.patch',
     'mexecclient-runtime-identity-candidate.patch','mexecclient-axes-layout-candidate.patch','mexecclient-layout-sync-candidate.patch',
-    'mexecclient-legend-references-candidate.patch')) {
+    'mexecclient-legend-references-candidate.patch','mexecclient-compact-layout-candidate.patch')) {
     git -C $clientSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Client patch failed: $patch; see $stage" }
 }
@@ -92,7 +92,8 @@ if ($LASTEXITCODE) { throw "Client layout REST probe failed; see $stage" }
     -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -GraphicsColors -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')
 foreach ($test in @('test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs','test-client-colors.cjs',
-    'test-client-runtime-identity.cjs','test-client-axes-layout.cjs','test-client-layout-bootstrap.cjs')) {
+    'test-client-runtime-identity.cjs','test-client-axes-layout.cjs','test-client-layout-bootstrap.cjs',
+    'test-client-compact-layout.cjs','test-client-compact-canvas.cjs')) {
     node (Join-Path $PSScriptRoot $test) $clientSource
     if ($LASTEXITCODE) { throw "Client candidate failed: $test; see $stage" }
 }

@@ -4,6 +4,11 @@ Status: source-copy integration candidate, 2026-11-05. Product 1.15.0 remains
 development; C ABI 2.12/158 and machine protocol 1.2 are unchanged. Original
 MExecServer/MExecClient sources and deployed services are not modified.
 
+The later [compact/current-Legend follow-up](host-compact-layout-candidate.md)
+closes the historical 390px cropping failure recorded below for its latest
+tested source-copy candidate. It uses the newer Legend-creation SDK; the older
+browser observations in this guide retain their original scope.
+
 ## Selection And Measurement
 
 Apply `mexecclient-axes-layout-candidate.patch` after the five renderer patches,

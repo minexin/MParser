@@ -23,10 +23,10 @@ success may substitute for missing kernel contracts.
 | H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins, 90-case R2024b source-context corpus and isolated revision-checked rename passed; deployed rename UI/API adoption pending |
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership, cross-command method/listener and non-static bound-handle access passed SDK and clean host replay; measured creator-context rules match the R2024b cases; deployed navigation and stale-document UI acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
-| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; host-reported floating colon endpoint loss fixed with 38 R2024b cases, 356 kernel/package checks, actual optimized-loop checks and fresh installed-SDK REST replay; narrow-screen cropping and broader downstream acceptance remain open |
-| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout passed; builtin 1.22 adds 80-case R2024b Legend creation/subset/property/lifecycle replay in HIR/SDK/REST; bounded actual v4 measurement/dual-Axes pixels/resize/zoom/reload passed on the preceding SDK; 390px cropping fails, new Legend browser adoption, UI editing, native layout and deployment remain open |
+| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay; latest compact source-copy candidate closes the measured 390px cropping failure with five viewport checks; broader downstream acceptance remains open |
+| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed; actual current-SDK repeated/cross-Axes Legend rename/delete/invalid preservation and compact layout passed bounded browser checks; UI editing, full native text/layout and deployment remain open |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 362/362, fresh installed-SDK host/80-case Legend REST/67 regressions and bounded old-header/current-DLL controls passed; restored ON 67/67 passed; actual v4 desktop evidence is bounded and 390px cropping fails; actual-commit CI, deployment and release acceptance remain separate gates |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 362/362, installed-SDK host/80-case Legend REST/67 regressions and bounded compatibility controls passed; current-SDK compact/Legend browser evidence is bounded; actual-commit CI, deployment and release acceptance remain separate gates |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only result collection and ON-mode source-only host replay passed; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see ordered-display-events.md |
 
@@ -78,6 +78,19 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 compact/current-Legend browser follow-up: the tenth client
+  candidate removes the desktop grid's 650px minimum in compact mode, retains
+  live panels/drafts, restores desktop roles/proportions and bounds small-Axes
+  tick/Legend presentation without changing kernel state. Actual Tabbit checks
+  pass at 320x800, 390x844, 768x1024, 844x390 and 1904x915 with nonblank colored
+  Canvas pixels and bounded controls. Current 9689A754 SDK checks repeated/
+  cross-Axes Legend keys, rename, AutoUpdate off, deletion and invalid-call
+  preservation. Fresh ten-candidate installed-SDK host replay passed all REST
+  checks and 67/67 in 20.26 seconds. See host-compact-layout-candidate.md and
+  build/browser-compact-20261105. The old 390px failure below remains historical;
+  latest tested candidate passes. Full layout, download UI, deployment and
+  broad device/browser acceptance remain open. Original sibling sources and
+  services were not changed.
 - 2026-11-05 Legend creation and array lifecycle: 80 actual R2024b cases were
   independently assertion-replayed. HIR/VM checks 160 outcomes; public SDK
   checks 320 in four requested modes, including frozen results and atomic

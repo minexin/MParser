@@ -1,0 +1,180 @@
+diff --git a/web/index.html b/web/index.html
+index 7710396..6d578e4 100644
+--- a/web/index.html
++++ b/web/index.html
+@@ -117,0 +118,6 @@
++  <nav id="compact-panel-tabs" role="tablist" aria-label="工作面板" hidden>
++    <button type="button" role="tab" id="compact-workbench" aria-controls="center-panel command-panel" aria-selected="true" data-panel="workbench">工作台</button>
++    <button type="button" role="tab" id="compact-files" aria-controls="files-panel" aria-selected="false" tabindex="-1" data-panel="files-panel">文件夹</button>
++    <button type="button" role="tab" id="compact-workspace" aria-controls="right-panel" aria-selected="false" tabindex="-1" data-panel="right-panel">工作区</button>
++    <button type="button" role="tab" id="compact-command" aria-controls="command-panel" aria-selected="false" tabindex="-1" data-panel="command-panel">命令</button>
++  </nav>
+@@ -200 +206 @@
+-          <label>图形 <select id="plot-figure" aria-label="选择内核图形" disabled></select></label><label>坐标区 <select id="plot-axes" aria-label="选择内核坐标区" disabled></select></label><button id="plot-export" disabled>导出当前视图 PNG</button><span>显示所选坐标区的内核快照</span>
++          <label>图形 <select id="plot-figure" aria-label="选择内核图形" disabled></select></label><label>坐标区 <select id="plot-axes" aria-label="选择内核坐标区" disabled></select></label><button id="plot-export" disabled>导出当前视图 PNG</button>
+diff --git a/web/js/layout.js b/web/js/layout.js
+index 2b3045a..e307628 100644
+--- a/web/js/layout.js
++++ b/web/js/layout.js
+@@ -73,0 +74,3 @@ window.MExec = window.MExec || {};
++  let compactActive = false;
++  let syncCompact = () => {};
++  let revealCompact = () => {};
+@@ -75,0 +79 @@ window.MExec = window.MExec || {};
++    if (compactActive && panel) return;
+@@ -88,0 +93 @@ window.MExec = window.MExec || {};
++    syncCompact();
+@@ -117 +122,4 @@ window.MExec = window.MExec || {};
+-  MExec.layout = {reveal(id) { if (maximized && maximized.element.id !== id) setMaximized(null); }};
++  MExec.layout = {reveal(id) {
++    if (maximized && maximized.element.id !== id) setMaximized(null);
++    revealCompact(id);
++  }};
+@@ -118,0 +127,78 @@ window.MExec = window.MExec || {};
++
++  const navigation = document.getElementById('compact-panel-tabs');
++  if (!navigation || !window.matchMedia) return;
++  const compactMedia = window.matchMedia('(max-width: 720px), (max-height: 500px) and (max-width: 1000px)');
++  const shortMedia = window.matchMedia('(max-height: 500px)');
++  const choices = [...navigation.querySelectorAll('[data-panel]')];
++  const panelRoles = new Map(panels.map(panel => [panel.element.id,{
++    role:panel.element.getAttribute('role'),label:panel.element.getAttribute('aria-labelledby'),
++  }]));
++  let compactPane = 'workbench';
++  syncCompact = () => {
++    const active = document.activeElement;
++    const navigationHadFocus = navigation.contains(active);
++    navigation.hidden = !compactActive;
++    main.classList.toggle('compact-layout',compactActive);
++    main.classList.toggle('compact-short',compactActive && shortMedia.matches);
++    main.dataset.compactPane = compactPane;
++    const visible = compactPane === 'workbench'
++      ? ['center-panel',...(shortMedia.matches ? [] : ['command-panel'])] : [compactPane];
++    let concealedFocus = false;
++    for (const panel of panels) {
++      const concealed = compactActive && !visible.includes(panel.element.id);
++      concealedFocus ||= concealed && panel.element.contains(active);
++      panel.element.classList.toggle('compact-pane-concealed',concealed);
++      panel.element.inert = concealed || Boolean(maximized && panel !== maximized);
++      if (compactActive) {
++        const owner = panel.element.id === 'center-panel' || (panel.element.id === 'command-panel' && compactPane === 'workbench')
++          ? 'workbench' : panel.element.id;
++        panel.element.setAttribute('role','tabpanel');
++        panel.element.setAttribute('aria-labelledby',choices.find(choice => choice.dataset.panel === owner).id);
++      } else {
++        const previous = panelRoles.get(panel.element.id);
++        for (const [name,value] of [['role',previous.role],['aria-labelledby',previous.label]]) {
++          if (value === null) panel.element.removeAttribute(name);
++          else panel.element.setAttribute(name,value);
++        }
++      }
++    }
++    for (const choice of choices) {
++      const selected = choice.dataset.panel === compactPane;
++      choice.setAttribute('aria-selected',String(selected));
++      choice.tabIndex = selected ? 0 : -1;
++      if (selected && concealedFocus) choice.focus();
++    }
++    if (!compactActive && navigationHadFocus) {
++      document.querySelector('.center-view-tabs [aria-selected="true"]')?.focus();
++    }
++    MExec.plot.draw();
++  };
++  function choose(value, focus = false) {
++    if (!choices.some(choice => choice.dataset.panel === value)) return;
++    compactPane = value; syncCompact();
++    if (focus) choices.find(choice => choice.dataset.panel === value).focus();
++  }
++  revealCompact = id => {
++    if (compactActive) choose(id === 'center-panel' ? 'workbench' : id);
++  };
++  choices.forEach((choice,index) => {
++    choice.addEventListener('click',() => choose(choice.dataset.panel));
++    choice.addEventListener('keydown',event => {
++      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 ||
++          event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
++      const next = event.key === 'ArrowRight' ? (index+1)%choices.length :
++        event.key === 'ArrowLeft' ? (index+choices.length-1)%choices.length :
++        event.key === 'Home' ? 0 : event.key === 'End' ? choices.length-1 : null;
++      if (next === null) return;
++      event.preventDefault(); choose(choices[next].dataset.panel,true);
++    });
++  });
++  const updateMode = () => {
++    compactActive = compactMedia.matches;
++    if (compactActive && maximized) setMaximized(null);
++    syncCompact();
++  };
++  compactMedia.addEventListener('change',updateMode);
++  shortMedia.addEventListener('change',syncCompact);
++  document.getElementById('layout-reset').addEventListener('click',() => choose('workbench'));
++  updateMode();
+diff --git a/web/js/plot.js b/web/js/plot.js
+index 0008ac9..acedfdb 100644
+--- a/web/js/plot.js
++++ b/web/js/plot.js
+@@ -117 +117 @@ MExec.plot = (() => {
+-      const maxWidth = Math.max(48, sideOutside ?
++      const maxWidth = region ? Math.max(32,region.width-16) : Math.max(48,sideOutside ?
+@@ -132 +132 @@ MExec.plot = (() => {
+-      const boxHeight = Math.min(height - 16, (row + 1) * 20 + 8);
++      const boxHeight = Math.max(0,Math.min(region ? region.height-8 : height-16,(row+1)*20+8));
+@@ -213 +213 @@ MExec.plot = (() => {
+-      : ticks(x0, x1, 6);
++      : ticks(x0,x1,Math.max(1,Math.min(6,Math.floor(plotWidth/64))));
+@@ -216 +216 @@ MExec.plot = (() => {
+-      : ticks(y0, y1, 5);
++      : ticks(y0,y1,Math.max(1,Math.min(5,Math.floor(plotHeight/36))));
+diff --git a/web/css/mexec.css b/web/css/mexec.css
+index c87656c..e8dd8ed 100644
+--- a/web/css/mexec.css
++++ b/web/css/mexec.css
+@@ -816,0 +817,48 @@ button:focus-visible {outline:2px solid var(--accent);outline-offset:-2px;}
++
++#compact-panel-tabs {display:flex;flex:none;gap:0;border-bottom:1px solid var(--border);background:#f5f6f7;}
++#compact-panel-tabs[hidden] {display:none;}
++#compact-panel-tabs button {flex:1;min-width:0;border:0;border-bottom:2px solid transparent;border-radius:0;padding:5px 3px;letter-spacing:0;}
++#compact-panel-tabs button[aria-selected=true] {border-bottom-color:var(--accent);background:#fff;color:#064875;}
++#main.compact-layout {min-width:0;width:100%;max-width:100%;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(88px,var(--command-height));}
++#main.compact-layout > .splitter,#main.compact-layout > .compact-pane-concealed {display:none;}
++#main.compact-layout #center-panel {grid-column:1;grid-row:1;}
++#main.compact-layout #command-panel {grid-column:1;grid-row:2;}
++#main.compact-layout #files-panel,#main.compact-layout #right-panel,
++#main.compact-layout[data-compact-pane=command-panel] #command-panel {grid-column:1;grid-row:1 / -1;}
++#main.compact-layout.compact-short {grid-template-rows:minmax(0,1fr);}
++#main.compact-layout .panel-maximize {display:none;}
++.plot-toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:5px;flex:none;}
++.plot-toolbar label {display:flex;align-items:center;gap:4px;min-width:0;max-width:100%;}
++.plot-toolbar select {min-width:0;max-width:180px;}
++
++@media (max-width:720px), (max-height:500px) and (max-width:1000px) {
++  body {overflow-x:hidden;}
++  #ribbon,#menubar,#directory-bar {min-width:0;max-width:100%;flex-shrink:0;}
++  #menubar {display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) 28px;}
++  #ribbon-tabs {grid-column:1 / 5;grid-row:1;margin:0;min-width:0;}
++  #ribbon-tabs button {flex:1;min-width:0;padding:5px 3px;}
++  #ribbon-toggle {grid-column:5;grid-row:1;margin-left:0;}
++  #menubar .menu {grid-row:2;min-width:0;}
++  #menubar .menu-trigger {width:100%;}
++  #menubar .menu-items {width:180px;min-width:0;max-width:calc(100vw - 12px);}
++  #menubar [data-menu=view] .menu-items,#menubar [data-menu=help] .menu-items {right:0;left:auto;}
++  #directory-bar {display:grid;grid-template-columns:repeat(4,28px) minmax(0,1fr) 28px;gap:3px;}
++  #directory-bar > label {display:none;}
++  #directory-location {grid-row:2;grid-column:1 / -1;}
++  #files-history {grid-column:5;grid-row:1;width:100%;min-width:0;max-width:none;}
++  #files-edit-path {grid-column:6;grid-row:1;}
++  #statusbar {min-width:0;}
++}
++@media (max-height:500px) and (max-width:1000px) {
++  #menubar {display:flex;flex-wrap:nowrap;min-height:28px;}
++  #menubar #ribbon-tabs {flex:1;margin:0;}
++  #menubar .menu > .menu-trigger {padding:5px;}
++  #menubar .session-label {display:none;}
++  #ribbon {height:65px;min-height:65px;}
++  #ribbon .ribbon-actions button {height:42px;}
++  #ribbon .ribbon-files .ribbon-actions button:nth-child(n+4),#ribbon .ribbon-edit .ribbon-actions button {height:13px;}
++  #ribbon .ribbon-files .ribbon-actions,#ribbon .ribbon-edit .ribbon-actions {grid-template-rows:repeat(3,13px);}
++  #directory-bar {display:flex;flex-wrap:nowrap;}
++  #directory-location {min-width:0;}
++  #files-history {width:100px;max-width:20%;}
++}

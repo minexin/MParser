@@ -5,6 +5,8 @@
   "artifacts": [
     {"path": "web/js/plot.js", "sha256_lf": "214e95bcc502d31f25cd979947f90e44104ed2611c589d6f84f7bff1a5a93152"},
     {"path": "web/js/plot-view.js", "sha256_lf": "4e18f97901d6490b2ab015ea0fee1d178f13e4d25c8e7a65760c6693dfba4102"},
+    {"path": "web/js/layout.js", "sha256_lf": "ffa43bb51ca0e4d5a8235f855707cd5f26b2076f337e9b7e0029b2407669156e"},
+    {"path": "web/css/mexec.css", "sha256_lf": "0178a0e1f0ba99d229d71783f288a55eb7d1efa6460bd5f5906fa6514feb4721"},
     {"path": "web/js/api.js", "sha256_lf": "6cb61ddcee17904049d8ffea09c43b3ec23d68f9c4eb8b041826ad77f909585b"},
     {"path": "web/js/app.js", "sha256_lf": "6af1b8537b6f346417bfb7dd0d65ebcbb8454d90ff0747f176c78e630c803bdb"},
     {"path": "web/index.html", "sha256_lf": "3aee508c4ccf455e6b35ba764d111daf0e4145aaf3102cbacb7085cc34dcd9a6"},

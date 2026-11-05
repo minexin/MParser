@@ -115,11 +115,18 @@ The v4 environment/multi-Axes source-copy candidate now has a separate bounded
 actual Tabbit measurement/pixel/resize/selection/zoom/reload run in
 [the Canvas layout guide](host-canvas-layout-candidate.md). The inspected dual
 Axes screenshot and Canvas PNG are retained under build/browser-layout-20261105.
-This run confirms 390px cropping still fails and does not establish the download
-UI or production adoption. It predates the new Legend-creation kernel.
+That historical run confirmed 390px cropping failed and predates the new
+Legend-creation kernel. The latest ten-candidate current-SDK follow-up closes
+that measured cropping failure at five tested viewports and checks actual
+repeated/cross-Axes Legend rename/delete/invalid-call preservation. See the
+[compact candidate guide](host-compact-layout-candidate.md) for screenshots,
+Canvas pixels, keyboard/draft/filter workflows and exact limitations. Its fresh
+installed-SDK host replay passed 67/67; original host/client sources and services
+remain unchanged. Neither run establishes download UI or production adoption.
 
 - Broader lifecycle/selection races beyond the tested close/recreate/switch cases.
-- The confirmed narrow-screen cropping and untested responsive interactions.
+- Responsive interactions beyond the five compact-candidate viewports/workflows,
+  touch/hardware keyboards and full screen-reader acceptance.
 - Exact submitted-source navigation, document freshness and user-facing failures.
 - Host property writeback, protocol negotiation and deployment.
 - Kernel file export remains explicit renderer-unavailable; browser PNG export

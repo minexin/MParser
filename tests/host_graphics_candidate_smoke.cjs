@@ -35,11 +35,13 @@ const integration = path.join(repo,'tools/host-integration');
 for (const patch of ['mexecclient-text-labels-candidate.patch','mexecclient-line-clipping-candidate.patch',
   'mexecclient-grid-candidate.patch','mexecclient-legend-candidate.patch','mexecclient-color-candidate.patch',
   'mexecclient-runtime-identity-candidate.patch','mexecclient-axes-layout-candidate.patch',
-  'mexecclient-layout-sync-candidate.patch','mexecclient-legend-references-candidate.patch']) {
+  'mexecclient-layout-sync-candidate.patch','mexecclient-legend-references-candidate.patch',
+  'mexecclient-compact-layout-candidate.patch']) {
   run(git, ['-C',stage,'apply','--unidiff-zero','--ignore-space-change',path.join(integration,patch)]);
 }
 for (const test of ['test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs','test-client-colors.cjs',
-  'test-client-axes-layout.cjs','test-client-layout-bootstrap.cjs','test-client-runtime-identity.cjs']) {
+  'test-client-axes-layout.cjs','test-client-layout-bootstrap.cjs','test-client-runtime-identity.cjs',
+  'test-client-compact-layout.cjs','test-client-compact-canvas.cjs']) {
   run(process.execPath, [path.join(integration,test),stage]);
 }
 if (process.argv[4]) {

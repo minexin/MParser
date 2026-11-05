@@ -124,13 +124,17 @@ controls passed, old SDK ON was rejected and restored current SDK ON passed
 layout plus 67/67 in 20.62 seconds at `build/legend-creation-compat.log`. This
 is not a full old-header host regression with the new DLL. Final selected
 documentation/installed/archive checks passed 10/10 in 65.98 seconds at
-`build/legend-creation-final-package-test.log`. Full Legend browser adoption
-and actual-commit GitHub CI remain separate gates.
+`build/legend-creation-final-package-test.log`. The later
+[actual compact/Legend browser follow-up](host-compact-layout-candidate.md)
+checks repeated/cross-Axes keys, rename, AutoUpdate off, delete and invalid-call
+preservation with this DLL. Full Legend layout, deployed adoption and
+actual-commit GitHub CI remain separate gates.
 
 AutoUpdate reads use canonical character on/off, not MATLAB's OnOffSwitchState
 enum identity. Categorical/missing labels, rich text interpretation, unlisted
 creation properties, boxon/boxoff, Legend title objects, custom Position/Units
 and full layout are not implemented by this follow-up. Error identifiers and
 legacy argument-ambiguity warning wording are not all MATLAB-identical. The
-extra-label warning is checked explicitly. Candidate Canvas checks are not browser-pixel or production
-adoption evidence. No tag or published release is created merely by this work.
+extra-label warning is checked explicitly. Simulated Canvas tests are not
+browser-pixel evidence; the bounded actual run above is not production
+adoption. No tag or published release is created merely by this work.
