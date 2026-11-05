@@ -126,6 +126,18 @@ Evidence is in `build/axes-layout-compat.log` and separate stage response sets.
 This is not a full old-header host regression with the new DLL. Actual-commit
 GitHub CI remains a separate gate, including hosted macOS runner availability.
 
+The first feature-commit CI passed Windows, both macOS architectures and
+Clang sanitizers, but GCC rejected an inlined SDK numericScalar optional-span
+construction with maybe-uninitialized warnings. The scalar helper now separates
+real and complex construction explicitly. Added real/complex, signed-zero and
+logical scalar checks passed with 360/360 complete regression in 48.36 seconds
+at `build/axes-layout-scalar-fix-full-test.log`. A second fresh installed-SDK
+source-only host passed 148 actions, all probes and 67/67 regressions (20.71
+seconds) at `build/clean-host-probe/98b8df0155804973afe2b53ce5101abd`, aggregate
+`build/axes-layout-scalar-fix-clean-host.log`. The DLL hash is unchanged; the
+earlier old-header/new-DLL controls still bind that exact DLL. Exact fix-commit
+GCC CI remains a separate gate until it completes.
+
 The online [Axes properties](https://www.mathworks.com/help/matlab/ref/matlab.graphics.axis.axes-properties.html)
 and [Figure properties](https://www.mathworks.com/help/matlab/ref/matlab.ui.figure.html)
 explain unit/position concepts; the installed R2024b run anchors this corpus.

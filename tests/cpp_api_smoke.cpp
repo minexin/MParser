@@ -155,6 +155,29 @@ void runValueSmoke() {
     assert(single.numericClass() == NumericClass::Single);
     assert(single.numericData<float>().front() == 0.1F);
 
+    const auto negativeZero = Value::numericScalar(NumericClass::Double, -0.0);
+    assert(!negativeZero.isComplex() && std::signbit(negativeZero.numericData().front()));
+    const auto complexDoubleScalar = Value::numericScalar<double>(
+        NumericClass::Double, -0.0, std::optional<double>{2.5});
+    assert(complexDoubleScalar.isComplex());
+    assert(std::signbit(complexDoubleScalar.numericData().front()));
+    assert(complexDoubleScalar.numericImaginaryData().front() == 2.5);
+    assert(complexDoubleScalar.dimensions() == std::vector<std::size_t>({1, 1}));
+    const auto complexSingleScalar = Value::numericScalar<float>(
+        NumericClass::Single, 1.25F, std::optional<float>{-0.0F});
+    assert(complexSingleScalar.isComplex() && complexSingleScalar.numericData<float>().front() == 1.25F);
+    assert(std::signbit(complexSingleScalar.numericImaginaryData<float>().front()));
+    const auto logicalScalar = Value::numericScalar<std::uint8_t>(NumericClass::Logical, std::uint8_t{1});
+    assert(!logicalScalar.isComplex() && logicalScalar.numericData<std::uint8_t>().front() == 1);
+    bool rejectedComplexLogicalScalar = false;
+    try {
+        static_cast<void>(Value::numericScalar<std::uint8_t>(
+            NumericClass::Logical, std::uint8_t{1}, std::optional<std::uint8_t>{std::uint8_t{0}}));
+    } catch (const ApiError& error) {
+        rejectedComplexLogicalScalar = error.status() == MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    assert(rejectedComplexLogicalScalar);
+
     const std::array<float, 4> complexReal{
         1.0F, -2.0F, 3.5F, 0.0F};
     const std::array<float, 4> complexImaginary{

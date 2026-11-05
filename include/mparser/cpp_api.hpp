@@ -626,13 +626,11 @@ public:
         std::optional<Element> imaginary = std::nullopt) {
         const std::array<std::size_t, 2> dimensions{1, 1};
         const std::span<const Element> realData(&real, 1);
-        const std::optional<std::span<const Element>> imaginaryData =
-            imaginary
-                ? std::optional<std::span<const Element>>(
-                      std::span<const Element>(&*imaginary, 1))
-                : std::nullopt;
-        return numericArray(
-            numericClass, dimensions, realData, imaginaryData);
+        if (!imaginary) {
+            return numericArray(numericClass, dimensions, realData);
+        }
+        return numericArray<Element>(numericClass, dimensions, realData,
+            std::span<const Element>(&*imaginary, 1));
     }
 
     template <typename Element>

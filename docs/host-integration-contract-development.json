@@ -34,7 +34,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "15f94144bd5ab75cbe42ae112b96a6f4ea4794516a3c30f1edf7b32310ac570f"
+      "sha256_lf": "41bd10f3d79d143f76269cb389a2293dd03e61c53365ecbc3449c79e85fafe33"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -78,7 +78,7 @@
     },
     {
       "path": "include/mparser/cpp_api.hpp",
-      "sha256_lf": "7c85a14b97b984738997586753e186ec773c5421eb67c88e2653ba8260f0c0e1"
+      "sha256_lf": "06a6af3837332ae007bef4864bbc587e912d13f607611f07951096377562519f"
     },
     {
       "path": "tests/c_api_generation2_revision12_symbols.txt",
@@ -126,7 +126,7 @@
     },
     {
       "path": "docs/axes-layout-development.md",
-      "sha256_lf": "a1cb936ee73827ee1fb2a9adad73c93def0a6a3f93037e8ade066c08fb4acf32"
+      "sha256_lf": "df9be0aa1c8959a6f78cfe1d1af3a2b1dda461fbe0e3cc4f84b0947f14128f66"
     },
     {
       "path": "docs/graphics-v4.schema.json",
