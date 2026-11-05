@@ -44,6 +44,12 @@ is outside this commitment, not an outstanding kernel acceptance gate.
 
 ## Implementation Constraints From The Current Runtime
 
+The 1.15 development follow-up adds validated Axes Position/InnerPosition and
+Units properties. Public normalized positions and internal explicit-environment
+conversion have separate evidence and boundaries in
+[Axes layout development](axes-layout-development.md). Native window sizing,
+decoration insets and browser multi-Axes layout are not implied by those fields.
+
 `runtime_object.cpp` stores ordinary handle fields in a shared map, and
 `runtime_value_ops.cpp` compares scalar handle identity using that map's
 address. Graph parent/child links must not be stored as strong `RuntimeValue`

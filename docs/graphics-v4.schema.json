@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MParser opt-in graphics identity and layout snapshot v4",
+  "type": "object",
+  "required": ["schema", "version", "graphIdentity", "objects"],
+  "properties": {
+    "schema": {"const": "mparser.graphics"},
+    "version": {"const": 4},
+    "graphIdentity": {"$ref": "#/definitions/identity"},
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "objectIdentity", "type", "parent", "children", "properties"],
+        "properties": {
+          "id": {"$ref": "#/definitions/reference"},
+          "objectIdentity": {"$ref": "#/definitions/identity"},
+          "layout": {"oneOf": [
+            {"type": "null"},
+            {"type": "object", "required": ["revision", "contentSizePixels", "pixelsPerInch", "characterSizePixels"],
+             "properties": {
+               "revision": {"$ref": "#/definitions/identity"},
+               "contentSizePixels": {"$ref": "#/definitions/positivePair"},
+               "pixelsPerInch": {"type": "number", "exclusiveMinimum": 0},
+               "characterSizePixels": {"$ref": "#/definitions/positivePair"}
+             }, "additionalProperties": false}
+          ]},
+          "type": {"enum": ["Figure", "Axes", "Line", "Text", "Legend"]},
+          "parent": {"type": ["integer", "null"], "minimum": 1},
+          "children": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/reference"}},
+          "labels": {
+            "type": "object",
+            "properties": {
+              "Title": {"$ref": "#/definitions/reference"},
+              "XLabel": {"$ref": "#/definitions/reference"},
+              "YLabel": {"$ref": "#/definitions/reference"}
+            },
+            "additionalProperties": false
+          },
+          "axes": {"$ref": "#/definitions/reference"},
+          "entries": {"type": "array", "items": {
+            "type": "object", "required": ["line", "label"],
+            "properties": {"line": {"$ref": "#/definitions/reference"}, "label": {"type": "string"}},
+            "additionalProperties": false
+          }},
+          "properties": {"type": "object", "additionalProperties": {"oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"oneOf": [{"type": "number"}, {"enum": ["NaN", "Inf", "-Inf"]}]}}
+          ]}}
+        },
+        "additionalProperties": false,
+        "allOf": [{
+          "if": {"properties": {"type": {"const": "Figure"}}},
+          "then": {"required": ["layout"]},
+          "else": {"not": {"required": ["layout"]}}
+        }, {
+          "if": {"properties": {"type": {"const": "Axes"}}},
+          "then": {"properties": {"properties": {
+            "required": ["Position", "Units"],
+            "properties": {
+              "Position": {"type": "array", "minItems": 4, "maxItems": 4, "items": [
+                {"type": "number"}, {"type": "number"},
+                {"type": "number", "minimum": 0}, {"type": "number", "minimum": 0}
+              ]},
+              "Units": {"enum": ["normalized", "pixels", "inches", "centimeters", "points", "characters"]}
+            }
+          }}}
+        }]
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "positivePair": {"type": "array", "minItems": 2, "maxItems": 2,
+      "items": {"type": "number", "exclusiveMinimum": 0}},
+    "identity": {"type": "string", "pattern": "^[1-9][0-9]{0,19}$"},
+    "reference": {"type": "integer", "minimum": 1}
+  }
+}

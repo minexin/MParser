@@ -32,7 +32,7 @@ async function main(){
         const result=await execute('marker=42;plot(1:3);');assert.equal(result.graphics.version,3);
         console.log(`PASS writeback OFF: absent feature/route, legacy execute/graphics on ABI 2.${info.runtime.abi_revision}`);return;
     }
-    assert.equal(info.runtime.abi_revision,11);
+    assert.ok(info.runtime.abi_revision>=11);
     const seed=await execute('marker=42; lines=plot([1,10;2,20]); first=lines(1); second=lines(2);');
     const graph=seed.graphics.graphIdentity,first=seed.graphics.objects[2].objectIdentity,second=seed.graphics.objects[3].objectIdentity;
     const workspace=()=>request(`${base}/workspace?include_values=true`);

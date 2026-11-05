@@ -1,19 +1,23 @@
 # Graphics Identity Development Contract
 
 Status: opt-in serializer, standalone schema and C/C++ value SDK implemented.
-ABI 2.11 adds current-runtime lookup and atomic property writes; see
-[writeback contract](graphics-writeback-contract.md). Host negotiation,
+ABI 2.11 adds current-runtime lookup and atomic property writes; see the
+[writeback contract](graphics-writeback-contract.md). ABI 2.12 adds explicit
+host layout environments and
+identity-bearing graphics v4; see [layout development](axes-layout-development.md).
+Host negotiation,
 UI selection/writeback and deployment require separate acceptance.
 
 C ABI 2.7 adds `mparser_value_graphics_json_versioned(value, version, out_json)`.
 C++ values expose `graphicsJson(version)`. Version 0 retains legacy behavior;
-version 3 enables persistent identities in each scalar/array graph. Other
+version 3 enables persistent identities in each scalar/array graph. ABI 2.12
+also accepts opt-in version 4 with explicit Figure layout environments. Other
 versions fail with INVALID_ARGUMENT and null output. The existing unversioned
 C function remains available. Ownership and deleted-handle behavior are unchanged.
 
 The same development ABI adds `mparser_result_graphics_json_versioned` and
 `Result::graphicsJson(3)` for no-output plots and whole-session snapshots.
-Results retain both representations captured under one graph lock at completion.
+Results retain all supported representations captured under one graph lock at completion.
 Later mutations, runtime reset and runtime destruction cannot change either
 representation. A valid result without a snapshot yields an empty view with OK;
 unsupported versions or null arguments yield INVALID_ARGUMENT. Returned views

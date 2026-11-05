@@ -1,0 +1,128 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -39,1 +39,7 @@
+ find_package(MParser 1.15.0 EXACT CONFIG REQUIRED COMPONENTS C CPP)
++option(MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT "Enable explicit host layout environments and v4 readback" OFF)
++if(MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT AND (NOT MParser_C_ABI_GENERATION EQUAL 2 OR
++   MParser_C_ABI_REVISION LESS 12 OR NOT MEXEC_GRAPHICS_V3))
++    message(FATAL_ERROR "Graphics layout environments require ABI 2.12 and explicit graphics v3")
++endif()
++
+@@ -81,1 +81,3 @@
++target_compile_definitions(mexec_core PUBLIC
++    MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT=$<BOOL:${MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT}>)
+ target_compile_definitions(mexec_core PRIVATE
+diff --git a/include/mexec/engine/workspace_session.hpp b/include/mexec/engine/workspace_session.hpp
+--- a/include/mexec/engine/workspace_session.hpp
++++ b/include/mexec/engine/workspace_session.hpp
+@@ -212,1 +212,7 @@
+     std::optional<nlohmann::json> graphicsSnapshot() const;
++#if MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT
++    std::optional<nlohmann::json> graphicsLayoutSnapshot() const;
++    std::optional<nlohmann::json> setGraphicsLayoutEnvironment(const std::string& graph,
++        const std::string& figure, const mparser::sdk::GraphicsLayoutEnvironment& environment,
++        std::uint64_t expectedRevision);
++#endif
+diff --git a/src/engine/workspace_session.cpp b/src/engine/workspace_session.cpp
+--- a/src/engine/workspace_session.cpp
++++ b/src/engine/workspace_session.cpp
+@@ -11,1 +11,2 @@
+ #include <iterator>
++#include <limits>
+@@ -1699,1 +1699,27 @@
++#if MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT
++std::optional<nlohmann::json> WorkspaceSession::graphicsLayoutSnapshot() const {
++    std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
++    if (!lock.owns_lock() || executionRunning()) return std::nullopt;
++    return nlohmann::json{{"graphics",nlohmann::json::parse(runtime_.graphicsJson(4))},
++        {"revision",std::to_string(workspaceRevision_)}};
++}
++
++std::optional<nlohmann::json> WorkspaceSession::setGraphicsLayoutEnvironment(
++    const std::string& graph, const std::string& figure,
++    const mparser::sdk::GraphicsLayoutEnvironment& environment, std::uint64_t expectedRevision) {
++    std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
++    if (!lock.owns_lock() || executionRunning()) return std::nullopt;
++    if (expectedRevision != workspaceRevision_)
++        return nlohmann::json{{"conflict",true},{"revision",std::to_string(workspaceRevision_)}};
++    if (workspaceRevision_ == std::numeric_limits<std::uint64_t>::max())
++        return nlohmann::json{{"exhausted",true}};
++    runtime_.setGraphicsLayoutEnvironment(graph,figure,environment);
++    ++workspaceRevision_;
++    lastGraphicsJson_ = runtime_.graphicsJson(3);
++    recordActivity();
++    return nlohmann::json{{"graphics",nlohmann::json::parse(runtime_.graphicsJson(4))},
++        {"revision",std::to_string(workspaceRevision_)}};
++}
++#endif
++
+ nlohmann::json WorkspaceSession::snapshot() const {
+diff --git a/src/rest/api_server.cpp b/src/rest/api_server.cpp
+--- a/src/rest/api_server.cpp
++++ b/src/rest/api_server.cpp
+@@ -8,1 +8,2 @@
+ #include <charconv>
++#include <cmath>
+@@ -296,1 +296,4 @@
+                   "headless-graphics",
++#if MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT
++                  "graphics-layout-environment",
++#endif
+@@ -497,1 +497,56 @@
++#if MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT
++    if (segments.size() == 3 && segments[2] == "graphics-layout") {
++        if (request.method != "GET") return errorResponse(405,"method_not_allowed","use GET");
++        const auto session = engine_.findSession(segments[1]);
++        if (!session) return errorResponse(404,"session_not_found","session not found");
++        const auto snapshot = session->graphicsLayoutSnapshot();
++        if (!snapshot) return errorResponse(409,"session_busy","session is busy");
++        return jsonResponse(200,*snapshot);
++    }
++    if (segments.size() == 3 && segments[2] == "graphics-layout-environment") {
++        if (request.method != "POST") return errorResponse(405,"method_not_allowed","use POST");
++        const auto session = engine_.findSession(segments[1]);
++        if (!session) return errorResponse(404,"session_not_found","session not found");
++        std::string error;
++        const auto body = parseJsonBody(request,&error);
++        if (!body || !body->is_object()) return errorResponse(400,"invalid_json","expected object");
++        for (const auto* field : {"graph_identity","figure_identity","expected_revision"}) {
++            if (!body->contains(field) || !body->at(field).is_string())
++                return errorResponse(400,"invalid_layout_request","identities and revision must be strings");
++        }
++        const auto revisionText = body->at("expected_revision").get<std::string>();
++        std::uint64_t expectedRevision = 0;
++        const auto parsed = std::from_chars(revisionText.data(),revisionText.data()+revisionText.size(),expectedRevision);
++        if (revisionText.empty() || parsed.ec != std::errc{} || parsed.ptr != revisionText.data()+revisionText.size())
++            return errorResponse(400,"invalid_revision","expected_revision must be an unsigned decimal string");
++        if (!body->contains("environment") || !body->at("environment").is_object())
++            return errorResponse(400,"invalid_layout_request","environment object required");
++        const auto& fields = body->at("environment");
++        for (const auto* field : {"width_pixels","height_pixels","pixels_per_inch","character_width_pixels","character_height_pixels"}) {
++            if (!fields.contains(field) || !fields.at(field).is_number())
++                return errorResponse(400,"invalid_layout_request","numeric environment fields required");
++            const auto value = fields.at(field).get<double>();
++            if (!std::isfinite(value) || value <= 0)
++                return errorResponse(400,"invalid_layout_request","environment metrics must be positive and finite");
++        }
++        const mparser::sdk::GraphicsLayoutEnvironment environment{fields.at("width_pixels").get<double>(),
++            fields.at("height_pixels").get<double>(),fields.at("pixels_per_inch").get<double>(),
++            fields.at("character_width_pixels").get<double>(),fields.at("character_height_pixels").get<double>()};
++        try {
++            const auto result = session->setGraphicsLayoutEnvironment(body->at("graph_identity").get<std::string>(),
++                body->at("figure_identity").get<std::string>(),environment,expectedRevision);
++            if (!result) return errorResponse(409,"session_busy","session is busy");
++            if (result->contains("conflict")) return errorResponse(409,"workspace_conflict","revision changed");
++            if (result->contains("exhausted")) return errorResponse(409,"workspace_revision_exhausted","revision space exhausted");
++            return jsonResponse(200,*result);
++        } catch (const mparser::sdk::ApiError& exception) {
++            const auto status = exception.status();
++            if (status == MPARSER_API_STATUS_OWNER_MISMATCH || status == MPARSER_API_STATUS_OUT_OF_RANGE)
++                return errorResponse(409,"graphics_target_unavailable",exception.what());
++            if (status == MPARSER_API_STATUS_INVALID_ARGUMENT || status == MPARSER_API_STATUS_TYPE_MISMATCH)
++                return errorResponse(400,"graphics_layout_rejected",exception.what());
++            return errorResponse(500,"graphics_layout_failed",exception.what());
++        }
++    }
++#endif
+     if (segments.size() == 3 && segments[2] == "graphics") {

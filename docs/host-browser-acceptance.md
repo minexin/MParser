@@ -2,7 +2,9 @@
 
 This is a bounded desktop smoke check, not full browser, deployment or release
 acceptance. Production MExecServer/MExecClient sources and services were not
-modified. The kernel remains development 1.15.0, ABI 2.10 (154 exports).
+modified. The captured runs below used development 1.15.0, ABI 2.10 (154 exports),
+not the later ABI 2.12 layout-environment SDK. Current SDK/REST tests do not
+replace these separate browser-pixel acceptance gates.
 
 ## Selected Pair
 

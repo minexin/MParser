@@ -9,9 +9,10 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
 +    message(FATAL_ERROR "Graphics writeback requires ABI 2.11 and explicit graphics v3")
 +endif()
 +
-@@ -81,1 +87,2 @@
+@@ -81,1 +87,3 @@
++target_compile_definitions(mexec_core PUBLIC
++    MEXEC_GRAPHICS_WRITEBACK=$<BOOL:${MEXEC_GRAPHICS_WRITEBACK}>)
  target_compile_definitions(mexec_core PRIVATE
-+    MEXEC_GRAPHICS_WRITEBACK=$<BOOL:${MEXEC_GRAPHICS_WRITEBACK}>
 diff --git a/include/mexec/engine/workspace_session.hpp b/include/mexec/engine/workspace_session.hpp
 --- a/include/mexec/engine/workspace_session.hpp
 +++ b/include/mexec/engine/workspace_session.hpp

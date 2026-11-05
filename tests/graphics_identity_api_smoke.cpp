@@ -33,6 +33,19 @@ int main() {
             require(changed.at("objects")[3].at("properties").at("Color")==Json::array({1,0,0}),"color write");
             require(changed.at("objects")[3].at("properties").at("DisplayName")=="\xe6\xb5\x8b\xe9\x87\x8f","Unicode JSON");
             require(seed.graphicsJson(3)==frozen,"frozen result");
+            const auto axesId=graph.at("objects")[1].at("objectIdentity").get<std::string>();
+            const std::array<size_t,2> positionShape{4,1};
+            const std::array<double,4> position{0.1,0.2,0.4,0.5};
+            runtime.setGraphicsProperty(graphId,axesId,"Position",
+                Value::numericArray<double>(NumericClass::Double,positionShape,position));
+            const auto layout=Json::parse(runtime.graphicsJson(3)).at("objects")[1].at("properties");
+            require(layout.at("Position")==Json::array({0.1,0.2,0.4,0.5}) && layout.at("Units")=="normalized","SDK Axes Position");
+            rejects([&]{runtime.setGraphicsProperty(graphId,axesId,"Units",Value::characterArray(labelShape,label));},MPARSER_API_STATUS_TYPE_MISMATCH);
+            const std::array<size_t,2> unitsShape{1,6};
+            const std::array<std::uint16_t,6> pixelUnits{'p','i','x','e','l','s'};
+            const auto beforeMissingEnvironment=runtime.graphicsJson(3);
+            rejects([&]{runtime.setGraphicsProperty(graphId,axesId,"Units",Value::characterArray(unitsShape,pixelUnits));},MPARSER_API_STATUS_TYPE_MISMATCH);
+            require(runtime.graphicsJson(3)==beforeMissingEnvironment,"SDK missing environment changed layout");
             const auto before=runtime.graphicsJson(3);
             rejects([&]{runtime.setGraphicsProperty(graphId,secondId,"Color",Value::scalar(2));},MPARSER_API_STATUS_TYPE_MISMATCH);
             rejects([&]{runtime.setGraphicsProperty(graphId,secondId,"unknown",red);},MPARSER_API_STATUS_TYPE_MISMATCH);

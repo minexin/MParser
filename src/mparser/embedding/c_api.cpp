@@ -2793,13 +2793,13 @@ mparser_api_status mparser_runtime_graphics_json_versioned(
     if (!out_json) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     *out_json = nullptr;
     if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive ||
-        (version != 0 && version != 3)) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+        (version != 0 && version != 3 && version != 4)) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     try {
         std::lock_guard lock(runtime->state->mutex);
         const auto graph = runtime->state->session->graphicsGraph();
         const auto guard = graph->lock();
         return mparser_c_detail::makeValueHandle(mparser::makeRuntimeCharacterVectorUtf8(
-            graph->serialize(version == 3,true)),{},out_json);
+            graph->serialize(version >= 3,true,version == 4)),{},out_json);
     } catch (const std::bad_alloc&) { return MPARSER_API_STATUS_ALLOCATION_FAILED; }
     catch (...) { return MPARSER_API_STATUS_INTERNAL_ERROR; }
 }
@@ -2845,6 +2845,33 @@ mparser_api_status mparser_runtime_graphics_set_property(mparser_runtime* runtim
             mparser::RuntimeGraphicsHandle(graph,*objectId)),name,value->state->value);
         return result.succeeded ? MPARSER_API_STATUS_OK : MPARSER_API_STATUS_TYPE_MISMATCH;
     } catch (const std::bad_alloc&) { return MPARSER_API_STATUS_ALLOCATION_FAILED; }
+    catch (...) { return MPARSER_API_STATUS_INTERNAL_ERROR; }
+}
+
+mparser_api_status mparser_runtime_graphics_set_layout_environment(mparser_runtime* runtime,
+    mparser_utf8_view graph_identity, mparser_utf8_view figure_identity,
+    const mparser_graphics_layout_environment* environment) {
+    const auto graphId = mparser_c_detail::graphicsIdentity(graph_identity);
+    const auto figureId = mparser_c_detail::graphicsIdentity(figure_identity);
+    if (!runtime || !runtime->state || !environment || !graphId || !figureId || mparser_c_detail::debugCallbackActive) {
+        return MPARSER_API_STATUS_INVALID_ARGUMENT;
+    }
+    if (environment->struct_size < MPARSER_GRAPHICS_LAYOUT_ENVIRONMENT_SIZE ||
+        environment->abi_generation != MPARSER_C_ABI_GENERATION) { return MPARSER_API_STATUS_ABI_MISMATCH; }
+    try {
+        std::lock_guard lock(runtime->state->mutex);
+        const auto graph = runtime->state->session->graphicsGraph();
+        const auto guard = graph->lock();
+        if (graph->identity() != *graphId) { return MPARSER_API_STATUS_OWNER_MISMATCH; }
+        const auto* figure = graph->find(*figureId);
+        if (!figure) { return MPARSER_API_STATUS_OUT_OF_RANGE; }
+        if (figure->kind != mparser::RuntimeGraphicsKind::Figure) { return MPARSER_API_STATUS_TYPE_MISMATCH; }
+        graph->setLayoutEnvironment(*figureId, {environment->width_pixels,environment->height_pixels,
+            environment->pixels_per_inch,environment->character_width_pixels,environment->character_height_pixels});
+        return MPARSER_API_STATUS_OK;
+    } catch (const std::invalid_argument&) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    catch (const std::overflow_error&) { return MPARSER_API_STATUS_OUT_OF_RANGE; }
+    catch (const std::bad_alloc&) { return MPARSER_API_STATUS_ALLOCATION_FAILED; }
     catch (...) { return MPARSER_API_STATUS_INTERNAL_ERROR; }
 }
 
@@ -3039,11 +3066,11 @@ mparser_api_status mparser_result_graphics_json_versioned(
     const mparser_result* result, uint32_t version, mparser_utf8_view* out_json) {
     if (!out_json) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     *out_json = mparser_c_detail::emptyUtf8View();
-    if (!result || (version != 0 && version != 3)) {
+    if (!result || (version != 0 && version != 3 && version != 4)) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     if (result->value.graphicsSnapshot) {
-        *out_json = mparser_c_detail::utf8View(result->value.graphicsSnapshot->json(version == 3));
+        *out_json = mparser_c_detail::utf8View(result->value.graphicsSnapshot->json(version >= 3, version == 4));
     }
     return MPARSER_API_STATUS_OK;
 }
@@ -4043,11 +4070,11 @@ mparser_api_status mparser_value_graphics_json_versioned(
     const mparser_value* value, uint32_t version, mparser_value** out_json) {
     if (!out_json) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     *out_json = nullptr;
-    if (version != 0 && version != 3) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
+    if (version != 0 && version != 3 && version != 4) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     if (!value || !value->state) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     if (!mparser::isRuntimeGraphicsValue(value->state->value)) { return MPARSER_API_STATUS_TYPE_MISMATCH; }
     try {
-        const auto json = mparser::serializeRuntimeGraphicsValue(value->state->value, version == 3);
+        const auto json = mparser::serializeRuntimeGraphicsValue(value->state->value, version >= 3, version == 4);
         return mparser_c_detail::makeValueHandle(
             mparser::makeRuntimeCharacterVectorUtf8(json), {}, out_json);
     } catch (const std::bad_alloc&) {

@@ -23,6 +23,14 @@ struct RuntimeGraphicsSeries {
     std::vector<double> y;
 };
 
+struct RuntimeGraphicsLayoutEnvironment {
+    double widthPixels = 0;
+    double heightPixels = 0;
+    double pixelsPerInch = 0;
+    double characterWidthPixels = 0;
+    double characterHeightPixels = 0;
+};
+
 struct RuntimeGraphicsNode {
     RuntimeGraphicsKind kind;
     RuntimeGraphicsId id;
@@ -33,6 +41,8 @@ struct RuntimeGraphicsNode {
     std::map<std::string, RuntimeGraphicsId> labels;
     std::optional<RuntimeGraphicsId> associatedAxes;
     std::vector<RuntimeGraphicsId> legendLines;
+    std::optional<RuntimeGraphicsLayoutEnvironment> layoutEnvironment;
+    std::uint64_t layoutRevision = 0;
 };
 
 // Nodes contain IDs only. Exported handles may retain the graph, but the graph
@@ -49,6 +59,8 @@ public:
     void reparent(RuntimeGraphicsId id, RuntimeGraphicsId parent);
     void erase(RuntimeGraphicsId id);
     void setProperty(RuntimeGraphicsId id, const std::string& name, RuntimeGraphicsProperty value);
+    void setLayoutEnvironment(RuntimeGraphicsId figure, RuntimeGraphicsLayoutEnvironment environment);
+    std::optional<RuntimeGraphicsLayoutEnvironment> layoutEnvironment(RuntimeGraphicsId figure) const;
     RuntimeGraphicsId currentFigure();
     RuntimeGraphicsId currentAxes();
     void selectFigure(RuntimeGraphicsId id);
@@ -59,7 +71,7 @@ public:
     RuntimeGraphicsId plot(std::vector<double> x, std::vector<double> y);
     std::vector<RuntimeGraphicsId> plotLines(std::vector<RuntimeGraphicsSeries> series);
     // Opt-in v3 identities are scoped to this loaded kernel instance.
-    std::string serialize(bool persistentIdentity = false, bool ascii = false) const;
+    std::string serialize(bool persistentIdentity = false, bool ascii = false, bool includeLayout = false) const;
     const std::map<RuntimeGraphicsId, RuntimeGraphicsNode>& nodes() const noexcept { return nodes_; }
 private:
     mutable std::recursive_mutex mutex_;
@@ -74,12 +86,13 @@ private:
 class RuntimeGraphicsSnapshot {
 public:
     explicit RuntimeGraphicsSnapshot(const RuntimeGraphicsGraph& graph);
-    const std::string& json(bool persistentIdentity = false) const noexcept {
-        return persistentIdentity ? identityJson_ : json_;
+    const std::string& json(bool persistentIdentity = false, bool includeLayout = false) const noexcept {
+        return includeLayout ? layoutJson_ : persistentIdentity ? identityJson_ : json_;
     }
 private:
     std::string json_;
     std::string identityJson_;
+    std::string layoutJson_;
 };
 
 class RuntimeGraphicsHandle {
@@ -91,7 +104,7 @@ public:
     RuntimeGraphicsKind kind() const;
     // Versioned graph plus a record-local reference to this handle. Deleted
     // handles have a null reference; no process address or historical ID leaks.
-    std::string serialize(bool persistentIdentity = false) const;
+    std::string serialize(bool persistentIdentity = false, bool includeLayout = false) const;
     bool sameIdentity(const RuntimeGraphicsHandle& other) const noexcept;
     std::optional<RuntimeGraphicsHandle> parent() const;
     // Public Children omits bound labels; graph ownership retains them.
@@ -103,7 +116,7 @@ public:
     bool hasLabel(const std::string& role, const RuntimeGraphicsHandle& label) const;
     void setProperty(const std::string& name, RuntimeGraphicsProperty value);
 private:
-    friend std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persistentIdentity);
+    friend std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persistentIdentity, bool includeLayout);
     const RuntimeGraphicsNode& requireNode() const;
     std::shared_ptr<RuntimeGraphicsGraph> graph_;
     RuntimeGraphicsId id_;
@@ -111,7 +124,7 @@ private:
 
 RuntimeValue makeRuntimeGraphicsValue(RuntimeGraphicsHandle handle);
 bool isRuntimeGraphicsValue(const RuntimeValue& value);
-std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persistentIdentity = false);
+std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persistentIdentity = false, bool includeLayout = false);
 RuntimeObjectOperationResult runtimeGraphicsMember(const RuntimeValue& value, const std::string& name);
 RuntimeObjectOperationResult runtimeSetGraphicsMember(const RuntimeValue& target,
     const std::string& name, const RuntimeValue& value);

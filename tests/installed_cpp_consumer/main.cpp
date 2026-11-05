@@ -383,6 +383,11 @@ end
             try { graphicsRuntime.setGraphicsProperty("01","3","Clipping",mparser::sdk::Value::scalar(0)); }
             catch(const mparser::sdk::ApiError& error) { writeRejected=error.status()==MPARSER_API_STATUS_INVALID_ARGUMENT; }
             require(lookupRejected&&writeRejected,"installed graphics API rejection contract");
+            bool layoutRejected=false;
+            try { graphicsRuntime.setGraphicsLayoutEnvironment("01","1",{800,600,96,6,14}); }
+            catch(const mparser::sdk::ApiError& error) { layoutRejected=error.status()==MPARSER_API_STATUS_INVALID_ARGUMENT; }
+            require(layoutRejected && graphicsRuntime.graphicsJson(4).find("\"layout\":null")!=std::string::npos,
+                "installed explicit layout environment contract");
             auto methodRuntime = mparser::sdk::Runtime::create();
             const auto invocation = methodRuntime.execute(module);
             require(invocation.succeeded(),"installed function-form method invocation failed");

@@ -14,8 +14,8 @@
   },
   "c_abi": {
     "generation": 2,
-    "revision": 11,
-    "symbol_count": 157
+    "revision": 12,
+    "symbol_count": 158
   },
   "builtin_source_contract": {
     "major": 1,
@@ -28,16 +28,17 @@
       1,
       2
     ],
-    "opt_in_version": 3
+    "opt_in_version": 3,
+    "layout_opt_in_version": 4
   },
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "2aa59e6cd95e1b67fe793e66d61adc590bd4d0d3219270318d072df530804286"
+      "sha256_lf": "15f94144bd5ab75cbe42ae112b96a6f4ea4794516a3c30f1edf7b32310ac570f"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
-      "sha256_lf": "6e25e297619afabda7e6768d6ed2a9d0df57359eab00ca5ad98372212959fa23"
+      "sha256_lf": "a85b60e386ade6ae5605eca74dd2eed35bf5b3ed4f51a292e46ee9b4c405ae52"
     },
     {
       "path": "docs/definition-metadata.md",
@@ -45,7 +46,7 @@
     },
     {
       "path": "docs/variable-name-validation.md",
-      "sha256_lf": "ec4c3c1a8ccd1455f651c20a4481afc4972ff25f34f9232fccb4110515b7a8bf"
+      "sha256_lf": "cac300d4f06b481616ba9700939965d18d3bee8518b0165367b42a9b49493ef1"
     },
     {
       "path": "docs/graphics-clipping-contract.md",
@@ -53,7 +54,7 @@
     },
     {
       "path": "cmake/MParserConfig.cmake.in",
-      "sha256_lf": "40feb97f0924bb5c956876248e42095db6164e7f6bbdf0d954a7c61d41781c76"
+      "sha256_lf": "453b3ab6aea9c8b57fdb7005abf29abf188a290dfc0546f66993ed950fd3019b"
     },
     {
       "path": "docs/graphics-color-contract.md",
@@ -73,15 +74,15 @@
     },
     {
       "path": "include/mparser/c_api.h",
-      "sha256_lf": "f82cfc307da333b160501bdaf3afb85dbeb4ae4c4358afef0c8665bb74420fe4"
+      "sha256_lf": "f0f58796c1c0b93607c00ca0bed3fd07148a39c7fafe0d0c0969d1d08e28d4e1"
     },
     {
       "path": "include/mparser/cpp_api.hpp",
-      "sha256_lf": "be5943ffa87e13645c17f476a19289c546b88c8fafb89e0083b70ef702f9bdcf"
+      "sha256_lf": "7c85a14b97b984738997586753e186ec773c5421eb67c88e2653ba8260f0c0e1"
     },
     {
-      "path": "tests/c_api_generation2_revision11_symbols.txt",
-      "sha256_lf": "6211fcba292358fe5e48841f24e083a931ac93b3cab90f5c8425215587ec5160"
+      "path": "tests/c_api_generation2_revision12_symbols.txt",
+      "sha256_lf": "f2f9796916d7b7f44a640a9025d4577dafcd4abf4215ad8ec01d9a6f1ab9f08e"
     },
     {
       "path": "docs/machine-result-v1.schema.json",
@@ -105,7 +106,7 @@
     },
     {
       "path": "docs/ordered-display-events.md",
-      "sha256_lf": "5b6611bc6d58767b40cf07e19e24924f98ca20336cbbafa930e5ede5a9a209aa"
+      "sha256_lf": "b085de04383fdf8952bbabac4ad129af809da033830d724e0629e54cf9128675"
     },
     {
       "path": "docs/ordered-display-api-design.md",
@@ -117,11 +118,19 @@
     },
     {
       "path": "docs/host-browser-acceptance.md",
-      "sha256_lf": "518400c36a6d276c494738307f12c30308ea6e7bf5f9a1e1ce2dbd69e4f2a051"
+      "sha256_lf": "3f339c01615b79f68db0d6c3f7db913d4472b6d312d646364a0089d3f6cdf627"
     },
     {
       "path": "docs/graphics-writeback-contract.md",
-      "sha256_lf": "8b8e9d2187c8558ea007d5ac2c66adc567022b74c18b8050381c0844e84843a7"
+      "sha256_lf": "536215789975a2d075f7c876fd5c9e05e47cc1036640685e0c631dc748d00d0f"
+    },
+    {
+      "path": "docs/axes-layout-development.md",
+      "sha256_lf": "a1cb936ee73827ee1fb2a9adad73c93def0a6a3f93037e8ade066c08fb4acf32"
+    },
+    {
+      "path": "docs/graphics-v4.schema.json",
+      "sha256_lf": "81429e0b71f023e85f70015d219b91620d7a0897d8c4980c54dc6ac0772a76d2"
     }
   ]
 }

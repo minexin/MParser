@@ -37,7 +37,7 @@ foreach ($target in @($hostSource,$clientSource)) {
 foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-metadata.patch',
     'mexecserver-development-acceptance.patch','mexecserver-workspace-rename.patch',
     'mexecserver-compile-diagnostics.patch','mexecserver-system-path-sync.patch','mexecserver-ordered-events.patch',
-    'mexecserver-definition-sources.patch','mexecserver-graphics-writeback.patch')) {
+    'mexecserver-definition-sources.patch','mexecserver-graphics-writeback.patch','mexecserver-graphics-layout.patch')) {
     git -C $hostSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Host patch failed: $patch; see $stage" }
 }
@@ -51,7 +51,7 @@ $node = (Get-Command node).Source
 cmake -S $hostSource -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release `
     "-DMParser_DIR=$sdk/lib/cmake/MParser" "-DMEXEC_CLIENT_WEB_DIR=$clientSource/web" `
     "-DMEXEC_NODE_EXECUTABLE=$node" -DMEXEC_BUILD_TESTS=ON -DMEXEC_WARNINGS_AS_ERRORS=ON `
-    -DMEXEC_GRAPHICS_V3=ON -DMEXEC_GRAPHICS_WRITEBACK=ON -DMEXEC_DEFINITION_METADATA=ON `
+    -DMEXEC_GRAPHICS_V3=ON -DMEXEC_GRAPHICS_WRITEBACK=ON -DMEXEC_GRAPHICS_LAYOUT_ENVIRONMENT=ON -DMEXEC_DEFINITION_METADATA=ON `
     -DMEXEC_WORKSPACE_RENAME=ON -DMEXEC_SYSTEM_PATH_SYNC=ON -DMEXEC_ORDERED_EVENTS=ON `
     -DMEXEC_KERNEL_MILESTONE=development | Tee-Object -FilePath (Join-Path $stage 'configure.log')
 if ($LASTEXITCODE) { throw "Clean host configure failed; see $stage" }
@@ -78,6 +78,9 @@ if ($LASTEXITCODE) { throw "Legend state probe failed; see $stage" }
 node (Join-Path $PSScriptRoot 'test-graphics-writeback.cjs') (Join-Path $build 'mexec_server.exe') `
     (Join-Path $stage 'graphics-writeback-probe')
 if ($LASTEXITCODE) { throw "Graphics writeback probe failed; see $stage" }
+node (Join-Path $PSScriptRoot 'test-axes-layout.cjs') (Join-Path $build 'mexec_server.exe') `
+    (Join-Path $stage 'axes-layout-probe')
+if ($LASTEXITCODE) { throw "Axes layout probe failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
     -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -GraphicsColors -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')

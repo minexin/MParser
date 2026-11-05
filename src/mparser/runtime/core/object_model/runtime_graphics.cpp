@@ -107,7 +107,9 @@ std::map<std::string, RuntimeGraphicsProperty> defaultProperties(RuntimeGraphics
         return {{"XLim", std::vector<double>{0, 1}}, {"YLim", std::vector<double>{0, 1}},
             {"XLabel", std::string{}}, {"YLabel", std::string{}}, {"Title", std::string{}},
             {"NextPlot", std::string{"replace"}}, {"Clipping", std::string{"on"}},
-            {"XGrid", std::string{"off"}}, {"YGrid", std::string{"off"}}};
+            {"XGrid", std::string{"off"}}, {"YGrid", std::string{"off"}},
+            {"Position", std::vector<double>{0.13, 0.11, 0.775, 0.815}},
+            {"Units", std::string{"normalized"}}};
     }
     if (kind == RuntimeGraphicsKind::Text) {
         return {{"String", std::string{}}, {"Visible", std::string{"on"}},
@@ -121,6 +123,40 @@ std::map<std::string, RuntimeGraphicsProperty> defaultProperties(RuntimeGraphics
     return {{"XData", std::vector<double>{}}, {"YData", std::vector<double>{}},
         {"Color", std::vector<double>{0, 0.447, 0.741}}, {"LineStyle", std::string{"-"}},
         {"DisplayName", std::string{}}, {"Clipping", std::string{"on"}}};
+}
+
+std::string layoutUnits(std::string units) {
+    for (auto& character : units) {
+        if (character >= 'A' && character <= 'Z') { character += 'a' - 'A'; }
+    }
+    std::string result;
+    for (const auto candidate : {"normalized", "pixels", "inches", "centimeters", "points", "characters"}) {
+        if (!units.empty() && std::string_view(candidate).starts_with(units)) {
+            if (!result.empty()) { throw std::invalid_argument("ambiguous Axes Units"); }
+            result = candidate;
+        }
+    }
+    if (result.empty()) { throw std::invalid_argument("unsupported Axes Units"); }
+    return result;
+}
+
+std::array<double, 2> layoutScale(const std::string& units,
+    const RuntimeGraphicsLayoutEnvironment& environment) {
+    if (units == "normalized") { return {environment.widthPixels, environment.heightPixels}; }
+    if (units == "pixels") { return {1, 1}; }
+    if (units == "characters") { return {environment.characterWidthPixels, environment.characterHeightPixels}; }
+    const auto scale = units == "inches" ? environment.pixelsPerInch :
+        units == "centimeters" ? environment.pixelsPerInch / 2.54 : environment.pixelsPerInch / 72;
+    return {scale, scale};
+}
+
+double layoutCoordinate(double value, double oldScale, double newScale) {
+    if (oldScale == newScale) { return value; }
+    // Exponent-space scaling avoids overflow of an otherwise representable intermediate product.
+    int valueExponent = 0, oldExponent = 0, newExponent = 0;
+    const auto mantissa = std::frexp(value, &valueExponent) * std::frexp(oldScale, &oldExponent) /
+        std::frexp(newScale, &newExponent);
+    return std::scalbn(mantissa, valueExponent + oldExponent - newExponent);
 }
 
 std::string nextLegendName(const RuntimeGraphicsNode& legend,
@@ -187,7 +223,7 @@ RuntimeGraphicsId RuntimeGraphicsGraph::create(RuntimeGraphicsKind kind,
         children.reserve(children.size() + 1);
     }
     nodes_.emplace(id, RuntimeGraphicsNode{kind, id, parent, {}, std::move(properties),
-        std::nullopt, {}, std::nullopt, {}});
+        std::nullopt, {}, std::nullopt, {}, std::nullopt});
     if (parent) { nodes_.at(*parent).children.push_back(id); }
     if (automaticLegend) { automaticLegend->legendLines.push_back(id); }
     ++nextId_;
@@ -351,8 +387,9 @@ RuntimeGraphicsId RuntimeGraphicsGraph::plot(std::vector<double> y) {
     return plot(std::move(x), std::move(y));
 }
 
-std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity, bool ascii) const {
+std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity, bool ascii, bool includeLayout) const {
     const auto guard = lock();
+    persistentIdentity |= includeLayout;
     using Json = nlohmann::ordered_json;
     std::map<RuntimeGraphicsId, size_t> ids;
     for (const auto& [id, node] : nodes_) {
@@ -406,6 +443,16 @@ std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity, bool ascii)
             {"parent", node.parent ? Json(ids.at(*node.parent)) : Json(nullptr)},
             {"children", std::move(children)}, {"properties", std::move(properties)}};
         if (persistentIdentity) { record["objectIdentity"] = std::to_string(id); }
+        if (includeLayout && node.kind == RuntimeGraphicsKind::Figure) {
+            record["layout"] = nullptr;
+            if (node.layoutEnvironment) {
+                const auto& environment = *node.layoutEnvironment;
+                record["layout"] = {{"revision", std::to_string(node.layoutRevision)},
+                    {"contentSizePixels", {environment.widthPixels, environment.heightPixels}},
+                    {"pixelsPerInch", environment.pixelsPerInch},
+                    {"characterSizePixels", {environment.characterWidthPixels, environment.characterHeightPixels}}};
+            }
+        }
         if (!node.labels.empty()) {
             Json labels = Json::object();
             for (const auto& [role, target] : node.labels) {
@@ -439,7 +486,7 @@ std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity, bool ascii)
         objects.push_back(std::move(record));
     }
     Json snapshot{{"schema", "mparser.graphics"},
-        {"version", persistentIdentity ? 3 : requiresVersion2 ? 2 : 1},
+        {"version", includeLayout ? 4 : persistentIdentity ? 3 : requiresVersion2 ? 2 : 1},
         {"objects", std::move(objects)}};
     if (persistentIdentity) { snapshot["graphIdentity"] = std::to_string(identity_); }
     return snapshot.dump(-1, ' ', ascii);
@@ -450,6 +497,7 @@ RuntimeGraphicsSnapshot::RuntimeGraphicsSnapshot(const RuntimeGraphicsGraph& gra
     const auto guard = graph.lock();
     json_ = graph.serialize();
     identityJson_ = graph.serialize(true);
+    layoutJson_ = graph.serialize(true, false, true);
 }
 
 RuntimeGraphicsId RuntimeGraphicsGraph::plot(std::vector<double> x, std::vector<double> y) {
@@ -484,7 +532,13 @@ std::vector<RuntimeGraphicsId> RuntimeGraphicsGraph::plotLines(std::vector<Runti
                 pending.nodes_.at(child).properties = defaultProperties(RuntimeGraphicsKind::Text);
             }
         }
-        if (nextPlot == "replace") { axesNode.properties = defaultProperties(RuntimeGraphicsKind::Axes); }
+        if (nextPlot == "replace") {
+            auto position = std::move(axesNode.properties.at("Position"));
+            auto units = std::move(axesNode.properties.at("Units"));
+            axesNode.properties = defaultProperties(RuntimeGraphicsKind::Axes);
+            axesNode.properties.at("Position") = std::move(position);
+            axesNode.properties.at("Units") = std::move(units);
+        }
     }
     std::vector<RuntimeGraphicsId> lines;
     lines.reserve(series.size());
@@ -516,6 +570,32 @@ void RuntimeGraphicsGraph::setProperty(RuntimeGraphicsId id, const std::string& 
     const auto guard = lock();
     auto found = nodes_.find(id);
     if (found == nodes_.end()) { throw std::invalid_argument("deleted or unknown graphics object"); }
+    if (found->second.kind == RuntimeGraphicsKind::Axes && name == "InnerPosition") {
+        setProperty(id, "Position", std::move(value));
+        return;
+    }
+    if (found->second.kind == RuntimeGraphicsKind::Axes && name == "Units") {
+        const auto* text = std::get_if<std::string>(&value);
+        if (!text) { throw std::invalid_argument("Axes Units requires text"); }
+        auto units = layoutUnits(*text);
+        auto& previousUnits = std::get<std::string>(found->second.properties.at("Units"));
+        if (units == previousUnits) { return; }
+        const auto& environment = nodes_.at(*found->second.parent).layoutEnvironment;
+        if (!environment) { throw std::invalid_argument("Axes unit conversion requires a host-provided layout environment"); }
+        const auto oldScale = layoutScale(previousUnits, *environment);
+        const auto newScale = layoutScale(units, *environment);
+        auto& previousPosition = std::get<std::vector<double>>(found->second.properties.at("Position"));
+        auto position = previousPosition;
+        for (size_t index = 0; index < position.size(); ++index) {
+            const auto oldOrigin = index < 2 && previousUnits == "pixels" ? 1 : 0;
+            const auto newOrigin = index < 2 && units == "pixels" ? 1 : 0;
+            position[index] = layoutCoordinate(position[index] - oldOrigin, oldScale[index % 2], newScale[index % 2]) + newOrigin;
+            if (!std::isfinite(position[index])) { throw std::invalid_argument("Axes unit conversion overflows"); }
+        }
+        previousPosition.swap(position);
+        previousUnits.swap(units);
+        return;
+    }
     if (found->second.kind == RuntimeGraphicsKind::Axes &&
         (name == "Title" || name == "XLabel" || name == "YLabel")) {
         throw std::invalid_argument("Axes labels are Text objects; modify String or use a label function");
@@ -590,12 +670,49 @@ void RuntimeGraphicsGraph::setProperty(RuntimeGraphicsId id, const std::string& 
         }
     } else {
         const auto& data = std::get<std::vector<double>>(value);
+        if (name == "Position" && (data.size() != 4 ||
+            std::any_of(data.begin(), data.end(), [](double element) { return !std::isfinite(element); }) ||
+            data[2] < 0 || data[3] < 0)) {
+            throw std::invalid_argument("Axes Position requires four finite values with nonnegative width and height");
+        }
         if ((name == "XLim" || name == "YLim") && (data.size() != 2 ||
             !std::isfinite(data[0]) || !std::isfinite(data[1]) || data[0] >= data[1])) {
             throw std::invalid_argument("axes limits require two increasing finite values");
         }
     }
     property->second = std::move(value);
+}
+
+void RuntimeGraphicsGraph::setLayoutEnvironment(RuntimeGraphicsId figure,
+    RuntimeGraphicsLayoutEnvironment environment) {
+    const auto guard = lock();
+    const auto found = nodes_.find(figure);
+    if (found == nodes_.end() || found->second.kind != RuntimeGraphicsKind::Figure) {
+        throw std::invalid_argument("layout environment requires a live Figure");
+    }
+    for (const auto value : {environment.widthPixels, environment.heightPixels, environment.pixelsPerInch,
+        environment.characterWidthPixels, environment.characterHeightPixels}) {
+        if (!std::isfinite(value) || value <= 0) {
+            throw std::invalid_argument("layout environment dimensions and scales must be positive and finite");
+        }
+    }
+    if (environment.pixelsPerInch / 72 == 0) {
+        throw std::invalid_argument("layout environment point scale is not representable");
+    }
+    if (found->second.layoutRevision == std::numeric_limits<std::uint64_t>::max()) {
+        throw std::overflow_error("graphics layout revision exhausted");
+    }
+    found->second.layoutEnvironment = environment;
+    ++found->second.layoutRevision;
+}
+
+std::optional<RuntimeGraphicsLayoutEnvironment> RuntimeGraphicsGraph::layoutEnvironment(RuntimeGraphicsId figure) const {
+    const auto guard = lock();
+    const auto found = nodes_.find(figure);
+    if (found == nodes_.end() || found->second.kind != RuntimeGraphicsKind::Figure) {
+        throw std::invalid_argument("layout environment requires a live Figure");
+    }
+    return found->second.layoutEnvironment;
 }
 
 void RuntimeGraphicsGraph::erase(RuntimeGraphicsId id) {
@@ -648,7 +765,7 @@ RuntimeGraphicsKind RuntimeGraphicsHandle::kind() const {
     return requireNode().kind;
 }
 
-std::string RuntimeGraphicsHandle::serialize(bool persistentIdentity) const {
+std::string RuntimeGraphicsHandle::serialize(bool persistentIdentity, bool includeLayout) const {
     const auto guard = graph_->lock();
     using Json = nlohmann::ordered_json;
     Json reference = nullptr;
@@ -661,7 +778,7 @@ std::string RuntimeGraphicsHandle::serialize(bool persistentIdentity) const {
         }
     }
     return Json{{"valid", valid()}, {"reference", std::move(reference)},
-        {"graph", Json::parse(graph_->serialize(persistentIdentity))}}.dump(-1, ' ', true);
+        {"graph", Json::parse(graph_->serialize(persistentIdentity, false, includeLayout))}}.dump(-1, ' ', true);
 }
 
 bool isRuntimeGraphicsValue(const RuntimeValue& value) {
@@ -676,7 +793,7 @@ bool isRuntimeGraphicsValue(const RuntimeValue& value) {
         [](const RuntimeValue& element) { return element.graphicsHandle != nullptr; });
 }
 
-std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persistentIdentity) {
+std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persistentIdentity, bool includeLayout) {
     if (!isRuntimeGraphicsValue(value)) { throw std::invalid_argument("expected graphics value"); }
     const auto dimensions = runtimeDimensions(value);
     const auto product = checkedRuntimeDimensionProduct(dimensions);
@@ -684,7 +801,7 @@ std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persis
         (value.graphicsHandle && (*product != 1 || !value.objectElements.empty()))) {
         throw std::invalid_argument("graphics payload does not match its shape");
     }
-    if (value.graphicsHandle) { return value.graphicsHandle->serialize(persistentIdentity); }
+    if (value.graphicsHandle) { return value.graphicsHandle->serialize(persistentIdentity, includeLayout); }
     using Json = nlohmann::ordered_json;
     std::vector<const RuntimeGraphicsHandle*> handles;
     std::vector<std::shared_ptr<RuntimeGraphicsGraph>> graphs;
@@ -710,7 +827,7 @@ std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persis
     Json records = Json::array();
     std::vector<std::map<RuntimeGraphicsId, size_t>> references;
     for (const auto& graph : graphs) {
-        records.push_back(Json::parse(graph->serialize(persistentIdentity)));
+        records.push_back(Json::parse(graph->serialize(persistentIdentity, false, includeLayout)));
         auto& ids = references.emplace_back();
         for (const auto& [id, node] : graph->nodes()) {
             (void)node;
@@ -799,6 +916,21 @@ RuntimeObjectOperationResult runtimeSetGraphicsMember(const RuntimeValue& target
                 }
             } else { throw std::invalid_argument("Legend String requires text labels"); }
             handle.setProperty(name, std::move(labels));
+        } else if (handle.kind() == RuntimeGraphicsKind::Axes &&
+            (name == "Position" || name == "InnerPosition")) {
+            const auto dimensions = runtimeDimensions(value);
+            if (!isRuntimeNumericValue(value) || isRuntimeLogical(value) || runtimeShapeElementCount(value) != 4 ||
+                dimensions.size() != 2 || (dimensions[0] != 1 && dimensions[1] != 1)) {
+                throw std::invalid_argument("Axes Position requires a numeric four-element vector");
+            }
+            std::vector<double> position;
+            position.reserve(4);
+            for (size_t index = 0; index < 4; ++index) {
+                const auto element = runtimeNumericElement(value, index);
+                if (!element) { throw std::invalid_argument("invalid Axes Position value"); }
+                position.push_back(*element);
+            }
+            handle.setProperty(name, std::move(position));
         } else if (const auto text = runtimeTextScalarUtf8(value)) {
             handle.setProperty(name, *text);
         } else if (name == "Color" && isRuntimeNumericValue(value)) {
@@ -913,7 +1045,7 @@ RuntimeGraphicsProperty RuntimeGraphicsHandle::property(const std::string& name)
         return labels;
     }
     const auto& properties = requireNode().properties;
-    const auto found = properties.find(name);
+    const auto found = properties.find(node.kind == RuntimeGraphicsKind::Axes && name == "InnerPosition" ? "Position" : name);
     if (found == properties.end()) { throw std::invalid_argument("unknown graphics property"); }
     if (name == "Color") {
         if (const auto* channels = std::get_if<std::vector<double>>(&found->second); channels && channels->size() == 4) {

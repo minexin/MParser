@@ -28,10 +28,10 @@ set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
 set(MPARSER_C_ABI_GENERATION 2)
-set(MPARSER_C_ABI_REVISION 11)
+set(MPARSER_C_ABI_REVISION 12)
 set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision11_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision12_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -374,9 +374,9 @@ if(UNIX)
     list(REMOVE_DUPLICATES _mparser_c_abi_symbols)
     list(LENGTH _mparser_c_abi_symbols
         _mparser_c_abi_symbol_count)
-    if(NOT _mparser_c_abi_symbol_count EQUAL 157)
+    if(NOT _mparser_c_abi_symbol_count EQUAL 158)
         message(FATAL_ERROR
-            "C ABI symbol manifest must contain exactly 157 symbols")
+            "C ABI symbol manifest must contain exactly 158 symbols")
     endif()
     file(STRINGS
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision5_symbols.txt"
@@ -396,6 +396,9 @@ if(UNIX)
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision10_symbols.txt"
         _mparser_revision10_c_abi_symbols REGEX "^mparser_[A-Za-z0-9_]+$")
     list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision10_c_abi_symbols})
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision11_symbols.txt"
+        _mparser_revision11_c_abi_symbols REGEX "^mparser_[A-Za-z0-9_]+$")
+    list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision11_c_abi_symbols})
     list(REMOVE_DUPLICATES _mparser_previous_c_abi_symbols)
     foreach(_mparser_previous_c_abi_symbol IN LISTS
             _mparser_previous_c_abi_symbols)
@@ -2938,7 +2941,7 @@ add_test(NAME c_api_shared_library_abi
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_shared_library_abi.cmake")
 set_tests_properties(c_api_shared_library_abi PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "MParser shared C ABI validated: 157 symbols, SOVERSION 2")
+        "MParser shared C ABI validated: 158 symbols, SOVERSION 2")
 
 add_executable(cpp_api_smoke_tests
     tests/cpp_api_smoke.cpp)
@@ -2987,6 +2990,19 @@ target_include_directories(ordered_events_api_smoke_tests PRIVATE third_party/nl
 add_test(NAME ordered_events_api_smoke COMMAND ordered_events_api_smoke_tests)
 set_tests_properties(ordered_events_api_smoke PROPERTIES TIMEOUT 60 LABELS host-integration)
 add_executable(runtime_graphics_smoke_tests tests/runtime_graphics_smoke.cpp)
+add_executable(axes_layout_smoke_tests tests/axes_layout_smoke.cpp)
+target_link_libraries(axes_layout_smoke_tests PRIVATE mparser_core mparser_json_schema_validator)
+target_include_directories(axes_layout_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME axes_layout_smoke COMMAND axes_layout_smoke_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/axes_layout_reference.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/docs/graphics-v4.schema.json)
+set_tests_properties(axes_layout_smoke PROPERTIES TIMEOUT 60 LABELS host-integration)
+add_executable(axes_layout_api_smoke_tests tests/axes_layout_api_smoke.cpp)
+target_link_libraries(axes_layout_api_smoke_tests PRIVATE mparser_cpp_api Threads::Threads)
+target_include_directories(axes_layout_api_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME axes_layout_api_smoke COMMAND axes_layout_api_smoke_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/axes_layout_reference.json)
+set_tests_properties(axes_layout_api_smoke PROPERTIES TIMEOUT 60 LABELS host-integration)
 target_link_libraries(runtime_graphics_smoke_tests PRIVATE mparser_core mparser_json_schema_validator)
 target_include_directories(runtime_graphics_smoke_tests PRIVATE third_party/nlohmann_json/include)
 add_test(NAME runtime_graphics_smoke COMMAND runtime_graphics_smoke_tests
@@ -3413,6 +3429,7 @@ install(FILES
     docs/cli-contract-v1.json
     docs/machine-result-v1.schema.json
     docs/graphics-v3.schema.json
+    docs/graphics-v4.schema.json
     docs/graphics-identity-contract.md
     docs/definition-metadata.md
     docs/variable-name-validation.md
@@ -3421,6 +3438,7 @@ install(FILES
     docs/graphics-colon-contract.md
     docs/graphics-legend-contract.md
     docs/graphics-writeback-contract.md
+    docs/axes-layout-development.md
     docs/system-search-paths.md
     docs/assignment-display-development.md
     docs/ordered-display-events.md

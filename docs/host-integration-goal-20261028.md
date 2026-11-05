@@ -24,9 +24,9 @@ success may substitute for missing kernel contracts.
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership, cross-command method/listener and non-static bound-handle access passed SDK and clean host replay; measured creator-context rules match the R2024b cases; deployed navigation and stale-document UI acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; host-reported floating colon endpoint loss fixed with 38 R2024b cases, 356 kernel/package checks, actual optimized-loop checks and fresh installed-SDK REST replay; narrow-screen cropping and broader downstream acceptance remain open |
-| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Clipping/Color/Legend and v3 identities passed; ABI 2.11 current-graph lookup/atomic property writes passed SDK, fresh REST revision/race/stale-target and OFF/old-SDK checks; UI selection/writeback, full layout and deployment remain open |
+| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Clipping/Color/Legend and stable identity writes passed; ABI 2.12 adds explicit per-Figure environments, six Axes units and frozen v4 snapshots, with SDK/REST revision/race/stale-target and OFF/old-SDK checks; actual browser measurement/rendering/negotiation, UI editing, full native layout and deployment remain open |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 358/358 and clean installed-SDK host build/REST/67 regressions passed, with bounded old-SDK compatibility checks; desktop visual/PNG smoke is not full browser acceptance; GitHub CI requires actual-commit evidence; deployment and release acceptance remain open |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 360/360 and clean installed-SDK host build/REST/67 regressions passed, with bounded old-SDK/new-DLL checks and restored-ON regression; desktop visual/PNG smoke is not full browser acceptance; actual-commit CI, deployment and release acceptance remain separate gates |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only result collection and ON-mode source-only host replay passed; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see ordered-display-events.md |
 
@@ -78,6 +78,21 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 explicit host layout environment: the user selected host-provided
+  metrics, not inferred virtual defaults. ABI 2.12 preserves the previous 157
+  exports and adds one setter. Axes Position/InnerPosition and all six units
+  use the owning Figure's explicit environment; plot replacement preserves
+  position/units. Opt-in v4 freezes metrics and their per-Figure revision.
+  Actual R2024b recorded 50 cases; 43 Axes-only sources passed HIR/four VM modes
+  in core (215 outcomes) and four public SDK modes (172 outcomes). Seven native
+  Figure source cases remain outside the implementation. Kernel/package
+  360/360 passed. Fresh installed-SDK host build/REST and 67/67 regressions
+  passed at `build/clean-host-probe/da813f8efbc74603be061f2d84f945d4`.
+  Old ABI 2.11 SDK OFF, bounded old-header/new-DLL and rejected old SDK ON
+  controls passed; restored new SDK ON passed another 67 regressions. Original
+  host/client sources and services were unchanged. Browser measurement,
+  rendering/negotiation, native layout, export, deployment and actual-commit
+  CI remain separate gates; see axes-layout-development.md.
 - 2026-11-04 identity-targeted graphics follow-up: ABI 2.11 adds three C/C++
   SDK operations for current graph readback, live identity lookup and atomic
   property writes. Canonical identity validation and mutation share runtime

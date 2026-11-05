@@ -21,7 +21,7 @@ _Static_assert(MPARSER_C_API_VERSION_MAJOR == 1u &&
                "C API version changed");
 _Static_assert(MPARSER_C_ABI_GENERATION == 2u,
                "C ABI generation changed");
-_Static_assert(MPARSER_C_ABI_REVISION == 11u,
+_Static_assert(MPARSER_C_ABI_REVISION == 12u,
                "C ABI revision changed");
 _Static_assert(MPARSER_API_STATUS_ALLOCATION_FAILED == 6u,
                "allocation status changed");
@@ -56,6 +56,16 @@ REQUIRE_OFFSET(mparser_numeric_buffer, is_complex, 4);
 REQUIRE_OFFSET(mparser_numeric_buffer, real_data, 8);
 REQUIRE_OFFSET(mparser_numeric_buffer, imaginary_data, 16);
 REQUIRE_OFFSET(mparser_numeric_buffer, element_count, 24);
+
+_Static_assert(sizeof(mparser_graphics_layout_environment) == MPARSER_GRAPHICS_LAYOUT_ENVIRONMENT_SIZE,
+               "graphics layout environment size changed");
+REQUIRE_OFFSET(mparser_graphics_layout_environment, struct_size, 0);
+REQUIRE_OFFSET(mparser_graphics_layout_environment, abi_generation, 4);
+REQUIRE_OFFSET(mparser_graphics_layout_environment, width_pixels, 8);
+REQUIRE_OFFSET(mparser_graphics_layout_environment, height_pixels, 16);
+REQUIRE_OFFSET(mparser_graphics_layout_environment, pixels_per_inch, 24);
+REQUIRE_OFFSET(mparser_graphics_layout_environment, character_width_pixels, 32);
+REQUIRE_OFFSET(mparser_graphics_layout_environment, character_height_pixels, 40);
 
 _Static_assert(sizeof(mparser_utf8_view) == 16,
                "mparser_utf8_view size changed");

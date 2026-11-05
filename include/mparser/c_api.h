@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 15u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 11u
+#define MPARSER_C_ABI_REVISION 12u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -749,7 +749,8 @@ MPARSER_C_API mparser_api_status
 mparser_runtime_reset(mparser_runtime* runtime);
 
 /* ABI 2.11. Read the current session graph without executing source. Versions
- * 0 (legacy) and 3 are supported. Returns an owned character JSON value using
+ * 0 (legacy), 3 (identities) and 4 (identities/layout) are supported.
+ * Returns an owned character JSON value using
  * ASCII escapes for non-ASCII text. All failures null out_json. */
 MPARSER_C_API mparser_api_status mparser_runtime_graphics_json_versioned(
     mparser_runtime* runtime, uint32_t version, mparser_value** out_json);
@@ -771,6 +772,29 @@ MPARSER_C_API mparser_api_status mparser_runtime_graphics_set_property(
     mparser_runtime* runtime, mparser_utf8_view graph_identity,
     mparser_utf8_view object_identity, mparser_utf8_view property,
     const mparser_value* value);
+
+typedef struct mparser_graphics_layout_environment {
+    uint32_t struct_size;
+    uint32_t abi_generation;
+    double width_pixels;
+    double height_pixels;
+    double pixels_per_inch;
+    double character_width_pixels;
+    double character_height_pixels;
+} mparser_graphics_layout_environment;
+#define MPARSER_GRAPHICS_LAYOUT_ENVIRONMENT_SIZE 48u
+/* ABI 2.12. Supply the current Figure's actual host layout environment without
+ * executing source. Metrics must be positive and finite. Canonical identity,
+ * stale/deleted and callback rules match the identity-targeted property write;
+ * a non-Figure target returns TYPE_MISMATCH. Invalid metrics return
+ * INVALID_ARGUMENT; incompatible structure size/generation returns ABI_MISMATCH.
+ * No defaults are inferred. Each successful call advances the Figure's layout
+ * revision. Version 4 snapshots include this environment; legacy formats do not.
+ * Delete/reset clears it. This does not create a window or change Axes Units.
+ * The host must authenticate and serialize this with its own revision policy. */
+MPARSER_C_API mparser_api_status mparser_runtime_graphics_set_layout_environment(
+    mparser_runtime* runtime, mparser_utf8_view graph_identity,
+    mparser_utf8_view figure_identity, const mparser_graphics_layout_environment* environment);
 
 MPARSER_C_API void mparser_session_retain(mparser_session* session);
 MPARSER_C_API void mparser_session_release(mparser_session* session);
@@ -807,6 +831,7 @@ mparser_result_output_count(const mparser_result* result);
 MPARSER_C_API mparser_utf8_view
 mparser_result_graphics_json(const mparser_result* result);
 /* ABI 2.7: select legacy (0) or identity-bearing (3) immutable snapshot.
+ * ABI 2.12 also accepts version 4 with immutable Figure layout environments.
  * Other versions and null arguments return INVALID_ARGUMENT. Output is cleared
  * on failure. A missing snapshot returns OK with an empty view; ownership and
  * lifetime are the same as mparser_result_graphics_json. */
@@ -997,7 +1022,8 @@ MPARSER_C_API mparser_api_status mparser_value_graphics_json(
 
 /* ABI 2.7: version 0 retains legacy automatic v1/v2 selection; version 3
  * includes graphIdentity/objectIdentity decimal strings, scoped to this loaded
- * kernel instance. Other versions return INVALID_ARGUMENT with null output.
+ * kernel instance. ABI 2.12 accepts version 4 with Figure layout environments.
+ * Other versions return INVALID_ARGUMENT with null output.
  * Ownership, locking, scalar/array and deleted-handle rules match the function
  * above. Identities are not authorization tokens and expire on kernel reload. */
 MPARSER_C_API mparser_api_status mparser_value_graphics_json_versioned(

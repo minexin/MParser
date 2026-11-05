@@ -1,14 +1,17 @@
 # Identity-Targeted Graphics SDK
 
 Development product 1.15.0; introduced in C ABI 2.11 (157 total exports).
-The three functions are additive. Old symbols, invocation layouts, graphics
+The subsequent layout follow-up advances to ABI 2.12/158 with a separate host
+environment setter and opt-in graphics v4; see axes-layout-development.md.
+The three identity-writeback functions are additive. Old symbols, invocation layouts, graphics
 versions and frozen release contracts are unchanged.
 
 ## Operations
 
 - `mparser_runtime_graphics_json_versioned` / `Runtime::graphicsJson(version)`
   capture the current graph without executing source or reconstructing it
-  from a previous Result. Versions 0 and 3 are accepted. The C output is an
+  from a previous Result. Versions 0 and 3 are accepted; ABI 2.12 also accepts
+  opt-in version 4 with explicit layout environments. The C output is an
   owned character JSON value with ASCII escapes, including Unicode labels.
 - `mparser_runtime_graphics_value` / `Runtime::graphicsObject(graph,object)`
   resolve canonical positive uint64 decimal identity strings only in the

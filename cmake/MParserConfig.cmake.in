@@ -56,6 +56,8 @@ set_and_check(
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/machine-result-v1.schema.json")
 set_and_check(MParser_GRAPHICS_V3_SCHEMA_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-v3.schema.json")
+set_and_check(MParser_GRAPHICS_V4_SCHEMA_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-v4.schema.json")
 set_and_check(MParser_HOST_INTEGRATION_DEVELOPMENT_CONTRACT_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/host-integration-contract-development.json")
 set_and_check(MParser_DEFINITION_METADATA_GUIDE_FILE
@@ -68,6 +70,8 @@ set_and_check(MParser_GRAPHICS_COLOR_GUIDE_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-color-contract.md")
 set_and_check(MParser_GRAPHICS_WRITEBACK_GUIDE_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/graphics-writeback-contract.md")
+set_and_check(MParser_AXES_LAYOUT_GUIDE_FILE
+    "@PACKAGE_CMAKE_INSTALL_DOCDIR@/axes-layout-development.md")
 set_and_check(MParser_SYSTEM_SEARCH_PATH_GUIDE_FILE
     "@PACKAGE_CMAKE_INSTALL_DOCDIR@/system-search-paths.md")
 set_and_check(

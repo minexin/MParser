@@ -1,7 +1,7 @@
 # Variable Name Validation
 
 Development API, introduced in C ABI generation 2 revision 6 and retained in
-the 1.15.0 development SDK (ABI 2.11). Product identity and the active development
+the 1.15.0 development SDK (ABI 2.12). Product identity and the active development
 manifest are synchronized; this checkout is not a published release candidate.
 
 `mparser_validate_variable_name(mparser_utf8_view, out_status)` performs a pure,

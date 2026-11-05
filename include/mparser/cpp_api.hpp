@@ -2088,6 +2088,14 @@ private:
     friend class Module;
 };
 
+struct GraphicsLayoutEnvironment {
+    double widthPixels = 0;
+    double heightPixels = 0;
+    double pixelsPerInch = 0;
+    double characterWidthPixels = 0;
+    double characterHeightPixels = 0;
+};
+
 class Runtime {
 public:
     Runtime() noexcept = default;
@@ -2163,6 +2171,15 @@ public:
         detail::checkStatus(mparser_runtime_graphics_set_property(requireRaw(),
             {graph.data(),graph.size()},{object.data(),object.size()},
             {property.data(),property.size()},value.requireRaw()),"write current runtime graphics property");
+    }
+
+    void setGraphicsLayoutEnvironment(std::string_view graph, std::string_view figure,
+        const GraphicsLayoutEnvironment& environment) {
+        const mparser_graphics_layout_environment raw{MPARSER_GRAPHICS_LAYOUT_ENVIRONMENT_SIZE,
+            MPARSER_C_ABI_GENERATION,environment.widthPixels,environment.heightPixels,environment.pixelsPerInch,
+            environment.characterWidthPixels,environment.characterHeightPixels};
+        detail::checkStatus(mparser_runtime_graphics_set_layout_environment(requireRaw(),
+            {graph.data(),graph.size()},{figure.data(),figure.size()},&raw),"set current Figure layout environment");
     }
 
     void clearGlobals() {

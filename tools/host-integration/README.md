@@ -111,7 +111,7 @@ Production sibling sources remain unchanged.
 Apply the graphics/SDK-selection patch first, then
 mexecserver-definition-metadata.patch with --unidiff-zero and
 --ignore-space-change to the separate host checkout. Configure with
-MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.11).
+MEXEC_DEFINITION_METADATA=ON and the 1.15.0 development SDK (currently ABI 2.12).
 
 The clean-host probe also applies `mexecserver-ordered-events.patch` and enables
 `MEXEC_ORDERED_EVENTS`. This candidate requires ABI revision 9 and defaults OFF
@@ -160,7 +160,18 @@ The clean-host runner enables it alongside the existing feature probes.
 
 ## Clean Installed-SDK Acceptance
 
-The source-copy runner enables `MEXEC_GRAPHICS_WRITEBACK` with the ABI 2.11 SDK
+The runner includes `test-axes-layout.cjs` for actual kernel normalized Axes
+positions, identity-targeted InnerPosition writes, later-command readback,
+replacement preservation and explicit host layout-environment injection.
+`MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT` defaults OFF and requires ABI 2.12. Its
+separate graphics-layout route explicitly returns v4 with environment/revision;
+legacy graphics/execution routes retain v3. The probe checks real source unit
+conversion, invalid/stale requests and one concurrent commit, not browser pixels.
+`probe-axes-layout-compat.ps1` verifies ABI 2.11 OFF, bounded old-header/new-DLL
+layout-OFF and legacy-writeback probes, and rejects old SDK layout ON. Its
+finally block restores the new SDK/ON before the final probe and host suite.
+
+The source-copy runner enables `MEXEC_GRAPHICS_WRITEBACK` with the ABI 2.12 SDK
 and explicit graphics v3. `test-graphics-writeback.cjs` checks real property
 writes/readback, lossless revision strings, stale/deleted/reset/foreign targets,
 invalid-write preservation and exactly one winner for concurrent requests at

@@ -1,6 +1,6 @@
 # Ordered Execution Events
 
-Development contract: MParser 1.15, introduced in C ABI 2.9 and retained in 2.11. This additive
+Development contract: MParser 1.15, introduced in C ABI 2.9 and retained in 2.12. This additive
 API returns an ordered, read-only collection after execution. It is not a live
 callback API or a browser-rendering acceptance claim.
 
