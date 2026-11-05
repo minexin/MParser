@@ -3439,6 +3439,7 @@ install(FILES
     docs/graphics-legend-contract.md
     docs/graphics-writeback-contract.md
     docs/axes-layout-development.md
+    docs/host-canvas-layout-candidate.md
     docs/system-search-paths.md
     docs/assignment-display-development.md
     docs/ordered-display-events.md

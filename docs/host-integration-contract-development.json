@@ -34,7 +34,7 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "41bd10f3d79d143f76269cb389a2293dd03e61c53365ecbc3449c79e85fafe33"
+      "sha256_lf": "d40ddf135b8c99eb57df6c0b95c278cd2f00dbe1a831a52400437d72bb40a97f"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -118,7 +118,7 @@
     },
     {
       "path": "docs/host-browser-acceptance.md",
-      "sha256_lf": "3f339c01615b79f68db0d6c3f7db913d4472b6d312d646364a0089d3f6cdf627"
+      "sha256_lf": "9cfa10d18149bee0164e356afd842b3bd7725bb7ba6caa72adfd6aeff77cb2b1"
     },
     {
       "path": "docs/graphics-writeback-contract.md",
@@ -126,11 +126,15 @@
     },
     {
       "path": "docs/axes-layout-development.md",
-      "sha256_lf": "df9be0aa1c8959a6f78cfe1d1af3a2b1dda461fbe0e3cc4f84b0947f14128f66"
+      "sha256_lf": "ee8e5099cb1f90f0a4ed8f8ab73044d754229aad3bcc23560a95becc3cb2fe50"
     },
     {
       "path": "docs/graphics-v4.schema.json",
       "sha256_lf": "81429e0b71f023e85f70015d219b91620d7a0897d8c4980c54dc6ac0772a76d2"
+    },
+    {
+      "path": "docs/host-canvas-layout-candidate.md",
+      "sha256_lf": "996e9c03092abfa1fad26cfc3db241af915bc4d60c86711237dfe78153ea0f88"
     }
   ]
 }

@@ -1,5 +1,11 @@
 # MExec Host Integration Candidates
 
+The explicit-layout renderer/synchronization candidates and their controlled
+Canvas, app/API and real SDK/REST probes are described in
+[the Canvas layout guide](../../docs/host-canvas-layout-candidate.md).
+The clean-host runner now applies eight client candidates. No v4 browser-pixel,
+responsive or deployed-host acceptance is implied by their passing tests.
+
 This patch is an opt-in integration candidate, not a deployed server update.
 Apply it to a separate MExecServer source checkout after checking the diff:
 

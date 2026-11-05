@@ -43,7 +43,7 @@ foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-met
 }
 foreach ($patch in @('mexecclient-text-labels-candidate.patch','mexecclient-line-clipping-candidate.patch',
     'mexecclient-grid-candidate.patch','mexecclient-legend-candidate.patch','mexecclient-color-candidate.patch',
-    'mexecclient-runtime-identity-candidate.patch')) {
+    'mexecclient-runtime-identity-candidate.patch','mexecclient-axes-layout-candidate.patch','mexecclient-layout-sync-candidate.patch')) {
     git -C $clientSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Client patch failed: $patch; see $stage" }
 }
@@ -81,11 +81,14 @@ if ($LASTEXITCODE) { throw "Graphics writeback probe failed; see $stage" }
 node (Join-Path $PSScriptRoot 'test-axes-layout.cjs') (Join-Path $build 'mexec_server.exe') `
     (Join-Path $stage 'axes-layout-probe')
 if ($LASTEXITCODE) { throw "Axes layout probe failed; see $stage" }
+node (Join-Path $PSScriptRoot 'test-client-layout-rest.cjs') (Join-Path $build 'mexec_server.exe') `
+    $clientSource (Join-Path $stage 'client-layout-rest-probe')
+if ($LASTEXITCODE) { throw "Client layout REST probe failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
     -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -GraphicsColors -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')
 foreach ($test in @('test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs','test-client-colors.cjs',
-    'test-client-runtime-identity.cjs')) {
+    'test-client-runtime-identity.cjs','test-client-axes-layout.cjs','test-client-layout-bootstrap.cjs')) {
     node (Join-Path $PSScriptRoot $test) $clientSource
     if ($LASTEXITCODE) { throw "Client candidate failed: $test; see $stage" }
 }

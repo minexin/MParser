@@ -1,0 +1,50 @@
+diff --git a/web/js/api.js b/web/js/api.js
+index 2308125..7e7e915 100644
+--- a/web/js/api.js
++++ b/web/js/api.js
+@@ -119,0 +120,2 @@ MExec.api = (() => {
++    graphicsLayout: (id) => request('GET', '/api/v1/sessions/' + encode(id) + '/graphics-layout'),
++    graphicsLayoutEnvironment: (id, body) => request('POST', '/api/v1/sessions/' + encode(id) + '/graphics-layout-environment', body),
+diff --git a/web/js/app.js b/web/js/app.js
+index 6bc29a3..fb1e56a 100644
+--- a/web/js/app.js
++++ b/web/js/app.js
+@@ -203,0 +204,16 @@ MExec.app = (() => {
++  const layoutSync = MExec.plotLayout?.controller({
++    api:MExec.api,
++    current:() => ({sessionId:state.sessionId,epoch:graphicsEpoch,
++      enabled:((state.health || {}).features || []).includes('graphics-layout-environment')}),
++    render:snapshot => MExec.plot.renderGraphicsSnapshot(snapshot,false,false),
++    target:() => MExec.plot.layoutTarget(),
++    measure:() => MExec.plotLayout.measure(document.querySelector('#plot-canvas')),
++    onCommit:() => refreshWorkspace(),
++  });
++  let layoutTimer;
++  function scheduleLayout() {
++    if (!layoutSync) return;
++    clearTimeout(layoutTimer);
++    layoutTimer = setTimeout(() => layoutSync.refresh().catch(error =>
++      MExec.command.print('Layout: ' + error.message,'err')),120);
++  }
+@@ -204,0 +221 @@ MExec.app = (() => {
++    if (layoutSync && ((state.health || {}).features || []).includes('graphics-layout-environment')) return layoutSync.refresh();
+@@ -350,0 +368 @@ MExec.app = (() => {
++    if (layoutSync) refreshGraphics().catch(error => MExec.command.print('Layout: ' + error.message,'err'));
+@@ -892 +910 @@ MExec.app = (() => {
+-      setTimeout(() => MExec.plot.draw(), 0);
++      setTimeout(() => { MExec.plot.draw(); scheduleLayout(); }, 0);
+@@ -1045,0 +1064,8 @@ GET/PUT /files                脚本文件存储</div>`,
++    if (layoutSync) {
++      const element = document.querySelector('#plot-canvas');
++      if (element && window.ResizeObserver) new window.ResizeObserver(() => {
++        MExec.plot.draw(); scheduleLayout();
++      }).observe(element);
++      window.addEventListener('resize',scheduleLayout);
++      document.fonts?.addEventListener('loadingdone',scheduleLayout);
++    }
+diff --git a/web/index.html b/web/index.html
+index 1b2a93d..7710396 100644
+--- a/web/index.html
++++ b/web/index.html
+@@ -251,0 +252 @@
++  <script src="/js/plot-layout.js" defer></script>

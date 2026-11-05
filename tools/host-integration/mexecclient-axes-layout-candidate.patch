@@ -1,0 +1,220 @@
+diff --git a/web/js/plot.js b/web/js/plot.js
+index c2a7a07..12031b6 100644
+--- a/web/js/plot.js
++++ b/web/js/plot.js
+@@ -5,0 +6 @@ MExec.plot = (() => {
++  let layoutAxes = [];
+@@ -37,0 +39 @@ MExec.plot = (() => {
++    layoutAxes = [];
+@@ -81 +83 @@ MExec.plot = (() => {
+-    if (!element) return;
++    if (!element) return false;
+@@ -83,0 +86 @@ MExec.plot = (() => {
++    if (lastSnapshot?.version === 4 && (!element.clientWidth || !element.clientHeight)) return false;
+@@ -92,0 +96,14 @@ MExec.plot = (() => {
++    if (layoutAxes.length) {
++      let complete = true;
++      for (const item of layoutAxes) {
++        const region = MExec.plotLayout?.frame(item.properties,item.layout,width,height);
++        if (region) drawAxes(context,width,height,item.state,region,item.key,item.selected);
++        else complete = false;
++      }
++      return complete;
++    } else drawAxes(context,width,height,state);
++    return true;
++  }
++
++  function drawAxes(context,width,height,state,region = null,key = undefined,selected = true) {
++
+@@ -117 +134 @@ MExec.plot = (() => {
+-      if (legend.location.includes('outside')) {
++      if (!region && legend.location.includes('outside')) {
+@@ -124,2 +141,3 @@ MExec.plot = (() => {
+-    const plotWidth = width - margin.left - margin.right;
+-    const plotHeight = height - margin.top - margin.bottom;
++    if (region) { margin.left = region.left; margin.top = region.top; }
++    const plotWidth = region ? region.width : width - margin.left - margin.right;
++    const plotHeight = region ? region.height : height - margin.top - margin.bottom;
+@@ -164 +182 @@ MExec.plot = (() => {
+-      ({xa,xb,ya,yb} = MExec.plotView.limits({xa,xb,ya,yb}));
++      ({xa,xb,ya,yb} = MExec.plotView.limits({xa,xb,ya,yb},key));
+@@ -167 +185 @@ MExec.plot = (() => {
+-      MExec.plotView.updateFrame({xa,xb,ya,yb,left:margin.left,top:margin.top,width:plotWidth,height:plotHeight,xlog:state.xlog,ylog:state.ylog});
++      if (selected) MExec.plotView.updateFrame({xa,xb,ya,yb,left:margin.left,top:margin.top,width:plotWidth,height:plotHeight,xlog:state.xlog,ylog:state.ylog});
+@@ -246 +264 @@ MExec.plot = (() => {
+-          margin.left - 12
++          Math.max(1,margin.left - 12)
+@@ -286 +304 @@ MExec.plot = (() => {
+-      context.fillText(state.title, width / 2, 18);
++      context.fillText(state.title, region ? margin.left + plotWidth/2 : width/2, region ? margin.top-16 : 18);
+@@ -292 +310 @@ MExec.plot = (() => {
+-      context.fillText(state.xlabel, width / 2, height - 8);
++      context.fillText(state.xlabel, region ? margin.left + plotWidth/2 : width/2, region ? margin.top+plotHeight+32 : height-8);
+@@ -298 +316 @@ MExec.plot = (() => {
+-      context.translate(14, height / 2);
++      context.translate(region ? margin.left-42 : 14, region ? margin.top+plotHeight/2 : height/2);
+@@ -383 +401 @@ MExec.plot = (() => {
+-    if (!snapshot || snapshot.schema !== 'mparser.graphics' || ![1,2,3].includes(snapshot.version) || !Array.isArray(snapshot.objects)) return false;
++    if (!snapshot || snapshot.schema !== 'mparser.graphics' || ![1,2,3,4].includes(snapshot.version) || !Array.isArray(snapshot.objects)) return false;
+@@ -387,2 +405,7 @@ MExec.plot = (() => {
+-      MExec.plotView?.resetAll();
+-      selectedFigure=null;selectedAxes.clear();sceneEpoch++;
++      const identities = value => value?.version === 4 && value.graphIdentity &&
++        JSON.stringify(value.objects.map(item => [item.type,item.objectIdentity,item.parent]));
++      if (!identities(snapshot) || snapshot.graphIdentity !== lastSnapshot?.graphIdentity ||
++          identities(snapshot) !== identities(lastSnapshot)) {
++        MExec.plotView?.resetAll(); selectedFigure=null;selectedAxes.clear();
++      }
++      sceneEpoch++;
+@@ -437 +460,2 @@ MExec.plot = (() => {
+-    MExec.plotView?.select(figure && axes ? String(figure.id) + ':' + String(axes.id) : null);
++    const viewKey = item => snapshot.version === 4 ? snapshot.graphIdentity + ':' + item.objectIdentity : String(figure.id) + ':' + String(item.id);
++    MExec.plotView?.select(figure && axes ? viewKey(axes) : null);
+@@ -442,0 +467,2 @@ MExec.plot = (() => {
++    function axesState(axes) {
++    const state = {};
+@@ -510,0 +537,5 @@ MExec.plot = (() => {
++    return state;
++    }
++    Object.assign(state,axesState(axes));
++    if (snapshot.version === 4) layoutAxes = axesList.map(item => ({state:axesState(item),
++      properties:item.properties,layout:figure.layout,key:viewKey(item),selected:item.id === axesId}));
+@@ -512,0 +544 @@ MExec.plot = (() => {
++    if (selectionOnly && snapshot.version === 4) MExec.app?.refreshGraphics?.().catch(() => {});
+@@ -515,0 +548,7 @@ MExec.plot = (() => {
++  function layoutTarget() {
++    const figure = lastSnapshot?.objects.find(item => item.type === 'Figure' && item.id === selectedFigure);
++    return lastSnapshot?.version === 4 && figure ? {
++      graph_identity:lastSnapshot.graphIdentity,figure_identity:figure.objectIdentity,
++    } : null;
++  }
++
+@@ -519 +558 @@ MExec.plot = (() => {
+-      draw();
++      if (draw() === false) throw new Error('Figure layout is unavailable');
+@@ -540,0 +580 @@ MExec.plot = (() => {
++    layoutTarget,
+diff --git a/web/js/plot-view.js b/web/js/plot-view.js
+index 234ced4..13d5bfa 100644
+--- a/web/js/plot-view.js
++++ b/web/js/plot-view.js
+@@ -40 +40 @@ MExec.plotView = (() => {
+-  function limits(base) { return views.get(key) || base; }
++  function limits(base, viewKey = key) { return views.get(viewKey) || base; }
+diff --git a/web/js/plot-layout.js b/web/js/plot-layout.js
+new file mode 100644
+index 0000000..7f711f4
+--- /dev/null
++++ b/web/js/plot-layout.js
+@@ -0,0 +1,111 @@
++window.MExec = window.MExec || {};
++MExec.plotLayout = (() => {
++  const positive = value => Number.isFinite(value) && value > 0;
++  const fields = ['width_pixels','height_pixels','pixels_per_inch',
++    'character_width_pixels','character_height_pixels'];
++  function metrics(layout) {
++    if (!layout) return null;
++    const values = [...(layout.contentSizePixels || []),layout.pixelsPerInch,
++      ...(layout.characterSizePixels || [])];
++    return values.length === 5 && values.every(positive)
++      ? Object.fromEntries(fields.map((field,index) => [field,values[index]])) : null;
++  }
++  function frame(properties, layout, width, height) {
++    const p = properties?.Position, units = properties?.Units;
++    if (!positive(width) || !positive(height) || !Array.isArray(p) || p.length !== 4 ||
++        !p.every(Number.isFinite) || p[2] < 0 || p[3] < 0) return null;
++    let sx, sy, origin = 0;
++    if (units === 'normalized') { sx = width; sy = height; }
++    else {
++      const environment = metrics(layout);
++      if (!environment) return null;
++      const dpi = environment.pixels_per_inch;
++      if (units === 'pixels') { sx = sy = 1; origin = 1; }
++      else if (units === 'inches') sx = sy = dpi;
++      else if (units === 'centimeters') sx = sy = dpi / 2.54;
++      else if (units === 'points') sx = sy = dpi / 72;
++      else if (units === 'characters') {
++        sx = environment.character_width_pixels; sy = environment.character_height_pixels;
++      } else return null;
++    }
++    const left = (p[0] - origin) * sx, bottom = (p[1] - origin) * sy;
++    const result = {left,top:height-bottom-p[3]*sy,width:p[2]*sx,height:p[3]*sy};
++    return Object.values(result).every(Number.isFinite) ? result : null;
++  }
++  function measure(element) {
++    if (!element?.isConnected || !element.getClientRects().length ||
++        document.fonts?.status === 'loading') return null;
++    const style = window.getComputedStyle(element);
++    if (style.visibility !== 'visible' || !style.font) return null;
++    const size = ['width','height'].map((name,index) => {
++      const axis = index ? ['Top','Bottom'] : ['Left','Right'];
++      return (index ? element.clientHeight : element.clientWidth) -
++        axis.reduce((total,side) => total + (parseFloat(style['padding'+side]) || 0),0);
++    });
++    if (!size.every(positive)) return null;
++    const ruler = document.createElement('span'), characters = document.createElement('span');
++    ruler.style.cssText = 'position:fixed;left:0;top:0;width:1in;height:1px;padding:0;border:0;visibility:hidden;pointer-events:none;';
++    characters.style.cssText = 'position:fixed;left:0;top:0;width:max-content;height:auto;padding:0;border:0;visibility:hidden;pointer-events:none;white-space:pre;letter-spacing:0;';
++    characters.style.font = style.font;
++    characters.textContent = '0000000000';
++    try {
++      document.body.appendChild(ruler); document.body.appendChild(characters);
++      const box = characters.getBoundingClientRect();
++      const values = [...size,ruler.getBoundingClientRect().width,box.width/10,box.height];
++      return values.every(positive) ? Object.fromEntries(fields.map((field,index) => [field,values[index]])) : null;
++    } finally { ruler.remove(); characters.remove(); }
++  }
++  function same(layout, environment) {
++    const previous = metrics(layout);
++    return previous && fields.every(field => previous[field] === environment[field]);
++  }
++  function controller({api,current,render,target,measure:readMetrics,onCommit = () => {}}) {
++    let pending = null, again = false;
++    async function run() {
++      const owner = current();
++      if (!owner?.enabled || !owner.sessionId) return;
++      const live = () => {
++        const value = current();
++        return value?.enabled && value.sessionId === owner.sessionId && value.epoch === owner.epoch;
++      };
++      let response;
++      try { response = await api.graphicsLayout(owner.sessionId); }
++      catch (error) { if (error.status === 409 || !live()) return; throw error; }
++      if (!live()) return;
++      render(response.graphics);
++      const selected = target(), environment = readMetrics();
++      const graph = response.graphics;
++      const figure = graph?.objects?.find(item => item.type === 'Figure' && item.objectIdentity === selected?.figure_identity);
++      if (!figure || selected.graph_identity !== graph.graphIdentity || !environment ||
++          !fields.every(field => positive(environment[field])) || same(figure.layout,environment)) return;
++      if (typeof response.revision !== 'string') throw new Error('Missing layout workspace revision');
++      try {
++        response = await api.graphicsLayoutEnvironment(owner.sessionId,{
++          graph_identity:graph.graphIdentity,figure_identity:figure.objectIdentity,
++          expected_revision:response.revision,environment,
++        });
++      } catch (error) {
++        // A lost response may follow a committed write. Read before any retry.
++        if (live()) {
++          try {
++            const fresh = await api.graphicsLayout(owner.sessionId);
++            if (live()) { render(fresh.graphics); await onCommit(); }
++          } catch (_) {}
++        }
++        if (error.status === 409 || !live()) return;
++        throw error;
++      }
++      if (!live()) return;
++      render(response.graphics); await onCommit();
++    }
++    function refresh() {
++      if (pending) { again = true; return pending; }
++      pending = (async () => {
++        do { again = false; await run(); } while (again);
++      })().finally(() => { pending = null; });
++      return pending;
++    }
++    return {refresh};
++  }
++  return {frame,measure,metrics,controller};
++})();

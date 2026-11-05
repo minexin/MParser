@@ -142,9 +142,17 @@ The online [Axes properties](https://www.mathworks.com/help/matlab/ref/matlab.gr
 and [Figure properties](https://www.mathworks.com/help/matlab/ref/matlab.ui.figure.html)
 explain unit/position concepts; the installed R2024b run anchors this corpus.
 
-Still open: actual browser environment measurement/rendering and negotiation,
+The source-copy Canvas candidate now implements measurement, capability-gated
+v4 refresh/injection and multi-Axes rendering. Controlled Canvas, app/API and
+real SDK/REST checks are described in
+[the candidate guide](host-canvas-layout-candidate.md); they do not prove
+actual browser measurements or pixels. The preceding final kernel commit
+45fa677 passed all seven mandatory cross-platform CI jobs and documentation
+CI. CI for subsequent commits remains a separate gate.
+
+Still open: actual browser environment measurement/rendering acceptance,
 full native Figure Position/Units,
 OuterPosition/PositionConstraint and decoration-inset solving, subplot/tiled
-layout, browser multi-Axes rendering, production adoption and actual-commit CI.
+layout, browser multi-Axes acceptance, production adoption and actual-commit CI.
 The native Figure zero-width reference is visibly clamped by MATLAB's window
 system; it is not implemented or emulated by this headless Axes foundation.

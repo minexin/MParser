@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>MExec Studio - MParser Web Client</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/css/mexec.css">
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">MExec Studio</div>
+    <span class="edition">MParser V1.14 · 科学计算工作台</span>
+    <span id="server-status" class="status-badge">连接中…</span>
+  </header>
+
+  <nav id="menubar" aria-label="工作台功能区">
+    <div id="ribbon-tabs" role="tablist" aria-label="功能区">
+      <button id="ribbon-home" role="tab" aria-controls="ribbon" aria-selected="false" tabindex="-1" data-ribbon="home">主页</button>
+      <button id="ribbon-plot" role="tab" aria-controls="ribbon" aria-selected="false" tabindex="-1" data-ribbon="plot">绘图</button>
+      <button id="ribbon-editor" role="tab" aria-controls="ribbon" aria-selected="true" data-ribbon="editor">编辑器</button>
+      <button id="ribbon-view" role="tab" aria-controls="ribbon" aria-selected="false" tabindex="-1" data-ribbon="view">视图</button>
+    </div>
+    <div class="menu" data-menu="file">
+      <button class="menu-trigger" type="button">文件</button>
+      <div class="menu-items">
+        <button data-action="file-new">新建脚本</button>
+        <button data-action="file-open">打开…</button>
+        <button data-action="file-save">保存 (Ctrl+S)</button>
+        <button data-action="file-save-all">全部保存</button>
+        <button data-action="file-save-as">另存为… (Ctrl+Shift+S)</button>
+        <button data-action="file-reload" disabled>从在线文件重新载入</button>
+      </div>
+    </div>
+    <div class="menu" data-menu="session">
+      <button class="menu-trigger" type="button">会话</button>
+      <div class="menu-items">
+        <button data-action="session-new">新建会话</button>
+        <button data-action="session-reset">重置会话</button>
+        <button data-action="session-delete">删除当前会话</button>
+      </div>
+    </div>
+    <div class="menu" data-menu="view">
+      <button class="menu-trigger" type="button">窗口</button>
+      <div class="menu-items">
+        <button data-action="view-editor">编辑器</button>
+        <button data-action="view-plot">绘图</button>
+      </div>
+    </div>
+    <div class="menu" data-menu="help">
+      <button class="menu-trigger" type="button">帮助</button>
+      <div class="menu-items">
+        <button data-action="help-about">关于</button>
+        <button data-action="help-api">API 文档</button>
+        <button data-action="swagger-page">Swagger API 页面</button>
+      </div>
+    </div>
+    <span id="session-label" class="session-label"></span>
+    <button id="ribbon-toggle" type="button" aria-controls="ribbon" aria-expanded="true" title="收起功能区 (Ctrl+F1)">⌃</button>
+  </nav>
+
+
+  <section id="ribbon" role="tabpanel" aria-labelledby="ribbon-editor">
+    <div class="ribbon-group ribbon-files" data-ribbon-pages="home editor"><div class="ribbon-actions">
+      <button data-action="file-new"><span aria-hidden="true">＋</span>新建脚本</button>
+      <button data-action="file-open"><span aria-hidden="true">▱</span>打开</button>
+      <button data-action="file-save"><span aria-hidden="true">▣</span>保存</button>
+      <button data-action="file-save-all"><span aria-hidden="true">▣</span>全部保存</button>
+      <button data-action="file-save-as"><span aria-hidden="true">▧</span>另存为</button>
+      <button data-action="file-reload" title="重新读取在线文件；未保存修改需要确认放弃" disabled><span aria-hidden="true">↻</span>重新载入</button>
+    </div><div class="ribbon-caption">文件</div></div>
+    <div class="ribbon-group ribbon-edit" data-ribbon-pages="editor"><div class="ribbon-actions">
+      <button data-action="editor-undo" title="撤销 (Ctrl+Z)" disabled><span aria-hidden="true">↶</span>撤销</button>
+      <button data-action="editor-redo" title="重做 (Ctrl+Y / Ctrl+Shift+Z)" disabled><span aria-hidden="true">↷</span>重做</button>
+      <button data-action="editor-check" title="只编译当前编辑内容，不执行"><span aria-hidden="true">✓</span>编译检查</button>
+      <button data-action="editor-goto-line" title="转到行 (Ctrl+G)"><span aria-hidden="true">↦</span>转到行</button>
+      <button data-action="editor-find"><span aria-hidden="true">⌕</span>查找 / 替换</button>
+      <button data-action="editor-comment"><span aria-hidden="true">%</span>注释</button>
+      <button data-action="editor-uncomment"><span aria-hidden="true">↶</span>取消注释</button>
+    </div><div class="ribbon-caption">编辑与视图</div></div>
+    <div class="ribbon-group" data-ribbon-pages="home editor"><div class="ribbon-actions">
+      <button id="btn-run" title="运行编辑器 (Ctrl+Enter)"><span class="run-icon" aria-hidden="true">▶</span><span id="run-label">运行</span></button>
+      <button data-action="editor-run-selection" title="运行选中代码；未选中时运行当前行 (F9)"><span aria-hidden="true">▹</span>运行选中</button>
+      <button id="btn-debug" title="启动内核调试"><span aria-hidden="true">▷</span>调试</button>
+      <button id="btn-stop" title="请求内核停止执行 (Shift+F5)"><span aria-hidden="true">■</span>停止</button>
+    </div><div class="ribbon-caption">运行</div></div>
+    <div class="ribbon-group" data-ribbon-pages="home view"><div class="ribbon-actions">
+      <button id="btn-new-session"><span aria-hidden="true">⊕</span>新建会话</button>
+      <button id="btn-reset-session"><span aria-hidden="true">↺</span>重置会话</button>
+      <button id="layout-reset"><span aria-hidden="true">▦</span>恢复布局</button>
+    </div><div class="ribbon-caption">工作环境</div></div>
+    <div class="ribbon-group" data-ribbon-pages="plot" hidden><div class="ribbon-actions">
+      <button data-action="view-plot"><span aria-hidden="true">▥</span>显示图形</button>
+      <button id="ribbon-plot-export"><span aria-hidden="true">⇩</span>导出 PNG</button>
+    </div><div class="ribbon-caption">内核图形</div></div>
+    <div class="ribbon-group" data-ribbon-pages="view" hidden><div class="ribbon-actions">
+      <button data-action="view-editor"><span aria-hidden="true">▤</span>编辑器</button>
+      <button data-action="view-plot"><span aria-hidden="true">▥</span>绘图</button>
+      <button id="focus-command"><span aria-hidden="true">❯</span>命令窗口</button>
+      <button id="focus-workspace"><span aria-hidden="true">▦</span>工作区</button>
+      <button id="toggle-history" aria-pressed="false"><span aria-hidden="true">◷</span>命令历史</button>
+    </div><div class="ribbon-caption">面板</div></div>
+  </section>
+  <div id="directory-bar">
+    <button id="files-back" type="button" title="后退" aria-label="目录后退" disabled>←</button>
+    <button id="files-forward" type="button" title="前进" aria-label="目录前进" disabled>→</button>
+    <button id="files-up" title="上级目录" aria-label="上级目录">↑</button>
+    <button id="files-refresh" title="刷新" aria-label="刷新当前文件夹">⟳</button>
+    <label for="files-cwd-input">当前文件夹</label>
+    <div id="directory-location">
+      <nav id="files-breadcrumbs" aria-label="当前文件夹路径"></nav>
+      <input id="files-cwd-input" spellcheck="false" aria-label="输入目录路径" title="Enter 打开目录，Esc 取消" hidden>
+    </div>
+    <button id="files-edit-path" type="button" aria-label="输入目录路径" aria-controls="files-cwd-input" aria-expanded="false" title="输入目录路径">⌨</button>
+    <select id="files-history" aria-label="本会话目录历史" title="本会话目录历史" disabled></select>
+  </div>
+
+  <main id="main">
+    <aside id="files-panel">
+      <div class="panel-title">当前文件夹</div>
+      <div class="files-column-heading">名称</div>
+      <ul id="files-tree" aria-label="当前文件夹内容" aria-description="方向键选择，Home 和 End 到首尾，键入文件名前缀定位，Enter 打开" title="↑↓ 选择 · Home/End 首尾 · 输入文件名前缀定位 · Enter 打开"><li class="dim">加载中…</li></ul>
+      <details id="file-details" open>
+        <summary>详细信息</summary>
+        <div id="file-details-content" aria-live="polite">选择文件以查看详细信息</div>
+      </details>
+      <details id="history-panel">
+        <summary>命令历史 <span id="history-count"></span></summary>
+        <div class="history-tools">
+          <input id="history-filter" aria-label="筛选命令历史" placeholder="筛选命令历史">
+          <button id="history-clear" type="button" title="清空本页命令历史">清空</button>
+        </div>
+        <div class="history-help">单击召回，回车执行</div>
+        <ul id="history-list" aria-label="最近的命令"></ul>
+      </details>
+    </aside>
+
+    <section id="center-panel">
+      <div class="tabs">
+        <div class="center-view-tabs" role="tablist" aria-label="中央工作面板">
+          <button id="view-editor-tab" class="tab active" role="tab" aria-selected="true" aria-controls="editor-tab" data-tab="editor">编辑器</button>
+          <button id="view-plot-tab" class="tab" role="tab" aria-selected="false" aria-controls="plot-tab" tabindex="-1" data-tab="plot">绘图</button>
+        </div>
+        <span id="editor-file">未命名.m</span>
+        <span id="editor-dirty" class="dirty-mark"></span>
+        <span id="dbg-location" class="debug-status">空闲</span>
+        <button id="editor-search-toggle" type="button" aria-label="查找 / 替换" title="查找 / 替换 (Ctrl+F)">⌕</button>
+      </div>
+      <div id="editor-tab" class="tab-page active" role="tabpanel" aria-labelledby="view-editor-tab">
+        <div id="editor-doc-tabs" role="tablist" aria-label="打开的脚本"></div>
+        <div id="editor-search" class="editor-search" hidden>
+          <input id="editor-find" aria-label="查找文本（区分大小写）" placeholder="查找文本（区分大小写）">
+          <input id="editor-replacement" aria-label="替换文本" placeholder="替换文本">
+          <button id="editor-find-prev" type="button">上一个</button>
+          <button id="editor-find-next" type="button">下一个</button>
+          <button id="editor-replace" type="button">替换</button>
+          <button id="editor-replace-all" type="button">全部替换</button>
+          <button id="editor-search-close" type="button" aria-label="关闭查找">×</button>
+          <span id="editor-search-status" role="status"></span>
+        </div>
+        <div id="editor-wrap">
+          <div id="editor-gutter"></div>
+          <div id="editor-surface" role="tabpanel">
+            <pre id="editor-highlight" aria-hidden="true" hidden></pre>
+          <textarea id="editor" spellcheck="false" autocomplete="off"
+                    autocapitalize="off" wrap="off"></textarea>
+          </div>
+        </div>
+        <section id="analysis-panel" aria-label="内核编译检查" hidden>
+          <div class="analysis-head"><span>编译检查</span><button id="analysis-close" type="button" aria-label="关闭编译检查">×</button></div>
+          <div id="analysis-status" role="status"></div>
+          <div id="analysis-functions"></div>
+          <ul id="analysis-list"></ul>
+        </section>
+        <div id="dbg-pane" class="debug-pane hidden">
+          <div class="debug-toolbar">
+            <button id="dbg-continue" disabled>继续</button>
+            <button id="dbg-step-over" disabled>单步</button>
+            <button id="dbg-step-into" disabled>步入</button>
+            <button id="dbg-step-out" disabled>步出</button>
+            <button id="dbg-pause" disabled>暂停</button>
+            <button id="dbg-stop" disabled>退出调试</button>
+            <span id="dbg-status" class="debug-status"></span>
+          </div>
+          <div class="debug-eval">
+            <select id="dbg-frame" title="求值所在调用帧">
+              <option value="-1">当前帧</option>
+            </select>
+            <input id="dbg-eval-input" spellcheck="false"
+                   placeholder="在暂停帧求值/赋值，如 x+1 或 y=3；dbstack/dbup/dbdown 也可用">
+            <button id="dbg-eval" disabled>求值</button>
+            <button id="dbg-locate-frame" type="button" title="定位所选调用帧；只跳转到内容匹配的已打开调试文档" disabled>定位源码</button>
+          </div>
+          <pre id="dbg-eval-output" class="debug-eval-output"></pre>
+          <pre id="dbg-frames" class="debug-frames"></pre>
+        </div>
+      </div>
+      <div id="plot-tab" class="tab-page" role="tabpanel" aria-labelledby="view-plot-tab" hidden>
+        <div class="plot-toolbar">
+          <label>图形 <select id="plot-figure" aria-label="选择内核图形" disabled></select></label><label>坐标区 <select id="plot-axes" aria-label="选择内核坐标区" disabled></select></label><button id="plot-export" disabled>导出当前视图 PNG</button><span>显示所选坐标区的内核快照</span>
+        </div>
+        <div class="plot-view-tools" aria-label="图形视图操作"><button id="plot-zoom-in" type="button" disabled>放大</button><button id="plot-zoom-out" type="button" disabled>缩小</button><button id="plot-pan" type="button" aria-pressed="false" disabled>平移</button><button id="plot-reset-view" type="button" disabled>恢复视图</button><span id="plot-view-status" role="status"></span></div>
+        <canvas id="plot-canvas" tabindex="0" aria-label="内核图形；滚轮缩放，方向键平移，加减键缩放，Home 恢复视图"></canvas>
+      </div>
+    </section>
+
+    <aside id="right-panel">
+      <div id="workspace-panel">
+        <div class="panel-title">工作区 <span id="workspace-count" class="panel-subtitle"></span></div>
+        <div class="workspace-tools"><input id="workspace-filter" class="workspace-filter" aria-label="按名称筛选工作区变量" placeholder="筛选变量…" spellcheck="false" autocomplete="off"><select id="workspace-sort" aria-label="工作区排序"><option value="name-asc">名称 ↑</option><option value="name-desc">名称 ↓</option><option value="count-asc">元素个数 ↑</option><option value="count-desc">元素个数 ↓</option><option value="type-asc">类型 ↑</option><option value="type-desc">类型 ↓</option></select></div>
+        <div class="workspace-scroll">
+          <table id="workspace-table">
+            <thead>
+              <tr><th id="workspace-name-header" scope="col" aria-sort="ascending"><button id="workspace-sort-name" type="button">名称 ↑</button></th><th scope="col">值</th><th scope="col" aria-label="变量操作"></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="workspace-selection" role="status">选择行；双击或 Enter 打开</div>
+      </div>
+    </aside>
+      <div id="command-panel">
+        <div class="panel-title">命令窗口</div>
+        <pre id="output" tabindex="0" aria-label="命令输出"></pre>
+        <div class="command-line">
+          <span class="prompt">&gt;&gt;</span>
+          <textarea id="command-input" rows="1" spellcheck="false" autocomplete="off" aria-label="命令输入" title="Enter 执行；Shift+Enter 换行；Ctrl+C 无选择时中断" placeholder="输入 MATLAB 命令；Shift+Enter 换行"></textarea>
+        </div>
+      </div>
+
+    <div id="split-left" class="splitter vertical" role="separator" aria-label="调整文件夹宽度" aria-orientation="vertical" tabindex="0"></div>
+    <div id="split-right" class="splitter vertical" role="separator" aria-label="调整工作区宽度" aria-orientation="vertical" tabindex="0"></div>
+    <div id="split-command" class="splitter horizontal" role="separator" aria-label="调整命令窗口高度" aria-orientation="horizontal" tabindex="0"></div>
+  </main>
+
+  <footer id="statusbar">
+    <span id="status-runtime"></span>
+    <span id="status-session"></span>
+    <span id="status-cwd"></span>
+    <span id="status-last-run"></span>
+    <span id="status-execution" role="status">未连接会话</span>
+    <span id="status-caret">行 1，列 1</span>
+  </footer>
+
+  <div id="modal-root"></div>
+
+  <script src="/js/value.js" defer></script>
+  <script src="/js/api.js" defer></script>
+  <script src="/js/input.js" defer></script>
+  <script src="/js/workspace.js" defer></script>
+  <script src="/js/plot-view.js" defer></script>
+  <script src="/js/plot.js" defer></script>
+  <script src="/js/debug.js" defer></script>
+  <script src="/js/files.js" defer></script>
+  <script src="/js/syntax.js" defer></script>
+  <script src="/js/editor.js" defer></script>
+  <script src="/js/analysis.js" defer></script>
+  <script src="/js/command.js" defer></script>
+  <script src="/js/value-browser.js" defer></script>
+  <script src="/js/text-editor.js" defer></script>
+  <script src="/js/matrix-editor.js" defer></script>
+  <script src="/js/numeric-viewer.js" defer></script>
+  <script src="/js/diagnostics.js" defer></script>
+  <script src="/js/menus.js" defer></script>
+  <script src="/js/app.js" defer></script>
+  <script src="/js/layout.js" defer></script>
+  <script src="/js/desktop.js" defer></script>
+</body>
+</html>
