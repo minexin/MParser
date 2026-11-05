@@ -34,7 +34,7 @@
   "artifacts": [
     {
       "path": "docs/graphics-export-contract.md",
-      "sha256_lf": "527af65d8f3a11be167ba64f0bd9c013223cbdf6efddfe586cc691c364b49d70"
+      "sha256_lf": "41897de42d1e93dc1e4d77eec9c13ea3d40c94a8c8ed338f49de9911eb982483"
     },
     {
       "path": "docs/host-definition-navigation-candidate.md",
@@ -50,7 +50,7 @@
     },
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "a930efa1a4aa68cae34cc994cd27b4556254a97e62e88338eb6ebc71041d4dc7"
+      "sha256_lf": "e19d1ba9c2156d5a99462a07a89eed95996e383ce5f15ec2a52ab297f10f16d8"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -134,7 +134,7 @@
     },
     {
       "path": "docs/host-browser-acceptance.md",
-      "sha256_lf": "00ba2968bff04be2f869ad87af34899410543633e53b2612d4267ca3cc533df6"
+      "sha256_lf": "fb2d1019473b669b05ebe76af59d70e907af1b3678dab28c9d9bef1c447ceb71"
     },
     {
       "path": "docs/graphics-writeback-contract.md",

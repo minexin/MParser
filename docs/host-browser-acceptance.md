@@ -2,9 +2,62 @@
 
 This is a bounded desktop smoke check, not full browser, deployment or release
 acceptance. Production MExecServer/MExecClient sources and services were not
-modified. The captured runs below used development 1.15.0, ABI 2.10 (154 exports),
-not the later ABI 2.12 layout-environment SDK. Current SDK/REST tests do not
-replace these separate browser-pixel acceptance gates.
+modified. The latest export replay below uses ABI 2.13. The historical desktop
+check starting at Selected Pair used ABI 2.10 (154 exports), not the later
+layout-environment SDK. These evidence scopes must not be combined into a
+claim of full current-browser or release acceptance.
+
+## ABI 2.13 Browser PNG Replay
+
+On 2026-11-05, actual Tabbit interaction exercised the source-copy host at
+`build/clean-host-probe/38989fc5d01243869d276c8ba540df5d/build` against the
+installed 1.15.0 ABI 2.13 SDK. Its loaded DLL path and SHA256
+`C749ACFC0D0FD5128F2554D211A88E587FF2CDA72EA000877287ED98AE11D0F0`
+were verified from the running process. This invocation had no renderer port
+configured; the optional REST encoder from the separate H07 proof was absent.
+The isolated service listened on loopback port 6373 with a fresh file root.
+
+Evidence root:
+`build/browser-acceptance/9c7257347f924fd48c1337f0a61574f6`.
+`session.json` binds the executable, start time, DLL/hash and actual `/info`.
+Real command input created red and blue Figures. The selector chose the first
+red Figure while the kernel current Figure was the second blue one. Clicking
+the panel export button produced `figure (2).png`; selecting the blue Figure
+and clicking the ribbon export button produced `figure (3).png`.
+
+The native Tabbit download list identified both completed files from the
+isolated host. The user also confirmed the first file. Copied bytes were
+decoded and inspected, not inferred from Canvas pixels or a clicked button:
+
+| Download | Dimensions | Bytes | Red/Blue Dominant Pixels | SHA256 |
+| --- | --- | --- | --- | --- |
+| Red selected Figure | 1071 x 375 | 25983 | 1635 / 0 | `81fcca0f5f7079698f3fc06ce909ca3d54f1e9d837eb784ceeb77494589685c7` |
+| Blue selected Figure | 1071 x 375 | 26451 | 0 / 1704 | `3cfb124851949ce249b2809606f6acd8ac75900e493fbbaec07e81c64ea2d898` |
+
+`verified.json`, `download-red.png`, `download-blue.png` and the saved native
+download observations retain this proof. The lifecycle receipt asserts that
+hiding the current Figure selects the remaining visible Figure, hiding both
+and `close all` disable export, and creating a visible empty Figure re-enables
+it. It does not claim a separate empty-Figure download. A temporary controlled
+`toDataURL` failure displayed an error and dispatched zero download anchors;
+the original encoder was restored. This is fault injection, not a naturally
+occurring browser encoder failure.
+
+The real browser command `print('export-browser','-dpdf')` returned
+`MParser:GraphicsRendererUnavailable`; no corresponding session file existed.
+Final readback was graphics v4 with explicit host layout. `final-page.png`
+(913 x 887, SHA256
+`46a4d7cd9f9253059790d66fed4ff4edcb94452bc3decbb082cf6fbad3a4546c`)
+was inspected and shows the recreated Figure and the headless `print` error.
+It is one desktop view, not another responsive viewport matrix.
+
+Tabbit's API did not expose download events and rejected navigation to its
+internal download page. Native Ctrl+J and accessibility observations supplied
+the download confirmation; no internal browser database was read. The created
+test page was closed, the automation task finished without forced cleanup,
+and only the process with the verified executable/start time was stopped.
+Browser PNG is still a current-view download, not kernel `print`/`saveas`, a
+PDF download route, or production renderer adoption.
 
 ## Selected Pair
 

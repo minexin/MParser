@@ -25,7 +25,7 @@ success may substitute for missing kernel contracts.
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay; latest compact source-copy candidate closes the measured 390px cropping failure with five viewport checks; broader downstream acceptance remains open |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed; actual current-SDK repeated/cross-Axes Legend rename/delete/invalid preservation and compact layout passed bounded browser checks; UI editing, full native text/layout and deployment remain open |
-| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Real isolated MExecServer REST executes bounded PNG/vector PDF export through an opt-in renderer and its own session FileStore. Failure preservation, wrong bytes, root policy and session isolation checked. Default CLI/REST still refuse; production renderer, broader scene/file policy and browser downloads remain open. |
+| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Real isolated REST export writes bounded PNG/vector PDF through a renderer and session FileStore; failure/root/session controls pass. Separate actual ABI 2.13 Tabbit PNG downloads pass selected-Figure/pixel/lifecycle checks. Default CLI/REST still refuse; production renderer and broader scene/file/download policy remain open. |
 | H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | ABI 2.13 kernel/package 364/364, fresh installed-SDK MExecServer 67/67 and bounded REST export acceptance passed. Prior browser checks cover selected workflows, not full browser acceptance; CI for the exact revision, deployment and release remain separate gates. |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering and default-OFF actual Tabbit interaction/DOM passed; screenshot capture timed out; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see host-ordered-display-candidate.md |
@@ -78,6 +78,19 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 H07 current-SDK Tabbit follow-up: the same installed ABI 2.13
+  DLL/source-copy executable, with a new isolated root and no renderer port,
+  passed real command/selector/panel/ribbon workflows. Two actual native
+  downloads decode to 1071 x 375 PNGs with 1635 red/0 blue and 0 red/1704 blue
+  pixels. Hidden/closed Figure disablement, empty-Figure re-enable, and
+  recreation passed; a controlled encoder failure showed an error without a
+  download anchor. Browser `print` remained explicitly renderer-unavailable
+  with no server output file. Evidence:
+  `build/browser-acceptance/9c7257347f924fd48c1337f0a61574f6/verified.json`,
+  native observations, receipts and inspected `final-page.png`. See
+  host-browser-acceptance.md for exact hashes and evidence boundaries. Test
+  page and verified service were closed; original siblings/deployment remain
+  unchanged. No full browser matrix, PDF download or production adoption claim.
 - 2026-11-05 H07 installed-SDK MExecServer follow-up: isolated source copy
   with `-GraphicsExportPython` built 148 actions with warnings as errors and
   passed real REST export, default headless controls, existing dedicated

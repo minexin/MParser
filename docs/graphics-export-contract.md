@@ -123,4 +123,11 @@ read-only destination preserves the old PDF; a later writable invocation
 publishes different bytes. Missing layout and an unconfigured callback retain
 their failure paths. This is neither a binary download route nor a production
 renderer. Production MExecServer adoption, broader scene/file policy coverage,
-and actual browser download acceptance remain open.
+and broader browser download acceptance remain open.
+
+A separate current-SDK [Tabbit PNG replay](host-browser-acceptance.md#abi-213-browser-png-replay)
+verified two actual current-view downloads and selected-Figure pixels, hidden/
+closed/recreated Figure button states, and a controlled encoding failure. It
+also verified that the same browser still receives an explicit headless error
+for `print`. This does not turn the browser's PNG button into a kernel renderer
+or provide a browser PDF download route.
