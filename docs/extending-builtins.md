@@ -288,7 +288,7 @@ contract change and reviewed against the v1.0 roadmap before implementation.
 ## Source Contract Version
 
 `kBuiltinSourceContractMajor` and `kBuiltinSourceContractMinor` currently
-identify active source contract 1.22. Contract 1.0 established
+identify active source contract 1.23. Contract 1.0 established
 registration/freeze rules, descriptor meaning, call/result behavior,
 ownership, diagnostics, context, threading, resource cooperation, and
 typed-lowering eligibility. It does not promise a C++ binary ABI or stable

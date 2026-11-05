@@ -59,12 +59,14 @@ RuntimeExecutionControl::RuntimeExecutionControl(
     RuntimeExecutionLimits limits,
     std::optional<RuntimeCancellationToken> cancellation,
     std::shared_ptr<RuntimeDebugger> debugger,
-    RuntimeInputSource inputSource, RuntimeConsoleSink consoleSink)
+    RuntimeInputSource inputSource, RuntimeConsoleSink consoleSink,
+    std::shared_ptr<const RuntimeGraphicsExportAdapter> graphicsExport)
     : limits_(limits),
       cancellation_(std::move(cancellation)),
       debugger_(std::move(debugger)),
       inputSource_(std::move(inputSource)),
       consoleSink_(std::move(consoleSink)),
+      graphicsExport_(std::move(graphicsExport)),
       startedAt_(std::chrono::steady_clock::now()) {}
 
 bool RuntimeExecutionControl::consoleStreaming() const noexcept {

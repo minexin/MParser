@@ -76,6 +76,7 @@ public:
     void setLayoutEnvironment(RuntimeGraphicsId figure, RuntimeGraphicsLayoutEnvironment environment);
     std::optional<RuntimeGraphicsLayoutEnvironment> layoutEnvironment(RuntimeGraphicsId figure) const;
     RuntimeGraphicsId currentFigure();
+    std::optional<RuntimeGraphicsId> existingCurrentFigure() const;
     RuntimeGraphicsId currentAxes();
     void selectFigure(RuntimeGraphicsId id);
     void selectAxes(RuntimeGraphicsId id);

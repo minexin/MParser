@@ -20,6 +20,11 @@ The definition-navigation candidate uses the server's explicit compile
 capabilities and compiler ranges. See [the navigation guide](../../docs/host-definition-navigation-candidate.md)
 for application order, browser checks and remaining boundaries.
 
+The clean-host probe also enables `-GraphicsExportContract`: validate the
+headless Figure target and PNG/PDF request policy over real REST, verify the
+scene stays unchanged and no files are created or overwritten. This is not
+renderer adoption; see [the export contract](../../docs/graphics-export-contract.md).
+
 This patch is an opt-in integration candidate, not a deployed server update.
 Apply it to a separate MExecServer source checkout after checking the diff:
 

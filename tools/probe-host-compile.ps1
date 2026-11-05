@@ -7,6 +7,7 @@ param(
     [switch]$ContextualIdentifiers,
     [switch]$CompileDiagnostics,
     [switch]$GraphicsColors,
+    [switch]$GraphicsExportContract,
     [string]$ExpectedProductVersion
 )
 $ErrorActionPreference = 'Stop'
@@ -299,6 +300,42 @@ try {
             if ($result.status -ne 'runtime-failed' -or $result.diagnostics[0].identifier -ne ('MParser:' + $case.id) -or
                 (Get-FileHash -LiteralPath $sentinel).Hash -ne $hash) { throw "Unexpected export result: $($case.name); see $root" }
             Write-Output "graphics/export/$($case.name): $($result.diagnostics[0].identifier)"
+        }
+        if ($GraphicsExportContract) {
+            $graphBefore = $graph | ConvertTo-Json -Depth 64 -Compress
+            $noExtension = Join-Path $workspace 'export_normalized'
+            $relative = $noExtension.Replace('\','/').Replace("'","''")
+            foreach ($case in @(
+                @{name='implicit'; cmd="print('$relative','-dpng');"; id='GraphicsRendererUnavailable'},
+                @{name='parent_axes'; cmd="saveas(gca(),'$q');"; id='GraphicsRendererUnavailable'},
+                @{name='parent_line'; cmd="saveas(fresh(1),'$relative','png');"; id='GraphicsRendererUnavailable'},
+                @{name='mismatch'; cmd="print(gcf(),'$q','-dpng');"; id='GraphicsExportExtensionMismatch'},
+                @{name='array'; cmd="saveas(fresh,'$q');"; id='InvalidExportFigure'},
+                @{name='unknown_extension'; cmd="saveas(gcf(),'$relative.xyz','png');"; id='GraphicsExportExtensionMismatch'},
+                @{name='default_fig'; cmd="saveas(gcf(),'$relative');"; id='UnsupportedExportFormat'},
+                @{name='directory'; cmd="saveas(gcf(),'$relative/','png');"; id='InvalidGraphicsExport'}
+            )) {
+                $response = Invoke-WebRequest "$base/sessions/$($gs.id)/execute" -UseBasicParsing -Method Post -ContentType 'application/json' -Body (@{command=$case.cmd} | ConvertTo-Json)
+                [IO.File]::WriteAllText((Join-Path $root ("graphics_export_contract_" + $case.name + '.json')), [string]$response.Content)
+                $result = $response.Content | ConvertFrom-Json
+                if ($result.status -ne 'runtime-failed' -or $result.diagnostics[0].identifier -ne ('MParser:' + $case.id) -or
+                    ($result.graphics | ConvertTo-Json -Depth 64 -Compress) -cne $graphBefore -or
+                    (Get-FileHash -LiteralPath $sentinel).Hash -ne $hash -or
+                    @(Get-ChildItem -LiteralPath $workspace -Filter 'export_normalized*').Count -ne 0) {
+                    throw "Export contract changed graphics or files: $($case.name); see $root"
+                }
+                Write-Output "graphics/export-contract/$($case.name): $($result.diagnostics[0].identifier)"
+            }
+            $emptySession = Invoke-RestMethod "$base/sessions" -Method Post -ContentType 'application/json' -Body '{"name":"empty-export-probe"}'
+            $emptyResult = Invoke-WebRequest "$base/sessions/$($emptySession.id)/execute" -UseBasicParsing -Method Post -ContentType 'application/json' -Body (@{command="print('$relative','-dpng');"} | ConvertTo-Json)
+            [IO.File]::WriteAllText((Join-Path $root 'graphics_export_contract_no_current.json'), [string]$emptyResult.Content)
+            $empty = $emptyResult.Content | ConvertFrom-Json
+            if ($empty.status -ne 'runtime-failed' -or $empty.diagnostics[0].identifier -ne 'MParser:InvalidExportFigure' -or
+                $empty.graphics.schema -ne 'mparser.graphics' -or $empty.graphics.objects.Count -ne 0 -or
+                @(Get-ChildItem -LiteralPath $workspace -Filter 'export_normalized*').Count -ne 0) {
+                throw "Implicit print created a figure or file; see $root"
+            }
+            Write-Output 'graphics/export-contract/no_current: empty graph preserved'
         }
         if ($GraphicsV3) {
             function Invoke-IdentityProbe([string]$sessionId, [string]$name, [string]$command) {

@@ -17,6 +17,7 @@ class RuntimeDebugger;
 class RuntimeConsoleCaptureScope;
 class RuntimeEventJournal;
 class RuntimeEventJournalScope;
+class RuntimeGraphicsExportAdapter;
 
 using RuntimeConsoleSink = std::function<bool(std::string_view)>;
 
@@ -76,7 +77,8 @@ public:
             std::nullopt,
         std::shared_ptr<RuntimeDebugger> debugger = {},
         RuntimeInputSource inputSource = {},
-        RuntimeConsoleSink consoleSink = {});
+        RuntimeConsoleSink consoleSink = {},
+        std::shared_ptr<const RuntimeGraphicsExportAdapter> graphicsExport = {});
 
     RuntimeInputResult readInput(const RuntimeInputRequest& request);
     bool consoleStreaming() const noexcept;
@@ -84,6 +86,7 @@ public:
     size_t consoleCaptureDepth() const noexcept { return consoleCaptureDepth_; }
     const std::shared_ptr<RuntimeEventJournal>& eventJournal() const noexcept { return eventJournal_; }
     bool emitConsole(std::string_view text) const;
+    const RuntimeGraphicsExportAdapter* graphicsExport() const noexcept { return graphicsExport_.get(); }
 
     RuntimeDebugger* debugger() const noexcept;
     void stopFromDebugger() noexcept;
@@ -115,6 +118,7 @@ private:
     std::shared_ptr<RuntimeDebugger> debugger_;
     RuntimeInputSource inputSource_;
     RuntimeConsoleSink consoleSink_;
+    std::shared_ptr<const RuntimeGraphicsExportAdapter> graphicsExport_;
     size_t consoleCaptureDepth_ = 0;
     bool inputActive_ = false;
     std::chrono::steady_clock::time_point startedAt_;

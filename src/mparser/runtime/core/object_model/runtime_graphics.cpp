@@ -240,14 +240,22 @@ RuntimeGraphicsId RuntimeGraphicsGraph::create(RuntimeGraphicsKind kind,
 
 RuntimeGraphicsId RuntimeGraphicsGraph::currentFigure() {
     const auto guard = lock();
+    if (const auto id = existingCurrentFigure()) {
+        currentFigure_ = id;
+        return *id;
+    }
+    return create(RuntimeGraphicsKind::Figure);
+}
+
+std::optional<RuntimeGraphicsId> RuntimeGraphicsGraph::existingCurrentFigure() const {
+    const auto guard = lock();
     if (currentFigure_ && find(*currentFigure_)) { return *currentFigure_; }
     for (auto iterator = nodes_.rbegin(); iterator != nodes_.rend(); ++iterator) {
         if (iterator->second.kind == RuntimeGraphicsKind::Figure) {
-            currentFigure_ = iterator->first;
-            return *currentFigure_;
+            return iterator->first;
         }
     }
-    return create(RuntimeGraphicsKind::Figure);
+    return std::nullopt;
 }
 
 RuntimeGraphicsId RuntimeGraphicsGraph::currentAxes() {

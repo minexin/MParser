@@ -23,11 +23,13 @@
 #include "mparser/runtime/core/value/runtime_numeric.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/object_model/runtime_graphics.h"
+#include "mparser/runtime/core/object_model/runtime_graphics_export.h"
 #include "mparser/runtime/core/value/runtime_categorical.h"
 #include "mparser/runtime/core/value/runtime_shape.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value_ops.h"
 #include "mparser/runtime/core/session/runtime_warning.h"
+#include "mparser/runtime/core/session/runtime_execution_control.h"
 
 #include <algorithm>
 #include <exception>
@@ -2249,6 +2251,83 @@ BuiltinDescriptor timetableDescriptor(std::string_view name) {
     return descriptor;
 }
 
+BuiltinResult exportGraphics(const BuiltinCall& call, bool print) {
+    const auto fail = [&](const char* message, const char* identifier) {
+        return BuiltinResult::failure(call.span, std::string(print ? "print: " : "saveas: ") + message, identifier);
+    };
+    const auto& args = call.arguments;
+    const bool implicit = print && args.size() == 2 && runtimeTextScalarUtf8(args[0]).has_value();
+    auto path = runtimeTextScalarUtf8(args[implicit ? 0 : 1]);
+    if (!path || path->empty() || std::any_of(path->begin(), path->end(), [](unsigned char c) { return c < 32 || c == 127; })) {
+        return fail("expected a nonempty file path without control characters", "MParser:InvalidGraphicsExport");
+    }
+    const auto separator = path->find_last_of("/\\");
+    const std::string_view filename = std::string_view(*path).substr(separator == std::string::npos ? 0 : separator + 1);
+    if (filename.empty() || filename.back() == '.' || filename.back() == ' ' ||
+        (print && filename.front() == '-')) {
+        return fail("expected a file name, not a directory or option", "MParser:InvalidGraphicsExport");
+    }
+    const auto dot = filename.rfind('.');
+    const auto extension = dot == std::string_view::npos ? std::string_view{} : filename.substr(dot);
+    const auto option = (implicit || args.size() == 3) ? runtimeTextScalarUtf8(args.back()) : std::nullopt;
+    std::optional<RuntimeGraphicsExportFormat> format;
+    if (option) {
+        if (*option == (print ? "-dpng" : "png")) { format = RuntimeGraphicsExportFormat::Png; }
+        if (*option == (print ? "-dpdf" : "pdf")) { format = RuntimeGraphicsExportFormat::Pdf; }
+    } else if (!print && args.size() == 2) {
+        if (extension == ".png") { format = RuntimeGraphicsExportFormat::Png; }
+        if (extension == ".pdf") { format = RuntimeGraphicsExportFormat::Pdf; }
+    }
+    if (!format) {
+        return fail("expected a supported PNG or PDF format or device", "MParser:UnsupportedExportFormat");
+    }
+    const std::string_view expectedExtension = *format == RuntimeGraphicsExportFormat::Png ? ".png" : ".pdf";
+    if (!extension.empty() && extension != expectedExtension) {
+        return fail("file extension conflicts with the selected format", "MParser:GraphicsExportExtensionMismatch");
+    }
+    if (extension.empty()) { path->append(expectedExtension); }
+
+    const auto& graph = *call.context->graphicsGraph;
+    auto* control = call.context->executionControl;
+    const auto* adapter = control ? control->graphicsExport() : nullptr;
+    RuntimeGraphicsExportRequest request{*format, std::move(*path), 0, {}};
+    {
+        const auto guard = graph.lock();
+        const RuntimeGraphicsNode* node = nullptr;
+        if (implicit) {
+            if (const auto id = graph.existingCurrentFigure()) { node = graph.find(*id); }
+            if (!node) { return fail("there is no current Figure", "MParser:InvalidExportFigure"); }
+        } else {
+            const auto& handle = args.front().graphicsHandle;
+            if (handle && handle->belongsTo(graph)) { node = graph.find(handle->id()); }
+            while (!print && node && node->parent) { node = graph.find(*node->parent); }
+            if (!node || node->kind != RuntimeGraphicsKind::Figure) {
+                return fail(print ? "expected a live scalar Figure" : "expected a live scalar graphics object with an owning Figure",
+                            "MParser:InvalidExportFigure");
+            }
+        }
+        if (!adapter) { return fail("no graphics export renderer is available", "MParser:GraphicsRendererUnavailable"); }
+        request.figureIdentity = node->id;
+        request.sceneJson = graph.serialize(true, false, true);
+    }
+    if (!control->checkpoint()) { return fail("export cancelled before rendering", "MParser:GraphicsExportCancelled"); }
+    try {
+        switch (adapter->write(request)) {
+        case RuntimeGraphicsExportStatus::Written: return BuiltinResult::success({});
+        case RuntimeGraphicsExportStatus::UnsupportedFormat:
+            return fail("renderer does not support the selected format", "MParser:UnsupportedExportFormat");
+        case RuntimeGraphicsExportStatus::DestinationRejected:
+            return fail("renderer rejected the export destination", "MParser:GraphicsExportDestinationRejected");
+        case RuntimeGraphicsExportStatus::Failed: break;
+        }
+    } catch (const std::bad_alloc&) {
+        throw;
+    } catch (...) {
+        return fail("graphics export renderer raised an exception", "MParser:GraphicsExportFailed");
+    }
+    return fail("graphics export did not complete", "MParser:GraphicsExportFailed");
+}
+
 BuiltinDescriptor descriptorFor(std::string_view name) {
     if (name == "isvarname" || name == "iskeyword" || name == "namelengthmax") {
         return identifierDescriptor(name);
@@ -2364,34 +2443,14 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
         descriptor.outputs = BuiltinArity::range(0, 0);
         descriptor.implementation = BuiltinImplementationKind::Context;
         descriptor.purity = BuiltinPurity::Impure;
-        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics | BuiltinContextPermission::ExecutionControl;
         descriptor.requiredContext = BuiltinContextPermission::Graphics;
+        descriptor.sideEffects = BuiltinSideEffect::External;
         descriptor.errorIdentifier = "MParser:InvalidGraphicsExport";
-        descriptor.summary = "Validate a Figure file export; headless execution has no export renderer.";
+        descriptor.summary = "Resolve and validate a PNG/PDF Figure export; a host renderer must write the file.";
         descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
-        descriptor.handler = [name = std::string(name)](const BuiltinCall& call) {
-            const auto graph = call.context->graphicsGraph;
-            const auto guard = graph->lock();
-            const auto& figure = call.arguments[0].graphicsHandle;
-            if (!figure || !figure->belongsTo(*graph) || !figure->valid() || figure->kind() != RuntimeGraphicsKind::Figure) {
-                return BuiltinResult::failure(call.span, name + ": expected a live scalar Figure", "MParser:InvalidExportFigure");
-            }
-            const auto path = runtimeTextScalarUtf8(call.arguments[1]);
-            if (!path || path->empty() || path->find('\0') != std::string::npos ||
-                path->back() == '/' || path->back() == '\\') {
-                return BuiltinResult::failure(call.span, name + ": expected a nonempty file path", "MParser:InvalidGraphicsExport");
-            }
-            if (call.arguments.size() == 3) {
-                const auto format = runtimeTextScalarUtf8(call.arguments[2]);
-                const bool known = name == "print" ? (format == "-dpdf" || format == "-dpng") :
-                    (format == "pdf" || format == "png");
-                if (!known) {
-                    return BuiltinResult::failure(call.span, name + ": unsupported export format or device", "MParser:UnsupportedExportFormat");
-                }
-            } else if (name == "print" || !(path->ends_with(".png") || path->ends_with(".pdf"))) {
-                return BuiltinResult::failure(call.span, name + ": expected a PNG or PDF format or device", "MParser:UnsupportedExportFormat");
-            }
-            return BuiltinResult::failure(call.span, name + ": no graphics export renderer is available", "MParser:GraphicsRendererUnavailable");
+        descriptor.handler = [print = name == "print"](const BuiltinCall& call) {
+            return exportGraphics(call, print);
         };
         return descriptor;
     }

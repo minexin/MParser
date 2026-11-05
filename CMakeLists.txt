@@ -2550,10 +2550,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.22/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.23/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.22 catalog validated: 356 descriptors")
+        "builtin source contract 1.23 catalog validated: 356 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2965,6 +2965,11 @@ set_tests_properties(graphics_identity_api_smoke PROPERTIES TIMEOUT 60 LABELS ho
 target_link_libraries(graphics_api_smoke_tests PRIVATE mparser_cpp_api Threads::Threads)
 target_include_directories(graphics_api_smoke_tests PRIVATE third_party/nlohmann_json/include)
 add_test(NAME graphics_api_smoke COMMAND graphics_api_smoke_tests)
+add_executable(graphics_export_smoke_tests tests/graphics_export_smoke.cpp)
+target_link_libraries(graphics_export_smoke_tests PRIVATE mparser_core)
+target_include_directories(graphics_export_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME graphics_export_smoke COMMAND graphics_export_smoke_tests)
+set_tests_properties(graphics_export_smoke PROPERTIES LABELS host-integration TIMEOUT 30)
 set_tests_properties(graphics_api_smoke PROPERTIES TIMEOUT 30)
 add_executable(graphics_color_smoke_tests tests/graphics_color_smoke.cpp)
 add_executable(legend_state_smoke_tests tests/legend_state_smoke.cpp)
@@ -3451,6 +3456,7 @@ install(FILES
     docs/graphics-color-contract.md
     docs/graphics-colon-contract.md
     docs/graphics-legend-contract.md
+    docs/graphics-export-contract.md
     docs/graphics-writeback-contract.md
     docs/axes-layout-development.md
     docs/host-canvas-layout-candidate.md
@@ -3508,11 +3514,11 @@ install(FILES
     docs/v1.x-host-requirement-audit.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
-    tests/public_contract/builtin/1.22/default_catalog.json
+    tests/public_contract/builtin/1.23/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 foreach(mparser_builtin_contract_version IN ITEMS
         1.0 1.1 1.3 1.4 1.5 1.6 1.7 1.8 1.9 1.10
-        1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18 1.19 1.20 1.21 1.22)
+        1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18 1.19 1.20 1.21 1.22 1.23)
     install(FILES
         "tests/public_contract/builtin/${mparser_builtin_contract_version}/default_catalog.json"
         DESTINATION

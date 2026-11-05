@@ -36,6 +36,8 @@ mparser --run --result-format=json-v1 script.m
 - [Superclass Reflection](superclasses.md): visible ancestor queries in v1.12.
 - [Graphics Object Model](graphics-object-model.md): headless object
   semantics, deterministic serialization, and the separate rendering boundary.
+- [Figure File Export](graphics-export-contract.md): validated PNG/PDF requests
+  and the headless renderer boundary.
 - [C Embedding API](embedding-c-api.md): current development C source API
   1.15.0 over ABI generation 2 revision 12, with opaque handles, values, sessions, diagnostics,
   cancellation, limits, and shared Runtime ownership.
@@ -58,7 +60,7 @@ Installed CMake targets are `MParser::c_api`, `MParser::cpp_api`, and
 ## Extend The Runtime
 
 - [Extending Builtins](extending-builtins.md): current builtin source
-  contract 1.22 plus archived contracts, descriptor rules, registry
+  contract 1.23 plus archived contracts, descriptor rules, registry
   behavior, ownership, threading, resources, and conformance tests.
 - [Architecture](architecture.md): Lexer to Parser to semantic HIR to
   verified bytecode to VM/typed/native execution.
@@ -124,7 +126,7 @@ adds pause-event evaluation and conditional breakpoints at ABI 2.4, plus source
 breakpoint commands at builtin contract 1.19. The [V1.14 baseline](v1.14.md) adds
 headless graphics snapshots at ABI 2.5, protocol 1.2 and builtin contract 1.20,
 without mutating the historical snapshots. Current [V1.15 development](v1.15.md)
-uses ABI 2.12 and builtin 1.22 for host integration. See
+uses ABI 2.12 and builtin 1.23 for host integration. See
 [Interactive Script Input](interactive-input.md), [v1.12](v1.12.md), and
 [Debugging Through The SDK](debugging-sdk.md). The v1.3
 implementation train originally closed with 1.10; 1.11 added the guarded `sum`

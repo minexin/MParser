@@ -19,10 +19,17 @@ int main() {
             const std::pair<const char*, const char*> cases[] = {
                 {"print(gcf(),'unused.pdf','-dpdf');", "MParser:GraphicsRendererUnavailable"},
                 {"saveas(gcf(),'unused.png');", "MParser:GraphicsRendererUnavailable"},
-                {"saveas(gca(),'unused.pdf');", "MParser:InvalidExportFigure"},
+                {"saveas(gca(),'unused.pdf');", "MParser:GraphicsRendererUnavailable"},
+                {"l=plot(1:3); saveas(l,'unused','png');", "MParser:GraphicsRendererUnavailable"},
+                {"print(gca(),'unused.pdf','-dpdf');", "MParser:InvalidExportFigure"},
+                {"print('unused','-dpng');", "MParser:InvalidExportFigure"},
+                {"f=figure; print('unused','-dpng');", "MParser:GraphicsRendererUnavailable"},
                 {"f=figure(); delete(f); saveas(f,'unused.pdf');", "MParser:InvalidExportFigure"},
                 {"saveas(gcf(),'','pdf');", "MParser:InvalidGraphicsExport"},
                 {"print(gcf(),'unused.pdf','-dunknown');", "MParser:UnsupportedExportFormat"},
+                {"print(gcf(),'unused.pdf','-dpng');", "MParser:GraphicsExportExtensionMismatch"},
+                {"saveas(gcf(),'unused.png','pdf');", "MParser:GraphicsExportExtensionMismatch"},
+                {"saveas(gcf(),'unused');", "MParser:UnsupportedExportFormat"},
                 {"saveas(gcf(),'unused.xyz');", "MParser:UnsupportedExportFormat"}
             };
             for (const auto& [source, identifier] : cases) {

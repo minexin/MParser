@@ -25,7 +25,7 @@ success may substitute for missing kernel contracts.
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay; latest compact source-copy candidate closes the measured 390px cropping failure with five viewport checks; broader downstream acceptance remains open |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed; actual current-SDK repeated/cross-Axes Legend rename/delete/invalid preservation and compact layout passed bounded browser checks; UI editing, full native text/layout and deployment remain open |
-| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
+| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 resolves owning/current Figure, rejects suffix conflicts and defines a frozen internal adapter request. Headless SDK/REST remain explicitly unsupported without a renderer. Public adapter registration, encoding and rooted commit remain open. |
 | H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 362/362, installed-SDK host/80-case Legend REST/67 regressions and bounded compatibility controls passed; current-SDK compact/Legend browser evidence is bounded; actual-commit CI, deployment and release acceptance remain separate gates |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering and default-OFF actual Tabbit interaction/DOM passed; screenshot capture timed out; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see host-ordered-display-candidate.md |
@@ -78,6 +78,23 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 H07 request/adapter follow-up: 21 installed R2024b assertions
+  distinguish explicit and current targets, parent Figure lookup, actual file
+  signatures and suffix behavior. MParser intentionally rejects mismatched
+  suffixes. The new internal adapter receives the exact selected Figure and
+  frozen v4 scene without a graph lock; headless SDK paths do not write files.
+  See graphics-export-contract.md for coverage and the remaining public
+  registration, renderer, rooted file publication and deployment gates.
+  Rebuilt kernel/package regression: 363/363 in 153.77 seconds at
+  build/graphics-export-full-test.log. Fresh installed-SDK host stage
+  build/clean-host-probe/2d7fd2a3b60e4e1f87c49e1cb336ca4d passed 148 build
+  actions, REST/client checks and 67/67 in 22.26 seconds. Nine added REST
+  cases preserve the scene and file bytes (including an empty graph on
+  implicit print); aggregate log: build/graphics-export-clean-host.log.
+  Loaded DLL SHA256:
+  A7EFE860221ACD1EFB4D8F6FBB87FF6C0E3EE68D80EA860120CFDEA8733550E6.
+  No original host source or service was changed; no new browser/encoder
+  acceptance is claimed.
 - 2026-11-05 H03 navigation candidate: current-document and selected-open-graph
   checks consume exact kernel ranges and explicit class ownership. Actual Tabbit
   verifies cross-document selection, CRLF/UTF-8, stale edit/undo rejection and

@@ -91,7 +91,7 @@ node (Join-Path $PSScriptRoot 'test-client-layout-rest.cjs') (Join-Path $build '
     $clientSource (Join-Path $stage 'client-layout-rest-probe')
 if ($LASTEXITCODE) { throw "Client layout REST probe failed; see $stage" }
 & (Join-Path $repo 'tools/probe-host-compile.ps1') -ServerExe (Join-Path $build 'mexec_server.exe') `
-    -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -GraphicsColors -ExpectedProductVersion '1.15.0' |
+    -KernelDll (Join-Path $sdk 'bin/mparser_c.dll') -GraphicsV3 -DefinitionMetadata -ContextualIdentifiers -CompileDiagnostics -GraphicsColors -GraphicsExportContract -ExpectedProductVersion '1.15.0' |
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')
 foreach ($test in @('test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs','test-client-colors.cjs',
     'test-client-runtime-identity.cjs','test-client-axes-layout.cjs','test-client-layout-bootstrap.cjs',
