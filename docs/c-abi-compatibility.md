@@ -8,7 +8,7 @@ The embedding boundary has an independent technical contract level:
 
 - C source API: `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH == 1/15/0`;
 - C ABI generation: `MPARSER_C_ABI_GENERATION == 2`;
-- active C ABI revision: `MPARSER_C_ABI_REVISION == 10`;
+- active C ABI revision: `MPARSER_C_ABI_REVISION == 13`;
 - shared-library full version: `1.15.0`, with SOVERSION/install-name generation
   `2`.
 
@@ -45,11 +45,15 @@ and an optional invocation tail pointer. Old caller-sized prefixes retain
 their meaning. Event records borrow immutable result storage; C++ accessors
 return owning copies. See [ordered events](ordered-display-events.md).
 
-## Development Policy
-
 Revision 10 adds `mparser_module_compile_source_graph`, for 154 exports. Its
 pointer array contains caller-sized graph units with explicit class-method
 ownership. Existing source-unit arrays and compile entry points are unchanged.
+Revision 11 adds current-runtime graphics snapshots, identity lookup and
+property writes (157 exports). Revision 12 adds the host layout-environment
+setter (158 exports). Revision 13 adds the optional renderer callback to the
+invocation tail without changing the export set.
+
+## Development Policy
 
 The project is not yet using the v1.3 SDK in production. Current headers,
 implementation, in-repository callers, tests, examples, and documentation move
@@ -78,8 +82,9 @@ The current ABI-generation library names are:
 - Windows: `mparser_c.dll` plus its import library.
 
 Internal compiler, VM, C++ facade, and SLJIT symbols have hidden visibility.
-The current revision-4 public export set is the 138-name manifest in
-`tests/c_api_generation2_revision4_symbols.txt`. Revision 3 retains its
+The current revision-13 public export set is the 158-name manifest in
+`tests/c_api_generation2_revision13_symbols.txt`. The revision-4 138-name
+manifest remains `tests/c_api_generation2_revision4_symbols.txt`. Revision 3 retains its
 134-name manifest in `tests/c_api_generation2_revision3_symbols.txt`. Revision 2 retains its
 124-name manifest in `tests/c_api_generation2_revision2_symbols.txt`. The v1.3 revision-1
 117-name manifest remains `tests/c_api_generation2_revision1_symbols.txt`,

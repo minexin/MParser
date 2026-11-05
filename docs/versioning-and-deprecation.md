@@ -51,7 +51,7 @@ separate execution products.
 
 `MPARSER_C_API_VERSION_MAJOR/MINOR/PATCH` report source API `1.15.0`.
 `MPARSER_C_ABI_GENERATION` contains generation `2`, and
-the active header's `MPARSER_C_ABI_REVISION` contains revision `8`.
+the active header's `MPARSER_C_ABI_REVISION` contains revision `13` (158 exports).
 `mparser_c_abi_generation()` and `mparser_c_abi_revision()` expose the same
 binary compatibility identifiers at runtime. The generation terminology is
 deliberately distinct from the MParser product version and source API.
@@ -74,8 +74,12 @@ snapshots are archive evidence, not live header inputs.
 The v1.15 development work adds identifier/definition accessors (revision 6,
 144 exports) and version-selectable value/result graphics snapshots (revision
 7, 146 exports), then authoritative SystemContext path access/replacement
-(revision 8, 148 exports). Current installed contract metadata points to the explicit
-development manifest; the v1.14 manifest and its hashes remain immutable.
+(revision 8, 148 exports). Later additive revisions expose opt-in ordered
+events (9), explicit source-graph method ownership (10), identity-targeted
+graphics access and writeback (11), host layout environments (12), and an
+optional renderer callback (13). Current installed contract metadata points
+to the [development manifest](host-integration-contract-development.json);
+the v1.14 manifest and its hashes remain immutable.
 
 Repository consumers move with unreleased development headers. An incompatible
 binary change advances the generation; an additive change within a frozen

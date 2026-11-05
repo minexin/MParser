@@ -346,7 +346,7 @@ Lifecycle and concurrency stress covers pure calls, shared handle mutation,
 same and independent sessions, cross-session escaped objects, shared Runtime
 closures/objects/state, reentrant callbacks, shared cancellation, isolated
 limits, and concurrent retain/release. The current development library
-contract is ABI generation 2 revision 8 with an exact 148-symbol manifest;
+contract is ABI generation 2 revision 13 with an exact 158-symbol manifest;
 the v1.3 revision-1 117-symbol boundary and archived v1.2 revision-0 109-symbol
 boundary remain immutable evidence. The C++ facade remains header-only rather
 than a C++ binary ABI.

@@ -29,14 +29,14 @@ success may substitute for missing kernel contracts.
 
 | ID | Work | Acceptance | State |
 | --- | --- | --- | --- |
-| H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated host compile-only/execute diagnostic propagation verified, including preservation with clear_workspace=true; deployed host unchanged |
-| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and 90-case R2024b source-context corpus passed. Original development host now adopts revision-checked rename API; rename UI and production rollout remain separate. |
-| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | SDK/REST explicit method ownership and current isolated browser navigation passed for selected open documents, including repeated nested names, external declaration/implementation and edit/undo freshness. Screenshot and production adoption remain open. |
+| H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated/deployed loopback REST compile/execute diagnostic propagation verified; invalid execution with clear_workspace=true preserves variables and graphics. |
+| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and 90-case R2024b source-context corpus passed. Deployed loopback REST confirms kernel rejection reasons, contextual rename, stale-revision and no-execution controls. Rename UI and production rollout remain separate. |
+| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | Deployed REST confirms UTF-8/CRLF, repeated nested names and explicit external-method ownership. Deployed Tabbit verifies single-document navigation and edit/undo freshness; selected-open-document browser coverage remains the isolated run. |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
-| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay; latest compact source-copy candidate closes the measured 390px cropping failure with five viewport checks; broader downstream acceptance remains open |
-| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed; actual current-SDK repeated/cross-Axes Legend rename/delete/invalid preservation and compact layout passed bounded browser checks; UI editing, full native text/layout and deployment remain open |
+| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay. Deployed Tabbit verifies two matrix columns, no overflow at 390px, and close/recreate with stale-handle rejection. Broader downstream acceptance remains open. |
+| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed. Deployed Tabbit confirms Legend rename, retained Line identities and per-Line clipping pixels. A v4/v3 snapshot transition can still reset the selected Figure; full native text/layout and UI property editing remain open. |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Real isolated REST export writes bounded PNG/vector PDF through a renderer and session FileStore; failure/root/session controls pass. Separate actual ABI 2.13 Tabbit PNG downloads pass selected-Figure/pixel/lifecycle checks. Default CLI/REST still refuse; production renderer and broader scene/file/download policy remain open. |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | ABI 2.13 kernel/package 364/364, original-source development host 85/85 and fresh source-copy 85/85 passed, with adopted client/SDK assets verified. Prior browser checks cover selected workflows, not full browser acceptance; CI for the exact revision, production rollout and release remain separate gates. |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 364/364 and host 85/85 locally; exact locked private GitHub host run 85/85, independent frontend four lanes passed. Local deployment and bounded Tabbit checks are verified; the selection issue, broader browser acceptance and formal 1.15.0 publication remain open. |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering and default-OFF actual Tabbit interaction/DOM passed; screenshot capture timed out; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see host-ordered-display-candidate.md |
 
@@ -50,6 +50,20 @@ and the submitted source names. Execution was null and the workspace remained
 empty for all three requests. Raw responses for the assertion-enabled run:
 `build/host-compile-probe/c2fa4d0bcfab44b6834dffbae2627ef6`. This tests
 the isolated host/kernel pair, not an installed release or browser UI.
+
+The deployed local 1.15.0/ABI 2.13 pair was separately checked on
+2026-11-05. Empty RHS and reserved LHS are rejected at line 2 column 2 and
+line 1 column 1 respectively; a valid assignment compiles. For both invalid
+execute requests, execution stayed null and the pre-existing variable and
+plot in the temporary session were unchanged even with clear_workspace=true.
+Raw responses: `build/deployed-compile-audit-20261105/verified.json`.
+
+H02/H03 deployed REST evidence: `build/deployed-names-definitions-20261105-1U5LnA`
+retains the completed rename assertions in the initial mixed probe and the
+passing `definition-contract-confirmed.json` replay. Invalid names did not
+change the workspace; an accepted contextual name retained the value and
+did not execute source. Both definition graphs were detached from the
+session and preserved workspace, run count and graphics.
 
 ## Delivery Gates
 
@@ -88,6 +102,14 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 hosted integration follow-up: independently verified the client
+  four-lane run and the exact locked backend 85/85 run. Fixed the CMake 4
+  vendor policy compatibility, stdin UTF-8 BOM handling and the obsolete
+  Windows PowerShell random probe. [Source adoption](host-source-adoption.md#github-actions)
+  records revisions and reports. The deployed original pair passed the
+  bounded REST and Tabbit follow-ups; [browser evidence](host-browser-acceptance.md#deployed-loopback-replay)
+  distinguishes the reproduced selection regression from the successful
+  renderer-unavailable contract. No service replacement or release was made.
 - 2026-11-05 host workflow/deployment follow-up: user replaced local-only patch
   retention with two private repositories. Remote main commits are verified:
   MExecServer `00682e1350eb4caa02d756a85bfb3d7254610707`, MExecClient

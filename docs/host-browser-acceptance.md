@@ -1,11 +1,10 @@
-# Isolated Browser Acceptance
+# Browser Acceptance
 
-This is a bounded desktop smoke check, not full browser, deployment or release
-acceptance. Production MExecServer/MExecClient sources and services were not
-modified. The latest export replay below uses ABI 2.13. The historical desktop
-check starting at Selected Pair used ABI 2.10 (154 exports), not the later
-layout-environment SDK. These evidence scopes must not be combined into a
-claim of full current-browser or release acceptance.
+These are bounded checks of separately identified host/client pairs, not
+full browser, production or release acceptance. The ABI 2.13 PNG download
+replay is isolated; the deployed loopback replay does not install a renderer.
+The historical desktop check starting at Selected Pair used ABI 2.10
+(154 exports), not the later layout-environment SDK.
 
 ## ABI 2.13 Browser PNG Replay
 
@@ -58,6 +57,43 @@ test page was closed, the automation task finished without forced cleanup,
 and only the process with the verified executable/start time was stopped.
 Browser PNG is still a current-view download, not kernel `print`/`saveas`, a
 PDF download route, or production renderer adoption.
+
+## Deployed Loopback Replay
+
+On 2026-11-05, Tabbit used a new temporary session on the original-source
+1.15.0/ABI 2.13 deployment at port 8080. The
+[adoption record](host-source-adoption.md#local-service-deployment) identifies
+the deployed revisions and DLL. The running service was not replaced.
+
+- Clicking a nested definition in an unsaved UTF-8 document selected the
+  exact compiler-supplied range. Editing and undoing did not revive the stale
+  navigation result. Compile-only left the workspace revision and execution
+  count at zero. Evidence: `build/tabbit-deployed-definitions.json`.
+- A 3-by-2 matrix produced two Lines with distinct column data and identities.
+  Changing one DisplayName updated the kernel Legend label while retaining
+  both Line identities. The rendered red and blue Lines were visible at
+  1904 x 915 and 390 x 844; no horizontal overflow in the compact case.
+  The inspected `build/tabbit-deployed-matrix-page.png` shows the two clipping
+  modes, updated Legend and source-located compile error. Pixel sampling
+  outside the axes found 227 red-dominant pixels and zero blue-dominant
+  pixels (`build/tabbit-deployed-clipping-pixels.json`).
+- Selecting the first of two Figures worked. Malformed source reported
+  compilation failure. Closing all cleared the graph and disabled the
+  selector and PNG export; recreation enabled them. `isvalid` distinguished
+  the new Line from the stale one
+  (`build/tabbit-deployed-lifecycle-confirm.json`).
+- `print` without a renderer explicitly failed with
+  `MParser:GraphicsRendererUnavailable`, leaving no PDF in the session.
+  **Open frontend defect:** the selected first Figure fell back to the
+  second when a v3 execution result arrived while the v4 layout view was
+  active. The result's v3 graph was identical to the REST readback before
+  the failure. This is a selection-continuity problem, not a deleted or
+  overwritten kernel Figure. Evidence: `build/tabbit-deployed-lifecycle.json`,
+  `selectionRegression`. A fix must also preserve real partial execution
+  effects and selection changes when a Figure is hidden or deleted.
+
+Only the audit tab and its temporary API session were removed; the service
+was not restarted. This run did not perform a new native PNG download.
 
 ## Selected Pair
 

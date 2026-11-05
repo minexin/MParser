@@ -10,13 +10,13 @@ MParser feature branch was created.
 
 | Local Source | Private Repository | Verified Remote Main |
 | --- | --- | --- |
-| `D:/project/MExecServer` | [minexin/MExecServer](https://github.com/minexin/MExecServer) | `00682e1350eb4caa02d756a85bfb3d7254610707` |
-| `D:/project/MExecClient` | [minexin/MExecClient](https://github.com/minexin/MExecClient) | `6dda80db39ff94f26a0608d5c08dae95b79c6ab0` |
+| `D:/project/MExecServer` | [minexin/MExecServer](https://github.com/minexin/MExecServer) | `c1f9f7cbeffdaa577cb28658ba64186066cde9ed` |
+| `D:/project/MExecClient` | [minexin/MExecClient](https://github.com/minexin/MExecClient) | `f27f5f74d05c3749c03aa86c11d6dc38b04d6488` |
 
 Both repositories and their default `main` branches were verified directly
 through GitHub's authenticated API. They are separate from MParser's tree and
-require the owner's authorized login to view. No full cross-repository Actions
-pipeline is claimed for these first host imports; the tests below ran locally.
+require an authorized login to view. These are the verified CI revisions;
+the existing local deployment is a separately identified snapshot below.
 
 ## Adopted Development State
 
@@ -64,6 +64,27 @@ The adopted preset and source-copy tests are not a new full browser acceptance
 run. Earlier browser evidence remains scoped to the DLL/source-copy pair
 recorded on its own page.
 
+## GitHub Actions
+
+- [Frontend run 42034228270](https://github.com/minexin/MExecClient/actions/runs/42034228270):
+  all four Windows/Linux and Node 22/24 jobs passed on the client revision
+  above. Each artifact reports 24 module syntax checks, 51 unit tests and 11
+  integration tests. These are automated DOM/Canvas replays, not Tabbit.
+- [Backend run 42056268166](https://github.com/minexin/MExecServer/actions/runs/42056268166):
+  Windows x64, CMake 4.4.5, Node 24.22.2. The configured read credential
+  checked out the private frontend revision above. The workflow installed
+  the SDK built from MParser `8af9e74151766a13b831ddf5d86a6c3dddff1869` and
+  passed 85/85 host/client CTests without failures, skips or disabled cases.
+  The downloaded report, JUnit and CTest log agree on the clean checkout,
+  SDK 1.15.0/ABI 2.13 and test inventory; see
+  `build/private-host-ci-verified-42056268166`. This includes the actual
+  PowerShell pipeline, exact UTF-8 inputs with/without BOM, stdin error
+  location, and the 31-case behavior probe with kernel `rand`/`rng`.
+- The pinned kernel revision passed
+  [Cross-platform CI 42026807929](https://github.com/minexin/MParser/actions/runs/42026807929)
+  and [Documentation CI 42026807874](https://github.com/minexin/MParser/actions/runs/42026807874).
+  Later documentation-only commits do not change the pinned kernel code.
+
 ## Local Service Deployment
 
 After deployment authorization, the tested original-source build was copied
@@ -75,6 +96,12 @@ an installed Windows SCM or automatic-boot service. Older deployment/build
 directories are retained. Host tools provide explicit start/stop operations
 with executable/start-time ownership checks.
 
+The deployed server/client sources are the initial private imports
+`00682e1350eb4caa02d756a85bfb3d7254610707` and
+`6dda80db39ff94f26a0608d5c08dae95b79c6ab0`. The CI/CLI follow-up does not
+change the served HTTP implementation or frontend assets and did not restart
+this process. It is not a deployment of the current GitHub commits.
+
 `build/host-adoption-20261105/deployed-service-evidence/verified.json` records
 actual HTTP readback hashes for all 27 frontend resources and REST acceptance
 for invalid-assignment diagnostics, compile-only definition metadata,
@@ -82,6 +109,12 @@ matrix/Legend graphics, opt-in ordered events and explicit headless export
 failure without a fake PDF. The temporary verification session was removed
 through the API; no existing user script was executed. Service deployment is
 not publication of an MParser release.
+
+The later deployed REST checks verified failed compile/execute preservation,
+kernel reason codes on rename, and compile-only function ranges. Actual
+Tabbit replay on this same service verified definition navigation and
+bounded graphics cases, and found the v4/v3 selection issue recorded in
+[browser acceptance](host-browser-acceptance.md#deployed-loopback-replay).
 
 ## Repository And Patch Policy
 

@@ -4,10 +4,12 @@ Current product and SDK development identity: **v1.15.0 (unreleased)**.
 The [V1.15 development line](docs/v1.15.md) prioritizes host integration:
 identifier validation, compiler definition ranges, graphics lifecycle/Text/Legend,
 and opt-in identity snapshots. Browser, deployment and release acceptance remain
-separate gates. Internal ordered display recording and reference-backed
-expression/ans semantics are tracked in the
-[display development guide](docs/assignment-display-development.md); a public
-host event stream is still pending. The prior V1.14 batch adds
+separate gates. The SDK exposes an opt-in, read-only
+[ordered event collection](docs/ordered-display-events.md) on completed
+results, without live delivery. Expression/ans semantics and internal
+recording are tracked in the
+[display development guide](docs/assignment-display-development.md).
+The prior V1.14 batch adds
 headless Figure/Axes/Line objects and scalar/array/session graph snapshots;
 platform acceptance is tracked in [docs/v1.14.md](docs/v1.14.md). V1.13 added
 paused-frame evaluation, assignment, conditional breakpoints and source debugger
@@ -18,9 +20,10 @@ building on the v1.10 shared Runtime for cross-module closures, objects, globals
 persistent state on top of the existing session-owned system boundary,
 standard-library coverage, dynamic workspace semantics, MAT v5 persistence,
 and repository-owned C++20 numerical algorithms without Eigen. The active
-development identities are C/C++ source API 1.15, C ABI generation 2 revision 10
-with 154 exports, CLI 1.0, machine result protocol 1.2, and Builtin source
-contract 1.23. The v1.14 baseline and v1.3 revision-1 contract are archived; the v1.2 and released
+development identities are C/C++ source API 1.15, C ABI generation 2 revision 13
+with 158 exports, CLI 1.0, machine result protocol 1.2, and builtin source
+contract 1.23. See the [development manifest](docs/host-integration-contract-development.json).
+The v1.14 baseline and v1.3 revision-1 contract are archived; the v1.2 and released
 v1.0 contracts remain immutable historical evidence. Unreleased interfaces move
 together with repository consumers. See
 [interactive input](docs/interactive-input.md), [docs/v1.12.md](docs/v1.12.md),

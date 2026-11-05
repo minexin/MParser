@@ -127,8 +127,8 @@ Adapters must not re-enter that same context. Process execution and native
 filesystem access are capabilities, not sandboxing: an embedding host should
 grant them only when its own isolation policy allows the operation.
 
-The current v1.10 development C ABI revision 2 and header-only C++ facade
-expose a rooted native context plus an explicit shared Runtime. The host
+The development C ABI and header-only C++ facade expose a rooted native
+context plus the explicit shared Runtime introduced in ABI 2.2. The host
 selects capability bits, root/current/temporary/search directories, a random
 seed, and open/read limits, then binds that context to a stateless invocation,
 reusable session, or Runtime. A Runtime shares one session state and callable
@@ -348,13 +348,13 @@ An embedding application remains responsible for:
 
 ## Current Candidate Boundaries
 
-C source API 1.3 and current ABI generation 2 revision 2 ownership,
+C source API 1.15 and current ABI generation 2 revision 13 ownership,
 sealed/extensible structure rules, and symbol meanings are checked against
-current headers and consumers. The C++ source API is 1.3 and promises no C++
-binary ABI. Machine protocol 1.1 carries exact
-typed and complex numeric values. Builtin source contract 1.1 is frozen with
-the archived v1.2 candidate; the active candidate descriptor contract is 1.17 and remains
-a compiled-in source extension surface, not an external plugin ABI. Archived
+current headers and consumers. The C++ source API is 1.15 and promises no C++
+binary ABI. Machine protocol 1.2 carries exact typed and complex numeric
+values and graphics snapshots. Builtin source contract 1.1 is frozen with the
+archived v1.2 candidate; the active candidate descriptor contract is 1.23 and
+remains a compiled-in source extension surface, not an external plugin ABI. Archived
 v1.0 and frozen v1.2 contracts remain historical evidence rather than
 compatibility gates for development changes.
 

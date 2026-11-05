@@ -25,10 +25,12 @@ opt-in ordered execution results in revision 9 (153 exports). See
 [ordered execution events](ordered-display-events.md) for borrowing and limits.
 Revision 10 adds explicit source-graph method ownership (154 exports); see
 [definition metadata](definition-metadata.md) for descriptor lifetimes and use.
+Revision 11 adds [graphics identity access and writeback](graphics-writeback-contract.md)
+(157 exports). Revision 12 adds the
+[host layout-environment setter](axes-layout-development.md) (158 exports).
 Revision 13 retains 158 exports and adds the optional invocation-tail
 [graphics export callback](graphics-export-contract.md).
-They are
-binary-contract identifiers, not SDK product versions. MParser and the
+These are binary-contract identifiers, not SDK product versions. MParser and the
 installed SDK report `1.15.0`, while the C source API reports `1.15`.
 Applications can query
 `mparser_c_abi_generation()`, `mparser_c_abi_revision()`, and the three
@@ -554,7 +556,7 @@ Simplified BSD terms reproduced in the third-party notices.
 ## Current Candidate Boundary
 
 The current v1.15 host surface is C source API 1.15, C ABI
-generation 2 revision 10 with 154 exports, header-only C++ source API 1.15, and
+generation 2 revision 13 with 158 exports, header-only C++ source API 1.15, and
 machine protocol 1.2. It includes rooted system-context calls and the shared
 Runtime graph, reporting product/SDK version 1.15.0.
 Current in-repository and relocated consumers validate this
