@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+include("${CMAKE_CURRENT_LIST_DIR}/release_contract_inputs.cmake")
 
 foreach(required_variable IN ITEMS
         MPARSER_ARCHIVE
@@ -163,21 +164,7 @@ if(NOT recorded_revision STREQUAL expected_revision OR
         "Release provenance source dependency changed")
 endif()
 
-set(contract_paths
-    CMakeLists.txt
-    CMakePresets.json
-    .github/workflows/ci.yml
-    docs/public-contract-v1.3.json
-    docs/public-contract-v1.14.json
-    docs/public-contract-v1.2.json
-    docs/public-contract-v1.json
-    docs/cli-contract-v1.json
-    docs/machine-result-v1.schema.json
-    docs/compatibility-matrix.json
-    docs/release-process.md
-    docs/release-authentication.md
-    tests/validate_release_authentication_input.cmake)
-list(LENGTH contract_paths contract_count)
+list(LENGTH mparser_release_contract_paths contract_count)
 math(EXPR expected_dependency_count "${contract_count} + 1")
 string(JSON dependency_count LENGTH
     "${provenance_json}" ${build_path} resolvedDependencies)
@@ -194,7 +181,7 @@ foreach(dependency_index RANGE 1 ${dependency_last})
     string(JSON contract_sha256 GET
         "${provenance_json}" ${build_path}
         resolvedDependencies ${dependency_index} digest sha256)
-    list(FIND contract_paths "${contract_name}" contract_index)
+    list(FIND mparser_release_contract_paths "${contract_name}" contract_index)
     list(FIND seen_contracts "${contract_name}" duplicate_index)
     if(contract_index EQUAL -1 OR NOT duplicate_index EQUAL -1)
         message(FATAL_ERROR

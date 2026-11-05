@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+include("${CMAKE_CURRENT_LIST_DIR}/release_contract_inputs.cmake")
 
 foreach(required_variable IN ITEMS
         MPARSER_CMAKE_COMMAND
@@ -306,6 +307,39 @@ if(NOT authentication_revision_status EQUAL 0)
         "${authentication_revision_error}")
 endif()
 
+set(canonical_contract "${mparser_test_root}/canonical-contract.json")
+set(crlf_contract "${mparser_test_root}/crlf-contract.json")
+execute_process(
+    COMMAND "${MPARSER_GIT_COMMAND}" -C "${MPARSER_PROJECT_ROOT}" cat-file blob
+        "${authentication_revision}:${mparser_active_sdk_contract_path}"
+    OUTPUT_FILE "${canonical_contract}"
+    COMMAND_ERROR_IS_FATAL ANY)
+file(READ "${canonical_contract}" contract_bytes)
+string(REPLACE "\n" "\r\n" crlf_contract_bytes "${contract_bytes}")
+file(WRITE "${crlf_contract}" "${crlf_contract_bytes}")
+set(canonical_guard "${mparser_test_root}/canonical-guard.cmake")
+file(WRITE "${canonical_guard}" [=[
+include("${input_helper}")
+mparser_require_canonical_release_file(
+    "${project_root}" "${git}" "${revision}" "${contract_path}" "${working_file}")
+]=])
+set(guard_args
+    "-Dinput_helper=${CMAKE_CURRENT_LIST_DIR}/release_contract_inputs.cmake"
+    "-Dproject_root=${MPARSER_PROJECT_ROOT}"
+    "-Dgit=${MPARSER_GIT_COMMAND}"
+    "-Drevision=${authentication_revision}"
+    "-Dcontract_path=${mparser_active_sdk_contract_path}")
+run_checked("Canonical publication contract"
+    "${MPARSER_CMAKE_COMMAND}" ${guard_args}
+    "-Dworking_file=${canonical_contract}" -P "${canonical_guard}")
+execute_process(
+    COMMAND "${MPARSER_CMAKE_COMMAND}" ${guard_args}
+        "-Dworking_file=${crlf_contract}" -P "${canonical_guard}"
+    RESULT_VARIABLE guard_status ERROR_VARIABLE guard_error)
+if(guard_status EQUAL 0 OR NOT guard_error MATCHES "Non-canonical publication input")
+    message(FATAL_ERROR "CRLF publication input was not rejected: ${guard_error}")
+endif()
+
 set(authentication_input_dir
     "${mparser_test_root}/exact-authentication-input")
 file(MAKE_DIRECTORY "${authentication_input_dir}")
@@ -401,26 +435,33 @@ set(contract_provenance
 configure_file("${first_archive}" "${contract_archive}" COPYONLY)
 configure_file(
     "${first_archive}.sha256" "${contract_archive}.sha256" COPYONLY)
-file(READ "${first_provenance}" contract_provenance_json)
-string(JSON contract_provenance_json SET
-    "${contract_provenance_json}"
-    predicate buildDefinition resolvedDependencies 1 digest sha256
-    "\"0000000000000000000000000000000000000000000000000000000000000000\"")
-file(WRITE "${contract_provenance}" "${contract_provenance_json}\n")
-file(SHA256 "${contract_provenance}" contract_provenance_hash)
-file(WRITE "${contract_input_dir}/SHA256SUMS"
-    "${first_hash}  ${first_archive_name}\n"
-    "${contract_provenance_hash}  ${first_provenance_name}\n")
-expect_authentication_input_rejection(
-    "Modified release-authentication contract"
-    "${contract_archive}"
-    "${contract_provenance}"
-    "${contract_archive}.sha256"
-    "${contract_input_dir}/SHA256SUMS"
-    "${authentication_revision}"
-    OFF
-    OFF
-    "contract identity is invalid: CMakeLists.txt")
+file(READ "${first_provenance}" correct_contract_provenance)
+foreach(contract IN ITEMS CMakeLists.txt "${mparser_active_sdk_contract_path}")
+    list(FIND mparser_release_contract_paths "${contract}" contract_index)
+    if(contract_index EQUAL -1)
+        message(FATAL_ERROR "Missing release contract input: ${contract}")
+    endif()
+    math(EXPR dependency_index "${contract_index} + 1")
+    string(JSON contract_provenance_json SET
+        "${correct_contract_provenance}"
+        predicate buildDefinition resolvedDependencies ${dependency_index} digest sha256
+        "\"0000000000000000000000000000000000000000000000000000000000000000\"")
+    file(WRITE "${contract_provenance}" "${contract_provenance_json}\n")
+    file(SHA256 "${contract_provenance}" contract_provenance_hash)
+    file(WRITE "${contract_input_dir}/SHA256SUMS"
+        "${first_hash}  ${first_archive_name}\n"
+        "${contract_provenance_hash}  ${first_provenance_name}\n")
+    expect_authentication_input_rejection(
+        "Modified release-authentication contract ${contract}"
+        "${contract_archive}"
+        "${contract_provenance}"
+        "${contract_archive}.sha256"
+        "${contract_input_dir}/SHA256SUMS"
+        "${authentication_revision}"
+        OFF
+        OFF
+        "contract identity is invalid:")
+endforeach()
 
 set(tampered_archive_dir "${mparser_test_root}/tampered-archive")
 file(MAKE_DIRECTORY "${tampered_archive_dir}")
@@ -635,6 +676,33 @@ foreach(path IN LISTS required_paths)
     if(NOT EXISTS "${path}")
         message(FATAL_ERROR
             "Required unpacked release artifact is missing: ${path}")
+    endif()
+endforeach()
+
+set(installed_docs "${mparser_relocated_prefix}/${MPARSER_INSTALL_DOCDIR}")
+set(installed_sdk_contract "${installed_docs}/host-integration-contract-development.json")
+file(SHA256 "${MPARSER_PROJECT_ROOT}/${mparser_active_sdk_contract_path}" source_contract_hash)
+file(SHA256 "${installed_sdk_contract}" installed_contract_hash)
+if(NOT installed_contract_hash STREQUAL source_contract_hash)
+    message(FATAL_ERROR "Unpacked active SDK contract differs from the provenance input")
+endif()
+file(READ "${installed_sdk_contract}" installed_sdk_contract_json)
+string(JSON sdk_artifact_count LENGTH "${installed_sdk_contract_json}" artifacts)
+math(EXPR sdk_artifact_last "${sdk_artifact_count} - 1")
+foreach(index RANGE 0 ${sdk_artifact_last})
+    string(JSON path GET "${installed_sdk_contract_json}" artifacts ${index} path)
+    if(path MATCHES "^docs/(.+)$")
+        set(installed_path "${installed_docs}/${CMAKE_MATCH_1}")
+    elseif(path MATCHES "^include/(.+)$")
+        set(installed_path
+            "${mparser_relocated_prefix}/${MPARSER_INSTALL_INCLUDEDIR}/${CMAKE_MATCH_1}")
+    else()
+        continue()
+    endif()
+    file(SHA256 "${MPARSER_PROJECT_ROOT}/${path}" source_hash)
+    file(SHA256 "${installed_path}" installed_hash)
+    if(NOT installed_hash STREQUAL source_hash)
+        message(FATAL_ERROR "Unpacked SDK contract member differs: ${path}")
     endif()
 endforeach()
 

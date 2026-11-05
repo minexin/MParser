@@ -36,7 +36,7 @@ success may substitute for missing kernel contracts.
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay. Deployed Tabbit verifies two matrix columns, no overflow at 390px, and close/recreate with stale-handle rejection. Broader downstream acceptance remains open. |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed. Deployed Tabbit confirms Legend rename, retained Line identities and per-Line clipping pixels. Current frontend fixes the deployed v4/v3 selection regression; isolated Tabbit confirms selection/zoom and partial effects. Deployment of this fix, full native text/layout and UI property editing remain open. |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Real isolated REST export writes bounded PNG/vector PDF through a renderer and session FileStore; failure/root/session controls pass. Separate actual ABI 2.13 Tabbit PNG downloads pass selected-Figure/pixel/lifecycle checks. Default CLI/REST still refuse; production renderer and broader scene/file/download policy remain open. |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 364/364 and host 85/85 locally; latest locked private GitHub host run 85/85 and independent frontend four lanes passed. The Windows candidate package is verified locally. Deployment of the frontend fix, broader browser acceptance and formal 1.15.0 publication remain open. |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 364/364 and host 85/85 locally; latest locked private GitHub host run 85/85 and frontend four lanes passed. Five unsigned cross-platform archives verified at exact source; downloaded Windows/Linux x64 consumers passed. Deployment of the frontend fix, broader browser acceptance and exact-tag authentication/publication remain open. |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK/installed-host and deployed REST verify side-effect-free path readback, lookup precedence, command/file compilation, removal and root rejection. In-script dynamic rebinding is outside this proof. |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering, default-OFF Tabbit interaction and deployed REST ordering/suppression/failure replay passed. Live delivery, bounded in-flight recording and overloaded display remain separate; see host-ordered-display-candidate.md. |
 
@@ -104,6 +104,18 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-06 unsigned release preflight: [run 42078322130](https://github.com/minexin/MParser/actions/runs/42078322130)
+  passed eight jobs on `474e3f7` with authentication disabled. All five
+  exact four-file artifact sets passed the then-current signing-input
+  validator against canonical Git bytes and 32 installed-member checks
+  per archive. Actual downloaded Windows/Linux x64 C and C++ consumers
+  passed; CLI protocol 1.2 and the 158-name export sets matched.
+  Evidence: `build/unsigned-v115-ci-42078322130-verified.json` and
+  `build/unsigned-v115-windows-replay.log`/`build/unsigned-v115-linux-replay.log`.
+  The preflight exposed that an old raw CRLF contract could coexist with a
+  clean Git status, and the prior provenance list omitted the current SDK
+  manifest. The publication guard now rejects non-canonical inputs and
+  binds that manifest. Older signed v1.0.0 evidence is unchanged.
 - 2026-11-06 deployed H09/H10 replay:
   `build/deployed-path-events-20261106-rciszQ/verified.json` records actual
   ordered search paths used by subsequent command/file compiles, no-effect

@@ -62,8 +62,10 @@ validator requires:
 - an archive subject with matching name, size, media type, and SHA-256;
 - the exact release commit, repository, Release configuration, native-JIT
   setting, local builder ID, and source-clean marker;
-- SHA-256 identities for the frozen public contracts, release policy,
-  authentication workflow, and authentication-input validator.
+- Raw SHA-256 identities for the historical public contracts, the current
+  host SDK manifest, release policy, authentication workflow, and validation
+  input list. Use a fresh checkout of the exact source if an older worktree
+  has different raw bytes despite a clean Git status.
 
 Cosign signs both `<archive>` and `<archive>.provenance.json`. Each subject gets
 an adjacent `<subject>.sigstore.json` bundle containing the short-lived signing

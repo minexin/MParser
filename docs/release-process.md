@@ -29,7 +29,9 @@ target system, and target processor as internal parameters. Its resolved
 dependencies bind the base Git commit plus SHA-256 values for CMake build
 configuration, the public CLI/API/protocol/compatibility contracts, the
 release-authentication policy, its same-run workflow, and the validator that
-accepts package inputs for signing.
+accepts package inputs for signing. The shared input list also binds the active
+host SDK manifest, including its declared headers, ABI, catalog and graphics
+schemas. Older authenticated evidence retains its original input list.
 
 From a clean checkout at `revision`, initialize the platform compiler
 environment, then run:
@@ -62,12 +64,19 @@ sidecar binds the archive independently. The provenance is not placed inside
 the archive because its subject digest would otherwise be self-referential.
 
 The publication target rejects a dirty Git worktree before invoking CPack.
+It also compares the unfiltered bytes of the contract inputs and current
+manifest members to their Git blobs. Git can report a clean checkout when
+it normalizes different line endings. In that case, build from a fresh
+checkout of the intended revision; do not normalize signed evidence or
+ignore a checksum mismatch. The active SDK manifest's declared hashes must
+match the canonical files.
 The executable
 `release_archive_smoke` may generate a statement with
 `mparser_sourceTreeClean: false` solely to exercise the structure during
-development; such an artifact is not publishable. The same gate alters an
-archive payload and the statement authentication field independently and
-requires both mutations to be rejected by the semantic validator.
+development; such an artifact is not publishable. The same gate alters
+archive and provenance inputs independently, checks that a changed SDK
+contract digest and non-canonical line endings are rejected, and compares
+the unpacked SDK manifest and its shipped members with their source bytes.
 
 ## Local CMake Builder v1
 

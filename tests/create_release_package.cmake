@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+include("${CMAKE_CURRENT_LIST_DIR}/release_contract_inputs.cmake")
 
 foreach(required_variable IN ITEMS
         MPARSER_CMAKE_COMMAND
@@ -54,6 +55,14 @@ if(MPARSER_REQUIRE_CLEAN_SOURCE)
             "Publication package requires a clean Git worktree.\n"
             "${source_changes}")
     endif()
+    execute_process(
+        COMMAND "${MPARSER_GIT_COMMAND}" -C "${MPARSER_PROJECT_ROOT}"
+            rev-parse --verify HEAD
+        OUTPUT_VARIABLE source_revision
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND_ERROR_IS_FATAL ANY)
+    mparser_require_canonical_release_contracts(
+        "${MPARSER_PROJECT_ROOT}" "${MPARSER_GIT_COMMAND}" "${source_revision}")
 endif()
 
 get_filename_component(

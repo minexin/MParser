@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+include("${CMAKE_CURRENT_LIST_DIR}/release_contract_inputs.cmake")
 
 foreach(required_variable IN ITEMS
         MPARSER_ARCHIVE
@@ -94,6 +95,10 @@ if(MPARSER_REQUIRE_CLEAN_SOURCE AND NOT source_tree_clean)
         "Publication provenance requires a clean Git worktree.\n"
         "${worktree_status}")
 endif()
+if(MPARSER_REQUIRE_CLEAN_SOURCE)
+    mparser_require_canonical_release_contracts(
+        "${MPARSER_PROJECT_ROOT}" "${MPARSER_GIT_COMMAND}" "${source_revision}")
+endif()
 
 file(SHA256 "${archive}" archive_sha256)
 file(SIZE "${archive}" archive_size)
@@ -174,22 +179,8 @@ string(JSON source_dependency SET
 string(JSON resolved_dependencies SET
     "${resolved_dependencies}" 0 "${source_dependency}")
 
-set(contract_paths
-    CMakeLists.txt
-    CMakePresets.json
-    .github/workflows/ci.yml
-    docs/public-contract-v1.3.json
-    docs/public-contract-v1.14.json
-    docs/public-contract-v1.2.json
-    docs/public-contract-v1.json
-    docs/cli-contract-v1.json
-    docs/machine-result-v1.schema.json
-    docs/compatibility-matrix.json
-    docs/release-process.md
-    docs/release-authentication.md
-    tests/validate_release_authentication_input.cmake)
 set(dependency_index 1)
-foreach(contract_path IN LISTS contract_paths)
+foreach(contract_path IN LISTS mparser_release_contract_paths)
     set(contract_file
         "${MPARSER_PROJECT_ROOT}/${contract_path}")
     if(NOT EXISTS "${contract_file}")
