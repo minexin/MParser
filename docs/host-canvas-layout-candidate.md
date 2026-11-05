@@ -92,13 +92,9 @@ Its metrics are explicitly controlled inputs, not browser measurements.
 Initial bounded REST evidence is under
 `build/client-layout-rest-retest-20261105`; source-copy replay is under
 `build/client-rendering-probe/a0c0a1cf74c841ada5b5d9a62ceac2d1`.
-The stable Tabbit launcher exited 1 with no diagnostic output even after an
-approved invocation. No browser runtime, registry or security settings were
-modified. Actual browser measurement, screenshots, Canvas pixel checks,
-desktop/mobile resize/selection/zoom and PNG export for this new v4 path remain
-unverified. Earlier v2/v3 browser evidence is not reused as v4 acceptance.
-The previously observed 390px horizontal cropping remains open. Production
-adoption and release acceptance remain separate gates.
+The initial stable Tabbit launcher exited 1 before attachment. After the user
+reinstalled/opened Tabbit, the stable launcher connected successfully. No
+browser runtime, registry or security settings were modified by this work.
 
 Fresh installed-SDK source-only host acceptance passed all 148 build actions,
 the dedicated REST/controller/bootstrap probes and 67/67 regressions in 20.06
@@ -112,3 +108,39 @@ Complete kernel/package regression passed 360/360 in 65.05 seconds at
 renderer was copied to the owned host evidence stage for the final host rerun.
 This does not modify either original sibling project. Exact submitted-commit
 GitHub CI is checked separately from these local results.
+
+## Actual Browser Follow-Up
+
+The same SDK/host stage above was served from an isolated process, with the
+exact EC3756F5 DLL. Tabbit Browser stable loaded the actual client. Evidence:
+`build/browser-layout-20261105/session.json`, `observations.json`, the inspected
+`desktop-dual-axes.png` and inspected `recreated-canvas.png`.
+
+- At 1904x915, actual Canvas logical size was 1071x375, logical DPI 96 and
+  measured character size 7.0078125x17. The v4 Figure contained these exact
+  metrics. Both Axes were visible with separate red/blue pixel ranges: red
+  x=107..427, blue x=642..963, 697 classified pixels each. The screenshot was
+  visually inspected, not inferred from a successful transport response.
+- A temporary 1280x800/DPR=2 page emulation produced a 715x298 logical Canvas
+  and 1430x596 backing bitmap. Source conversion to pixels read back
+  [108.1,76,321.3,225] (floating representation retained); resize did not change
+  those pixel-unit numbers. The injected environment used logical dimensions.
+- Actual selection/zoom controls changed Axes 2 ranges to [0.1,0.9], left Axes 1
+  at [0,1], retained the independent view on switching back and reset correctly.
+- Close/recreate invalidated the old Line and changed Figure identity from 1
+  to 8. Reloading the same page/session restored the current Figure with
+  run_count unchanged at 3, without executing hidden source.
+- At 390x844, document width was 650 and Canvas right edge 462: narrow-screen
+  acceptance still fails. Canvas itself had nonwhite pixels; that does not
+  excuse horizontal clipping. The original 1904x915 page size was restored.
+- Actual browser Canvas PNG encoding was saved and visually checked at
+  1071x375 (`recreated-canvas.png`). This is not evidence that the browser's
+  download UI completed a button-triggered download. Page screenshots during
+  viewport emulation timed out; those failed captures are not counted as
+  visual passes. DOM geometry and pixel/encoding results remain separate.
+
+The Tabbit task finished successfully without forced cleanup. The owned server
+was stopped after verifying its exact executable path; no production service
+was touched. This bounded run predates the newer Legend-creation kernel and
+ninth client candidate, and does not establish every stale-response/resize
+race, native Figure layout, release acceptance or deployed host adoption.

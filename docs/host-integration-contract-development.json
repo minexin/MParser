@@ -19,7 +19,7 @@
   },
   "builtin_source_contract": {
     "major": 1,
-    "minor": 21,
+    "minor": 22,
     "descriptor_count": 356,
     "registered_name_count": 358
   },
@@ -34,11 +34,11 @@
   "artifacts": [
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "d40ddf135b8c99eb57df6c0b95c278cd2f00dbe1a831a52400437d72bb40a97f"
+      "sha256_lf": "8f2174c497b2b2d755ca14db1cd1e658469004711278a38fd6b3c86892406256"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
-      "sha256_lf": "a85b60e386ade6ae5605eca74dd2eed35bf5b3ed4f51a292e46ee9b4c405ae52"
+      "sha256_lf": "8494b54215a95a4870361013704ddefd1c4fe03871f140c0e28be222b8668d71"
     },
     {
       "path": "docs/definition-metadata.md",
@@ -54,7 +54,7 @@
     },
     {
       "path": "cmake/MParserConfig.cmake.in",
-      "sha256_lf": "453b3ab6aea9c8b57fdb7005abf29abf188a290dfc0546f66993ed950fd3019b"
+      "sha256_lf": "a0ce6a7d73d158cda5a4a00225be21d18116adc3a250ec776d0e3904651cc5b5"
     },
     {
       "path": "docs/graphics-color-contract.md",
@@ -66,7 +66,7 @@
     },
     {
       "path": "docs/graphics-legend-contract.md",
-      "sha256_lf": "9a0ddd98dd6f38fb421a40dc886758dbfc540994e86e6ac98c6ce6fb808a7d0b"
+      "sha256_lf": "54938a13ff36c71acd41f51255374f9c461e8afca9d07b3d55caa0b5db4cc589"
     },
     {
       "path": "docs/public-contract-v1.14.json",
@@ -93,12 +93,12 @@
       "sha256_lf": "ca57dd2f8dd660acab708dc1fc55f6d7ab21af39abeef028f58d407c45d4ef3f"
     },
     {
-      "path": "tests/public_contract/builtin/1.21/default_catalog.json",
-      "sha256_lf": "d225c0a791ce9d2ee7fad944a577027115494639ebb87022296d2715be83db42"
+      "path": "tests/public_contract/builtin/1.22/default_catalog.json",
+      "sha256_lf": "7f8ce05da635f798b868777e8dfb8df5e98fb67d37c3c3cc0f4726e0a09205c5"
     },
     {
       "path": "src/mparser/runtime/builtins/builtin_registry.h",
-      "sha256_lf": "6ab349813a53582ef28974555cf29f83099a7227ce24fb055dd0f0ede506a76c"
+      "sha256_lf": "26cd836c0971557aca5f59f5f1a33c35af6d8e3a10aa4d1c2e874df6ac051a37"
     },
     {
       "path": "docs/system-search-paths.md",
@@ -118,7 +118,7 @@
     },
     {
       "path": "docs/host-browser-acceptance.md",
-      "sha256_lf": "9cfa10d18149bee0164e356afd842b3bd7725bb7ba6caa72adfd6aeff77cb2b1"
+      "sha256_lf": "8ac8191a9e67dfbe0bc2ff0129161face321bfc002ac6c560b9208300172db6e"
     },
     {
       "path": "docs/graphics-writeback-contract.md",
@@ -126,7 +126,7 @@
     },
     {
       "path": "docs/axes-layout-development.md",
-      "sha256_lf": "ee8e5099cb1f90f0a4ed8f8ab73044d754229aad3bcc23560a95becc3cb2fe50"
+      "sha256_lf": "f54116412092bbb3bbf156bd8b2f6657efe3c7d48b7d7d91cd403f67c882a4ad"
     },
     {
       "path": "docs/graphics-v4.schema.json",
@@ -134,7 +134,11 @@
     },
     {
       "path": "docs/host-canvas-layout-candidate.md",
-      "sha256_lf": "996e9c03092abfa1fad26cfc3db241af915bc4d60c86711237dfe78153ea0f88"
+      "sha256_lf": "c9488742db547010e5468de39697ed7a15f684c857f8937d08282674d4821661"
+    },
+    {
+      "path": "docs/extending-builtins.md",
+      "sha256_lf": "0dcfb6b1ea8c94a5caf57766dedb723d3566b9b22e547767a81aae92af3079e9"
     }
   ]
 }

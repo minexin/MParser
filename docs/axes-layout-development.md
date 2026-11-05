@@ -146,11 +146,13 @@ The source-copy Canvas candidate now implements measurement, capability-gated
 v4 refresh/injection and multi-Axes rendering. Controlled Canvas, app/API and
 real SDK/REST checks are described in
 [the candidate guide](host-canvas-layout-candidate.md); they do not prove
-actual browser measurements or pixels. The preceding final kernel commit
+actual browser measurements or pixels by themselves. A later bounded actual
+Tabbit run verifies measurement, dual-Axes pixels, resize/DPR, selection/zoom,
+close/recreate and reload; narrow-screen cropping still fails. The preceding final kernel commit
 45fa677 passed all seven mandatory cross-platform CI jobs and documentation
 CI. CI for subsequent commits remains a separate gate.
 
-Still open: actual browser environment measurement/rendering acceptance,
+Still open: broader browser layout/race/responsive acceptance,
 full native Figure Position/Units,
 OuterPosition/PositionConstraint and decoration-inset solving, subplot/tiled
 layout, browser multi-Axes acceptance, production adoption and actual-commit CI.

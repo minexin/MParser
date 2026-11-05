@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <variant>
+#include <utility>
 
 namespace mparser {
 
@@ -21,6 +22,17 @@ using RuntimeGraphicsProperty = std::variant<std::string, std::vector<double>, s
 struct RuntimeGraphicsSeries {
     std::vector<double> x;
     std::vector<double> y;
+};
+
+struct RuntimeGraphicsLegendOptions {
+    std::optional<std::vector<RuntimeGraphicsId>> lines;
+    std::vector<std::string> labels;
+    std::vector<std::pair<std::string, RuntimeGraphicsProperty>> properties;
+};
+
+struct RuntimeGraphicsLegendResult {
+    RuntimeGraphicsId id;
+    bool ignoredLabels = false;
 };
 
 struct RuntimeGraphicsLayoutEnvironment {
@@ -43,6 +55,8 @@ struct RuntimeGraphicsNode {
     std::vector<RuntimeGraphicsId> legendLines;
     std::optional<RuntimeGraphicsLayoutEnvironment> layoutEnvironment;
     std::uint64_t layoutRevision = 0;
+    bool legendExplicitMembers = false;
+    std::optional<RuntimeGraphicsId> generatedLegendName = std::nullopt;
 };
 
 // Nodes contain IDs only. Exported handles may retain the graph, but the graph
@@ -67,6 +81,8 @@ public:
     void selectAxes(RuntimeGraphicsId id);
     RuntimeGraphicsId setLabel(RuntimeGraphicsId axes, const std::string& role, std::string text);
     RuntimeGraphicsId legend(RuntimeGraphicsId axes);
+    RuntimeGraphicsLegendResult configureLegend(std::optional<RuntimeGraphicsId> axes,
+        const RuntimeGraphicsLegendOptions& options);
     RuntimeGraphicsId plot(std::vector<double> y);
     RuntimeGraphicsId plot(std::vector<double> x, std::vector<double> y);
     std::vector<RuntimeGraphicsId> plotLines(std::vector<RuntimeGraphicsSeries> series);
@@ -77,6 +93,7 @@ private:
     mutable std::recursive_mutex mutex_;
     const std::uint64_t identity_;
     void validateParent(RuntimeGraphicsKind kind, std::optional<RuntimeGraphicsId> parent) const;
+    void refreshLegendName(RuntimeGraphicsId line);
     std::map<RuntimeGraphicsId, RuntimeGraphicsNode> nodes_;
     RuntimeGraphicsId nextId_ = 1;
     std::optional<RuntimeGraphicsId> currentFigure_;
@@ -124,8 +141,10 @@ private:
 
 RuntimeValue makeRuntimeGraphicsValue(RuntimeGraphicsHandle handle);
 bool isRuntimeGraphicsValue(const RuntimeValue& value);
+std::vector<std::string> runtimeGraphicsLegendLabels(const RuntimeValue& value);
 std::string serializeRuntimeGraphicsValue(const RuntimeValue& value, bool persistentIdentity = false, bool includeLayout = false);
 RuntimeObjectOperationResult runtimeGraphicsMember(const RuntimeValue& value, const std::string& name);
+RuntimeObjectOperationResult runtimeGraphicsLifecycle(const RuntimeValue& value, bool erase);
 RuntimeObjectOperationResult runtimeSetGraphicsMember(const RuntimeValue& target,
     const std::string& name, const RuntimeValue& value);
 

@@ -1,0 +1,7 @@
+diff --git a/web/js/plot.js b/web/js/plot.js
+index 12031b6..0008ac9 100644
+--- a/web/js/plot.js
++++ b/web/js/plot.js
+@@ -530 +530 @@ MExec.plot = (() => {
+-        const line = lines.find(item => item.id === entry.line);
++        const line = objects.find(item => item.type === 'Line' && item.id === entry.line);

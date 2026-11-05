@@ -111,12 +111,12 @@ every lifecycle/selection race or a deployed client.
 
 ## Remaining Gates
 
-The newer v4 environment/multi-Axes source-copy candidate is documented in
-[the Canvas layout guide](host-canvas-layout-candidate.md). Controlled Canvas
-and actual SDK/REST tests are not real-browser acceptance. The Tabbit stable
-launcher currently fails before attachment; no v4 screenshot/pixel/export or
-responsive result is established by that implementation. Earlier desktop
-evidence above applies only to its recorded v2/v3 stage.
+The v4 environment/multi-Axes source-copy candidate now has a separate bounded
+actual Tabbit measurement/pixel/resize/selection/zoom/reload run in
+[the Canvas layout guide](host-canvas-layout-candidate.md). The inspected dual
+Axes screenshot and Canvas PNG are retained under build/browser-layout-20261105.
+This run confirms 390px cropping still fails and does not establish the download
+UI or production adoption. It predates the new Legend-creation kernel.
 
 - Broader lifecycle/selection races beyond the tested close/recreate/switch cases.
 - The confirmed narrow-screen cropping and untested responsive interactions.

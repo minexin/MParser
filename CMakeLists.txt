@@ -2550,10 +2550,10 @@ target_include_directories(builtin_catalog_snapshot_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann_json/include)
 add_test(NAME builtin_catalog_snapshot_smoke
     COMMAND builtin_catalog_snapshot_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.21/default_catalog.json)
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/public_contract/builtin/1.22/default_catalog.json)
 set_tests_properties(builtin_catalog_snapshot_smoke PROPERTIES
     PASS_REGULAR_EXPRESSION
-        "builtin source contract 1.21 catalog validated: 356 descriptors")
+        "builtin source contract 1.22 catalog validated: 356 descriptors")
 
 add_test(NAME builtin_registry_interpreter_cli_smoke
     COMMAND mparser --run-hir
@@ -2973,6 +2973,20 @@ target_include_directories(legend_state_smoke_tests PRIVATE third_party/nlohmann
 add_test(NAME legend_state_smoke COMMAND legend_state_smoke_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/legend_reference.json)
 set_tests_properties(legend_state_smoke PROPERTIES TIMEOUT 60 LABELS host-integration)
+add_executable(legend_creation_smoke_tests tests/legend_creation_smoke.cpp)
+target_link_libraries(legend_creation_smoke_tests PRIVATE mparser_core mparser_json_schema_validator)
+target_include_directories(legend_creation_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME legend_creation_smoke COMMAND legend_creation_smoke_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/legend_creation_reference.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/docs/graphics-v3.schema.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/docs/graphics-v4.schema.json)
+set_tests_properties(legend_creation_smoke PROPERTIES TIMEOUT 60 LABELS host-integration)
+add_executable(legend_creation_api_smoke_tests tests/legend_creation_api_smoke.cpp)
+target_link_libraries(legend_creation_api_smoke_tests PRIVATE mparser_cpp_api)
+target_include_directories(legend_creation_api_smoke_tests PRIVATE third_party/nlohmann_json/include)
+add_test(NAME legend_creation_api_smoke COMMAND legend_creation_api_smoke_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/legend_creation_reference.json)
+set_tests_properties(legend_creation_api_smoke PROPERTIES TIMEOUT 60 LABELS host-integration)
 target_link_libraries(graphics_color_smoke_tests PRIVATE mparser_cpp_api)
 target_include_directories(graphics_color_smoke_tests PRIVATE third_party/nlohmann_json/include)
 add_test(NAME graphics_color_smoke COMMAND graphics_color_smoke_tests
@@ -3491,11 +3505,11 @@ install(FILES
     docs/v1.x-host-requirement-audit.md
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES
-    tests/public_contract/builtin/1.21/default_catalog.json
+    tests/public_contract/builtin/1.22/default_catalog.json
     DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 foreach(mparser_builtin_contract_version IN ITEMS
         1.0 1.1 1.3 1.4 1.5 1.6 1.7 1.8 1.9 1.10
-        1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18 1.19 1.20 1.21)
+        1.11 1.12 1.13 1.14 1.15 1.16 1.17 1.18 1.19 1.20 1.21 1.22)
     install(FILES
         "tests/public_contract/builtin/${mparser_builtin_contract_version}/default_catalog.json"
         DESTINATION

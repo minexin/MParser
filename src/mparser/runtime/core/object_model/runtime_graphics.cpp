@@ -225,7 +225,10 @@ RuntimeGraphicsId RuntimeGraphicsGraph::create(RuntimeGraphicsKind kind,
     nodes_.emplace(id, RuntimeGraphicsNode{kind, id, parent, {}, std::move(properties),
         std::nullopt, {}, std::nullopt, {}, std::nullopt});
     if (parent) { nodes_.at(*parent).children.push_back(id); }
-    if (automaticLegend) { automaticLegend->legendLines.push_back(id); }
+    if (automaticLegend) {
+        automaticLegend->legendLines.push_back(id);
+        nodes_.at(id).generatedLegendName = automaticLegend->id;
+    }
     ++nextId_;
     if (kind == RuntimeGraphicsKind::Figure) { currentFigure_ = id; }
     if (kind == RuntimeGraphicsKind::Axes) {
@@ -303,29 +306,86 @@ RuntimeGraphicsId RuntimeGraphicsGraph::setLabel(RuntimeGraphicsId axes, const s
 
 RuntimeGraphicsId RuntimeGraphicsGraph::legend(RuntimeGraphicsId axes) {
     const auto guard = lock();
-    const auto* target = find(axes);
-    if (!target || target->kind != RuntimeGraphicsKind::Axes) {
-        throw std::invalid_argument("legend requires a live Axes");
-    }
-    for (const auto& [id, node] : nodes_) {
+    for (const auto& [id,node] : nodes_) {
         if (node.kind == RuntimeGraphicsKind::Legend && node.associatedAxes == axes) { return id; }
     }
+    return configureLegend(axes, {}).id;
+}
+
+RuntimeGraphicsLegendResult RuntimeGraphicsGraph::configureLegend(std::optional<RuntimeGraphicsId> axes,
+    const RuntimeGraphicsLegendOptions& options) {
+    const auto guard = lock();
     RuntimeGraphicsGraph pending;
     pending.nodes_ = nodes_;
     pending.nextId_ = nextId_;
-    const auto id = pending.create(RuntimeGraphicsKind::Legend, target->parent);
+    pending.currentFigure_ = currentFigure_;
+    if (!axes && options.lines && !options.lines->empty()) {
+        const auto* first = pending.find(options.lines->front());
+        if (!first || first->kind != RuntimeGraphicsKind::Line) {
+            throw std::invalid_argument("legend subset requires live Lines");
+        }
+        axes = first->parent;
+    }
+    if (!axes) { axes = pending.currentAxes(); }
+    const auto* target = pending.find(*axes);
+    if (!target || target->kind != RuntimeGraphicsKind::Axes) {
+        throw std::invalid_argument("legend requires a live Axes");
+    }
+    std::optional<RuntimeGraphicsId> existing;
+    for (const auto& [candidate, node] : pending.nodes_) {
+        if (node.kind == RuntimeGraphicsKind::Legend && node.associatedAxes == axes) { existing = candidate; break; }
+    }
+    const auto id = existing ? *existing : pending.create(RuntimeGraphicsKind::Legend, target->parent);
     auto& legend = pending.nodes_.at(id);
     legend.associatedAxes = axes;
-    for (const auto child : target->children) {
-        auto& line = pending.nodes_.at(child);
-        if (line.kind != RuntimeGraphicsKind::Line) { continue; }
-        auto& name = line.properties.at("DisplayName");
-        if (std::get<std::string>(name).empty()) { name = nextLegendName(legend, pending.nodes_); }
-        legend.legendLines.push_back(child);
+    const auto previousMembers = legend.legendLines;
+    bool ignoredLabels = false;
+    if (!existing || options.lines || !options.labels.empty()) {
+        std::vector<RuntimeGraphicsId> candidates;
+        if (options.lines) { candidates = *options.lines; }
+        else {
+            for (const auto child : target->children) {
+                if (pending.nodes_.at(child).kind == RuntimeGraphicsKind::Line) { candidates.push_back(child); }
+            }
+        }
+        std::vector<bool> unnamed;
+        for (const auto child : candidates) {
+            const auto* line = pending.find(child);
+            if (!line || line->kind != RuntimeGraphicsKind::Line) {
+                throw std::invalid_argument("legend subset requires live Lines");
+            }
+            unnamed.push_back(std::get<std::string>(line->properties.at("DisplayName")).empty());
+        }
+        ignoredLabels = options.labels.size() > candidates.size();
+        const auto count = options.labels.empty() ? candidates.size() : std::min(candidates.size(),options.labels.size());
+        legend.legendLines.clear();
+        legend.legendExplicitMembers = options.lines.has_value() || !options.labels.empty();
+        std::set<std::string> allocatedNames;
+        for (size_t index = 0; index < count; ++index) {
+            auto& name = pending.nodes_.at(candidates[index]).properties.at("DisplayName");
+            if (!options.labels.empty()) {
+                if (options.labels[index].empty()) { continue; }
+                name = options.labels[index];
+                pending.nodes_.at(candidates[index]).generatedLegendName.reset();
+            } else if (unnamed[index]) {
+                for (size_t ordinal = 1;; ++ordinal) {
+                    const auto candidate = "data" + std::to_string(ordinal);
+                    if (!allocatedNames.contains(candidate) && std::none_of(legend.legendLines.begin(),legend.legendLines.end(),[&](const auto line) {
+                        return std::get<std::string>(pending.nodes_.at(line).properties.at("DisplayName")) == candidate;
+                    })) { name = candidate; allocatedNames.insert(candidate); break; }
+                }
+                pending.nodes_.at(candidates[index]).generatedLegendName = id;
+            }
+            legend.legendLines.push_back(candidates[index]);
+        }
     }
+    for (const auto& [name,value] : options.properties) { pending.setProperty(id,name,value); }
+    pending.setProperty(id,"Visible",std::string{"on"});
+    for (const auto line : previousMembers) { pending.refreshLegendName(line); }
     nodes_.swap(pending.nodes_);
     nextId_ = pending.nextId_;
-    return id;
+    currentFigure_ = pending.currentFigure_;
+    return {id,ignoredLabels};
 }
 
 void RuntimeGraphicsGraph::reparent(RuntimeGraphicsId id, RuntimeGraphicsId parent) {
@@ -342,7 +402,10 @@ void RuntimeGraphicsGraph::reparent(RuntimeGraphicsId id, RuntimeGraphicsId pare
             if (legend.associatedAxes == parent &&
                 std::get<std::string>(legend.properties.at("AutoUpdate")) == "on") {
                 legend.legendLines.reserve(legend.legendLines.size() + 1);
-                if (std::get<std::string>(found->properties.at("DisplayName")).empty()) {
+                const bool keepsName = std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& entry) {
+                    return entry.second.legendExplicitMembers && std::find(entry.second.legendLines.begin(),entry.second.legendLines.end(),id) != entry.second.legendLines.end();
+                });
+                if (std::get<std::string>(found->properties.at("DisplayName")).empty() || (found->generatedLegendName && !keepsName)) {
                     automaticName = nextLegendName(legend, nodes_);
                 }
                 automaticLegend = &legend;
@@ -371,9 +434,18 @@ void RuntimeGraphicsGraph::reparent(RuntimeGraphicsId id, RuntimeGraphicsId pare
     destination.push_back(id);
     node.parent = parent;
     if (node.kind == RuntimeGraphicsKind::Line) {
-        for (auto& [candidate, legend] : nodes_) { (void)candidate; std::erase(legend.legendLines, id); }
-        if (automaticName) { std::get<std::string>(node.properties.at("DisplayName")).swap(*automaticName); }
-        if (automaticLegend) { automaticLegend->legendLines.push_back(id); }
+        for (auto& [candidate, legend] : nodes_) {
+            (void)candidate;
+            if (!legend.legendExplicitMembers && legend.associatedAxes != parent) { std::erase(legend.legendLines,id); }
+        }
+        if (automaticName) {
+            std::get<std::string>(node.properties.at("DisplayName")).swap(*automaticName);
+            node.generatedLegendName = automaticLegend->id;
+        }
+        if (automaticLegend && std::find(automaticLegend->legendLines.begin(),automaticLegend->legendLines.end(),id) == automaticLegend->legendLines.end()) {
+            automaticLegend->legendLines.push_back(id);
+        }
+        refreshLegendName(id);
     }
     if (node.kind == RuntimeGraphicsKind::Axes) { nodes_.at(parent).currentAxes = id; }
     for (const auto legend : legends) { reparent(legend, parent); }
@@ -473,11 +545,9 @@ std::string RuntimeGraphicsGraph::serialize(bool persistentIdentity, bool ascii,
             }
             record["axes"] = ids.at(*node.associatedAxes);
             Json entries = Json::array();
-            std::set<RuntimeGraphicsId> seen;
             for (const auto child : node.legendLines) {
                 const auto& series = nodes_.at(child);
-                if (series.kind != RuntimeGraphicsKind::Line || series.parent != node.associatedAxes ||
-                    !seen.insert(child).second) { throw std::logic_error("invalid Legend Line reference"); }
+                if (series.kind != RuntimeGraphicsKind::Line) { throw std::logic_error("invalid Legend Line reference"); }
                 const auto& name = std::get<std::string>(series.properties.at("DisplayName"));
                 entries.push_back({{"line", ids.at(child)}, {"label", name}});
             }
@@ -609,6 +679,7 @@ void RuntimeGraphicsGraph::setProperty(RuntimeGraphicsId id, const std::string& 
         legend.legendLines.resize(std::min(legend.legendLines.size(), labels->size()));
         for (size_t index = 0; index < legend.legendLines.size(); ++index) {
             pending.at(legend.legendLines[index]).properties.at("DisplayName") = labels->at(index);
+            pending.at(legend.legendLines[index]).generatedLegendName.reset();
         }
         nodes_.swap(pending);
         return;
@@ -646,6 +717,21 @@ void RuntimeGraphicsGraph::setProperty(RuntimeGraphicsId id, const std::string& 
     if (property->second.index() != value.index()) {
         throw std::invalid_argument("unknown graphics property or incorrect value type");
     }
+    if (found->second.kind == RuntimeGraphicsKind::Legend) {
+        if (auto* text = std::get_if<std::string>(&value)) {
+            for (auto& character : *text) {
+                if (character >= 'A' && character <= 'Z') { character += 'a' - 'A'; }
+            }
+            if (name == "Location") {
+                static const std::map<std::string,std::string> shortNames{{"n","north"},{"s","south"},
+                    {"e","east"},{"w","west"},{"ne","northeast"},{"nw","northwest"},
+                    {"se","southeast"},{"sw","southwest"}};
+                if (const auto alias = shortNames.find(*text); alias != shortNames.end()) { *text = alias->second; }
+            } else if (name == "Orientation" && (*text == "h" || *text == "v")) {
+                *text = *text == "h" ? "horizontal" : "vertical";
+            } else if ((name == "Visible" || name == "AutoUpdate") && *text == "of") { *text = "off"; }
+        }
+    }
     if (const auto* text = std::get_if<std::string>(&value)) {
         if (name == "Location") {
             static const std::set<std::string> locations{"north", "south", "east", "west",
@@ -681,6 +767,20 @@ void RuntimeGraphicsGraph::setProperty(RuntimeGraphicsId id, const std::string& 
         }
     }
     property->second = std::move(value);
+    if (name == "DisplayName") { found->second.generatedLegendName.reset(); }
+}
+
+void RuntimeGraphicsGraph::refreshLegendName(RuntimeGraphicsId id) {
+    auto found = nodes_.find(id);
+    if (found == nodes_.end() || !found->second.generatedLegendName) { return; }
+    for (const auto& [candidate,legend] : nodes_) {
+        if (std::find(legend.legendLines.begin(),legend.legendLines.end(),id) != legend.legendLines.end()) {
+            found->second.generatedLegendName = candidate;
+            return;
+        }
+    }
+    std::get<std::string>(found->second.properties.at("DisplayName")).clear();
+    found->second.generatedLegendName.reset();
 }
 
 void RuntimeGraphicsGraph::setLayoutEnvironment(RuntimeGraphicsId figure,
@@ -744,6 +844,11 @@ void RuntimeGraphicsGraph::erase(RuntimeGraphicsId id) {
     for (auto node : pending) {
         for (auto& [candidate, legend] : nodes_) { (void)candidate; std::erase(legend.legendLines, node); }
         nodes_.erase(node);
+    }
+    for (auto& [candidate,node] : nodes_) {
+        if (node.generatedLegendName && std::find(pending.begin(),pending.end(),*node.generatedLegendName) != pending.end()) {
+            refreshLegendName(candidate);
+        }
     }
 }
 
@@ -883,6 +988,61 @@ RuntimeObjectOperationResult runtimeGraphicsMember(const RuntimeValue& value, co
     }
 }
 
+RuntimeObjectOperationResult runtimeGraphicsLifecycle(const RuntimeValue& value, bool erase) {
+    std::vector<RuntimeGraphicsHandle> handles;
+    const auto count = runtimeObjectElementCount(value);
+    handles.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        const auto* element = runtimeObjectLogicalElement(value,index);
+        if (!element || !element->graphicsHandle) { return {false,{},"invalid graphics array element"}; }
+        handles.push_back(*element->graphicsHandle);
+    }
+    if (erase) {
+        for (auto& handle : handles) { handle.erase(); }
+        return {true,{}, {}};
+    }
+    std::vector<double> valid(count);
+    for (size_t index = 0; index < count; ++index) {
+        const auto offset = runtimeColumnMajorLinearToStorageOffset(value,index);
+        if (!offset) { return {false,{},"invalid graphics array shape"}; }
+        valid[*offset] = handles[index].valid() ? 1.0 : 0.0;
+    }
+    auto result = makeRuntimeVectorValue(std::move(valid),RuntimeNumericClass::Logical);
+    setRuntimeDimensions(result,runtimeDimensions(value));
+    return {true,std::move(result),{}};
+}
+
+std::vector<std::string> runtimeGraphicsLegendLabels(const RuntimeValue& value) {
+    std::vector<std::string> labels;
+    if (isRuntimeCharacterArray(value)) {
+        const auto dimensions = runtimeDimensions(value);
+        if (dimensions.size() != 2) { throw std::invalid_argument("Legend labels require two-dimensional character data"); }
+        const auto rows = dimensions[0], columns = dimensions[1];
+        if (!rows || !columns) { return {""}; }
+        for (size_t row = 0; row < rows; ++row) {
+            std::u16string text;
+            for (size_t column = 0; column < columns; ++column) {
+                const auto character = runtimeCharacterElement(value,row+column*rows);
+                if (!character) { throw std::invalid_argument("invalid Legend character data"); }
+                text.push_back(*character);
+            }
+            while (rows > 1 && !text.empty() && text.back() == u' ') { text.pop_back(); }
+            labels.push_back(runtimeUtf16ToUtf8(text));
+        }
+    } else if (value.kind == RuntimeValueKind::Cell || isRuntimeStringArray(value)) {
+        for (size_t index = 0; index < runtimeShapeElementCount(value); ++index) {
+            const auto offset = runtimeColumnMajorLinearToStorageOffset(value,index);
+            const auto* element = runtimeStringElement(value,index);
+            const auto text = value.kind == RuntimeValueKind::Cell
+                ? (offset ? runtimeTextScalarUtf8(value.cells.at(*offset)) : std::nullopt)
+                : (element && !element->missing ? std::optional<std::string>(runtimeUtf16ToUtf8(element->value)) : std::nullopt);
+            if (!text) { throw std::invalid_argument("Legend labels require nonmissing text"); }
+            labels.push_back(*text);
+        }
+    } else { throw std::invalid_argument("Legend labels require text"); }
+    return labels;
+}
+
 RuntimeObjectOperationResult runtimeSetGraphicsMember(const RuntimeValue& target,
     const std::string& name, const RuntimeValue& value) {
     try {
@@ -901,21 +1061,7 @@ RuntimeObjectOperationResult runtimeSetGraphicsMember(const RuntimeValue& target
         } else if (name == "Children") {
             throw std::invalid_argument("Children is read-only; assign Parent to reparent an object");
         } else if (handle.kind() == RuntimeGraphicsKind::Legend && name == "String") {
-            std::vector<std::string> labels;
-            if (const auto text = runtimeTextScalarUtf8(value)) { labels.push_back(*text); }
-            else if (value.kind == RuntimeValueKind::Cell || isRuntimeStringArray(value)) {
-                const auto count = runtimeShapeElementCount(value);
-                for (size_t index = 0; index < count; ++index) {
-                    const auto offset = runtimeColumnMajorLinearToStorageOffset(value, index);
-                    const auto labelText = value.kind == RuntimeValueKind::Cell
-                        ? (offset ? runtimeTextScalarUtf8(value.cells.at(*offset)) : std::nullopt)
-                        : (runtimeStringElement(value, index) && !runtimeStringElement(value, index)->missing
-                            ? std::optional<std::string>(runtimeUtf16ToUtf8(runtimeStringElement(value, index)->value)) : std::nullopt);
-                    if (!labelText) { throw std::invalid_argument("Legend String requires text labels"); }
-                    labels.push_back(*labelText);
-                }
-            } else { throw std::invalid_argument("Legend String requires text labels"); }
-            handle.setProperty(name, std::move(labels));
+            handle.setProperty(name, runtimeGraphicsLegendLabels(value));
         } else if (handle.kind() == RuntimeGraphicsKind::Axes &&
             (name == "Position" || name == "InnerPosition")) {
             const auto dimensions = runtimeDimensions(value);

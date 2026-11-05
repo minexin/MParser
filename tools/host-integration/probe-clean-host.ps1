@@ -43,7 +43,8 @@ foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-met
 }
 foreach ($patch in @('mexecclient-text-labels-candidate.patch','mexecclient-line-clipping-candidate.patch',
     'mexecclient-grid-candidate.patch','mexecclient-legend-candidate.patch','mexecclient-color-candidate.patch',
-    'mexecclient-runtime-identity-candidate.patch','mexecclient-axes-layout-candidate.patch','mexecclient-layout-sync-candidate.patch')) {
+    'mexecclient-runtime-identity-candidate.patch','mexecclient-axes-layout-candidate.patch','mexecclient-layout-sync-candidate.patch',
+    'mexecclient-legend-references-candidate.patch')) {
     git -C $clientSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Client patch failed: $patch; see $stage" }
 }
@@ -75,6 +76,9 @@ if ($LASTEXITCODE) { throw "Colon graphics probe failed; see $stage" }
 node (Join-Path $PSScriptRoot 'test-legend-state.cjs') (Join-Path $build 'mexec_server.exe') `
     (Join-Path $stage 'legend-state-probe')
 if ($LASTEXITCODE) { throw "Legend state probe failed; see $stage" }
+node (Join-Path $PSScriptRoot 'test-legend-creation.cjs') (Join-Path $build 'mexec_server.exe') `
+    (Join-Path $stage 'legend-creation-probe')
+if ($LASTEXITCODE) { throw "Legend creation probe failed; see $stage" }
 node (Join-Path $PSScriptRoot 'test-graphics-writeback.cjs') (Join-Path $build 'mexec_server.exe') `
     (Join-Path $stage 'graphics-writeback-probe')
 if ($LASTEXITCODE) { throw "Graphics writeback probe failed; see $stage" }

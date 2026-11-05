@@ -12,7 +12,7 @@ source tree, product metadata, and installed SDK report candidate version
 `1.15.0` in development state. The v1.4-v1.14 internal batches previously
 retained the 1.3.0 stamp until the v1.14 milestone synchronized them. The
 v1.15 host-integration line now uses C/C++ source API 1.15, ABI 2.12, CLI 1.0,
-protocol 1.2 and builtin 1.21. This identity is not a publication claim.
+protocol 1.2 and builtin 1.22. This identity is not a publication claim.
 
 This project is not currently using the v1.3 interfaces in production.
 Implementation, in-repository consumers, tests, samples, and documentation may
@@ -34,7 +34,7 @@ unreleased development interfaces.
 | C ABI | generation 2, revision 12; v1.14 revision 5 remains archived | Binary layout, symbols, ownership, and calling convention |
 | C++ source API | 1.15 | Header-level source contract over the C ABI |
 | Machine result protocol | `mparser.result` 1.2 | JSON producer/consumer contract |
-| Builtin source contract | 1.21 | Registry/descriptor/call semantics compiled with the engine |
+| Builtin source contract | 1.22 | Registry/descriptor/call semantics compiled with the engine |
 
 ## CLI 1.0
 
@@ -111,7 +111,7 @@ Consumers check the protocol major and tolerate documented additive minor
 fields. A change that removes a required field or changes its meaning requires
 a protocol-major change.
 
-## Builtin Source Contract 1.21
+## Builtin Source Contract 1.22
 
 `BuiltinRegistry`, `BuiltinDescriptor`, `BuiltinCall`, and `BuiltinResult`
 form a source-integration contract for builtins compiled with the engine. They
@@ -158,6 +158,11 @@ Contract 1.21 adds identifier predicates and the current graphics lifecycle,
 labels, Legend, grids and export validation subset. Its development catalog
 has 356 descriptors and 358 registered names; headless export rejection is
 not an image encoder or a claim of full MATLAB graphics support.
+
+Contract 1.22 extends the existing Legend builtin to variadic label/subset and
+supported name-value creation, warning-state effects, duplicate/cross-Axes
+references and measured lifecycle rules. Descriptor/name counts remain
+356/358. Contract 1.21 is retained as a historical catalog, not overwritten.
 
 An independently compiled external C/C++ callback table requires its own
 future pure-C ABI. It cannot expose `RuntimeValue`, STL containers, registry

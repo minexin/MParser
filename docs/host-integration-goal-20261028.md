@@ -24,9 +24,9 @@ success may substitute for missing kernel contracts.
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | ABI 2.10 explicit method ownership, cross-command method/listener and non-static bound-handle access passed SDK and clean host replay; measured creator-context rules match the R2024b cases; deployed navigation and stale-document UI acceptance pending |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; host-reported floating colon endpoint loss fixed with 38 R2024b cases, 356 kernel/package checks, actual optimized-loop checks and fresh installed-SDK REST replay; narrow-screen cropping and broader downstream acceptance remain open |
-| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | Text/Clipping/Color/Legend and stable identity writes passed; ABI 2.12 adds explicit environments, six Axes units and v4 snapshots; source-copy Canvas measurement/negotiation/multi-Axes implementation passes controlled renderer/bootstrap and real SDK/REST tests; actual v4 browser-pixel/responsive acceptance, UI editing, full native layout and deployment remain open |
+| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout passed; builtin 1.22 adds 80-case R2024b Legend creation/subset/property/lifecycle replay in HIR/SDK/REST; bounded actual v4 measurement/dual-Axes pixels/resize/zoom/reload passed on the preceding SDK; 390px cropping fails, new Legend browser adoption, UI editing, native layout and deployment remain open |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 360/360 and clean installed-SDK host build/REST/67 regressions passed, with bounded old-SDK/new-DLL checks and restored-ON regression; desktop visual/PNG smoke is not full browser acceptance; actual-commit CI, deployment and release acceptance remain separate gates |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 362/362, fresh installed-SDK host/80-case Legend REST/67 regressions and bounded old-header/current-DLL controls passed; restored ON 67/67 passed; actual v4 desktop evidence is bounded and 390px cropping fails; actual-commit CI, deployment and release acceptance remain separate gates |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only result collection and ON-mode source-only host replay passed; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see ordered-display-events.md |
 
@@ -77,6 +77,36 @@ records that rename was not shipped; no rename operation or UI is claimed.
    explicitly report any unavailable browser/platform/renderer evidence.
 
 ## Progress
+
+- 2026-11-05 Legend creation and array lifecycle: 80 actual R2024b cases were
+  independently assertion-replayed. HIR/VM checks 160 outcomes; public SDK
+  checks 320 in four requested modes, including frozen results and atomic
+  invalid/foreign rejection. Ordered/duplicate/cross-Axes subsets, creation
+  labels, supported name-value forms, warning state and generated-name cleanup
+  now use kernel state. HIR/VM graphics delete/isvalid arrays share shape-aware
+  logic instead of falling into file deletion. Builtin source contract 1.22
+  preserves the 1.21 archive; ABI 2.12/158 and graphics formats are unchanged.
+  Complete rebuilt kernel/package regression passed 362/362 in 65.88 seconds
+  at build/legend-creation-final-full-test.log. Source-only installed-SDK host
+  stage build/clean-host-probe/a3cce8c27a944401ab82b4d4789a3257 passed 148 build
+  actions, all REST/client probes (including 80 creation cases) and 67/67 tests
+  in 27.61 seconds. Loaded DLL SHA256:
+  9689A754300DF313D828F7FD9692C6D9447426AC05D5CFC2EF85AAD1A67AE298.
+  Bounded old ABI 2.11 SDK OFF and old-header/current-DLL controls passed layout
+  absence/legacy writeback; old SDK ON was rejected. Restored current SDK ON
+  passed layout and another 67/67 in 20.62 seconds at
+  build/legend-creation-compat.log. This is not a full old-header host regression
+  with the new DLL. No original sibling source/service changed. Full Legend
+  layout/text, browser adoption and release gates remain open.
+- 2026-11-05 actual v4 browser follow-up: after the user reinstalled/opened
+  Tabbit, the preceding da05219/EC3756F5 SDK stage passed real measurement,
+  dual-Axes red/blue pixels and inspected screenshot, DPR=2/resize with stable
+  pixel-unit source positions, independent selection/zoom/reset, close/recreate
+  and same-page reload without hidden execution. 390px document width remained
+  650px, so narrow-screen acceptance fails. Canvas PNG encoding was inspected;
+  download UI completion and emulated screenshots remain unverified. Raw
+  evidence: build/browser-layout-20261105. The task finished and its owned
+  isolated server was stopped. This does not certify the new Legend kernel.
 
 - 2026-11-05 explicit host layout environment: the user selected host-provided
   metrics, not inferred virtual defaults. ABI 2.12 preserves the previous 157

@@ -3,8 +3,11 @@
 The explicit-layout renderer/synchronization candidates and their controlled
 Canvas, app/API and real SDK/REST probes are described in
 [the Canvas layout guide](../../docs/host-canvas-layout-candidate.md).
-The clean-host runner now applies eight client candidates. No v4 browser-pixel,
-responsive or deployed-host acceptance is implied by their passing tests.
+The clean-host runner now applies nine client candidates. The Legend-reference
+candidate resolves explicit entries through the whole snapshot, including
+duplicate/cross-Axes references; it never draws the referenced foreign curve
+as an associated-Axes series. Bounded actual v4 browser evidence is recorded
+in the guide, separately from pending narrow-screen and deployment acceptance.
 
 This patch is an opt-in integration candidate, not a deployed server update.
 Apply it to a separate MExecServer source checkout after checking the diff:

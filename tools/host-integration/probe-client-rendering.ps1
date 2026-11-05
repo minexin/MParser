@@ -14,7 +14,8 @@ git -C $stage init -q
 if ($LASTEXITCODE) { throw 'Unable to initialize isolated patch target' }
 foreach ($patch in @('mexecclient-text-labels-candidate.patch','mexecclient-line-clipping-candidate.patch',
     'mexecclient-grid-candidate.patch','mexecclient-legend-candidate.patch','mexecclient-color-candidate.patch',
-    'mexecclient-runtime-identity-candidate.patch','mexecclient-axes-layout-candidate.patch','mexecclient-layout-sync-candidate.patch')) {
+    'mexecclient-runtime-identity-candidate.patch','mexecclient-axes-layout-candidate.patch','mexecclient-layout-sync-candidate.patch',
+    'mexecclient-legend-references-candidate.patch')) {
     git -C $stage apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Candidate does not apply: $patch; see $stage" }
 }

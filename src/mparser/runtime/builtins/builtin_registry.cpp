@@ -2397,39 +2397,103 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
     }
     if (name == "legend") {
         auto descriptor = baseDescriptor(name);
-        descriptor.inputs = BuiltinArity::range(0, 2);
+        descriptor.inputs = BuiltinArity::variadic();
         descriptor.outputs = BuiltinArity::range(0, 1);
         descriptor.implementation = BuiltinImplementationKind::Context;
         descriptor.purity = BuiltinPurity::Impure;
-        descriptor.sideEffects = BuiltinSideEffect::ObjectState;
-        descriptor.contextPermissions = BuiltinContextPermission::Graphics;
+        descriptor.sideEffects = BuiltinSideEffect::ObjectState | BuiltinSideEffect::WarningState;
+        descriptor.contextPermissions = BuiltinContextPermission::Graphics | BuiltinContextPermission::WarningState;
         descriptor.requiredContext = BuiltinContextPermission::Graphics;
         descriptor.errorIdentifier = "MParser:InvalidGraphicsCall";
-        descriptor.summary = "Create, show, hide or remove the automatic Line legend for a 2-D Axes.";
+        descriptor.summary = "Configure 2-D Line legends with labels, ordered subsets and supported properties.";
         descriptor.implicitOutputPolicy = BuiltinImplicitOutputPolicy::None;
         descriptor.handler = [](const BuiltinCall& call) {
             auto graph = call.context->graphicsGraph;
             const auto guard = graph->lock();
             std::optional<RuntimeGraphicsId> axes;
             size_t index = 0;
-            if (!call.arguments.empty() && isRuntimeGraphicsValue(call.arguments.front())) {
+            if (!call.arguments.empty() && call.arguments.front().graphicsHandle &&
+                call.arguments.front().graphicsHandle->belongsTo(*graph) && call.arguments.front().graphicsHandle->valid() &&
+                call.arguments.front().graphicsHandle->kind() == RuntimeGraphicsKind::Axes) {
                 const auto& handle = call.arguments.front().graphicsHandle;
-                if (!handle || !handle->belongsTo(*graph) || !handle->valid() || handle->kind() != RuntimeGraphicsKind::Axes) {
+                if (!handle->belongsTo(*graph) || !handle->valid()) {
                     return BuiltinResult::failure(call.span, "expected a live scalar Axes", "MParser:InvalidGraphicsCall");
                 }
                 axes = handle->id();
                 ++index;
             }
+            const auto lower = [](std::string text) {
+                for (auto& character : text) {
+                    if (character >= 'A' && character <= 'Z') { character += 'a' - 'A'; }
+                }
+                return text;
+            };
+            const auto propertyName = [&](const RuntimeValue& value) -> std::optional<std::string> {
+                const auto text = value.kind == RuntimeValueKind::NameValueArgument
+                    ? std::optional<std::string>(value.text) : runtimeTextScalarUtf8(value);
+                if (!text) { return std::nullopt; }
+                const auto key = lower(*text);
+                for (const auto candidate : {"Location","Orientation","AutoUpdate","Visible"}) {
+                    if (key == lower(candidate)) { return candidate; }
+                }
+                return std::nullopt;
+            };
             std::optional<std::string> mode;
-            if (index < call.arguments.size()) {
-                mode = runtimeTextScalarUtf8(call.arguments[index]);
-                if (call.arguments.size() != index + 1 || !mode ||
-                    (*mode != "show" && *mode != "hide" && *mode != "off")) {
-                    return BuiltinResult::failure(call.span, "unsupported legend arguments", "MParser:InvalidGraphicsCall");
+            if (index + 1 == call.arguments.size()) {
+                if (const auto text = runtimeTextScalarUtf8(call.arguments[index])) {
+                    const auto key = lower(*text);
+                    if (key == "show" || key == "hide" || key == "off" || key == "toggle") { mode = key; }
+                }
+            }
+            RuntimeGraphicsLegendOptions options;
+            if (!mode && index < call.arguments.size()) {
+                const auto& value = call.arguments[index];
+                if (isRuntimeGraphicsValue(value)) {
+                    std::vector<RuntimeGraphicsId> lines;
+                    for (size_t elementIndex = 0; elementIndex < runtimeObjectElementCount(value); ++elementIndex) {
+                        const auto* element = runtimeObjectLogicalElement(value,elementIndex);
+                        const auto* handle = element ? element->graphicsHandle.get() : nullptr;
+                        if (!handle || !handle->belongsTo(*graph) || !handle->valid() || handle->kind() != RuntimeGraphicsKind::Line) {
+                            return BuiltinResult::failure(call.span,"legend subset requires live Lines from this runtime","MParser:InvalidGraphicsCall");
+                        }
+                        lines.push_back(handle->id());
+                    }
+                    if (!lines.empty()) { options.lines = std::move(lines); }
+                    ++index;
+                } else if (isRuntimeNumericValue(value) && runtimeShapeElementCount(value) == 0) { ++index; }
+                if (index < call.arguments.size()) {
+                    const auto& labels = call.arguments[index];
+                    const auto dimensions = runtimeDimensions(labels);
+                    const bool grouped = labels.kind == RuntimeValueKind::Cell ||
+                        (isRuntimeStringArray(labels) && !isRuntimeStringScalar(labels)) ||
+                        (isRuntimeCharacterArray(labels) && dimensions[0] > 1);
+                    if (grouped) { options.labels = runtimeGraphicsLegendLabels(labels); ++index; }
+                    else {
+                        while (index < call.arguments.size() && !propertyName(call.arguments[index])) {
+                            const auto text = runtimeTextScalarUtf8(call.arguments[index]);
+                            if (!text) { break; }
+                            options.labels.push_back(*text); ++index;
+                        }
+                    }
+                }
+                while (index < call.arguments.size()) {
+                    const auto& argument = call.arguments[index];
+                    const bool named = argument.kind == RuntimeValueKind::NameValueArgument;
+                    const auto name = propertyName(argument);
+                    if (!name || (named ? argument.cells.size() != 1 : index + 1 == call.arguments.size())) {
+                        return BuiltinResult::failure(call.span,"unsupported or unpaired Legend property","MParser:InvalidGraphicsCall");
+                    }
+                    const auto& propertyValue = named ? argument.cells.front() : call.arguments[index+1];
+                    if (const auto text = runtimeTextScalarUtf8(propertyValue)) { options.properties.emplace_back(*name,*text); }
+                    else if (isRuntimeNumericValue(propertyValue) && !propertyValue.numericComplex && !propertyValue.sparseStorage && runtimeShapeElementCount(propertyValue) == 1) {
+                        options.properties.emplace_back(*name,std::vector<double>{*runtimeNumericElement(propertyValue,0)});
+                    } else { return BuiltinResult::failure(call.span,"Legend property requires scalar text or 0/1","MParser:InvalidGraphicsCall"); }
+                    index += named ? 1 : 2;
                 }
             }
             std::optional<RuntimeGraphicsId> id;
-            if (mode == "off" || mode == "hide") {
+            bool ignoredLabels = false;
+            if (mode == "off" || mode == "hide" || mode == "toggle") {
                 // Do not create a Figure/Axes just to hide or remove its absent legend.
                 if (!axes && !graph->nodes().empty()) {
                     axes = graph->find(graph->currentFigure())->currentAxes;
@@ -2440,14 +2504,25 @@ BuiltinDescriptor descriptorFor(std::string_view name) {
                     }
                 }
                 if (id && mode == "off") { graph->erase(*id); id.reset(); }
-                else if (id) { graph->setProperty(*id, "Visible", std::string{"off"}); }
+                else if (id) {
+                    const bool visible = std::get<std::string>(graph->find(*id)->properties.at("Visible")) == "on";
+                    graph->setProperty(*id, "Visible", std::string(mode == "toggle" && !visible ? "on" : "off"));
+                } else if (mode == "toggle") { id = graph->configureLegend(axes,options).id; }
             } else {
-                id = graph->legend(axes ? *axes : graph->currentAxes());
-                graph->setProperty(*id, "Visible", std::string{"on"});
+                const auto configured = graph->configureLegend(axes,options);
+                id = configured.id; ignoredLabels = configured.ignoredLabels;
             }
-            if (!call.requestedOutputCount) { return BuiltinResult::success(); }
-            return BuiltinResult::success({id ? makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph, *id))
-                                              : makeRuntimeMatrixValue(0, 0, {})});
+            std::vector<Diagnostic> diagnostics;
+            if (ignoredLabels) {
+                const std::string identifier = "MATLAB:legend:IgnoringExtraEntries", message = "Ignoring extra Legend labels";
+                if (call.context->warningContext) {
+                    auto warning = call.context->warningContext->warning({makeRuntimeCharacterVectorUtf8(identifier),makeRuntimeCharacterVectorUtf8(message)},0);
+                    if (warning.emitted) { diagnostics.push_back({call.span,warning.emitted->message,warning.emitted->identifier,DiagnosticSeverity::Warning}); }
+                } else { diagnostics.push_back({call.span,message,identifier,DiagnosticSeverity::Warning}); }
+            }
+            std::vector<RuntimeValue> outputs;
+            if (call.requestedOutputCount) { outputs.push_back(id ? makeRuntimeGraphicsValue(RuntimeGraphicsHandle(graph,*id)) : makeRuntimeMatrixValue(0,0,{})); }
+            return BuiltinResult::success(std::move(outputs),std::move(diagnostics));
         };
         return descriptor;
     }

@@ -4266,15 +4266,15 @@ private:
         }
 
         if ((name == "delete" || name == "isvalid") && arguments.size() == 1 &&
-            arguments.front().graphicsHandle) {
+            isRuntimeGraphicsValue(arguments.front())) {
             if (requestedOutputCount > (name == "delete" ? 0U : 1U)) {
                 addDiagnostic(node, "invalid graphics lifecycle output count");
                 return missingOutputs();
             }
-            auto& handle = *arguments.front().graphicsHandle;
-            if (name == "delete") { handle.erase(); return FunctionCallResult{}; }
+            auto result = runtimeGraphicsLifecycle(arguments.front(),name == "delete");
+            if (!result.succeeded) { addDiagnostic(node,std::move(result.error)); return missingOutputs(); }
             return FunctionCallResult{requestedOutputCount
-                ? std::vector<RuntimeValue>{makeRuntimeLogicalValue(handle.valid())}
+                ? std::vector<RuntimeValue>{std::move(result.value)}
                 : std::vector<RuntimeValue>{}};
         }
 

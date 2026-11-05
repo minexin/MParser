@@ -14152,14 +14152,14 @@ private:
                                     isRuntimeStringArray(argument);
                          }));
         if ((name == "delete" || name == "isvalid") && arguments.size() == 1 &&
-            arguments.front().graphicsHandle) {
+            isRuntimeGraphicsValue(arguments.front())) {
             if (requestedCount > (name == "delete" ? 0 : 1)) {
                 addDiagnostic(instruction, "invalid graphics lifecycle output count");
                 return missingOutputs(requestedCount);
             }
-            auto& handle = *arguments.front().graphicsHandle;
-            if (name == "delete") { handle.erase(); return {}; }
-            return requestedCount ? std::vector<RuntimeValue>{makeRuntimeLogicalValue(handle.valid())}
+            auto result = runtimeGraphicsLifecycle(arguments.front(),name == "delete");
+            if (!result.succeeded) { addDiagnostic(instruction,std::move(result.error)); return missingOutputs(requestedCount); }
+            return requestedCount ? std::vector<RuntimeValue>{std::move(result.value)}
                                   : std::vector<RuntimeValue>{};
         }
         if (const BuiltinDescriptor* descriptor =

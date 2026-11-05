@@ -88,6 +88,13 @@ for (const version of [2,3]) {
   assert.ok(labelCall[2] >= 0 && labelCall[2] + labelCall[4] <= canvas.clientWidth);
   canvas.clientWidth = 600;
   canvas.clientHeight = 400;
+  graph.objects.push({id:6,type:'Figure',properties:{Visible:'off'},children:[7]},
+    {id:7,type:'Axes',parent:6,children:[8],properties:{}},
+    {id:8,type:'Line',parent:7,properties:{XData:[0,1],YData:[1,0],Color:[0,0,1]}});
+  legend.entries=[{line:8,label:'Legend external'},{line:3,label:'Legend local'},{line:8,label:'Legend repeated'}];
+  render(graph,['Legend external','Legend local','Legend repeated']);
+  assert.equal(sandbox.MExec.plot.state.series.length,1,'external Legend reference does not draw a foreign Axes curve');
+  assert.equal(sandbox.MExec.plot.state.legend.entries[0].color,'rgb(0, 0, 255)');
   graph.objects = graph.objects.filter(object=>object.id !== 5);
   render(graph, []);
   sandbox.MExec.plot.clear();
