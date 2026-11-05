@@ -10,8 +10,8 @@ MParser feature branch was created.
 
 | Local Source | Private Repository | Verified Remote Main |
 | --- | --- | --- |
-| `D:/project/MExecServer` | [minexin/MExecServer](https://github.com/minexin/MExecServer) | `c1f9f7cbeffdaa577cb28658ba64186066cde9ed` |
-| `D:/project/MExecClient` | [minexin/MExecClient](https://github.com/minexin/MExecClient) | `f27f5f74d05c3749c03aa86c11d6dc38b04d6488` |
+| `D:/project/MExecServer` | [minexin/MExecServer](https://github.com/minexin/MExecServer) | `5481e691d14e0b76379d1eead95242ca3c91f308` |
+| `D:/project/MExecClient` | [minexin/MExecClient](https://github.com/minexin/MExecClient) | `6995bcae92cfd6fa06b77d22bf9123745de6390f` |
 
 Both repositories and their default `main` branches were verified directly
 through GitHub's authenticated API. They are separate from MParser's tree and
@@ -44,6 +44,9 @@ loopback child processes and unique evidence roots, not a deployed service.
 
 - Kernel full rebuild/regression: 364/364 in 99.23 seconds,
   `build/host-adoption-20261105/kernel-full-regression.log`.
+  The subsequent 2026-11-06 full local replay also passed 364/364, including
+  installed C/C++ consumers and the relocated Windows archive:
+  `build/mparser-115-host-sync-local.log`.
 - Original-source host: 148 build actions and 85/85 in 23.61 seconds,
   `build/host-adoption-20261105/adopted-host-build-test-corrected.log`.
 - A fresh source-only copy of the adopted originals, without reapplying the
@@ -66,24 +69,27 @@ recorded on its own page.
 
 ## GitHub Actions
 
-- [Frontend run 42034228270](https://github.com/minexin/MExecClient/actions/runs/42034228270):
+- [Frontend run 42075178497](https://github.com/minexin/MExecClient/actions/runs/42075178497):
   all four Windows/Linux and Node 22/24 jobs passed on the client revision
   above. Each artifact reports 24 module syntax checks, 51 unit tests and 11
   integration tests. These are automated DOM/Canvas replays, not Tabbit.
-- [Backend run 42056268166](https://github.com/minexin/MExecServer/actions/runs/42056268166):
+- [Backend run 42075623084](https://github.com/minexin/MExecServer/actions/runs/42075623084):
   Windows x64, CMake 4.4.5, Node 24.22.2. The configured read credential
   checked out the private frontend revision above. The workflow installed
-  the SDK built from MParser `8af9e74151766a13b831ddf5d86a6c3dddff1869` and
+  the SDK built from MParser `a541767682788bb68bc6deb95b5ddd9c246da85b` and
   passed 85/85 host/client CTests without failures, skips or disabled cases.
   The downloaded report, JUnit and CTest log agree on the clean checkout,
   SDK 1.15.0/ABI 2.13 and test inventory; see
-  `build/private-host-ci-verified-42056268166`. This includes the actual
+  `build/private-host-ci-verified-42075623084`. This includes the actual
   PowerShell pipeline, exact UTF-8 inputs with/without BOM, stdin error
-  location, and the 31-case behavior probe with kernel `rand`/`rng`.
+  location, the 31-case behavior probe with kernel `rand`/`rng`, and the
+  v3/v4 view continuity regression.
 - The pinned kernel revision passed
+  [Documentation CI 42073260611](https://github.com/minexin/MParser/actions/runs/42073260611).
+  Its unchanged kernel sources also passed
   [Cross-platform CI 42026807929](https://github.com/minexin/MParser/actions/runs/42026807929)
-  and [Documentation CI 42026807874](https://github.com/minexin/MParser/actions/runs/42026807874).
-  Later documentation-only commits do not change the pinned kernel code.
+  at `8af9e74151766a13b831ddf5d86a6c3dddff1869`. Later documentation-only
+  commits do not change the pinned kernel code.
 
 ## Local Service Deployment
 
@@ -99,8 +105,10 @@ with executable/start-time ownership checks.
 The deployed server/client sources are the initial private imports
 `00682e1350eb4caa02d756a85bfb3d7254610707` and
 `6dda80db39ff94f26a0608d5c08dae95b79c6ab0`. The CI/CLI follow-up does not
-change the served HTTP implementation or frontend assets and did not restart
-this process. It is not a deployment of the current GitHub commits.
+change the served HTTP implementation. The newer frontend continuity fix
+was verified on an isolated host only. Neither follow-up restarted this
+process or replaced the deployed assets. The development SDK documentation
+was reinstalled without changing the development DLL hash.
 
 `build/host-adoption-20261105/deployed-service-evidence/verified.json` records
 actual HTTP readback hashes for all 27 frontend resources and REST acceptance
@@ -113,8 +121,8 @@ not publication of an MParser release.
 The later deployed REST checks verified failed compile/execute preservation,
 kernel reason codes on rename, and compile-only function ranges. Actual
 Tabbit replay on this same service verified definition navigation and
-bounded graphics cases, and found the v4/v3 selection issue recorded in
-[browser acceptance](host-browser-acceptance.md#deployed-loopback-replay).
+bounded graphics cases, and found the v4/v3 selection issue fixed in the
+[isolated follow-up](host-browser-acceptance.md#identity-continuity-follow-up).
 
 ## Repository And Patch Policy
 

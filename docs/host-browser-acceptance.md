@@ -84,16 +84,38 @@ the deployed revisions and DLL. The running service was not replaced.
   (`build/tabbit-deployed-lifecycle-confirm.json`).
 - `print` without a renderer explicitly failed with
   `MParser:GraphicsRendererUnavailable`, leaving no PDF in the session.
-  **Open frontend defect:** the selected first Figure fell back to the
+  **Deployed baseline defect:** the selected first Figure fell back to the
   second when a v3 execution result arrived while the v4 layout view was
   active. The result's v3 graph was identical to the REST readback before
   the failure. This is a selection-continuity problem, not a deleted or
   overwritten kernel Figure. Evidence: `build/tabbit-deployed-lifecycle.json`,
-  `selectionRegression`. A fix must also preserve real partial execution
-  effects and selection changes when a Figure is hidden or deleted.
+  `selectionRegression`. The source fix and its isolated acceptance are below.
 
 Only the audit tab and its temporary API session were removed; the service
 was not restarted. This run did not perform a new native PNG download.
+
+## Identity Continuity Follow-Up
+
+On 2026-11-06, the frontend fix at
+`6995bcae92cfd6fa06b77d22bf9123745de6390f` was verified against the same
+ABI 2.13 contract on a new isolated loopback host. The actual HTTP-served
+`plot.js` matched the working file by SHA256. The view now uses kernel graph
+and object identities across v3 execution and v4 layout snapshots, not the
+snapshot-local selector references. A different graph does not reuse the
+selection. Real additions, hiding and deletion still update selection;
+authoritative Axes limit changes supersede a stale local zoom.
+
+Tabbit selected the first of two Figures, its second Axes and a zoomed range.
+Renderer-unavailable `print` returned the same v3 graph and did not disturb
+the choice or zoom. A second failed export followed a real Line color
+mutation; the Canvas still drew the changed Line (539 magenta pixels),
+retained the same view and wrote no PDF. Changed Axes limits, hidden Figure
+fallback, close/recreate and old/new handle validity also passed. The
+1280 x 800 screenshot was inspected. Evidence:
+`build/browser-selection-fix-10d7d4cbbe804485a2b18ff950083c26/replay.json`
+and `verified-selection.png` in the same directory. The isolated session,
+tab and server were cleaned up. This verifies the current source fix, not
+installation of that fix into the still-running port 8080 snapshot.
 
 ## Selected Pair
 
