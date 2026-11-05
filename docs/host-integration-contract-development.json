@@ -33,6 +33,10 @@
   },
   "artifacts": [
     {
+      "path": "docs/host-source-adoption.md",
+      "sha256_lf": "b852e18b5d7bd25c772477dc8350bb026235c5c11f3318ec61c4aed01a8af90f"
+    },
+    {
       "path": "docs/graphics-export-contract.md",
       "sha256_lf": "41897de42d1e93dc1e4d77eec9c13ea3d40c94a8c8ed338f49de9911eb982483"
     },
@@ -50,7 +54,7 @@
     },
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "e19d1ba9c2156d5a99462a07a89eed95996e383ce5f15ec2a52ab297f10f16d8"
+      "sha256_lf": "9368a14cee0da511e4ff847776a7c4b60c1abce64a2dd2f67463665b67c6aedb"
     },
     {
       "path": "docs/versioning-and-deprecation.md",

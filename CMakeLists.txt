@@ -3471,6 +3471,7 @@ install(FILES
     docs/host-compact-layout-candidate.md
     docs/host-ordered-display-candidate.md
     docs/host-definition-navigation-candidate.md
+    docs/host-source-adoption.md
     docs/system-search-paths.md
     docs/assignment-display-development.md
     docs/ordered-display-events.md

@@ -51,6 +51,9 @@ mparser --run --result-format=json-v1 script.m
   Legend browser checks and bounded responsive acceptance on isolated copies.
 - [Host Definition Navigation](host-definition-navigation-candidate.md):
   exact compiler ranges and revision-checked navigation across open documents.
+- [Original Host Source Adoption](host-source-adoption.md): local original-directory
+  integration, the development preset and 85-test suite, private repository
+  revisions and the separate local-service deployment evidence.
 - [Ordered Display Candidate](host-ordered-display-candidate.md): explicit
   read-only event consumption, exact history and bounded browser interaction.
 

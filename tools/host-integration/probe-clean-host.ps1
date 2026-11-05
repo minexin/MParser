@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory)][string]$ServerRoot,
     [Parameter(Mandatory)][string]$ClientRoot,
     [Parameter(Mandatory)][string]$SdkPrefix,
+    [switch]$IntegratedSources,
     [string]$GraphicsExportPython,
     [string]$PdfToPpm = 'pdftoppm',
     [int]$Parallel = 4
@@ -29,6 +30,9 @@ Copy-Item -LiteralPath (Join-Path $server 'CMakeLists.txt') -Destination $hostSo
 foreach ($directory in @('src','include','third_party','docs','tests')) {
     Copy-Source (Join-Path $server $directory) (Join-Path $hostSource $directory) ('copy-server-' + $directory + '.log')
 }
+if ($IntegratedSources) {
+    Copy-Source (Join-Path $server 'cmake') (Join-Path $hostSource 'cmake') 'copy-server-cmake.log'
+}
 foreach ($directory in @('web','tests')) {
     Copy-Source (Join-Path $client $directory) (Join-Path $clientSource $directory) ('copy-client-' + $directory + '.log')
 }
@@ -36,6 +40,7 @@ foreach ($target in @($hostSource,$clientSource)) {
     git -C $target init -q
     if ($LASTEXITCODE) { throw "Cannot initialize patch target: $target" }
 }
+if (!$IntegratedSources) {
 foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-metadata.patch',
     'mexecserver-development-acceptance.patch','mexecserver-workspace-rename.patch',
     'mexecserver-compile-diagnostics.patch','mexecserver-system-path-sync.patch','mexecserver-ordered-events.patch',
@@ -51,6 +56,13 @@ foreach ($patch in @('mexecclient-text-labels-candidate.patch','mexecclient-line
     'mexecclient-definition-navigation-candidate.patch')) {
     git -C $clientSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Client patch failed: $patch; see $stage" }
+}
+} else {
+    foreach ($file in @((Join-Path $hostSource 'cmake/host-integration-tests.cmake'),
+            (Join-Path $clientSource 'web/js/analysis.js'))) {
+        if (!(Test-Path -LiteralPath $file)) { throw "Integrated source marker missing: $file" }
+    }
+    Write-Output 'Using adopted host/client sources; legacy candidates are not reapplied.'
 }
 $exportProbeArgs = @()
 if ($GraphicsExportPython) {

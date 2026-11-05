@@ -5,6 +5,16 @@ Baseline: MParser 1.14.0, commit `9be51f9`.
 Scope agreed on 2026-10-28: prioritize kernel requirements raised by
 MExecServer/MExecClient, not unrelated MATLAB compatibility expansion.
 
+Original-source adoption authorized on 2026-11-05: the host/client candidates
+are now in `D:/project/MExecServer` and `D:/project/MExecClient`, with a separate
+development SDK/build and 85/85 regression. Subsequent iteration may happen
+directly there. The later policy creates independent private MExecServer and
+MExecClient repositories, each tracking origin/main; new host source stays in
+those repositories. The user also authorized the verified local loopback
+service deployment at port 8080. Historical
+isolated-run entries below do not describe the current source adoption state;
+see [adoption evidence](host-source-adoption.md).
+
 ## Evidence And Ownership
 
 Inputs are the host's `docs/mparser-kernel-iteration-notes.md`,
@@ -20,13 +30,13 @@ success may substitute for missing kernel contracts.
 | ID | Work | Acceptance | State |
 | --- | --- | --- | --- |
 | H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated host compile-only/execute diagnostic propagation verified, including preservation with clear_workspace=true; deployed host unchanged |
-| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins, 90-case R2024b source-context corpus and isolated revision-checked rename passed; deployed rename UI/API adoption pending |
+| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and 90-case R2024b source-context corpus passed. Original development host now adopts revision-checked rename API; rename UI and production rollout remain separate. |
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | SDK/REST explicit method ownership and current isolated browser navigation passed for selected open documents, including repeated nested names, external declaration/implementation and edit/undo freshness. Screenshot and production adoption remain open. |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay; latest compact source-copy candidate closes the measured 390px cropping failure with five viewport checks; broader downstream acceptance remains open |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed; actual current-SDK repeated/cross-Axes Legend rename/delete/invalid preservation and compact layout passed bounded browser checks; UI editing, full native text/layout and deployment remain open |
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Real isolated REST export writes bounded PNG/vector PDF through a renderer and session FileStore; failure/root/session controls pass. Separate actual ABI 2.13 Tabbit PNG downloads pass selected-Figure/pixel/lifecycle checks. Default CLI/REST still refuse; production renderer and broader scene/file/download policy remain open. |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | ABI 2.13 kernel/package 364/364, fresh installed-SDK MExecServer 67/67 and bounded REST export acceptance passed. Prior browser checks cover selected workflows, not full browser acceptance; CI for the exact revision, deployment and release remain separate gates. |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | ABI 2.13 kernel/package 364/364, original-source development host 85/85 and fresh source-copy 85/85 passed, with adopted client/SDK assets verified. Prior browser checks cover selected workflows, not full browser acceptance; CI for the exact revision, production rollout and release remain separate gates. |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering and default-OFF actual Tabbit interaction/DOM passed; screenshot capture timed out; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see host-ordered-display-candidate.md |
 
@@ -78,6 +88,26 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 host workflow/deployment follow-up: user replaced local-only patch
+  retention with two private repositories. Remote main commits are verified:
+  MExecServer `00682e1350eb4caa02d756a85bfb3d7254610707`, MExecClient
+  `6dda80db39ff94f26a0608d5c08dae95b79c6ab0`. Both local roots track their
+  own origin/main. The authorized local background deployment at port 8080
+  passed runtime/DLL identity, all 27 HTTP asset hashes and focused compiler,
+  definition, matrix/Legend, event and headless-export checks. No formal
+  v1.15 release, Windows SCM/boot installation or private cross-repository CI
+  coverage is claimed. Extra adoption overlays remain local rather than being
+  published through MParser. See host-source-adoption.md.
+- 2026-11-05 original source adoption: user authorized direct host/client
+  iteration and initially selected local source with retained patches; this
+  policy was superseded by the private-repository decision above.
+  Eleven server/twelve client candidates, development SDK/build preset and
+  eighteen CTest integration checks are adopted. Kernel 364/364, direct host
+  85/85, fresh adopted-source copy and dedicated probes 85/85 passed. All 27
+  frontend assets and installed/build DLL hashes match. See
+  host-source-adoption.md for the failed first configure, corrected evidence,
+  backup/manifest and exact paths. No test-only export bridge, old-build
+  replacement at this stage. The later repository/deployment step is separate.
 - 2026-11-05 H07 current-SDK Tabbit follow-up: the same installed ABI 2.13
   DLL/source-copy executable, with a new isolated root and no renderer port,
   passed real command/selector/panel/ribbon workflows. Two actual native

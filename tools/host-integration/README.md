@@ -1,5 +1,16 @@
 # MExec Host Integration Candidates
 
+The user has now authorized and verified adoption in the original host/client
+directories. See [source adoption](../../docs/host-source-adoption.md) for the
+development preset, 85/85 direct and copied-source regressions, preserved
+repository revisions and local-service deployment evidence. The two hosts now
+have separate private Git repositories; implementation is edited/tested locally
+and pushed to each origin/main. New host diffs are not published through this
+repository. For a fresh regression copy of
+the adopted originals, pass `-IntegratedSources` to `probe-clean-host.ps1`;
+do not reapply the historical candidate patches to them. Historical isolated
+proofs below retain their original scope and selected DLL identities.
+
 The explicit-layout renderer/synchronization candidates and their controlled
 Canvas, app/API and real SDK/REST probes are described in
 [the Canvas layout guide](../../docs/host-canvas-layout-candidate.md).
