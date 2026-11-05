@@ -104,5 +104,23 @@ readback and pixel counts verify the output. In its private output root an
 exact flat allowlist rejects a parent-relative path; same-directory atomic
 replacement preserves bytes on an injected pre-commit failure. A Figure
 without explicit layout is rejected before encoding. This is not a general
-filesystem sandbox or a production renderer. MExecServer adoption, full
-graphics rendering and browser download acceptance remain open.
+filesystem sandbox or a production renderer.
+
+## Isolated MExecServer Acceptance
+
+The Windows source-copy runner accepts `-GraphicsExportPython <python.exe>`
+to build an opt-in MExecServer probe against the installed ABI 2.13 SDK. Real
+REST `execute` calls preserve the kernel's target selection and send its
+frozen scene to a loopback-only test encoder. The server, not the encoder,
+checks the destination and commits encoded bytes through its session
+FileStore. The proof permits only `export-*` flat names in a private session
+root with root cwd; it does not define a general rooted path policy.
+
+The REST replay verifies explicit Line ownership versus the current Figure,
+PNG/PDF signatures and pixels, actual file listing and sizes, and isolation
+from a second session. Traversal, absolute paths and wrong format fail. A
+read-only destination preserves the old PDF; a later writable invocation
+publishes different bytes. Missing layout and an unconfigured callback retain
+their failure paths. This is neither a binary download route nor a production
+renderer. Production MExecServer adoption, broader scene/file policy coverage,
+and actual browser download acceptance remain open.

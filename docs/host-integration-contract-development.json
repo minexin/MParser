@@ -34,7 +34,7 @@
   "artifacts": [
     {
       "path": "docs/graphics-export-contract.md",
-      "sha256_lf": "749dc2a198b558a111d23ac3ee2a9b2b4f9860ac078f977a1cde51ed3ab51671"
+      "sha256_lf": "527af65d8f3a11be167ba64f0bd9c013223cbdf6efddfe586cc691c364b49d70"
     },
     {
       "path": "docs/host-definition-navigation-candidate.md",

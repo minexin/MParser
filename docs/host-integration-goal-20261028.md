@@ -25,8 +25,8 @@ success may substitute for missing kernel contracts.
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay; latest compact source-copy candidate closes the measured 390px cropping failure with five viewport checks; broader downstream acceptance remains open |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed; actual current-SDK repeated/cross-Axes Legend rename/delete/invalid preservation and compact layout passed bounded browser checks; UI editing, full native text/layout and deployment remain open |
-| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 validates owning/current Figure and format/suffix. ABI 2.13 exposes an opt-in renderer callback. Isolated SDK renderer writes and verifies real PNG/PDF for a bounded scene, with private-root failure preservation. Default CLI/REST still explicitly refuse; production renderer adoption and broader rendering/file policy acceptance remain open. |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 362/362, installed-SDK host/80-case Legend REST/67 regressions and bounded compatibility controls passed; current-SDK compact/Legend browser evidence is bounded; actual-commit CI, deployment and release acceptance remain separate gates |
+| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Real isolated MExecServer REST executes bounded PNG/vector PDF export through an opt-in renderer and its own session FileStore. Failure preservation, wrong bytes, root policy and session isolation checked. Default CLI/REST still refuse; production renderer, broader scene/file policy and browser downloads remain open. |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | ABI 2.13 kernel/package 364/364, fresh installed-SDK MExecServer 67/67 and bounded REST export acceptance passed. Prior browser checks cover selected workflows, not full browser acceptance; CI for the exact revision, deployment and release remain separate gates. |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering and default-OFF actual Tabbit interaction/DOM passed; screenshot capture timed out; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see host-ordered-display-candidate.md |
 
@@ -78,6 +78,22 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 H07 installed-SDK MExecServer follow-up: isolated source copy
+  with `-GraphicsExportPython` built 148 actions with warnings as errors and
+  passed real REST export, default headless controls, existing dedicated
+  probes and 67/67 host CTest (22.30 seconds). Evidence:
+  `build/clean-host-probe/38989fc5d01243869d276c8ba540df5d/export-probe/evidence.json`
+  and `build/graphics-export-host-rest-clean.log`. The adjacent DLL SHA256
+  `C749ACFC0D0FD5128F2554D211A88E587FF2CDA72EA000877287ED98AE11D0F0`
+  matches the installed SDK. `saveas(Line)` wrote a red PNG from Figure 1;
+  implicit `print` wrote a blue vector PDF from Figure 4, confirmed by
+  2949 red/0 blue and 0 red/1781 blue pixels after the PDF overwrite and
+  rasterization. REST lists the binary sizes only in the originating session.
+  Traversal, absolute/drive paths, nested paths, device names and mismatched
+  extensions did not reach the encoder. A wrong-signature reply, a read-only
+  destination and missing layout did not replace existing bytes. The same
+  executable without the renderer port remained headless. No changes to the
+  original siblings, browser, public versions or deployment.
 - 2026-11-05 H07 public renderer follow-up: ABI 2.13 appends optional callback
   fields without changing 158 exports, legacy prefix sizes or graphics schema.
   C/C++ tests verify module/session/runtime paths, headless and truncated tails,

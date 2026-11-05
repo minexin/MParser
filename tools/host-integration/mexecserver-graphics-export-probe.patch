@@ -1,0 +1,49 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -39,6 +39,15 @@
+ if(MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT AND (NOT MParser_C_ABI_GENERATION EQUAL 2 OR
+    MParser_C_ABI_REVISION LESS 12 OR NOT MEXEC_GRAPHICS_V3))
+     message(FATAL_ERROR "Graphics layout environments require ABI 2.12 and explicit graphics v3")
+ endif()
+-
++
++option(MEXEC_GRAPHICS_EXPORT_PROBE "Enable the isolated Windows graphics export probe" OFF)
++if(MEXEC_GRAPHICS_EXPORT_PROBE AND (NOT WIN32 OR NOT MEXEC_GRAPHICS_LAYOUT_ENVIRONMENT OR
++   NOT MParser_C_ABI_GENERATION EQUAL 2 OR MParser_C_ABI_REVISION LESS 13))
++    message(FATAL_ERROR "Graphics export probe requires Windows, ABI 2.13 and explicit layout")
++endif()
++if(MEXEC_GRAPHICS_EXPORT_PROBE AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/graphics-export-probe-bridge.hpp")
++    message(FATAL_ERROR "Graphics export probe bridge must be copied into the isolated source tree")
++endif()
++
+ option(MEXEC_GRAPHICS_WRITEBACK "Enable identity-targeted kernel graphics writes" OFF)
+@@ -137,4 +146,8 @@
+ if(WIN32)
+     target_link_libraries(mexec_core PRIVATE Advapi32)
+ endif()
++if(MEXEC_GRAPHICS_EXPORT_PROBE)
++    target_compile_definitions(mexec_core PRIVATE MEXEC_GRAPHICS_EXPORT_PROBE=1)
++    target_link_libraries(mexec_core PRIVATE Winhttp)
++endif()
+ mexec_enable_warnings(mexec_core)
+diff --git a/src/engine/workspace_session.cpp b/src/engine/workspace_session.cpp
+--- a/src/engine/workspace_session.cpp
++++ b/src/engine/workspace_session.cpp
+@@ -3,2 +3,5 @@
+ #include "mexec/engine/value_json.hpp"
++#if defined(MEXEC_GRAPHICS_EXPORT_PROBE)
++#include "graphics-export-probe-bridge.hpp"
++#endif
+ #if MEXEC_ORDERED_EVENTS
+@@ -847,3 +850,10 @@
+     }
+     auto invocation = makeInvocation(request);
++#if defined(MEXEC_GRAPHICS_EXPORT_PROBE)
++    if (const auto port = export_probe::rendererPort()) {
++        invocation.graphicsExport = [this, port](const mparser::sdk::GraphicsExportRequest& exportRequest) {
++            return export_probe::publish(sessionStore_, cwd_, port, exportRequest);
++        };
++    }
++#endif
+     // Cancellation must not acquire mutex_: the execution thread owns it.

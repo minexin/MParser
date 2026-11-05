@@ -33,6 +33,19 @@ layout, writes two different Figures with native PNG/vector PDF encoders,
 checks rasterized pixels and verifies destination rejection and atomic failure
 preservation in a private allowlisted output directory.
 
+For the actual isolated MExecServer execution path, pass
+`-GraphicsExportPython <python.exe>` to `probe-clean-host.ps1` (the interpreter
+must have Pillow and ReportLab; use `-PdfToPpm` if Poppler is not on PATH).
+This applies a test-only Windows bridge after the existing layout patch. It
+starts a loopback encoder in the probe process and registers the SDK callback
+only in the isolated child process. Only flat `export-*` PNG/PDF names at the
+private session root are permitted. The bridge rejects wrong signatures and
+uses the server's existing atomic FileStore commit. The probe asserts actual
+REST file listings and decodes the resulting files, rather than treating
+successful execution or a renderer reply as proof of a file. The remaining
+regressions run without the renderer. Do not enable the bridge in a deployed
+server; it is not a production renderer, download API or path sandbox.
+
 This patch is an opt-in integration candidate, not a deployed server update.
 Apply it to a separate MExecServer source checkout after checking the diff:
 

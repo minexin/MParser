@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory)][string]$ServerRoot,
     [Parameter(Mandatory)][string]$ClientRoot,
     [Parameter(Mandatory)][string]$SdkPrefix,
+    [string]$GraphicsExportPython,
+    [string]$PdfToPpm = 'pdftoppm',
     [int]$Parallel = 4
 )
 $ErrorActionPreference = 'Stop'
@@ -50,16 +52,30 @@ foreach ($patch in @('mexecclient-text-labels-candidate.patch','mexecclient-line
     git -C $clientSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Client patch failed: $patch; see $stage" }
 }
+$exportProbeArgs = @()
+if ($GraphicsExportPython) {
+    $exportProbeArgs = @('-DMEXEC_GRAPHICS_EXPORT_PROBE=ON')
+    git -C $hostSource apply --ignore-space-change (Join-Path $PSScriptRoot 'mexecserver-graphics-export-probe.patch')
+    if ($LASTEXITCODE) { throw "Host export probe patch failed; see $stage" }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'graphics-export-probe-bridge.hpp') `
+        -Destination (Join-Path $hostSource 'src/engine')
+}
 $node = (Get-Command node).Source
 cmake -S $hostSource -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release `
     "-DMParser_DIR=$sdk/lib/cmake/MParser" "-DMEXEC_CLIENT_WEB_DIR=$clientSource/web" `
     "-DMEXEC_NODE_EXECUTABLE=$node" -DMEXEC_BUILD_TESTS=ON -DMEXEC_WARNINGS_AS_ERRORS=ON `
     -DMEXEC_GRAPHICS_V3=ON -DMEXEC_GRAPHICS_WRITEBACK=ON -DMEXEC_GRAPHICS_LAYOUT_ENVIRONMENT=ON -DMEXEC_DEFINITION_METADATA=ON `
     -DMEXEC_WORKSPACE_RENAME=ON -DMEXEC_SYSTEM_PATH_SYNC=ON -DMEXEC_ORDERED_EVENTS=ON `
+    @exportProbeArgs `
     -DMEXEC_KERNEL_MILESTONE=development | Tee-Object -FilePath (Join-Path $stage 'configure.log')
 if ($LASTEXITCODE) { throw "Clean host configure failed; see $stage" }
 cmake --build $build --parallel $Parallel | Tee-Object -FilePath (Join-Path $stage 'build.log')
 if ($LASTEXITCODE) { throw "Clean host build failed; see $stage" }
+if ($GraphicsExportPython) {
+    & $GraphicsExportPython (Join-Path $PSScriptRoot 'probe-host-graphics-export.py') `
+        (Join-Path $build 'mexec_server.exe') (Join-Path $stage 'export-probe') --pdftoppm $PdfToPpm
+    if ($LASTEXITCODE) { throw "Host graphics export probe failed; see $stage" }
+}
 node (Join-Path $PSScriptRoot 'test-workspace-rename.cjs') (Join-Path $build 'mexec_server.exe') `
     (Join-Path $stage 'rename-probe') on
 if ($LASTEXITCODE) { throw "Workspace rename probe failed; see $stage" }
