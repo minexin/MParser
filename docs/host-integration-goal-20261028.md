@@ -25,7 +25,7 @@ success may substitute for missing kernel contracts.
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs; not a newly fixed kernel defect |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay; latest compact source-copy candidate closes the measured 390px cropping failure with five viewport checks; broader downstream acceptance remains open |
 | H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed; actual current-SDK repeated/cross-Axes Legend rename/delete/invalid preservation and compact layout passed bounded browser checks; UI editing, full native text/layout and deployment remain open |
-| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 resolves owning/current Figure, rejects suffix conflicts and defines a frozen internal adapter request. Headless SDK/REST remain explicitly unsupported without a renderer. Public adapter registration, encoding and rooted commit remain open. |
+| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 validates owning/current Figure and format/suffix. ABI 2.13 exposes an opt-in renderer callback. Isolated SDK renderer writes and verifies real PNG/PDF for a bounded scene, with private-root failure preservation. Default CLI/REST still explicitly refuse; production renderer adoption and broader rendering/file policy acceptance remain open. |
 | H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 362/362, installed-SDK host/80-case Legend REST/67 regressions and bounded compatibility controls passed; current-SDK compact/Legend browser evidence is bounded; actual-commit CI, deployment and release acceptance remain separate gates |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering and default-OFF actual Tabbit interaction/DOM passed; screenshot capture timed out; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see host-ordered-display-candidate.md |
@@ -78,6 +78,25 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 H07 public renderer follow-up: ABI 2.13 appends optional callback
+  fields without changing 158 exports, legacy prefix sizes or graphics schema.
+  C/C++ tests verify module/session/runtime paths, headless and truncated tails,
+  frozen requests, typed failure, and same-thread reset/reentry refusal.
+  New C++ headers with the ABI 2.12 DLL reject callback opt-in before execution
+  while ordinary calls pass (`build/graphics-export-api-compat.log`). The ABI
+  2.12 host executable with the new DLL passed bounded REST/headless controls
+  (`build/graphics-export-api-legacy-host.log`), not a full old-host regression.
+  `build/graphics-export-real-sdk-final-20261105/evidence.json` records actual
+  Pillow PNG and ReportLab vector PDF, separate Figure identities, and
+  Poppler raster readback: 2949 red/0 blue pixels and 0 red/2460 blue pixels.
+  The probe preserves existing bytes on pre-commit failure and missing layout,
+  rejects traversal without altering the outside-root sentinel, and is not a
+  general sandbox or a production encoder. CTest 364/364 in 190.28 seconds
+  (`build/graphics-export-api-full-test.log`); fresh source-only installed SDK
+  host 148 build actions, REST/client checks and 67/67 in 19.52 seconds
+  (`build/graphics-export-api-clean-host.log`). Selected DLL SHA256:
+  C749ACFC0D0FD5128F2554D211A88E587FF2CDA72EA000877287ED98AE11D0F0.
+  No original sibling source, deployed service, or browser was changed.
 - 2026-11-05 H07 request/adapter follow-up: 21 installed R2024b assertions
   distinguish explicit and current targets, parent Figure lookup, actual file
   signatures and suffix behavior. MParser intentionally rejects mismatched

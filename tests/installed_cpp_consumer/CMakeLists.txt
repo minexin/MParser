@@ -23,7 +23,7 @@ if(NOT TARGET MParser::cpp_api OR NOT TARGET MParser::cli)
         "The installed package must export MParser::cpp_api and MParser::cli")
 endif()
 if(NOT MParser_C_ABI_GENERATION EQUAL 2 OR
-   NOT MParser_C_ABI_REVISION EQUAL 12)
+   NOT MParser_C_ABI_REVISION EQUAL 13)
     message(FATAL_ERROR
         "Unexpected installed C ABI generation/revision: ${MParser_C_ABI_GENERATION}/${MParser_C_ABI_REVISION}")
 endif()

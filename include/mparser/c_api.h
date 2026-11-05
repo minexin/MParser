@@ -26,7 +26,7 @@ extern "C" {
 #define MPARSER_C_API_VERSION_MINOR 15u
 #define MPARSER_C_API_VERSION_PATCH 0u
 #define MPARSER_C_ABI_GENERATION 2u
-#define MPARSER_C_ABI_REVISION 12u
+#define MPARSER_C_ABI_REVISION 13u
 
 typedef uint32_t mparser_api_status;
 #define MPARSER_API_STATUS_OK 0u
@@ -362,6 +362,34 @@ MPARSER_C_API mparser_api_status mparser_event_capture_options_init(mparser_even
 MPARSER_C_API mparser_api_status mparser_event_capture_options_init_sized(
     void* storage,size_t storage_size,uint32_t abi_generation);
 
+typedef uint32_t mparser_graphics_export_format;
+#define MPARSER_GRAPHICS_EXPORT_PNG 1u
+#define MPARSER_GRAPHICS_EXPORT_PDF 2u
+typedef uint32_t mparser_graphics_export_status;
+#define MPARSER_GRAPHICS_EXPORT_WRITTEN 0u
+#define MPARSER_GRAPHICS_EXPORT_UNSUPPORTED_FORMAT 1u
+#define MPARSER_GRAPHICS_EXPORT_DESTINATION_REJECTED 2u
+#define MPARSER_GRAPHICS_EXPORT_FAILED 3u
+
+typedef struct mparser_graphics_export_request {
+    uint32_t struct_size;
+    uint32_t abi_generation;
+    mparser_graphics_export_format format;
+    uint32_t snapshot_version;
+    uint64_t figure_identity;
+    mparser_utf8_view destination;
+    mparser_utf8_view scene_json;
+} mparser_graphics_export_request;
+
+/* ABI 2.13. Synchronous and invocation-scoped; request and UTF-8 views are
+ * borrowed only for this call. The destination is untrusted, not an authorized
+ * path. The host owns policy, encoding and atomic publication. Return WRITTEN
+ * only after committing the requested format. Do not call into the executing
+ * Runtime/Session/Module, release its handles, or wait on work that needs it.
+ * C callbacks must not let exceptions cross the boundary. */
+typedef mparser_graphics_export_status (*mparser_graphics_export_callback)(
+    void* user_data, const mparser_graphics_export_request* request);
+
 typedef struct mparser_invocation_options {
     uint32_t struct_size;
     uint32_t abi_generation;
@@ -389,6 +417,9 @@ typedef struct mparser_invocation_options {
     void* input_user_data;
     /* Optional ABI revision 9 tail. Null/absent preserves legacy behavior. */
     const mparser_event_capture_options* event_capture;
+    /* Optional ABI revision 13 tail. Both fields must fit struct_size. */
+    mparser_graphics_export_callback graphics_export;
+    void* graphics_export_user_data;
 } mparser_invocation_options;
 
 typedef uint32_t mparser_execution_event_kind;

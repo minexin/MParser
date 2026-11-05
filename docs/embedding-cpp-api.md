@@ -2,10 +2,12 @@
 
 `include/mparser/cpp_api.hpp` provides the header-only MParser C++20 embedding
 facade. The current v1.15 boundary reports source API 1.15 over C
-ABI generation 2 revision 8 and includes authoritative SystemContext path access,
+ABI generation 2 revision 13 and includes authoritative SystemContext path access,
 identifier/definition metadata,
 version-selectable graphics snapshots, the public debugger, `SystemContext`, and
-`Runtime` facades. MParser and the installed SDK report product version
+`Runtime` facades. `Invocation::graphicsExport` optionally delegates validated
+Figure file requests to a [host renderer](graphics-export-contract.md). MParser
+and the installed SDK report product version
 `1.15.0`; source API, ABI, and protocol
 identifiers remain independently queryable contract metadata.
 

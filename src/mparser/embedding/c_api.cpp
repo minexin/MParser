@@ -15,6 +15,7 @@
 #include "mparser/runtime/io/runtime_system.h"
 #include "mparser/runtime/core/object_model/runtime_metadata.h"
 #include "mparser/runtime/core/object_model/runtime_graphics.h"
+#include "mparser/runtime/core/object_model/runtime_graphics_export.h"
 #include "mparser/runtime/core/object_model/runtime_object.h"
 #include "mparser/runtime/core/value/runtime_text.h"
 #include "mparser/runtime/core/value/runtime_value.h"
@@ -273,11 +274,11 @@ struct DebuggerState {
     std::shared_ptr<RuntimeState> runtimeOwner;
 };
 
-thread_local bool debugCallbackActive = false;
+thread_local bool executionCallbackActive = false;
 
-struct DebugCallbackGuard {
-    DebugCallbackGuard() { debugCallbackActive = true; }
-    ~DebugCallbackGuard() { debugCallbackActive = false; }
+struct ExecutionCallbackGuard {
+    const bool previous = std::exchange(executionCallbackActive, true);
+    ~ExecutionCallbackGuard() { executionCallbackActive = previous; }
 };
 } // namespace mparser_c_detail
 
@@ -1348,6 +1349,33 @@ mparser_output_kind externalOutputKind(
                : MPARSER_OUTPUT_STANDARD;
 }
 
+class GraphicsExportCallbackAdapter final : public mparser::RuntimeGraphicsExportAdapter {
+public:
+    GraphicsExportCallbackAdapter(mparser_graphics_export_callback callback, void* userData)
+        : callback_(callback), userData_(userData) {}
+
+    mparser::RuntimeGraphicsExportStatus write(const mparser::RuntimeGraphicsExportRequest& request) const override {
+        using Status = mparser::RuntimeGraphicsExportStatus;
+        if (executionCallbackActive) { return Status::Failed; }
+        const mparser_graphics_export_request view{
+            sizeof(mparser_graphics_export_request), MPARSER_C_ABI_GENERATION,
+            request.format == mparser::RuntimeGraphicsExportFormat::Png ? MPARSER_GRAPHICS_EXPORT_PNG : MPARSER_GRAPHICS_EXPORT_PDF,
+            4u, request.figureIdentity, {request.destination.data(), request.destination.size()},
+            {request.sceneJson.data(), request.sceneJson.size()}};
+        const ExecutionCallbackGuard guard;
+        switch (callback_(userData_, &view)) {
+        case MPARSER_GRAPHICS_EXPORT_WRITTEN: return Status::Written;
+        case MPARSER_GRAPHICS_EXPORT_UNSUPPORTED_FORMAT: return Status::UnsupportedFormat;
+        case MPARSER_GRAPHICS_EXPORT_DESTINATION_REJECTED: return Status::DestinationRejected;
+        default: return Status::Failed;
+        }
+    }
+
+private:
+    mparser_graphics_export_callback callback_;
+    void* userData_;
+};
+
 template <typename OwnerState>
 mparser_api_status buildRequest(
     const mparser_invocation_options* options,
@@ -1355,7 +1383,7 @@ mparser_api_status buildRequest(
     mparser::ModuleInvocationRequest& request,
     bool& usesSharedGraph) {
     usesSharedGraph = false;
-    if (debugCallbackActive) {
+    if (executionCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     if (!options) {
@@ -1386,6 +1414,11 @@ mparser_api_status buildRequest(
     request.entryFunction = *entry;
     request.backend = *selectedBackend;
     request.collectProfile = options->collect_profile != 0;
+    if (options->struct_size >= offsetof(mparser_invocation_options, graphics_export_user_data) +
+            sizeof(options->graphics_export_user_data) && options->graphics_export) {
+        request.graphicsExport = std::make_shared<GraphicsExportCallbackAdapter>(
+            options->graphics_export, options->graphics_export_user_data);
+    }
     if (options->struct_size >= offsetof(mparser_invocation_options,event_capture) + sizeof(options->event_capture) &&
         options->event_capture) {
         const auto& capture = *options->event_capture;
@@ -1570,7 +1603,7 @@ public:
             request.executionControl =
                 std::make_shared<mparser::RuntimeExecutionControl>(
                     request.limits, request.cancellationToken, state_->debugger,
-                    request.inputSource);
+                    request.inputSource, mparser::RuntimeConsoleSink{}, request.graphicsExport);
         }
     }
 
@@ -1772,7 +1805,7 @@ mparser_api_status executeRuntime(
             request.executionControl =
                 std::make_shared<mparser::RuntimeExecutionControl>(
                     request.limits, request.cancellationToken, nullptr,
-                    request.inputSource);
+                    request.inputSource, mparser::RuntimeConsoleSink{}, request.graphicsExport);
         }
         request.externalCallableInvoker =
             runtime->state->callableInvoker(
@@ -2738,7 +2771,7 @@ mparser_api_status mparser_runtime_clear_global(
     mparser_runtime* runtime,
     const char* name,
     size_t name_size) {
-    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive) {
+    if (!runtime || !runtime->state || mparser_c_detail::executionCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2759,7 +2792,7 @@ mparser_api_status mparser_runtime_clear_global(
 
 mparser_api_status
 mparser_runtime_clear_globals(mparser_runtime* runtime) {
-    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive) {
+    if (!runtime || !runtime->state || mparser_c_detail::executionCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2774,7 +2807,7 @@ mparser_runtime_clear_globals(mparser_runtime* runtime) {
 }
 
 mparser_api_status mparser_runtime_reset(mparser_runtime* runtime) {
-    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive) {
+    if (!runtime || !runtime->state || mparser_c_detail::executionCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2792,7 +2825,7 @@ mparser_api_status mparser_runtime_graphics_json_versioned(
     mparser_runtime* runtime, uint32_t version, mparser_value** out_json) {
     if (!out_json) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     *out_json = nullptr;
-    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive ||
+    if (!runtime || !runtime->state || mparser_c_detail::executionCallbackActive ||
         (version != 0 && version != 3 && version != 4)) { return MPARSER_API_STATUS_INVALID_ARGUMENT; }
     try {
         std::lock_guard lock(runtime->state->mutex);
@@ -2810,7 +2843,7 @@ mparser_api_status mparser_runtime_graphics_value(mparser_runtime* runtime,
     *out_value = nullptr;
     const auto graphId = mparser_c_detail::graphicsIdentity(graph_identity);
     const auto objectId = mparser_c_detail::graphicsIdentity(object_identity);
-    if (!runtime || !runtime->state || mparser_c_detail::debugCallbackActive || !graphId || !objectId) {
+    if (!runtime || !runtime->state || mparser_c_detail::executionCallbackActive || !graphId || !objectId) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2831,7 +2864,7 @@ mparser_api_status mparser_runtime_graphics_set_property(mparser_runtime* runtim
     const auto graphId = mparser_c_detail::graphicsIdentity(graph_identity);
     const auto objectId = mparser_c_detail::graphicsIdentity(object_identity);
     if (!runtime || !runtime->state || !value || !value->state ||
-        !property.data || !property.size || mparser_c_detail::debugCallbackActive || !graphId || !objectId) {
+        !property.data || !property.size || mparser_c_detail::executionCallbackActive || !graphId || !objectId) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2853,7 +2886,7 @@ mparser_api_status mparser_runtime_graphics_set_layout_environment(mparser_runti
     const mparser_graphics_layout_environment* environment) {
     const auto graphId = mparser_c_detail::graphicsIdentity(graph_identity);
     const auto figureId = mparser_c_detail::graphicsIdentity(figure_identity);
-    if (!runtime || !runtime->state || !environment || !graphId || !figureId || mparser_c_detail::debugCallbackActive) {
+    if (!runtime || !runtime->state || !environment || !graphId || !figureId || mparser_c_detail::executionCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     if (environment->struct_size < MPARSER_GRAPHICS_LAYOUT_ENVIRONMENT_SIZE ||
@@ -2957,7 +2990,7 @@ mparser_session_clear_global(
     mparser_session* session,
     const char* name,
     size_t name_size) {
-    if (!session || !session->state || mparser_c_detail::debugCallbackActive) {
+    if (!session || !session->state || mparser_c_detail::executionCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2981,7 +3014,7 @@ mparser_session_clear_global(
 
 mparser_api_status
 mparser_session_clear_globals(mparser_session* session) {
-    if (!session || !session->state || mparser_c_detail::debugCallbackActive) {
+    if (!session || !session->state || mparser_c_detail::executionCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -2999,7 +3032,7 @@ mparser_session_clear_globals(mparser_session* session) {
 
 mparser_api_status
 mparser_session_reset(mparser_session* session) {
-    if (!session || !session->state || mparser_c_detail::debugCallbackActive) {
+    if (!session || !session->state || mparser_c_detail::executionCallbackActive) {
         return MPARSER_API_STATUS_INVALID_ARGUMENT;
     }
     try {
@@ -4113,7 +4146,7 @@ mparser_api_status mparser_debugger_create(
                 for (const auto& diagnostic : view.conditionDiagnostics) {
                     view.diagnosticViews.push_back(mparser_c_detail::externalDiagnostic(diagnostic));
                 }
-                const mparser_c_detail::DebugCallbackGuard callbackGuard;
+                const mparser_c_detail::ExecutionCallbackGuard callbackGuard;
                 const auto action = sink(user_data, &view);
                 if (action > MPARSER_DEBUG_STOP) {
                     throw std::invalid_argument("invalid debugger resume action");

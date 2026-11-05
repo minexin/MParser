@@ -25,6 +25,8 @@ opt-in ordered execution results in revision 9 (153 exports). See
 [ordered execution events](ordered-display-events.md) for borrowing and limits.
 Revision 10 adds explicit source-graph method ownership (154 exports); see
 [definition metadata](definition-metadata.md) for descriptor lifetimes and use.
+Revision 13 retains 158 exports and adds the optional invocation-tail
+[graphics export callback](graphics-export-contract.md).
 They are
 binary-contract identifiers, not SDK product versions. MParser and the
 installed SDK report `1.15.0`, while the C source API reports `1.15`.

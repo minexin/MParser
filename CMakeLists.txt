@@ -28,10 +28,10 @@ set(MPARSER_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/MParser"
     CACHE STRING "Install directory for the MParser CMake package")
 set(MPARSER_C_ABI_GENERATION 2)
-set(MPARSER_C_ABI_REVISION 12)
+set(MPARSER_C_ABI_REVISION 13)
 set(MPARSER_C_LIBRARY_VERSION "${PROJECT_VERSION}")
 set(MPARSER_C_ABI_SYMBOL_LIST
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision12_symbols.txt")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision13_symbols.txt")
 set(MPARSER_PROJECT_LICENSE "Apache-2.0")
 set(MPARSER_PROJECT_COPYRIGHT "Copyright 2026 Wang Xin")
 
@@ -399,6 +399,9 @@ if(UNIX)
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision11_symbols.txt"
         _mparser_revision11_c_abi_symbols REGEX "^mparser_[A-Za-z0-9_]+$")
     list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision11_c_abi_symbols})
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api_generation2_revision12_symbols.txt"
+        _mparser_revision12_c_abi_symbols REGEX "^mparser_[A-Za-z0-9_]+$")
+    list(APPEND _mparser_previous_c_abi_symbols ${_mparser_revision12_c_abi_symbols})
     list(REMOVE_DUPLICATES _mparser_previous_c_abi_symbols)
     foreach(_mparser_previous_c_abi_symbol IN LISTS
             _mparser_previous_c_abi_symbols)
@@ -2970,6 +2973,11 @@ target_link_libraries(graphics_export_smoke_tests PRIVATE mparser_core)
 target_include_directories(graphics_export_smoke_tests PRIVATE third_party/nlohmann_json/include)
 add_test(NAME graphics_export_smoke COMMAND graphics_export_smoke_tests)
 set_tests_properties(graphics_export_smoke PROPERTIES LABELS host-integration TIMEOUT 30)
+add_executable(graphics_export_c_api_smoke_tests tests/graphics_export_c_api_smoke.c)
+target_link_libraries(graphics_export_c_api_smoke_tests PRIVATE mparser_c_api)
+set_target_properties(graphics_export_c_api_smoke_tests PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES)
+add_test(NAME graphics_export_c_api_smoke COMMAND graphics_export_c_api_smoke_tests)
+set_tests_properties(graphics_export_c_api_smoke PROPERTIES LABELS host-integration TIMEOUT 30)
 set_tests_properties(graphics_api_smoke PROPERTIES TIMEOUT 30)
 add_executable(graphics_color_smoke_tests tests/graphics_color_smoke.cpp)
 add_executable(legend_state_smoke_tests tests/legend_state_smoke.cpp)

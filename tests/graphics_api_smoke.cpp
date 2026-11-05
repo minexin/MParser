@@ -14,6 +14,45 @@ void require(bool value, const std::source_location location = std::source_locat
 
 int main() {
     try {
+        {
+            auto runtime = Runtime::create();
+            const auto producer = Module::compile("f=figure(); f.Name='first'; a=gca(); h=plot(1:3); "
+                "g=figure(); g.Name='second'; plot(7:9);", "export_seed.m");
+            require(runtime.execute(producer).succeeded());
+            const auto graph = nlohmann::json::parse(runtime.graphicsJson(4));
+            const auto first = graph.at("objects").at(0).at("objectIdentity").get<std::string>();
+            runtime.setGraphicsLayoutEnvironment(graph.at("graphIdentity").get<std::string>(), first, {640, 400, 96, 7, 16});
+            Invocation invocation;
+            std::string frozen;
+            std::size_t calls = 0;
+            invocation.graphicsExport = [&](const GraphicsExportRequest& request) {
+                ++calls;
+                require(request.format == GraphicsExportFormat::Pdf && request.snapshotVersion == 4);
+                require(std::to_string(request.figureIdentity) == first && request.destination == "probe.pdf");
+                frozen = request.sceneJson;
+                return GraphicsExportStatus::Written; // Test double, not real file success.
+            };
+            const auto selected = runtime.graphicsObject(graph.at("graphIdentity").get<std::string>(), first);
+            invocation.initialWorkspace = {{"f", selected}};
+            const auto exportModule = Module::compile("saveas(f,'probe','pdf'); f.Name='after';", "export_call.m");
+            const auto result = runtime.execute(exportModule, invocation);
+            require(result.succeeded() && calls == 1);
+            const auto snapshot = nlohmann::json::parse(frozen);
+            require(snapshot.at("version") == 4 && snapshot.at("objects").at(0).at("properties").at("Name") == "first");
+            require(!snapshot.at("objects").at(0).at("layout").is_null());
+            require(runtime.graphicsJson(4) != frozen);
+            invocation.graphicsExport = [](const GraphicsExportRequest&) -> GraphicsExportStatus {
+                throw std::runtime_error("renderer implementation detail");
+            };
+            invocation.eventCapture = EventCaptureOptions{};
+            const auto failed = runtime.execute(exportModule, invocation);
+            require(!failed.succeeded() && failed.diagnostics().front().identifier == "MParser:GraphicsExportFailed");
+            require(failed.diagnostics().front().message.find("implementation detail") == std::string::npos);
+            require(!failed.executionEvents().empty());
+            invocation.graphicsExport = {};
+            const auto headless = runtime.execute(exportModule, invocation);
+            require(!headless.succeeded() && headless.diagnostics().front().identifier == "MParser:GraphicsRendererUnavailable");
+        }
         Result firstPlot;
         {
             const std::pair<const char*, const char*> cases[] = {

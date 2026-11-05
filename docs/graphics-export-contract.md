@@ -1,8 +1,9 @@
 # Figure File Export
 
 Development contract for MParser 1.15.0, builtin source contract 1.23. C ABI
-2.12 and the machine/graphics wire formats are unchanged. The public SDK,
-CLI and current MExecServer have no file renderer installed.
+2.13 adds optional SDK callback registration without new symbols or changes
+to machine/graphics wire formats. The CLI and current MExecServer have no
+renderer installed. An SDK invocation is headless unless the caller supplies one.
 
 ## Source Requests
 
@@ -35,25 +36,44 @@ This path performs no file I/O, does not create a missing Figure, and does not
 change the selected Figure or any scene object. An explicit expression such as
 `gcf()` is still evaluated normally before the export call.
 
-## Internal Renderer Adapter
+## SDK Renderer Callback
 
-An internal, synchronous `RuntimeGraphicsExportAdapter` can be supplied by an
-execution control. The selected Figure identity, PNG/PDF enum, destination and
-owning v4 JSON snapshot are prepared together. The whole graph is included to
+With ABI generation 2 revision 13 or newer, initialize `mparser_invocation_options`
+using `MPARSER_INVOCATION_OPTIONS_INIT` and fill `graphics_export` and
+`graphics_export_user_data`. In C++, set `Invocation::graphicsExport`. The
+registration applies to one execution (module, session or shared Runtime),
+not to later invocations. The C++ wrapper rejects registration with an old
+DLL. C hosts must check generation and revision before using the new tail.
+Older-sized callers, partial tails and null callbacks retain headless behavior.
+
+The synchronous callback receives a size-tagged request with a typed PNG/PDF
+format, selected Figure identity, destination and borrowed v4 scene JSON.
+The request and views are valid only until the callback returns; copy them
+to retain evidence. The whole graph is included to
 retain cross-Axes Legend references; render only the selected Figure, not all
 Figures. No graph lock is held across the adapter call and no live object or
 workspace pointer is supplied. A missing Figure layout environment remains
 missing; an adapter must not claim real display metrics it does not have.
 
-The adapter owns root/cwd policy, access checks, encoding and atomic publication.
+The host owns root/cwd policy, access checks, encoding and atomic publication.
 It must treat the path as untrusted, must not reenter the invoking runtime, and
-must not report `Written` until the actual selected format is committed.
-Unsupported encoding, destination rejection, reported failure and exceptions
-have distinct typed or execution-error results. The kernel does not write or
+must not report `Written` until the actual selected format is committed. The
+callback runs on the invoking thread; the runtime/session execution lock can
+still be held. Do not release its handles or wait for work needing the lock.
+Same-thread reentry into execution/reset and the guarded runtime mutation APIs
+is rejected. Renderer callbacks are not dispatched from inside another guarded
+execution callback. Separate invocations can run concurrently, so shared host
+callback state needs its own synchronization. No renderer userdata is retained
+by the SDK after the invocation.
+
+Unsupported format becomes `MParser:UnsupportedExportFormat`; policy rejection
+becomes `MParser:GraphicsExportDestinationRejected`. Failure, unknown status and
+C++ callback exceptions become `MParser:GraphicsExportFailed`. C callbacks must
+not propagate exceptions. The kernel does not write or
 inspect output bytes here. Cancellation is checked before dispatch, not a
 promise of interrupting the adapter or rolling back an already committed file.
-No public callback, built-in encoder, production deployment or browser download
-behavior is introduced by this adapter.
+No built-in encoder, production deployment or browser download behavior is
+introduced by this callback.
 
 ## Reference And Tests
 
@@ -69,8 +89,20 @@ neither is supported here.
 `graphics_export_smoke` exercises HIR/VM dispatch, owning and current Figure
 selection, immutable request snapshots and adapter failure mapping. Its
 recording adapter is a test double, not an encoder or file-success proof.
-`graphics_api_smoke` checks the installed public ABI's headless behavior.
+`graphics_api_smoke` checks C++ registration, frozen scenes and callback failure;
+`graphics_export_c_api_smoke` checks all three execution paths, old/partial
+option buffers and guarded reentry. These ABI tests use test doubles. The
+relocated SDK consumer also exercises the optional C++ registration.
 The isolated host probe adds real REST checks for target and format rules,
 empty-scene preservation and unchanged files, without configuring an encoder.
-Actual PNG/PDF rendering and commit under a rooted host policy, a supported
-public SDK registration boundary, and deployed acceptance remain open.
+
+`tools/host-integration/probe-graphics-export-render.py` is a separate real-file
+SDK probe using Pillow and ReportLab. It renders only a deliberately bounded
+normalized Axes/solid RGB Line subset with an explicitly supplied offscreen
+environment. The PNG and vector PDF select different Figures; Poppler raster
+readback and pixel counts verify the output. In its private output root an
+exact flat allowlist rejects a parent-relative path; same-directory atomic
+replacement preserves bytes on an injected pre-commit failure. A Figure
+without explicit layout is rejected before encoding. This is not a general
+filesystem sandbox or a production renderer. MExecServer adoption, full
+graphics rendering and browser download acceptance remain open.

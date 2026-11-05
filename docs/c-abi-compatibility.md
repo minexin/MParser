@@ -158,6 +158,13 @@ during execution and its borrowed text/source pointers are valid only for that
 call. `output_sink` and `output_user_data` are tail fields in the current
 caller-sized `mparser_invocation_options` root.
 
+ABI 2.13 appends `graphics_export` and `graphics_export_user_data`, preserving
+the legacy minimum and every earlier offset. Both fields must be present to
+enable the callback. The kernel supplies a caller-visible size and generation
+in the borrowed `mparser_graphics_export_request`. No symbols were added or
+removed. See [Figure file export](graphics-export-contract.md) for status and
+lifetime rules. The C API regression allocates real short prefix buffers.
+
 ## Numeric Transport
 
 ABI 2 replaces the double-only numeric transport with
@@ -182,7 +189,7 @@ values.
 
 `c_api_shared_library_abi` inspects the dynamic library with the platform
 toolchain, compares its exports with
-`tests/c_api_generation2_revision4_symbols.txt`, and checks SONAME/install-name
+`tests/c_api_generation2_revision13_symbols.txt`, and checks SONAME/install-name
 major 2. Lifecycle, unload, allocation-failure, named-fault,
 concurrency, and relocated C/C++ consumer tests exercise the same current
 headers. The complete platform matrix runs at a milestone candidate gate;

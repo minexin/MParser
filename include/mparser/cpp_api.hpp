@@ -1348,6 +1348,26 @@ struct InputResult {
 };
 using InputSource = std::function<InputResult(const InputRequest&)>;
 
+enum class GraphicsExportFormat : std::uint32_t {
+    Png = MPARSER_GRAPHICS_EXPORT_PNG, Pdf = MPARSER_GRAPHICS_EXPORT_PDF,
+};
+enum class GraphicsExportStatus : std::uint32_t {
+    Written = MPARSER_GRAPHICS_EXPORT_WRITTEN,
+    UnsupportedFormat = MPARSER_GRAPHICS_EXPORT_UNSUPPORTED_FORMAT,
+    DestinationRejected = MPARSER_GRAPHICS_EXPORT_DESTINATION_REJECTED,
+    Failed = MPARSER_GRAPHICS_EXPORT_FAILED,
+};
+struct GraphicsExportRequest {
+    GraphicsExportFormat format;
+    std::uint32_t snapshotVersion;
+    std::uint64_t figureIdentity;
+    std::string_view destination;
+    std::string_view sceneJson;
+};
+// Views are borrowed during the synchronous callback. Exceptions become
+// GraphicsExportFailed execution diagnostics rather than escaping the C ABI.
+using GraphicsExport = std::function<GraphicsExportStatus(const GraphicsExportRequest&)>;
+
 struct Invocation {
     std::string entryFunction;
     std::vector<Value> arguments;
@@ -1361,6 +1381,7 @@ struct Invocation {
     std::optional<Debugger> debugger;
     InputSource inputSource;
     std::optional<EventCaptureOptions> eventCapture;
+    GraphicsExport graphicsExport;
 };
 
 namespace detail {
@@ -1428,6 +1449,14 @@ struct InvocationBridge {
             options.output_sink = &InvocationBridge::emitOutput;
             options.output_user_data = this;
         }
+        if (source.graphicsExport) {
+            if (mparser_c_abi_generation() != MPARSER_C_ABI_GENERATION || mparser_c_abi_revision() < 13) {
+                throw ApiError(MPARSER_API_STATUS_ABI_MISMATCH, "graphics export requires MParser ABI 2.13 or later");
+            }
+            graphicsExport = source.graphicsExport;
+            options.graphics_export = &InvocationBridge::writeGraphics;
+            options.graphics_export_user_data = this;
+        }
     }
 
     void rethrowOutputSinkException() const {
@@ -1440,6 +1469,19 @@ struct InvocationBridge {
     }
 
 private:
+    static mparser_graphics_export_status writeGraphics(void* userData,
+        const mparser_graphics_export_request* request) noexcept {
+        auto* self = static_cast<InvocationBridge*>(userData);
+        try {
+            return static_cast<mparser_graphics_export_status>(self->graphicsExport(GraphicsExportRequest{
+                static_cast<GraphicsExportFormat>(request->format), request->snapshot_version,
+                request->figure_identity, {request->destination.data, request->destination.size},
+                {request->scene_json.data, request->scene_json.size}}));
+        } catch (...) {
+            return MPARSER_GRAPHICS_EXPORT_FAILED;
+        }
+    }
+
     static mparser_input_status readInput(void* userData, mparser_input_mode mode,
         mparser_utf8_view prompt, mparser_utf8_view* text,
         mparser_utf8_view* error) noexcept {
@@ -1502,6 +1544,7 @@ public:
     InputResult inputResult;
     std::exception_ptr inputSourceException;
     std::optional<Debugger> debugger;
+    GraphicsExport graphicsExport;
 };
 
 inline ExecutionSummary copyExecutionSummary(

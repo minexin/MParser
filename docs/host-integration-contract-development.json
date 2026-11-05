@@ -14,7 +14,7 @@
   },
   "c_abi": {
     "generation": 2,
-    "revision": 12,
+    "revision": 13,
     "symbol_count": 158
   },
   "builtin_source_contract": {
@@ -34,7 +34,7 @@
   "artifacts": [
     {
       "path": "docs/graphics-export-contract.md",
-      "sha256_lf": "a2c45a111a6e72c30685c8157525e50b4644f4cc88382cdb6eccb33dacfc980b"
+      "sha256_lf": "749dc2a198b558a111d23ac3ee2a9b2b4f9860ac078f977a1cde51ed3ab51671"
     },
     {
       "path": "docs/host-definition-navigation-candidate.md",
@@ -50,19 +50,19 @@
     },
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "cf06f719efcea27ef3db3e1b78c5820026e5e514069dce5709dd692645fd281e"
+      "sha256_lf": "a930efa1a4aa68cae34cc994cd27b4556254a97e62e88338eb6ebc71041d4dc7"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
-      "sha256_lf": "d8e438a2e13504065733e4834576ea6cb3a32d8fe05e889f74c5ff6a141e0cac"
+      "sha256_lf": "cd917c9e3bdcb3ea449c00ed6491d0c5119f2897fc7ff95a3723cb3ac4a87b04"
     },
     {
       "path": "docs/definition-metadata.md",
-      "sha256_lf": "c13024d4b03a0b3e5f6926ec733de62f94ff4ec735a0b5a6813cc0adbb0e3301"
+      "sha256_lf": "ba3462066de5f0e440c82d637cb925112373f3808a067740fae023e5884e8836"
     },
     {
       "path": "docs/variable-name-validation.md",
-      "sha256_lf": "cac300d4f06b481616ba9700939965d18d3bee8518b0165367b42a9b49493ef1"
+      "sha256_lf": "bc95d1ab4754a82d73bd03bae86aff65d27be910f82b2900cc17f0abc813ec59"
     },
     {
       "path": "docs/graphics-clipping-contract.md",
@@ -90,14 +90,14 @@
     },
     {
       "path": "include/mparser/c_api.h",
-      "sha256_lf": "f0f58796c1c0b93607c00ca0bed3fd07148a39c7fafe0d0c0969d1d08e28d4e1"
+      "sha256_lf": "5b0573f06c684467fd132eda38acff8b7fd691fca62afde7845b2ab601a41a37"
     },
     {
       "path": "include/mparser/cpp_api.hpp",
-      "sha256_lf": "06a6af3837332ae007bef4864bbc587e912d13f607611f07951096377562519f"
+      "sha256_lf": "3faa70efea9ea50078f9ed283d7a01edd546ccb3ede4288a7a0a464b8515b683"
     },
     {
-      "path": "tests/c_api_generation2_revision12_symbols.txt",
+      "path": "tests/c_api_generation2_revision13_symbols.txt",
       "sha256_lf": "f2f9796916d7b7f44a640a9025d4577dafcd4abf4215ad8ec01d9a6f1ab9f08e"
     },
     {

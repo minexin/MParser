@@ -25,6 +25,14 @@ headless Figure target and PNG/PDF request policy over real REST, verify the
 scene stays unchanged and no files are created or overwritten. This is not
 renderer adoption; see [the export contract](../../docs/graphics-export-contract.md).
 
+To exercise the ABI 2.13 renderer callback with real file output separately,
+run `python probe-graphics-export-render.py <mparser_c-library> <fresh-evidence-dir> <pdftoppm>`
+from this directory. This test-only probe needs Pillow, ReportLab and Poppler;
+none is linked into MParser or MExecServer. It supplies explicit offscreen
+layout, writes two different Figures with native PNG/vector PDF encoders,
+checks rasterized pixels and verifies destination rejection and atomic failure
+preservation in a private allowlisted output directory.
+
 This patch is an opt-in integration candidate, not a deployed server update.
 Apply it to a separate MExecServer source checkout after checking the diff:
 

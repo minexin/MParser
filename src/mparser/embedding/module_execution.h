@@ -140,6 +140,7 @@ struct ModuleInvocationRequest {
     RuntimeInputSource inputSource;
     std::shared_ptr<RuntimeSystemContext> systemContext = {};
     std::shared_ptr<RuntimeExecutionControl> executionControl = {};
+    std::shared_ptr<const RuntimeGraphicsExportAdapter> graphicsExport = {};
     RuntimeSourceCallableInvoker externalCallableInvoker;
     bool captureEventJournal = false;
     std::optional<RuntimeEventCollectionOptions> publicEventCapture;

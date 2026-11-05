@@ -1087,7 +1087,8 @@ ModuleInvocationResult CompiledModule::execute(
               : std::make_shared<RuntimeSessionState>(
                     request.systemContext);
     const auto executionControl = request.executionControl ? request.executionControl :
-        std::make_shared<RuntimeExecutionControl>(request.limits,request.cancellationToken,nullptr,request.inputSource);
+        std::make_shared<RuntimeExecutionControl>(request.limits, request.cancellationToken, nullptr,
+            request.inputSource, RuntimeConsoleSink{}, request.graphicsExport);
     RuntimeEventJournalScope journalScope(executionControl.get(),request.captureEventJournal);
     const auto journalDiagnostics = [&](const std::vector<Diagnostic>& diagnostics) {
         if (!journalScope.journal()) { return; }

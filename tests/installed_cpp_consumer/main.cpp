@@ -388,6 +388,19 @@ end
             catch(const mparser::sdk::ApiError& error) { layoutRejected=error.status()==MPARSER_API_STATUS_INVALID_ARGUMENT; }
             require(layoutRejected && graphicsRuntime.graphicsJson(4).find("\"layout\":null")!=std::string::npos,
                 "installed explicit layout environment contract");
+            mparser::sdk::Invocation exportInvocation;
+            std::size_t exportCalls = 0;
+            exportInvocation.graphicsExport = [&](const mparser::sdk::GraphicsExportRequest& request) {
+                ++exportCalls;
+                require(request.format == mparser::sdk::GraphicsExportFormat::Png && request.snapshotVersion == 4 &&
+                    request.destination == "installed.png" && !request.sceneJson.empty(), "installed export request mismatch");
+                return mparser::sdk::GraphicsExportStatus::DestinationRejected;
+            };
+            const auto rejectedExport = graphicsRuntime.execute(mparser::sdk::Module::compile(
+                "print('installed','-dpng');", "installed_export.m"), exportInvocation);
+            require(exportCalls == 1 && !rejectedExport.succeeded() && !rejectedExport.diagnostics().empty() &&
+                rejectedExport.diagnostics().front().identifier == "MParser:GraphicsExportDestinationRejected",
+                "installed renderer registration and rejection failed");
             auto methodRuntime = mparser::sdk::Runtime::create();
             const auto invocation = methodRuntime.execute(module);
             require(invocation.succeeded(),"installed function-form method invocation failed");

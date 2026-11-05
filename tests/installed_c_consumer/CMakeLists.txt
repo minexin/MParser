@@ -31,7 +31,7 @@ if(NOT MParser_C_ABI_GENERATION EQUAL 2)
     message(FATAL_ERROR
         "Unexpected installed C ABI generation: ${MParser_C_ABI_GENERATION}")
 endif()
-if(NOT MParser_C_ABI_REVISION EQUAL 12)
+if(NOT MParser_C_ABI_REVISION EQUAL 13)
     message(FATAL_ERROR
         "Unexpected installed C ABI revision: ${MParser_C_ABI_REVISION}")
 endif()
