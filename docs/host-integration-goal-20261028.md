@@ -28,7 +28,7 @@ success may substitute for missing kernel contracts.
 | H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Explicit Figure file requests now have typed headless rejection; seven REST cases checked, no renderer or real encoding implemented |
 | H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 362/362, installed-SDK host/80-case Legend REST/67 regressions and bounded compatibility controls passed; current-SDK compact/Legend browser evidence is bounded; actual-commit CI, deployment and release acceptance remain separate gates |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK ABI 2.8 and source-only clean installed-SDK host acceptance passed; deployment and in-script dynamic rebinding remain outside this proof |
-| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only result collection and ON-mode source-only host replay passed; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see ordered-display-events.md |
+| H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering and default-OFF actual Tabbit interaction/DOM passed; screenshot capture timed out; live delivery, bounded in-flight recording, overloaded display and deployment remain open; see host-ordered-display-candidate.md |
 
 H01 downstream evidence: `tools/probe-host-compile.ps1` ran the existing
 Windows MExecServer executable in an isolated directory with the development
@@ -78,6 +78,17 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-05 H10 client delivery: the eleventh candidate explicitly opts in
+  through a default-OFF capability-gated checkbox, preserves legacy requests
+  and renders original kernel event order without workspace reconstruction.
+  Simulated API/app tests and actual installed-SDK REST cover suppression,
+  evalc/caught errors, failure-prefix history, privacy, precise truncation,
+  invalid protocols, entry returns and stale-source guards. Fresh source-only
+  host run build/clean-host-probe/069f5ae6d50b4b83932e862cc0c79a8a passed all
+  probes and 67/67 (23.15 seconds). Actual Tabbit native controls and DOM prove
+  OFF/ON/OFF behavior and ordered failure preservation; native screenshots timed
+  out and are not counted as visual passes. See host-ordered-display-candidate.md.
+  Kernel/API/ABI versions and original sibling sources/services are unchanged.
 - 2026-11-05 compact/current-Legend browser follow-up: the tenth client
   candidate removes the desktop grid's 650px minimum in compact mode, retains
   live panels/drafts, restores desktop roles/proportions and bounds small-Axes

@@ -3,7 +3,7 @@
 The explicit-layout renderer/synchronization candidates and their controlled
 Canvas, app/API and real SDK/REST probes are described in
 [the Canvas layout guide](../../docs/host-canvas-layout-candidate.md).
-The clean-host runner now applies ten client candidates. The Legend-reference
+The clean-host runner now applies eleven client candidates. The Legend-reference
 candidate resolves explicit entries through the whole snapshot, including
 duplicate/cross-Axes references; it never draws the referenced foreign curve
 as an associated-Axes series. Bounded actual v4 browser evidence is recorded
@@ -12,6 +12,10 @@ cropping failure and retains live panels/drafts without source execution.
 Five viewport and current-SDK Legend workflows, the two new simulated
 DOM/Canvas probes and remaining device/deployment gates are documented in
 [the compact candidate guide](../../docs/host-compact-layout-candidate.md).
+The final ordered-events candidate adds an explicit default-OFF checkbox and
+consumes real kernel history without grouped-result duplication. See
+[the ordered display guide](../../docs/host-ordered-display-candidate.md) for
+REST/client/browser evidence and the screenshot/live/deployment boundaries.
 
 This patch is an opt-in integration candidate, not a deployed server update.
 Apply it to a separate MExecServer source checkout after checking the diff:

@@ -44,7 +44,7 @@ foreach ($patch in @('mexecserver-graphics-v3.patch','mexecserver-definition-met
 foreach ($patch in @('mexecclient-text-labels-candidate.patch','mexecclient-line-clipping-candidate.patch',
     'mexecclient-grid-candidate.patch','mexecclient-legend-candidate.patch','mexecclient-color-candidate.patch',
     'mexecclient-runtime-identity-candidate.patch','mexecclient-axes-layout-candidate.patch','mexecclient-layout-sync-candidate.patch',
-    'mexecclient-legend-references-candidate.patch','mexecclient-compact-layout-candidate.patch')) {
+    'mexecclient-legend-references-candidate.patch','mexecclient-compact-layout-candidate.patch','mexecclient-ordered-events-candidate.patch')) {
     git -C $clientSource apply --unidiff-zero --ignore-space-change (Join-Path $PSScriptRoot $patch)
     if ($LASTEXITCODE) { throw "Client patch failed: $patch; see $stage" }
 }
@@ -65,7 +65,7 @@ node (Join-Path $PSScriptRoot 'test-system-path-sync.cjs') (Join-Path $build 'me
     (Join-Path $stage 'path-probe')
 if ($LASTEXITCODE) { throw "Kernel path synchronization probe failed; see $stage" }
 node (Join-Path $PSScriptRoot 'test-ordered-events.cjs') (Join-Path $build 'mexec_server.exe') `
-    (Join-Path $stage 'ordered-events-probe') on
+    (Join-Path $stage 'ordered-events-probe') on $clientSource
 if ($LASTEXITCODE) { throw "Ordered event probe failed; see $stage" }
 node (Join-Path $PSScriptRoot 'test-definition-sources.cjs') (Join-Path $build 'mexec_server.exe') `
     (Join-Path $stage 'definition-sources-probe')
@@ -93,7 +93,7 @@ if ($LASTEXITCODE) { throw "Client layout REST probe failed; see $stage" }
     Tee-Object -FilePath (Join-Path $stage 'kernel-probe.log')
 foreach ($test in @('test-client-text-labels.cjs','test-client-clipping.cjs','test-client-legend.cjs','test-client-colors.cjs',
     'test-client-runtime-identity.cjs','test-client-axes-layout.cjs','test-client-layout-bootstrap.cjs',
-    'test-client-compact-layout.cjs','test-client-compact-canvas.cjs')) {
+    'test-client-compact-layout.cjs','test-client-compact-canvas.cjs','test-client-ordered-events.cjs')) {
     node (Join-Path $PSScriptRoot $test) $clientSource
     if ($LASTEXITCODE) { throw "Client candidate failed: $test; see $stage" }
 }

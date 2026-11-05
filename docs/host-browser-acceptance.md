@@ -111,6 +111,11 @@ every lifecycle/selection race or a deployed client.
 
 ## Remaining Gates
 
+The later [ordered display candidate](host-ordered-display-candidate.md) has
+actual default-OFF/ON/OFF command/checkbox and event-order DOM evidence with
+the current SDK. Screenshot capture timed out; it is not a visual acceptance
+claim. Original host/client deployments remain unchanged.
+
 The v4 environment/multi-Axes source-copy candidate now has a separate bounded
 actual Tabbit measurement/pixel/resize/selection/zoom/reload run in
 [the Canvas layout guide](host-canvas-layout-candidate.md). The inspected dual

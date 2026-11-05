@@ -1,0 +1,145 @@
+diff --git a/web/index.html b/web/index.html
+index 6d578e4..54a381c 100644
+--- a/web/index.html
++++ b/web/index.html
+@@ -229 +229 @@
+-        <div class="panel-title">命令窗口</div>
++        <div class="panel-title">命令窗口<label class="ordered-events-toggle" hidden><input id="ordered-events-enabled" type="checkbox">有序内核回显</label></div>
+@@ -270,0 +271 @@
++  <script src="/js/ordered-events.js" defer></script>
+diff --git a/web/js/api.js b/web/js/api.js
+index 7e7e915..175fd05 100644
+--- a/web/js/api.js
++++ b/web/js/api.js
+@@ -97,0 +98,3 @@ MExec.api = (() => {
++      if (!payload.compile_only && !Object.prototype.hasOwnProperty.call(payload,'include_execution_events')) {
++        Object.assign(payload,MExec.orderedEvents?.requestOptions());
++      }
+diff --git a/web/js/app.js b/web/js/app.js
+index fb1e56a..46dde21 100644
+--- a/web/js/app.js
++++ b/web/js/app.js
+@@ -279,10 +279,10 @@ MExec.app = (() => {
+-    // MParser v1.2 host output (disp/fprintf) arrives as ordered events.
+-    for (const event of result.output_events || []) {
+-      if (!event.text) continue;
+-      MExec.command.writeOutput(event.text);
+-    }
+-    // MParser v1.2 reports top-level expression results; MATLAB stores the
+-    // last displayed result in ans.
+-    for (const expression of result.top_level_expressions || []) {
+-      if (expression.output_suppressed) continue;
+-      printValueEcho('ans', expression.value);
++    const sourceLabel = name => editorPlan && name === result.execution_source_name
++      ? (editorPlan.path || editorPlan.fileName || name) : name;
++    const ordered = MExec.orderedEvents?.render(result.execution_events,printDiagnostic);
++    if (!ordered) {
++      for (const event of result.output_events || []) {
++        if (event.text) MExec.command.writeOutput(event.text);
++      }
++      for (const expression of result.top_level_expressions || []) {
++        if (!expression.output_suppressed) printValueEcho('ans', expression.value);
++      }
+@@ -301 +301,2 @@ MExec.app = (() => {
+-    if (result.status === 'succeeded' && kind !== 'multi-assign') {
++    if (result.status === 'succeeded' && kind !== 'multi-assign' &&
++        (!ordered || (ordered.valid && result.entry_function))) {
+@@ -309,3 +310 @@ MExec.app = (() => {
+-    const sourceLabel = name => editorPlan && name === result.execution_source_name
+-      ? (editorPlan.path || editorPlan.fileName || name) : name;
+-    for (const diagnostic of result.diagnostics || []) {
++    function printDiagnostic(diagnostic) {
+@@ -342,0 +342,3 @@ MExec.app = (() => {
++    if (!ordered || ordered.aggregateDiagnostics) {
++      for (const diagnostic of result.diagnostics || []) printDiagnostic(diagnostic);
++    }
+@@ -1030,0 +1033 @@ GET/PUT /files                脚本文件存储</div>`,
++      MExec.orderedEvents?.configure(health);
+diff --git a/web/js/layout.js b/web/js/layout.js
+index e307628..9e5aa99 100644
+--- a/web/js/layout.js
++++ b/web/js/layout.js
+@@ -105 +105 @@ window.MExec = window.MExec || {};
+-      if (event.target.closest('button, input, select, a')) return;
++      if (event.target.closest('button, input, select, a, label')) return;
+diff --git a/web/css/mexec.css b/web/css/mexec.css
+index e8dd8ed..d9917a3 100644
+--- a/web/css/mexec.css
++++ b/web/css/mexec.css
+@@ -819,0 +820,2 @@ button:focus-visible {outline:2px solid var(--accent);outline-offset:-2px;}
++.ordered-events-toggle {display:inline-flex;align-items:center;gap:3px;margin-left:auto;font-weight:normal;white-space:nowrap;}
++.ordered-events-toggle[hidden] {display:none;}
+diff --git a/web/js/ordered-events.js b/web/js/ordered-events.js
+new file mode 100644
+index 0000000..d5efff8
+--- /dev/null
++++ b/web/js/ordered-events.js
+@@ -0,0 +1,68 @@
++window.MExec = window.MExec || {};
++
++MExec.orderedEvents = (() => {
++  let supported = false;
++  const control = () => document.querySelector('#ordered-events-enabled');
++  function configure(info) {
++    supported = Array.isArray(info?.features) && info.features.includes('ordered-display-events');
++    const input = control();
++    if (!input) return;
++    input.disabled = !supported;
++    if (!supported) input.checked = false;
++    input.closest('label').hidden = !supported;
++  }
++  function requestOptions() {
++    return supported && control()?.checked
++      ? {include_execution_events:true, max_execution_events:4096} : null;
++  }
++  const decimal = value => typeof value === 'string' && /^(0|[1-9][0-9]{0,19})$/.test(value)
++    && BigInt(value) <= 18446744073709551615n;
++  function validate(data) {
++    if (data.schema !== 'mexec.execution-events' || data.version !== 1 ||
++        data.offset_unit !== 'utf8-byte' || data.column_unit !== 'utf8-byte' ||
++        data.line_base !== 1 || data.column_base !== 1 || data.end_exclusive !== true ||
++        !data.summary || data.summary.enabled !== true || typeof data.summary.started !== 'boolean' ||
++        typeof data.summary.truncated !== 'boolean' || !Array.isArray(data.events) || data.events.length > 4096)
++      return false;
++    const summary = data.summary;
++    if (![summary.generated_count,summary.retained_count,summary.retained_bytes].every(decimal) ||
++        summary.retained_count !== String(data.events.length) ||
++        BigInt(summary.generated_count) < BigInt(summary.retained_count) ||
++        !['none','event-count','byte-limit'].includes(summary.truncation_reason) ||
++        summary.truncated !== (summary.truncation_reason !== 'none') ||
++        (!summary.truncated && summary.generated_count !== summary.retained_count) ||
++        (!summary.started && data.events.length)) return false;
++    return data.events.every((event,index) => event && event.sequence === String(index) &&
++      ['assignment','expression','text','warning','error'].includes(event.kind) &&
++      ['visible','raised','caught','suppressed','unhandled'].includes(event.disposition) &&
++      Number.isSafeInteger(event.capture_depth) && event.capture_depth >= 0 &&
++      typeof event.output_suppressed === 'boolean' && typeof event.label === 'string' &&
++      typeof event.text === 'string' && ['compact','loose'].includes(event.line_spacing) &&
++      (event.value_unavailable === null || typeof event.value_unavailable === 'string') &&
++      (!['warning','error'].includes(event.kind) ||
++        (event.diagnostic && typeof event.diagnostic.message === 'string')));
++  }
++  function render(data, printDiagnostic) {
++    if (data === undefined || data === null) return null;
++    if (!validate(data)) {
++      MExec.command.print('无法读取内核有序回显：不支持或不完整的事件协议', 'warn');
++      return {valid:false, aggregateDiagnostics:true};
++    }
++    for (const event of data.events) {
++      if (event.capture_depth !== 0 || event.output_suppressed ||
++          !['visible','unhandled'].includes(event.disposition)) continue;
++      if (event.kind === 'text') MExec.command.writeOutput(event.text);
++      else if (event.kind === 'warning' || event.kind === 'error') printDiagnostic(event.diagnostic);
++      else {
++        const value = event.value_unavailable === null ? event.text : `[值不可用: ${event.value_unavailable}]`;
++        MExec.command.print(`${event.label} =\n${value}${event.line_spacing === 'loose' ? '\n' : ''}`, 'out');
++      }
++    }
++    if (data.summary.truncated) {
++      MExec.command.print(`内核回显不完整（${data.summary.truncation_reason}，保留 ${data.summary.retained_count}/${data.summary.generated_count} 条）`, 'warn');
++      MExec.command.print('以下执行诊断不属于已保留的回显前缀', 'dim');
++    }
++    return {valid:true, aggregateDiagnostics:!data.summary.started || data.summary.truncated};
++  }
++  return {configure, requestOptions, render};
++})();

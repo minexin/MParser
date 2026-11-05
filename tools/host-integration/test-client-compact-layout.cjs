@@ -67,6 +67,10 @@ assert.equal(get('center-panel').getAttribute('role'),null,'desktop landmark rol
 assert.equal(storage.get('mexec.desktop-layout'),previous,'viewport changes never overwrite desktop proportions');
 const centerButton=get('center-panel-title').children[0];centerButton.fire('click');
 assert.equal(main.classList.contains('has-maximized-panel'),true);
+centerButton.fire('click');
+get('center-panel-title').fire('dblclick',{target:{closest:selector=>selector.split(',').some(value=>value.trim()==='label')?{}:null}});
+assert.equal(main.classList.contains('has-maximized-panel'),false,'interactive checkbox labels do not maximize their panel');
+centerButton.fire('click');
 compact.change(true);assert.equal(main.classList.contains('has-maximized-panel'),false);
 centerButton.fire('click');assert.equal(main.classList.contains('has-maximized-panel'),false,'compact layout does not combine with desktop maximization');
 get('layout-reset').fire('click');assert.equal(selected(),'workbench');assert.equal(get('right-panel').inert,true);

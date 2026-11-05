@@ -33,12 +33,16 @@
   },
   "artifacts": [
     {
+      "path": "docs/host-ordered-display-candidate.md",
+      "sha256_lf": "6c33c98d0f0f95724af33811aea5b9568a6b334de999e2aea5de09370883101a"
+    },
+    {
       "path": "docs/host-compact-layout-candidate.md",
       "sha256_lf": "d5643b92504a71e220ef195b7acfa3f972922a04c1d4f987a016114e5fecbb01"
     },
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "b9838f0afdb687e0590bf985cd2619b77c78720539ab0a9d17c10a0b56320002"
+      "sha256_lf": "36d2b6d4ea1f57b4bd4c1def1f234059e9fc4473617f985f4e799cad5fa21c98"
     },
     {
       "path": "docs/versioning-and-deprecation.md",
@@ -110,7 +114,7 @@
     },
     {
       "path": "docs/ordered-display-events.md",
-      "sha256_lf": "b085de04383fdf8952bbabac4ad129af809da033830d724e0629e54cf9128675"
+      "sha256_lf": "3cd69fca22d0d6a019b6ba3f01f6a9a2b630ccebe2ed7f488f631121825157bf"
     },
     {
       "path": "docs/ordered-display-api-design.md",
@@ -122,7 +126,7 @@
     },
     {
       "path": "docs/host-browser-acceptance.md",
-      "sha256_lf": "771a5a511b5856876b1ad7c9b73114631dcad81ba61341a76b5947614c75054d"
+      "sha256_lf": "00ba2968bff04be2f869ad87af34899410543633e53b2612d4267ca3cc533df6"
     },
     {
       "path": "docs/graphics-writeback-contract.md",

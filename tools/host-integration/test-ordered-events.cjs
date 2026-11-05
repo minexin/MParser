@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
 const crypto = require('node:crypto');
+const vm = require('node:vm');
 const {spawn} = require('node:child_process');
-const [executable,evidenceDirectory,mode='on'] = process.argv.slice(2);
+const [executable,evidenceDirectory,mode='on',clientRoot] = process.argv.slice(2);
 assert.ok(executable && evidenceDirectory && ['on','off'].includes(mode));
 const root = path.resolve(evidenceDirectory);
 fs.mkdirSync(root,{recursive:true});
@@ -55,6 +56,21 @@ async function main() {
     assert.equal(info.features.includes('ordered-display-events'),mode==='on');
     const {id}=await request('/sessions','POST',{name:'ordered-events'},201);
     const base=`/sessions/${id}`;
+    let client;
+    if (clientRoot) {
+        const rows=[],label={hidden:true},checkbox={checked:false,disabled:false,closest:()=>label};
+        const MExec={command:{print:(text,cls)=>rows.push({text,cls}),writeOutput:text=>rows.push({text,cls:'text'})},
+            value:{stringify:JSON.stringify,toDisplay(){throw Error('ordered history must not use legacy value groups');}}};
+        const context={MExec,window:{addEventListener(){}},location:{origin:`http://127.0.0.1:${port}`},
+            fetch,AbortController,setTimeout,clearTimeout,
+            document:{querySelector:selector=>selector==='#ordered-events-enabled'?checkbox:null,querySelectorAll:()=>[]}};
+        for (const name of ['ordered-events.js','api.js','app.js'])
+            vm.runInNewContext(fs.readFileSync(path.resolve(clientRoot,'web/js',name),'utf8'),context);
+        MExec.orderedEvents.configure(info);
+        assert.equal(label.hidden,mode!=='on');assert.equal(checkbox.checked,false);
+        client={MExec,rows,checkbox,render(result){rows.length=0;MExec.app.handleExecuteResult(result,'command');
+            assert.equal(rows.some(row=>row.text.includes('事件协议')),false,'real server event protocol is accepted');}};
+    }
     const execute=(command,extra={})=>request(`${base}/execute`,'POST',
         {command,include_workspace_values:true,...extra});
     const legacy=await execute('a=1');
@@ -64,6 +80,12 @@ async function main() {
     if(mode==='off') {
         await request(`${base}/execute`,'POST',{command:'a=99',include_execution_events:true},400);
         assert.equal((await request(`${base}/workspace`)).revision,before);
+        if(client){
+            const response=await client.MExec.api.execute(id,{command:'client_legacy=73',include_workspace_values:true});
+            assert.equal(response.status,'succeeded');assert.equal(response.execution_events,undefined);
+            assert.equal(value(response,'client_legacy').data[0],73);
+            assert.equal(client.checkbox.disabled,true);
+        }
     } else {
         for(const [name,command,expected] of [
             ['assignment','a=1',[['assignment','a','1',false]]],
@@ -80,6 +102,17 @@ async function main() {
             for(const event of data.events.filter(event=>event.kind==='assignment')) {
                 assert.equal(event.snapshot.schema,'mparser.value-snapshot'); assert.equal(event.snapshot.version,1);
                 assert.equal(event.value_unavailable,null);
+            }
+            if (client) {
+                client.render(result);
+                const visible=client.rows.filter(row=>row.cls==='out'||row.cls==='text'||row.text.startsWith('stop'));
+                const wanted=expected.filter(item=>!item[3]);assert.equal(visible.length,wanted.length,name);
+                wanted.forEach(([kind,label,text],index)=>{
+                    if(kind==='assignment') assert.equal(visible[index].text.trimEnd(),`${label} =\n${text}`,name);
+                    else if(kind==='text') assert.equal(visible[index].text,text,name);
+                    else assert.ok(visible[index].text.startsWith(text),name);
+                });
+                fs.writeFileSync(path.join(root,`client-${name}.json`),JSON.stringify(client.rows,null,2));
             }
             if(name==='partial-failure') {
                 assert.equal(value(result,'a').data[0],8); assert.equal(data.events[1].disposition,'unhandled');
@@ -166,6 +199,35 @@ async function main() {
         assert.equal((await request(`${base}/workspace`)).revision,current,'invalid options execute no source');
         const stateless=await request('/execute','POST',{source:'stateless=7',include_execution_events:true});
         assert.equal(collection(stateless).events[0].label,'stateless');
+        if (client) {
+            const disabled=await client.MExec.api.execute(id,{command:'client_default=10'});
+            assert.equal(disabled.execution_events,undefined,'default checkbox does not request capture');
+            client.checkbox.checked=true;
+            const enabled=await client.MExec.api.execute(id,{command:'client_history=41\nclient_history=42'});
+            assert.equal(collection(enabled).events.length,2);client.render(enabled);
+            assert.deepEqual(client.rows.map(row=>row.text.trimEnd()),['client_history =\n41','client_history =\n42']);
+            const limited=await client.MExec.api.execute(id,{command:'client_history=43\nclient_history=44',
+                include_execution_events:true,max_execution_events:1});
+            client.render(limited);assert.ok(client.rows.some(row=>row.text.includes('保留 1/2')));
+            assert.equal(client.rows.some(row=>row.text.includes('44')),false,'truncation does not display final workspace history');
+            const captured=await client.MExec.api.execute(id,{command:"outside=1\ntranscript=evalc('inside=2; 3');\noutside=4"});
+            client.render(captured);assert.deepEqual(client.rows.filter(row=>row.cls==='out').map(row=>row.text.trimEnd()),
+                ['outside =\n1','outside =\n4'],'evalc records remain captured');
+            const privacy=await client.MExec.api.execute(id,{command:'client_origin=watcher.Source\nclient_callback=watcher.Callback'});
+            client.render(privacy);
+            const rendered=JSON.stringify(client.rows);
+            for(const forbidden of ['InternalSecret','capturedSecret','91234567'])assert.equal(rendered.includes(forbidden),false);
+            assert.equal(client.rows.filter(row=>row.cls==='out').length,2,'public object/callback summaries remain usable');
+            const privacyRows=client.rows.slice(),strictFormatter=client.MExec.value.toDisplay;
+            client.MExec.value.toDisplay=value=>JSON.stringify(value.data);
+            const returned=await client.MExec.api.execute(id,{source:'function y=client_return()\ny=17;\nend',
+                source_name:'client_return.m',entry_function:'client_return',requested_output_count:1});
+            assert.equal(returned.status,'succeeded');assert.equal(returned.entry_function,'client_return');
+            client.render(returned);assert.deepEqual(client.rows.map(row=>row.text),['ans = [17]'],'explicit function return is displayed once');
+            client.MExec.value.toDisplay=strictFormatter;
+            fs.writeFileSync(path.join(root,'client-api.json'),JSON.stringify({enabled,limited,captured,privacy,returned,privacyRows,returnRows:client.rows},null,2));
+            console.log('PASS actual installed-SDK API opt-in and client history, suppression, errors, evalc, truncation and privacy (simulated DOM)');
+        }
         console.log('PASS display history, retained-listener privacy/order, suppression, errors, evalc, UTF-8 and bounded opt-in REST');
     }
     const dll=path.join(path.dirname(path.resolve(executable)),'mparser_c.dll');

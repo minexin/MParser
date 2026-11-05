@@ -67,6 +67,11 @@ SDK consumers and source-only host candidates require their own current runs.
 Do not infer full host, browser, deployment or release acceptance from these
 kernel tests. See `ordered-display-api-design.md` for the remaining gates.
 
+The later [ordered display client candidate](host-ordered-display-candidate.md)
+adds a default-OFF checkbox and consumes the real collection in sequence. Its
+current installed-SDK REST, simulated-client and actual Tabbit interaction/DOM
+checks are separate from screenshot, live-stream and deployment acceptance.
+
 ### Local Development Evidence (2026-11-04)
 
 - `build/ordered-events-expanded-test.log`: 355/355 kernel, SDK and package
