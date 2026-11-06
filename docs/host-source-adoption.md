@@ -73,6 +73,11 @@ loopback child processes and unique evidence roots, not a deployed service.
   evidence are under `build/workspace-rename-browser-a73c3d824ab344d4a062358669094294`.
   Compact screenshot capture timed out; compact DOM geometry was checked.
   The port 8080 frontend was not changed for this feature.
+- The final signed Windows SDK at `v1.15.0` also passed a fresh 86/86 host
+  build and regression with these host/client revisions. The DLL matched the
+  canonical Release download; see the [publication audit](release-evidence/v1.15.0-publication/README.md)
+  and `D:/project/MExecServer/build/rename-ui-signed-sdk.log`. The live service
+  continues to use its previously identified development DLL.
 
 The first original-source configure correctly rejected a remaining 1.14.0
 requirement. Inspection found that Git had skipped candidate paths inside a
@@ -87,10 +92,14 @@ recorded on its own page.
 ## GitHub Actions
 
 - [Frontend rename run 42089204511](https://github.com/minexin/MExecClient/actions/runs/42089204511)
-  passed at `577dea9`. The corresponding
+  passed all four Windows/Linux and Node 22/24 jobs at `577dea9`; each
+  reported 24 syntax, 52 unit and 11 integration checks. The corresponding
   [host run 42141013643](https://github.com/minexin/MExecServer/actions/runs/42141013643)
-  pins `577dea9` and kernel package source `7fb29e7`; the local archive-based
-  86-test replay above is separate from that hosted build.
+  passed all 86 tests without skips at `278619f`, with pinned frontend
+  `577dea9` and kernel package source `7fb29e7`. The downloaded report and
+  JUnit agree on the exact revisions, installed 1.15.0/ABI 2.13 and the
+  presence of the rename UI test. The local archive-based replay above is
+  separate from that hosted build.
 - [Frontend run 42075178497](https://github.com/minexin/MExecClient/actions/runs/42075178497):
   all four Windows/Linux and Node 22/24 jobs passed on `6995bca`.
   Each artifact reports 24 module syntax checks, 51 unit tests and 11

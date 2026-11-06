@@ -137,6 +137,32 @@ The audit tab and its session were removed; backend PID and uptime remained
 continuous. This was not another native PNG download or a production renderer
 test.
 
+## Workspace Rename And Source Graph
+
+On 2026-11-06, an isolated host using the verified Windows SDK from unsigned
+run 42082588791 served the exact MExecClient `577dea9` assets. Tabbit verified
+kernel keyword rejection, duplicate-name refusal and stale-revision recovery.
+The valid contextual name `arguments` retained the updated value of 64;
+focus moved to its row. A closure renamed in the 390px layout returned the
+captured result 14 on a later explicit execution. The renames themselves
+preserved the run count and graph. Compact DOM geometry fit the viewport;
+compact screenshot capture timed out.
+
+In the same isolated session, four files were opened through the editor.
+Including a malformed source made the graph compile fail; excluding it and
+explicitly binding the external method owner compiled the three selected
+units. Four jumps selected exact ranges across files: two same-named nested
+helpers, a declaration, and its separate implementation. The browser
+converted the compiler's UTF-8 byte ranges over Unicode/CRLF text to editor
+selections. Editing and undoing did not revive stale navigation. The
+workspace, graph and run count were unchanged by compile and navigation.
+
+`replay.json`, `multisource.json`, `verified-rename-dialog.png` and
+`verified-source-graph.png` are retained under
+`build/workspace-rename-browser-a73c3d824ab344d4a062358669094294`. The
+scratch tab, session and service were removed. This was not a new 8080
+deployment.
+
 ## Selected Pair
 
 - Source-only host stage:

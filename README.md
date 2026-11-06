@@ -1,7 +1,7 @@
 # MParser
 
-Current product and SDK identity: **v1.15.0**, the host-integration prerelease
-line. The latest stable release remains v1.0.0.
+Current product and SDK identity: [**v1.15.0 host-integration prerelease**](https://github.com/minexin/MParser/releases/tag/v1.15.0).
+The latest stable release remains v1.0.0.
 The [V1.15 integration guide](docs/v1.15.md) covers:
 identifier validation, compiler definition ranges, graphics lifecycle/Text/Legend,
 and opt-in identity snapshots. Browser, deployment and release acceptance remain
