@@ -34,7 +34,7 @@
   "artifacts": [
     {
       "path": "docs/host-source-adoption.md",
-      "sha256_lf": "1c768dc29e96b8671cb62f1af6893d775789647786fbbf56699f4222d9983171"
+      "sha256_lf": "5714845d8eddcab3bcb5076b4d34ee23b0349b01567b0e5f956a60d84f48fb76"
     },
     {
       "path": "docs/graphics-export-contract.md",
@@ -54,7 +54,7 @@
     },
     {
       "path": "docs/v1.15.md",
-      "sha256_lf": "5ff138bb3746bd724adf58d4c6417830efcc6664e7bfae7552620d61d5045879"
+      "sha256_lf": "a31d0c2164ae57ed42a8cb99114d4e33bbbb9c79e9bd1d087b9f4713fc6ef9b8"
     },
     {
       "path": "docs/versioning-and-deprecation.md",

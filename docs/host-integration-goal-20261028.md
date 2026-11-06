@@ -1,6 +1,6 @@
 # Host Integration Kernel Goal
 
-Status: active. Development product/SDK: 1.15.0 (unreleased).
+Status: active. Product/SDK: 1.15.0 host-integration prerelease line.
 Baseline: MParser 1.14.0, commit `9be51f9`.
 Scope agreed on 2026-10-28: prioritize kernel requirements raised by
 MExecServer/MExecClient, not unrelated MATLAB compatibility expansion.
@@ -30,7 +30,7 @@ success may substitute for missing kernel contracts.
 | ID | Work | Acceptance | State |
 | --- | --- | --- | --- |
 | H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated/deployed loopback REST compile/execute diagnostic propagation verified; invalid execution with clear_workspace=true preserves variables and graphics. |
-| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and 90-case R2024b source-context corpus passed. Deployed loopback REST confirms kernel rejection reasons, contextual rename, stale-revision and no-execution controls. Rename UI and production rollout remain separate. |
+| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and 90-case R2024b source-context corpus passed. Deployed REST confirms kernel rejection reasons, contextual rename, stale revision and no-execution controls. The new client UI passed actual isolated Tabbit value/closure retention, conflict and keyboard/focus checks; the port 8080 frontend was not updated for this slice. |
 | H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | Deployed REST confirms UTF-8/CRLF, repeated nested names and explicit external-method ownership. Deployed Tabbit verifies single-document navigation and edit/undo freshness; selected-open-document browser coverage remains the isolated run. |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs and the current deployed ABI 2.13 pair; not a newly fixed kernel defect. |
 | H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay. Deployed Tabbit verifies two matrix columns, no overflow at 390px, and close/recreate with stale-handle rejection. Broader downstream acceptance remains open. |
@@ -104,6 +104,13 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-06 H02 workspace rename: MExecClient `577dea9` submits the observed
+  revision to the existing kernel-validated binding API. Real Tabbit and a
+  downloaded-SDK host build verified rejected keyword/duplicate/stale names,
+  successful contextual rename and retained closure capture without an
+  extra execution or graph change. Local host/client CTest: 86/86.
+  [Host adoption](host-source-adoption.md) identifies the tested and deployed
+  revisions separately.
 - 2026-11-06 H06 live follow-up: the tested client asset was updated on the
   existing 8080 process. All 27 managed HTTP assets matched the client and
   the seeded workspace/graph survived without restarting the backend. The

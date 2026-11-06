@@ -10,13 +10,13 @@ MParser feature branch was created.
 
 | Local Source | Private Repository | Verified Remote Main |
 | --- | --- | --- |
-| `D:/project/MExecServer` | [minexin/MExecServer](https://github.com/minexin/MExecServer) | `5481e691d14e0b76379d1eead95242ca3c91f308` |
-| `D:/project/MExecClient` | [minexin/MExecClient](https://github.com/minexin/MExecClient) | `6995bcae92cfd6fa06b77d22bf9123745de6390f` |
+| `D:/project/MExecServer` | [minexin/MExecServer](https://github.com/minexin/MExecServer) | `278619f98338fe92fbc8aff91fb061452aa14269` |
+| `D:/project/MExecClient` | [minexin/MExecClient](https://github.com/minexin/MExecClient) | `577dea9db0d3e2ac6b59d28f7dedbb25e1a041cd` |
 
 Both repositories and their default `main` branches were verified directly
 through GitHub's authenticated API. They are separate from MParser's tree and
-require an authorized login to view. These are the verified CI revisions;
-the existing local deployment is a separately identified snapshot below.
+require an authorized login to view. The existing local deployment is a
+separately identified snapshot below.
 
 ## Adopted Development State
 
@@ -58,11 +58,21 @@ loopback child processes and unique evidence roots, not a deployed service.
   `C749ACFC0D0FD5128F2554D211A88E587FF2CDA72EA000877287ED98AE11D0F0`.
 - A later isolated source-only replay used the downloaded Windows x64 SDK
   from [unsigned run 42082588791](https://github.com/minexin/MParser/actions/runs/42082588791),
-  source `7fb29e7`, and the exact host/client revisions above. All 85 CTests
+  source `7fb29e7`, backend `5481e69` and frontend `6995bca`. All 85 CTests
   and dedicated REST/SDK probes passed. The host DLL matched that archive's
   SHA256 `CF0EEFD4AE481ECD76C47F33291F7A05BEF11A2E54BB6EA428B6741006041C60`.
   See `build/unsigned-v115-host-replay-42082588791.log`. This archive was not
   installed into the running service.
+- The next downloaded-SDK host build with the rename client above passed
+  86/86 CTests with the same DLL, including the new frontend contract test.
+  Real Tabbit on an isolated port confirmed kernel keyword and duplicate-name
+  rejection, stale-revision refresh/reconfirmation, keyboard selection and
+  focus, preserved value and unchanged run count and graphics. At 390px the
+  dialog and field fit the viewport; a renamed closure retained its capture
+  and returned 14 when called separately. The desktop screenshot and raw
+  evidence are under `build/workspace-rename-browser-a73c3d824ab344d4a062358669094294`.
+  Compact screenshot capture timed out; compact DOM geometry was checked.
+  The port 8080 frontend was not changed for this feature.
 
 The first original-source configure correctly rejected a remaining 1.14.0
 requirement. Inspection found that Git had skipped candidate paths inside a
@@ -76,13 +86,18 @@ recorded on its own page.
 
 ## GitHub Actions
 
+- [Frontend rename run 42089204511](https://github.com/minexin/MExecClient/actions/runs/42089204511)
+  passed at `577dea9`. The corresponding
+  [host run 42141013643](https://github.com/minexin/MExecServer/actions/runs/42141013643)
+  pins `577dea9` and kernel package source `7fb29e7`; the local archive-based
+  86-test replay above is separate from that hosted build.
 - [Frontend run 42075178497](https://github.com/minexin/MExecClient/actions/runs/42075178497):
-  all four Windows/Linux and Node 22/24 jobs passed on the client revision
-  above. Each artifact reports 24 module syntax checks, 51 unit tests and 11
+  all four Windows/Linux and Node 22/24 jobs passed on `6995bca`.
+  Each artifact reports 24 module syntax checks, 51 unit tests and 11
   integration tests. These are automated DOM/Canvas replays, not Tabbit.
 - [Backend run 42075623084](https://github.com/minexin/MExecServer/actions/runs/42075623084):
   Windows x64, CMake 4.4.5, Node 24.22.2. The configured read credential
-  checked out the private frontend revision above. The workflow installed
+  checked out private frontend `6995bca` at backend `5481e69`. The workflow installed
   the SDK built from MParser `a541767682788bb68bc6deb95b5ddd9c246da85b` and
   passed 85/85 host/client CTests without failures, skips or disabled cases.
   The downloaded report, JUnit and CTest log agree on the clean checkout,

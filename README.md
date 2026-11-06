@@ -1,7 +1,8 @@
 # MParser
 
-Current product and SDK development identity: **v1.15.0 (unreleased)**.
-The [V1.15 development line](docs/v1.15.md) prioritizes host integration:
+Current product and SDK identity: **v1.15.0**, the host-integration prerelease
+line. The latest stable release remains v1.0.0.
+The [V1.15 integration guide](docs/v1.15.md) covers:
 identifier validation, compiler definition ranges, graphics lifecycle/Text/Legend,
 and opt-in identity snapshots. Browser, deployment and release acceptance remain
 separate gates. The SDK exposes an opt-in, read-only
