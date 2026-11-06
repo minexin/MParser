@@ -10,7 +10,7 @@ MParser feature branch was created.
 
 | Local Source | Private Repository | Verified Remote Main |
 | --- | --- | --- |
-| `D:/project/MExecServer` | [minexin/MExecServer](https://github.com/minexin/MExecServer) | `278619f98338fe92fbc8aff91fb061452aa14269` |
+| `D:/project/MExecServer` | [minexin/MExecServer](https://github.com/minexin/MExecServer) | `9927e2ab64e1f91e704086586781020b63241bce` |
 | `D:/project/MExecClient` | [minexin/MExecClient](https://github.com/minexin/MExecClient) | `577dea9db0d3e2ac6b59d28f7dedbb25e1a041cd` |
 
 Both repositories and their default `main` branches were verified directly
@@ -72,7 +72,8 @@ loopback child processes and unique evidence roots, not a deployed service.
   and returned 14 when called separately. The desktop screenshot and raw
   evidence are under `build/workspace-rename-browser-a73c3d824ab344d4a062358669094294`.
   Compact screenshot capture timed out; compact DOM geometry was checked.
-  The port 8080 frontend was not changed for this feature.
+  This isolated run did not modify port 8080; see the subsequent deployment
+  below.
 - The final signed Windows SDK at `v1.15.0` also passed a fresh 86/86 host
   build and regression with these host/client revisions. The DLL matched the
   canonical Release download; see the [publication audit](release-evidence/v1.15.0-publication/README.md)
@@ -100,6 +101,10 @@ recorded on its own page.
   JUnit agree on the exact revisions, installed 1.15.0/ABI 2.13 and the
   presence of the rename UI test. The local archive-based replay above is
   separate from that hosted build.
+- Backend `9927e2a` only updates the host adoption guide after the signed
+  release and frontend rollout. Its
+  [same-main run 42148755005](https://github.com/minexin/MExecServer/actions/runs/42148755005)
+  uses the same locked kernel/client and test inventory.
 - [Frontend run 42075178497](https://github.com/minexin/MExecClient/actions/runs/42075178497):
   all four Windows/Linux and Node 22/24 jobs passed on `6995bca`.
   Each artifact reports 24 module syntax checks, 51 unit tests and 11
@@ -144,6 +149,26 @@ included in the match. The old asset and verified replacement receipt are
 retained in `build/deployed-client-6995bca-c84efb97b2444c41ba11effbfc920a9a`.
 Process identity, uptime, loaded DLL and a temporary session's workspace and
 graph survived the update. No backend restart or renderer install occurred.
+
+The subsequent 2026-11-06 update serves the current MExecClient
+`577dea9db0d3e2ac6b59d28f7dedbb25e1a041cd`. Its 26 non-entrypoint assets
+were staged and HTTP-hash-verified under a revision-specific URL prefix.
+The entrypoint was atomically replaced after rehearsing rollback on an
+isolated process with the same deployed executable and DLL. Only its 25
+resource URLs differ from the tested source HTML. Old asset URLs and bytes
+remain usable by already loaded pages. The process, loaded DLL, all three
+pre-existing sessions and a seeded workspace/graph were retained. The
+frontend state is in `D:/project/MExecServer/build/development-service.frontend.json`;
+the entrypoint backup and receipts are in
+`build/live-client-577dea9-a65effd3c24c4bc58523215dd4f1fda0`.
+
+[Actual live Tabbit](host-browser-acceptance.md#versioned-live-client) verified
+the new resource URLs, rename, cross-document navigation, explicit layout
+metrics, identity writeback and renderer-unavailable PDF. This update is not
+a backend restart or a replacement of the development DLL with a Release
+binary. For a future managed restart after existing sessions are released,
+the already-tested `D:/project/MExecServer/build/rename-ui-signed-sdk` is a
+separate build using the signed Windows SDK and current frontend.
 
 `build/host-adoption-20261105/deployed-service-evidence/verified.json` records
 actual HTTP readback hashes for all 27 frontend resources and REST acceptance

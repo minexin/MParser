@@ -1,6 +1,7 @@
 # Host Integration Kernel Goal
 
-Status: active. Product/SDK: 1.15.0 host-integration prerelease line.
+Status: acceptance verified for the agreed H01-H10 scope on 2026-11-06.
+Product/SDK: published 1.15.0 host-integration prerelease.
 Baseline: MParser 1.14.0, commit `9be51f9`.
 Scope agreed on 2026-10-28: prioritize kernel requirements raised by
 MExecServer/MExecClient, not unrelated MATLAB compatibility expansion.
@@ -30,13 +31,13 @@ success may substitute for missing kernel contracts.
 | ID | Work | Acceptance | State |
 | --- | --- | --- | --- |
 | H01 | Reject empty assignment RHS and invalid keyword assignment | Parser and public compile API reject malformed source with useful source locations; positive syntax controls pass; compile has no workspace effects | Kernel and isolated/deployed loopback REST compile/execute diagnostic propagation verified; invalid execution with clear_workspace=true preserves variables and graphics. |
-| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and 90-case R2024b source-context corpus passed. Deployed REST confirms kernel rejection reasons, contextual rename, stale revision and no-execution controls. The new client UI passed actual isolated Tabbit value/closure retention, conflict and keyboard/focus checks; the port 8080 frontend was not updated for this slice. |
-| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | Deployed REST confirms UTF-8/CRLF, repeated nested names and external-method ownership. Deployed Tabbit verifies single-document navigation. Current isolated Tabbit verifies selected-open-source inclusion/exclusion, repeated names, external declaration/implementation ranges and edit/undo freshness without execution. |
+| H02 | Public variable-name validation | Side-effect-free SDK validation with explicit character, keyword and length rules; shared rules with supported source builtins; host rename can validate without executing assignment | SDK, REST builtins and 90-case R2024b source-context corpus passed. Deployed Tabbit and REST verify kernel keyword/duplicate/stale refusal, contextual rename, value and closure retention, keyboard focus and no execution. |
+| H03 | Definition metadata | C/C++ API exposes function/local/nested/method definitions, hierarchy, source identity and ranges with documented offset units; repeated names, UTF-8 and line endings tested | Deployed REST and Tabbit verify single and selected-open-source navigation, Unicode/CRLF ranges, repeated names, external declaration/implementation ownership, malformed-source exclusion and edit/undo freshness without execution. |
 | H04 | Historical metadata export reconciliation | Re-run DynamicProperty descriptor/nested value/unrelated summary export and follow-up invocation through installed SDK and host; do not assume historical failure remains | REST replay passed with both host-adjacent and development DLLs and the current deployed ABI 2.13 pair; not a newly fixed kernel defect. |
-| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle/matrix desktop cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay. Deployed Tabbit verifies two matrix columns, no overflow at 390px, and close/recreate with stale-handle rejection. Broader downstream acceptance remains open. |
-| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 identity/layout and builtin 1.22 80-case Legend creation replay passed. Deployed Tabbit confirms Legend rename, retained Line identities and per-Line clipping pixels. The v4/v3 selection fix passed both isolated and live Tabbit replays for selection/zoom and partial effects. Full native text/layout and UI property editing remain open. |
-| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Real isolated REST export writes bounded PNG/vector PDF through a renderer and session FileStore; failure/root/session controls pass. Separate actual ABI 2.13 Tabbit PNG downloads pass selected-Figure/pixel/lifecycle checks. Default CLI/REST still refuse; production renderer and broader scene/file/download policy remain open. |
-| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Kernel/package 364/364 and locked private host CI 86/86; all four frontend lanes passed. Published v1.15.0 is an authenticated prerelease with five exact platform archives, not the latest stable release. All 32 public assets were redownloaded and verified. The earlier plot fix is deployed locally; the new rename client and broader rollout are separate. |
+| H05 | Graphics lifecycle and matrix plots | Reproduce current Figure/Axes, replacement/hold/close behavior; implement missing agreed subset and column-wise multiple lines with handle arrays | Lifecycle and matrix reference cases passed; floating colon endpoint loss fixed with 38 R2024b cases and SDK/REST replay. Deployed Tabbit verifies two matrix columns, no overflow at 390px and close/recreate with stale-handle rejection. |
+| H06 | Graphics identity and properties | Specify stable identities or snapshot mapping before property writeback; implement agreed title/grid/Legend/Clipping object semantics and serialization | ABI 2.12 layout and 80 R2024b Legend cases passed. Live v4 freezes browser-supplied metrics and the kernel uses them for unit conversion. Direct REST DisplayName/Clipping/Text writes render in Tabbit without executing source; stale revisions and closed objects are refused. v4/v3 selection, zoom and partial effects are separately verified. |
+| H07 | Graphics export contract | Define figure/format/path validation and renderer adapter boundary; real format/file semantics or explicit unsupported errors, never relabel PNG as PDF | Builtin 1.23 and ABI 2.13 verified. Isolated REST wrote actual PNG/vector PDF with scoped renderer and FileStore, including failure/root/session controls. Real Tabbit PNG downloads passed selected-Figure/pixel/lifecycle checks. Default CLI/REST explicitly refuse when no renderer is configured; no production renderer is claimed. |
+| H08 | Downstream and release acceptance | Installed SDK clean rebuild, kernel regression, host REST and browser acceptance, current version/contracts/docs and GitHub state synchronized | Final local kernel/package replay 364/364; signed Windows SDK host 86/86, locked private CI 86/86 and frontend four lanes. Actual 8080 versioned client passed browser and continuity checks without changing the running DLL. Published v1.15.0 prerelease has five exact archives and 32 verified canonical assets; v1.0.0 remains latest stable. |
 | H09 | Authoritative dynamic search paths | Side-effect-free ordered SDK path snapshots/replacement, root/order/failure contracts, and later command/file compiles consuming actual kernel path state | SDK/installed-host and deployed REST verify side-effect-free path readback, lookup precedence, command/file compilation, removal and root rejection. In-script dynamic rebinding is outside this proof. |
 | H10 | Ordered assignment display events | Real labels/value snapshots, suppression/source/sequence and pre-failure events ordered with text/warnings/diagnostics; no host source parsing or final-workspace reconstruction | ABI 2.9 opt-in read-only collection, installed-SDK REST/client rendering, default-OFF Tabbit interaction and deployed REST ordering/suppression/failure replay passed. Live delivery, bounded in-flight recording and overloaded display remain separate; see host-ordered-display-candidate.md. |
 
@@ -65,6 +66,30 @@ change the workspace; an accepted contextual name retained the value and
 did not execute source. Both definition graphs were detached from the
 session and preserved workspace, run count and graphics.
 
+## Acceptance Audit
+
+The acceptance column above defines the verified milestone, rather than full
+MATLAB compatibility. The final local suite passed 364/364 with no skips,
+including the contextual identifier, public C/C++ SDK, runtime graphics,
+identity/export, system context, installed consumers and archive checks.
+Results: `build/final-host-integration-kernel.log`. The exact signed tag CI
+and canonical package audit are recorded in the [publication evidence](release-evidence/v1.15.0-publication/README.md).
+Runtime sources and public headers are unchanged between the deployed
+development source `7743950` and the signed tag; the deployed and signed
+DLL byte identities are deliberately recorded separately.
+
+The current [host revisions](host-source-adoption.md) and the
+[actual 8080 replay](host-browser-acceptance.md#versioned-live-client) close
+the verified downstream checks. Historical compiler/metadata and ordered
+path/event responses remain retained. The H07 retained output bytes have
+real PNG and PDF signatures and match the tested digests; the default CLI
+and service still decline file export without a renderer. The explicit-host
+layout decision and the opt-in read-only event decision do not imply a
+native window system, general UI property editor or live event stream.
+Additional graphics properties (including `LineWidth`), wider browser and
+accessibility coverage, and production renderer/deployment remain outside
+these verified results.
+
 ## Delivery Gates
 
 H04 replay: `tools/probe-host-compile.ps1 -MetadataOnly` ran the original
@@ -88,8 +113,8 @@ After seeding original=42, all five REST predicate requests left that value
 and the singleton workspace intact. The three H01 controls passed in the same
 run. Raw responses: `build/host-compile-probe/a1a4937706914e288ceb2a1586683a5b`.
 This verifies the executable builtin path, not the REST host calling the C SDK
-validator directly. The host's v114-workspace-conditional-delete.md explicitly
-records that rename was not shipped; no rename operation or UI is claimed.
+validator directly. The host's v114-workspace-conditional-delete.md records
+the old v1.14 limitation; current 1.15 REST and UI evidence is above.
 
 1. Establish minimal reproductions and distinguish missing implementation,
    missing host adoption and stale records.
@@ -104,6 +129,11 @@ records that rename was not shipped; no rename operation or UI is claimed.
 
 ## Progress
 
+- 2026-11-06 final deployed acceptance: the versioned client was switched
+  atomically with the old resource URLs retained. Three pre-existing
+  sessions and the seeded graph/workspace survived without a restart. Live
+  Tabbit checked H02, H03 and H06, including graph-stable refusal of
+  renderer-unavailable PDF. The final kernel/package replay passed 364/364.
 - 2026-11-06 H08 publication: exact tag `v1.15.0` at `6b2f0d6` passed all
   nine [same-run jobs](https://github.com/minexin/MParser/actions/runs/42141719375),
   including Sigstore authentication. [Published prerelease](https://github.com/minexin/MParser/releases/tag/v1.15.0)

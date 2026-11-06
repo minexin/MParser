@@ -163,6 +163,35 @@ workspace, graph and run count were unchanged by compile and navigation.
 scratch tab, session and service were removed. This was not a new 8080
 deployment.
 
+## Versioned Live Client
+
+The next 2026-11-06 replay ran on the [updated 8080 entrypoint](host-source-adoption.md#local-service-deployment),
+client `577dea9`. Tabbit loaded all 25 script/style URLs from the same client
+prefix. The replay confirmed keyword, duplicate and stale revision refusal;
+F2 and Enter committed a contextual rename with value 64 and restored focus.
+A renamed closure returned 14 on later explicit execution. The renames
+themselves did not execute source. The four cross-document definition jumps,
+explicit external owner, exclusion of malformed source and edit/undo
+invalidation also passed without changing workspace, graph or run count.
+
+The actual Canvas supplied a 715 x 298 content size, 96 CSS pixels per inch
+and measured character dimensions. Those values were read back from the
+kernel v4 Figure, and the kernel converted Axes Position to pixels using
+them. Revision-checked REST writes updated a real Line's DisplayName and
+Clipping and the bound title Text. Browser refresh rendered the new Legend
+label and title; the sample outside the Axes changed from zero red pixels
+to 270 while blue remained zero. Stale revision and closed-object writes
+were rejected without graph mutation. `print` still refused PDF explicitly
+and wrote no file. An unsupported `LineWidth` fixture was also rejected; it
+was not counted as implemented. The writeback screenshot timed out, so the
+rendering proof is the actual Canvas pixel sample and view state.
+
+The scratch session was removed without restarting the backend or replacing
+the other sessions. Evidence is in
+`build/live-client-577dea9-a65effd3c24c4bc58523215dd4f1fda0`, including
+`live-browser.json`, `live-multisource.json`, `live-graphics-writeback.json`,
+and the inspected rename and source graph screenshots.
+
 ## Selected Pair
 
 - Source-only host stage:
@@ -266,7 +295,7 @@ host/observation records are local files. The isolated host was stopped through
 its owning PTY and no server process remained. These cases do not establish
 every lifecycle/selection race or a deployed client.
 
-## Remaining Gates
+## Scope Limits
 
 The later [ordered display candidate](host-ordered-display-candidate.md) has
 actual default-OFF/ON/OFF command/checkbox and event-order DOM evidence with
@@ -283,14 +312,19 @@ that measured cropping failure at five tested viewports and checks actual
 repeated/cross-Axes Legend rename/delete/invalid-call preservation. See the
 [compact candidate guide](host-compact-layout-candidate.md) for screenshots,
 Canvas pixels, keyboard/draft/filter workflows and exact limitations. Its fresh
-installed-SDK host replay passed 67/67; original host/client sources and services
-remain unchanged. Neither run establishes download UI or production adoption.
+installed-SDK host replay passed 67/67; that historical replay did not change
+original host/client sources or services. Neither run establishes download UI
+or production adoption.
 
 - Broader lifecycle/selection races beyond the tested close/recreate/switch cases.
 - Responsive interactions beyond the five compact-candidate viewports/workflows,
   touch/hardware keyboards and full screen-reader acceptance.
-- Exact submitted-source navigation, document freshness and user-facing failures.
-- Host property writeback, protocol negotiation and deployment.
+- Source navigation, document freshness and failure paths beyond the bounded
+  single-source and selected-open-document cases above.
+- A general UI property editor, arbitrary property support and production
+  rollout beyond the verified local REST writeback and Canvas refresh.
 - Kernel file export remains explicit renderer-unavailable; browser PNG export
   is not a substitute for that contract.
-- GitHub synchronization and CI for the actual current commit remain separate.
+- [Source adoption and exact-revision CI](host-source-adoption.md#github-actions)
+  and [signed release verification](release-evidence/v1.15.0-publication/README.md)
+  are separate from this browser evidence.

@@ -37,19 +37,20 @@ an exported old handle may still retain an old graph after Runtime reset, but
 the new identity-targeted write rejects that graph. The SDK does not implement
 an optimistic per-property revision check or an all-properties transaction.
 
-## Host Candidate
+## Host Contract
 
-`mexecserver-graphics-writeback.patch` is applied only to source copies in the
-MParser build directory. It defaults OFF and requires ABI 2.11 plus explicit
-graphics v3 when enabled. The candidate POST session graphics-property route
+`mexecserver-graphics-writeback.patch` records the original source-copy
+candidate. Its implementation was subsequently adopted in MExecServer; the
+generic build defaults OFF and requires ABI 2.11 plus explicit graphics v3
+when enabled. The POST session graphics-property route
 requires string graph/object identities, a property, a normal JSON value and
 an expected workspace revision as an unsigned decimal string. Both revision
 requests and responses preserve uint64 values without JavaScript rounding.
 It rejects busy/conflicting requests, calls
 the SDK directly, advances the workspace revision for alias invalidation and
 refreshes the last completed graphics export. It does not increment execution
-run_count or compile a property-assignment script. It is not deployed to the
-original MExecServer/MExecClient sources or production service.
+run_count or compile a property-assignment script. The feature is enabled
+on the verified local loopback deployment, not claimed as a production rollout.
 After an uncertain transport/server failure, refresh the revision/snapshot;
 do not assume a failed response proves the write was not committed.
 
@@ -85,7 +86,10 @@ passed the race probe plus 67/67 host regressions (19.93 seconds). Evidence:
 `build/graphics-writeback-compat.log`, with separate raw responses in the stage.
 This is not a full legacy-host regression with the new DLL.
 
-Actual-commit GitHub CI remains a separate gate. Browser
-object selection, UI editing/negotiation, property-specific conflict policy,
-DLL reload generations, rendering/export and production adoption are not
-established by the SDK or a successful REST transport.
+[Exact host CI](host-source-adoption.md#github-actions) and
+[live Tabbit](host-browser-acceptance.md#versioned-live-client) provide
+separate evidence. On the deployed ABI 2.13 service, REST writes to
+DisplayName, Clipping and title Text retained stable identities, and the
+browser refreshed their actual Canvas representation. Stale revisions and
+closed objects were rejected. This is not a generic browser property editor,
+DLL reload or production rollout claim.
